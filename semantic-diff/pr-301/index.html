@@ -1,0 +1,1083 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">22 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-301"><code>9ce75bd3ef01f306d7e2cb752f622b1902fcce01..pr-301</code></a><ul><li>22 commits, units 4 verified, 3 refused</li><li>changes: 26 Docs, 2 Semantics, 26 Theorem, 14 Check, 3 Rule, 7 Example, 9 Definition, 2 Wire, 1 Control, 2 Tooling, 1 Proposal</li><li>parts: <span class="chip">docs</span> <span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip strong">trust</span></li><li>wire: the framed plan document's protocol entries carry a key</li></ul></li></ul></section>
+<h2 id="g-pr-301"><code>9ce75bd3ef01f306d7e2cb752f622b1902fcce01..pr-301</code></h2><article class="card" id="c-27442b12f"><header><div><div class="sha">27442b12f · Cristiano Calcagno · Nov 20, 14:12</div><h3>State field keys, a component's initialization and units checked at their known calls in both papers</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Small examples of the blockers between TScert and pretext's P22 sites showed three things the papers did not state: a field location's key, so that a write at one key leaves facts at another (a cursor parameter beside a handle, a member writing a different field of a handle); a component of several modules with constants, cells, imports and functions naming each other; and a module function that is no entry, checked where it is called. The owner approved the text on 2026-11-20.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a field or cell location has a kind and no key; derivations state no disjointness between paths at different keys</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a field or cell location has a key fixed at allocation (W3); pi.f and pi'.g are disjoint when f and g differ (Definition &quot;Derivations&quot;); Example &quot;A cursor that may be the record&quot;</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/note.tex</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>every location at key none in Section 4.1; a component is one module with no linked capture; every unit checked at the open context 0</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a part is (site, kind, key), a write at a constant key charges that key and a computed key every key; a component is a set of modules closed under imports, initialized in evaluation order, realm values stated by one property (A1-A3); a module function that is no entry is checked at the contexts of its known calls (B1, B2, B4, Section 5.3); examples for each, the unsafe ones returning NaN under Node</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">both papers' PDFs</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>built from the previous text</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>built by color.py and LaTeX on note-color.tex</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · both papers build with no error · every example's Node driver run, the unsafe ones printing NaN</dd></dl>
+<details><summary>4 files changed, 345 insertions(+), 84 deletions(-)</summary><pre class="code"> docs/drafts/readonly-frames-note/note.tex          | 358 ++++++++++++++++-----
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 361995 -&gt; 379846 bytes
+ docs/drafts/tolerant-frames-note/note.tex          |  71 +++-
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 504086 -&gt; 508950 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-995bf298a"><header><div><div class="sha">995bf298a · Cristiano Calcagno · Nov 20, 14:41</div><h3>Record a field or a cell location's key in its role, and separate regions at different keys</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The approved text of Tolerant frames gives a field or a cell location a key fixed at allocation (W3, T2), and makes the regions pi.f and pi'.g disjoint when f and g differ (Definition &quot;Derivations&quot;). The Lean world recorded no key, so no query could answer that a write of c.i leaves h.extras, where c may be h.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Semantics <span class="target">Role</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">field</span> | <span class="m-text">cell, with no key; a slot under</span> <var>k</var> <span class="m-text">is a field or a cell</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">field</span> <var>k</var> | <span class="m-text">cell</span> <var>k</var>; <span class="m-text">a slot under</span> <var>k</var> <span class="m-text">is a field or a cell of the key</span> <var>k</var></span></div><div class="row"><span><span class="m-text">(SlotRole), so every allocation records each property's key</span></span></div><div class="row"><span><span class="m-text">(objectEntries (ns</span>.<span class="m-text">map</span> .<span class="m-text">field), concreteRoles at the keys</span>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">Region.apart_of_keys</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a region at a field or a path's field</span> <var>k</var> <span class="m-text">other than the spine key holds</span></span></div><div class="row"><span><span class="m-text">only locations of the key</span> <var>k</var> (<span class="m-con">Region</span>.<span class="m-op">key</span><sub><span class="m-text">sound</span></sub>); <span class="m-text">two regions at</span></span></div><div class="row"><span><span class="m-text">different keys share no location in a well-formed state</span></span></div><div class="row"><span>(<span class="m-con">Region</span>.<span class="m-op">apart</span><sub><span class="m-op">of</span></sub><sub><span class="m-text">keys</span></sub>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">boundQuery, SepEvidence.query</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>disjoint by role-class bounds, freshness or a separation fact</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>also disjoint where the regions' keys differ</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, tolerant-frames.pdf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>T2's key and the disjointness of pi.f and pi'.g with no Lean theorem</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>their Lean names (Role.key?, Region.apart_of_keys)</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>Region.apart_of_keys, Region.key_sound, boundQuery_sound, SepEvidence.query_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (no sorry, no warning) · node pipeline/run-cases.mts stated, frame, region, footprint (166 of 166 as expected) · node tests/docs.mts</dd></dl>
+<details><summary>18 files changed, 314 insertions(+), 168 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/note.tex          |   4 +-
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 508950 -&gt; 508979 bytes
+ .../Paper/TolerantFrames/KindsModelRules.lean      |  10 +-
+ .../Paper/TolerantFrames/NamedCounterexample.lean  |   4 +-
+ lean/Verification/Semantics/AllocationWorlds.lean  |  19 +-
+ lean/Verification/Semantics/FootprintRebase.lean   |   1 +
+ lean/Verification/Semantics/KindsAllocation.lean   |  24 +--
+ lean/Verification/Semantics/KindsCalls.lean        |  12 +-
+ lean/Verification/Semantics/KindsCapabilities.lean | 199 ++++++++++++---------
+ lean/Verification/Semantics/KindsEffects.lean      |   4 +-
+ lean/Verification/Semantics/KindsNatives.lean      |   6 +-
+ lean/Verification/Semantics/KindsWrites.lean       |  10 +-
+ lean/Verification/Semantics/RegionBounds.lean      | 114 +++++++++++-
+ .../Verification/Semantics/SeparationEvidence.lean |  24 ++-
+ lean/Verification/Semantics/StorageRoles.lean      |  13 +-
+ lean/Verification/Semantics/Worlds.lean            |  34 ++--
+ lean/Verification/Source/Claims/FramedReturns.lean |   2 +-
+ .../Types/NativePromiseSeparation.lean             |   2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-38e092bf8"><header><div><div class="sha">38e092bf8 · Cristiano Calcagno · Nov 20, 14:52</div><h3>Grade a field write of primitives as a scalar's step</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A frame Modifies&lt;{ values: &quot;scalar&quot; }&gt; was not certified even for c.i = j on a number field: every typed field write was graded {value: any, spine: keep}, the only grade its rule granted. The change scalar admits a location holding neither an object nor a spine taking contents that are no spine, which such a write is.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">scalarWrite, ExpressionEffects.lean</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a typed field write whose field every alternative of the receiver's</span></span></div><div class="row"><span><span class="m-text">type gives a type of primitives (scalarTy, scalarClause), of a value of</span></span></div><div class="row"><span><span class="m-text">a type of source values, changes its field by a scalar's step</span><span class="m-rel">:</span></span></div><div class="row"><span>{<var>x</var>.<var>f</var><span class="m-rel">:</span> <span class="m-con">scalar</span>} <span class="m-text">on normal return, the heap unchanged on a throw</span></span></div><div class="row"><span>(<span class="m-op">scalarWrite</span><sub><span class="m-text">sound</span></sub>); <span class="m-text">its closed bound is</span> {<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">scalar, spine</span><span class="m-rel">:</span> <span class="m-con">keep</span>}</span></div><div class="row"><span>(<span class="m-op">scalarWriteFrame</span><sub><span class="m-text">closed</span></sub>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">fieldWriteWithin, writeGrades, stepEffects</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a field write within a bound at least {value: any, spine: keep}</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>also within {value: scalar, spine: keep} where it is a scalar write; the regional route reads its frame {x.f: scalar} (scalarFieldStepEffect)</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">moveTo writes c.i = j within { values: <span class="tk-s">&quot;scalar&quot;</span> } and proves c.i === j</span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-scalar-field-write</code> <span class="kind positive">positive</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// A write of a number to a field of type number is a scalar's step: its old</span>
+<span class="tk-c">// and new contents are neither objects nor spines, so `c.i = j` is within</span>
+<span class="tk-c">// `{ values: &quot;scalar&quot; }` and its postcondition holds at the return.</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number };
+
+<span class="tk-c">/** @requires safeInteger(j)
+ * @ensures safeInteger(c.i) &amp;&amp; c.i === j */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> moveTo(c: <span class="tk-t">Cursor</span>, j: number): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;scalar&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  c.i = j;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>ExpressionEffects.scalarWrite_sound, ExpressionEffects.scalarWriteFrame_closed, ExpressionEffects.scalarField_contents, PositiveNormalization.scalarClause_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-scalar-field-write; node pipeline/run-cases.mts stated, write, field (391 of 391 as expected)</span></dd></dl>
+<details><summary>5 files changed, 230 insertions(+), 12 deletions(-)</summary><pre class="code"> .../Programs/ArgumentRegionCertificates.lean       |  29 +++-
+ lean/Verification/Programs/ExpressionEffects.lean  | 181 ++++++++++++++++++++-
+ lean/Verification/Types/PositiveNormalization.lean |  21 +++
+ pipeline/cases.mts                                 |   1 +
+ pipeline/examples/stated-scalar-field-write.ts     |  10 ++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-91cd92308"><header><div><div class="sha">91cd92308 · Cristiano Calcagno · Nov 20, 15:09</div><h3>State a parameter's field regions in a frame, certified by the regional check</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Tolerant frames' Example &quot;A cursor that may be the record&quot; states moveTo's effect as { &quot;c.i&quot;: &quot;scalar&quot; }. The source gate refused every location key but a spine region, and the regional check's regions were spines at the change any, so no frame could name a field.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">ArgumentSpineRegion, SpineRegions.lean</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a position and a path; the region's spine at any, the stated frame the</span></span></div><div class="row"><span><span class="m-text">closed bound off the selected spines</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a position, a path, a key (a field, the spine at the spine key, or</span></span></div><div class="row"><span><span class="m-text">every field) and a change; the stated frame is Post of the closed bound</span></span></div><div class="row"><span><span class="m-text">with each region's entry (ArgumentSpineRegionsWithin)</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">regionKindOk, spineRegionOf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a region is a spine at a collection type; a frame's regions are its path spine entries at any</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a spine region at a collection type, a field region through at most one field; a frame's regions are its path and pathFields entries at their changes</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">StatedFrame regions, tools/type-graph.mts, tools/type-term.mts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>&quot;x[*]&quot; and &quot;x.f[*]&quot; at any; every other location key refused</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>also &quot;x.g&quot;, &quot;x.*&quot;, &quot;x.f.g&quot;, &quot;x.f.*&quot; at a change, emitted as path and pathFields frame entries</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">the paper's example: pairAt keeps the facts <span class="tk-k">of</span> h.extras, h.widths and</span><span class="ln">their spines across moveTo(c, <span class="tk-n">1</span>) with the frame <span class="tk-s">&quot;c.i&quot;</span>: <span class="tk-s">&quot;scalar&quot;</span></span></pre>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">the same with <span class="tk-s">&quot;c.*&quot;</span>: h.extras[c.i] is refused; pairAt(h, h) is <span class="tk-t">NaN</span> under <span class="tk-t">Node</span></span></pre>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">a body writing h.extras is not within <span class="tk-s">&quot;c.i&quot;</span>: <span class="tk-s">&quot;scalar&quot;</span>; pair is <span class="tk-t">NaN</span> under <span class="tk-t">Node</span></span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, SOURCE-FRAGMENT.md, ANNOTATIONS.md</span></h4><div class="prose"><p>field regions, their certification and what a caller keeps across them</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-field-region-key</code> <span class="kind positive">positive</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// Tolerant frames, Example &quot;A cursor that may be the record&quot;: `moveTo`'s</span>
+<span class="tk-c">// frame names the cursor's field `i` alone, and `pairAt` keeps</span>
+<span class="tk-c">// `h.extras === null || h.extras.length === h.widths.length` and</span>
+<span class="tk-c">// `2 &lt;= h.widths.length` across the call, also where `c` is `h`: the fields</span>
+<span class="tk-c">// `h.extras` and `h.widths` are apart from `c.i` by their keys, the spines by</span>
+<span class="tk-c">// their kind.</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; extras: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires safeInteger(j)
+ * @ensures safeInteger(c.i) &amp;&amp; c.i === j */</span>
+<span class="tk-k">function</span> moveTo(c: <span class="tk-t">Cursor</span>, j: number): <span class="tk-t">Modifies</span>&lt;{ <span class="tk-s">&quot;c.i&quot;</span>: <span class="tk-s">&quot;scalar&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  c.i = j;
+}
+
+<span class="tk-c">/** @requires h.extras === null || h.extras.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pairAt(h: <span class="tk-t">H</span>, c: <span class="tk-t">Cursor</span>): number {
+  <span class="tk-k">if</span> (h.widths.length &lt; <span class="tk-n">2</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  moveTo(c, <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> h.widths[c.i]! + (h.extras === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : h.extras[c.i]!);
+}</pre></details></li><li><details><summary><code>invalid-stated-field-region-fields</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">unverified</span></summary><pre class="code"><span class="tk-c">// Tolerant frames, Example &quot;A cursor that may be the record&quot;, with the frame</span>
+<span class="tk-c">// &quot;c.*&quot; in place of &quot;c.i&quot;: the cursor's fields may be the handle's, so no</span>
+<span class="tk-c">// rule separates them from `h.extras`, and the reads of `pairAt` are</span>
+<span class="tk-c">// refused. `moveTo` also sets an `extras` field holding `null` to `[]`, a</span>
+<span class="tk-c">// key-adding write the fragment refuses on its own: with the handle as its</span>
+<span class="tk-c">// own cursor, `pairAt` reads `undefined` (run under Node: the sum is `NaN`).</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; extras: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires h.extras === null || h.extras.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pairAt(h: <span class="tk-t">H</span>, c: <span class="tk-t">Cursor</span>): number {
+  <span class="tk-k">if</span> (h.widths.length &lt; <span class="tk-n">2</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  moveTo(c, <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> h.widths[c.i]! + (h.extras === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : h.extras[c.i]!);
+}
+
+<span class="tk-c">/** @requires safeInteger(j)
+ * @ensures safeInteger(c.i) &amp;&amp; c.i === j */</span>
+<span class="tk-k">function</span> moveTo(c: <span class="tk-t">Cursor</span>, j: number): <span class="tk-t">Modifies</span>&lt;{ <span class="tk-s">&quot;c.*&quot;</span>: <span class="tk-s">&quot;scalar&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  c.i = j;
+  <span class="tk-k">const</span> o = c <span class="tk-k">as</span> { i: number; extras?: number[] | <span class="tk-k">null</span> };
+  <span class="tk-k">if</span> (o.extras === <span class="tk-k">null</span>) o.extras = [];
+}</pre></details></li><li><details><summary><code>invalid-stated-field-region-escape</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">unverified</span></summary><pre class="code"><span class="tk-c">// A body writing outside its field region: the frame names `c.i`, and the</span>
+<span class="tk-c">// write `h.extras = []` is no part of it, so `moveTo`'s frame is refused.</span>
+<span class="tk-c">// A caller relying on it reads `undefined` (run under Node: `pair` returns</span>
+<span class="tk-c">// `NaN`).</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; extras: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires safeInteger(j)
+ * @ensures safeInteger(c.i) &amp;&amp; c.i === j */</span>
+<span class="tk-k">function</span> moveTo(c: <span class="tk-t">Cursor</span>, h: <span class="tk-t">H</span>, j: number): <span class="tk-t">Modifies</span>&lt;{ <span class="tk-s">&quot;c.i&quot;</span>: <span class="tk-s">&quot;scalar&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  c.i = j;
+  <span class="tk-k">if</span> (h.extras === <span class="tk-k">null</span>) h.extras = [];
+}
+
+<span class="tk-c">/** @requires h.extras === null || h.extras.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pair(h: <span class="tk-t">H</span>): number {
+  <span class="tk-k">const</span> c: <span class="tk-t">Cursor</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">if</span> (h.widths.length &lt; <span class="tk-n">2</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  moveTo(c, h, <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> h.widths[c.i]! + (h.extras === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : h.extras[c.i]!);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Footprints.ArgumentSpineRegionsWithin, ArgumentRegionCertificates.scalarFieldStep_ok, EffectJson.spineRegionOf</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-field-region-key</span> <span class="test pos">invalid-stated-field-region-fields</span> <span class="test pos">invalid-stated-field-region-escape; node tests/node-runs.mts; node pipeline/run-cases.mts modifies, region, stated (129 of 129 as expected); tsc over tools/tsconfig.json; node tests/json-field-names.mts; node tests/docs.mts</span></dd></dl>
+<details><summary>23 files changed, 197 insertions(+), 113 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |  5 +-
+ docs/SOURCE-ELABORATION.md                         | 27 ++++++-
+ docs/SOURCE-FRAGMENT.md                            |  2 +-
+ .../Programs/ArgumentPathTracking.lean             | 22 +++---
+ .../Programs/ArgumentRegionCertificates.lean       |  4 +-
+ .../Verification/Programs/ArgumentRegionGraph.lean |  2 +-
+ lean/Verification/Programs/SinglePass.lean         |  2 +-
+ .../Programs/TolerantFramesRegionalRecorded.lean   |  2 +-
+ .../Programs/TolerantFramesRegionalRuns.lean       |  2 +-
+ .../Semantics/ArgumentSpineRegions.lean            | 11 ---
+ lean/Verification/Semantics/SpineRegions.lean      | 84 ++++++++--------------
+ lean/Verification/Source/Claims/Json.lean          |  4 +-
+ lean/Verification/Source/EffectJson.lean           |  8 ++-
+ lean/Verification/Source/Lowering.lean             |  2 +-
+ lean/Verification/Source/SourceRequests.lean       |  2 +-
+ pipeline/cases.mts                                 |  5 ++
+ .../examples/invalid-stated-field-region-escape.ts | 21 ++++++
+ .../examples/invalid-stated-field-region-fields.ts | 23 ++++++
+ pipeline/examples/stated-field-region-key.ts       | 21 ++++++
+ tests/node-runs.mts                                |  7 ++
+ tests/single-pass-controls.mts                     | 26 +++----
+ tools/type-graph.mts                               | 18 +++--
+ tools/type-term.mts                                | 10 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-167ec7089"><header><div><div class="sha">167ec7089 · Cristiano Calcagno · Nov 20, 15:29</div><h3>Keep a field write's other keys of every object, by the key a location's role records</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>moveTo's c.i === j was lost across its own write h.extras = []: a write kept the cell facts of another key only on its own object where the receiver's type owned the field (ownedField), and dropped every read link. A field location has one key (Tolerant frames, W3), so a write under f finds no location of another key, whatever objects the slots hold.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">write-sibling, writeKeeps</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a cell fact of</span> <var>z</var>.<var>g</var> <span class="m-text">is kept where a separation states it apart, or the</span></span></div><div class="row"><span><span class="m-text">written field is owned</span>, <var>z</var> <span class="m-text">holds x's object and</span> <var>g</var> <span class="m-text">differs from</span> <var>f</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">kept where a separation states it apart, or</span> <var>g</var> <span class="m-text">differs from</span> <var>f</var></span></div><div class="row"><span>(<span class="m-op">writeKeeps</span><sub><span class="m-op">ne</span></sub>, <span class="m-text">from SlotRole at the roots); ownedField and its</span></span></div><div class="row"><span><span class="m-text">soundness removed</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">writeOutput's links</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">alias links alone kept across a write</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">also the read links the write keeps by writeKeeps</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">checkStep_sound, passSteps_sound, write_sound</span></h4><div class="prose"><p>take the roots' validity where the step is a write, which the checker's soundness supplies</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">c.i === j holds after h.extras = []</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, &quot;Writing&quot;</span></h4><div class="prose"><p>write-sibling as g differs from f, by the key a location's role records</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>write-sibling-other-object</code> <span class="kind positive">positive</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// A write keeps what is known of another key of any object: after `c.i = j`,</span>
+<span class="tk-c">// the write `h.extras = []` is under the key `extras`, so it finds a location</span>
+<span class="tk-c">// other than `c.i`'s, whether or not `c` is `h`, and `c.i === j` holds at</span>
+<span class="tk-c">// the return (the note *Tolerant frames*, (W3)).</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; extras: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires safeInteger(j)
+ * @ensures safeInteger(c.i) &amp;&amp; c.i === j */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> moveTo(c: <span class="tk-t">Cursor</span>, h: <span class="tk-t">H</span>, j: number): <span class="tk-k">void</span> {
+  c.i = j;
+  h.extras = [];
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>HeapExpressionRules.writeKeeps_ne, HeapExpressionRules.write_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">write-sibling-other-object; node pipeline/run-cases.mts write, field, cursor, sibling, link, invariant (363 of 363 as expected); node tests/docs.mts</span></dd></dl>
+<details><summary>5 files changed, 108 insertions(+), 110 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  23 ++-
+ .../Verification/Programs/HeapExpressionRules.lean | 170 ++++++++++-----------
+ .../Programs/TolerantFramesSelect.lean             |  11 +-
+ pipeline/cases.mts                                 |   1 +
+ pipeline/examples/write-sibling-other-object.ts    |  13 ++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-99a6bac7e"><header><div><div class="sha">99a6bac7e · Cristiano Calcagno · Nov 20, 15:58</div><h3>Read a part's key from the world, and charge a field write at its key</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The approved Read-only frames text makes a part a site, a kind and a key (§4.1): a write at a constant key charges that key, and a region x.f has the key f. The Lean read a part's key from a ghost key that every step set to none (NoKeys), and charged a write per kind, so a member writing n.label = s charged every field of its sites, and h.flags at grow failed beside it (Example &quot;A member writing another key&quot;).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Semantics <span class="target">St.part, Kept, Ghost</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a part's key is the ghost's key, fixed at allocation (Ghost</span>.<span class="m-text">key</span>,</span></div><div class="row"><span><span class="m-con">CheckData</span>.<span class="m-text">key, Ghost</span>.<span class="m-text">alloc's keys); Kept fixes sites and keys</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a part's key is the key the world records in the location's role</span></span></div><div class="row"><span>(<span class="m-op">keyAt</span> <span class="m-rel">=</span> (<span class="m-op">roleAt</span> <var>W</var> <var>l</var>).<span class="m-text">bind Role</span>.<span class="m-text">key</span>?); <span class="m-text">Kept fixes sites, and an</span></span></div><div class="row"><span><span class="m-text">admissible transition fixes roles, so kinds and keys</span></span></div><div class="row"><span>(<span class="m-op">roleAt</span><sub><span class="m-text">kept</span></sub>, <span class="m-op">keyAt</span><sub><span class="m-text">kept</span></sub>); <span class="m-text">the ghost records sites only</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">regionKeys</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>K</var>(<var>r</var>)<span class="m-rel">:</span> <span class="m-text">the key a region's form fixes (Region</span>.<span class="m-text">key</span>?), <span class="m-text">none where its</span></span></div><div class="row"><span><span class="m-text">bound holds no field or cell, every key (no finite list) otherwise</span>;</span></div><div class="row"><span><span class="m-text">every location of a region has one of its keys</span> (<span class="m-op">regionKeys</span><sub><span class="m-text">sound</span></sub>),</span></div><div class="row"><span><span class="m-text">finitely many where the region has sites</span> (<span class="m-op">regionKeys</span><sub><span class="m-op">of</span></sub><sub><span class="m-text">sites</span></sub>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">framed_of_sites, framed_of_frame, framed_at_frame, framed_at_call, framed_at_innermost</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">given a key list per region and the premise that each location's</span></span></div><div class="row"><span><span class="m-text">ghost key is among its region's</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">at each region's keys, the premise proved from the world</span></span></div><div class="row"><span>(<span class="m-op">regionKeys</span><sub><span class="m-text">sound</span></sub>); <span class="m-text">NoKeys, noKeys</span>, <span class="m-op">reached</span><sub><span class="m-text">key</span></sub>, <span class="m-op">reached</span><sub><span class="m-text">hkey</span></sub>,</span></div><div class="row"><span><span class="m-op">framed</span><sub><span class="m-op">at</span></sub><sub><span class="m-text">innermost</span></sub><sub><span class="m-text">keys</span></sub> <span class="m-text">and FramedSpec</span>.<span class="m-text">noKeys removed</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">writesK, probeProtocol, componentProtocol, depthCharges</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a write charges the kinds a slot under its key may have; a protocol</span></span></div><div class="row"><span><span class="m-text">from charges is any at a charged kind, every key</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a write under</span> <var>k</var> <span class="m-text">charges those kinds at the slot's key (slotKey</span>,</span></div><div class="row"><span><span class="m-op">slotKey</span><sub><span class="m-text">sound</span></sub>); <span class="m-text">a protocol from charges is any at a charged kind and</span></span></div><div class="row"><span><span class="m-text">key</span> (<span class="m-op">slotKind</span><sub><span class="m-text">sound</span></sub>, <span class="m-op">step</span><sub><span class="m-text">kind</span></sub><sub><span class="m-text">charged</span></sub>, <span class="m-op">probeProtocol</span><sub><span class="m-text">charged</span></sub>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">framed plan document, &quot;protocol&quot;</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>[site, kind, change]</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>[site, kind, key, change], read by partsIndex at the key; protocolAtLeastB at the parts of the sites and the listed keys</p></div></figure></div>
+<h4 class="change"><span class="act removed">removed</span>Definition <span class="target">ReadOnlyCover.lean</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the check at a universe of sites, read by no check; the frame's check</span></span></div><div class="row"><span><span class="m-text">refuses a region with no sites</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Control <span class="target">FlowProbeControls, FramedBindingControls</span></h4><div class="control"><p>charges at keys; a capture's write at i keeps its site's field at j</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">readonly-frames-note/note.tex status marks; framed-acceptance.md; readonly-handles.md</span></h4><div class="prose"><p>a location's key the world's, proved; a write's charge at its key, proved</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>no case changes its outcome (readonly, framed, frame, protocol,</code></li><li><code>cursor, clients)</code></li></ul>
+<h4 class="change">Gap</h4><p>Example &quot;A member writing another key&quot; stays refused: its regions</p><div class="prose"><p>of outside storage need the protected reading of §4.1, which the code does not run (frameCheckAt's last argument false)</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>keyAt · roleAt_kept · keyAt_kept · Kept.part · regionKeys · regionKeys_sound · regionKeys_of_sites · callParts · framed_of_sites · slotKey · slotKey_sound · writesK · slotKind_sound · step_kind_charged · probeProtocol_charged · partsU · protocolAtLeastB_sound</dd><dt>Wire</dt><dd>the framed plan document's protocol entries carry a key</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node pipeline/run-cases.mts readonly, framed, frame, protocol, cursor, clients (116 of 116 as expected) · node tests/axiom-check-imports.mts · node tests/docs.mts</dd></dl>
+<details><summary>36 files changed, 589 insertions(+), 752 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   |  47 ++---
+ docs/drafts/readonly-frames-note/note.tex          |   8 +-
+ docs/drafts/readonly-handles.md                    |  14 +-
+ .../Paper/TolerantFrames/ReadOnlyBinding.lean      |  27 +--
+ .../Paper/TolerantFrames/ReadOnlyBridge.lean       |   4 +-
+ .../Paper/TolerantFrames/ReadOnlyCallFrame.lean    | 223 +++++++++-----------
+ .../Paper/TolerantFrames/ReadOnlyCert.lean         |   2 +-
+ .../Paper/TolerantFrames/ReadOnlyCharges.lean      |  75 ++++---
+ .../Paper/TolerantFrames/ReadOnlyChecks.lean       |  24 +--
+ .../Paper/TolerantFrames/ReadOnlyClaim.lean        |   2 +-
+ .../Paper/TolerantFrames/ReadOnlyCover.lean        | 180 ----------------
+ .../Paper/TolerantFrames/ReadOnlyEnterRoots.lean   |   2 +-
+ .../Paper/TolerantFrames/ReadOnlyExec.lean         |  73 ++++---
+ .../Paper/TolerantFrames/ReadOnlyFits.lean         |  44 ++--
+ .../Paper/TolerantFrames/ReadOnlyFitsReach.lean    |  16 +-
+ .../Paper/TolerantFrames/ReadOnlyFitsStep.lean     | 230 ++++++++++-----------
+ .../Paper/TolerantFrames/ReadOnlyFrame.lean        |  55 +++--
+ .../Paper/TolerantFrames/ReadOnlyLocalReach.lean   |   4 +-
+ .../Paper/TolerantFrames/ReadOnlyRegion.lean       |   5 +-
+ .../Paper/TolerantFrames/ReadOnlySites.lean        |  44 ++--
+ .../Paper/TolerantFrames/ReadOnlyTraceCert.lean    |   2 +-
+ .../Paper/TolerantFrames/ReadOnlyTransfer.lean     |   4 +-
+ .../Paper/TolerantFrames/ReadOnlyWriteKinds.lean   |  59 +++---
+ .../Paper/TolerantFrames/Tests/AxiomCheck.lean     |   1 -
+ lean/Verification/Source/Claims/FlowProbe.lean     |   6 +-
+ lean/Verification/Source/Claims/FramedCheck.lean   |  24 ++-
+ lean/Verification/Source/Claims/FramedFlow.lean    |  37 ++--
+ .../Source/Claims/FramedNodeChecks.lean            |   2 +-
+ lean/Verification/Source/Claims/FramedReached.lean |   2 +-
+ lean/Verification/Source/Claims/FramedReturns.lean |  48 ++---
+ lean/Verification/Source/Claims/FramedSpec.lean    |  11 +-
+ lean/Verification/Source/Claims/FramedStarts.lean  |  29 +--
+ lean/Verification/Source/Claims/Json.lean          |   2 +-
+ .../Verification/Source/Claims/PassUnitMember.lean |   2 +-
+ lean/Verification/Tests/FlowProbeControls.lean     |  27 +--
+ lean/Verification/Tests/FramedBindingControls.lean |   6 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-1f7611068"><header><div><div class="sha">1f7611068 · Cristiano Calcagno · Nov 20, 16:06</div><h3>Name why a framed node drops a support, and the note's two key examples as cases</h3></div><span class="pill principled">refused</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The Read-only frames note refuses Example &quot;A member writing the same key&quot; by the protocol: the member's write is charged at (s, field, flags), so Psi_C is any at a part of h.flags, above grow. A framed walk's refusal named only the expression it could not type (h.flags[i] at node 9), not the frame's check that dropped h.flags.length === n at the visit.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">frameCheckFailure, supportFailure</span></h4><div class="prose"><p>the first part at which a support fails the frame's check at a framed node: the region with no sites, or the part where the node's protocol, or the callee's stated effect on a region read unprotected, exceeds the region's change</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">FilePlans.framedSupports, FilePlans.framedPlan, PreparedFile.framedVerdict</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">a refused framed walk's text: the walk's refusal</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">followed by a line per framed node that drops a support:</span><span class="ln">&quot;framed node l drops a support: &lt;region&gt; at &lt;change&gt; fails at the</span><span class="ln">part (&lt;site&gt;, &lt;kind&gt;, &lt;key&gt;): &lt;why&gt;&quot;</span></pre></figure></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">the note<span class="tk-s">'s Example &quot;A member writing another key&quot;: rename'</span>s write is</span><span class="ln">charged at label, so the protocol keeps h.flags; the visitor's stated</span><span class="ln">effect drops h.flags.length === n, the region read unprotected</span></pre>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">the note's <span class="tk-t">Example</span> <span class="tk-s">&quot;A member writing the same key&quot;</span>, its member</span><span class="ln">reset(h: { flags: <span class="tk-k">readonly</span> number[] }) writing h.flags = [] (the</span><span class="ln">note's cast is refused at its claim): the protocol is any at</span><span class="ln">(outside storage, field, flags), above grow; <span class="tk-t">NaN</span> under <span class="tk-t">Node</span></span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>readonly-frame-other-key</code> <span class="kind gap">gap</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">the region read unprotected</span></summary><pre class="code"><span class="tk-c">// The Read-only frames note, Example &quot;A member writing another key&quot;</span>
+<span class="tk-c">// (docs/drafts/readonly-frames-note/note.tex): the member writes the key</span>
+<span class="tk-c">// label of a record a caller passes writable, so the component's protocol</span>
+<span class="tk-c">// changes outside storage only at the key label and keeps the parts of</span>
+<span class="tk-c">// h.flags and its spine. The fact h.flags.length === n across visit(i)</span>
+<span class="tk-c">// needs both regions, of outside storage, read as protected (the crossing</span>
+<span class="tk-c">// of h at H their witness, §4.1); the code reads no region as protected,</span>
+<span class="tk-c">// so the visitor's stated effect drops it.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Note</span> = { label: string };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rename(n: <span class="tk-t">Note</span>, s: string): <span class="tk-k">void</span> {
+  n.label = s;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-c">/** @requires h.flags.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.widths.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-same-key</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">the protocol at flags</span></summary><pre class="code"><span class="tk-c">// The Read-only frames note, Example &quot;A member writing the same key&quot;</span>
+<span class="tk-c">// (docs/drafts/readonly-frames-note/note.tex): the member writes the</span>
+<span class="tk-c">// handle's own key flags, replacing its array. Its write is charged at the</span>
+<span class="tk-c">// key flags of outside storage, so the component's protocol is any at a</span>
+<span class="tk-c">// part of h.flags, above the invariant's grow, and walk is refused by the</span>
+<span class="tk-c">// protocol. A visitor that calls reset(h) at its first visit makes walk</span>
+<span class="tk-c">// read past the new array (NaN under Node, tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(h: { flags: <span class="tk-k">readonly</span> number[] }): <span class="tk-k">void</span> {
+  h.flags = [];
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-c">/** @requires h.flags.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.widths.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">walk(h, (i) =&gt; { <span class="tk-k">if</span> (i === <span class="tk-n">0</span>) reset(h); }) with</span><span class="ln">h = { widths: [<span class="tk-n">1</span>, <span class="tk-n">1</span>, <span class="tk-n">1</span>], flags: [<span class="tk-n">1</span>, <span class="tk-n">1</span>, <span class="tk-n">1</span>] } prints <span class="tk-t">NaN</span> under <span class="tk-t">Node</span></span></pre>
+<h4 class="change">Gap</h4><p>readonly-frame-other-key needs the protected reading of §4.1</p><div class="prose"><p>(regions of outside storage reached read-only from an entry's crossing), which the code does not run</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">tools</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>frameCheckFailure · supportFailure · supportFailureText · framedPlan_overStore · Mode8Accepted.framed</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">readonly-frame-other-key</span> <span class="test pos">invalid-readonly-frame-same-key; node tests/node-runs.mts; node pipeline/run-cases.mts framed, readonly, bounds-pattern (149 of 149 as expected)</span></dd></dl>
+<details><summary>9 files changed, 159 insertions(+), 15 deletions(-)</summary><pre class="code"> .../Paper/TolerantFrames/ReadOnlyChecks.lean       | 12 ++++
+ lean/Verification/Source/Claims/FramedCheck.lean   | 73 +++++++++++++++++++---
+ .../Source/Claims/FramedNodeChecks.lean            | 17 +++++
+ lean/Verification/Source/Claims/PassUnitRun.lean   |  4 +-
+ lean/Verification/Source/RequestCli.lean           |  7 ++-
+ pipeline/cases.mts                                 |  4 ++
+ .../examples/invalid-readonly-frame-same-key.ts    | 26 ++++++++
+ pipeline/examples/readonly-frame-other-key.ts      | 28 +++++++++
+ tests/node-runs.mts                                |  3 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-a1ae24296"><header><div><div class="sha">a1ae24296 · Cristiano Calcagno · Nov 20, 16:07</div><h3>Build the Read-only frames PDF from its status marks at keyed parts</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The note's status marks of §4.1 state the keys of parts proved (keyAt, regionKeys_sound, slotKind_sound); its PDF was built from the marks that called them conjectures.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/readonly-frames.pdf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>built from the marks &quot;conj.: that each location's key is the key the world records&quot; and &quot;conj. at the keys of a write&quot;</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>built by color.py and LaTeX on note-color.tex from the current note</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · the note builds with no error</dd></dl>
+<details><summary>1 file changed, 0 insertions(+), 0 deletions(-)</summary><pre class="code"> .../readonly-frames-note/readonly-frames.pdf       | Bin 379846 -&gt; 379954 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-debbf62e6"><header><div><div class="sha">debbf62e6 · Cristiano Calcagno · Nov 20, 16:31</div><h3>Design the protected reading of Read-only frames §4.1 as milestone 2</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Example &quot;A member writing another key&quot; (readonly-frame-other-key) is refused only because the code reads no region as protected: every reader of the frame's check passes prot false. The draft's planned route read the witness through witness_reached, whose premise is a start equal to entryStart; the framed spec starts from the program's history truncated to one set, so that premise fails there, while the witness growth it uses holds from any start.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;Milestone 2: the protected reading&quot;</span></h4><div class="prose"><p>the existing mechanism (frameCheck's prot, frameCheck_sound with prot_of_witness, the entering step's crossings, Witness.grow); the rule as §4.1 states it; the decision protRegionB: the region's root slot a copy of a read-only entry parameter's slot at every node sharing the call's continuation and handler (copiesB over the slot copies, a must-analysis of the request's edges), and Psi_C join Theta_C keep at every part of its prefix regions; the theorem chain from a witness at the truncated start (start_witness, witness_of_start) through copies_sound, prefix_unchanged and prot_witness to framed_of_check with prot; eight pieces in commit order, the first seven changing no acceptance; the cases (readonly-frame-other-key positive, invalid-readonly-frame-same-key negative, a protected walker and a reassigned-parameter walker, NaN under Node) and a forced-support control of the prefix check</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, Milestones</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>milestone 2 protection and the guarantee route; 3 the arrow; 4 keys</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>milestone 2 the protected reading; 3 the guarantee route with disjoint supports and the remaining incoming crossings; 4 the arrow; 5 keys, each reference renumbered</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 352 insertions(+), 27 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md | 379 ++++++++++++++++++++++++++++++++++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-01d58ff75"><header><div><div class="sha">01d58ff75 · Cristiano Calcagno · Nov 20, 16:31</div><h3>State the code's keyed protocol in Read-only frames' limits of the flow</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The paragraph &quot;Two limits of the flow&quot; said the code's protocol puts every part at the key none. On this line the code's protocol reads a part's key from the world and charges a write at its key (keyAt, writesK); what the code lacks is the protected reading.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/note.tex, §4.1</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a fact about a field of outside storage fails in the probe for two reasons: the protocol at key none, and no crossing read as protected</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>it fails because no crossing in is read as protected, so every part of outside storage meets the callee's effect; the protocol is at the keys of §4.1, writes to other keys charges at other parts</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/readonly-frames.pdf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>built from the previous text</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>built by color.py and LaTeX on note-color.tex</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · the note builds with no error</dd></dl>
+<details><summary>2 files changed, 6 insertions(+), 6 deletions(-)</summary><pre class="code"> docs/drafts/readonly-frames-note/note.tex          |  12 ++++++------
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 379954 -&gt; 379964 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-729bdc042"><header><div><div class="sha">729bdc042 · Cristiano Calcagno · Nov 20, 16:43</div><h3>Record entry crossings at shared read-only positions and protect paths of entry values (milestone 2)</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Fable's review of the milestone 2 design: entryXs records an argument at the request's declared type, so a function sharing the realized code with a writable parameter, or a writable parameter whose calculus type equals a read-only one's, is recorded protected, and the headline's hypothesis is wider than Assumption &quot;Clients&quot;; the decision read only a region rooted at a copy of a parameter's slot, so Section 1's const w = h.widths (Example &quot;The module above&quot;) was read unprotected; the protected case's visitor is refused at the gate; and pairs where protection decides were missing.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;Milestone 2: the protected reading&quot;</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>ro j by type membership and sharedReadOnlyB; (C) a root slot that is a copy of a parameter's slot; eight pieces, 1250-1900 lines; four cases and one control</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>piece 0 records argument j at its type only at a position every function sharing the code declares read-only (roPositions, roPositionsB; outType elsewhere); slot copies (slot, parameter, path of field and element reads), extended at a bind of .var, readAt and elemAt, with (P) over the parts the path passes (pathParts) and the region's prefix; Theta_C all-keep noted, so (P) is decided by Psi_C; ten pieces, 1950-2850 lines; seventeen cases, two mutation controls and a forced support</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The history of a program&quot;</span></h4><div class="prose"><p>sharedParamTypes stated by position, pointing to piece 0</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 310 insertions(+), 215 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md | 525 +++++++++++++++++++++++----------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f8f3ef563"><header><div><div class="sha">f8f3ef563 · Cristiano Calcagno · Nov 20, 17:00</div><h3>Record an entry argument read-only only where every function sharing its code declares it so</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>readonly-frame-shared-code.ts#walk</span><span>readonly-frame-shared-code.ts#walkAgain</span><span>invalid-readonly-frame-shared-code.ts#walk</span><span>invalid-readonly-frame-shared-code.ts#walkAgain</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>An entering step of the realized code recorded argument j at the request's declared type r.inputs[j], and the frame's view read a type read-only by membership in the plan's read-only types. Two exported walkers of one body, walk(xs: readonly number[]) and walkAgain(xs: number[]), enter the same code, so a call of walkAgain recorded its writable xs read-only; and a writable parameter whose calculus type equals a read-only one's (W = { flags: number[] } beside H = { readonly flags: readonly number[] }) was recorded read-only too. The history then protected storage the client may change, so the headline's hypothesis was stronger than Assumption &quot;Clients&quot; (no verdict read it: no frame check reads protection yet).</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">the plan: its read-only positions</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">roPos</span>(<var>j</var>) ⟺ <var>j</var> &lt; <span class="m-text">arity</span> ∧ <span class="m-text">the member declares parameter</span> <var>j</var> <span class="m-op">read-only</span></span></div><div class="row cont"><span><span class="m-text">throughout</span> ∧ <span class="m-text">every module function of</span> <var>C</var> <span class="m-text">whose code is the</span></span></div><div class="row cont"><span><span class="m-text">realized code declares parameter</span> <var>j</var> <span class="m-text">read-only throughout</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">the history: the crossings an entering step records</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">argument</span> <var>j</var> <span class="m-text">crosses in at</span> <var>r</var>.<span class="m-text">inputs</span>[<var>j</var>]</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">argument</span> <var>j</var> <span class="m-text">crosses in at</span> <var>r</var>.<span class="m-text">inputs</span>[<var>j</var>] <span class="m-text">where</span> <span class="m-op">roPos</span>(<var>j</var>), <span class="m-text">and at the</span></span></div><div class="row"><span><span class="m-text">writable type outgoing values cross at otherwise</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">binding checks: the read-only positions</span></h4><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed plan's request</span><span class="tgt"><span class="m-text">the plan's read-only positions are the meet, by position, of the shapes the member and the module functions sharing its realized code declare (roPositionsB)</span></span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">binding checks: the read-only types</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed plan's request</span><span class="tgt"><span class="m-text">every read-only type is an input whose declared shape at the member is read-only throughout</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed plan's request</span><span class="tgt"><span class="m-text">the read-only types are exactly the inputs at the read-only positions, and the type outgoing values cross at is none of them</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">the frame's read-only types are declared</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">binding checks pass</span> ⟹ <span class="m-text">every type the view reads read-only is an</span></span></div><div class="row cont"><span><span class="m-text">input the member declares read-only</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">binding checks pass</span> ∧ <var>c</var> <span class="m-text">a crossing of an entering step</span> ∧ <span class="m-text">the view</span></span></div><div class="row cont"><span><span class="m-text">reads c's type read-only</span> ⟹ <var>c</var> <span class="m-text">is argument</span> <var>j</var> <span class="m-op">at</span> <var>r</var>.<span class="m-text">inputs</span>[<var>j</var>], <var>j</var> <span class="m-text">below</span></span></div><div class="row cont"><span><span class="m-text">the arity, and the member and every module function sharing the</span></span></div><div class="row cont"><span><span class="m-text">realized code declare</span> <var>j</var> <span class="m-op">read-only</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the read-only positions are the shared declarations</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">roPositionsB</span> ⟹ (<span class="m-op">roPos</span>(<var>j</var>) ⟺ <var>j</var> &lt; <span class="m-text">arity</span> ∧ <span class="m-text">the member declares</span> <var>j</var></span></div><div class="row cont"><span><span class="m-op">read-only</span> ∧ <span class="m-text">every module function sharing the code declares</span> <var>j</var></span></div><div class="row cont"><span><span class="m-op">read-only</span>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;Milestone 2&quot;</span></h4><div class="prose"><p>piece 0 as built: the positions computed by the decoder, on no document; the meet over the module functions names lists, the natives' models not read</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>readonly-frame-shared-code</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused (gap)</span> <span class="why">both walkers declare xs read-only; the spine is read unprotected until protection is read</span></summary><pre class="code"><span class="tk-c">// Two exported walkers of one body (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, &quot;The crossings an entering step records&quot;): both declare</span>
+<span class="tk-c">// xs read-only, so position 0 is read-only in the meet of the declared</span>
+<span class="tk-c">// shapes of the functions sharing the realized code (`readOnlyPositions`),</span>
+<span class="tk-c">// and the crossing of xs at either entry protects its spine.</span>
+<span class="tk-c">// xs.length === n across visit(i) needs the spine, outside storage, read</span>
+<span class="tk-c">// as protected: the visitor's stated effect lets every spine change.</span>
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(xs: <span class="tk-k">readonly</span> number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walkAgain(xs: <span class="tk-k">readonly</span> number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-shared-code</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">position 0 writable in the meet; a client pops its array under walkAgain (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// Two exported walkers of one body (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, &quot;The crossings an entering step records&quot;): walk declares</span>
+<span class="tk-c">// xs read-only, walkAgain writable. Both enter the same realized code, so</span>
+<span class="tk-c">// position 0 is not read-only in the meet of their declared shapes</span>
+<span class="tk-c">// (`readOnlyPositions`): an entry records xs at the writable type, no</span>
+<span class="tk-c">// crossing protects its spine, and xs.length === n across visit(i) is</span>
+<span class="tk-c">// refused at both. A client calling walkAgain with an array it pops at</span>
+<span class="tk-c">// the first visit makes the walker read past it (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(xs: <span class="tk-k">readonly</span> number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walkAgain(xs: number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><code>every other readonly-frame, framed and bounds-pattern case</code> <span class="why">unchanged</span></li></ul>
+<h4 class="change">Gap</h4><p>the shared-code positive needs the protected reading (milestone 2, piece 9)</p>
+<h4 class="change">Soundness</h4><p>a crossing recorded read-only is at a position every function sharing the entered code declares read-only (readOnly_declared), so the history protects only what Assumption &quot;Clients&quot; asks the client to keep</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip strong">trust</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>FramedSpec.roPositions · FramedSpec.roPos · FramedSpec.entryTy · FramedSpec.entryXs · declaredReadOnly · readOnlyPositions · readOnlyInputs · readOnlyB · FramedSpec.roPositionsB · FramedSpec.roPositionsB_sound · FramedSpec.readOnly_declared · FramedSpec.bindingB_iff</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">readonly-frame-shared-code</span> <span class="test neg">invalid-readonly-frame-shared-code; node-runs: invalid-readonly-frame-shared-code; run-cases readonly-frame, framed, bounds-pattern unchanged; json-field-names</span></dd></dl>
+<details><summary>11 files changed, 230 insertions(+), 64 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   | 53 +++++++++-------
+ lean/Verification/Source/Claims/FramedCheck.lean   | 11 ++--
+ lean/Verification/Source/Claims/FramedHistory.lean | 10 +--
+ .../Source/Claims/FramedPassChecks.lean            | 52 +++++++++++-----
+ lean/Verification/Source/Claims/FramedSpec.lean    | 22 +++++--
+ lean/Verification/Source/Claims/Json.lean          |  6 +-
+ .../Verification/Source/Claims/PassUnitMember.lean | 71 ++++++++++++++++++----
+ pipeline/cases.mts                                 |  4 ++
+ .../examples/invalid-readonly-frame-shared-code.ts | 32 ++++++++++
+ pipeline/examples/readonly-frame-shared-code.ts    | 30 +++++++++
+ tests/node-runs.mts                                |  3 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-323ee5a1f"><header><div><div class="sha">323ee5a1f · Cristiano Calcagno · Nov 20, 17:04</div><h3>State the witness a crossing in gives after any crossings, and grow it from a call's start</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The frame of a framed plan starts from the program's history truncated to the entered call's set, not from the history before an entry with the arguments crossed in (entryStart). The witness of protection was proved only at entryStart (entryStart_witness, witness_reached), so no witness was available at a framed plan's start, which the protected reading of Read-only frames §4.1 needs.</p></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">a crossing in witnesses what it reaches read-only</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>g</var> <span class="m-text">uniform with at least</span> <var>d</var> <span class="m-rel">≥</span> 1 <span class="m-text">sets</span> ∧ <var>x</var> <span class="m-rel">∈</span> <span class="m-text">xs a crossing</span> <span class="m-text">in</span> ∧ <var>x</var> <span class="m-text">reaches</span></span></div><div class="row cont"><span><var>ℓ</var> <span class="m-text">read-only at</span> <var>h</var> ∧ <var>ℓ</var> <span class="m-text">released or outside storage at</span> <var>g</var></span></div><div class="row cont"><span>⟹ <span class="m-op">Witness</span><sub><var>d</var></sub>(<span class="m-op">crosses</span><sub><var>h</var></sub>(<span class="m-op">xs</span>, <var>g</var>), <var>ℓ</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the truncation grows the history</span></h4><div class="rules"><div class="formulas"><div class="row"><span>1 <span class="m-rel">≤</span> |<var>g</var>.<var>A</var>| ⟹ <span class="m-op">Grows</span><sub>1</sub>(<var>g</var>, <span class="m-op">truncate</span>(<var>g</var>)), <span class="m-text">and</span> <span class="m-op">Prot</span>(<span class="m-op">truncate</span>(<var>g</var>)) <span class="m-rel">=</span> <span class="m-op">Prot</span>(<var>g</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the history grows from a start along a unit's call</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call the claim is about at a run of C's code</span> ∧ <span class="m-text">its start meets the</span></span></div><div class="row cont"><span><span class="m-text">invariants of states</span> ∧ <span class="m-text">an execution from it to</span> <var>e</var> <span class="m-text">with the call</span></span></div><div class="row cont"><span><span class="m-text">active at</span> <var>e</var> ⟹ <span class="m-op">Grows</span><sub>1</sub><span class="m-text">(start</span>, <var>e</var>.<var>g</var>); <span class="m-text">a witness at the start is</span> <span class="m-text">then</span></span></div><div class="row cont"><span><span class="m-text">live at</span> <var>e</var></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">an entry's argument is witnessed</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">proved by its own induction over the entry's crossings</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the instance of the crossing witness at the history before an entry</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act removed">removed</span>Theorem <span class="target">an entry's argument is witnessed along an execution from entryStart</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">replaced by the growth from a start, which reads any start meeting</span></span></div><div class="row"><span><span class="m-text">the invariants of states</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>steps 1 and 2 as proved</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>crosses_witness · entryStart_witness · FramedSpec.truncate_prot · FramedSpec.truncate_grows · ClientFrame.grows_of_start · ClientFrame.witness_of_start · ClientFrame.witness_reached</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build</dd></dl>
+<details><summary>4 files changed, 96 insertions(+), 67 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   |  29 ++---
+ docs/drafts/readonly-handles.md                    |   2 +-
+ .../Paper/TolerantFrames/ReadOnlyCallFrame.lean    | 119 ++++++++++++---------
+ lean/Verification/Source/Claims/FramedSpec.lean    |  13 +++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8d2d20df3"><header><div><div class="sha">8d2d20df3 · Cristiano Calcagno · Nov 20, 17:20</div><h3>Read a framed call's slots from its entering step and give its start the crossings' protection</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>readonly-frame-other-key.ts#walk</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The protected reading needs, at a framed plan's start, a witness for each location an argument at a read-only position reaches: the frame starts from the program's history truncated to the entered call's set, and nothing related the request's slots at its start to the arguments the entering step records crossing in. The plan's arity, which entryXs reads, was a proposal no check tied to the closures entered, so a closure of the realized code taking fewer parameters would put its captures in slots the plan reads as arguments.</p></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">binding checks: the arity</span></h4><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed plan's request</span><span class="tgt"><span class="m-text">the realized code's layout in the flow has the plan's arity, and the arity is at most the request's inputs' (arityB)</span></span></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">an entering step is a call of graph code from outside code</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a step from a term with no pending binding of C's runs raising the</span></span></div><div class="row cont"><span><span class="m-text">calls of</span> <var>C</var> <span class="m-text">by one to</span> <var>K</var>[<span class="m-text">goto</span> <var>m</var> <var>l</var> <var>L</var> <var>d</var> <var>c</var>] ⟹ <span class="m-text">the term is</span> <var>K</var>[<var>u</var>], <var>u</var> <span class="m-text">a call</span></span></div><div class="row cont"><span><span class="m-text">or new of a closure of code</span> <var>m</var> <span class="m-text">from a position of outside code (the</span></span></div><div class="row cont"><span><span class="m-text">term's active frame, its redex</span> <var>u</var>), <span class="m-text">the heap kept, and</span></span></div><div class="row cont"><span><var>L</var> <span class="m-rel">=</span> <span class="m-con">recv</span> <span class="m-rel">:</span><span class="m-rel">:</span> <span class="m-con">parameters</span>(<var>n</var>, <span class="m-text">args</span>) ++ <span class="m-text">caps</span> ++ [<span class="m-text">closure</span>], <var>d</var> <span class="m-rel">=</span> <span class="m-lit">null</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the entry's slots</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">EntryAt</span>(<var>r</var>, <var>k</var>, <var>W</var>, <var>h</var>, <var>t</var>, <var>a</var>₂) ∧ <span class="m-op">arityB</span> ⟹ <var>t</var> <span class="m-rel">=</span> <span class="m-con">goto</span><span class="m-text">(start</span>, <var>L</var>, <var>d</var>) ∧ <var>h</var> <span class="m-op">is</span></span></div><div class="row cont"><span><span class="m-text">the entering state's heap</span> ∧ <span class="m-bind">∀</span> <var>j</var> &lt; <span class="m-text">arity, slot</span> <var>j</var> <span class="m-text">holds</span> <span class="m-lit">undefined</span></span></div><div class="row cont"><span><span class="m-text">or the argument the entering step records crossing in at</span> <span class="m-op">entryTy</span>(<var>j</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the protection a framed call starts with</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">EntryAt</span>(<var>r</var>, <var>k</var>, <var>W</var>, <var>h</var>, <var>t</var>, <var>a</var>₂) ∧ <var>j</var> &lt; <span class="m-text">arity</span> ∧ <span class="m-op">roPos</span>(<var>j</var>) ∧ <span class="m-text">slot</span> <var>j</var> <span class="m-text">reaches</span> <var>ℓ</var></span></div><div class="row cont"><span><span class="m-kw">in</span> <var>h</var> ⟹ <var>ℓ</var> <span class="m-text">is allocated, of no local or internal site, protected or</span></span></div><div class="row cont"><span><span class="m-text">exposed and</span> <span class="m-text">in</span> <var>E</var> <span class="m-op">at</span> <span class="m-op">truncate</span>(<var>a</var>₂.<var>g</var>), <span class="m-text">and</span> <span class="m-op">Witness</span><sub>1</sub> <span class="m-text">at it where</span> <var>ℓ</var> <span class="m-op">is</span></span></div><div class="row cont"><span><span class="m-text">released or outside storage</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>steps 3 and 4 as proved, with the arity check</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>every readonly-frame, framed and bounds-pattern case</code> <span class="why">unchanged (the arity check passes at every framed plan)</span></li></ul>
+<h4 class="change">Soundness</h4><p>the arity check only refuses; the theorems change no verdict</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>enter_call · activeFrame_pathAt · undef_reaches · goto_rootsOk · parameters_getD · parameters_length · FramedSpec.arityB · FramedSpec.layAt_fflow · FramedSpec.prologue_run · FramedSpec.enter_args · FramedSpec.start_protects</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · run-cases readonly-frame, framed, bounds-pattern unchanged</dd></dl>
+<details><summary>6 files changed, 585 insertions(+), 21 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   |  42 +-
+ .../Source/Claims/FramedPassChecks.lean            |   7 +
+ .../Source/Claims/FramedProtection.lean            | 544 +++++++++++++++++++++
+ lean/Verification/Source/Claims/Json.lean          |   4 +-
+ .../Verification/Source/Claims/PassUnitMember.lean |   8 +-
+ lean/Verification/Tests/AxiomCheck.lean            |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-60a650acb"><header><div><div class="sha">60a650acb · Cristiano Calcagno · Nov 20, 17:25</div><h3>State the reads of a path of keys and of a region's prefix, with the locations they read</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The protected reading needs, at a framed node, the region of a slot holding a copy of an argument (const g = h) or the value a read of keys gives from it (const w = h.widths) to be reached from the argument at the entry's heap. Nothing stated which locations a read of a key or a region's membership reads, so neither could be shown kept, nor its locations reached from the argument.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">paths of reads</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">ReadKey</span>(<var>h</var>, <var>f</var>, <var>v</var>, <var>u</var>) ⟺ <var>v</var> <span class="m-text">is an object and</span> <var>u</var> <span class="m-text">is its own field f's</span></span></div><div class="row cont"><span><span class="m-text">contents, or the read of</span> <var>f</var> <span class="m-text">from its</span> [[<span class="m-text">proto</span>]] <span class="m-text">field's contents where</span></span></div><div class="row cont"><span><span class="m-text">it has no field</span> <var>f</var>, <span class="m-text">or</span> <span class="m-lit">undefined</span> <span class="m-text">where it has neither</span></span></div><div class="row"><span><span class="m-op">Reads</span>(<var>h</var>, <var>v</var>, <var>π</var>, <var>u</var>) ⟺ <span class="m-text">the reads of the keys</span> <var>π</var> <span class="m-kw">in</span> <span class="m-text">order from</span> <var>v</var> <span class="m-text">give</span> <var>u</var></span></div><div class="row"><span><span class="m-con">KeyLoc</span> / <span class="m-op">ReadsAt</span>(<var>h</var>, <var>v</var>, <var>π</var>, <var>ℓ</var>, <var>w</var>, <var>q</var>) ⟺ <var>ℓ</var> <span class="m-text">is a location the reads read</span>,</span></div><div class="row cont"><span><span class="m-text">held by the value</span> <var>w</var> <span class="m-text">as a member of the step</span> <var>q</var><span class="m-rel">:</span> <span class="m-con">field</span> 0 <var>f</var> <span class="m-text">for an</span></span></div><div class="row cont"><span><span class="m-text">own field, field</span> 0 [[<span class="m-text">proto</span>]] <span class="m-text">for the prototype field</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">the locations a region's membership reads</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">RegionReadsAt</span>(<var>h</var>, <var>r</var>, <var>u</var>, <var>ℓ</var>, <var>w</var>, <var>q</var>) ⟺ <var>ℓ</var> <span class="m-text">is a field r's path of own fields</span></span></div><div class="row cont"><span><span class="m-text">reads from</span> <var>u</var>, <span class="m-text">or a spine its cells are read from, held by</span> <var>w</var> <span class="m-text">as a</span></span></div><div class="row cont"><span><span class="m-text">member of the step</span> <var>q</var> <span class="m-text">(field</span> 0 <var>k</var>, <span class="m-text">field</span> 0 [], <span class="m-text">spine</span> 0 [])</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">what reads reach</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">Reads</span>(<var>h</var>, <var>v</var>, <var>π</var>, <var>u</var>) ⟹ <var>u</var> <span class="m-op">is</span> <var>v</var>, <span class="m-text">or a location's contents reached from</span> <var>v</var>,</span></div><div class="row cont"><span><span class="m-text">or</span> <span class="m-lit">undefined</span>; <span class="m-text">a location ReadsAt or RegionReadsAt reads is in a</span></span></div><div class="row cont"><span><span class="m-text">value reached, a member of one of its steps there</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">unchanged locations give the same reads</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>h</var>₁ <span class="m-text">agrees with</span> <var>h</var>₀ <span class="m-text">on the locations</span> <span class="m-op">Reads</span>(<var>h</var>₀, <var>v</var>, <var>π</var>, ·) <span class="m-text">reads</span> ∧</span></div><div class="row cont"><span><span class="m-op">Reads</span>(<var>h</var>₁, <var>v</var>, <var>π</var>, <var>u</var>) ⟹ <span class="m-op">Reads</span>(<var>h</var>₀, <var>v</var>, <var>π</var>, <var>u</var>); <var>h</var>₁ <span class="m-text">agrees with</span> <var>h</var>₀ <span class="m-op">on</span></span></div><div class="row cont"><span><span class="m-text">the locations r's membership reads from the slot's value at</span> <var>h</var>₀ ∧</span></div><div class="row cont"><span><var>ℓ</var> <span class="m-rel">∈</span> <var>r</var> <span class="m-op">at</span> <var>h</var>₁ ⟹ <var>ℓ</var> <span class="m-text">is reached from the slot's value at</span> <var>h</var>₀</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The decision&quot;, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>paths as lists of keys, an element read giving no copy entry; parts read at steps (any site); step 5 as proved</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>ReadKey · KeyLoc · Reads · ReadsAt · keySteps · pathSteps · ValReach · follows_append · ValReach.reaches · ValReach.step · readKey_reach · reads_reach · keyLoc_reach · readsAt_reach · readKey_congr · readKey_det · reads_congr · reads_snoc · readsAt_snoc · regionSlot · ownSteps · spineSteps · regionSteps · OwnAt · SpineAt · RegionReadsAt · readPath_congr · ownAt_reach · spineCells_reach · region_reach · spineAt_mem · regionReadsAt_reach</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build</dd></dl>
+<details><summary>3 files changed, 481 insertions(+), 25 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                 |  54 +--
+ lean/Verification/Source/Claims/FramedPaths.lean | 451 +++++++++++++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean          |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8b7f3d975"><header><div><div class="sha">8b7f3d975 · Cristiano Calcagno · Nov 20, 17:31</div><h3>Keep a protected location along a framed call where the component's protocol keeps its part</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The protected reading relies on the locations a slot's copy was read through, and those a region's membership reads, holding at a framed node what they held at the call's entry. No result stated when a location keeps its contents along a framed call: the client obligation constrains outside code only at protected storage, and C's own steps only where its code is charged.</p></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">a step keeps a protected location no code of C is charged at</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a reached step whose term holds no write outside every frame</span> ∧ <var>ℓ</var> <span class="m-text">old</span></span></div><div class="row cont"><span><span class="m-text">and</span> <span class="m-op">RowProtects</span>(<var>g</var>, <var>ℓ</var>) ∧ <var>Ψ</var><sub><var>C</var></sub><span class="m-text">(none</span>, <span class="m-op">kind</span>(<var>ℓ</var>), <span class="m-op">key</span>(<var>ℓ</var>)) <span class="m-rel">=</span> <span class="m-con">keep</span></span></div><div class="row cont"><span>⟹ <span class="m-text">the step keeps</span> <var>h</var>[<var>ℓ</var>]<span class="m-rel">:</span> <span class="m-text">outside code by</span> <var>Θ</var><sub><var>C</var></sub>, <span class="m-text">which keeps every</span></span></div><div class="row cont"><span><span class="m-text">part; C's code changes only charged kinds and keys, where</span> <var>Ψ</var><sub><var>C</var></sub> <span class="m-op">is</span></span></div><div class="row cont"><span><span class="m-text">any; a step changing the calls of</span> <var>C</var> <span class="m-text">active keeps the heap</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">kept along a call</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call's start at a run of C's code meeting the invariants of states</span></span></div><div class="row cont"><span>∧ <span class="m-text">every</span> <var>ℓ</var> <span class="m-rel">∈</span> <span class="m-text">Rel allocated, protected and kept by</span> <var>Ψ</var><sub><var>C</var></sub> <span class="m-text">at the start</span></span></div><div class="row cont"><span>⟹ <span class="m-text">every state of an execution from the start holds the start's</span></span></div><div class="row cont"><span><span class="m-text">contents at each</span> <var>ℓ</var> <span class="m-rel">∈</span> <span class="m-con">Rel</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">a step changing the heap reduces its redex at the path's innermost frame</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>h'</var> <span class="m-rel">≠</span> <var>h</var> ⟹ <span class="m-op">frameTag</span>(<span class="m-op">activeFrame</span>(<var>t</var>)) <span class="m-rel">=</span> <span class="m-op">activeTag</span>(<var>t</var>), <span class="m-text">and the calls of</span></span></div><div class="row cont"><span><var>C</var> <span class="m-text">active are kept</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>step 6 as proved, the protocol read at site none</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>activeFrame_tag_ne · depth_of_heap_ne · ClientFrame.kept_step · TopC.writes · ClientFrame.kept_along</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build</dd></dl>
+<details><summary>3 files changed, 321 insertions(+), 15 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                |  33 +--
+ lean/Verification/Source/Claims/FramedKept.lean | 302 ++++++++++++++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean         |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-daec5fe32"><header><div><div class="sha">daec5fe32 · Cristiano Calcagno · Nov 20, 17:38</div><h3>Check which slots of a framed request copy reads of its arguments, with their invariant</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A support region rooted at a slot can be read as protected only where that slot holds an argument read from a read-only position, or the value a path of key reads gives from it: Section 1's const w = h.widths reads widths across the visit from w's slot. The flow records the sites a slot's value may reach, which do not identify the value, so no existing analysis could state which slot holds what.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">the table of copies and its check</span></h4><div class="rules"><div class="formulas"><div class="row"><span>(<var>i</var>, <var>j</var>, <var>π</var>) <span class="m-rel">∈</span> <span class="m-op">cp</span>(<var>l</var>) ⟺ <span class="m-text">at every run of the request's code at label</span> <var>l</var>,</span></div><div class="row cont"><span><span class="m-text">while the locations the reads of</span> <var>π</var> <span class="m-text">from argument</span> <var>j</var> <span class="m-text">read at the</span></span></div><div class="row cont"><span><span class="m-text">entry's heap keep their contents, slot</span> <var>i</var> <span class="m-text">holds those reads' value</span></span></div><div class="row"><span><span class="m-op">copiesB</span><span class="m-rel">:</span> <span class="m-text">the start's entries are</span> (<var>j</var>, <var>j</var>, []) <span class="m-text">below the arity; along</span></span></div><div class="row cont"><span><span class="m-text">every edge, a target entry is the source slot's entry, or for the</span></span></div><div class="row cont"><span><span class="m-text">value a bind or tagBind edge binds, the node's</span> .<span class="m-text">var</span> <var>i</var> <span class="m-text">entry or its</span></span></div><div class="row cont"><span><span class="m-op">readAt</span> <var>f</var> (.<span class="m-text">var</span> <var>i</var>) <span class="m-text">entry extended by</span> <var>f</var></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Proposal <span class="target">the copies a request's code keeps</span></h4><div class="lowering"><div class="map"><code class="src">request code</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">the must-analysis intersecting along the edges from the start's diagonal, key paths bounded; the empty table where it fails copiesB</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the invariant of the copies</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">copiesB</span> ∧ <span class="m-op">CopyInv</span>(<var>t</var>) ∧ <span class="m-text">a step</span> <var>t</var> → <var>t'</var> <span class="m-text">at a heap agreeing with the</span></span></div><div class="row cont"><span><span class="m-text">entry's on</span> <var>K</var> <span class="m-text">and holding values</span> ⟹ <span class="m-op">CopyInv</span>(<var>t'</var>); <span class="m-text">along an execution</span></span></div><div class="row cont"><span><span class="m-text">from the start, CopyInv holds at every state</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The decision&quot;, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>the slot copies and step 7 as built, element reads giving no entry</p></div>
+<h4 class="change">Soundness</h4><p>copiesB is checked; the proposal is read only through it</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>CopyEntry · CopyTable · srcOf · envMap_src · boundEntryB · edgeOkB · contEdges · nodeEdges · copiesB · edgeEntries · copiesRound · copiesOf · EntryKept · SlotsHold · Stage · TermHolds · CopyInv · SlotVals.at · edge_holds · copiesB_node · copiesB_start · copyInv_step · copies_along · readsAt_append · readsAt_of_keyLoc</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · a research #guard of copiesOf at a walker reading const w = h.widths</dd></dl>
+<details><summary>4 files changed, 474 insertions(+), 43 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                  |  84 +++--
+ lean/Verification/Source/Claims/FramedCopies.lean | 418 ++++++++++++++++++++++
+ lean/Verification/Source/Claims/FramedPaths.lean  |  14 +
+ lean/Verification/Tests/AxiomCheck.lean           |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-774a9e592"><header><div><div class="sha">774a9e592 · Cristiano Calcagno · Nov 20, 17:42</div><h3>Show a framed node's region of a copy holds only locations its argument reached at entry</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The witness of protection is a crossing at the call's entry, so a location of a support region at a framed node must be one its argument reached at the entry's heap. A region rooted at a copy reads its slot's value and, for a path or cells, the contents of further locations; if outside code or C's code changed any of them since the entry, the region could hold storage the client allocated or changed since, which no crossing protects.</p></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">the parts of a step kept</span></h4><div class="prose"><p>stepKeptB(Ψ, q) ⟺ Ψ keeps every part ⟨none, kind, key⟩ with kind of q's bound and key among q's keys; refused where q fixes no finite set of keys</p></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">a step's location has a kept part</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">HeapOk</span>(<var>W</var>, <var>h</var>) ∧ <span class="m-op">RefsOk</span>(<var>W</var>, <var>w</var>) ∧ <var>ℓ</var> <span class="m-rel">∈</span> <var>q</var> <span class="m-op">at</span> <var>w</var> ∧ <span class="m-op">stepKeptB</span>(<var>Ψ</var>, <var>q</var>)</span></div><div class="row cont"><span>⟹ <var>Ψ</var>⟨<span class="m-text">none</span>, <span class="m-op">kind</span><sub><var>W</var></sub>(<var>ℓ</var>), <span class="m-op">key</span><sub><var>W</var></sub>(<var>ℓ</var>)⟩ <span class="m-rel">=</span> <span class="m-con">keep</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">a region of a copy at a framed node is reached from its argument</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call's start at a run of the code meeting the invariants of states</span>,</span></div><div class="row cont"><span><span class="m-text">its read-only arguments reaching only protected locations</span> ∧ <span class="m-op">an</span></span></div><div class="row cont"><span><span class="m-text">execution to a frame of the code</span> ∧ <span class="m-op">copiesB</span> ⟹ <span class="m-text">some node</span> <var>l''</var> <span class="m-text">with the</span></span></div><div class="row cont"><span><span class="m-text">frame's continuation and handler has, for each entry</span> (<var>i</var>, <var>j</var>, <var>π</var>) <span class="m-op">at</span></span></div><div class="row cont"><span><span class="m-text">a read-only</span> <var>j</var> <span class="m-text">with stepsKeptB at</span> <span class="m-op">π's</span> <span class="m-text">steps, every location of a</span></span></div><div class="row cont"><span><span class="m-text">region</span> <var>r</var> <span class="m-text">of slot</span> <var>i</var> <span class="m-text">with stepsKeptB at r's steps, at the frame's</span></span></div><div class="row cont"><span><span class="m-text">heap, reached from argument</span> <var>j</var> <span class="m-text">at the entry's heap</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>step 8 as proved; (P) decided at steps, at the site none</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>stepKeptB · stepsKeptB · stepKept_part · pathSteps_slot · regionSteps_slot · stepLoc_reach · ValReach.refs · ClientFrame.region_reached · CopyInv · copies_along</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build</dd></dl>
+<details><summary>4 files changed, 236 insertions(+), 32 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   |  30 ++--
+ lean/Verification/Source/Claims/FramedCopies.lean  |  37 ++--
+ lean/Verification/Source/Claims/FramedReading.lean | 200 +++++++++++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean            |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2086a8ea3"><header><div><div class="sha">2086a8ea3 · Cristiano Calcagno · Nov 20, 17:45</div><h3>Decide a region read as protected at a framed node, and witness its lent locations</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The frame's check at a framed node reads, for each support region, a Boolean saying its released and outside locations are protected; its soundness needs a live history witness for each such location. The code had no decision of Read-only frames §4.1's &quot;read as protected&quot; and no witness at a framed plan's frame.</p></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">a region read as protected</span></h4><div class="prose"><p>protRegionB(Ψ_C, cp, arity, roPos, m, l, r) ⟺ r is read from a slot x, Ψ_C keeps the parts of r's steps, and at every node sharing l's continuation and handler some (x, j, π) ∈ cp has j &lt; arity, roPos(j) and Ψ_C keeping the parts of π's steps</p></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">every lent location of a region read as protected has a live witness</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a reached frame of the request's code entering</span> <var>l</var> ∧ <span class="m-op">copiesB</span>(<span class="m-op">cp</span>) ∧</span></div><div class="row cont"><span><span class="m-op">protRegionB</span>(...)(<var>r</var>) ∧ <var>ℓ</var> <span class="m-rel">∈</span> <var>r</var> <span class="m-text">at the frame's slots and heap</span> ∧ <var>ℓ</var></span></div><div class="row cont"><span><span class="m-text">released or outside storage</span> ⟹ <span class="m-op">Witness</span><sub>1</sub><span class="m-text">(state</span>, <var>ℓ</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the proposal of the copies passes the check</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">copiesB</span>(<span class="m-op">copiesOf</span><span class="m-text">(Pe, Pk, start, arity, bound))</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The decision&quot;, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>the decision as built, (P) at steps at the site none; step 9 as proved</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-rules</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>protRegionB · copiesOf_sound · ClientFrame.prot_witness · FramedSpec.prot_witness</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build</dd></dl>
+<details><summary>2 files changed, 193 insertions(+), 40 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   |  76 +++++-----
+ lean/Verification/Source/Claims/FramedReading.lean | 157 +++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-25c4afd96"><header><div><div class="sha">25c4afd96 · Cristiano Calcagno · Nov 20, 17:49</div><h3>Carry the frame check's protected reading and its witnesses through the framed returns</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The theorems from the pass's frame check to the returns at reached executions fixed the check's protected reading to false (framed_of_check passed no witness), so no reading could reach acceptance without changing every theorem on the way.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">the rule's premise at each framed node, from the frame's check</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the check at each framed node passes with no region read as</span></span></div><div class="row cont"><span><span class="m-text">protected</span> ⟹ <span class="m-text">Framed at the node's protocol</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the check passes at a reading</span> <span class="m-op">prot</span>(<var>l</var>) ∧ <span class="m-text">every lent location of a</span></span></div><div class="row cont"><span><span class="m-text">region</span> <span class="m-op">prot</span>(<var>l</var>) <span class="m-text">reads as protected has a live witness (ProtWitness)</span></span></div><div class="row cont"><span>⟹ <span class="m-text">Framed at the node's protocol</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">the returns at reached executions, ret_reachedW_of_checks to ret_reachedW_public</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the frame's check at prot</span> <span class="m-lit">false</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the frame's check at prot, with ProtWitness for prot; the pass's</span></span></div><div class="row cont"><span><span class="m-text">checks read it at prot</span> <span class="m-lit">false</span>, <span class="m-con">ProtWitness</span>.<span class="m-text">none</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;The theorem chain&quot;</span></h4><div class="prose"><p>step 10 as proved</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>every readonly-frame, framed and bounds-pattern case</code> <span class="why">unchanged</span></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>ClientFrame.ProtWitness · ClientFrame.ProtWitness.none · ClientFrame.framed_of_check · PassUnit.ret_reachedW_of_checks · PassUnit.ret_reachedW_of_charges · PassUnit.ret_reachedW_of_entries · PassUnit.ret_reachedW_frame · PassUnit.ret_reachedW_spec · PassUnit.ret_reachedW_public · PassUnit.framedReturns_reached</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · run-cases readonly-frame, framed, bounds-pattern unchanged</dd></dl>
+<details><summary>4 files changed, 68 insertions(+), 28 deletions(-)</summary><pre class="code"> docs/drafts/framed-acceptance.md                   | 22 +++++---
+ lean/Verification/Source/Claims/FramedReached.lean |  2 +-
+ lean/Verification/Source/Claims/FramedReturns.lean | 64 +++++++++++++++++-----
+ lean/Verification/Source/Claims/FramedStarts.lean  |  8 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-06ec6bb1f"><header><div><div class="sha">06ec6bb1f · Cristiano Calcagno · Nov 20, 18:12</div><h3>Read a framed node's regions as protected where their argument crossed in read-only</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>readonly-frame-other-key.ts#walk</span><span>readonly-frame-shared-code.ts#walk</span><span>readonly-frame-local-alias.ts#walk</span><span>invalid-readonly-frame-param-reassigned.ts#walk</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The Read-only frames note's Example &quot;A member writing another key&quot; (readonly-frame-other-key) was refused with &quot;framed node 12 drops a support: slot 7.flags in a class at grow fails at the part (storage of code outside the component, field, flags): the callee's stated effect changes it beyond grow, the region read unprotected&quot;: every reader of the frame's check passed prot false, so every part of outside storage met the callee's stated effect, though the crossing of h at H protects it and the client keeps Θ_C there (§4.1).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">the frame's check at each framed node</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed node</span><span class="tgt"><span class="m-text">each support passes frameCheckAt with no region read as protected</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed node l</span><span class="tgt"><span class="m-text">each support passes frameCheckAt with the regions protRegionB reads as protected at</span> <var>l</var>, <span class="m-text">at the component's protocol, the request's table of copies (copiesOf, checked by copiesB) and the plan's read-only positions (FramedSpec</span>.<span class="m-text">protAt); the producer's supports read the same</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">the framed returns at the executions the claim is about</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">componentRefusal none</span> ∧ <span class="m-op">requestB</span> ∧ <span class="m-con">CallbacksWithin</span> ⟹ <span class="m-text">the returns</span>,</span></div><div class="row cont"><span><span class="m-text">at the frame's check with no region read as protected</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">componentRefusal none</span> ∧ <span class="m-op">bindingB</span> ∧ <span class="m-op">requestB</span> ∧ <span class="m-con">CallbacksWithin</span> ⟹ <span class="m-text">the</span></span></div><div class="row cont"><span><span class="m-text">returns, at the frame's check reading protRegionB, its witnesses by</span></span></div><div class="row cont"><span><span class="m-con">FramedSpec</span>.<span class="m-op">prot</span><sub><span class="m-text">witness</span></sub></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">the mutation verifier: the framed checks</span></h4><pre class="code"><span class="ln">fr-protected   SourceClaimJson.protRegionB: every region of a framed node is read as protected</span><span class="ln">fr-ro-sharing  SourceClaimJson.sharingReadOnlyB: a position is read-only where the member declares it</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/note.tex, readonly-frames.pdf</span></h4><div class="prose"><p>Example &quot;A member writing another key&quot; accepted, its mark the Lean names; Example &quot;The module above&quot; with its Lean mark; §4.1's mark of the protected reading; the limit of the flow at outside fields replaced by the reading; the PDF built by color.py and LaTeX</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, &quot;Milestone 2&quot;; WORK.md</span></h4><div class="prose"><p>the milestone as built, its cases' outcomes and controls; the row &quot;Implementation rules and paper rules&quot;</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>readonly-frame-other-key</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">both regions of h.flags read as protected, the crossing of h at H their witness</span></summary><pre class="code"><span class="tk-c">// The Read-only frames note, Example &quot;A member writing another key&quot;</span>
+<span class="tk-c">// (docs/drafts/readonly-frames-note/note.tex): the member writes the key</span>
+<span class="tk-c">// label of a record a caller passes writable, so the component's protocol</span>
+<span class="tk-c">// changes outside storage only at the key label and keeps the parts of</span>
+<span class="tk-c">// h.flags and its spine. The fact h.flags.length === n across visit(i)</span>
+<span class="tk-c">// needs both regions, of outside storage, read as protected (the crossing</span>
+<span class="tk-c">// of h at H their witness, §4.1); the code reads no region as protected,</span>
+<span class="tk-c">// so the visitor's stated effect drops it.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[]; <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Note</span> = { label: string };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rename(n: <span class="tk-t">Note</span>, s: string): <span class="tk-k">void</span> {
+  n.label = s;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-c">/** @requires h.flags.length === h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.widths.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-shared-code</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">position 0 read-only in the meet</span></summary><pre class="code"><span class="tk-c">// Two exported walkers of one body (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, &quot;The crossings an entering step records&quot;): both declare</span>
+<span class="tk-c">// xs read-only, so position 0 is read-only in the meet of the declared</span>
+<span class="tk-c">// shapes of the functions sharing the realized code (`readOnlyPositions`),</span>
+<span class="tk-c">// and the crossing of xs at either entry protects its spine.</span>
+<span class="tk-c">// xs.length === n across visit(i) needs the spine, outside storage, read</span>
+<span class="tk-c">// as protected: the visitor's stated effect lets every spine change.</span>
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(xs: <span class="tk-k">readonly</span> number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walkAgain(xs: <span class="tk-k">readonly</span> number[], visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; xs.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-param-protected</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">the spine of h.flags read as protected</span></summary><pre class="code"><span class="tk-c">// A walker of a record passed read-only throughout (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, the protected reading): h at a read-only position, so the</span>
+<span class="tk-c">// crossing of h at H protects the spine of h.flags, outside storage, and</span>
+<span class="tk-c">// h.flags.length === n across a visitor letting every spine change holds</span>
+<span class="tk-c">// through the region read as protected (the Read-only frames note, §4.1).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-param-positions</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">h at a read-only position</span></summary><pre class="code"><span class="tk-c">// Two parameters whose calculus types are equal once readonly is erased</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, &quot;The crossings an</span>
+<span class="tk-c">// entering step records&quot;): h is at a read-only position, w is not; the</span>
+<span class="tk-c">// entry records w at the writable type, so only h's crossing protects.</span>
+<span class="tk-c">// The fact over h.flags across the visit holds.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, w: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = w.flags.length;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-local-alias</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">w's slot copies the read of widths from h</span></summary><pre class="code"><span class="tk-c">// The Read-only frames note's opening module (Example &quot;The module above&quot;,</span>
+<span class="tk-c">// docs/drafts/readonly-frames-note/note.tex): a walker reads a handle's</span>
+<span class="tk-c">// widths through a local alias, const w = h.widths, across a visitor. The</span>
+<span class="tk-c">// alias's slot holds the read of widths from h, at a read-only position</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the slot copies), so</span>
+<span class="tk-c">// the spine of w is read as protected and i &lt; w.length holds across the</span>
+<span class="tk-c">// visit.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = () =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> w = h.widths;
+  <span class="tk-k">const</span> n = w.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; w.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit();
+    s += w[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-param-copy</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">g's slot copies h</span></summary><pre class="code"><span class="tk-c">// A walker of a copy of its read-only parameter (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, the slot copies): const g = h binds the parameter's value,</span>
+<span class="tk-c">// so g's slot holds a copy of the argument at a read-only position and the</span>
+<span class="tk-c">// spine of g.flags is read as protected across the visit.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> g = h;
+  <span class="tk-k">const</span> n = g.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; g.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += g.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-depth-two</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">the field inner kept</span></summary><pre class="code"><span class="tk-c">// A fact over a path of two fields of a read-only parameter</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the decision's (P)):</span>
+<span class="tk-c">// the region of h.inner.flags reads the field inner, which no code of the</span>
+<span class="tk-c">// component writes, so its spine is read as protected across the visit.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H2</span> = { <span class="tk-k">readonly</span> inner: <span class="tk-t">H</span> };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H2</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.inner.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.inner.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.inner.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-param-writable</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">no read-only position (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A walker of a record passed writable (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, the protected reading): h at no read-only position, so no</span>
+<span class="tk-c">// crossing protects the spine of h.flags, and h.flags.length === n across a</span>
+<span class="tk-c">// visitor letting every spine change is refused. A client popping the</span>
+<span class="tk-c">// array it passed under the walker makes it read past it (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-param-partly-readonly</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">not read-only throughout (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A walker of a record whose field is read-only and whose array is writable</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the protected reading):</span>
+<span class="tk-c">// the declared type is not read-only throughout, so h is at no read-only</span>
+<span class="tk-c">// position and nothing protects the spine of h.flags. A client popping</span>
+<span class="tk-c">// the array under the walker makes it read past it (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">P</span> = { <span class="tk-k">readonly</span> flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">P</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-param-positions</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">w recorded writable (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// Two parameters whose calculus types are equal once readonly is erased</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, &quot;The crossings an</span>
+<span class="tk-c">// entering step records&quot;): w is at no read-only position, so the entry</span>
+<span class="tk-c">// records it at the writable type and nothing protects the spine of</span>
+<span class="tk-c">// w.flags; the fact over w.flags across the visit is refused. A client</span>
+<span class="tk-c">// popping w.flags under the walker makes it read past it (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, w: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = w.flags.length;
+  <span class="tk-k">let</span> s = h.flags.length;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; w.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += w.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-param-reassigned</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">h's slot copies w (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A read-only parameter reassigned to a writable one before the loop</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the slot copies):</span>
+<span class="tk-c">// after h = w, h's slot holds a copy of w, at no read-only position, so the</span>
+<span class="tk-c">// spine of h.flags is read unprotected and the fact across the visit is</span>
+<span class="tk-c">// refused. A client popping w.flags under the walker makes it read past it</span>
+<span class="tk-c">// (NaN under Node, tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, w: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>): number {
+  h = w;
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-depth-two</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">inner charged by swap (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A fact over a path of two fields whose first a member replaces</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the decision's (P)):</span>
+<span class="tk-c">// swap writes the field inner, charged at its key, so the component's</span>
+<span class="tk-c">// protocol is any at a part of the path's first field and the region of</span>
+<span class="tk-c">// h.inner.flags is read unprotected; the fact across the visit is</span>
+<span class="tk-c">// refused. A visitor calling swap(h) makes the walker read past the new</span>
+<span class="tk-c">// array (NaN under Node, tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H2</span> = { <span class="tk-k">readonly</span> inner: <span class="tk-t">H</span> };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> swap(h: { inner: <span class="tk-t">H</span> }): <span class="tk-k">void</span> {
+  h.inner = { flags: [] };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H2</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.inner.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.inner.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.inner.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-cells</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the element fact's support names a class region</span></summary><pre class="code"><span class="tk-c">// An element fact over the cells of a read-only parameter's array</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the decision): a</span>
+<span class="tk-c">// visitor letting every value change keeps the spines, so the fact over</span>
+<span class="tk-c">// the cells of items, a local alias of h.items, holds across the visit</span>
+<span class="tk-c">// only where those cells are read as protected, their prefix the spine</span>
+<span class="tk-c">// they are read from and the alias's read of h's field items.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> items: <span class="tk-k">readonly</span> number[]; <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;keep&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-c">/** @requires forall k in h.items: safeInteger(h.items[k]) &amp;&amp; 0 &lt;= h.items[k] &amp;&amp; h.items[k] &lt; h.widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> items = h.items;
+  <span class="tk-k">const</span> widths = h.widths;
+  <span class="tk-k">const</span> n = items.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; items.length === n &amp;&amp; forall k in items: safeInteger(items[k]) &amp;&amp; 0 &lt;= items[k] &amp;&amp; items[k] &lt; widths.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += widths[items[i]!]!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>readonly-frame-handler</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the framed returns claim normal returns only</span></summary><pre class="code"><span class="tk-c">// A fact read on a framed call's exceptional edge (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, the slot copies across a handler): the handler binds the</span>
+<span class="tk-c">// thrown value in front of the slots, which keep their copies, so the spine</span>
+<span class="tk-c">// of h.flags is read as protected on the handler's edge too.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">try</span> {
+      visit(i);
+    } <span class="tk-k">catch</span> {
+      s += h.flags[i]!;
+    }
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><code>every other readonly, framed and bounds-pattern case</code> <span class="why">unchanged</span></li></ul>
+<h4 class="change">Gap</h4><p>a support naming a class region (element facts) and a fact on a framed call's handler edge</p>
+<h4 class="change">Soundness</h4><p>a region read as protected has every lent location witnessed by a crossing in at a read-only position (FramedSpec.prot_witness); the mutation controls fr-protected and fr-ro-sharing show the decision and the read-only positions are what refuse</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>protRegionB · sharingReadOnlyB · FramedSpec.copyBound · FramedSpec.copiesAt · FramedSpec.protAt · supportKeptB · supportFailure · framedNodeKeeps · framedNodeOkB · framedNodesAt · framedNodesWhy · framedSupportsAt · FramedSpec.requestB · thetaKeepB_keep · framedNode_ok · framedNodesAt_sound · FramedSpec.framedNodes_frame · PassUnit.framedReturns_reached · FramedCopyDefs · FilePlans.framedSupports</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">Lean guards of protRegionB at a prefix the protocol charges (FramedBindingControls);</span> <span class="test pos">readonly-frame-other-key</span> <span class="test pos">readonly-frame-shared-code</span> <span class="test pos">readonly-frame-param-protected</span> <span class="test pos">readonly-frame-param-positions</span> <span class="test pos">readonly-frame-local-alias</span> <span class="test pos">readonly-frame-param-copy</span> <span class="test pos">readonly-frame-depth-two</span> <span class="test neg">invalid-readonly-frame-param-writable</span> <span class="test neg">invalid-readonly-frame-param-partly-readonly</span> <span class="test neg">invalid-readonly-frame-param-positions</span> <span class="test neg">invalid-readonly-frame-param-reassigned</span> <span class="test neg">invalid-readonly-frame-depth-two; mutation controls fr-protected, fr-ro-sharing; node-runs; run-cases readonly, framed, bounds-pattern</span></dd></dl>
+<details><summary>33 files changed, 677 insertions(+), 274 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/drafts/framed-acceptance.md                   |  83 ++++++------
+ docs/drafts/readonly-frames-note/note.tex          |  19 ++-
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 379964 -&gt; 381299 bytes
+ lean/Verification/Source/Claims/FramedCheck.lean   |  23 +++-
+ lean/Verification/Source/Claims/FramedCopies.lean  | 127 +-----------------
+ .../Verification/Source/Claims/FramedCopyDefs.lean | 145 +++++++++++++++++++++
+ lean/Verification/Source/Claims/FramedFlow.lean    |   4 +-
+ .../Source/Claims/FramedNodeChecks.lean            |  70 ++++++++--
+ .../Source/Claims/FramedPassChecks.lean            |  15 ++-
+ lean/Verification/Source/Claims/FramedReached.lean |  50 +++++--
+ lean/Verification/Source/Claims/FramedReading.lean |  27 ----
+ lean/Verification/Source/Claims/Json.lean          |   5 +-
+ .../Source/Claims/PassUnitHeadline.lean            |   4 +-
+ .../Verification/Source/Claims/PassUnitMember.lean |   2 +-
+ lean/Verification/Tests/AxiomCheck.lean            |   1 +
+ lean/Verification/Tests/FramedBindingControls.lean |  34 ++++-
+ pipeline/cases.mts                                 |  25 +++-
+ .../examples/invalid-readonly-frame-depth-two.ts   |  25 ++++
+ ...invalid-readonly-frame-param-partly-readonly.ts |  19 +++
+ .../invalid-readonly-frame-param-positions.ts      |  21 +++
+ .../invalid-readonly-frame-param-reassigned.ts     |  21 +++
+ .../invalid-readonly-frame-param-writable.ts       |  19 +++
+ pipeline/examples/readonly-frame-cells.ts          |  22 ++++
+ pipeline/examples/readonly-frame-depth-two.ts      |  18 +++
+ pipeline/examples/readonly-frame-handler.ts        |  20 +++
+ pipeline/examples/readonly-frame-local-alias.ts    |  21 +++
+ pipeline/examples/readonly-frame-param-copy.ts     |  18 +++
+ .../examples/readonly-frame-param-positions.ts     |  19 +++
+ .../examples/readonly-frame-param-protected.ts     |  18 +++
+ tests/node-runs.mts                                |  15 +++
+ tests/single-pass-controls.mts                     |  26 +++-
+ tests/single-pass-mutations.mts                    |  33 +++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-fcbfba492"><header><div><div class="sha">fcbfba492 · Cristiano Calcagno · Nov 20, 18:47</div><h3>Charge unmodeled native calls to the component and refuse framed modules giving code out unnamed</h3></div><span class="pill principled">refused</span></header>
+<div class="units"><span>invalid-readonly-frame-walker-pops.ts#walk</span><span>invalid-readonly-frame-trim.ts#walk</span><span>invalid-readonly-frame-alias-export.ts#walk</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Fable's review of milestone 2 found two accepted unsafe programs. A walker popping its writable parameter's array, w.flags.pop(), was accepted under client trust, and walk(o, o, () =&gt; {}) gives NaN under Node: the framed realm models [[Array.prototype]] with no fields, so a native method C's code calls is charged nowhere in Ψ_C, and the protected reading then skipped the callee's stated effect at its node. And export const walkW: (h: W, visit: Visitor) =&gt; number = walk gave walk's code out at a writable type no entry states: the read-only positions read walk's own declaration alone.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">a framed node's protocol</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Θ_C ⊔ Ψ_C ⊔ the depth charges at the node's set</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Θ_C ⊔ Ψ_C ⊔ the depth charges ⊔ any at every site a call of C's code may reach whose callee may be outside code and is no argument's own value (nativeSites), at every code with a closure's layout</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">a region read as protected</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>protRegionB at Ψ_C</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the node's callee is an argument's own value at every sharing node (calleeArgB) ∧ protRegionB at Ψ_C joined with the native charges</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">a framed component's interface</span></h4><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a framed plan</span><span class="tgt"><span class="refused">refused</span><span class="m-text"> where the component's interface is unknown; the front end makes a module's interface unknown where it exports a value binding naming one of its functions or classes</span></span></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">protection is monotone in the protocol</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-bind">∀</span> <var>p</var>, <var>Ψ'</var> <var>p</var> <span class="m-rel">=</span> <span class="m-con">keep</span> ⟹ <var>Ψ</var> <var>p</var> <span class="m-rel">=</span> <span class="m-con">keep</span> <span class="m-rel">⊢</span> <span class="m-op">protRegionB</span>(<var>Ψ'</var>) ⟹ <span class="m-op">protRegionB</span>(<var>Ψ</var>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/framed-acceptance.md, SOURCE-FRAGMENT.md, WORK.md, the note</span></h4><div class="prose"><p>the restrictions of the protected reading where the note's rule is wider; &quot;in full&quot; dropped; ex:rokey's case header; ex:ro's mark naming how readonly-frame-local-alias differs from the printed module, which is refused; ex:rotrim's mark its case; the PDF rebuilt</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-readonly-frame-walker-pops</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the node protocol any at outside storage (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A walker that pops a writable parameter's array itself</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the natives the realm</span>
+<span class="tk-c">// does not model): w.flags.pop() calls a method read from storage, a</span>
+<span class="tk-c">// native whose steps are the component's, so the node protocol is any at</span>
+<span class="tk-c">// every part of outside storage the call reaches and h.flags.length === n</span>
+<span class="tk-c">// across the visit is refused by the protocol. A client passing one record</span>
+<span class="tk-c">// as both arguments makes the walker read past its array (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, w: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+    w.flags.pop();
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-trim</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">ex:rotrim in parameter form, refused by the protocol (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// The Read-only frames note's Example &quot;A member that shortens&quot;, its record</span>
+<span class="tk-c">// a parameter (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the natives</span>
+<span class="tk-c">// the realm does not model): trim pops the array of the record it is given,</span>
+<span class="tk-c">// a native call whose steps are the component's, so the node protocol is</span>
+<span class="tk-c">// any at the spine of outside storage and walk is refused by the protocol.</span>
+<span class="tk-c">// A visitor calling trim(h) makes walk read past the array (NaN under</span>
+<span class="tk-c">// Node, tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> widths: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Rep</span> = { <span class="tk-k">readonly</span> widths: number[] };
+<span class="tk-k">export</span> <span class="tk-k">function</span> trim(r: <span class="tk-t">Rep</span>): <span class="tk-k">void</span> {
+  r.widths.pop();
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: () =&gt; <span class="tk-k">void</span>): number {
+  <span class="tk-k">const</span> w = h.widths;
+  <span class="tk-k">const</span> n = w.length;
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; w.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit();
+    sum += w[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-readonly-frame-alias-export</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">interface unknown (NaN under Node)</span></summary><pre class="code"><span class="tk-c">// A walker exported again at a writable type (docs/drafts/framed-acceptance.md,</span>
+<span class="tk-c">// &quot;Milestone 2&quot;, the read-only positions): walkW is a value naming walk's</span>
+<span class="tk-c">// code, which no entry states, so the module's interface is unknown and no</span>
+<span class="tk-c">// framed plan reads it. A client calling walkW with a record it pops under</span>
+<span class="tk-c">// the walker makes it read past its array (NaN under Node,</span>
+<span class="tk-c">// tests/node-runs.mts).</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+<span class="tk-k">export</span> <span class="tk-k">const</span> walkW: (h: <span class="tk-t">W</span>, visit: <span class="tk-t">Visitor</span>) =&gt; number = walk;</pre></details></li><li><details><summary><code>readonly-frame-export-value</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">accepted under client trust</span> <span class="why">a binding naming no code</span></summary><pre class="code"><span class="tk-c">// A module exporting a value binding beside its walker</span>
+<span class="tk-c">// (docs/drafts/framed-acceptance.md, &quot;Milestone 2&quot;, the read-only positions):</span>
+<span class="tk-c">// the binding names none of the module's code, so the interface stays known</span>
+<span class="tk-c">// and the walker's framed plan holds, its spine read as protected.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">H</span> = { <span class="tk-k">readonly</span> flags: <span class="tk-k">readonly</span> number[] };
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">W</span> = { flags: number[] };
+<span class="tk-k">type</span> <span class="tk-t">Visitor</span> = (i: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;keep&quot;</span>; spines: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;;
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(h: <span class="tk-t">H</span>, visit: <span class="tk-t">Visitor</span>): number {
+  
+  <span class="tk-k">const</span> n = h.flags.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; safeInteger(n) &amp;&amp; h.flags.length === n */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    visit(i);
+    s += h.flags[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+<span class="tk-k">export</span> <span class="tk-k">const</span> <span class="tk-t">K</span>: number = <span class="tk-n">1</span>;</pre></details></li><li><code>every readonly, framed, bounds-pattern, closure, module and literal case</code> <span class="why">unchanged</span></li></ul>
+<h4 class="change">Gap</h4><p>a native's stated effect at its receivers' parts, which the note charges; the printed module of Section 1</p>
+<h4 class="change">Soundness</h4><p>the native charges and the callee condition only refuse (protRegionB_mono, nodeProtocolOf_ge); the Lean model runs no unmodeled native, so the charges answer calls the model does not represent</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>calleeArgB · nativeSites · nativeProtocol · nodeProtocol · FramedSpec.protAt · copyBound · stepKeptB_mono · protRegionB_mono · Change.max_keep_left · nodeProtocolOf_ge</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-readonly-frame-walker-pops</span> <span class="test neg">invalid-readonly-frame-trim</span> <span class="test neg">invalid-readonly-frame-alias-export</span> <span class="test pos">readonly-frame-export-value; node-runs; controls 210 of 210; run-cases readonly, framed, bounds-pattern, closure, module, literal</span></dd></dl>
+<details><summary>18 files changed, 282 insertions(+), 24 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/SOURCE-FRAGMENT.md                            |  13 +++++
+ docs/drafts/framed-acceptance.md                   |  37 +++++++++++++-
+ docs/drafts/readonly-frames-note/note.tex          |   4 +-
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 381299 -&gt; 382076 bytes
+ lean/Verification/Source/Claims/FramedCheck.lean   |   7 ++-
+ .../Verification/Source/Claims/FramedCopyDefs.lean |   3 ++
+ .../Source/Claims/FramedNodeChecks.lean            |  55 +++++++++++++++++----
+ lean/Verification/Source/Claims/FramedReached.lean |  39 +++++++++++++--
+ lean/Verification/Source/RequestCli.lean           |   8 +--
+ pipeline/cases.mts                                 |   7 +++
+ .../invalid-readonly-frame-alias-export.ts         |  21 ++++++++
+ pipeline/examples/invalid-readonly-frame-trim.ts   |  23 +++++++++
+ .../examples/invalid-readonly-frame-walker-pops.ts |  22 +++++++++
+ pipeline/examples/readonly-frame-export-value.ts   |  19 +++++++
+ pipeline/examples/readonly-frame-other-key.ts      |   6 +--
+ tests/node-runs.mts                                |   9 ++++
+ tools/components.mts                               |  31 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
