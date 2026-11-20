@@ -36,7 +36,8 @@ too, every old location the run changes is of a site of the set.
   for a set holding the values' sets, closed under the heap of sites'
   contents and under the capture slots of the codes whose tokens it holds
   (`CapClosed`), where the closures have their codes' layouts (`LayDeep`)
-  and the flow's codes are lowered (`CodesLowered`).
+  and the node expressions of the flow's codes hold no located value
+  (`CodesLowered`).
 - **The frame a step runs in** (`Fits.frameIn`, `frameKinds_flow`): the
   innermost frame of a fitting term runs a code the flow proposes for, so
   its charges are among the flow's codes'.
@@ -212,8 +213,11 @@ def CapClosed (Lay : Code → Nat × Bool × Nat × Nat → Prop) (L : Sites P) 
     ∀ j, j < nc → Sub (π.env s (capSlot ar rest j)) L
 
 variable (Fl) in
-/-- **The codes a flow proposes for are lowered.** -/
-def CodesLowered : Prop := ∀ m c π, Fl.code m c = some π → ∀ e ∈ m.1, Lowered Fl e
+/-- **The codes a flow proposes for hold no located value**: the values of
+each of their node expressions are spines with no cell, as the values of
+lowered code are (`lowered_vals_all`). -/
+def CodesLowered : Prop :=
+  ∀ m c π, Fl.code m c = some π → ∀ e ∈ m.1, ∀ x ∈ vals allC true e, ∃ ls, x = .arr ls ∧ ∀ y ∈ ls, y = none
 
 variable (Fl g n) in
 /-- A value meeting a set within `L`, its closures at their layouts, or a
@@ -253,14 +257,15 @@ theorem goodIn_vals_vj {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : 
     rcases hx with rfl | ⟨e, he, hx⟩ | ⟨a, ha, hx⟩
     · exact .inl ⟨S, hS, hv, hl⟩
     · -- A node expression's values.
-      have hlowE : Lowered Fl e := by
-        cases hc : P.ofC comp with
-        | false => exact (hv.inner _ (.refl _)).2.2.1 fs ar E K s caps k rest comp oid rfl hc e he
-        | true =>
-          obtain ⟨π, hπ, -⟩ := hv.entryC hc
-          exact hlow (E, K) entryCx π hπ e he
-      obtain ⟨ls, rfl, hls⟩ := lowered_vals_all e hlowE true x hx
-      exact .inr ⟨ls, rfl, hls⟩
+      cases hc : P.ofC comp with
+      | false =>
+        obtain ⟨ls, rfl, hls⟩ :=
+          lowered_vals_all e ((hv.inner _ (.refl _)).2.2.1 fs ar E K s caps k rest comp oid rfl hc e he) true x hx
+        exact .inr ⟨ls, rfl, hls⟩
+      | true =>
+        obtain ⟨π, hπ, -⟩ := hv.entryC hc
+        obtain ⟨ls, rfl, hls⟩ := hlow (E, K) entryCx π hπ e he x hx
+        exact .inr ⟨ls, rfl, hls⟩
     · -- A capture.
       have hla : LayDeep P Lay a := fun w hw => hl w (.cap ha hw)
       cases hc : P.ofC comp with

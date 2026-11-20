@@ -387,6 +387,40 @@ theorem selfFnB_sound {c : FCode P} {ar : Nat} {E : List Tm} {K : List (Continua
   have := h i (FCode.fn_lt hi)
   rw [hi] at this; simpa using this
 
+/-- **The entry slots naming a signature of a closure an open term
+creates**, decided (`OCapFn`): each slot past the parameters naming one is
+a capture that is a slot of the node naming the same signature (`φ`), or
+the closure's own slot. -/
+def ocapFnB (φ : Nat → Option FnSig) (c : FCode P) (d : Nat) (ar : Nat) (E : List Tm)
+    (K : List (Continuation × Option Target)) (s : Nat) (caps : List Tm) (rest : Bool) : Bool :=
+  (List.range (c.node s).fn.size).all fun i =>
+    (c.flow.fn s i).all fun σ => decide (capSlot ar rest 0 ≤ i) &&
+      ((decide (i - capSlot ar rest 0 = caps.length) && decide (σ = ⟨(E, K), ar, s, rest, caps.length⟩)) ||
+        match caps[i - capSlot ar rest 0]? with
+        | some (.var v) => decide (d ≤ v) && decide (φ (v - d) = some σ)
+        | _ => false)
+
+omit [DecidableEq P.Site] [Hashable P.Site] in
+theorem ocapFnB_sound {φ : Nat → Option FnSig} {c : FCode P} {d ar : Nat} {E : List Tm}
+    {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {rest : Bool}
+    (h : ocapFnB φ c d ar E K s caps rest = true) : OCapFn φ d c.flow ar E K s caps rest := by
+  intro i σ hi
+  simp only [ocapFnB, List.all_eq_true, List.mem_range] at h
+  have := h i (FCode.fn_lt hi)
+  rw [hi] at this
+  simp only [Option.all_some, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true] at this
+  obtain ⟨hle, hc⟩ := this
+  have hslot : i = capSlot ar rest (i - capSlot ar rest 0) := by simp only [capSlot] at hle ⊢; omega
+  refine ⟨i - capSlot ar rest 0, hslot, ?_⟩
+  rcases hc with ⟨hj, hσ⟩ | hc
+  · exact .inr ⟨hj, hσ⟩
+  · refine .inl ?_
+    split at hc
+    · rename_i v hv
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      exact ⟨v, hv, hc.1, hc.2⟩
+    · cases hc
+
 mutual
 /-- **Lowered code**, decided. -/
 def lowB : Tm → Bool
@@ -584,7 +618,7 @@ def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm
     | some c =>
       if (F.ctxs (E, K)).all (fun c' => (List.range caps.length).all (fun i => (caps[i]?).all fun u =>
           (partSites τ d Γ u).any fun S' => decide (Sub S' (c'.2.flow.env s (capSlot ar rest i)))) &&
-          selfFnB c'.2 ar E K s rest caps.length) &&
+          ocapFnB φ c'.2 d ar E K s caps rest) &&
         (!decide (c.tok ∈ F.O) || openB F c ar s rest caps.length) then
         some [a.obj, c.tok] else none
     | none => none
@@ -618,7 +652,7 @@ def syn (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → Option (Sites P)
     | some Ls, some Sp => if Ls.all (storesB F a.obj) && noLocalB Sp then some (a.obj :: Sp) else none
     | _, _ => none
   | .makeAt (.graph ar E K s caps _ rest comp) _ inits => match synAll d Γ inits with
-    | some Ls => if Ls.all (storesB F a.obj) && E.all (lowB F) then graphSites F τ a d Γ ar E K s caps rest comp
+    | some Ls => if Ls.all (storesB F a.obj) && E.all (lowB F) then graphSites F τ φ a d Γ ar E K s caps rest comp
       else none
     | none => none
   | .readAt _ x => match syn d Γ x with
@@ -999,7 +1033,7 @@ theorem syn_sound : ∀ e, SynOk F τ φ a κ e := by
                 · exact openB_sound F hop
               obtain ⟨fc, hfc, rfl⟩ := FFlow.code_at h'
               obtain ⟨hcaps, hself⟩ := hall _ (FFlow.at_ctxs hfc)
-              refine ⟨fun i u hu => ?_, selfFnB_sound hself⟩
+              refine ⟨fun i u hu => ?_, ocapFnB_sound hself⟩
               have hi : i < caps.length := (List.getElem?_eq_some_iff.mp hu).1
               have := hcaps i hi
               rw [hu] at this

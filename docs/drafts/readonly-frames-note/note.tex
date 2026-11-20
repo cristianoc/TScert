@@ -485,9 +485,10 @@ $H(s)\subseteq S$
 \paragraph{Signatures.} A slot that names a signature holds a closure of
 it at every state: at an entry, as the entry states; along an edge, from
 the slot or value that fills it; at a closure's entry, only at a capture
-holding such a closure or at the closure's own slot, the only one a
-closure a node expression creates names
-\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{SelfFn}; at the entry, \lean{EntryShape}}.
+holding such a closure or at the closure's own slot; a closure a node
+expression creates names one at a capture only where the capture is a
+slot of the node naming the same signature
+\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{OCapFn}; at the entry, \lean{EntryShape}}.
 
 \paragraph{The rules.} A set $S$ is \emph{supplied} when it holds what
 outside code may supply: $\circ$ and the token of every code whose token

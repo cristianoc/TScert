@@ -2389,7 +2389,10 @@ sets of sites:
   allocation) and no run; what it captures or binds into a closure is a
   variable or a primitive (`CodePart`); every closure of $`C`$'s code it
   creates has a proposal whose entry names no signature but the
-  closure's own (`SelfFn`). The lowering emits no object and no run;
+  closure's own (`SelfFn`). The node expressions of the codes the flow
+  proposes for are checked for less: they hold no located value
+  (`CodesLowered`), and a closure they create names a signature at a
+  capture slot only where the capture is a slot naming it (`OCapFn`). The lowering emits no object and no run;
   outside code is lowered source (`LoweredSrc`, which creates no closure
   of $`C`$'s code), a premise of the entries, and lowered source is
   lowered code (`LoweredSrc.lowered`).
@@ -2631,8 +2634,9 @@ first proposal at the context.
   a signature whose entry's slots, at the context the node names, hold the
   receiver's and actuals' sets the callee's return set there, and a call
   whose callee, receiver and actuals lie within `O` the set `O`; a
-  closure's captures are checked against every context of its code
-  (`graphSites`). Where it is
+  closure's captures are checked against every context of its code, and
+  each slot naming a signature at its entry is its own or a capture that
+  is a slot naming that signature (`graphSites`, `ocapFnB`). Where it is
   computed, the term fits it (`syn_sound`), and every larger set
   (`OFits.sub`).
 - **Lowered code** (`lowB`, `lowB_sound`) and the closure's own slot alone

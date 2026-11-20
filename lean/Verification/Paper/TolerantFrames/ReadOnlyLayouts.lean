@@ -9,7 +9,8 @@ code's capture slots at the layout its closures have (`tokenCaps`, one
 layout per code of the finite flow, `lay`); the local lemma's premises
 hold where every closure of `C`'s code has its code's layout
 (`LayDeep`), the set is closed under captures (`CapClosed`) and the
-flow's codes are lowered (`CodesLowered`).
+node expressions of the flow's codes hold no located value
+(`CodesLowered`).
 
 - **Layout provenance** (`layP q`): every closure a term holds or creates,
   in the code of its values and runs included, meets `q` at its code, tag
@@ -30,7 +31,7 @@ flow's codes are lowered (`CodesLowered`).
 - **The closure check gives `CapClosed`** (`capClosed_of_lay`): a set
   passing `capClosedB` at `tokenCaps` is closed under captures at the
   layouts `lay` states, where every code's tokens are sites (`tokensSomeB`).
-- **The flow's codes are lowered**, decided (`codesLoweredB`,
+- **The flow's codes hold no located value**, decided (`codesLoweredB`,
   `codesLoweredB_sound`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification
@@ -474,18 +475,29 @@ theorem capClosed_of_lay {F : FFlow P} {lay : List Layout} {S T : Sites P}
   simp only [hany, if_true, codeCaptureSites]
   exact List.mem_flatMap.mpr ⟨(entryCx, fc), hctx, List.mem_flatMap.mpr ⟨j, List.mem_range.mpr hj, hx⟩⟩
 
-/-- **The flow's codes are lowered**, decided. -/
-def codesLoweredB (F : FFlow P) : Bool := F.codes.all fun mc => lowAll F mc.1.1
+/-- A spine with no cell, decided. -/
+def spineB : Val → Bool
+  | .arr ls => ls.all Option.isNone
+  | _ => false
 
-/-- **The lowered-codes check is sound** (proved, `lowB_sound`): every code
-the flow proposes for is lowered. -/
+/-- **The flow's codes hold no located value**, decided: each value of
+each node expression of each code the flow proposes for is a spine with no
+cell. -/
+def codesLoweredB (F : FFlow P) : Bool := F.codes.all fun mc => mc.1.1.all fun e => (vals allC true e).all spineB
+
+omit [Hashable P.Site] in
+/-- **The check is sound** (proved): the node expressions of every code
+the flow proposes for hold no located value. -/
 theorem codesLoweredB_sound {F : FFlow P} (h : codesLoweredB F = true) : CodesLowered F.flow := by
-  intro m c π hπ e he
+  intro m c π hπ e he x hx
   obtain ⟨fc, hfc, -⟩ := FFlow.code_at hπ
   obtain ⟨l, hl, -⟩ := FFlow.at_mem hfc
   simp only [codesLoweredB, List.all_eq_true] at h
-  exact lowB_sound F ((lowAll_iff F).mp (h _ hl) e he)
+  have := h _ hl e he x hx
+  cases x <;> simp only [spineB, Bool.false_eq_true, List.all_eq_true, Option.isNone_iff_eq_none] at this
+  exact ⟨_, rfl, this⟩
 
+omit [Hashable P.Site] in
 /-- **The local lemma's heap premise from the checks** (proved,
 `heapDeep_of_heapInv`): a heap meeting the flow and layout provenance at
 its layouts meets in depth a set passing the closure check. -/
@@ -495,6 +507,7 @@ theorem heapDeep_of_checks {F : FFlow P} {lay : List Layout} {S T : Sites P} {g 
   heapDeep_of_heapInv (capClosed_of_lay hT htok) (codesLoweredB_sound hlow) hH
     (fun s hs => ((capClosedB_sound hT).2 s hs).1) (fun _ _ hw => layDeep_of_layP (hl.get hw))
 
+omit [Hashable P.Site] in
 /-- **The local lemma's root premise from the checks** (proved,
 `deepIn_of_vj`): a value meeting a set within one passing the closure
 check, and layout provenance at the flow's layouts, meets it in depth. -/

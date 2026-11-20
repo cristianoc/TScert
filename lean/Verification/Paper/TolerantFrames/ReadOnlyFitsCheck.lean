@@ -39,6 +39,23 @@ def OVOr (d : Nat) (Γ : Nat → Option (Sites P)) (S : Sites P) (u : Tm) : Prop
   primVal u = true ∨ (∃ j S', u = .var j ∧ j < d ∧ Γ j = some S' ∧ Sub S' S) ∨
     ∃ j, u = .var j ∧ d ≤ j ∧ Sub (τ (j - d)) S
 
+/-- **The entry slots naming a signature of a closure an open term
+creates**: each is a capture that is a slot of the node naming that
+signature (`φ`), or the closure itself. Instantiation makes it `CapFn`
+(`OCapFn.inst`); `SelfFn` is the case of no capture naming one. -/
+def OCapFn (d : Nat) (π : CodeFlow P) (ar : Nat) (E : List Tm) (K : List (Continuation × Option Target)) (s : Nat)
+    (caps : List Tm) (rest : Bool) : Prop :=
+  ∀ i σ, π.fn s i = some σ → ∃ j, i = capSlot ar rest j ∧
+    ((∃ v, caps[j]? = some (.var v) ∧ d ≤ v ∧ φ (v - d) = some σ) ∨
+      (j = caps.length ∧ σ = ⟨(E, K), ar, s, rest, caps.length⟩))
+
+theorem SelfFn.ocapFn {π : CodeFlow P} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
+    {rest : Bool} {caps : List Tm} (h : SelfFn π ar E K s rest caps.length) (d : Nat) :
+    OCapFn φ d π ar E K s caps rest := by
+  intro i σ hi
+  obtain ⟨rfl, rfl⟩ := h i σ hi
+  exact ⟨caps.length, rfl, .inr ⟨rfl, rfl⟩⟩
+
 /-- **An open term fits a set of sites** (the module's header). -/
 inductive OFits : Nat → (Nat → Option (Sites P)) → FrameAt P → Bool → Sites P → Tm → Prop where
   | prim {d Γ a o S v} : primVal v = true → (o = true → Sub S Fl.O) → OFits d Γ a o S v
@@ -74,7 +91,7 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → FrameAt P → Bool → 
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
       P.ofC comp = true → Fl.code (E, K) entryCx = some π →
       (∀ c π', Fl.code (E, K) c = some π' →
-        (∀ i u, caps[i]? = some u → OVOr τ d Γ (π'.env s (capSlot ar rest i)) u) ∧ SelfFn π' ar E K s rest caps.length) →
+        (∀ i u, caps[i]? = some u → OVOr τ d Γ (π'.env s (capSlot ar rest i)) u) ∧ OCapFn φ d π' ar E K s caps rest) →
       π.tok ∈ S → (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) →
       (∀ e ∈ E, Lowered Fl e) →
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
@@ -122,6 +139,20 @@ theorem OVOr.inst {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) {d : Nat} {�
   · rw [instantiate_prim hp]; exact .inl (VJ.prim hp)
   · simp only [instantiate, if_pos hj]; exact .inr ⟨j, S', rfl, hΓ, hs⟩
   · simp only [instantiate, if_neg (by omega : ¬ j < d)]; exact .inl ((hρ _).sub hs)
+
+/-- **The signatures an open closure creation names, instantiated**
+(proved): a capture naming a signature is a slot holding a closure of it. -/
+theorem OCapFn.inst {ρ : Env} (hφ : ∀ i σ, φ i = some σ → FnIs P σ (ρ i)) {d : Nat} {π : CodeFlow P} {ar : Nat}
+    {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {rest : Bool}
+    (h : OCapFn φ d π ar E K s caps rest) : CapFn π ar E K s (caps.map (instantiate d ρ)) rest := by
+  intro i σ hi
+  obtain ⟨j, rfl, hc⟩ := h i σ hi
+  refine ⟨j, rfl, ?_⟩
+  rcases hc with ⟨v, hv, hd, hφv⟩ | ⟨rfl, rfl⟩
+  · refine .inl ⟨instantiate d ρ (.var v), by simp [List.getElem?_map, hv], ?_⟩
+    simp only [instantiate, if_neg (by omega : ¬ v < d)]
+    exact hφ _ σ hφv
+  · exact .inr ⟨by simp, by simp⟩
 
 /-- An instantiated argument list. -/
 theorem mem_inst {d : Nat} {ρ : Env} {args : List Tm} {x : Tm} (hx : x ∈ args.map (instantiate d ρ)) :
@@ -180,9 +211,7 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
     refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun c π' h' => ?_) htok (by rwa [List.length_map]) hE ho
-    have hself' : SelfFn π' ar E K s rest (caps.map (instantiate d ρ)).length := by
-      rw [List.length_map]; exact (hcaps c π' h').2
-    refine ⟨fun i u hu => ?_, hself'.capFn⟩
+    refine ⟨fun i u hu => ?_, (hcaps c π' h').2.inst hφ⟩
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
     exact ((hcaps c π' h').1 i x hx).inst hρ
