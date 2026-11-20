@@ -338,7 +338,7 @@ theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
     {front : Option (Json × Front)} {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known memo = .ok f) :
     OverStore f := by
-  unfold fragmentPlansFromInterfaces at h
+  unfold fragmentPlansFromInterfaces fragmentPlansWithImports at h
   obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
   cases h
@@ -384,7 +384,7 @@ theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverSto
 
 /-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
 head facts, with `infer` beside the proposals inference recorded, then the
-false start fact where `TSCERT_FORCE` names `start-facts`. -/
+false start fact where `--force-proposals` names `start-facts`. -/
 def preparedMode8 (force : List String) (givenLines : Std.HashMap String Json) (infer : Bool) (f : FilePlans) :
     FilePlans :=
   if force.contains "start-facts" then (f.withHeadFacts givenLines false infer).withFalseStartFact

@@ -241,12 +241,22 @@ def rowsKinds (rows : List ComponentWire.Clients) : List (Option Verification.Ki
     let c := rowsAt rows k
     if c == .keep then none else some (k, c)
 
-/-- **A component's protocol** (`componentProtocol`), built once: its
-held sites' set and its charges are computed before any part is queried
-(`componentIndex_eq`). -/
-@[noinline] def componentIndex {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
+/-- Materialize the charges and the closed set of sites. Returning data
+here keeps the native compiler from postponing the closure until a part is
+queried. -/
+@[noinline] def componentCharges {ofC : ComponentTag → Bool} {O : List (Option Nat)}
+    (F : FFlow (markedPackage ofC O)) (lay : List (Nat × Bool × Nat × Nat)) :
+    List (Option Verification.Kind) × Std.HashSet (Option Nat) :=
+  (flowKinds F, Std.HashSet.ofList (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)))
+
+def chargeAt {ofC : ComponentTag → Bool} {O : List (Option Nat)}
+    (charges : List (Option Verification.Kind) × Std.HashSet (Option Nat)) : Protocol (markedPackage ofC O) :=
+  fun p => if p.site.any (fun s => (markedPackage ofC O).mark s = .local) && !charges.2.contains p.site then .keep
+    else if charges.1.contains p.kind then .any else .keep
+
+def componentIndex {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) : Protocol (markedPackage ofC O) :=
-  componentProtocol F lay
+  chargeAt (componentCharges F lay)
 
 theorem componentIndex_eq {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) : componentIndex F lay = componentProtocol F lay := rfl
@@ -256,12 +266,12 @@ change but `keep` (`componentProtocol`, `partsU`). -/
 def protocolParts {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) : List (Option Nat × Option Verification.Kind × Footprints.Change) :=
   -- (the protocol's index built once, its parts queried)
-  let idx := componentIndex F lay
+  let charges := componentCharges F lay
   (partsU (flowSites F)).filterMap fun p =>
-    let c := idx p
+    let c := chargeAt (ofC := ofC) (O := O) charges p
     if c == .keep then none else some (p.site, p.kind, c)
 
-/-- **A forged component** (`TSCERT_FORCE`, the controls'):
+/-- **A forged component** (`--force-proposals`, the controls'):
 `framed-flow-site` swaps the object and array sites of the first
 allocation of the first code's body throughout the flow (a renaming the
 flow's own checks pass), and `framed-init-exports` reads the exports'
@@ -394,7 +404,7 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
            codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
            theta, psi, psiDef := fc.psiDef, componentRefusal, framed }
 
-/-- **A forged document** (`TSCERT_FORCE`, the controls'): `framed-doc-node`
+/-- **A forged document** (`--force-proposals`, the controls'): `framed-doc-node`
 names a node no call frames, `framed-doc-support` keeps a support the
 frame's check fails, `framed-doc-component` and `framed-doc-entries` name
 another component and entries, `framed-doc-theta` states a client
@@ -423,7 +433,7 @@ def forgeDocument (force : List String) (doc : Json) : Json := Id.run do
     if let .obj kvs := doc then doc := .obj (kvs.erase "entries")
   return doc
 
-/-- **A forged plan** (`TSCERT_FORCE`, the controls'): `framed-spec-readonly`
+/-- **A forged plan** (`--force-proposals`, the controls'): `framed-spec-readonly`
 reads the request's first input read-only. -/
 def forgeSpec {ι : Type} (force : List String) (inputs : List (ProgramTyping.Ty ι)) (spec : FramedSpec ι) : FramedSpec ι :=
   if force.contains "framed-spec-readonly" then { spec with readOnly := inputs.take 1 } else spec

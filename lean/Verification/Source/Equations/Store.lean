@@ -790,6 +790,11 @@ structure Checked (E : Equations) (p : Primitive E) where
   variances : Variances E := E.variances
   promise : Option (NativePromise E) := none
   resolution : Option { c : ResolutionContext E // E.domain = c.domain } := none
+  /-- The image checker of this immutable store. Its lazy built-in prototype
+  check is shared by the proposal, diagnostic and final certificate walks. -/
+  imageCache : Thunk { I : InstanceImageCheck E.graph //
+      I = eitherImages (finiteInstanceImages E.graph) (exactImages E variances heads.subtypeBudget) } :=
+    Thunk.mk fun _ => ⟨_, rfl⟩
 
 section
 variable {E : Equations} {p : Primitive E}
@@ -799,6 +804,16 @@ instance : FromJson (Checked E p) := ⟨fun j => do return { heads := ← fromJs
 
 /-- A tree as a label of `E`, if it is one. -/
 def Checked.label? (t : Tree) : Option (CheckedLabel E p) := Label.ofTree? t
+
+/-- The specification of the image checker used by all requests over a frozen store. -/
+def Checked.imageCheck (c : Checked E p) : InstanceImageCheck E.graph :=
+  eitherImages (finiteInstanceImages E.graph) (exactImages E c.variances c.heads.subtypeBudget)
+
+def Checked.cachedImageCheck (c : Checked E p) : InstanceImageCheck E.graph := c.imageCache.get.val
+
+@[csimp] theorem Checked.imageCheck_eq_cached : @Checked.imageCheck = @Checked.cachedImageCheck := by
+  funext E p c
+  exact c.imageCache.get.property.symm
 
 instance : StoreView (Checked E p) (CheckedLabel E p) where
   graph _ := E.graph
@@ -816,7 +831,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
         | none => .clauses []) (spell c.heads)
       (mentioned.map CheckedLabel.tree) depth
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
-  images c := eitherImages (finiteInstanceImages E.graph) (exactImages E c.variances c.heads.subtypeBudget)
+  images c := c.imageCheck
 
 
 /-- A checked store's graph is its equations': it reads none of the store's

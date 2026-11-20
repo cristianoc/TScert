@@ -1,5 +1,6 @@
 import Verification.Types.StoreMaps
 import Std.Data.HashMap
+import Std.Data.HashSet.Lemmas
 
 /-! # Store maps: the check
 
@@ -290,6 +291,27 @@ a scheme of the domain: one whose image no other label may share. -/
     | some s => s.binders.contains i || s.bounds.any (·.1 == i)
     | none => false
 
+/-- The scheme binders in the domain of a proposed map. Each scheme is
+looked up once even when many labels query this set. -/
+def schemeBinders (G : NormalGraph ι) (keys : List ι) : Std.HashSet ι :=
+  Std.HashSet.ofList (keys.flatMap fun k => match G.schemes k with
+    | some s => s.binders ++ s.bounds.map (·.1)
+    | none => [])
+
+theorem bindsOf_eq_index (G : NormalGraph ι) (keys : List ι) (i : ι) :
+    bindsOf G keys i = (G.params i || (schemeBinders G keys).contains i) := by
+  simp only [bindsOf, schemeBinders, Std.HashSet.contains_ofList]
+  congr 1
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.any_eq_true, List.contains_iff_mem, List.mem_flatMap]
+  constructor
+  · rintro ⟨k, hk, h⟩
+    refine ⟨k, hk, ?_⟩
+    cases hs : G.schemes k <;> simp_all [List.mem_map, List.any_eq_true, beq_iff_eq]
+  · rintro ⟨k, hk, h⟩
+    refine ⟨k, hk, ?_⟩
+    cases hs : G.schemes k <;> simp_all [List.mem_map, List.any_eq_true, beq_iff_eq]
+
 /-- **The check of a proposed map** against the roots `I` and `A`. -/
 @[nospecialize] def checkMap [Inhabited κ] (G : NormalGraph ι) (H : NormalGraph κ) (canon : List κ → List κ)
     (mp : Std.HashMap ι κ) (I : List ι) (A : List κ) : Bool :=
@@ -299,6 +321,24 @@ a scheme of the domain: one whose image no other label may share. -/
   let inD := fun i => mp.contains i
   mp.keys.all (labelOkB G H φ inD (opOf canon mp) (fun k => inv.get? k) bind) &&
     builtinsOkB G H φ inD && I.all inD && sameMembersB φ I A
+
+/-- The same map check with a single index of its domain's scheme binders. -/
+@[nospecialize] def checkMapIndexed [Inhabited κ] (G : NormalGraph ι) (H : NormalGraph κ) (canon : List κ → List κ)
+    (mp : Std.HashMap ι κ) (I : List ι) (A : List κ) : Bool :=
+  let keys := mp.keys
+  let binders := schemeBinders G keys
+  let bind := fun i => G.params i || binders.contains i
+  let inv : Std.HashMap κ ι := mp.fold (fun acc k v => if bind k then acc.insert v k else acc) {}
+  let φ := mapOf mp
+  let inD := fun i => mp.contains i
+  keys.all (labelOkB G H φ inD (opOf canon mp) (fun k => inv.get? k) bind) &&
+    builtinsOkB G H φ inD && I.all inD && sameMembersB φ I A
+
+@[csimp] theorem checkMap_eq_indexed : @checkMap = @checkMapIndexed := by
+  funext ι κ de h de' h' inh G H canon mp I A
+  unfold checkMap checkMapIndexed
+  rw [show bindsOf G mp.keys = (fun i => G.params i || (schemeBinders G mp.keys).contains i) from
+    funext (bindsOf_eq_index G mp.keys)]
 
 /-- The proposal's first pairs: the roots', then the built-ins'. -/
 @[nospecialize] def startPairs (G : NormalGraph ι) (H : NormalGraph κ) (I : List ι) (A : List κ) : List (ι × κ) :=

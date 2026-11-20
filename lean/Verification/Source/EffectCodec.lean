@@ -1369,57 +1369,41 @@ def document (j : Json) : Except String Json := do
   effectsRead "" j
   pure j
 
-/-- The UTF-16 code unit four hexadecimal digits state. -/
-def hexUnit (cs : List Char) : Option Nat :=
-  (cs.mapM fun c => hexOf c.toLower).map fun ds => ds.foldl (fun a d => a * 16 + d) 0
+open Std.Internal.Parsec Std.Internal.Parsec.String
 
-/-- **A document's text states no object key twice** (at its first repeated
-key): the reader reads objects into maps, which keep one value of a key.
-Keys are compared as the strings they state, their escapes decoded (`\u0070`
-is `p`, a surrogate pair one character). -/
-partial def duplicateKey? (text : String) : Option String :=
-  let rec str (cs : List Char) (acc : List Char) : Option (String × List Char) :=
-    match cs with
-    | '"' :: rest => some (String.ofList acc.reverse, rest)
-    | '\\' :: 'u' :: a :: b :: c :: d :: rest =>
-      match hexUnit [a, b, c, d] with
-      | none => none
-      | some u =>
-        if 0xD800 ≤ u ∧ u < 0xDC00 then
-          match rest with
-          | '\\' :: 'u' :: e :: f :: g :: h :: rest' =>
-            match hexUnit [e, f, g, h] with
-            | some l => if 0xDC00 ≤ l ∧ l < 0xE000 then
-                str rest' (Char.ofNat (0x10000 + (u - 0xD800) * 0x400 + (l - 0xDC00)) :: acc)
-              else str rest (Char.ofNat u :: acc)
-            | none => none
-          | _ => str rest (Char.ofNat u :: acc)
-        else str rest (Char.ofNat u :: acc)
-    | '\\' :: c :: rest => str rest ((match c with
-        | 'b' => '\x08' | 'f' => '\x0c' | 'n' => '\n' | 'r' => '\r' | 't' => '\t' | c => c) :: acc)
-    | c :: rest => str rest (c :: acc)
-    | [] => none
-  -- `stack`: per open object its keys, `none` for an array; `key`: whether a
-  -- string read now is an object's key.
-  let rec go (cs : List Char) (stack : List (Option (List String))) (key : Bool) : Option String :=
-    match cs with
-    | [] => none
-    | '"' :: rest => match str rest [] with
-      | none => none
-      | some (s, rest') =>
-        if key then match stack with
-          | some ks :: up =>
-            if ks.contains s then some s!"an object states the key '{s}' twice"
-            else go rest' (some (s :: ks) :: up) false
-          | _ => go rest' stack false
-        else go rest' stack false
-    | '{' :: rest => go rest (some [] :: stack) true
-    | '[' :: rest => go rest (none :: stack) false
-    | '}' :: rest | ']' :: rest => go rest stack.tail false
-    | ',' :: rest => go rest stack (match stack with | some _ :: _ => true | _ => false)
-    | _ :: rest => go rest stack key
-  go text.toList [] false
+/-- Read containers recursively so that an object can refuse a repeated key
+before the map loses the first value. Lean's JSON reader reads the scalars,
+including escapes in member names. -/
+private partial def jsonValue : Parser Json := do
+  match ← peek! with
+  | '{' =>
+    skip; ws
+    let mut obj : Std.TreeMap.Raw String Json := ∅
+    if (← peek!) != '}' then
+      repeat
+        Json.Parser.lookahead (· == '"') "\""; skip
+        let key ← Json.Parser.str
+        if obj.contains key then fail s!"an object states the key '{key}' twice"
+        ws; Json.Parser.lookahead (· == ':') ":"; skip; ws
+        obj := obj.insert key (← jsonValue)
+        if (← peek!) == '}' then break
+        Json.Parser.lookahead (· == ',') ","; skip; ws
+    skip; ws
+    return .obj obj
+  | '[' =>
+    skip; ws
+    let mut entries := #[]
+    if (← peek!) != ']' then
+      repeat
+        entries := entries.push (← jsonValue)
+        if (← peek!) == ']' then break
+        Json.Parser.lookahead (· == ',') ","; skip; ws
+    skip; ws
+    return .arr entries
+  | _ => Json.Parser.anyCore
 
+/-- A complete JSON document with unique decoded member names at every depth. -/
+def parseDocument (text : String) : Except String Json := (ws *> jsonValue <* eof).run text
 
 /-! ## Examples
 

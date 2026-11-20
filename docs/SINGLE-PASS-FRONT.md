@@ -9,7 +9,7 @@ unit's flow graphs; its declarations' footprints are the pass's own steps'
 Every result is a proposal: the pass checks each at its node
 ([steps and obligations](SINGLE-PASS.md#5-steps-and-obligations)), so no
 rule here is trusted, and a rule that proposes too little costs coverage
-only. A force named beside a rule (`TSCERT_FORCE=…`) states the rule's
+only. A force named beside a rule (`--force-proposals …`) states the rule's
 proposal falsely, and the [controls](SINGLE-PASS-CONTROLS.md#forced-proposals)
 require its unit refused. The proposals at loop heads are
 [loop heads' proposals](SINGLE-PASS.md#loop-heads-proposals).
@@ -150,7 +150,7 @@ parameter's signature taking the most parameters; any other literal is at
 its written parameters and receiver (a method's `this`). Its body reads each binding
 it captures that a slot holds (`cellLocals`: the unit's or an enclosing
 literal's) at its type where the literal is made, one a cell holds at its
-declared type; `TSCERT_FORCE=captures` reads a
+declared type; `--force-proposals captures` reads a
 cell's at its type there too, the adversarial proposal. A literal of no
 rest that is not a guard is stated at its own parameters' row and, beside
 it, at each signature the expected callable states binding more
@@ -170,12 +170,12 @@ also at its signature extended by a rest of `unknown`, its code
 discarding the further actuals, as a module function's slot is. Where a unit's walk finds such an offer, the unit is
 walked once more with each offered row stated at its literal, the walk's
 one retry, at most one walk beyond the first.
-`TSCERT_FORCE=offers` offers every longer signature whatever its leading
+`--force-proposals offers` offers every longer signature whatever its leading
 parameters, the adversarial proposal. A defaulted parameter is offered
 with `undefined`, bound in the body at its type less `undefined` joined
 with its default's (a parameter of `unknown` at `unknown`), its default
 made at that type at the literal's entry, before the body, its effect the literal's
-(`TSCERT_FORCE=defaults` leaves it out, the adversarial proposal). A
+(`--force-proposals defaults` leaves it out, the adversarial proposal). A
 literal with an array rest is stated at its rest arrow, the pack of the
 rest's element, at its written effect else the ordinary one
 (`ClosureSetup`'s own signature of an array rest); a rest of a tuple of
@@ -190,10 +190,10 @@ contract read below the call's entry, the spine of a constant holding a
 spine the run allocated (one initialized by a call whose instance states a
 fresh result, or by such a constant) discharged; a `for...of` each step of
 its stepper's first signature, its receiver the iterator the call made
-(`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal);
+(`--force-proposals steps` leaves the steps out, the adversarial proposal);
 composed along its control flow (an untrusted heuristic); its footprint the normal exit's bound, a
 throw bounded where the exceptional exit's bound is within it; and an expression body that is a
-call whose instance states a fresh result states one. `TSCERT_FORCE=fresh` takes every named receiver as
+call whose instance states a fresh result states one. `--force-proposals fresh` takes every named receiver as
 such a constant, the adversarial proposal. A
 generic function literal (one writing type parameters, a class's generic
 method included) is claimed at the scheme its annotations state, before
@@ -232,7 +232,7 @@ mentions bound; where none admits a
 callback, the first stating each callback's promise, else the first
 admitting the other actuals, the callback at its own effect, which the
 pass then refuses. A binder the chosen signature does not mention is at
-the empty type. `TSCERT_FORCE=callbacks` chooses the first signature and
+the empty type. `--force-proposals callbacks` chooses the first signature and
 states each callback at its parameter's effect, the adversarial
 proposal. A callback whose parameter is a binder another actual's
 parameter takes at a position of one of its methods is walked at the
@@ -292,7 +292,7 @@ in no async body, changes nothing on a normal return, for a literal's
 effect and for a declaration's footprint; its throw is its signature's. Under a handler or
 in an async body its throw is caught and the heap it leaves is a normal
 return's: the call changes what its instance's footprint states.
-`TSCERT_FORCE=no-return` reads it as changing nothing there too, the
+`--force-proposals no-return` reads it as changing nothing there too, the
 adversarial proposal.
 A synchronous throw operand outside a handler or finalizer contributes
 only its exceptional effect, since it has no normal exit. A finalizer’s body and handler retain those effects:
@@ -360,7 +360,7 @@ effect, throw bound or promise) is proposed, beside its footprint, the join
 of the footprints of the signatures of the checked type of the value each
 of its returns returns, as the footprint of the function it returns; its
 callers read it, its returns establish it
-(`resultWithFootprint`); `TSCERT_FORCE=results` proposes it keeping values
+(`resultWithFootprint`); `--force-proposals results` proposes it keeping values
 and spines, the adversarial proposal (the controls
 `returned-closure-footprint` `countLetters`, accepted unforced, and
 `invalid-returned-closure-footprint` `lastRead`). Where the initialization
@@ -435,7 +435,7 @@ does not resolve, one of a module whose plans fail, and one whose
 proposal is the ordinary effect or is not established, is at its declared
 type with the ordinary effect (but the reading of an import that never
 returns). The declared type is what the importer reads in every case;
-only the effect rests on the module's check. `TSCERT_FORCE=imports` proposes
+only the effect rests on the module's check. `--force-proposals imports` proposes
 every function read keeping values and spines and bounding its throws,
 the adversarial proposal: the controls `certified-value-import`
 `tallies` (accepted unforced) and `invalid-certified-write-value-import`
@@ -456,7 +456,7 @@ A handler's entry
 and a finalizer's entry on a throw's route state each cell at its
 declared type, and so does a return's route through a finalizer where
 evaluating the returned value changes a value location: a throw keeps no
-current-content fact (`ControlFlow.handlerFacts`). `TSCERT_FORCE=cells` keeps the narrowing,
+current-content fact (`ControlFlow.handlerFacts`). `--force-proposals cells` keeps the narrowing,
 the controls
 `module-cache-keeps-lengths` `count` and
 `module-cache-before-initialization` `rhs` (its initialization's `let`
@@ -473,7 +473,7 @@ contract: its annotation, else its function literal's written receiver,
 parameters (a defaulted one admitting `undefined`) and result at its
 written effect, else the ordinary one; that is its storage contract. It
 stays at that contract after its declaration, which writes its cell, every
-later read checking the cell's contents against it; `TSCERT_FORCE=early` holds it at
+later read checking the cell's contents against it; `--force-proposals early` holds it at
 its initializer's type, the control `early-bindings` `count`. A
 `return`'s value holds the statement's bindings at its own position,
 where a finalizer holds the return.
@@ -518,7 +518,7 @@ their own keys exactly, with no optional field, states its own keys
 exactly. Where a type is expected, each copy an object literal with spreads gives
 is made at the first member of it whose field at each named key the part
 is within, its named fields at that member's, where the copy is within
-the member (`TSCERT_FORCE=objects` states the expected type itself).
+the member (`--force-proposals objects` states the expected type itself).
 A copy (`{ ...o }`, `Object.assign`) is the union of the
 copies its parts give: a named field set in each, a spread merged into
 each once per label of its operand (a record's fields but its prototype
@@ -557,7 +557,7 @@ binders, is each arm's call: every arm's count admits the actuals, each
 actual is made at the parameter every arm states at its position, else at
 its own type, and the value is the union
 of the arms' results; for a declaration's footprint it is a call of no one
-instance, changing anything and leaving a throw unbounded. `TSCERT_FORCE=arms` states the first arm's signature alone,
+instance, changing anything and leaving a throw unbounded. `--force-proposals arms` states the first arm's signature alone,
 the adversarial proposal. A bounded binder's value is called at its bound.
 An array arm's `length` is a number beside the other arms' reads.
 A keyed read `o[k]` is an array's or a string's element, an object's
@@ -606,7 +606,7 @@ iterables), the member read arm by arm, and bound, of each arm's member
 its first signature of no promise binding keeps, where all take the same
 parameters at the same effect, at any receiver taking them at the effect
 binding keeps, returning the union of their results (the lowering splits the host's slot, `unionVar`, and binds
-each arm's member, `bindMember`); `TSCERT_FORCE=binds`
+each arm's member, `bindMember`); `--force-proposals binds`
 states it keeping values and spines, the adversarial proposal.
 `f.apply(o, list)` and
 `Reflect.apply(f, o, list)` are the target's one signature's result, the
@@ -873,7 +873,7 @@ where the join settles strictly within the declared type, else at the
 declared type. The head's
 types are its point claims, so the pass checks every edge into the head
 against them, the entry and each back edge ([steps and obligations](SINGLE-PASS.md#5-steps-and-obligations)).
-`TSCERT_FORCE=head-entry` states such a binding at its entry type,
+`--force-proposals head-entry` states such a binding at its entry type,
 unwalked, the adversarial proposal: `loop-head-contents` `continued`,
 accepted unforced, is refused at an edge into its loop's head.
 
@@ -926,7 +926,7 @@ regex's `[Symbol.replace]`) changes what that method's signature and the
 callback's own signatures state, the call's member read at its claimed
 row; any other function passed to a
 generic module function's call changes everything. The function's own unit
-checks the proposal; `TSCERT_FORCE=callbacks` still refuses
+checks the proposal; `--force-proposals callbacks` still refuses
 `invalid-map-fresh-alias` `drained`.
 
 ## Casts through `unknown`

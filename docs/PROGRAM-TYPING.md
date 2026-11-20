@@ -2091,7 +2091,7 @@ reaching a point are these:
   $`n=|p.\mathit{widths}|`$ and $`|b|=|p.\mathit{widths}|`$ give $`n=|b|`$,
   which a call writing `p`'s fields preserves
   (`cursor-invariant-after-writing-call`; forced false,
-  `TSCERT_FORCE=head-eliminated`, refused at its head). At other nodes a name
+  `--force-proposals head-eliminated`, refused at its head). At other nodes a name
   an edge drops has its facts eliminated (`SinglePass.Store.drop`).
 
 **Implementation.** A spine's holes are bounded by `Types.SpinePresence`.
@@ -2420,7 +2420,7 @@ same expression, on a loop's back edge or in a branching operand, ends it
 (`-write`, `-expression-write`, `-loop`, `-join`); and a read of a copy
 taken before $`x`$ was rebound narrows the copy (`-alias`). Each is run
 under Node. A walk forced to narrow every read's receiver
-(`TSCERT_FORCE=reads`) is refused on `-write` and `-closure`
+(`--force-proposals reads`) is refused on `-write` and `-closure`
 ([single-pass-controls.mts](../tests/single-pass-controls.mts)). A binding held
 in a cell, which a closure may write, is not narrowed. A getter's write of
 the binding it is read from is excluded with accessors
@@ -4057,7 +4057,7 @@ no obligation (`guard-answer-constant`, `blocker-aliased-guard`,
 `invalid-guard-constant-across-loops`). At a loop head the implications are
 proposals of its computed line (`FilePlans.computedGiven`), each checked on
 every edge into the head and left out of the next run where an edge lacks it
-(forced false, `TSCERT_FORCE=head-implications` over
+(forced false, `--force-proposals head-implications` over
 `blocker-pretext-constant-implication-statements`, refused at its head). A `let` holding the
 answer, or a guarded `let` reassigned between the test and the use, carries
 no implication: the edge's mapping binds the new value to the slot

@@ -373,7 +373,7 @@ function check(lines: string[]): string {
   }).join("");
 }
 
-/** A `Control`: a small card with the force's name (`TSCERT_FORCE=<name>`
+/** A `Control`: a small card with the force's name (`--force-proposals <name>`
  * in the heading's object or the block, else the object's leading name), what
  * the force makes the computation state (a `force:` or `states:` line, and any
  * line of no field), and each unit it is shown on (a `unit:` line, else the
@@ -436,7 +436,7 @@ function control(lines: string[], target: string): string {
     return `<div class="outcomes">${u.unit !== undefined ? `<span class="unit">${inline(u.unit)}</span>` : ""}` +
       `${unforced}${unforced && forced ? ' <span class="arrow">→</span> ' : ""}${forced}</div>`;
   });
-  return `<div class="control">${name !== undefined ? `<div class="control-head"><code>TSCERT_FORCE=${esc(name)}</code></div>` : ""}` +
+  return `<div class="control">${name !== undefined ? `<div class="control-head"><code>--force-proposals ${esc(name)}</code></div>` : ""}` +
     statement.filter(p => p.join("").trim()).map(prose).join("") + rows.join("") + `</div>`;
 }
 

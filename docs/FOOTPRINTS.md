@@ -1059,7 +1059,7 @@ negatives, run under Node, `invalid-quantified-freshness-field-alias`,
 `invalid-quantified-freshness-free-term` and
 `invalid-push-keeps-apart-lengths-alias` (a push into a parameter that may
 be the counted array); a forced proposal stating each side of such a pair
-apart from itself (`TSCERT_FORCE=head-apart` over
+apart from itself (`--force-proposals head-apart` over
 `quantified-freshness-builder`, `tests/single-pass-control-inputs.mts`) is
 refused at that unit.
 

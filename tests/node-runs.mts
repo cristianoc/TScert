@@ -1538,7 +1538,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // class's prototype.
   // An imported function popping the array `map` visits leaves holes in its
   // result: the import's footprint lets the heap change, as its module's
-  // check establishes (the control under `TSCERT_FORCE=imports`).
+  // check establishes (the control with `--force-proposals imports`).
   // Imports read at the ordinary effect where no entry establishes what
   // their declarations state: a false postcondition, a statement a module
   // refuses; and a precondition the importer's call violates.

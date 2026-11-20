@@ -128,14 +128,14 @@ input's entry value at its statement entries (`inputsTable` from
 `GraphCode.namedInputs`), the `graph` rows' `inputs` the pass reads; at its
 statement entries, the implications its branches read
 (`branchImplications`), the rows' `implies`; with `falseImplications`
-(`TSCERT_FORCE=head-implications`), each also stated at `undefined`
+(`--force-proposals head-implications`), each also stated at `undefined`
 (`p = true ⟹ x : undefined`), the adversarial implication the pass's edge
 check refuses. With
-`falseInputs` (`TSCERT_FORCE=head-inputs`), each pair also restated at the
+`falseInputs` (`--force-proposals head-inputs`), each pair also restated at the
 next slot (`(s + 1, q)` beside `(s, q)`), the adversarial pair the pass's
 edge check refuses, in place of a given line's. The regional checks'
 tables at its statement entries (`regionalLines`), its `regional` and
-`footprintRegional`; with `falseRegional` (`TSCERT_FORCE=head-region-…`),
+`footprintRegional`; with `falseRegional` (`--force-proposals head-region-…`),
 an entry of that kind no edge establishes added at each. -/
 def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (falseInputs : Bool := false)
     (falseImplications : Bool := false) (falseRegional : Option String := none) (group : List Nat) :
@@ -541,7 +541,7 @@ def FilePlans.contractReads (f : FilePlans) (group : List Nat) : List Json :=
     | .error _ => []
 
 /-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each
-graph's start, the adversarial proposal of `TSCERT_FORCE=start-facts`: the
+graph's start, the adversarial proposal of `--force-proposals start-facts`: the
 pass's entry check refuses it. -/
 def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   let fact : HeapKnowledge.IndexAtom :=

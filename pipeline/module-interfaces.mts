@@ -39,6 +39,9 @@ function exact(value: Canonical, fields: readonly string[]): ObjectWire {
   return v;
 }
 
+/** Explicit adversarial proposals in a control’s verifier invocation. */
+export const proposalArgs = (force: readonly string[]): string[] => force.length ? ["--force-proposals", force.join(",")] : [];
+
 /** Semantic inputs common to the component checks and their importer. */
 export type InterfaceOptions = {
   mode: 8;
@@ -61,15 +64,17 @@ export type PreparedInterfaces = { path: string; records: Invoked[] };
  * fallback result can be published under the successful component key. */
 export function prepareInterfaces(fragmentPath: string, options: InterfaceOptions): PreparedInterfaces {
   mkdirSync(options.work, { recursive: true });
-  let ast = object(json(readFileSync(fragmentPath, "utf8")));
   let source = fragmentPath;
+  const ownLocations: string[] = [];
   if (options.ownModule !== undefined) {
+    const ast = object(json(readFileSync(fragmentPath, "utf8")));
     const own = object(json(readFileSync(options.ownModule, "utf8")));
     if (own.sourceSha256 !== ast.sourceSha256) throw Error("own module source differs from the checked file");
     const ownLocation = string(own.location);
-    ast = { ...ast, modules: [...array(ast.modules).filter((m) => string(object(m).location) !== ownLocation), own] };
+    ownLocations.push(ownLocation);
+    const withOwn = { ...ast, modules: [...array(ast.modules).filter((m) => string(object(m).location) !== ownLocation), own] };
     source = join(options.work, "own-fragment.json");
-    writeFileSync(source, canonical(ast));
+    writeFileSync(source, canonical(withOwn));
   }
   const records: Invoked[] = [];
   const invoke = (args: string[]): Invoked => {
@@ -85,7 +90,7 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
     names: options.names ? options.names.split(",").filter(Boolean).map((n) => n === ":init" ? "init" : n) : null,
     imports: [],
     functions: [],
-    own: options.ownModule === undefined ? [] : [string(object(json(readFileSync(options.ownModule, "utf8"))).location)],
+    own: ownLocations,
   }));
   const plan = exact(json(invoke(["--module-interface-plan", source, selection]).stdout), ["components"]);
   const byModule = new Map<string, { key: string; interface: Canonical }>();
@@ -144,22 +149,20 @@ export const fileWorkerProtocol: WorkerProtocol = {
  * stages fail (a timeout, a refusal), the checks at ordinary contracts
  * stand, with that failure: a unit accepted there is accepted with no
  * stronger module fact. */
-export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions): CheckedUnits {
+export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions,
+    hasModules: boolean = array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0): CheckedUnits {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  // An adversarial proposal the caller's environment forces (a control's):
-  // part of the stage's environment, so its key.
-  if (process.env.TSCERT_FORCE !== undefined) environment.TSCERT_FORCE = process.env.TSCERT_FORCE;
   const check = (path: string): WorkerRun => invokeWorker(verifierCall(verifier,
-    ["--subtype-rounds", String(options.rounds), "--file-worker", String(options.mode),
+    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--file-worker", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);
   const ordinary = join(options.work, "ordinary-interfaces.json");
   writeFileSync(ordinary, canonical({ modules: [] }));
   // A file that reads no module needs no interface; one that does is
   // checked at its modules' interfaces, and at ordinary contracts only
   // where they are not established.
-  if (array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0) return { run: check(ordinary), interfaceFailure: null };
+  if (!hasModules) return { run: check(ordinary), interfaceFailure: null };
   let interfaces: PreparedInterfaces;
   try {
     interfaces = prepareInterfaces(fragment, { ...options, names });
@@ -177,12 +180,11 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
     options: InterfaceOptions): { run: Invoked; interfaces: PreparedInterfaces } {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
-  if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
-  // The pass's own refusal text, unlocated (`TSCERT_PASS_REFUSALS=raw`): part
-  // of the stage's environment, so its key.
+  // Raw refusal text is an additional diagnostic on standard error. Key
+  // the observation as well, since the store replays that stream.
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
   const check = (path: string): Invoked => invokeProcess(verifierCall(verifier,
-    ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
+    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--verify-interface-stage", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment),
     options.invocation);
   // A completed importer check at ordinary contracts needs no stronger

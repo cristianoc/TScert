@@ -412,10 +412,17 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
               | some dv, _ => some (.proof dv)
               | none, some _ => some .effect
               | none, none => none
-            let kHere := (SinglePass.materialize entry width (List.range width) true).1
             let cEv : NodeEvidence _ := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [],
-              SinglePass.regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
-            let (a, b) := regionalBoth G I sumsB rs cEv node.expression false
+              {}, st.stepEffect, {}, none, [], [], [], none⟩
+            -- A scoped inspection satisfies ClosedParts.at at the first
+            -- closed bound, on both exits. No fact of its entry is read.
+            let Γ := ControlFlow.entry cEv
+            let (a, b) := if ExpressionEffects.check G Γ node.expression &&
+                ProgramCertificates.checkScope Γ.length node.expression then (some keepAll, some keepAll)
+              else
+                let kHere := (SinglePass.materialize entry width (List.range width) true).1
+                regionalBoth G I sumsB rs { cEv with knowledge := SinglePass.regionalFacts kHere st.stepK }
+                  node.expression false
             acc.set! l (some (unreturning G claimed l ⟨some (a.getD .top), some (b.getD .top)⟩))
           | _, _, _, _ => acc
         | none => acc
@@ -562,7 +569,7 @@ function's own unit checks it.
 `memo` keys each run by its inputs, both exits of each summary read
 included (`inputDigest`). None where the pass
 establishes nothing of it (callers read it at its written effect or `top`).
-With `results` (`TSCERT_FORCE`, the adversarial proposal), each returned
+With `results` (`--force-proposals`, the adversarial proposal), each returned
 function's footprint keep/keep. -/
 def proposeOne (fr : Front) (controls : List String) (force : List String) (prior : List StandIn)
     (found : List StandIn) (planOf : List StandIn → String → Except String FilePlans) (i : Nat) (f : Fragment.Fn)
