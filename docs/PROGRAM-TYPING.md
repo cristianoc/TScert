@@ -4641,8 +4641,9 @@ cell keeps its contents, and a member path through stable members keeps its
 entry (`module-cells-written-in-turn`).
 A constant holding an object literal keeps its fields' facts stated at a
 loop's head across a write of another object's field in the body, the
-other object an older constant's literal, rebound or not by a key-adding
-write ([no general frame rule](#no-general-frame-rule);
+other object a parameter or an older constant's literal, rebound or not by a
+key-adding write ([no general frame rule](#no-general-frame-rule);
+`fresh-object-separation-loop`, pretext's `walkPreparedLinesRaw`;
 `fresh-object-separation-older-fresh`).
 Where $`y`$ has
 no predicate, the write establishes no new contents and keeps the separated
@@ -4861,7 +4862,9 @@ fields the allocated value's type names, the pair is of those fields: a slot
 a key-adding write rebinds to its copy, and any slot where the allocated
 value is no source value (a cell, an iterator), which no assignment gives to
 another slot. A slot that may come to hold the allocated value itself is no
-partner: a younger constant bound to it (`invalid-fresh-object-separation-younger-alias`,
+partner: an older `let` assigned it
+(`invalid-fresh-object-separation-loop-alias`, run under Node), or a
+younger constant bound to it (`invalid-fresh-object-separation-younger-alias`,
 `invalid-fresh-object-separation-rebound-alias`, run under Node). A binding a
 closure captures was allocated before the closure's entry, which states no
 fact of that allocation, so its body states none.
