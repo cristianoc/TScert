@@ -1,9 +1,9 @@
 // The walker of bounds-pattern-unreachable-field in a module whose
-// exported functions `even` and `odd` name each other. No module function
-// of a framed plan's component names another
-// (docs/drafts/framed-acceptance.md, "Restrictions"), so the walker's
-// framed plan is refused at that gate, and its ordinary plan is refused at
-// the read after the visit.
+// exported functions `even` and `odd` name each other. The initialization
+// creates each module function's closure after those it names, so no
+// order creates these two (docs/drafts/framed-acceptance.md,
+// "Restrictions"): the walker's framed plan is refused at that gate, and
+// its ordinary plan is refused at the read after the visit.
 type Visitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
 type Cursor = { i: number };
 

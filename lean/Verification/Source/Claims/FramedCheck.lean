@@ -194,23 +194,35 @@ def FilePlans.framedCheck {ofC : ComponentTag → Bool} (f : FilePlans) (fuel : 
 (`[[Array.prototype]]`). -/
 def intrinsicName (x : String) : Bool := x.startsWith "[[" && x.endsWith "]]"
 
+/-- **The module functions in an order where each comes after those it
+names**, the order the initialization allocates their closures in; those
+naming each other in a cycle left out. -/
+def namingOrder (mods : List ProbeModule) : List ProbeModule := Id.run do
+  let mut order : List ProbeModule := []
+  for _ in mods do
+    for g in mods do
+      if !(order.any (·.name == g.name)) &&
+          g.siblings.all fun x => !(mods.any (·.name == x)) || order.any (·.name == x) then
+        order := order ++ [g]
+  return order
+
 /-- **The restrictions of a framed plan's component** (the draft,
 "Restrictions"), over its module functions `mods` and the `@clients` rows
-of its exported types: no module function naming another (a linked
-capture); no module function creating a closure; every outside slot of a module function an audited realm value (a native with a
-step model, `hostModel?`, or an intrinsic object); the rows stating class
-keys only (`clientsByKindB`); every module function of the module with
-closure code (`unplanned` lists those without) and every entry a module
-function. The first violated, as its located refusal's text. A framed
-plan's member is moreover a realized module function
+of its exported types: no module functions naming each other in a cycle,
+whose closures the initialization would create as one group; every outside
+slot of a module function a module function or an audited realm value (a
+native with a step model, `hostModel?`, or an intrinsic object); the rows
+stating class keys only (`clientsByKindB`); every module function of the
+module with closure code (`unplanned` lists those without) and every entry
+a module function. The first violated, as its located refusal's text. A
+framed plan's member is moreover a realized module function
 (`FilePlans.framedPlan`). -/
 def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clients) (entries unplanned : List String) :
     Option String :=
-  let named := mods.findSome? fun g => (g.siblings.find? fun x => mods.any (·.name == x)).map (g.name, ·)
-  if let some (g, x) := named then
-    some s!"a framed plan's module function {g} names the module function {x}, a linked capture"
-  else if let some g := mods.find? fun g => !(g.code.1.flatMap (closureLayouts fun _ => true)).isEmpty then
-    some s!"a framed plan's module function {g.name} creates a closure"
+  let order := namingOrder mods
+  if let some g := mods.find? fun g => !(order.any (·.name == g.name)) then
+    let x := (g.siblings.find? fun x => mods.any (·.name == x) && !(order.any (·.name == x))).getD g.name
+    some s!"a framed plan's module function {g.name} names the module function {x}, which names it back, a cycle of names"
   else
   -- (a slot of the module's own, a cell or a constant, named before a
   -- native's)
@@ -262,12 +274,7 @@ identities. -/
 def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List String) : ComponentInit := Id.run do
   let realmNames := (mods.flatMap (·.siblings)).filter (fun x => !(mods.any (·.name == x))) |>.eraseDups
   -- (the module functions in an order where each comes after those it names)
-  let mut order : List ProbeModule := []
-  for _ in mods do
-    for g in mods do
-      if !(order.any (·.name == g.name)) &&
-          g.siblings.all fun x => !(mods.any (·.name == x)) || order.any (·.name == x) then
-        order := order ++ [g]
+  let order := namingOrder mods
   let slotOf (x : String) : Nat := order.findIdx (·.name == x)
   -- (at node `k`, the closure of node `j < k` is at slot `k - 1 - j`, the
   -- realm value `j` at slot `k + j`)

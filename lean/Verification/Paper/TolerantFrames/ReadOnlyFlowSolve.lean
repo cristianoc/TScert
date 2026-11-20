@@ -74,6 +74,11 @@ structure SolveCode (P : Package) where
   entry of `C`): every slot of its first node then holds what outside code
   may supply, at its entry context (`EntryShape`). -/
   entry : Bool := false
+  /-- Whether the code is a closure a node expression of `C`'s code
+  creates, whose code the check reads lowered (`Lowered`): its token in
+  `O`, its code open at its entry and its capture slots holding `O` at
+  every context. -/
+  lowered : Bool := false
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
@@ -795,10 +800,10 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     let so := o.getD c.start 0
     let sn := nd.getD c.start 0
     if c.closure then
-      let filled := if c.cx == entryCx then
-          List.range (capSlot c.ar c.rest 0) ++ [capSlot c.ar c.rest c.ncaps]
-        else []
       let caps := (List.range c.ncaps).map (capSlot c.ar c.rest ·)
+      let filled := (if c.cx == entryCx then
+          List.range (capSlot c.ar c.rest 0) ++ [capSlot c.ar c.rest c.ncaps]
+        else []) ++ (if c.lowered then caps else [])
       entryVars := (c.tok, filled.map (so + min · sn), caps.map (so + min · sn)) :: entryVars
     if c.cx == entryCx && (!c.closure || c.entry) then
       for i in List.range (sn + 1) do
@@ -859,7 +864,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
       vars := Array.replicate count 0, delta := Array.replicate count 0, classes,
       offs, needs, rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v 1) st0
-  let st0 := st0.toO ((cs.filter (·.entry)).map (·.tok))
+  let st0 := st0.toO ((cs.filter fun c => c.entry || c.lowered).map (·.tok))
   let units := (List.range bases.size).filter fun b => !((bases[b]?).map (·.closure)).getD true
   return ⟨csA, base, ctxOf, nodeCx, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars,
     entryVars, noneVars, units, bases.size, tokVars, st0⟩
