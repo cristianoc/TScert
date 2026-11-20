@@ -13,10 +13,13 @@ declaration document describes:
 - **The `@clients` rows** (`componentRows`): the rows of the exported
   types of `C`'s module, which `clientsB` compares with the wire's
   $`\Theta_C`$.
-- **The read-only types** (`readOnlyInputs`, `readOnlyB`): an input of the
-  member is read-only where its entry code's declared shape is read-only
-  throughout (`ComponentChecks.readOnlyShape`); `readOnlyB` decides that
-  every type a plan reads read-only is one.
+- **The read-only positions** (`readOnlyPositions`): a parameter position
+  is read-only where the member and every module function sharing its
+  realized code declare it read-only throughout
+  (`ComponentChecks.readOnlyShape`); `roPositionsB` decides a plan's.
+- **The read-only types** (`readOnlyInputs`, `readOnlyB`): the inputs at
+  the read-only positions, and the type outgoing values cross at none of
+  them.
 - **A realized code's body** (`moduleBody_realized`): the request's code. -/
 
 namespace Verification.SourceClaimJson
@@ -48,21 +51,42 @@ def shapeReadOnly (F : ComponentWire.Components) : Option ComponentWire.Shape �
   | some t => ComponentChecks.readOnlyShape F.types (ComponentWire.shapeLimit * (F.types.length + 1)) [] t
   | none => false
 
+/-- **A declared parameter read-only throughout**: the shape of position
+`j` in a member's declared shapes is read-only (`shapeReadOnly`). -/
+def declaredReadOnly (F : ComponentWire.Components) (C : Nat) (member : String) (j : Nat) : Bool :=
+  shapeReadOnly F (((memberShapes F C member)[j]?).join)
+
+/-- **The read-only positions of a realized code** (the meet, by position,
+of the shapes its functions declare): below the arity, position `j` is
+read-only where the member and every module function of `C` whose code
+(in `codes`, named in `names`) is `m` declare it read-only
+(`declaredReadOnly`). -/
+def readOnlyPositions (F : ComponentWire.Components) (C : Nat) (member : String) (codes : List Code)
+    (names : List (String × Nat × List String)) (m : Code) (arity : Nat) : List Bool :=
+  (List.range arity).map fun j => declaredReadOnly F C member j &&
+    (codes.zip names).all fun (m', n) => m' != m || declaredReadOnly F C n.1 j
+
 section
 variable {ι : Type} [Labels ι]
 
-/-- **The read-only inputs of a member**: each input whose parameter's
-declared shape is read-only throughout. -/
-def readOnlyInputs (F : ComponentWire.Components) (C : Nat) (member : String) (inputs : List (Ty ι)) :
-    List (Ty ι) :=
-  (inputs.zip (memberShapes F C member)).filterMap fun (T, s) => if shapeReadOnly F s then some T else none
+/-- **The read-only inputs of a plan**: each input at a read-only
+position. -/
+def readOnlyInputs (inputs : List (Ty ι)) (ro : List Bool) : List (Ty ι) :=
+  (inputs.zip ro).filterMap fun (T, b) => if b then some T else none
 
-/-- **The read-only types check** (`ro_of_readOnlyShape`'s premise),
-decided: every type the plan reads read-only is a read-only input. -/
-def readOnlyB (F : ComponentWire.Components) (C : Nat) (member : String) (inputs readOnly : List (Ty ι)) : Bool :=
-  let ro := readOnlyInputs F C member inputs
-  readOnly.all (ro.contains ·)
+/-- **The read-only types check**, decided: every type the plan reads
+read-only is an input at a read-only position, every input at a read-only
+position is one, and the type outgoing values cross at is none. -/
+def readOnlyB (inputs readOnly : List (Ty ι)) (ro : List Bool) (outType : Ty ι) : Bool :=
+  readOnly.all (fun T => (inputs.zip ro).any fun (T', b) => b && T' == T) &&
+    (inputs.zip ro).all (fun (T, b) => !b || readOnly.contains T) && !readOnly.contains outType
 end
+
+/-- **The read-only positions check**, decided: the plan's read-only
+positions are the realized code's (`readOnlyPositions`) at the member. -/
+def FramedSpec.roPositionsB {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (name : String)
+    (r : SourceRequest σ ι) : Bool :=
+  spec.roPositions == readOnlyPositions spec.family spec.C name spec.codes spec.names (realizedCode r) spec.arity
 
 /-- The realized code's body is the request's code (proved). -/
 theorem moduleBody_realized {σ ι : Type} [Labels ι] [StoreView σ ι] {codes : List Code}

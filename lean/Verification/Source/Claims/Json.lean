@@ -878,7 +878,8 @@ covered `codesCoverB`, the entry's signatures `entryFnB` at the sibling
 slots and the closure's own, the wire's $`\Theta_C`$ the `@clients` rows'
 by kind `clientsB`, the wire's $`\Psi_C`$ at least the component's
 protocol as defined `protocolAtLeastB` at the flow's sites, the read-only
-types the member's declared read-only inputs `readOnlyB`, and its framed
+positions those every function sharing the realized code declares
+(`roPositionsB`), the read-only types the inputs at them `readOnlyB`, and its framed
 call nodes those of the realized code the flow frames
 (`framedCallNodes`). -/
 def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
@@ -901,7 +902,8 @@ def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSp
     ("its client obligation (clientsB)", fun _ => clientsB spec.theta (componentRows spec.family spec.C), fun _ => ""),
     ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef)) ΨC,
       fun _ => ""),
-    ("its read-only types (readOnlyB)", fun _ => readOnlyB spec.family spec.C name r.inputs spec.readOnly, fun _ => ""),
+    ("its read-only positions (roPositionsB)", fun _ => spec.roPositionsB name r, fun _ => ""),
+    ("its read-only types (readOnlyB)", fun _ => readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType, fun _ => ""),
     ("its framed call nodes (framedCallNodes)", fun _ => spec.framed.map (·.1) == framedCallNodes F spec.host m,
       fun _ => s!" ({spec.framed.map (·.1)} are not the flow's {framedCallNodes F spec.host m})")]
 

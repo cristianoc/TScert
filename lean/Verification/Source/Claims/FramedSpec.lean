@@ -84,6 +84,10 @@ structure FramedSpec (ι : Type) where
   /-- The realm's identities the initialization's slots hold at its entry. -/
   initL : List Tm
   arity : Nat
+  /-- **The read-only positions** (`roPositionsB`): position `j` is
+  read-only where every function of `C` whose code is the request's
+  realized code declares parameter `j` read-only throughout. -/
+  roPositions : List Bool
   ofC : ComponentTag → Bool
   marks : List (Option Nat)
   checked : FFlow (markedPackage ofC marks)
@@ -160,18 +164,28 @@ def view : ViewOver (Ty ι) := ⟨fun t _ => t, fun t => t ∈ spec.readOnly, fu
 /-- The family of the plan. -/
 abbrev F : Family := spec.fam.family
 
+/-- Whether parameter `j` is a read-only position (`roPositions`). -/
+def roPos (j : Nat) : Bool := spec.roPositions.getD j false
+
+/-- **The type an entering step records argument `j` at**: its declared
+type at a read-only position, and the writable type outgoing values cross
+at otherwise. -/
+def entryTy (r : SourceRequest σ ι) (j : Nat) : Ty ι :=
+  if spec.roPos j then r.inputs.getD j spec.outType else spec.outType
+
 open Classical in
 /-- **The crossings in at an entering step of the realized code**: from a
 term whose active frame runs outside code to one with one more call of `C`
-active whose innermost run is the realized code, each argument of the call
-the step reduces (the first `arity` of them) crosses in at its declared
-type. -/
+active whose innermost run is the realized code, each argument `j` of the
+call the step reduces (the first `arity` of them) crosses in at its entry
+type (`entryTy`): its declared type where every function sharing the code
+declares it read-only, the writable type otherwise. -/
 noncomputable def entryXs (r : SourceRequest σ ι) (t t' : Tm) : List (Crossing spec.view.view) :=
   if spec.F.ofC spec.C (frameTag (activeFrame none t).1) = false ∧ entered none t' = some (realizedCode r) ∧
       depthC spec.F spec.C none t' = depthC spec.F spec.C none t + 1 then
     match (activeFrame none t).2 with
     | .invoke _ _ args | .construct _ args =>
-      ((args.take spec.arity).zip (r.inputs.take spec.arity)).map fun (v, T) => ⟨.into, T, v⟩
+      (args.take spec.arity).mapIdx fun j v => ⟨.into, spec.entryTy r j, v⟩
     | _ => []
   else []
 
