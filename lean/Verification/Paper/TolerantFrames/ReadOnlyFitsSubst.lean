@@ -327,8 +327,9 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     simp only [subst, substArgs_eq_map]
     refine .frameC c π l hc hcode hn (fun i => by rw [envOf_map, (henv i).closed j v]; exact henv i)
       (fun i σ hi => by rw [envOf_map, (henv i).closed j v]; exact hfn i σ hi) (fun σ hσ => ?_) (ih rfl) hO ho
-    have hf := hvfn σ hσ
-    rw [(ht.value hf.val).closed j v]; exact hf
+    rcases hvfn σ hσ with hf | hm
+    · rw [(ht.value hf.val).closed j v]; exact hf.tm
+    · exact FnTm.subst_make j v hm
   | frameOut hc hE henv _ hO ho ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]

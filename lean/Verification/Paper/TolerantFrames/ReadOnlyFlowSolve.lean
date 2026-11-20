@@ -359,9 +359,12 @@ or the exception a handler edge pushes. -/
 def pushesNoVal (k : Continuation) (x : Option Target) (y : Target) : Bool :=
   (match k with | .branchBind .. => true | _ => false) || (match x with | some y' => y' == y | none => false)
 
-/-- The value signature of a node: a slot variable's signature. -/
-def vfnIx (fn : Array FnIx) : Tm → FnIx
+/-- The value signature of a node: a slot variable's signature, or the
+signature of the code a closure creation creates (`mk`, at a creation of
+`C`'s code). -/
+def vfnIx (mk : CallCode → FnIx) (fn : Array FnIx) : Tm → FnIx
   | .var j => fn.getD j none
+  | .makeAt c _ _ => mk c
   | _ => none
 
 /-- The signatures carried along an edge: the target's slot `i` reads the
@@ -382,14 +385,14 @@ def meetIx (x y : Array FnIx) : Array FnIx :=
 /-- **The signatures carried from a node**: its row carried along each
 edge and met at each target; the targets whose rows changed. `none` is a
 node no edge reached yet. -/
-def fnStep (exprs : Array Tm) (conts : Array (Continuation × Option Target))
+def fnStep (mk : CallCode → FnIx) (exprs : Array Tm) (conts : Array (Continuation × Option Target))
     (fns : Array (Option (Array FnIx))) (l : Nat) : Array (Option (Array FnIx)) × List Nat := Id.run do
   let mut acc := fns
   let mut changed : List Nat := []
   let some fn := acc.getD l none | return (acc, [])
   let some e := exprs[l]? | return (acc, [])
   let some (k, x) := conts[l]? | return (acc, [])
-  let vf := vfnIx fn e
+  let vf := vfnIx mk fn e
   for (y, push) in edgesOf (k, x) do
     let noVal := pushesNoVal k x y
     let src : Nat → FnIx := fun i =>
@@ -408,14 +411,14 @@ def fnStep (exprs : Array Tm) (conts : Array (Continuation × Option Target))
 whose row changed carried again, until none is left or the fuel ends (a
 row only shrinks once set, so the fuel is not reached on a code's own
 rows). -/
-def fnsOf (exprs : Array Tm) (conts : Array (Continuation × Option Target)) (start : Nat)
+def fnsOf (mk : CallCode → FnIx) (exprs : Array Tm) (conts : Array (Continuation × Option Target)) (start : Nat)
     (seed : Array FnIx) : Array (Array FnIx) :=
   let init : Array (Option (Array FnIx)) :=
     (List.range exprs.size).toArray.map fun l => if l = start then some seed else none
   let rec loop : Nat → List Nat → Array (Option (Array FnIx)) → Array (Option (Array FnIx))
     | 0, _, acc => acc
     | _ + 1, [], acc => acc
-    | r + 1, l :: work, acc => let (acc', ch) := fnStep exprs conts acc l; loop r (ch ++ work) acc'
+    | r + 1, l :: work, acc => let (acc', ch) := fnStep mk exprs conts acc l; loop r (ch ++ work) acc'
   let maxW := (seed.size + 1 + exprs.foldl (fun m _ => m) 0) + (conts.foldl (fun m (k, _) =>
     max m ((edgesOf (k, none)).foldl (fun m (y, _) => max m (mlen y.mapping)) 0)) 0)
   (loop ((exprs.size + 1) * (maxW + exprs.size + 2) * 4) [start] init).map (·.getD #[])
@@ -542,6 +545,13 @@ def sigTable (cs : Array (SolveCode P)) : Array (FnSig × Option Nat) :=
   cs.foldl (fun acc c => c.seeds.foldl (fun acc sd => match sd with
     | some σ => if acc.any (·.1 == σ) then acc else acc.push (σ, none)
     | none => acc) acc) own
+
+/-- **The signature a closure creation names**: the index in `table` of
+the signature of the code it creates, at a creation of `C`'s code. -/
+def creationIx (ofC : ComponentTag → Bool) (table : Array (FnSig × Option Nat)) : CallCode → FnIx
+  | .graph ar E K s caps _ rest comp =>
+    if ofC comp then table.findIdx? (·.1 == ⟨(E, K), ar, s, rest, caps.length⟩) else none
+  | _ => none
 
 /-- **The start of the rounds**: the codes as arrays, the table of
 signatures, each node's signatures, the variables' layout, the copies of
@@ -714,13 +724,14 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let bases := cs.toArray
   let table := sigTable bases
   let ix (σ? : Option FnSig) : FnIx := σ?.bind fun σ => table.findIdx? (·.1 == σ)
+  let mk := creationIx P.ofC table
   let baseCodes := bases.map fun c => (c.code.1.toArray, c.code.2.toArray)
   let baseFns : Array (Array (Array FnIx)) := bases.mapIdx fun ci c =>
     let (exprs, conts) := baseCodes.getD ci (#[], #[])
     let self := capSlot c.ar c.rest c.ncaps
     let seed : Array FnIx := (List.range (max c.seeds.length (if c.closure then self + 1 else 0))).toArray.map fun i =>
       if c.closure && i = self then some ci else ix (c.seeds.getD i none)
-    fnsOf exprs conts c.start seed
+    fnsOf mk exprs conts c.start seed
   -- The call sites: each node with a known call, its own context.
   let mut nodeCx : Array (Array Nat) := #[]
   let mut ctxOf : Array (List (Nat × Nat)) := bases.mapIdx fun ci _ => [(entryCx, ci)]
@@ -996,7 +1007,7 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let dflt := view (st.varMask (off + need))
           let κ := cxs.getD l entryCx
           let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
-          ⟨env, dflt, view (st.varMask (off + need + 1)), fn, vfnIx fn e, κ,
+          ⟨env, dflt, view (st.varMask (off + need + 1)), fn, vfnIx (creationIx P.ofC s.table) fn e, κ,
             callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
         ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, view (st.retOf ci), c.tok,
         allocsOf.getD b []⟩ : FCode P))) }

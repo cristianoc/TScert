@@ -196,6 +196,52 @@ def FnIs (P : Package) (σ : FnSig) (v : Tm) : Prop :=
 theorem FnIs.val {σ : FnSig} {v : Tm} (h : FnIs P σ v) : isVal v = true := by
   obtain ⟨_, _, _, _, _, rfl, _⟩ := h; rfl
 
+/-- **A term computing a closure of a signature**: a closure of that
+signature, or the creation of one, `fun_σ[ū]` with its fields' initializers
+(the note, "Signatures": the value of a closure creation names the
+signature of its code). -/
+def FnTm (P : Package) (σ : FnSig) (t : Tm) : Prop :=
+  FnIs P σ t ∨ ∃ ns inits caps k comp, t = .makeAt (.graph σ.ar σ.code.1 σ.code.2 σ.s caps k σ.rest comp) ns inits ∧
+    caps.length = σ.ncaps ∧ P.ofC comp = true
+
+theorem FnIs.tm {σ : FnSig} {v : Tm} (h : FnIs P σ v) : FnTm P σ v := .inl h
+
+/-- **A value computing a closure of a signature is one** (proved): a
+creation is no value. -/
+theorem FnTm.fnIs {σ : FnSig} {t : Tm} (h : FnTm P σ t) (hv : isVal t = true) : FnIs P σ t := by
+  rcases h with h | ⟨_, _, _, _, _, rfl, _⟩
+  · exact h
+  · simp [isVal] at hv
+
+/-- **A step keeps a term computing a closure of a signature** (proved): a
+creation evaluates its initializers, then allocates the closure; a closure
+takes no step. -/
+theorem FnTm.step {σ : FnSig} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (ht : FnTm P σ t) :
+    FnTm P σ t' := by
+  rcases ht with ⟨_, _, _, _, _, rfl, _⟩ | ⟨ns, inits, caps, k, comp, rfl, hl, hc⟩
+  · cases hs
+  · cases hs with
+    | makeArg _ _ _ => exact .inr ⟨_, _, caps, k, comp, rfl, hl, hc⟩
+    | makeFields _ _ => exact .inl ⟨_, caps, k, comp, _, rfl, hl, hc⟩
+
+/-- **Instantiation keeps a term computing a closure of a signature**
+(proved): it maps the captures and initializers of a creation, keeping
+their number, and the captures of a closure. -/
+theorem FnTm.inst {σ : FnSig} {t : Tm} (d : Nat) (ρ : Env) (ht : FnTm P σ t) :
+    FnTm P σ (Verification.instantiate d ρ t) := by
+  rcases ht with ⟨fs, caps, k, comp, oid, rfl, hl, hc⟩ | ⟨ns, inits, caps, k, comp, rfl, hl, hc⟩
+  · exact .inl ⟨fs, instantiateArgs d ρ caps, k, comp, oid, rfl, by simp [hl], hc⟩
+  · exact .inr ⟨ns, instantiateArgs d ρ inits, instantiateArgs d ρ caps, k, comp, rfl, by simp [hl], hc⟩
+
+/-- **Substitution keeps a creation computing a closure of a signature**
+(proved). -/
+theorem FnTm.subst_make {σ : FnSig} {t : Tm} (j : Nat) (a : Tm)
+    (ht : ∃ ns inits caps k comp, t = .makeAt (.graph σ.ar σ.code.1 σ.code.2 σ.s caps k σ.rest comp) ns inits ∧
+      caps.length = σ.ncaps ∧ P.ofC comp = true) :
+    FnTm P σ (subst j a t) := by
+  obtain ⟨ns, inits, caps, k, comp, rfl, hl, hc⟩ := ht
+  exact .inr ⟨ns, substArgs j a inits, substArgs j a caps, k, comp, rfl, by simp [hl], hc⟩
+
 /-- **An environment meets the signatures of a node's slots.** -/
 def EnvFn (π : CodeFlow P) (l : Nat) (L : List Tm) (d : Tm) : Prop :=
   ∀ i σ, π.fn l i = some σ → FnIs P σ (envOf L d i)
@@ -466,7 +512,7 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → F
       (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.goto E K l L d comp)
   | frameC {Γ a o S E K t L d k x comp} (c : Nat) (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) c = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) → EnvFn π l L d →
-      (∀ σ, π.vfn l = some σ → FnIs P σ t) →
+      (∀ σ, π.vfn l = some σ → FnTm P σ t) →
       Fits V Γ (π.at l (k, x)) false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
   | frameOut {Γ a o S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
       (∀ i, V Fl.O (envOf L d i)) →
@@ -722,7 +768,7 @@ def CodeOk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     (∀ (g : Ghost P) n (L : List Tm) d, EnvIn (VJ Fl g n) (π.env l) L d → EnvFn π l L d →
       Fits Fl (VJ Fl g n) (fun _ => none) (π.at l (k, x)) false (π.val l) (instantiate 0 (envOf L d) e) ∧
-      ∀ σ, π.vfn l = some σ → FnIs P σ (instantiate 0 (envOf L d) e)) ∧
+      ∀ σ, π.vfn l = some σ → FnTm P σ (instantiate 0 (envOf L d) e)) ∧
     ContOk Fl π l k ∧ HandlerOk Fl π l x ∧ ContFn π l k ∧ HandlerFn π l x
 
 variable (Fl) in

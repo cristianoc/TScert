@@ -1226,24 +1226,39 @@ theorem handlerChkB_sound {l : Nat} {x : Option Target} (h : handlerChkB F c (c.
 /-! ## The checks of a code and of a flow -/
 
 /-- A node value naming a signature is a slot naming it, decided by
-index. -/
+index, or the creation of a closure of `C`'s code of that signature. -/
 def vfnB (x : FNode P) (e : Tm) : Bool :=
   match x.vfn, e with
   | none, _ => true
   | some t, .var j => decide (x.fnAt j = some t)
+  | some t, .makeAt (.graph ar E K s caps _ rest comp) _ _ =>
+    decide (c.sigAt (some t) = some ⟨(E, K), ar, s, rest, caps.length⟩) && P.ofC comp
   | some _, _ => false
 
 omit [DecidableEq P.Site] [Hashable P.Site] in
-theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB (c.node l) e = true) :
-    ∀ σ, c.flow.vfn l = some σ → ∃ j, e = .var j ∧ c.flow.fn l j = some σ := by
+theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB c (c.node l) e = true) :
+    ∀ σ, c.flow.vfn l = some σ → (∃ j, e = .var j ∧ c.flow.fn l j = some σ) ∨
+      ∃ ns inits caps k comp, e = .makeAt (.graph σ.ar σ.code.1 σ.code.2 σ.s caps k σ.rest comp) ns inits ∧
+        caps.length = σ.ncaps ∧ P.ofC comp = true := by
   intro σ hσ
   simp only [FCode.flow] at hσ ⊢
-  unfold vfnB at h
   cases hx : (c.node l).vfn with
   | none => rw [hx] at hσ; cases hσ
   | some t =>
-    rw [hx] at h hσ
-    cases e <;> simp_all
+    rw [hx] at hσ
+    cases e with
+    | var j =>
+      simp only [vfnB, hx, decide_eq_true_eq] at h
+      exact .inl ⟨j, rfl, by rw [h]; exact hσ⟩
+    | makeAt cc ns inits =>
+      cases cc with
+      | graph ar E K s caps k rest comp =>
+        simp only [vfnB, hx, Bool.and_eq_true, decide_eq_true_eq] at h
+        obtain ⟨h1, h2⟩ := h
+        rw [h1] at hσ; cases hσ
+        exact .inr ⟨ns, inits, caps, k, comp, rfl, rfl, h2⟩
+      | _ => simp [vfnB, hx] at h
+    | _ => simp [vfnB, hx] at h
 
 /-- **The checks of a node** `l`, of expression `e`, continuation `k` and
 handler `x`, decided. -/
@@ -1251,7 +1266,7 @@ def nodeAtB (l : Nat) (e : Tm) (k : Continuation) (x : Option Target) : Bool :=
   let nd := c.node l
   (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) ⟨c.allocAt (k, x), nd.out⟩ nd.cx 0 (fun _ => none) e).any
     (fun S => decide (Sub S nd.val)) &&
-    vfnB nd e && contChkB c nd k && handlerChkB F c nd x
+    vfnB c nd e && contChkB c nd k && handlerChkB F c nd x
 
 /-- **The checks of a node**, decided. -/
 def nodeB (m : Code) (l : Nat) : Bool :=

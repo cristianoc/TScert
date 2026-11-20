@@ -988,8 +988,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨ht', hH'⟩ := ih ht hH
       rw [allocOf_C hF.agree hc hcode] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
-      refine ⟨.frameC c π l hc hcode hnode (fun i => (henv i).alloc hl) hfn (fun σ hσ => ?_) ht' hS ho, hH'⟩
-      have := (hvfn σ hσ).val; rw [notVal_of_step hst] at this; cases this
+      exact ⟨.frameC c π l hc hcode hnode (fun i => (henv i).alloc hl) hfn (fun σ hσ => (hvfn σ hσ).step hst) ht' hS ho,
+        hH'⟩
     | frameOut hc hE henv ht hS =>
       rw [show (FrameAt.outside : FrameAt P) = ⟨Alloc.outside, true⟩ from rfl,
         ← allocOf_out (Fl := Fl) (m := (_, _)) (kx := (_, _)) hc] at ht
@@ -1257,7 +1257,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))
-        (hkf _ _ _ hfn hvfn) hS ho, hH.same⟩
+        (hkf _ _ _ hfn fun σ hσ => (hvfn σ hσ).fnIs hv) hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
   | frameEffect hv =>
@@ -1327,10 +1327,10 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       split
       · exact fits_gotoC hc hcode
           (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).1
-          (hkf _ _ _ hfn hvfn).1 hS ho
+          (hkf _ _ _ hfn fun σ hσ => (hvfn σ hσ).fnIs hv).1 hS ho
       · exact fits_gotoC hc hcode
           (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2
-          (hkf _ _ _ hfn hvfn).2 hS ho
+          (hkf _ _ _ hfn fun σ hσ => (hvfn σ hσ).fnIs hv).2 hS ho
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
   | frameHandle hr =>
