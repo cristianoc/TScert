@@ -364,12 +364,14 @@ theorem handlerOk_of_chk {π : CodeFlow P} {l : Nat} {x : Option Target} (h : Ha
 variable (Fl) in
 /-- **The checks of a code**: each node expression fits the node's value
 set openly at the node's slots and signatures; a node value naming a
-signature is a slot naming it; each continuation and handler carries the
-node into its targets. -/
+signature is a slot naming it or a creation of a closure of it; each
+continuation and handler carries the node into its targets. -/
 def CodeChk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) (π.at l (k, x)) false (π.val l) e ∧
-    (∀ σ, π.vfn l = some σ → ∃ j, e = .var j ∧ π.fn l j = some σ) ∧
+    (∀ σ, π.vfn l = some σ → (∃ j, e = .var j ∧ π.fn l j = some σ) ∨
+      ∃ ns inits caps k comp, e = .makeAt (.graph σ.ar σ.code.1 σ.code.2 σ.s caps k σ.rest comp) ns inits ∧
+        caps.length = σ.ncaps ∧ P.ofC comp = true) ∧
     ContChk π l k ∧ HandlerChk Fl π l x
 
 /-- **The checks of a code give `CodeOk`** (proved, `ofits_sound`,
@@ -380,7 +382,8 @@ theorem codeOk_of_chk {m : Code} {π : CodeFlow P} (h : CodeChk Fl m π) : CodeO
   have hc' := contOk_of_chk (Fl := Fl) hc
   have hh' := handlerOk_of_chk hh
   refine ⟨fun g n L d henv hfn => ⟨ofits_sound henv hfn hf, fun σ hσ => ?_⟩, hc'.1, hh'.1, hc'.2, hh'.2⟩
-  obtain ⟨j, rfl, hj⟩ := hv σ hσ
-  simpa [instantiate] using hfn j σ hj
+  rcases hv σ hσ with ⟨j, rfl, hj⟩ | hm
+  · exact FnIs.tm (by simpa [instantiate] using hfn j σ hj)
+  · exact FnTm.inst 0 (envOf L d) (.inr hm)
 
 end Verification.TolerantFrames.ReadOnly
