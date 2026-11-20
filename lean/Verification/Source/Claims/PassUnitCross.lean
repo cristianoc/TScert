@@ -13,7 +13,7 @@ reads, and concludes the importer's file-level theorem from the entries its
 interface file holds. docs/SINGLE-PASS-THEOREM.md, section 7. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- A module's units on the wire are its units' identities (proved): the
 wire identity is injective at one location. -/

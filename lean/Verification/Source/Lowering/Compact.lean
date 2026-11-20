@@ -10,7 +10,7 @@ whose value is discarded. The slots keep their values (a binding never
 changes), so every edge reads the value the left-out node would have given.
 A statement entry, a node stating an assertion or candidates, and the graph's
 entry stay. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open ControlFlow CertificateProducer RequestJson
 open EquationGraphs (Tree)
 
@@ -146,4 +146,4 @@ def compactLowered (program : List Node) (claims : List (PointClaim Tree)) (sour
     source.candidates source.cuts entry
   (p, c, ⟨sm, a, ca, cu⟩, lab entry)
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

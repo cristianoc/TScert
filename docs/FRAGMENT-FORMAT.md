@@ -95,7 +95,7 @@ the required initialization order and available names.
 A mutable binding's storage contract is fixed for its allocated lifetime.
 For an annotated binding, the annotation supplies that contract. For an
 unannotated binding, the walk
-([Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+([Synthesis.lean](../lean/Verification/Source/Synthesis.lean))
 computes a declaration contract keyed by its initializer span and name: the
 initializer's type widened as TypeScript widens a `let`, grown in at most four
 rounds where its writes need more. Lean checks it against initialization and

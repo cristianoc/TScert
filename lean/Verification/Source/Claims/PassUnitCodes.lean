@@ -10,7 +10,7 @@ the induction that makes the table they build sound
 `GraphCode.extendTable_sound`. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open PositiveCertificates (InstanceImageCheck)
 open HeapExpressionRules (Checker)
 open CertificateProducer (Answered)

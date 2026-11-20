@@ -260,9 +260,9 @@ def selectionClosure (ast : Json) (roots : List String) : List String := Id.run 
   let bound := init.flatMap Fragment.Stmt.bound
   let owned := bound ++ bound.map Fragment.selfBindingOf ++
     SourceClaimJson.genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
-  let initMentions := init.flatMap SourceExtraction.stmtNames
+  let initMentions := init.flatMap SourceElaboration.stmtNames
   let mentions := fun (n : String) => if n == ":init" then initMentions else
-    (fns.filter (·.name == n)).flatMap fun f => f.body.flatMap SourceExtraction.stmtNames
+    (fns.filter (·.name == n)).flatMap fun f => f.body.flatMap SourceElaboration.stmtNames
   let names := fns.map (·.name)
   let mut set := roots.eraseDups
   for _ in List.range (fns.length + 2) do
@@ -929,7 +929,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
           f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
           compare debugNode repeats none observe counting p.located
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
-          f.extractionRefusal (some [SourceClaimJson.memberName unit]),
+          f.elaborationRefusal (some [SourceClaimJson.memberName unit]),
           f.contractReads (fr.group i), f.clientComponents (f.fr.group i))
   -- A refused group's framed plan, checked (`framedVerdict`).
   let (verdict, trusted) ← match verdict, planned with
@@ -974,7 +974,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
       trusted := trusted || WorkerWire.lineTrusted line
       if refused.isNone then refused := refusal
       if extraction.isNone then
-        extraction := (WorkerWire.lineExtraction line).toOption.join
+        extraction := (WorkerWire.lineElaboration line).toOption.join
     match extraction with
     | some reason => refuse reason
     | none =>

@@ -1,7 +1,7 @@
 import Verification.Source.Fragment
 import Verification.Source.SourceTypes
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open Fragment
 
 mutual
@@ -544,4 +544,4 @@ def ownedModuleCells (init : List Fragment.Stmt) (bodies : List (List Fragment.S
     | _ => []
   cells.filter fun n => !(init ++ bodies.flatten).any (moduleStmtEscapes n)
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

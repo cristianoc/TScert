@@ -6,7 +6,7 @@ import Verification.Programs.ArgumentRegionCertificates
 import Verification.Source.SourceResolution
 import Verification.Source.WorkerWire
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open LabelStore
 open EquationGraphs (Tree)
@@ -25,9 +25,9 @@ reported with its verdict (DESIGN.md, "Trust surface"); no check reads the
 record. A member: the key `key` of the declaration whose row states it, by
 the identity `declaration` the declaration document gives it (its module,
 name and span), read where the walk or the lowering computes the member's
-type (`SourceExtraction.recordMember`). A value of the declaration
+type (`SourceElaboration.recordMember`). A value of the declaration
 document: its declaration and its binding, read where the walk types its
-name (`SourceExtraction.recordName`). -/
+name (`SourceElaboration.recordName`). -/
 inductive ContractRead where
   | member (declaration : Json) (key : PropKey)
   | value (module name specifier imported localName : String)
@@ -100,7 +100,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   the frames of its graph's run. -/
   comp : ComponentTag
   /-- The module values the body names, in the order of the request's last
-  inputs, which hold them (`extractNormalizedFn`'s siblings). -/
+  inputs, which hold them (`lowerNormalizedFn`'s siblings). -/
   siblings : List String := []
   /-- Whether the function declares `this`: its first input is the
   receiver. -/
@@ -480,4 +480,4 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
 
 end
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

@@ -6,7 +6,7 @@ import Verification.Source.FragmentTypes
 
 /-! Prepares closure signatures, parameters and captures, and recognizes a
 guarded return of a tested read (`guardedReturn`). -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -368,4 +368,4 @@ by subtyping; or a scheme row's variadic signatures. -/
 
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

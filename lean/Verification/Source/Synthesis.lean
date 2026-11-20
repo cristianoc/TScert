@@ -1,6 +1,6 @@
-import Verification.Source.SourceExtraction
+import Verification.Source.Lowering
 import Verification.Source.Claims.Schemes
-import Verification.Source.Lowering.ExitProposals
+import Verification.Source.Synthesis.ExitProposals
 
 /-! # The types of a function's declarations and expressions, computed
 
@@ -22,7 +22,7 @@ the arms give it.
 
 `compareUnit` sets the computed types beside the claims document's at every
 expression occurrence and statement entry the claims name. -/
-namespace Verification.SourceExtraction.Synthesis
+namespace Verification.SourceElaboration.Synthesis
 open Lean ProgramTyping PositiveRules LabelStore Fragment
 open EquationGraphs (Tree)
 
@@ -6404,4 +6404,4 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {},
     w.contractReads)
 
-end Verification.SourceExtraction.Synthesis
+end Verification.SourceElaboration.Synthesis

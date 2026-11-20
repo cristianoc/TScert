@@ -167,7 +167,7 @@ theorem noPend_letGoto {P : Package} {E : List Tm} {Kc : List (Continuation × O
 end Verification.TolerantFrames.ReadOnly
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly HeapObservations
 
 section
@@ -529,7 +529,7 @@ end
 end Verification.SourceClaimJson
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open Verification.TolerantFrames.ReadOnly
 open HeapObservations
 

@@ -99,7 +99,7 @@ All Lean paths below are relative to `lean/Verification/`; the extensions are pr
 must prove region interpretation, separation, composition, substitution and the preservation of the locations a fact reads.
 `Programs/{ExpressionEffects,GraphCode,PromiseCalls}.lean` must certify summaries and frame facts;
 `Source/Lowering/Bindings.lean` must establish default-branch facts with faithful evaluation order.
-`Source/{SourceExtraction,SourceRequests}.lean` and `Source/Claims/Imports.lean`
+`Source/{SourceElaboration,SourceRequests}.lean` and `Source/Claims/Imports.lean`
 must connect initialization, entry assumptions, exported summaries and checked returns.
 Audit effect subtyping, substitution, binding, overloads, all wire mappings and exceptional edges.
 `SourceClaimJson.checkUnitJson_safe` must cover the exact accepted verdict and every accepted function.

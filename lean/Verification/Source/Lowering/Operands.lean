@@ -5,7 +5,7 @@ import Verification.Source.Lowering.Plans
 import Verification.Source.ExpressionPlan
 
 /-! Elaborates saved spread and method operands. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -162,4 +162,4 @@ dispatch retains its receiver as the correlated dispatch value. -/
   return (B, term)
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

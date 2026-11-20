@@ -238,7 +238,7 @@ import Verification.Semantics.ViewSpines
 import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
 import Verification.Source.Claims.Diagnostics
-import Verification.Source.Claims.Extraction
+import Verification.Source.Claims.Elaboration
 import Verification.Source.Claims.FlowProbe
 import Verification.Source.Claims.FramedCheck
 import Verification.Source.Claims.FramedFlow
@@ -314,6 +314,7 @@ import Verification.Source.FlowJson
 import Verification.Source.Fragment
 import Verification.Source.FragmentTypes
 import Verification.Source.LabelStore
+import Verification.Source.Lowering
 import Verification.Source.Lowering.Atoms
 import Verification.Source.Lowering.Bindings
 import Verification.Source.Lowering.Callbacks
@@ -322,14 +323,12 @@ import Verification.Source.Lowering.Closures
 import Verification.Source.Lowering.Compact
 import Verification.Source.Lowering.Control
 import Verification.Source.Lowering.Execution
-import Verification.Source.Lowering.ExitProposals
 import Verification.Source.Lowering.Expression
 import Verification.Source.Lowering.Flow
 import Verification.Source.Lowering.Observations
 import Verification.Source.Lowering.Operands
 import Verification.Source.Lowering.Plans
 import Verification.Source.Lowering.State
-import Verification.Source.Lowering.Synthesis
 import Verification.Source.Lowering.Types
 import Verification.Source.RequestCli
 import Verification.Source.RequestJson
@@ -337,11 +336,12 @@ import Verification.Source.ResolutionCapabilities
 import Verification.Source.ResolutionWire
 import Verification.Source.RuleExport
 import Verification.Source.SourceClaims
-import Verification.Source.SourceExtraction
 import Verification.Source.SourceFacts
 import Verification.Source.SourceRequests
 import Verification.Source.SourceResolution
 import Verification.Source.SourceTypes
+import Verification.Source.Synthesis
+import Verification.Source.Synthesis.ExitProposals
 import Verification.Source.WorkerWire
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests

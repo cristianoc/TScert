@@ -10,7 +10,7 @@ accepted verdict gives the unit's safety from the graph theorem alone
 (`run_sound_single_pass`): `passUnitVerdict_sound`. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **Mode 8's accepted verdict, from the graph theorem**: where `RunSound`
 holds, every member of the group of a unit the command prints accepted is

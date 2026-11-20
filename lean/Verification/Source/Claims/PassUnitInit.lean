@@ -10,7 +10,7 @@ postcondition the slot's contract (`KindMet` at `moduleCell`) needs, which
 stays a named hypothesis: docs/SINGLE-PASS-THEOREM.md, section 4, "H5b". -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]

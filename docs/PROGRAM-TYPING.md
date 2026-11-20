@@ -2972,7 +2972,7 @@ The expression judgment and its checker live in
   (`decodeFields`, `decodeShapes`, `conjuncts` for a conjunction, `primitive`)
   and the labels of reference cells (`reference`, `viewReference`), used by
   the type reader (`FragmentTypes`) and the lowering of cells
-  (`SourceExtraction`);
+  (`SourceElaboration`);
 - [CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean)
   and [DirectProof.lean](../lean/Verification/Programs/DirectProof.lean): the
   untrusted search that builds evidence trees at the types the pass states;
@@ -3000,7 +3000,7 @@ A new expression rule touches each layer once:
 4. **The search.** The node proposed where the rule applies: in
    `CertificateProducer` or a `DirectProof` recipe, and in the lowering
    (`Source/Lowering/`) where the rule needs a term of its own.
-5. **The types.** The walk (`Source/Lowering/Synthesis.lean`) states the
+5. **The types.** The walk (`Source/Synthesis.lean`) states the
    types the rule gives, where the source needs them.
 6. **The cases.** A positive and a negative pipeline case in
    `pipeline/cases.mts`, the negative one also run under Node

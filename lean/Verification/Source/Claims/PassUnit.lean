@@ -12,7 +12,7 @@ and the theorems built on them are presented in
 docs/SINGLE-PASS-THEOREM.md. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open PositiveCertificates (InstanceImageCheck)
 open HeapExpressionRules (Checker)
 open CertificateProducer (Answered)

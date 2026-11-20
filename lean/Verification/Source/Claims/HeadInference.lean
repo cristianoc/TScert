@@ -20,7 +20,7 @@ bindings the loop does not assign (the join of facts both edges define), and of 
 its integrality, the bounds its entry states that a step keeps, the bound
 the test states shifted by the step, and `2^32 - 1` where the test bounds
 it above (the join's candidates `{d, 0, 2^32-1, 2^53-1}`). -/
-namespace Verification.SourceExtraction.HeadInference
+namespace Verification.SourceElaboration.HeadInference
 open Fragment
 
 /-- A linear term over source names: a binding's name, the fields read from
@@ -1430,4 +1430,4 @@ def arraysOf (f : Fn) (param : Lean.Json → Option HeapKnowledge.Term.Kind := k
 names (`ofRequires`). -/
 def entryOf (f : Fn) : Ctx := f.requires.filterMap (ofRequires (f.params.map (·.name)))
 
-end Verification.SourceExtraction.HeadInference
+end Verification.SourceElaboration.HeadInference

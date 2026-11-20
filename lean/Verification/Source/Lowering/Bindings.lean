@@ -2,7 +2,7 @@ import Verification.Source.Lowering.Execution
 import Verification.Source.Lowering.Control
 import Verification.Source.FragmentTypes
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -220,4 +220,4 @@ set_option maxHeartbeats 1000000
 
 
 end LoweringBindings
-end Verification.SourceExtraction
+end Verification.SourceElaboration

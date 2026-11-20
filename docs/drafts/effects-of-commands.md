@@ -280,7 +280,7 @@ Introduce three-component `Closed`, the internal exit summaries, postcondition e
 
 ### 2. Move consumers and record independent summaries
 
-**Files:** `Programs/ExpressionEffects.lean`, `GraphCode.lean`, `PromiseCalls.lean`, `SinglePass.lean`, `SinglePassClose.lean`, argument-region modules; `Source/Lowering/Synthesis.lean`, `Source/Claims/PassProposals.lean` and their callers.
+**Files:** `Programs/ExpressionEffects.lean`, `GraphCode.lean`, `PromiseCalls.lean`, `SinglePass.lean`, `SinglePassClose.lean`, argument-region modules; `Source/Synthesis.lean`, `Source/Claims/PassProposals.lean` and their callers.
 
 Consumers read the list representation. Add bound-independent local certificates and prove their connection to existing recorded grades. Implement the general inclusion and consequence checks.
 
@@ -338,7 +338,7 @@ postconditions, and `CommandComposition` for sequencing and rebasing.
 | Postcondition | freshness, elements, growth, append, exact write, index facts | Entry and consequence from the selected exit's `ensures`; a frame proves none of these |
 | Scope and body | `below`, `belowRow`, `codeConditions`, `PassUnitCodes`, `PassUnitRealize`, `VariadicTyping` | scoped schemas, and certificates establishing every exported postcondition |
 | Operation on effects | `drop`, `meet`, `covers`, `withoutActuals` | schema transformations with their entailment, substitution or conjunction theorems |
-| Constructor and proposal | library contracts, `Lowering/Synthesis`, `ExitProposals`, `PassProposals` | both exits built directly; inference proposes them and body certification proves them |
+| Constructor and proposal | library contracts, `Synthesis`, `ExitProposals`, `PassProposals` | both exits built directly; inference proposes them and body certification proves them |
 | Serialization | `EffectJson`, writers of requests and claims, `Lowering/Types`, the TypeScript mappings and declarations, fixtures | one wire transaction |
 
 A semantic reader does not recover an old field from a constructor's
@@ -629,7 +629,7 @@ After the foundational interfaces in step 1 are fixed, two implementers can work
 | Implementer | Exclusive work |
 |---|---|
 | A | `Semantics` effect algebra, postcondition interpretation, rebasing/composition proofs and new command-summary modules |
-| B | `Programs` deciders and visit integration; `Source/Lowering/Synthesis.lean` and `Source/Claims/PassProposals.lean`, against those fixed interfaces |
+| B | `Programs` deciders and visit integration; `Source/Synthesis.lean` and `Source/Claims/PassProposals.lean`, against those fixed interfaces |
 
 `CallEffects.lean`, foundational `Parity*.lean` and shared certificate types need one owner. Their interface changes precede consumer integration.
 

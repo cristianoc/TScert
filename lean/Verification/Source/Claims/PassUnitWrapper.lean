@@ -11,7 +11,7 @@ PassUnitMemberRun), so that H3 (`PassGroupChecks`) holds of the code
 section 3. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- One step of `passGroup`'s fold. -/
 private def groupStep (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)

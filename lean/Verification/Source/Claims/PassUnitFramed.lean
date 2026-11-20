@@ -18,7 +18,7 @@ call (`CallSafe`):
   term that runs the graph (`GraphCode.safeGraph_of_sim`,
   `GraphCode.sim_step`). -/
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open Verification.TolerantFrames.ReadOnly (ClientFrame)
 open HeapObservations
 
@@ -130,7 +130,7 @@ theorem asserted_of_reach {P : Program} {assertions : List (Nat × HeapKnowledge
     {l : Nat} {k : HeapKnowledge.Knowledge} (hl : (l, k) ∈ assertions) {j : Nat} {h' : Heap} {ρ' : Env}
     (hj : j < n) (hr : ReachesIn P j h (.at start (envOf L d)) h' (.at l ρ')) :
     HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h' := by
-  rw [← SourceExtraction.program_nodes P] at hr
+  rw [← SourceElaboration.program_nodes P] at hr
   obtain ⟨ts', hst, hs'⟩ := reaches_sim hr (sim_gotoOf P start L d c)
   cases hs' with
   | goto => exact hJ hj hst l k hl _ _ _ rfl
@@ -163,7 +163,7 @@ theorem assertedAt_of_graph {P : Program} {assertions : List (Nat × HeapKnowled
   obtain ⟨s', hr, hs'⟩ := sim_reaches hst (sim_gotoOf P start L d c)
   cases hs' with
   | goto =>
-    rw [SourceExtraction.program_nodes P] at hr
+    rw [SourceElaboration.program_nodes P] at hr
     exact hg l k hl j h' _ hj hr
   | done hv => simp [gotoOf, isVal] at hv
 
@@ -201,7 +201,7 @@ theorem framedCode_of_guarantee {G : NormalGraph ι} {P : Program} {start : Nat}
       (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h (gotoOf P start L d comp) := by
   have hnodes := program_source_refsOk hg.source W
   have hsafe := hg.safe η trivial n W h (envOf L d) he hnodes hR
-  rw [← SourceExtraction.program_nodes P] at hsafe
+  rw [← SourceElaboration.program_nodes P] at hsafe
   have hE : ∀ e ∈ P.map (·.expression), RefsOk W e := by
     intro e he'
     obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he'
@@ -222,7 +222,7 @@ theorem framed_callSafe {r : SourceRequest σ ι} (hr : FramedRequestSafe r fr) 
     fun η hη n W h L d hE hR hN => ?_, fun ci q hq η n W h L d hE hR hN => ?_⟩
   · have := (framed_erase hm (hs η hη n W h L d hE hR hN)).1.post.erase
     have := GraphCode.safeGraph_of_sim n W h (sim_gotoOf r.program r.start L d r.comp) this
-    rwa [SourceExtraction.program_nodes] at this
+    rwa [SourceElaboration.program_nodes] at this
   · exact (framed_erase hm (hf hb η n W h L d hE hR hL hd hN)).1
   · exact (framed_erase hm (he hn η n W h L d hE hR hN)).1.post
   · exact (framed_erase hm (hg Φ regions hreg η n W h L d hE hR hN)).1
@@ -288,7 +288,7 @@ theorem framedReturns_of_requestSafe {r : SourceRequest σ ι} (hr : RequestSafe
         (gotoOf r.program r.start L d r.comp) := by
     intro η hη n W h L d hE hR
     have hsafe := hs η hη n W h (envOf L d) hE hR
-    rw [← SourceExtraction.program_nodes r.program] at hsafe
+    rw [← SourceElaboration.program_nodes r.program] at hsafe
     refine GraphCode.safe_of_sim n W h (sim_gotoOf r.program r.start L d r.comp) (fun e he' => ?_) hsafe
     obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he'
     exact program_source_refsOk hsrc W node hn
@@ -338,7 +338,7 @@ theorem framed_reaches {r : SourceRequest σ ι} (ha : FramedAssertionsClause r 
   have hs := ha η hη n W h L d hE hR hN g hg
   let x : Conf := ⟨⟨n, W, h, hn, hE.2.2.2.1, hE.2.2.2.2⟩, gotoOf r.program r.start L d r.comp,
     ClientFrame.safeUnder_refs hs⟩
-  rw [← SourceExtraction.program_nodes r.program] at hr
+  rw [← SourceElaboration.program_nodes r.program] at hr
   obtain ⟨ts', hst, hsim⟩ := reaches_sim hr (sim_gotoOf r.program r.start L d r.comp)
   refine ⟨x, rfl, rfl, rfl, ?_⟩
   rcases ClientFrame.safeUnder_path (x := x) hs hst hj with ⟨e, hex, he, ht⟩ | hb

@@ -54,7 +54,7 @@ following, in one change:
 ## Checking a unit in one pass
 
 The Lean verifier checks a unit over its Fragment alone. The walk
-([Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean),
+([Synthesis.lean](../lean/Verification/Source/Synthesis.lean),
 `retypeUnit`, run over a file by `retypeFromFragment`) computes the type of
 each expression and binding of a function; a generic call's instance comes
 from the walk (`instancesFromWalk`), and a declaration's footprint from
@@ -1596,7 +1596,7 @@ no arm; a refused meet refuses the whole spread, whatever the other meets
 of the union are; and the spread is refused where no arm remains.
 
 For each product, the walk (`checkCopyFields`, `copiesOf` in
-[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+[Synthesis.lean](../lean/Verification/Source/Synthesis.lean))
 gathers every record operand before choosing fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
 type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
 states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
@@ -2075,7 +2075,7 @@ gap: an overloaded guard is outside the fragment;
 not a $`T`$, each run under Node by `node-runs.mts`.
 
 For contextual callback inference, the walk (`applyCall` in
-[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+[Synthesis.lean](../lean/Verification/Source/Synthesis.lean))
 selects the signature the actuals' count and the walked actuals' types
 select, solves each binder from the receiver and the walked actuals
 (`matchBinder`), then walks each callback with its parameters at the
@@ -2159,7 +2159,7 @@ any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
 record with one), or a union with one, is the program's, and runs the
 [iterator protocol](#the-iterator-protocol); any other steps `%Iterate%`,
 whose typing then refuses what is no array. Lean compiles the loop over a
-host iterable itself (`SourceExtraction.body`), $`\mathit{it}`$ the picked
+host iterable itself (`SourceElaboration.body`), $`\mathit{it}`$ the picked
 intrinsic:
 
 ```math
@@ -2282,7 +2282,7 @@ receiver ([records](POSITIVE-TYPES.md#records)), which is what the close's
 test of `return` reads.
 
 The closing region is a `finally` that runs on some ways out of $`S`$ only,
-compiled by the machinery of `try` (`SourceExtraction.body`, `Finalizer`):
+compiled by the machinery of `try` (`SourceElaboration.body`, `Finalizer`):
 
 ```math
 \frac{\begin{array}{c}
@@ -3518,7 +3518,7 @@ interior claims are its own (`closure-offer-narrower-element`).
 The walk proposes an offer where each offered parameter is within the
 closure's by its inclusion test over its type table (`within`, in
 `offerSig` and `offerUse` of
-[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean)), the
+[Synthesis.lean](../lean/Verification/Source/Synthesis.lean)), the
 subtype comparison the pass uses, the record rule of
 [clause coverage](POSITIVE-TYPES.md#clause-coverage) included. An interface
 extending another is within its base where its overriding members are within
@@ -3958,7 +3958,7 @@ wrong effect fails at the defining callable's located typing obligation.
 
 A function literal's unwritten effect is proposed per exit, from a summary
 of each operation the walk meets (`ClassSummary`,
-[ExitProposals.lean](../lean/Verification/Source/Lowering/ExitProposals.lean)):
+[ExitProposals.lean](../lean/Verification/Source/Synthesis/ExitProposals.lean)):
 a call's is its instance's per-exit contract, each exit's frame read in the
 closed language below the call's entry with a fresh receiver's spine
 discharged (Fresh-Eff); a write's the grade its typed-write rule accepts; a

@@ -1,10 +1,10 @@
 import Verification.Source.Claims.MemberSettle
-import Verification.Source.Lowering.ExitProposals
+import Verification.Source.Synthesis.ExitProposals
 
 /-! **Proposals by the pass** ([proposals by the pass](../../../../docs/drafts/proposals-by-the-pass.md)):
 what the front proposes about a body's unwritten effect is computed with
 the pass's own steps on that body. A function's unwritten effect is a
-per-exit summary (`SourceExtraction.ClassSummary`): each checked step's
+per-exit summary (`SourceElaboration.ClassSummary`): each checked step's
 local summary, independent of any enclosing bound, composed over the body's
 graph by the rules of `ClassSummary` (`composeGraph`: Seq-Eff on both
 exits, choice at joins, a caught throw entering its handler). A step's
@@ -22,11 +22,11 @@ namespace Verification.SourceClaimJson
 
 /-- A written-footprint stand-in: the effect a function or an import would
 state if written, supplied apart from the source, as its complete per-exit
-summary (`SourceExtraction.ClassSummary`), with the footprint of the
+summary (`SourceElaboration.ClassSummary`), with the footprint of the
 function it returns. The command line supplies none. -/
 structure StandIn where
   name : String
-  summary : SourceExtraction.ClassSummary := ⟨some .top, some .top⟩
+  summary : SourceElaboration.ClassSummary := ⟨some .top, some .top⟩
   resultFootprint : Footprints.Closed := .top
 
 /-- **A stand-in in today's effect format**: its summary's projection
@@ -45,7 +45,7 @@ def StandIn.onThrow (s : StandIn) : Bool := s.summary.format.2
 /-- The stand-in of today's format: the summary of a closed footprint and a
 throw bound (`ClassSummary.ofFormat`). -/
 def StandIn.ofFormat (name : String) (c : Footprints.Closed) (t : Bool) (r : Footprints.Closed := .top) : StandIn :=
-  ⟨name, SourceExtraction.ClassSummary.ofFormat c t, r⟩
+  ⟨name, SourceElaboration.ClassSummary.ofFormat c t, r⟩
 
 /-- The stand-ins of a file: for the file's functions and for its imports. -/
 structure StandIns where
@@ -54,7 +54,7 @@ structure StandIns where
 
 namespace PassProposals
 open Lean ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
-open SourceExtraction LabelStore RequestJson
+open SourceElaboration LabelStore RequestJson
 open HeapKnowledge (Knowledge)
 
 abbrev Closed := Verification.Footprints.Closed
@@ -177,7 +177,7 @@ summary (the closed bounds of its normal and exceptional exits), the
 footprint of the function it returns, and the transfers its two runs
 visited. -/
 structure Established where
-  summary : SourceExtraction.ClassSummary
+  summary : SourceElaboration.ClassSummary
   result : Closed
   visits : Nat
 
@@ -189,7 +189,7 @@ its body's summary composed over the graph (`composeGraph`), none where the
 composition does not settle; the returned values' functions' footprint, and
 whether any return was visited. -/
 structure DirectRead where
-  summary : Option SourceExtraction.ClassSummary
+  summary : Option SourceElaboration.ClassSummary
   result : Closed
   returns : Bool
 
@@ -199,7 +199,7 @@ below the mark (`Footprint.boundBelow`) of the exit specifications its
 rules establish, each of which holds of the step (`Closed.holds_meet`);
 `top` where no rule bounds that exit, and at both exits where the step's
 scope check fails. Bound-independent: no enclosing bound is read. -/
-def localSummary (q : SinglePass.StepCertificate) : SourceExtraction.ClassSummary :=
+def localSummary (q : SinglePass.StepCertificate) : SourceElaboration.ClassSummary :=
   let bound := fun (xs : List CallEffects.ExitSpec) =>
     match xs.map (fun x => Footprints.Footprint.boundBelow q.fresh x.frame) with
     | [] => Footprints.Closed.top
@@ -218,26 +218,26 @@ no visit reached has no local summary and passes nothing. The graph
 worklist revisits a node when its entry rises, each at most 13 times (unreached, then three components of rank at
 most 4). The composition is the least fixed point; an exit no visited
 node reaches has no summary. -/
-def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option SourceExtraction.ClassSummary)) :
-    Option SourceExtraction.ClassSummary :=
+def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option SourceElaboration.ClassSummary)) :
+    Option SourceElaboration.ClassSummary :=
   let n := nodes.size
-  let initial : Array (Option Closed) × SourceExtraction.ClassSummary :=
+  let initial : Array (Option Closed) × SourceElaboration.ClassSummary :=
     ((Array.replicate n none).set! start (some keepAll), ⟨none, none⟩)
   let graph := (nodes.toList.map fun node => (node, ())).zipIdx
   let transfer := fun (((node, _), l) : (Node × Unit) × Nat)
-      ((entry, out) : Array (Option Closed) × SourceExtraction.ClassSummary) => Id.run do
+      ((entry, out) : Array (Option Closed) × SourceElaboration.ClassSummary) => Id.run do
     match entry.getD l none, locals.getD l none with
     | some p, some S =>
-      let N := SourceExtraction.ClassSummary.andThen (some p) S.normal
-      let X := SourceExtraction.ClassSummary.andThen (some p) S.exceptional
+      let N := SourceElaboration.ClassSummary.andThen (some p) S.normal
+      let X := SourceElaboration.ClassSummary.andThen (some p) S.exceptional
       let mut entry := entry
       let mut out := out
-      if node.continuation == .ret then out := { out with normal := SourceExtraction.ClassSummary.alt out.normal N }
+      if node.continuation == .ret then out := { out with normal := SourceElaboration.ClassSummary.alt out.normal N }
       for t in successors node.continuation do
-        entry := entry.set! t.label (SourceExtraction.ClassSummary.alt (entry.getD t.label none) N)
+        entry := entry.set! t.label (SourceElaboration.ClassSummary.alt (entry.getD t.label none) N)
       match node.handler with
-      | some t => entry := entry.set! t.label (SourceExtraction.ClassSummary.alt (entry.getD t.label none) X)
-      | none => out := { out with exceptional := SourceExtraction.ClassSummary.alt out.exceptional X }
+      | some t => entry := entry.set! t.label (SourceElaboration.ClassSummary.alt (entry.getD t.label none) X)
+      | none => out := { out with exceptional := SourceElaboration.ClassSummary.alt out.exceptional X }
       return (entry, out)
     | _, _ => return (entry, out)
   (graphWorklist graph transfer (fun state l => state.1.getD l none) (13 * n + 2) initial).map (·.2)
@@ -246,15 +246,15 @@ def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option Sour
 (`ExpressionEffects.emptyType`, the pass's `deadNode`): its normal exit is
 unreached. -/
 def unreturning {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (claimed : Array (PointClaim ι)) (l : Nat)
-    (S : SourceExtraction.ClassSummary) : SourceExtraction.ClassSummary :=
+    (S : SourceElaboration.ClassSummary) : SourceElaboration.ClassSummary :=
   match claimed[l]? with
   | some c => if ExpressionEffects.emptyType G c.type then { S with normal := none } else S
   | none => S
 
 /-- The local summaries by label: each label's visits' summaries joined
 (`ClassSummary.choice`). -/
-def localsOf (n : Nat) (visits : List (Nat × SourceExtraction.ClassSummary)) :
-    Array (Option SourceExtraction.ClassSummary) :=
+def localsOf (n : Nat) (visits : List (Nat × SourceElaboration.ClassSummary)) :
+    Array (Option SourceElaboration.ClassSummary) :=
   visits.foldl (init := Array.replicate n none) fun acc (l, S) =>
     if l < n then acc.set! l (some (match acc.getD l none with
       | some T => T.choice S
@@ -385,7 +385,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   -- The regional route: the walk under the regional fallback at `top`, run
   -- where the direct route's footprint is more than keep/keep (no footprint
   -- is below it).
-  let (regionalS, visitsB) : Option SourceExtraction.ClassSummary × Nat :=
+  let (regionalS, visitsB) : Option SourceElaboration.ClassSummary × Nat :=
     if normal == some keepAll then (none, 0) else
     match prepared.get with
     | none => (none, 0)
@@ -401,7 +401,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       -- with its throw bounded, `regionalBoth`, `top` where none bounds an
       -- exit; composed over the graph, `composeGraph`)
       let locals := SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
-        (List.range n).foldl (init := (Array.replicate n none : Array (Option SourceExtraction.ClassSummary))) fun acc l =>
+        (List.range n).foldl (init := (Array.replicate n none : Array (Option SourceElaboration.ClassSummary))) fun acc l =>
         match σB.walk.labels[l]? with
         | some (lw : SinglePass.LabelWalk (Label f)) => match lw.visited, lw.entry, lw.stepped, lw.region with
           | true, some entry, some st, some rs =>
@@ -423,7 +423,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
     | .error _ => (none, 0)
   -- The route of the less normal bound, its summary (`top` at an exit no
   -- composition settles): the member's summary.
-  let topS : SourceExtraction.ClassSummary := ⟨some .top, some .top⟩
+  let topS : SourceElaboration.ClassSummary := ⟨some .top, some .top⟩
   let S := match read.summary, regionalS with
     | some a, some b => if (b.normal.getD .top).le (a.normal.getD .top) && !(a.normal.getD .top).le (b.normal.getD .top)
         then b else a
@@ -506,7 +506,7 @@ one with regions. This is the reading of a statement the claims document
 gives the function (`fragmentClaims`, a footprint and a throw flag, which
 `RequestJson.statedWithin` compares with the statement), and changes with
 that document's format. -/
-def written (f : Fragment.Fn) : Option SourceExtraction.ClassSummary :=
+def written (f : Fragment.Fn) : Option SourceElaboration.ClassSummary :=
   f.stated.map fun s => if s.regions.isEmpty then .ofFormat s.closed s.onThrow else .ofFormat .top false
 
 /-- **The inputs a proposal's runs read, digested**: of each member of
@@ -570,7 +570,7 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
   let cycle := (fr.group i).filterMap fun j => match fr.units[j]? with
     | some (g, _, none) => if j != i && (fr.group i).length > 1 then some g.name else none
     | _ => none
-  let declared : List (String × Option SourceExtraction.ClassSummary) := fr.units.filterMap fun (g, _, c) =>
+  let declared : List (String × Option SourceElaboration.ClassSummary) := fr.units.filterMap fun (g, _, c) =>
     if c.isNone && !controls.contains g.name then some (g.name, written g) else none
   let reads := fun (own : Option StandIn) => (found.filter (!cycle.contains ·.name)) ++ declared.filterMap fun (nm, w) =>
     if nm == f.name then own
@@ -610,7 +610,7 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       -- 25 rounds that do not stop. (Argued, not proved: a round that does
       -- not stop raises a component of an exit's bound, at most 4 raises
       -- for each of the 3 components of the 2 exits.)
-      let mut assumed : SourceExtraction.ClassSummary := .ofFormat keepAll true
+      let mut assumed : SourceElaboration.ClassSummary := .ofFormat keepAll true
       let mut memo := memo
       for _ in List.range 25 do
         let (got, memo') := establish (some { name := f.name, summary := assumed }) memo

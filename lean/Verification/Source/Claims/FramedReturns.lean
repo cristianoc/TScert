@@ -545,7 +545,7 @@ end ClientFrame
 end Verification.TolerantFrames.ReadOnly
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open Verification.TolerantFrames.ReadOnly
 open HeapObservations
 

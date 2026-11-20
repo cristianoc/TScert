@@ -12,7 +12,7 @@ regions), each step's refusals excluded by the outcome.
 docs/SINGLE-PASS-THEOREM.md, section 3. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 
 /-- A pure `Except` value is the value it returns. -/

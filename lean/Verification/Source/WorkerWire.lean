@@ -18,7 +18,7 @@ obligation of each component `acceptedUnderClientTrust` lists (`trusted`,
 `{"unit","members","refusal","extraction","contracts"}`; `extraction` the first
 extraction refusal among its group's members, or null; `contracts` the
 contracts its group's check read, each once, in their compressed text's
-order (`SourceExtraction.ContractRead.toJson`), reporting only. -/
+order (`SourceElaboration.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
     (extraction : Option String) (contracts : List Json) (trusted : List Nat) : String :=
   let ext := ("extraction", match extraction with | some r => toJson r | none => Json.null)
@@ -31,7 +31,7 @@ def verdictLine (unit : String) (members : List String) (verdict : Except String
         ("refusal", toJson reason), ext, read]).compress
 
 /-- A contract a unit's check read, on its verdict line
-(`SourceExtraction.ContractRead`): a member, `{"member":{"declaration","key"}}`,
+(`SourceElaboration.ContractRead`): a member, `{"member":{"declaration","key"}}`,
 the declaration's identity `{"module","name","span"}` as the declaration
 document gives it and the key as the document writes one (a string, or
 `{"symbol"}`), or a value of the declaration document,
@@ -51,7 +51,7 @@ def lineTrusted (line : String) : Bool :=
   | .error _ => false
 
 /-- A verdict line's extraction refusal (`verdictLine`). -/
-def lineExtraction (line : String) : Except String (Option String) := do
+def lineElaboration (line : String) : Except String (Option String) := do
   let j ← Json.parse line
   let e ← j.getObjVal? "extraction"
   if e.isNull then return none

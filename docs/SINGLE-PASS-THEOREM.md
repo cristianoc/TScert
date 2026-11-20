@@ -597,7 +597,7 @@ part of $`u`$'s entry premise. `approx_link` (proved) restates
 its code with the receiver in slot 0 (`graphEntry`; a plain call passes
 `undefined`), and the request of a function declared without `this` has
 no receiver slot: its inputs are $`\mathit{params} \mathbin{+\!\!+} C`$
-(`extractNormalizedFn`). Its module code is
+(`lowerNormalizedFn`). Its module code is
 $`\mathrm{dropReceiver}(c)`$: the request's node lists with one node
 appended, at which the code starts, evaluating `undefined` and continuing
 at the request's start with the slots $`1, \ldots, a + |C| + 1`$ of the
@@ -642,7 +642,7 @@ indexed by function, its captured values one unfolding below, so
 `ReceiverDropSound`) gives every $`x \in D`$ realized from its members'
 safety (`rowRealized_spec`). H5a is a statement about the extraction (the
 slot table `ordinarySlots` builds, `withStandIns`, `withNeverImports`, the
-frame `extractMember` lays out), not proved: every function on that path is
+frame `elaborateMember` lays out), not proved: every function on that path is
 a `do` block over the front with no theorem about its frame; part of it is
 decidable at the verdict (the layout check).
 
@@ -833,7 +833,7 @@ each item names what a theorem about it would need.
   decided. What stays trusted is that the tested value at that point of the
   source run has the context type, and that a budget-$`n`$ source run sees
   the depth-$`n`$ environment; a theorem needs a source semantics and a
-  simulation theorem for `extractMember`.
+  simulation theorem for `elaborateMember`.
 - **Sparse handler placement**: which nodes the lowering gives a handler;
   the graph's handler edges are $`P`$'s.
 - **Declaration-only import contracts** (kind `declared`): the types of the

@@ -1,12 +1,12 @@
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.Sites
 import Verification.Source.Claims.Plans
-import Verification.Source.SourceExtraction
+import Verification.Source.Lowering
 import Verification.Source.FlowJson
 import Verification.Source.FragmentTypes
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]
@@ -139,9 +139,9 @@ structure Front where
   initBinders : List (String × Tree × Option (List Tree))
   classNames : List String
   freshConstructors : List (String × Span)
-  moduleFunctions : List (SourceExtraction.ModuleValue Tree)
-  moduleConstants : List (SourceExtraction.ModuleValue Tree)
-  classSelves : List (SourceExtraction.ModuleValue Tree)
+  moduleFunctions : List (SourceElaboration.ModuleValue Tree)
+  moduleConstants : List (SourceElaboration.ModuleValue Tree)
+  classSelves : List (SourceElaboration.ModuleValue Tree)
   /-- The units in order: the functions, then the initialization, with its
   claims. -/
   units : List (Fragment.Fn × List Fragment.TypeParam × Option (Function Tree))
@@ -150,7 +150,7 @@ structure Front where
   /-- The initialization order's refusal, the initialization unit's own. -/
   initOrder : Option String
   /-- The module cells whose objects the module owns
-  (`SourceExtraction.ownedModuleCells`), over every unit's code. -/
+  (`SourceElaboration.ownedModuleCells`), over every unit's code. -/
   moduleOwned : List String
   /-- Each unit's units reached by name (`Front.edgesOf`), by its index. -/
   edgeTable : Array (List Nat)
@@ -161,7 +161,7 @@ structure Front where
   imported : List (String × Span × List Tree)
   /-- The declaration document's values, each at its declaration and binding
   (`documentValueReads`): those a unit reads are reported with its verdict. -/
-  values : List SourceExtraction.ContractRead
+  values : List SourceElaboration.ContractRead
   /-- The component whose code contains each place of the file
   (`ComponentWire.Components.componentAt`). -/
   componentAt : Span → ComponentTag
@@ -279,7 +279,7 @@ overload, each its code at that overload's signature (SOURCE-ELABORATION.md,
 "Module functions"): the units of one name run one code, and its slot holds
 every overload. -/
 def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragment.Fn) (names : List String) :
-    List (SourceExtraction.ModuleValue Tree) :=
+    List (SourceElaboration.ModuleValue Tree) :=
   let claimOf (g : Fragment.Fn) : Option (Function Tree) :=
     d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos
   let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
@@ -302,7 +302,7 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
 /-- The values of a Fragment's declaration document (`ast`), each at its
 declaration and binding (`ContractRead.value`). The decoder of the document
 (`EquationLowering.source`) requires each value's fields. -/
-def documentValueReads (ast : Json) : List SourceExtraction.ContractRead :=
+def documentValueReads (ast : Json) : List SourceElaboration.ContractRead :=
   let values := (((ast.getObjVal? "declarations").toOption.bind fun doc =>
     (doc.getObjVal? "values").toOption.bind (·.getArr?.toOption)).getD #[]).toList
   values.filterMap fun value => do
@@ -315,7 +315,7 @@ def documentValueReads (ast : Json) : List SourceExtraction.ContractRead :=
 
 /-- The values among `values` the names `names` bind: the document's values
 a unit read. -/
-def readValues (values : List SourceExtraction.ContractRead) (names : List String) : List SourceExtraction.ContractRead :=
+def readValues (values : List SourceElaboration.ContractRead) (names : List String) : List SourceElaboration.ContractRead :=
   values.filter fun
     | .value _ _ _ _ localName => names.contains localName
     | .member .. => false
@@ -371,12 +371,12 @@ def fileFront (ast claims : Json) (fileKey : String)
   -- Imported values join them at the types their declarations state.
   sameCodeOverloads functionJsons
   let ordinary := (all.filter (·.2.isEmpty)).map (·.1)
-  let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
+  let moduleFunctions : List (SourceElaboration.ModuleValue Tree) :=
     ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
     (imported.map fun (name, span, U) =>
       -- An import with a body, read at no entry, at the ordinary effect
       -- (`ordinaryImport`); a declaration-only import at its declaration.
-      let declared : Except String (SourceExtraction.ModuleType Tree) :=
+      let declared : Except String (SourceElaboration.ModuleType Tree) :=
         if bodyImports.contains (name, span) then (ordinaryImport d.types U).map .written
         else .ok (.written (graphClaim U))
       (name, span, match qualified.lookup name with
@@ -384,7 +384,7 @@ def fileFront (ast claims : Json) (fileKey : String)
         | .ok J => .ok (.written J)
         | .error e => if lenient then declared else .error e
       | none => declared)) ++
-    (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
+    (if arrays then [(SourceElaboration.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
         [("a", toJson "graph"), ("label", toJson (StoreView.arrayProto d.types))]])])))] else [])
   -- Every immutable module value retains its initializer's checked claim and
@@ -393,7 +393,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   -- A generic class is read at the instances its uses name, as a generic
   -- module function is (`generics`), not at its declaring unit's rows.
   let classNames := genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
-  let moduleConstants : List (SourceExtraction.ModuleValue Tree) := init.flatMap fun
+  let moduleConstants : List (SourceElaboration.ModuleValue Tree) := init.flatMap fun
     | .constants _ bs => (bs.filter fun b => !classNames.contains b.name).map fun b =>
       (b.name, b.namePos, match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
         | some e => .ok (.claimed e.type.ground b.annot)
@@ -411,7 +411,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   -- module value at the class's construct signature, the annotation its
   -- binding is checked at there, as a function reads a module constant. A
   -- generic class's is not one (the parser refuses its self-reads).
-  let classSelves : List (SourceExtraction.ModuleValue Tree) := init.flatMap fun
+  let classSelves : List (SourceElaboration.ModuleValue Tree) := init.flatMap fun
     | .constants _ bs =>
       let ctors := bs.filterMap fun b => match b.init with
         | .ctor .. => some b.name
@@ -449,7 +449,7 @@ def fileFront (ast claims : Json) (fileKey : String)
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
-    SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
+    SourceElaboration.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
     #[], #[], imported, values, (← Fragment.decodeComponents ast).componentAt (← jStr (← jField ast "file"))⟩
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
@@ -470,16 +470,16 @@ def Front.withQualified (fr : Front)
 /-- What replaces a unit's claims before its extraction, where one does:
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
 a grown store, and the members and names the computation read
-(`SourceExtraction.contractReads`). -/
+(`SourceElaboration.contractReads`). -/
 abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
-  List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
-  Except String (EquationStore.State × SourceClaims.Function Tree × (List SourceExtraction.ContractRead × List String))
+  List (SourceElaboration.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
+  Except String (EquationStore.State × SourceClaims.Function Tree × (List SourceElaboration.ContractRead × List String))
 
 /-- What states a unit's calls' type arguments before its generic module
 values are instantiated, where a computation gives them: its claims with
 each such call's, over a grown store. -/
 abbrev Instances := Front → EquationStore.State → Fragment.Fn → Function Tree →
-  List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
+  List (SourceElaboration.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
   Except String (EquationStore.State × Function Tree)
 
 /-- What claims a unit's generic closures at their schemes where no claim
@@ -489,7 +489,7 @@ abbrev ClosureSchemes := EquationStore.State → Json →
   Except String (EquationStore.State × List (Expression Tree))
 
 /-- One unit's plan, extracted from the front over the store `T`. -/
-def extractMember (fr : Front) (T : EquationStore.State)
+def elaborateMember (fr : Front) (T : EquationStore.State)
     (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
@@ -620,7 +620,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
       (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
     d := { d with types := T }
     c := c'
-  let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
+  let finish (d : Document EquationStore.State Tree) (module : List (SourceElaboration.ModuleValue Tree)) (c : Function Tree)
       (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
     let mut d := d
     let mut module := module
@@ -629,7 +629,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
     -- the calls name, and those reads and calls are claimed at them. The
     -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
     for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
-      let prepared : Except String (Document EquationStore.State Tree × List (SourceExtraction.ModuleValue Tree) × Function Tree) := do
+      let prepared : Except String (Document EquationStore.State Tree × List (SourceElaboration.ModuleValue Tree) × Function Tree) := do
         let mut d := d
         let mut module := module
         let mut c := c
@@ -671,7 +671,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
       | some r => r fr d.types f c.normalized module (sourceScheme.map fun row =>
           (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
       | none => pure (d.types, c.normalized, ([], []))
-    let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
+    let request ← lowerNormalizedFn types f claims module (SourceElaboration.sourceClasses init) freshConstructors
       moduleOwned (readValues values) componentAt
     -- The contracts the walk and the lowering read, each once: their
     -- members, and the declaration document's values among the names they

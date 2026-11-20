@@ -10,7 +10,7 @@ given facts and the computed given lines (`withHeadFacts`,
 `computedGiven`), a refusal's next state (`inferredNext`), the settle loop
 (`inferredSettle`), and mode 8's check of a group (`passGroupMode8`). -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction
+open Lean ProgramTyping SourceElaboration
 open EquationGraphs (Tree)
 
 /-- The plans with each unit's loop-head facts the given file states

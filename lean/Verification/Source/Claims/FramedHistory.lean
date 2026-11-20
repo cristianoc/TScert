@@ -14,7 +14,7 @@ crosses into `C` (`FramedSpec.entryXs_into`), so the restated `ChkSound`
 lemmas (`ClientFrame.chkSound_of_flowIn`) read it. -/
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly
 
 namespace FramedSpec

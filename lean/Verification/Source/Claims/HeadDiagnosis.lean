@@ -10,7 +10,7 @@ main run, each found left out of its head as the walk goes. Its result
 only chooses the candidates of the member's next run; that run is the
 pass's, and decides. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **Member `i`'s lacking proposals**, by head (facts, or one of the
 head's implications, `SinglePass.LeftOut`): the main graph's diagnosing

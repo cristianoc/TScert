@@ -10,7 +10,7 @@ the wrapper makes), the theorem that such a member is safe
 headline from mode 8's exact acceptance condition (`passUnit_safe`). -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open PositiveCertificates (InstanceImageCheck)
 open HeapExpressionRules (Checker)
 open CertificateProducer (Answered)

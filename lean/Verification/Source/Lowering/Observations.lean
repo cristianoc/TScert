@@ -2,7 +2,7 @@ import Verification.Source.Lowering.State
 import Verification.Source.Lowering.Types
 
 /-! Emits graph nodes and checks source heap observations. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -420,4 +420,4 @@ def isSnapshot (name : String) : Bool := name.any (· == '.')
     persistentObservation d pos A fld R
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

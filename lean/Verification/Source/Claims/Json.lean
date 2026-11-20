@@ -13,19 +13,19 @@ import Verification.Source.Claims.Plans
 import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.FramedPassChecks
 import Verification.Source.Claims.FramedNodeChecks
--- Claims/Extraction.lean coordinates source units and reconstructs graph requests.
-import Verification.Source.Claims.Extraction
+-- Claims/Elaboration.lean coordinates source units and reconstructs graph requests.
+import Verification.Source.Claims.Elaboration
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
 import Verification.Source.Claims.Imports
 import Verification.Programs.SinglePass
 import Verification.Programs.CodeConditions
 import Verification.Programs.SinglePassStats
-import Verification.Source.Lowering.ExitProposals
+import Verification.Source.Synthesis.ExitProposals
 
 /-! Source claim validation, evidence production and the theorem relating
 exact accepted plans to modeled graph safety. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
 /-- An observation's line: its tag and its record, written where every
@@ -126,18 +126,18 @@ def Front.selected (fr : Front) (names : Option (List String)) : List Nat :=
 
 /-- `extractAll` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
-def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
+def Front.elaborateSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not extracted")) else
     match SinglePass.work "prepare: extraction" (fr.workItem i) fun _ =>
-        extractMember fr T u retype instances closureSchemes with
+        elaborateMember fr T u retype instances closureSchemes with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
 /-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceExtraction.ClassSummary × Footprints.Closed × Nat))
+abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceElaboration.ClassSummary × Footprints.Closed × Nat))
 
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/
@@ -169,7 +169,7 @@ def FilePlans.dependencies (f : FilePlans) (group : List Nat) : List String :=
 
 /-- The first extraction refusal among the groups `names` selects: a check
 reports it before any refusal at the evidence. -/
-def FilePlans.extractionRefusal (f : FilePlans) (names : Option (List String)) : Option String :=
+def FilePlans.elaborationRefusal (f : FilePlans) (names : Option (List String)) : Option String :=
   ((f.fr.selected names).flatMap f.fr.group).findSome? fun i =>
     match (f.plans[i]?).getD (.error "no unit") with
     | Except.error reason => some reason
@@ -850,7 +850,7 @@ def callEffectAt {ι : Type} [LabelStore.Labels ι] (G : NormalGraph ι) (c : Ce
 
 /-- **The effects the callees of a request's call nodes state** (`callEffectAt`
 at each node's claim and expression). -/
-def callEffects {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (G : NormalGraph ι) (r : SourceExtraction.SourceRequest σ ι) :
+def callEffects {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (G : NormalGraph ι) (r : SourceElaboration.SourceRequest σ ι) :
     Nat → Option Footprints.Footprint :=
   fun l => (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
 

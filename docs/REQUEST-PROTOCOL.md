@@ -137,15 +137,15 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   group, or `null`. The first non-null one in the order the checks run is
   the file's refusal, which `--verify-interface-stage 8` reports as its
   refusal. `contracts` lists the contracts the group's check read, each
-  once (`SourceExtraction.ContractRead`), which no verdict reads: a member,
+  once (`SourceElaboration.ContractRead`), which no verdict reads: a member,
   `{"member":{"declaration","key"}}`, the key of the declaration whose row
   states it, the declaration by the identity `{"module","name","span"}` the
   declaration document gives it and the key as that document writes one (a
   string, or `{"symbol"}`), recorded where the walk or the lowering computes the member's
-  type (`SourceExtraction.recordMember`); a value of the declaration
+  type (`SourceElaboration.recordMember`); a value of the declaration
   document, `{"value":{"module","name","specifier","imported","local"}}`, its
   declaration and binding, for a name the walk types or the lowering reads a
-  prototype through (`SourceExtraction.recordName`).
+  prototype through (`SourceElaboration.recordName`).
 
 A line of another shape, or a unit the selection does not check, is an
 operational failure (exit 3). A unit's verdict line is a function of the

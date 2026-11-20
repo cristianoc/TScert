@@ -9,7 +9,7 @@ request's own; mode 8 plans no module run (`fragmentPlans_modules`), so a
 unit's dependencies name units of its file alone. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- A request over a file's frozen store. -/
 abbrev Req (f : FilePlans) : Type :=

@@ -65,7 +65,7 @@ nodes found before it (none at a node the walk does not reach), those the
 node's check keeps (`framedNodeKeeps` at the request's code, the client
 obligation `Θ`); with a line per node. -/
 def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel i : Nat) (cf : ComponentFlow ofC)
-    (Θ : Protocol (markedPackage ofC cf.O)) (r : SourceExtraction.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
+    (Θ : Protocol (markedPackage ofC cf.O)) (r : SourceElaboration.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (nodes : List Nat) :
     List (Nat × List Footprints.Footprint) × List String := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := LabelStore.StoreView.graph f.F.store
@@ -365,7 +365,7 @@ which the pass checks (`compB`, `clientsB`, `protocolAtLeastB`), and the
 member's read-only inputs at their declared shapes (`readOnlyInputs`). -/
 def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
     (fc : FramedComponent) (member : String)
-    (r : SourceExtraction.SourceRequest σ ι) (doc : Json) : Except String (FramedSpec ι) := do
+    (r : SourceElaboration.SourceRequest σ ι) (doc : Json) : Except String (FramedSpec ι) := do
   exactFields doc ["component", "entries", "theta", "protocol", "framed"] "a framed plan's document"
   let C ← doc.getObjValAs? Nat "component"
   let entries' ← doc.getObjValAs? (List String) "entries"
