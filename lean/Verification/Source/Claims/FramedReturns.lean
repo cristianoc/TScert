@@ -512,6 +512,159 @@ theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
   rw [← hinst] at hv
   exact hroots l b₀ e L d k x hFl hb he hk hL hbt v hv
 
+/-- **The slots a call's operands read**: the slot of each operand of an
+invocation that is a slot. -/
+def atomSlots : Tm → List Nat
+  | .invoke f r args => (f :: r :: args).filterMap fun
+    | .var j => some j
+    | _ => none
+  | _ => []
+
+/-- **An operand read from slots of values meets its slot's set** (proved):
+at slots each of whose values meets its slot's set, an operand read from a
+slot meets that slot's set, and a constant every set; each meets layout
+provenance where the term instantiated does. -/
+theorem atom_vj {P : Package} {Fl : Flow P} {g : Ghost P} {n : Nat} {env : Nat → Sites P} {L : List Tm} {d : Tm}
+    {q : Code → ComponentTag → Layout → Bool} {a : Tm} (ha : atomB a = true)
+    (henv : ∀ i, VJ Fl g n (env i) (envOf L d i)) (hl : layP q (instantiate 0 (envOf L d) a) = true) :
+    ∃ S', VJ Fl g n S' (instantiate 0 (envOf L d) a) ∧ (∀ j, a = .var j → S' = env j) ∧
+      ((∀ j, a ≠ .var j) → S' = []) ∧ layP q (instantiate 0 (envOf L d) a) = true := by
+  cases a <;> simp [atomB] at ha
+  case var j => exact ⟨env j, by simpa [instantiate] using henv j, fun _ h => by cases h; rfl,
+    fun h => absurd rfl (h j), hl⟩
+  all_goals exact ⟨[], VJ.prim (by simp [instantiate, primVal]), fun _ h => (by cases h), fun _ => rfl, hl⟩
+
+/-- **The own steps at each framed node, from the frame's fit** (proved,
+`segWithin_of_deep` at each node's set `T l`): `own_of_run` with its root
+premise discharged. A reached state entering a framed node fits the flow
+(`fitsAt_reached`), so its frame of `C`'s code runs a node `l'` of its code
+with `l`'s continuation and handler, at a context `c`, each slot value
+meeting the slot's set at `l'` (`Fits.frameC`); each operand of the node's
+call read from a slot meets that set, a constant every set (`atom_vj`), and
+where `T l` holds the operand slots' sets at every such node and context,
+each value of the call's term meets `T l` in depth (`deepIn_of_checks`,
+`DeepIn.held`). -/
+theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true) (htok : tokensSomeB Fl = true)
+    (hlow : codesLoweredB Fl = true) (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    (hslots : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x → ∀ j ∈ atomSlots e, Sub (π.env l' j) (T l)) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀ := by
+  intro l b₀ e L d k x hFl hb he hk hL hbt
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+  refine segWithin_of_deep hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall fun f' r' args' ht v hv => ?_
+  rw [hbt, hinst] at ht
+  cases ht
+  have hfit := (fitsAt_reached hFa hS hE hb).1
+  have hlay := (lay_reached hly hb).1
+  rw [hbt] at hfit hlay
+  have hae := hatom l e hFl he
+  cases hfit with
+  | val hv => simp [isVal] at hv
+  | frameOut hc' => exact absurd hc' (by simpa [Family.at] using hcomp)
+  | frameC c π l' _ hcode hn henv =>
+    have hlt : layP (layQ Fl lay) (instantiate 0 (envOf L d) e) = true := by
+      simp only [layP, Bool.and_eq_true] at hlay; exact hlay.1.1.2
+    cases e with
+    | invoke fe re argse =>
+      simp only [atomCallB, Bool.and_eq_true, List.all_eq_true] at hae
+      obtain ⟨⟨haf, har⟩, haa⟩ := hae
+      simp only [instantiate, Tm.invoke.injEq] at hinst
+      obtain ⟨rfl, rfl, rfl⟩ := hinst
+      simp only [instantiate, layP, layPs_eq, Bool.and_eq_true, List.all_eq_true] at hlt
+      have hsub := hslots l _ k x hFl he hk c π l' hcode hn
+      have htop : ∀ o, atomB o = true → (o = fe ∨ o = re ∨ o ∈ argse) →
+          layP (layQ Fl lay) (instantiate 0 (envOf L d) o) = true →
+          DeepIn b₀.2.site (T l) (instantiate 0 (envOf L d) o) := by
+        intro o ho hmem hlo
+        obtain ⟨S', hv', hvar, hnv, hl'⟩ := atom_vj (env := π.env l') ho henv hlo
+        refine deepIn_of_checks (hT l hFl) htok hlow hv' ?_ hl'
+        by_cases hvo : ∃ j, o = .var j
+        · obtain ⟨j, rfl⟩ := hvo
+          rw [hvar j rfl]
+          refine hsub j (List.mem_filterMap.mpr ⟨.var j, ?_, rfl⟩)
+          rcases hmem with h | h | h
+          · rw [h]; exact List.mem_cons_self
+          · rw [h]; exact List.mem_cons_of_mem _ List.mem_cons_self
+          · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
+        · rw [hnv fun j h => hvo ⟨j, h⟩]; exact fun _ h => by cases h
+      simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap, instantiateArgs_eq_map, List.mem_map] at hv
+      rcases hv with (hv | hv) | ⟨a', ⟨o, ho, rfl⟩, hv⟩
+      · exact (htop fe haf (.inl rfl) hlt.1.1).held hf hv
+      · exact (htop re har (.inr (.inl rfl)) hlt.1.2).held hr hv
+      · refine (htop o (haa o ho) (.inr (.inr ho)) ?_).held (ha _ ?_) hv
+        · exact hlt.2 _ (by simp only [instantiateArgs_eq_map, List.mem_map]; exact ⟨o, ho, rfl⟩)
+        · simp only [instantiateArgs_eq_map, List.mem_map]; exact ⟨o, ho, rfl⟩
+    | _ => simp [atomCallB] at hae
+
+/-- **A frame's slots have valid references where the frame does**
+(proved). -/
+theorem frame_rootsOk {n : Nat} {W : WorldT n} {E : List Tm} {K : List (Continuation × Option Target)} {t : Tm}
+    {L : List Tm} {d : Tm} {k : Continuation} {x : Option Target} {comp : ComponentTag}
+    (h : RefsOk W (.frame E K t L d k x comp)) : RootsOk W (envOf L d) := by
+  intro i r hr
+  refine h r ?_
+  simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]
+  rcases getD_mem_or L i d with hm | hm
+  · simp only [envOf] at hr; rw [List.getD_eq_getElem?_getD] at hm hr
+    exact .inl (.inr ⟨_, hm, hr⟩)
+  · simp only [envOf] at hr; rw [hm] at hr; exact .inr hr
+
+/-- **The rule's premise at each framed node, from the frame's check**
+(proved, `framed_at_innermost_keys`): at a reached state entering a framed
+node `l` whose call's operands are read from slots, the frame is the
+term's innermost, so where the pass's check of each support of `S l`
+passes at every context of the code and every node with `l`'s
+continuation and handler, the separation it reads holds at the state, and
+every location's key is `none` (`NoKeys`), each support meets `Framed` at
+`Ψc l`, protection read nowhere (milestone 1). -/
+theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Continuation × Option Target)}
+    {c₀ : ComponentTag} {F : Nat → Bool} {S : Nat → List Footprints.Footprint} {Φ : Nat → Footprints.Footprint}
+    {Ψc : Nat → Protocol (fr.F.at fr.C)} {q : Nat → Footprints.SepQuery} {tv : TypeView} {dp : Nat}
+    (hFa : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) (hK : fr.NoKeys)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    (hcheck : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x →
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.H (π.env l') noKeys (fun _ => false) = true)
+    (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      (q l).Sound (envOf L d) b₀.1.s.h) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ T ∈ S l, Framed (Φ l) (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2) := by
+  intro l b₀ e L d k x hFl hb he hk hL hbt T hT
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hinn : innermost b₀.1.t = some (.frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀) := by
+    have hi : innermost (.invoke f r args) = none := by
+      have : ∀ xs : List Tm, (∀ a ∈ xs, isVal a = true) → innermostArgs xs = none := by
+        intro xs hxs
+        induction xs with
+        | nil => rfl
+        | cons y ys ih =>
+          simp only [innermostArgs, hxs y List.mem_cons_self, Bool.true_eq_false, if_false]
+          exact ih fun a ha => hxs a (List.mem_cons_of_mem _ ha)
+      simp only [innermost, hf, hr, Bool.true_eq_false, if_false]
+      exact this args ha
+    rw [hbt]; simp only [innermost, hinst, hi]; rfl
+  obtain ⟨-, c, π, l', hcode, hn, hfr⟩ :=
+    framed_at_innermost_keys hFa hS hE hK hb hinn (by simpa [Family.at] using hcomp)
+  have hρ : RootsOk b₀.1.s.W (envOf L d) := frame_rootsOk (by rw [← hbt]; exact b₀.1.ok)
+  exact hfr (tv := tv) (dp := dp) (hcheck l e k x hFl he hk c π l' hcode hn T hT)
+    (hq l b₀ e L d k x hFl hb he hk hL hbt) hρ (fun _ _ hp => by cases hp)
+
 end ClientFrame
 end Verification.TolerantFrames.ReadOnly
 
@@ -547,5 +700,72 @@ theorem ret_reachedW {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceReq
   let y : Conf := ⟨⟨n, W, h, hpos, hadm, hok⟩, gotoOf r.program r.start L d r.comp, gotoOf_refsOk hsrc hR⟩
   exact .inr ⟨y, rfl, HEq.rfl, rfl, rfl, ⟨(y, g), 0, hN, hg, .refl _⟩, .inl ⟨_, _, _, rfl, hvals n W h L d hN⟩,
     fun _ _ hp => by cases hp⟩
+
+/-- **The returns at reached executions, from the checks** (proved;
+`ret_reachedW` with its transfer premise assembled): `framed_transfer` at
+each framed node (`nodeTransfer_of_transfer`), its own steps from the
+frame's fit and the binding checks (`own_of_fit`), the rule's premise from
+the pass's frame check (`framed_of_check`). What it reads besides the
+checks: the spec's premises (`hsrc`, `hty`, `hvals`, `ChkSound`,
+`StartInv`, the flow's facts at the frame's starts), the members' trace
+certificates at `Ψj` (`cert_of_charges`, to be proved), the separation the
+frame check reads at each framed node's entry, and the callee's effect
+bounding the heap along the call's segment (the callback's arrow, part of
+`Θ_C`). -/
+theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
+    {fr : ClientFrame (Ty ι)} [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)]
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    (hty : ∀ n (W : WorldT n) h t, fr.Call n W h t → 0 < n ∧ WorldAdm W ∧ HeapOk n W h)
+    (hvals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm), fr.Call n W h (gotoOf r.program r.start L d r.comp) →
+      SlotVals L d)
+    (hc : fr.ChkSound) (hi : fr.StartInv)
+    {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow) (hK : fr.NoKeys)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (htok : tokensSomeB Fl = true) (hlow : codesLoweredB Fl = true)
+    (hcomp : fr.F.ofC fr.C r.comp = true)
+    (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true)
+    (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hslots : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
+    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+    (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      (q l).Sound (envOf L d) b₀.1.s.h)
+    {Ψj : Protocol (fr.F.at fr.C)} {G : (St (fr.F.at fr.C) → Prop) → Prop} (certs : fr.TraceCerts Ψj G)
+    (hΘ : ∀ p, (fr.Θ p).le (Ψj p) = true) (hW : ∀ l p, (Ψj p).le (Ψc l p) = true)
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      Ex fr.KStep (fun s => Inside fr.F fr.C (r.program.map (·.expression))
+        (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
+      a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+    FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
+      (fun _ _ _ _ => True) :=
+  ret_reachedW hsrc hty hvals
+    (ClientFrame.nodeTransfer_of_transfer hc hi hcomp hatom certs hΘ hW
+      (ClientFrame.own_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
+      (ClientFrame.framed_of_check (tv := fr.view.view) (dp := 0) hFa hS hE hK hcomp hatom hcheck hq) hΦ)
 
 end Verification.SourceClaimJson.PassUnit

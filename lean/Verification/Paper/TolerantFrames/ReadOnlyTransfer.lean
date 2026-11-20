@@ -198,6 +198,28 @@ theorem transfer_at {Ψc : Protocol (F.at C)} (hΘ : ∀ p, (Θ p).le (Ψ p) = t
 
 end SegRun
 
+/-! ## An entering step may change the heap -/
+
+/-- **The term of the counter-model**: a call whose first actual writes a
+field of an existing object and whose second is a run of the component
+`some 0` not yet entered, at the top level outside the component. -/
+def enterWrite : Tm :=
+  .invoke .nul .nul [.writeAt (.str "x") (.objAt [(.str "x", 0)] .absent 0) .tru, runAt (some 0)]
+
+/-- **An entering step that writes** (counter-model; the draft,
+"Certificates"): the step evaluating the write changes the heap's
+location `0` and leaves the run of `some 0` at the head of the path, so it
+enters a call of the component from a state whose active frame runs no
+code of it. The term is well formed (`wf`); the step is of kind `enter`,
+so the client obligation (read at outside steps) does not read it. -/
+theorem enterWrite_step :
+    Step [.nul] enterWrite [.tru] (.invoke .nul .nul [.nul, runAt (some 0)]) :=
+  .callArg (i := 0) rfl rfl rfl (fun _ hj => absurd hj (Nat.not_lt_zero _))
+    (.writeField (h := [.nul]) (l := 0) rfl rfl (by decide))
+
+#guard wf enterWrite && callsAt none enterWrite == 0 && !activeIn none enterWrite &&
+  callsAt none (.invoke .nul .nul [.nul, runAt (some 0)]) == 1
+
 /-! ## At a frame of the claim's term -/
 
 /-- **A frame's term that has returned**: a value, or a throw. -/
@@ -635,6 +657,58 @@ theorem segWithin_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr
   have hla := lay_reached hly ha
   have hda : depthC fr.F fr.C none a.1.t = 1 := hcall.depth
   refine (within_run (st := lift fr.F fr.C none y.1 y.2) (st' := lift fr.F fr.C none z.1 z.2) hK hrun
+    (fun i h₁ t₁ hi hs₁ => ?_) hs (by rw [← hat]; exact hwa.1) ?_ hwa.2
+    (by simp only [lift]; rw [← hyt]; exact y.1.ok) (by rw [← hyt]; exact hfy.1) ?_ hT htok hlow hfa.2 hla.2
+    (hroots f r args hat) (ex_sites hS hex).2).mono hle
+  · obtain ⟨b, n, hb, hbh⟩ := inside_prefix hex hat (Nat.le_of_lt hi) hs₁
+    have hfb := fitsAt_reached hFa hS hE (Reached.ex ha hb)
+    intro l v hv
+    rw [← hbh] at hv
+    exact (hfb.2 l v hv).val
+  · simp [writesK, writesK_val hfv, writesK_val hrv, List.flatMap_eq_nil_iff.mpr fun a ha => writesK_val (hargs a ha)]
+  · have hdy1 : depthC fr.F fr.C none (.frame E K u L d k x comp) = 1 := by
+      rw [← hyt]; have : δ fr.F fr.C none y = 1 := by rw [hdy]; exact hda
+      exact this
+    have hin : ¬ OutsideAt fr.F fr.C none (.frame E K u L d k x comp) := by rw [← hyt]; exact ho
+    exact activeFrame_runsC hc hdy1 hin
+
+/-- **The segment's own steps within the probe's protocol, from the call's
+values in depth** (proved; `segWithin_of_run` with the root premise read in
+depth, by `within_deep`): every value of the call's term meets in depth,
+at the call state's sites, a set `T` passing the closure check. -/
+theorem segWithin_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Sites (fr.F.at fr.C)} {Ψc : Protocol (fr.F.at fr.C)}
+    (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ F lay) a.1.t = true ∧ HeapLay (layQ F lay) a.1.s.h)
+    (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
+    (hlow : codesLoweredB F = true) (hle : ∀ p, (probeProtocol (flowKinds F) T p).le (Ψc p) = true)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
+    (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
+      ∀ v ∈ vals allC true (.invoke f r args), DeepIn a.2.site T v) :
+    fr.SegWithin Ψc E K L d k x comp a := by
+  intro m y z hex hy hyz hdy ho
+  obtain ⟨f, r, args, ⟨hat, hc⟩, hfv, hrv, hargs⟩ := id hcall
+  obtain ⟨u, hrun, hyt⟩ := FrameCore.inside_run hex hat
+  obtain ⟨w, ⟨hw, -⟩, hnr⟩ := id hy
+  rw [hyt] at hw; cases hw
+  have hyzs := hyz.1.step
+  rw [hyt] at hyzs
+  obtain ⟨u', hs, -⟩ := frameC_shape hyzs hnr
+  have hK : HeapObservations.EvalCtx (fun t => Tm.frame E K t L d k x comp) :=
+    .frameC E K L d k x comp .hole
+  have hya := Reached.ex ha hex
+  have hfa := fitsAt_reached hFa hS hE ha
+  have hfy := fitsAt_reached hFa hS hE hya
+  have hwa := wok_reached hwk ha
+  have hla := lay_reached hly ha
+  have hda : depthC fr.F fr.C none a.1.t = 1 := hcall.depth
+  refine (within_deep (st := lift fr.F fr.C none y.1 y.2) (st' := lift fr.F fr.C none z.1 z.2) hK hrun
     (fun i h₁ t₁ hi hs₁ => ?_) hs (by rw [← hat]; exact hwa.1) ?_ hwa.2
     (by simp only [lift]; rw [← hyt]; exact y.1.ok) (by rw [← hyt]; exact hfy.1) ?_ hT htok hlow hfa.2 hla.2
     (hroots f r args hat) (ex_sites hS hex).2).mono hle

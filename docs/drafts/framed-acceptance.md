@@ -555,9 +555,23 @@ entry's heap and keep each invariant of $`G`$ (`ownQ`), bounded by
 step prepended, each own step's property read from the certificate of the
 code its call entered at the call's entry (`exec_bound_trace`,
 `callRun_trace`). Certificates are at $`\Psi_j`$. `cert_of_charges` (to be proved):
-`enterWithin` (the entering step and its incoming crossing change no heap
-location) and `own` from `within_charges`; `enterKeeps`, `tolerant`
-vacuous at $`G=\emptyset`$.
+`enterWithin` and `own` from `within_charges`, the base of the member's
+run its entered run's environment; `enterKeeps`, `tolerant` vacuous at
+$`G=\emptyset`$. Well-formedness alone does not give `enterWithin`: a
+step of outside code that evaluates a write just before a run of $`C`$ not
+yet entered, at a pending position, changes the heap and enters the call
+(`enterWrite_step`, counter-model, `ReadOnlyTransfer.lean`), and neither
+$`\Theta_C`$ (read at steps of kind `outside`) nor $`C`$'s checks bound it.
+`cert_of_charges` reads an invariant of the reached states: a run of
+$`C`$ not yet entered sits off the path only as a binding's body (the rest
+binding of `graphEntry`), so every entering step is a call of graph code
+or a binding's step, which keep the heap, and the call's run ends at its
+return. Its base values are the entered run's environment, the call's
+receiver, actuals, captures and callee; at an entry through a binding the
+fit of the entering state gives the environment its slots' sets, which
+`OpenAt` bounds from below only, so their sets within the closure of the
+capture sites and $`O`$ come from the call's values at the call of graph
+code that left the binding.
 
 ## Re-entry
 
@@ -1364,13 +1378,35 @@ Lean (proved, `FramedReturns.lean`):
   arrow, part of $`\Theta_C`$).
 - `own_of_run`: that `SegWithin` premise by `segWithin_of_run` at each
   node's set $`T_l`$, from `hroots` at the node's entry.
+- `own_of_fit`: that premise from the frame's fit. The fit of a frame
+  records its node through its continuation and handler alone (`NodeOf`),
+  so it gives each slot value the slot's set at some node $`l'`$ sharing
+  $`l`$'s continuation and handler, at some context; where $`T_l`$ holds
+  the sets of the operand slots (`atomSlots`) at every such node and
+  context (`hslots`), each operand meets a set within $`T_l`$ (`atom_vj`,
+  a constant every set), and so each value of the call's term meets
+  $`T_l`$ in depth (`deepIn_of_checks`, `DeepIn.held`), the premise of
+  `segWithin_of_deep` (`within_deep`, `ReadOnlySegment.lean`).
+- `framed_of_check`: the `Framed` premise from the pass's check of each
+  support at every context of the code and every node with $`l`$'s
+  continuation and handler (`frameCheckAt`, keys `noKeys`, no
+  protection), by `framed_at_innermost_keys`, where the separation the
+  check reads holds at the node's entry.
+- `ret_reachedW_of_checks`: `ret_reachedW` with its transfer premise
+  assembled from `nodeTransfer_of_transfer`, `own_of_fit` and
+  `framed_of_check`. Its premises besides the checks (`atomCallB`,
+  `hslots`, the closure check of each $`T_l`$, $`W_c(T_l)\sqsubseteq\Psi_c(l)`$,
+  the frame check): the spec's (`hsrc`, `hty`, `hvals`, `ChkSound`,
+  `StartInv`, `Facts`, `FlowSites`, `EntryFits`, `NoKeys`, the residual
+  invariant and layout provenance at the starts, `tokensSomeB`,
+  `codesLoweredB`), the trace certificates at $`\Psi_j`$ with
+  $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$ (`cert_of_charges`),
+  the separation the frame check reads at each framed node's entry, and
+  the callee's effect bounding the heap along the call (part of
+  $`\Theta_C`$).
 
 With no framed node the returns hold of every frame
-(`framedReturnsReached_none`, proved). For `hroots`: the fit of a frame
-records its node through its continuation and handler alone (`NodeOf`), so
-the operands' sets the fit gives are those of some node sharing $`l`$'s
-continuation and handler; $`T_l`$ is to hold the slots' sets at each such
-node and context, as `framedSupportsAt` checks `Framed` at each.
+(`framedReturnsReached_none`, proved).
 
 ### The framed claim, from the check
 
@@ -1510,8 +1546,11 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `ex_sites`, `segWithin_of_run` (`ReadOnlyTransfer.lean`); `SafeRet.underW`,
 `framedRun_of_returnsW`, `rowAt_reads_world`, `TopRuns.step`,
 `frame_val_heap`, `frame_to_frame`, `retInv_step`, `ret_reachedW`,
-`atomCall_inst`, `nodeTransfer_of_transfer`, `own_of_run`
-(`FramedReturns.lean`).
+`atomCall_inst`, `nodeTransfer_of_transfer`, `own_of_run`, `atom_vj`,
+`own_of_fit`, `frame_rootsOk`, `framed_of_check`, `ret_reachedW_of_checks`
+(`FramedReturns.lean`); `within_deep`, `DeepIn.held`
+(`ReadOnlySegment.lean`); `segWithin_of_deep`, `enterWrite_step`
+(`ReadOnlyTransfer.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1521,12 +1560,12 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`segWithin_of_run`'s premise at the call (the call's values' sets within $`L(c)`$, from the call node's fit), `cert_of_charges`,
+`cert_of_charges` (with the invariant on runs not yet entered),
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reachedW`'s premises for `spec.frame r` (`hty` and `hvals` from
-`EntryAt`, `atomCallB` at the framed nodes, `nodeTransfer_of_transfer`'s
-premises from the check), each field of `FramedObligations` from the check,
+`EntryAt`; `ret_reachedW_of_checks`' other premises from the check),
+each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 
