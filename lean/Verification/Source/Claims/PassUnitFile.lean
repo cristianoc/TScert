@@ -12,7 +12,7 @@ environment meets its interface at every budget (`approx_meets`), so its
 captures meet their types (docs/SINGLE-PASS-THEOREM.md, section 6). -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- The labels of a file's frozen store. -/
 abbrev Lab (f : FilePlans) : Type := EquationStore.CheckedLabel f.F.equations f.F.primitive

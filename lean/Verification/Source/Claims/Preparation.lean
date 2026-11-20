@@ -4,7 +4,7 @@ import Verification.Source.Claims.Diagnostics
 import Verification.Source.FragmentTypes
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]

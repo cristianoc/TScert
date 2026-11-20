@@ -2,7 +2,7 @@ import Verification.Source.Claims.FragmentFront
 
 /-! Closed component results consumed at the stage-store replay boundary. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction
+open Lean ProgramTyping SourceElaboration
 
 /-- The complete module wire document represented by a decoded module. -/
 def interfaceModuleJson (m : Fragment.ModuleAst) : Json :=

@@ -3,7 +3,7 @@ import Verification.Source.FragmentTypes
 import Verification.Types.ProtoFree
 
 /-! Resolves source claims and type-directed expression operations. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -860,4 +860,4 @@ slice tells the values apart clause by clause, never inside one label. -/
   exprType fc e
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

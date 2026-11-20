@@ -17,7 +17,7 @@ docs/SINGLE-PASS-THEOREM.md, section 4. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 variable {ε : Verification.HeapKnowledge.EntryState}
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-! ## The module's environment -/
 

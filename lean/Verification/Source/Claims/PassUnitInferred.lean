@@ -12,7 +12,7 @@ candidates: `passGroupMode8_safe`, every member of an accepted group is
 safe at the plans the route started from. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **`f'` is `f` with other candidates**: the same file and store, each
 plan of `f'`, a graph plan or a framed plan, the one of `f` at the same

@@ -159,7 +159,7 @@ structure ProbeModule where
   rest : Bool := false
 
 def ProbeModule.ofRequest {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (name : String)
-    (r : SourceExtraction.SourceRequest σ ι) : Option ProbeModule :=
+    (r : SourceElaboration.SourceRequest σ ι) : Option ProbeModule :=
   if r.receiver then none else
   -- (the rest's spine is one input, past the arity)
   let ar := r.inputs.length - r.siblings.length - (if r.restParam then 1 else 0)

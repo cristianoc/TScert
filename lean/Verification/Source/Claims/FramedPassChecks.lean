@@ -20,7 +20,7 @@ declaration document describes:
 - **A realized code's body** (`moduleBody_realized`): the request's code. -/
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction ControlFlow LabelStore
+open Lean ProgramTyping SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly
 
 /-- **The `@clients` rows of a component**: the rows of the exported types

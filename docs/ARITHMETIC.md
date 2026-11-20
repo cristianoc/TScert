@@ -1249,7 +1249,7 @@ writes is `parameterKept` in `tools/bound-annotations.mts`. Lean's
 allocation output is `HeapExpressionRules.allocOutput`; an importer's
 invariants are `writtenImport`, their agreement with the unit
 `Claims.Imports`. A request's postcondition is `SourceRequest.ensures`,
-renamed by `extractNormalizedFn`; the table is `GraphCode.trackTable`, the
+renamed by `lowerNormalizedFn`; the table is `GraphCode.trackTable`, the
 check `GraphCode.returnsEnsure` with `trackFollows` and `returnEntails` (by
 `indicesCheckBy` through `returnMapping`). Proved: `GraphCode.goto_ensures`,
 by `EnsState`, `TracksAt` and `NextTracks`, with `edgesTrack_sound`; for

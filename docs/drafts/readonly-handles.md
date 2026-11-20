@@ -2560,7 +2560,7 @@ before (conjectured: no theorem composes entries).
 
 **Calls between module functions.** A module function reaches the module
 functions its body names at the request's slots past its parameters
-(`SourceExtraction.extractNormalizedFn`, the siblings); a module cell is
+(`SourceElaboration.lowerNormalizedFn`, the siblings); a module cell is
 read from storage, and a call of what it holds is read at $`O`$
 (`Fits.invoke`).
 The calls the claim is about hold, at each sibling slot whose function's

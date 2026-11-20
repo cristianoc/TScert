@@ -2,7 +2,7 @@ import Verification.Source.Lowering.Closures
 import Verification.Source.Lowering.Plans
 import Verification.Source.FragmentTypes
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -900,4 +900,4 @@ slots are introduced only after the operand supplying their type is checked. -/
   | _ => return plan
 
 end LoweringExpression
-end Verification.SourceExtraction
+end Verification.SourceElaboration

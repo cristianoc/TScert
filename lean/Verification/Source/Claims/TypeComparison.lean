@@ -1,10 +1,10 @@
-import Verification.Source.Claims.Extraction
-import Verification.Source.Lowering.Synthesis
+import Verification.Source.Claims.Elaboration
+import Verification.Source.Synthesis
 
 /-! A module value's type as a unit reads it, and a front's generic
 values (`Front.genericValues`), as the single pass's front computes them. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction
+open Lean ProgramTyping SourceElaboration
 open EquationGraphs (Tree)
 
 /-- A module value's type as the unit reads it: its written signature, its

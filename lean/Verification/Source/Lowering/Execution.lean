@@ -2,7 +2,7 @@ import Verification.Source.Lowering.Atoms
 import Verification.Source.Lowering.Control
 import Verification.Source.Lowering.Operands
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -1206,4 +1206,4 @@ loop, which is then no point of the graph). -/
 
 
 end LoweringExecution
-end Verification.SourceExtraction
+end Verification.SourceElaboration

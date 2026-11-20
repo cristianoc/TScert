@@ -1450,7 +1450,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Modifies<{ val
 /** `try { … } catch (e) { … } finally { … }`. The caught value is
  * `unknown`, the only annotation admitted: anything may be thrown. The
  * finalizer runs on every way out of the body and the handler, which the
- * lowering states by running it on each (`SourceExtraction`). */
+ * lowering states by running it on each (`SourceElaboration.body`). */
 export function tryStmt(this: Gate, node: ts.TryStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const handler = node.catchClause;

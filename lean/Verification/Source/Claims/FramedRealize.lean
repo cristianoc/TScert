@@ -37,7 +37,7 @@ node past the body. Where the request's nodes target only its own labels
   checks read the flow's sites (`flowSites`). -/
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly HeapObservations
 
 section

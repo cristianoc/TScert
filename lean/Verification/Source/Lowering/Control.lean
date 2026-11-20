@@ -4,7 +4,7 @@ import Verification.Source.Lowering.Observations
 import Verification.Source.Lowering.Plans
 
 /-! Builds control transfers and their scope mappings. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -381,4 +381,4 @@ read through its own mapping, found in `scope` by descriptor, else by name
     fun i => slots[i]?.getD 0)⟩
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

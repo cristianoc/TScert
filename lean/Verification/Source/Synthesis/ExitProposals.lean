@@ -40,7 +40,7 @@ offered at, with the footprint check of each step
 (`SinglePass.recordsAdmit`), decides whether the proposal holds. Today's
 effect format receives it through one projection (`ClassSummary.project`),
 an upper bound of the summary at each exit (`ClassSummary.project_covers`). -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open Verification Footprints CallEffects Parity
 
 abbrev Closed := Footprints.Closed
@@ -394,4 +394,4 @@ theorem iterated_step (B : ClassSummary) : exitWithin (andThen (iterated B) B.no
 
 end ClassSummary
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

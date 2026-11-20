@@ -147,7 +147,7 @@ private def pathRow : ComponentWire.Clients :=
 
 /-- A request of one node returning `undefined`, its frames tagged with the
 component `0`. -/
-private def req₀ : SourceExtraction.SourceRequest EquationStore.State EquationGraphs.Tree :=
+private def req₀ : SourceElaboration.SourceRequest EquationStore.State EquationGraphs.Tree :=
   { types := { doc := #[] }, program := [], claims := [], result := [], start := 0, inputs := [], obligations := [],
     async := false, stated := none, comp := some 0 }
 

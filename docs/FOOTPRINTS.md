@@ -607,7 +607,7 @@ The Fragment states every callable definition's completion kind, `sync` or
 [FRAGMENT-FORMAT](FRAGMENT-FORMAT.md)); Lean refuses an async declaration
 unit, async graph code and a qualified read of an async unit claiming any
 other footprint, before any certification is tried (`RequestJson.asyncEffects`;
-proved: `SourceExtraction.checkRequests_async`):
+proved: `SourceElaboration.checkRequests_async`):
 
 ```math
 \frac{\mathrm{completion}(d)=\mathsf{async}\qquad \mathrm{claim}(d)=\Phi}
@@ -630,7 +630,7 @@ returned function's footprint. An async function keeps `top`, the language's
 restriction ([the fragment](SOURCE-FRAGMENT.md)). A function literal's
 effect is proposed from a summary of each operation its body walks, composed
 along its control flow at the class level (`ClassSummary`,
-`lean/Verification/Source/Lowering/ExitProposals.lean`, and
+`lean/Verification/Source/Synthesis/ExitProposals.lean`, and
 `Synthesis.callChanges`), then projected into the closed footprint and throw
 bound (`ClassSummary.project`). A method call on an object whose type has several
 alternatives once each declaration it names is unfolded, with actuals that

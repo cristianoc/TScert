@@ -17,7 +17,7 @@ the footprint its module's units establish where the fragment resolves it
 to one (`fragmentPlansWithModules`). The loop heads' facts are the given
 file's (`FilePlans.passGroup`). -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction
+open Lean ProgramTyping SourceElaboration
 open EquationGraphs (Tree)
 
 /-- The generic closures a source tree creates, as their trees, outer first. -/
@@ -437,7 +437,7 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
   let module := fr.moduleFunctions ++ fr.classSelves
   -- Its generic closures (a generic class's methods among them) claimed at
   -- the schemes their annotations state, as scheme rows, before the walk
-  -- types the values holding them (`extractMember`'s order, the producer's
+  -- types the values holding them (`elaborateMember`'s order, the producer's
   -- claims.ml:546-564).
   let source := Json.mkObj [("body", (fr.ast.getObjVal? "init").toOption.getD (.arr #[]))]
   let atSchemes : Except String (EquationStore.State × Fragment.Fn × Function Tree) := do
@@ -507,7 +507,7 @@ def Front.withNeverImports (fr : Front) : Front := Id.run do
     let kept := out ++ [v]
     -- (an intrinsic, named `%…%`, keeps its reviewed contract)
     if own.contains v.1 || fr.qualifiedNames.contains v.1 || v.1.startsWith "%" ||
-        v.1 == SourceExtraction.arrayPrototypeName then
+        v.1 == SourceElaboration.arrayPrototypeName then
       out := kept
       continue
     match runCompiler T [] (moduleValueType v) with
@@ -590,7 +590,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       SinglePass.work "propose: member plans" (fr.nameItem name) fun _ => (do
     let fr' := initTyped (fr.withStandIns sis)
     let members := (fr'.selected (some [name])).flatMap fr'.group
-    let (T, plans) := fr'.extractSome (members.foldl (·.insert ·) {}) (some (retypeFromFragment force))
+    let (T, plans) := fr'.elaborateSome (members.foldl (·.insert ·) {}) (some (retypeFromFragment force))
       (some (instancesFromWalk force)) (some (writtenSchemes force))
     let F ← EquationStore.freeze T
     let f : FilePlans := ⟨⟨ast, withStandIns claims sis, qualified, [], depends⟩, fr', F,
@@ -620,7 +620,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let names := if !proposed then names else names.map (·.filter fr.proposes)
   let wanted := wantedOf fr names
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
-    fr.extractSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
+    fr.elaborateSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
       (some (writtenSchemes force))
   -- With `interfaceSlots`, each ordinary function's type as its callers
   -- read it, lowered into the store: the module's interface types.

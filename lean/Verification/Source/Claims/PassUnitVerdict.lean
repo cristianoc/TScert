@@ -8,7 +8,7 @@ line `"accepted": true`, every member of the unit's group is safe, under the
 graph-level hypotheses `RunSound` and `RunKeepsSummaries` alone. docs/SINGLE-PASS-THEOREM.md, section 1. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **The headline: mode 8's accepted verdict** (proved, under `RunSound`
 and `RunKeepsSummaries`). Mode 8 plans the file from the interfaces it

@@ -12,7 +12,7 @@ supplies the source fingerprint; this module checks agreement, not hashing or
 the parser's semantic correctness. Saved statuses are not part of the
 schema. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 /-- A rigid name refers to the enclosing source function's binder. It is never
 interpreted as a ground graph label or replaced with its upper bound. -/

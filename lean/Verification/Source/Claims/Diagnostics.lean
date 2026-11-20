@@ -1,7 +1,7 @@
 import Verification.Source.Lowering.Types
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 /-- A generic module value's instance checks (`moduleInstances`) are not
 ordinary graph sequents, but their failures use the same mandatory located

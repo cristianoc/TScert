@@ -191,9 +191,9 @@ private partial def defaultPrologues : Json → Except String (List (Span × Lis
 private def bodyGraph (owner : Span) (params : List String) (body : List Stmt)
     (module : Bool := false) : Except String Graph := do
   let graph ← build owner [] body
-  let cells := (SourceExtraction.cellLocals params body module).map
+  let cells := (SourceElaboration.cellLocals params body module).map
     fun (name, source) => (⟨name, some (source.getD owner)⟩ : Descriptor)
-  return { graph with cells := cells, moduleReads := SourceExtraction.moduleReadNames body }
+  return { graph with cells := cells, moduleReads := SourceElaboration.moduleReadNames body }
 
 /-- Nested executable bodies have their own owner, independent of the point
 where their closure is created or of the signatures proposed for that closure. -/

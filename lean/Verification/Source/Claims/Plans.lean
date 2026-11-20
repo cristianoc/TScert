@@ -4,7 +4,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Source.Claims.FramedSpec
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 /-- A unit's plan: its graph request, a generic unit and a generic closure
 included, their binders parameter rows the graph checks at every

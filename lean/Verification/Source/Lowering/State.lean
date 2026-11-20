@@ -7,7 +7,7 @@ import Verification.Source.SourceFacts
 import Verification.Programs.WorkTable
 
 /-! Owns lexical slots and the mutable graph construction state. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -701,4 +701,4 @@ def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : 
     nameReads := s.nameReads.toList })
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

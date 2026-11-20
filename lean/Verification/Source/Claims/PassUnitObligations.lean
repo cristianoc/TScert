@@ -11,7 +11,7 @@ environment meeting its context, is safe at its type
 (docs/SINGLE-PASS-THEOREM.md, section 8). -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open ProgramCertificates (CodesSound SummariesSound ReadSummary Evidence CheckResult checkTreeUsing_sound)
 
 section

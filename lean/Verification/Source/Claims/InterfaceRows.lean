@@ -14,7 +14,7 @@ store reads the import at. The two checks give the importer's slot type
 the module's interface's meaning (`signatureAgrees_of_checks`,
 docs/SINGLE-PASS-THEOREM.md, section 7). -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping SourceExtraction LabelStore PositiveGraphs
+open Lean ProgramTyping SourceElaboration LabelStore PositiveGraphs
 open EquationGraphs (Tree)
 
 /-- A module's interface rows, decoded: the table's rows by position, its
@@ -136,7 +136,7 @@ def importerRowsAgree {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t :
 
 /-- The module values unit `j`'s request captures, in its frame's order
 after its parameters: the values its extraction reaches
-(`extractMember`), each of those its body mentions (`moduleReadNames`). -/
+(`elaborateMember`), each of those its body mentions (`moduleReadNames`). -/
 def Front.captureNames (fr : Front) (j : Nat) : List String :=
   match fr.units[j]? with
   | none => []

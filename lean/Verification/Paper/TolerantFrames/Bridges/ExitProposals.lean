@@ -1,11 +1,11 @@
-import Verification.Source.Lowering.ExitProposals
+import Verification.Source.Synthesis.ExitProposals
 import Verification.Paper.TolerantFrames.CommandComposition
 import Verification.Paper.TolerantFrames.CommandLoops
 
 /-! # Proposed exit summaries: soundness for runs
 
 The rules composing the front's class-level summaries
-(`Source/Lowering/ExitProposals.lean`) are the class instances of the note's
+(`Source/Synthesis/ExitProposals.lean`) are the class instances of the note's
 rules over command summaries (`Paper/TolerantFrames/CommandSummaries.lean`,
 `Paper/TolerantFrames/CommandComposition.lean`, `Paper/TolerantFrames/CommandLoops.lean`):
 
@@ -27,7 +27,7 @@ for the union of the runs of the prefixes walked (each operation by
 `extend_sound`; a handler entered from both exits of its body, an
 over-approximation `handle_sound` covers; a loop body walked once or more
 and closed by `close`, `within_close`). -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open Verification Footprints CallEffects Parity
 
 namespace ClassSummary
@@ -287,4 +287,4 @@ theorem sound_spec {P : TolerantFrames.Assertion} {R : CallEffects.Runs} {S : Cl
 
 end ClassSummary
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

@@ -12,7 +12,7 @@ over a closed set (`link`, `closedUnits_linked`), and how a discharged
 interface meets a caller's input slot (`envOk_of_linked`). -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-! ## The closure of a file's verdicts -/
 

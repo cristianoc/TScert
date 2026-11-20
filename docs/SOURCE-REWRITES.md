@@ -4908,7 +4908,7 @@ stable field contract and adds no external assumption.
 
 `tools/shadow-contracts.mts#print` prints a nullable receiver with
 `term.receiver && print(term.receiver)` and interpolates the returned
-string. The walk (`Lowering/Synthesis.lean`) types `a && b` as the falsy
+string. The walk (`Synthesis.lean`) types `a && b` as the falsy
 slice of `a`'s type joined with `b`'s (`slice`), the slice read through
 `a`'s named declaration: every object is truthy, so only `null` from that
 operand can be a result of `&&` here. A named union that admits `false`

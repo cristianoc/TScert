@@ -126,7 +126,7 @@ Source signature comparisons use this same record with `entry-claim`,
 `return-contract` or `binding-annotation`. Equality requires two sequential
 inclusions; a failure carries the direction being checked. Explicit instance
 arguments use `scheme-elimination`. Both source spans in the record are derived
-from the located comparison by `SourceExtraction.subtypeFailure`.
+from the located comparison by `SourceElaboration.subtypeFailure`.
 
 Coverage measurements count exhausted attempts separately. A step's search
 among alternative derivations retains this outcome through failed

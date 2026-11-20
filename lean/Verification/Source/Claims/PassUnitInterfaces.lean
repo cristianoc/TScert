@@ -17,7 +17,7 @@ two stores agree on its signature (`entry_met`). The statements and the
 hypotheses' owners are in docs/SINGLE-PASS-THEOREM.md, section 7. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-! ## Kinds of outside slots -/
 

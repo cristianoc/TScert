@@ -12,7 +12,7 @@ source but `EntryHolds` and `GraphGuarantee`, which read their facts at the
 run's entry state (`HeapKnowledge.EntryState`: the environment and heap the
 run starts in); that module is not on this branch, so it cannot be imported. The
 namespace is this lane's, and the opened namespaces are the source's but
-`SourceExtraction`, which no copied declaration reads. `run_sound`
+`SourceElaboration`, which no copied declaration reads. `run_sound`
 (`TolerantFramesRunSound`) proves `RunSound` from the graph-level proof's
 named hypotheses. -/
 namespace Verification.TolerantFrames.Target

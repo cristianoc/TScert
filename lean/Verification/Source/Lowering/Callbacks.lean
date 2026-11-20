@@ -1,7 +1,7 @@
 import Verification.Source.Lowering.State
 import Verification.Source.BindingPlan
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open ProgramTyping ControlFlow
 open Fragment LabelStore
 open EquationGraphs (Tree)
@@ -18,4 +18,4 @@ structure RecursiveLowering where
   body : Span → SourceClaims.Function Tree → Ty Tree → List (ScopeBinding Tree) →
     List Fragment.Stmt → Compiler Target
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration

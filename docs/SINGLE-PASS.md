@@ -754,7 +754,7 @@ For a unit with spine regions or a footprint's
 regional fallback, the regional facts
 at its statement entries ([spine regions](#spine-regions)) are computed
 from its plan (`regionalLines`): the slots holding entry argument paths
-(`SourceExtraction.regionTable`), the fresh values and cells and the
+(`SourceElaboration.regionTable`), the fresh values and cells and the
 fresh fields, each a greatest fixed point (`freshTables`) over the
 evidence the computed claims give (`claimedCertificate`: a call of a slot its derivation read off the
 callee's signatures, any other node its sequent). A call is taken to

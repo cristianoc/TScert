@@ -3,7 +3,7 @@ import Verification.Source.Lowering.ClosureSetup
 import Verification.Source.Lowering.Control
 import Verification.Source.FlowGraph
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -498,4 +498,4 @@ private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) 
   return target
 
 end LoweringFlow
-end Verification.SourceExtraction
+end Verification.SourceElaboration

@@ -1,4 +1,4 @@
-import Verification.Source.Claims.Extraction
+import Verification.Source.Claims.Elaboration
 import Verification.Source.EffectJson
 
 /-! Certified imports (SOURCE-CONTRACTS.md, "Certified imports"): the origin
@@ -50,7 +50,7 @@ private def decodeCode (m : Fragment.ModuleAst) : Except String DecodedModule :=
   let init ← Fragment.decodeInit m.document
   let code := init ++ functions.flatMap (·.body)
   let names := (functions.map (·.name)).eraseDups
-  return ⟨functions, init, names.filter fun n => !code.any (SourceExtraction.assignsStmt n)⟩
+  return ⟨functions, init, names.filter fun n => !code.any (SourceElaboration.assignsStmt n)⟩
 
 /-- Each module's code (`decodeCode`) by its location, the first module of
 that location's, decoded at most once, where a read first asks for it. -/

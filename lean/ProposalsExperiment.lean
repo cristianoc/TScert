@@ -10,7 +10,7 @@ import Verification.Source.RequestCli
 
 namespace Verification.ProposalsExperiment
 open Lean ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
-open SourceClaimJson RequestJson SourceExtraction LabelStore
+open SourceClaimJson RequestJson SourceElaboration LabelStore
 open Footprints (Change)
 abbrev FC := Verification.Footprints.Closed
 open HeapKnowledge (Knowledge)
@@ -472,7 +472,7 @@ def inferAll (ast : Json) (key : String) (budget : SearchBudget) (fuel : Nat) (e
       let (Φ, ot) := match written f with
         | some w => w
         | none => (got.footprint, got.onThrow)
-      let R := if (SourceExtraction.resultWithFootprint fr.d.types f.ret got.result).isOk then got.result else .top
+      let R := if (SourceElaboration.resultWithFootprint fr.d.types f.ret got.result).isOk then got.result else .top
       let si : StandIn := { name := f.name, footprint := Φ, onThrow := ot && Φ != Footprints.Closed.top, resultFootprint := R }
       found := found ++ [si]
       let cmp := match walkClaim with

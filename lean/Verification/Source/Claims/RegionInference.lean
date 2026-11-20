@@ -3,7 +3,7 @@ import Verification.Source.Claims.Json
 /-! The regional tables a unit's loop heads are given (`SinglePass.Regional`'s
 `heads`, `regionalFromJson`), inferred from its graph and claims where no
 given file states them: the slots holding entry argument paths
-(`SourceExtraction.regionTable`), the fresh values and cells
+(`SourceElaboration.regionTable`), the fresh values and cells
 and the fresh fields, each propagated by `graphWorklist` to the
 fixed point of the existing transfers over its certificate
 (`regionalGiven`), here over the evidence each node's claim gives
@@ -13,7 +13,7 @@ Each table reaches the pass as a proposal: the regional check
 (`ArgumentRegionGraph.checkNode`) checks a loop head's entries on every edge
 into it. -/
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
@@ -21,7 +21,7 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- Each node's evidence as its claim states it: a call of a slot its
 derivation read off the callee's signatures (`SinglePass.directCall`, each
 precondition taken as admitted), any other node its sequent. -/
-def claimedCertificate (r : SourceExtraction.SourceRequest σ ι) : ControlFlow.Certificate ι :=
+def claimedCertificate (r : SourceElaboration.SourceRequest σ ι) : ControlFlow.Certificate ι :=
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
   (r.program.zip r.claims).map fun (n, c) =>
@@ -33,7 +33,7 @@ def claimedCertificate (r : SourceExtraction.SourceRequest σ ι) : ControlFlow.
     | none => ({ sequent := some ⟨c.context, n.expression, c.type⟩, edges := [] } : ControlFlow.NodeEvidence ι)
 
 /-- One pass over candidate fresh values and cells, as the existing
-search's (`SourceExtraction.freshTablesPass`), but a call whose derivation
+search's (`SourceElaboration.freshTablesPass`), but a call whose derivation
 the claims do not give (no `SinglePass.directCall` one) is taken to keep
 its cells: the pass's own evidence decides it there, and a cell it does not
 keep is an entry the edge into the head does not establish. -/
@@ -98,7 +98,7 @@ The inferred data remains a proposal checked by the pass. -/
 /-- The field names the spine regions of a unit's callees read through one
 field: the effects each call node's context types state, read from their
 normal frames (`regionNames` over a certificate's selected effects). -/
-def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :=
+def calleeRegionNames (r : SourceElaboration.SourceRequest σ ι) : List String :=
   let G := RequestJson.graph r.toRequest
   let tys := ((r.program.zip r.claims).flatMap fun (n, c) => match n.expression with
     | .invoke .. => c.context
@@ -112,13 +112,13 @@ def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :
 (`regionalGiven`'s shape): `force` adds at each one an entry no edge
 establishes (a fresh value, a fresh cell, an argument path or a fresh field,
 by its kind), the adversarial proposal the pass's edge check refuses. -/
-def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints.Closed)
+def regionalInferred (r : SourceElaboration.SourceRequest σ ι) (Φ : Footprints.Closed)
     (regions : List Footprints.ArgumentSpineRegion) (force : Option String := none) : Json :=
   let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
   let C := claimedCertificate r
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
-  let table := SourceExtraction.regionTable P C r.start regions
+  let table := SourceElaboration.regionTable P C r.start regions
   let nodes := (P.zip C).zipIdx
   let init := (nodes.map fun ((_, c), l) =>
     if l = r.start then [] else List.range (ControlFlow.entry c).length).toArray
@@ -131,7 +131,7 @@ def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints
     let start' := (nodes.map fun ((_, c), l) => if l = r.start then [] else
       (List.range (ControlFlow.entry c).length).flatMap fun j => names.map fun f => (j, f)).toArray
     (graphWorklist nodes
-      (fun node fields => SourceExtraction.freshFieldsPass G names values [node] fields)
+      (fun node fields => SourceElaboration.freshFieldsPass G names values [node] fields)
       (fun fields l => fields.getD l []) (2 * P.length + 2) start').getD #[]
   let width := fun (l : Nat) => ((r.claims[l]?).map (·.context.length)).getD 0
   -- (forced: one slot past those the table states at the entry, each kind)
@@ -158,7 +158,7 @@ def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints
 /-- A unit's inferred regional lines: its spine regions' (`regional`) and its
 footprint's regional fallback's (`footprintRegional`), as `givenLines`
 writes them. -/
-def regionalLines (r : SourceExtraction.SourceRequest σ ι) (force : Option String := none) : List (String × Json) :=
+def regionalLines (r : SourceElaboration.SourceRequest σ ι) (force : Option String := none) : List (String × Json) :=
   (match r.regional with
     | some (Φ, regions) => [("regional", regionalInferred r Φ regions force)]
     | none => []) ++
@@ -253,7 +253,7 @@ element of outside every loop it holds (`elementWritten`: the write keeps a quan
 array apart from it, `IndexWrites.writeAtoms`), as `IndexFact.apart`. With
 `force` (`TSCERT_FORCE=head-apart`), each such side also stated apart from
 itself, the adversarial pair the pass's edge check refuses. -/
-def freshApartAt (r : SourceExtraction.SourceRequest σ ι) (force : Bool := false) :
+def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := false) :
     List (Nat × List HeapKnowledge.IndexAtom) := Id.run do
   let G := RequestJson.graph r.toRequest
   let P := r.program

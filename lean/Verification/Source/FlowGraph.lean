@@ -51,7 +51,7 @@ structure Graph where
   moduleReads : List String := []
   entry : Nat
   nodes : Array Node
-  /-- The body's mutable bindings held in cells (`SourceExtraction.cellLocals`):
+  /-- The body's mutable bindings held in cells (`SourceElaboration.cellLocals`):
   a `let` named with its declaring statement, an assigned parameter with
   the body's owner. Every other one is a slot of the body's activation. -/
   cells : Scope := []

@@ -4,7 +4,7 @@ import Verification.Source.Lowering.ClosureSetup
 import Verification.Source.SourceFacts
 import Verification.Source.FlowGraph
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -220,4 +220,4 @@ code (`lambdaCode`) with the captured slots. -/
 
 
 end LoweringClosures
-end Verification.SourceExtraction
+end Verification.SourceElaboration

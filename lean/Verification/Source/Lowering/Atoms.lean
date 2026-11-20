@@ -3,7 +3,7 @@ import Verification.Source.Lowering.Control
 import Verification.Source.Lowering.Operands
 import Verification.Source.FragmentTypes
 
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -1361,4 +1361,4 @@ with the knowledge their edges carry, such as the field a failed test left
   | _ => simple
 
 end LoweringAtoms
-end Verification.SourceExtraction
+end Verification.SourceElaboration

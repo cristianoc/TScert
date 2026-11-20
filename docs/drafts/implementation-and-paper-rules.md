@@ -128,7 +128,7 @@ modules import the shared model alone (`Semantics/`). The bridges, and
 `Examples`, `ModelRules` and `NamedCounterexample` outside `Bridges/`, also
 import A: `Programs.IndexWrites`, `Programs.SinglePass.GraphSafety`,
 `Programs.TolerantFramesInvocation`, `Programs.TolerantFramesNamed`,
-`Programs.TolerantFramesWrites` and `Source.Lowering.ExitProposals`.
+`Programs.TolerantFramesWrites` and `Source.Synthesis.ExitProposals`.
 `ParityAssertions` and `KindsModelRules` read the kinds development
 (`Semantics.AdmissibleCells`, `Semantics.KindsNatives`,
 `Semantics.ViewSpines`), which lies outside `Paper/` and outside the

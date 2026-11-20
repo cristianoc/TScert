@@ -4,7 +4,7 @@ import Verification.Source.Lowering.Observations
 import Verification.Source.FragmentTypes
 
 /-! Builds direct proof plans for values, predicates and members. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -957,4 +957,4 @@ its type or `undefined`. -/
 
 
 end
-end Verification.SourceExtraction
+end Verification.SourceElaboration

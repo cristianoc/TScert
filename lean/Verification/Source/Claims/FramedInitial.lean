@@ -205,7 +205,7 @@ end
 end Verification.TolerantFrames.ReadOnly
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly
 
 section

@@ -8,7 +8,7 @@ file's frozen store. Then the headline
 (`passUnit_safe`) from mode 8's exact acceptance condition. -/
 
 namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open PositiveCertificates (InstanceImageCheck)
 open HeapExpressionRules (Checker)
 open CertificateProducer (Answered)

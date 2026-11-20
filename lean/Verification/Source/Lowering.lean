@@ -50,7 +50,7 @@ checked against.
 Active-name shadowing is refused here: the parser gives a shadowing local a
 name of its own (SOURCE-ELABORATION.md, "Shadowing"). This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
-namespace Verification.SourceExtraction
+namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment LabelStore
@@ -105,7 +105,7 @@ abbrev ModuleValue (ι : Type) := String × Span × Except String (ModuleType ι
 did not mention grow it, and the request carries the result. The request's
 contract reads are the members the lowering read and the values `values`
 gives of the names it read. -/
-@[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
+@[nospecialize] def lowerNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (ModuleValue Tree) := []) (classes : List String := [])
     (freshConstructors : List (String × Span) := []) (moduleOwned : List String := [])
     (values : List String → List ContractRead := fun _ => [])
@@ -356,4 +356,4 @@ gives of the names it read. -/
 
 end
 
-end Verification.SourceExtraction
+end Verification.SourceElaboration
