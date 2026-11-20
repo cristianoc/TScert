@@ -241,7 +241,7 @@ importer's modules, from entries of the components before it, with mode 8's
 prepare (each module's plans with its given head facts) and check (the
 pass over each group). The forged-interface control exercises it. -/
 def InterfaceProvenance (budget : PositiveCertificates.SearchBudget) (force : List String) (fuel : Nat)
-    (given : Std.HashMap String Json) (est : Established) : Prop :=
+    («given» : Std.HashMap String Json) (est : Established) : Prop :=
   ∀ e ∈ est, ∃ needs incoming tables vs ns ts est',
     establishModules needs budget force incoming
       (fun location f => f.withHeadFacts (RequestCli.forModule location given) false given.isEmpty)
@@ -345,9 +345,9 @@ theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
   apply refuseUnbound_overStore
   unfold fragmentPlansOfInterfaces at h₁
   by_cases he : est.isEmpty = true
-  · rw [if_pos he] at h₁
+  · rw [ite_eq_left he] at h₁
     exact fragmentPlansCore_overStore h₁
-  · rw [if_neg he] at h₁
+  · rw [ite_eq_right he] at h₁
     obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
     obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
     obtain ⟨_, h₂, h₁⟩ := except_bind_ok h₁

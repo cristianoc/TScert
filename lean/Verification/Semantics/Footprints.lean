@@ -851,9 +851,9 @@ theorem Post.empty_iff {ρ : Env} {h h' : Heap} : Post [] ρ h h' ↔ h.IsPrefix
     · obtain ⟨v, hv⟩ : ∃ v, h[l]? = some v := ⟨h[l], List.getElem?_eq_getElem hl⟩
       obtain ⟨v', hv', hal⟩ := hall l v hv
       rcases hal with rfl | ⟨e, he, -⟩
-      · rw [hv, if_pos hl, hv']
+      · rw [hv, ite_eq_left hl, hv']
       · simp at he
-    · rw [if_neg hl, List.getElem?_eq_none (Nat.le_of_not_lt hl)]
+    · rw [ite_eq_right hl, List.getElem?_eq_none (Nat.le_of_not_lt hl)]
   · rintro ⟨t, rfl⟩
     refine ⟨by simp, fun l v hv => ⟨v, ?_, .inl rfl⟩⟩
     rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]

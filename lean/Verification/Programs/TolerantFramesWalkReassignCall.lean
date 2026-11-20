@@ -121,9 +121,9 @@ theorem directCall_reassign (Γ : List (Ty ι)) (t : Tm) (A : Ty ι) (adm : Call
                 split
                 · rfl
                 · by_cases hs : same p.result A = true
-                  · simp only [hs, if_true]
+                  · simp only [hs, ite_true]
                     split <;> rfl
-                  · simp only [hs, Bool.false_eq_true, if_false, subtypeUsing_reassign]
+                  · simp only [hs, Bool.false_eq_true, ite_false, subtypeUsing_reassign]
                     split <;> rfl
               subst hXY2
               rcases X2 with ⟨_ | ⟨r2, b2⟩, a2⟩ <;> rfl

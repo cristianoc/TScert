@@ -166,10 +166,10 @@ theorem mapM_cases {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t
     (t.atEntry = true ∧ t' = t) ∨ (t.atEntry = false ∧ f t.slot = some t'.slot ∧ t' = { t with slot := t'.slot }) := by
   unfold mapM at h
   cases he : t.atEntry
-  · simp only [he, Bool.false_eq_true, if_false, Option.map_eq_some_iff] at h
+  · simp only [he, Bool.false_eq_true, ite_false, Option.map_eq_some_iff] at h
     obtain ⟨s, hs, rfl⟩ := h
     exact .inr ⟨rfl, hs, rfl⟩
-  · simp only [he, if_true, Option.some.injEq] at h
+  · simp only [he, ite_true, Option.some.injEq] at h
     exact .inl ⟨rfl, h.symm⟩
 
 theorem mapM_slot {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t') (he : t.atEntry = false) :
@@ -185,7 +185,7 @@ theorem mapM_slots {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t
   rcases mapM_cases h with ⟨he, rfl⟩ | ⟨he, hs, h3⟩
   · simp [slots, he] at hy
   · rw [h3] at hy
-    simp only [slots, he, Bool.false_eq_true, if_false, List.mem_singleton] at hy
+    simp only [slots, he, Bool.false_eq_true, ite_false, List.mem_singleton] at hy
     subst hy
     exact ⟨t.slot, by simp [slots, he], hs⟩
 
@@ -211,9 +211,9 @@ theorem mapEntry_cases {g : Nat → Option Nat} {t t' : Term} (h : t.mapEntry g 
     (t.atEntry = false ∧ t' = t) ∨ (t.atEntry = true ∧ g t.slot = some t'.slot ∧ t' = { t with slot := t'.slot }) := by
   unfold mapEntry at h
   cases he : t.atEntry
-  · simp only [he, Bool.false_eq_true, if_false, Option.some.injEq] at h
+  · simp only [he, Bool.false_eq_true, ite_false, Option.some.injEq] at h
     exact .inl ⟨rfl, h.symm⟩
-  · simp only [he, if_true, Option.map_eq_some_iff] at h
+  · simp only [he, ite_true, Option.map_eq_some_iff] at h
     obtain ⟨s, hs, rfl⟩ := h
     exact .inr ⟨rfl, hs, rfl⟩
 
@@ -472,11 +472,11 @@ def termValue (ε : EntryState) (ρ : Env) (h : Heap) (t : Term) : Option Int :=
 
 theorem termValue_now {ρ : Env} {h : Heap} {t : Term} (he : t.atEntry = false) :
     termValue ε ρ h t = termAt ρ h t := by
-  simp only [termValue, he, Bool.false_eq_true, if_false]
+  simp only [termValue, he, Bool.false_eq_true, ite_false]
 
 theorem termValue_atEntry {ρ : Env} {h : Heap} {t : Term} (he : t.atEntry = true) :
     termValue ε ρ h t = termAt ε.env ε.heap t := by
-  simp only [termValue, he, if_true]
+  simp only [termValue, he, ite_true]
 
 /-- **An entry term reads the entry state alone**: it denotes the same at
 every environment and heap. -/
@@ -498,7 +498,7 @@ theorem termValue_nil {ρ : Env} {h : Heap} {k : Term.Kind} {s : Nat} :
 theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot)
     (he : t.atEntry = false) :
     termValue ε ρ' h { t with slot := s } = termValue ε ρ h t := by
-  simp only [termValue, he, Bool.false_eq_true, if_false, termAt, hs]
+  simp only [termValue, he, Bool.false_eq_true, ite_false, termAt, hs]
 
 /-- **A term renamed by a total map of current slots denotes what it did**
 where each current slot's image holds its value. -/
@@ -522,7 +522,7 @@ theorem termValue_now_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : 
 theorem termValue_congr {ρ ρ' : Env} {h : Heap} {t : Term} (hs : t.atEntry = false → ρ t.slot = ρ' t.slot) :
     termValue ε ρ h t = termValue ε ρ' h t := by
   cases he : t.atEntry
-  · simp only [termValue, he, Bool.false_eq_true, if_false, termAt, hs he]
+  · simp only [termValue, he, Bool.false_eq_true, ite_false, termAt, hs he]
   · exact termValue_entry_invariant he
 
 /-- A term reads the entry environment at its entry slot only, and the
@@ -531,7 +531,7 @@ theorem termValue_congr_entry {ε' : EntryState} {ρ : Env} {h : Heap} {t : Term
     (hs : t.atEntry = true → ε.env t.slot = ε'.env t.slot) : termValue ε ρ h t = termValue ε' ρ h t := by
   cases he : t.atEntry
   · rw [termValue_now he, termValue_now he]
-  · simp only [termValue, he, if_true, termAt, hh, hs he]
+  · simp only [termValue, he, ite_true, termAt, hh, hs he]
 
 /-- **A renamed term denotes what it did** where each renamed slot holds its
 source slot's value: an entry term is not renamed. -/
@@ -552,7 +552,7 @@ theorem termValue_mapEntry {ε' : EntryState} {g : Nat → Option Nat} {ρ : Env
   rcases Term.mapEntry_cases hm with ⟨he, rfl⟩ | ⟨he, hs, h3⟩
   · rw [termValue_now he, termValue_now he]
   · rw [h3]
-    simp only [termValue, he, if_true, termAt, hh, hg he _ hs]
+    simp only [termValue, he, ite_true, termAt, hh, hg he _ hs]
 
 theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ε ρ h t).isSome) (he : t.atEntry = false) :
     ∃ v n, readPath h (ρ t.slot) t.path = some v ∧ kindValue h t.kind v = some n ∧ termValue ε ρ h t = some n := by
@@ -2122,7 +2122,7 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
   obtain ⟨kind, s, p, a⟩ := t
   cases a
   case true => exact termValue_entry_some rfl ht
-  simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
+  simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hkw⟩ := ht
   simp only [Term.keptBy, Term.pathKeptBy, Bool.false_or, Bool.and_eq_true] at hk
   obtain ⟨hpath, hkind⟩ := hk
@@ -2195,7 +2195,7 @@ theorem termValue_grown {c : Changes} {first : Nat → String → Bool} {ρ : En
   case true => exact ⟨n, termValue_entry_some rfl ht, Int.le_refl n⟩
   simp only [Term.grownBy, Bool.and_eq_true, beq_iff_eq] at hg
   obtain ⟨⟨rfl, hs⟩, hpath⟩ := hg
-  simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
+  simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hkw⟩ := ht
   simp only [kindValue] at hkw
   obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hkw
@@ -2519,7 +2519,7 @@ theorem termValue_viewFramed {c : Changes} {first : Nat → String → Bool} {ρ
   | [g], hp =>
     simp only [Bool.or_eq_true, Bool.not_eq_true'] at hp
     have hfirst := hp
-    simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
+    simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at ht ⊢
     obtain ⟨w, hw, hkw⟩ := ht
     cases hs : ρ s
     case objAt fs0 cd0 o0 =>

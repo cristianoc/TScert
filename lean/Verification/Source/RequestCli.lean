@@ -156,18 +156,21 @@ theorem surrogateEscapeFrom_of_at {b : ByteArray} {i j : Nat} (hij : i ≤ j)
     · simp [surrogateEscapeAt, byteIs, hj] at h
   induction i using surrogateEscapeFrom.induct b with
   | case1 i hi ih =>
-    rw [surrogateEscapeFrom]; simp only [hi, if_true, Bool.or_eq_true]
+    rw [surrogateEscapeFrom]; simp only [hi, ite_true, Bool.or_eq_true]
     rcases Nat.lt_or_eq_of_le hij with hlt | heq
     · exact Or.inr (ih (by omega))
     · subst heq; exact Or.inl h
   | case2 i hi => omega
 
-theorem byteIs_toByteArray {l : List UInt8} {i : Nat} {v : UInt8} :
-    byteIs l.toByteArray i v = (l[i]? == some v) := by
+theorem byteIs_mk {l : List UInt8} {i : Nat} {v : UInt8} :
+    byteIs ⟨⟨l⟩⟩ i v = (l[i]? == some v) := by
   unfold byteIs
   by_cases hi : i < l.length
-  · simp [hi, List.getElem_toByteArray]
-  · simp [hi]
+  · have hs : i < (⟨⟨l⟩⟩ : ByteArray).size := hi
+    have hg : (⟨⟨l⟩⟩ : ByteArray)[i] = l[i] := rfl
+    simp [hs, hg, hi]
+  · have hs : ¬ i < (⟨⟨l⟩⟩ : ByteArray).size := hi
+    simp [hs, hi]
 
 theorem start_bytes {cs : List Char} (h : SurrogateStart cs) :
     ∃ j, surrogateEscapeAt cs.utf8Encode j = true := by
@@ -175,7 +178,7 @@ theorem start_bytes {cs : List Char} (h : SurrogateStart cs) :
   refine ⟨(pre.flatMap String.utf8EncodeChar).length, ?_⟩
   have hb : String.utf8EncodeChar '\\' = [92] := rfl
   have hu : String.utf8EncodeChar 'u' = [117] := rfl
-  simp only [surrogateEscapeAt, List.utf8Encode, byteIs_toByteArray]
+  simp only [surrogateEscapeAt, List.utf8Encode, byteIs_mk]
   rcases hx with rfl | rfl
   · have hd : String.utf8EncodeChar 'd' = [100] := rfl
     simp [List.flatMap_append, hb, hu, hd]
@@ -272,13 +275,13 @@ def selectionClosure (ast : Json) (roots : List String) : List String := Id.run 
 
 /-- The given lines of a module's units, by their identity in the module:
 each line of a unit `module:<location>#<unit>`. -/
-def forModule (location : String) (given : Std.HashMap String Json) : Std.HashMap String Json :=
+def forModule (location : String) («given» : Std.HashMap String Json) : Std.HashMap String Json :=
   let pre := s!"module:{location}#"
   given.fold (init := {}) fun m k v => if k.startsWith pre then m.insert (k.drop pre.length).toString v else m
 
 /-- A module's given lines a pass reads (`FilePlans.passGroup`): those stating
 a graph, by the unit's identity in the module whose document is `ast`. -/
-def moduleGiven (ast : Json) (given : Std.HashMap String Json) : Std.HashMap String Json :=
+def moduleGiven (ast : Json) («given» : Std.HashMap String Json) : Std.HashMap String Json :=
   let location := (ast.getObjValAs? String "file").toOption.getD ""
   (forModule location given).fold (init := {}) fun m k v => if (v.getObjVal? "graph").isOk then m.insert k v else m
 

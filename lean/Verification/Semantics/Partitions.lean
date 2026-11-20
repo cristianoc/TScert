@@ -164,7 +164,7 @@ theorem merge_ok : Ok S (merge cs a b) := by
 
 theorem merge_length (hn : same cs a b = false) : (merge cs a b).length < cs.length := by
   unfold merge
-  rw [if_neg (by simp [hn])]
+  rw [ite_eq_right (by simp [hn])]
   have hne : cls cs a ≠ cls cs b := fun e => by
     simp [same, e, mem_cls_self] at hn
   have := length_filter_two (p := fun k => !k.contains a && !k.contains b) (cls_mem_of h ha) (cls_mem_of h hb) hne
@@ -179,7 +179,7 @@ theorem same_merge (x y : Nat) : same (merge cs a b) x y = true ↔
   have hm := merge_ok h ha hb
   have sym := fun {u v : Nat} (e : same cs u v = true) => same_symm h e
   by_cases hab : same cs a b = true
-  · simp only [merge, hab, if_true]
+  · simp only [merge, hab, ite_true]
     constructor
     · exact Or.inl
     · rintro (e | ⟨hx, hy⟩)

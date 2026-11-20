@@ -131,10 +131,10 @@ theorem deltaAdd_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowled
       | index x => exact ⟨hadd, hidx x _ ha rfl⟩
       | link g =>
         by_cases ht : (g.alias && g.cell == g.value) = true
-        · simp only [ht, Bool.not_true, Bool.false_eq_true, if_false]
+        · simp only [ht, Bool.not_true, Bool.false_eq_true, ite_false]
           exact ⟨hr, hi⟩
         · simp only [Bool.not_eq_true] at ht
-          simp only [ht, Bool.not_false, if_true]
+          simp only [ht, Bool.not_false, ite_true]
           exact ⟨hadd, hi⟩
       | cell _ | value _ | elem _ | sep _ => exact ⟨hadd, hi⟩
     · exact ⟨hr, hi⟩

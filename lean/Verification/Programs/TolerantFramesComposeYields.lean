@@ -112,7 +112,7 @@ from the state after the step where `K` also holds there (at a framed node,
 the facts its return keeps, `framedK`). -/
 structure NodeYieldedR (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge)
-    (given : Nat → Bool)
+    («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (Tres : Fam) (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) (K : Env → Heap → Prop) : Prop where
@@ -125,7 +125,7 @@ structure NodeYieldedR (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat
     StateHolds G entry (w.implies l) startNames ε ρ m s →
     EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
     RefsOk s.W (instantiate 0 ρ node.expression) →
-    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated «given» edgesIn) G c.type c.context
       (fun ρ' m' s' => (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
         ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧
           ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0)) ∧ K ρ' s'.h)
@@ -134,7 +134,7 @@ structure NodeYieldedR (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated «given» edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 omit [Hashable ι] in
 /-- A node meaning what it states with its yields means it with its exits
@@ -214,7 +214,7 @@ theorem stepEdgesSound_of_yieldsR {G : NormalGraph ι} {images : InstanceImageCh
       have hshape := nodeShape_of na.hshape (he'.2 0 _ rfl)
       have hK : framedK (ε := ε) F S l na.st.stepK (push v ρ) s'.h := fun hFl => by
         have hR' : framedRet S l ρ s.h s'.h := by
-          simpa only [RetP, enterPend, hFl, cond_true] using hR
+          simpa only [RetP, enterPend, hFl, Bool.cond_true] using hR
         exact framedKept_holds hkS.2.2.2.2.2 hR'
       by_cases hk : na.node.continuation = .ret
       · rw [hk]
@@ -302,7 +302,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 after the step, the yields at the pushed value and the step's output; the
 handler from the throw state; each at `edgePreAJ`. -/
 structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) : Prop where
@@ -310,7 +310,7 @@ structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     StateHolds G entry (w.implies l) startNames ε ρ m s →
     EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
     RefsOk s.W (instantiate 0 ρ node.expression) →
-    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated «given» edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
         ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧
           ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0))
@@ -319,7 +319,7 @@ structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated «given» edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 /-- **A node's kept yields judged and its return's goal from the checks**:
 `NodeYieldChecks` with the subtype answers sound (pass change D5) and the

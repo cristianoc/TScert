@@ -56,7 +56,7 @@ below the length of the first actual's spine. -/
 structure Effect where
   exits : Exits ExitSchema
   promise : Option TypePromise
-  requires : Option ElemPred := none
+  «requires» : Option ElemPred := none
   pre : List HeapKnowledge.IndexFact := []
   deriving Repr, DecidableEq
 
@@ -462,7 +462,7 @@ theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.entryBelow n = true
     rw [hp] at h
     simp only [decide_eq_true_eq] at h
     simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
-    rw [if_pos (by omega)]
+    rw [ite_eq_left (by omega)]
   · rfl
 
 /-- Code binding `n` parameters holds the call's position `s ≤ n` at its
@@ -479,7 +479,7 @@ theorem callEnv_frame {n s : Nat} (hle : s ≤ n) (r : Tm) (args vs : List Tm) (
     obtain ⟨x, hx⟩ : ∃ x, (CallArguments.parameters n args)[i]? = some x :=
       ⟨_, List.getElem?_eq_getElem hlen⟩
     simp only [List.getD_eq_getElem?_getD, hx, Option.getD_some] at hp
-    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD,
+    simp only [Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD,
       List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx, Option.getD_some, hp]
 
 /-- Actuals past position `m` do not change the call's positions up to `m`. -/
@@ -489,8 +489,8 @@ theorem callEnv_take {m s : Nat} (hle : s ≤ m) (r : Tm) (args : List Tm) :
   cases s with
   | zero => simp
   | succ i =>
-    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
-    rw [if_pos (by omega)]
+    simp only [Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
+    rw [ite_eq_left (by omega)]
 
 /-- Code binding `n` parameters reads the precondition's positions in its
 frame as the call passed them: the receiver, then each actual it binds. -/
@@ -533,7 +533,7 @@ theorem Effect.ensures_frame {n : Nat} {F : HeapKnowledge.IndexFact} (hsl : ∀ 
     obtain ⟨x, hx⟩ : ∃ x, (CallArguments.parameters n args)[i]? = some x :=
       ⟨_, List.getElem?_eq_getElem hlen⟩
     simp only [List.getD_eq_getElem?_getD, hx, Option.getD_some] at hp
-    simp only [ensuresEnv, callEnv, push, envOf, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+    simp only [ensuresEnv, callEnv, push, envOf, Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel,
       List.getD_eq_getElem?_getD, List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx,
       Option.getD_some, hp]
 
@@ -588,7 +588,7 @@ its exit world, a throw raises a value of the exception family `Ξ` meeting
 `excPost` with its exit world and heap, each given the entry world and heap, and every
 configuration on the way is well-formed under one extension of `U`
 (`NativeContract.run`). -/
-def NativeContract (Ξ : Fam) (Acc : ArgFam) (Rc : Fam) (requires : Tm → List Tm → Heap → Prop)
+def NativeContract (Ξ : Fam) (Acc : ArgFam) (Rc : Fam) («requires» : Tm → List Tm → Heap → Prop)
     (R : Tm → List Tm → Fam) (post : CPost) (excPost : CExc) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
@@ -657,7 +657,7 @@ theorem NativeContract.safe {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
 well-formed entry configuration meeting the input contract, `new` runs a
 construction safe at the result type and both postconditions, the receiver
 `undefined`. -/
-def NativeConstruct (Ξ : Fam) (Acc : ArgFam) (requires : List Tm → Heap → Prop) (R : List Tm → Fam)
+def NativeConstruct (Ξ : Fam) (Acc : ArgFam) («requires» : List Tm → Heap → Prop) (R : List Tm → Fam)
     (post : CPost) (excPost : CExc) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
     ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →

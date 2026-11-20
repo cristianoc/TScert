@@ -71,7 +71,7 @@ step's facts and output, a derivation `deriv` and the pass's promise check
 promised argument's name the start name of the goal's slot. -/
 structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (w : Walk ι) (startNames : List Nat) (goal : Goal ι)
-    (ensures : List HeapKnowledge.IndexFact) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
+    («ensures» : List HeapKnowledge.IndexFact) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
     (st : Stepped ι) (ys : List (PromiseCalls.Yield ι)) : Prop where
   kept : ys = [] ∨ ∃ (xs : List (PromiseCalls.Implication ι)) (deriv : ProgramCertificates.Evidence ι)
     (ys0 : List (PromiseCalls.Yield ι)) (sums' : List (ReadSummary ι)), (∀ x ∈ xs, x ∈ w.implies l) ∧
@@ -79,7 +79,7 @@ structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (
     ys = checkedYields G images c.context c.type (slotImplOf entry.names xs) st.stepK st.stepOut deriv
       node.expression (fun _ => SinglePass.promiseDerivChecked G images codes sums' c node st.stepK deriv) ys0
   ret : node.continuation = .ret → ∃ start argName debugNode answers,
-    (returnCheck G images goal ensures c l entry st.store st.result start startNames argName ys debugNode
+    (returnCheck G images goal «ensures» c l entry st.store st.result start startNames argName ys debugNode
       answers).1 = none ∧ argName = goal.slot.bind (startNames[·]?)
 
 /-- **The yield checks at a reassignment**: the same yields kept and the

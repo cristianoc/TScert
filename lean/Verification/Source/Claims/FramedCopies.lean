@@ -123,7 +123,7 @@ theorem edge_holds {cp : CopyTable} {h₀ : Heap} {ρ₀ : Env} {K : Nat → Pro
     rw [envMap_src]
     by_cases hs0 : srcOf t.mapping i' = 0
     · simp [hs0] at this
-    · simp only [hs0, if_false, List.contains_iff_mem] at this
+    · simp only [hs0, ite_false, List.contains_iff_mem] at this
       obtain ⟨s', hs'⟩ := Nat.exists_eq_succ_of_ne_zero hs0
       rw [hs'] at this ⊢
       exact hs _ this hk
@@ -132,10 +132,10 @@ theorem edge_holds {cp : CopyTable} {h₀ : Heap} {ρ₀ : Env} {K : Nat → Pro
     have := hok _ hen
     rw [envMap_src]
     by_cases hs0 : srcOf t.mapping i' = 0
-    · simp only [hs0, if_true, Bool.true_and] at this
+    · simp only [hs0, ite_true, Bool.true_and] at this
       rw [hs0]
       exact hv _ _ this hk
-    · simp only [hs0, if_false, List.contains_iff_mem] at this
+    · simp only [hs0, ite_false, List.contains_iff_mem] at this
       obtain ⟨s', hs'⟩ := Nat.exists_eq_succ_of_ne_zero hs0
       rw [hs'] at this ⊢
       exact hs _ this hk

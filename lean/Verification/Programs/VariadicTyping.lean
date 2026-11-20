@@ -953,7 +953,7 @@ theorem packedBy_sound {G : NormalGraph ι} {A : Ty ι} {t : ι} (hp : PackedBy 
     refine Packable_mono ?_ (h.2.2 rfl)
     intro j U' vs ⟨hvs, hl⟩
     refine ⟨t, List.mem_singleton_self t, ?_⟩
-    simp only [NormalGraph.listParam, hk, beq_self_eq_true, Bool.or_true, if_true]
+    simp only [NormalGraph.listParam, hk, beq_self_eq_true, Bool.or_true, ite_true]
     exact ⟨⟨_, rfl, rfl, hl⟩, hvs, trivial⟩
   obtain ⟨l, hl, hv⟩ := hv
   rcases hA l hl with rfl | ⟨hlp, hls, hm'⟩

@@ -104,7 +104,7 @@ theorem regionIn_modify_mono (a : Array (List RegionState)) (l t : Nat) (r e : R
     | some xs =>
       simpa [getElem!_def, Array.getElem?_modify, h] using
         (List.mem_cons_of_mem r (show e ∈ xs by simpa [getElem!_def, h] using he))
-  · simpa only [getElem!_def, Array.getElem?_modify, if_neg hlt] using he
+  · simpa only [getElem!_def, Array.getElem?_modify, ite_eq_right hlt] using he
 
 /-- The regional target fold only adds incoming states, at its targets. -/
 theorem regionalFold_inputs (heads : Nat → Bool) (given : Nat → RegionState)
@@ -125,7 +125,7 @@ theorem regionalFold_inputs (heads : Nat → Bool) (given : Nat → RegionState)
     · refine ⟨fun t e he => (ih _).1 t e (regionIn_modify_mono _ _ _ _ _ he), ?_⟩
       intro t ht
       rw [(ih _).2 t (fun y hy => ht y (List.mem_cons_of_mem _ hy))]
-      simp only [Array.getElem?_modify, if_neg (ht x (List.mem_cons_self ..))]
+      simp only [Array.getElem?_modify, ite_eq_right (ht x (List.mem_cons_self ..))]
 
 /-- The target fold appends precisely one sparse-table entry per target. -/
 theorem regionalFold_entries (heads : Nat → Bool) (given : Nat → RegionState)
@@ -149,7 +149,7 @@ theorem sparseFold_frame {α : Type} (xs : List (Nat × α)) (table : List α) (
   | nil => rfl
   | cons x xs ih =>
     rw [List.foldl_cons, ih _ (fun y hy => hne y (List.mem_cons_of_mem _ hy))]
-    simp only [List.getElem?_set, if_neg (hne x (List.mem_cons_self ..))]
+    simp only [List.getElem?_set, ite_eq_right (hne x (List.mem_cons_self ..))]
 
 /-- A sparse table keeps its initial own entry when no target shares the label. -/
 theorem sparse_own {α : Type} (n l : Nat) (empty value : α) (xs : List (Nat × α))

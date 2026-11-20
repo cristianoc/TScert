@@ -135,7 +135,7 @@ theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : Scheme
   unfold instanceTWithArgs sigsT SchemeRow.body instanceSigs instanceRestsWithArgs
   cases s.construct
   · rfl
-  · simp only [if_true, semWithArgs, List.map_map]
+  · simp only [ite_true, semWithArgs, List.map_map]
     -- A scheme body states no static field: its empty bag holds of every class value.
     refine Eq.trans ?_ (bag_nil_absorb ?_).symm
     · rfl
@@ -1738,8 +1738,8 @@ theorem semWithArgs_map_meaning [DecidableEq ι] {G : NormalGraph ι} {η θ : M
   rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
   have hr : ∀ S, mixedMeaning G η (f (r S)) = mixedMeaning G θ (r S) := fun S => by
     by_cases hS : S ∈ c.operands
-    · simp only [r, hS, if_true]; exact h S (.inl hS)
-    · simp only [r, hS, if_false]; exact h [] (.inr rfl)
+    · simp only [r, hS, ite_true]; exact h S (.inl hS)
+    · simp only [r, hS, ite_false]; exact h [] (.inr rfl)
   have h1 : (fun a => mixedValues G η (f (r a))) = fun a => mixedValues G θ (r a) := by
     funext a n W v
     exact congrFun (congrFun (congrFun (hr a) n) W) (.inl v)
@@ -1991,12 +1991,12 @@ theorem graphArguments_support [DecidableEq ι] {G : NormalGraph ι} {D : ι →
   apply exists_congr fun i => and_congr_right fun hi => ?_
   have ⟨hself, hreads, _⟩ := hF.row (hS i hi)
   by_cases hp : G.listParam i = true
-  · simp only [hp, if_true]
+  · simp only [hp, ite_true]
     have hk := NormalGraph.listParam_iff.mp hp
     have he := congrFun (congrFun (congrFun
       (h i hi i (hself (by rcases hk with hk | hk <;> simp [NormalGraph.params, hk]))) n) W) (.inr vs)
     rcases hk with hk | hk <;> simpa [mixedParameters, selectParameter, hk] using iff_of_eq he
-  · simp only [hp, if_false, Bool.false_eq_true]
+  · simp only [hp, ite_false, Bool.false_eq_true]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hplain := NormalGraph.plain_of_clauses hc
     have hq : G.schemes i = none := (NormalGraph.plain_iff.mp hplain).2.1
@@ -2033,7 +2033,7 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
   have ⟨hself, hreads, hbounds⟩ := hF.row hi
   unfold partSemWithArgs
   cases hp : G.params i
-  · simp only [Bool.false_eq_true, if_false]
+  · simp only [Bool.false_eq_true, ite_false]
     cases hq : G.schemes i with
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq' => forall_congr' fun As => forall_congr' fun hl =>
@@ -2140,7 +2140,7 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
         · rintro ⟨c, hc, h⟩
           exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mpr h⟩
       exact cl _ fun c hc => List.mem_append_left _ hc
-  · simp only [if_true]
+  · simp only [ite_true]
     rw [I.value_parameter i _ _ (hag i (hself hp))]
 
 
@@ -2416,9 +2416,9 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
       obtain ⟨i', hi', hv⟩ := hu
       cases List.mem_singleton.mp hi'
       rw [qDenoteWithArgs_unfold] at hv
-      simp only [qLayerWithArgs, hpi, hs, Bool.false_eq_true, if_false] at hv
+      simp only [qLayerWithArgs, hpi, hs, Bool.false_eq_true, ite_false] at hv
       simp only [schemeSemWithArgs, boundedSem, instanceTWithArgs, sigsT, Callee, hcon,
-        Bool.false_eq_true, if_false] at hv
+        Bool.false_eq_true, ite_false] at hv
       obtain ⟨hinv, hall⟩ := hv
       have hvself := hself j hj U hU
       have hval : isVal v = true ∧ Scoped 0 v := by
@@ -2468,9 +2468,9 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
           refine ⟨j', List.mem_singleton_self j', ?_⟩
           show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
           rw [qDenoteWithArgs_unfold]
-          simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
+          simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, ite_false]
           simp only [schemeSemWithArgs, boundedSem, instanceTWithArgs, sigsT, Callee, hcon',
-            Bool.false_eq_true, if_false]
+            Bool.false_eq_true, ite_false]
           refine ⟨hinvB oid, fun qlevel hlevel As hl _hal hbd => ?_⟩
           have hal := (sameShape_allowed G.domain hord As).mpr _hal
           show semWithArgs (excOf G) (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
@@ -3795,12 +3795,12 @@ theorem sortTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sor
       replace hl : listsIn G U = true := hl.resolve_left (by simp [hlk])
       obtain ⟨i, hi, hx⟩ := hx
       by_cases hp : G.listParam i = true
-      · simp only [hp, if_true] at hx
+      · simp only [hp, ite_true] at hx
         obtain ⟨k', hk'⟩ : ∃ k', G.parameterKinds i = some k' := by
           rcases NormalGraph.listParam_iff.mp hp with h | h <;> exact ⟨_, h⟩
         rw [hk'] at hx
         exact (hη i k' hk' n W _ hx).2
-      · simp only [hp, if_false, Bool.false_eq_true] at hx
+      · simp only [hp, ite_false, Bool.false_eq_true] at hx
         obtain ⟨c, hc, hx⟩ := hx
         have hpos := List.all_eq_true.mp (List.all_eq_true.mp (show listsIn G U = true from hl) i hi) c hc
         cases c <;> try exact hx.elim
@@ -4049,10 +4049,10 @@ theorem covers_body_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssig
       semWithArgs Ξ (mixedValues G η) (mixedArgs G η) d n W v := by
   unfold SchemeRow.body at hc ⊢
   cases h : s.construct
-  · simp only [h, Bool.false_eq_true, if_false] at hc hd ⊢
+  · simp only [h, Bool.false_eq_true, ite_false] at hc hd ⊢
     obtain ⟨M, T, rfl⟩ := hd
     exact covers_arrs_sound hc n hr hpa W v
-  · simp only [h, if_true] at hc hd ⊢
+  · simp only [h, ite_true] at hc hd ⊢
     obtain ⟨M, T, rfl⟩ := hd
     exact covers_ctors_sound hc n hr hpa W v
 

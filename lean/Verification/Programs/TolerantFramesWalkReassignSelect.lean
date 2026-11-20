@@ -38,7 +38,7 @@ theorem checkObservedSubResult_reassign (A B : Ty ι) (o : BranchRefinement.Obse
 theorem checkedOutput_select_reassign (e : ProgramCertificates.Evidence ι) (b : Bool) (out : HeapKnowledge.Knowledge)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     checkedOutput (reassign G η) (images.reassign η) e b out codes sums false = checkedOutput G images e b out codes sums false := by
-  simp only [checkedOutput, treeChecked, Bool.false_eq_true, if_false]
+  simp only [checkedOutput, treeChecked, Bool.false_eq_true, ite_false]
 
 /-- The steps' rules with the tree taken as given. -/
 theorem stepsSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
@@ -46,7 +46,7 @@ theorem stepsSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
     checkStepResult (reassign G η) (images.reassign η) j k e codes sums false =
       checkStepResult G images j k e codes sums false := by
   cases e <;> simp only [checkStepResult, checkSubtypeResult_reassign, checkObservedSubResult_reassign,
-    checkedOutput_select_reassign, treeChecked, Bool.false_eq_true, if_false] <;> rfl
+    checkedOutput_select_reassign, treeChecked, Bool.false_eq_true, ite_false] <;> rfl
 
 theorem stepsSel_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :

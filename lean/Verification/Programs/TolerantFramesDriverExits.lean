@@ -78,7 +78,7 @@ theorem pushExit_fields (env : SinglePass.WalkEnv ι G I) (l : Nat) (t : Target)
   unfold SinglePass.pushExit
   dsimp only
   split
-  · rw [Array.getElem?_modify, if_neg (Ne.symm hy)]
+  · rw [Array.getElem?_modify, ite_eq_right (Ne.symm hy)]
   · rfl
 
 /-- The state an exit carries into a node other than a head
@@ -173,18 +173,18 @@ theorem exitStep_effect {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Single
 omit [Labels ι] in
 theorem getD_modify_ne {α : Type} (a : Array α) (x y : Nat) (f : α → α) (d : α) (h : y ≠ x) :
     ((a.modify x f)[y]?).getD d = (a[y]?).getD d := by
-  rw [Array.getElem?_modify, if_neg (Ne.symm h)]
+  rw [Array.getElem?_modify, ite_eq_right (Ne.symm h)]
 
 omit [Labels ι] in
 theorem getD_modify_sub (a : Array Nat) (x : Nat) :
     ((a.modify x (· - 1))[x]?).getD 0 = (a[x]?).getD 0 - 1 := by
-  rw [Array.getElem?_modify, if_pos rfl]
+  rw [Array.getElem?_modify, ite_eq_left rfl]
   cases a[x]? <;> rfl
 
 omit [Labels ι] in
 theorem getD_modify_cons {α : Type} (a : Array (List α)) (x : Nat) (s : α) :
     ((a.modify x (s :: ·))[x]?).getD [] = (if x < a.size then [s] else []) ++ (a[x]?).getD [] := by
-  rw [Array.getElem?_modify, if_pos rfl]
+  rw [Array.getElem?_modify, ite_eq_left rfl]
   by_cases hx : x < a.size
   · rw [Array.getElem?_eq_getElem hx]; simp [hx]
   · rw [Array.getElem?_eq_none (Nat.le_of_not_lt hx)]; simp [hx]
@@ -243,13 +243,13 @@ theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
     cases hh : env.isHead[ex.target.label]! with
     | true =>
       have hy : ¬ (y = ex.target.label ∧ env.isHead[y]! = false) := fun ⟨h1, h2⟩ => by subst h1; rw [hh] at h2; cases h2
-      rw [if_neg hy]; unfold dg; rw [(he.head hh).indeg]
+      rw [ite_eq_right hy]; unfold dg; rw [(he.head hh).indeg]
     | false =>
       obtain ⟨_, _, -, -, -, h4, -⟩ := he.push hh
       unfold dg; rw [h4]
       by_cases hy : y = ex.target.label
-      · subst hy; rw [if_pos ⟨rfl, hh⟩]; exact getD_modify_sub _ _
-      · rw [if_neg (fun h => hy h.1)]; exact getD_modify_ne _ _ _ _ _ hy
+      · subst hy; rw [ite_eq_left ⟨rfl, hh⟩]; exact getD_modify_sub _ _
+      · rw [ite_eq_right (fun h => hy h.1)]; exact getD_modify_ne _ _ _ _ _ hy
   have hdeg_le : ∀ y, dg a.indeg y ≤ dg acc.indeg y := fun y => by rw [hdeg y]; split <;> omega
   have hsz : a.incoming.size = acc.incoming.size ∧ a.incomingImpl.size = acc.incomingImpl.size := by
     cases hh : env.isHead[ex.target.label]! with
@@ -289,7 +289,7 @@ theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
     | true => have hc := he.head hh; rw [hc.incoming, hc.incomingImpl, hc.incomingEdges]; exact ⟨rfl, rfl, rfl⟩
     | false =>
       obtain ⟨_, _, h1, h2, h3, -, -⟩ := he.push hh
-      rw [h1, h2, Array.getElem?_modify, if_neg (Ne.symm hy1), Array.getElem?_modify, if_neg (Ne.symm hy1)]
+      rw [h1, h2, Array.getElem?_modify, ite_eq_right (Ne.symm hy1), Array.getElem?_modify, ite_eq_right (Ne.symm hy1)]
       exact ⟨rfl, rfl, h3 y hy1⟩
   · rw [hf.sizes.1, hf.sizes.2]; exact hsz
   · intro y
@@ -334,8 +334,8 @@ theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
   · intro y hy
     rw [hf.degs y hy, hdeg y, List.map_cons, List.count_cons]
     by_cases hyx : y = ex.target.label
-    · subst hyx; rw [if_pos ⟨rfl, hy⟩]; simp; omega
-    · rw [if_neg (fun h => hyx h.1)]
+    · subst hyx; rw [ite_eq_left ⟨rfl, hy⟩]; simp; omega
+    · rw [ite_eq_right (fun h => hyx h.1)]
       have : (ex.target.label == y) = false := by simp; exact Ne.symm hyx
       rw [this]; simp
   · intro y; exact Nat.le_trans (hf.mono y) (hdeg_le y)
@@ -372,8 +372,8 @@ theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
         rw [List.map_cons, List.count_cons] at h1
         rw [hdeg y]
         by_cases hyx : y = ex.target.label
-        · subst hyx; rw [if_pos ⟨rfl, hy⟩]; simp at h1; omega
-        · rw [if_neg (fun h => hyx h.1)]
+        · subst hyx; rw [ite_eq_left ⟨rfl, hy⟩]; simp at h1; omega
+        · rw [ite_eq_right (fun h => hyx h.1)]
           have : (ex.target.label == y) = false := by simp; exact Ne.symm hyx
           rw [this] at h1; simpa using h1
       refine List.nodup_append.mpr ⟨q3 hc', ?_, fun x hx y hy hxy => ?_⟩

@@ -36,7 +36,7 @@ def EntryHolds (G : NormalGraph ι) (inputs : List (Ty ι)) (sep : HeapSeparatio
 structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → Prop) (P : Program)
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
+    (bound : Option RunBound) («ensures» : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)) : Prop where
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
@@ -49,11 +49,11 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
       (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d comp)
-  ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
+  ensured : «ensures» ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp)
+      (fun h' v => GraphCode.EnsuresAt «ensures» ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d comp,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →

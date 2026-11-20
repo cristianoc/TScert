@@ -174,8 +174,8 @@ theorem exitChecks_widths (s : Site c r l hl) (η : MixedAssignment ι) : Widths
   · intro i t pushed observed promote hm slots hs j hj
     rw [hnode] at hm
     have hb := bound _ (List.mem_of_getElem? hm) slots hs j hj
-    cases pushed <;> simpa only [exitNames, Exit.isHandler, Exit.pushed, Bool.false_eq_true, if_false,
-      if_true, normalNames, hentry] using hb
+    cases pushed <;> simpa only [exitNames, Exit.isHandler, Exit.pushed, Bool.false_eq_true, ite_false,
+      ite_true, normalNames, hentry] using hb
   · intro t ht slots hs j hj
     rw [hnode] at ht
     have hm : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by

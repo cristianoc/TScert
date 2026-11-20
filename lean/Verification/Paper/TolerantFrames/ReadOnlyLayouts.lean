@@ -469,10 +469,10 @@ theorem capClosed_of_lay {F : FFlow P} {lay : List Layout} {S T : Sites P}
   refine Sub.trans ?_ ((capClosedB_sound h).2 _ hT).2
   intro x hx
   have hne : fc.tok.isNone = false := by cases e : fc.tok <;> simp_all
-  simp only [tokenCaps, FCode.flow, hne, if_false, Bool.false_eq_true]
+  simp only [tokenCaps, FCode.flow, hne, ite_false, Bool.false_eq_true]
   refine List.mem_flatMap.mpr ⟨((m, cs), (ar, rest, nc, s)), hz, ?_⟩
   have hany : cs.any (fun c => c.2.tok == fc.tok) = true := List.any_eq_true.mpr ⟨_, hctx, by simp⟩
-  simp only [hany, if_true, codeCaptureSites]
+  simp only [hany, ite_true, codeCaptureSites]
   exact List.mem_flatMap.mpr ⟨(entryCx, fc), hctx, List.mem_flatMap.mpr ⟨j, List.mem_range.mpr hj, hx⟩⟩
 
 /-- A spine with no cell, decided. -/

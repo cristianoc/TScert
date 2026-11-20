@@ -40,19 +40,19 @@ noncomputable def headVal (startNames : List Nat) (ε : HeapKnowledge.EntryState
 theorem headVal_start {startNames : List Nat} {ρ' : Env} {fresh q y : Nat} (hnd : startNames.Nodup)
     (hq : startNames[q]? = some y) : headVal startNames ε ρ' fresh y = ε.env q := by
   have hex : ∃ q, startNames[q]? = some y := ⟨q, hq⟩
-  simp only [headVal, dif_pos hex]
+  simp only [headVal, dite_eq_left hex]
   have hc := Classical.choose_spec hex
   have h1 := (List.getElem?_eq_some_iff.mp hc)
   have h2 := (List.getElem?_eq_some_iff.mp hq)
   congr 1
-  exact (List.getElem_inj hnd).mp (h1.2.trans h2.2.symm)
+  exact (List.Nodup.getElem_inj hnd).mp (h1.2.trans h2.2.symm)
 
 theorem headVal_fresh {startNames : List Nat} {ρ' : Env} {fresh i : Nat} (hlt : ∀ x ∈ startNames, x < fresh) :
     headVal startNames ε ρ' fresh (i + fresh) = ρ' i := by
   have hne : ¬∃ q : Nat, startNames[q]? = some (i + fresh) := by
     rintro ⟨q, hq⟩
     have := hlt _ (List.mem_of_getElem? hq); omega
-  simp only [headVal, dif_neg hne]; congr 1; omega
+  simp only [headVal, dite_eq_right hne]; congr 1; omega
 
 /-- **The head's slots hold their names' values** under `headVal`, where
 the edge establishes the given inputs and the promised input. -/
@@ -65,7 +65,7 @@ theorem headEntry_slots {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
     SlotsNamed (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names
       ρ' (headVal startNames ε ρ' fresh) := by
   intro i x hx
-  simp only [SinglePass.headEntry, Bool.false_eq_true, if_false, List.getElem?_map] at hx
+  simp only [SinglePass.headEntry, Bool.false_eq_true, ite_false, List.getElem?_map] at hx
   by_cases hi : i < width
   · rw [List.getElem?_range hi] at hx
     simp only [Option.map_some, Option.some.injEq] at hx

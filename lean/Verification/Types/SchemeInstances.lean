@@ -253,7 +253,7 @@ theorem graphArguments_image [DecidableEq ι] (G : NormalGraph ι)
   have key := sameClauses_iff hrows (fun d => clauseArguments Y d n W vs)
     (fun c f hf hn => by simp only [clauseArguments_members hY hf hn])
   simp only [graphArguments, List.mem_singleton, exists_eq_left,
-    NormalGraph.listParam_of_plain hi, NormalGraph.listParam_of_plain hj, Bool.false_eq_true, if_false]
+    NormalGraph.listParam_of_plain hi, NormalGraph.listParam_of_plain hj, Bool.false_eq_true, ite_false]
   rw [key]
   simp only [List.mem_map]
   constructor
@@ -627,9 +627,9 @@ theorem lookup_keep [DecidableEq ι] (κ : Ctx ι) {src : List ι} {p : ι} (hp 
     rw [keep_cons]
     by_cases hq : q ∈ src
     · have hpq : p ≠ q := fun e => hp (e ▸ hq)
-      rw [if_pos hq, lookup_keep κ hp ps]
+      rw [ite_eq_left hq, lookup_keep κ hp ps]
       simp [hpq]
-    · rw [if_neg hq]
+    · rw [ite_eq_right hq]
       by_cases hpq : p = q
       · subst hpq
         cases hk : κ.lookup p with
@@ -647,7 +647,7 @@ theorem enter_nmem [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) {src
     (hp : p ∉ src) (hi : p ∈ fv V i) :
     (enter V i κ src tgt).lookup p = κ.lookup p := by
   unfold enter
-  rw [lookup_append_none (lookup_zip_none hp), lookup_keep κ hp, if_pos hi]
+  rw [lookup_append_none (lookup_zip_none hp), lookup_keep κ hp, ite_eq_left hi]
 
 /-- A binder entered stands for the binder at its position, and both sides are
 given the same family there. -/
@@ -1163,7 +1163,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
   have hrow := hents _ he
   simp only [entryOk] at hrow
   cases hp : G.params i
-  · simp only [hp, Bool.false_eq_true, if_false] at hrow
+  · simp only [hp, Bool.false_eq_true, ite_false] at hrow
     by_cases hrig : (T == [i] && fixedBy G κ V i) = true
     · simp only [Bool.and_eq_true, beq_iff_eq] at hrig
       obtain ⟨rfl, hfix⟩ := hrig
@@ -1176,7 +1176,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
       exact iff_of_eq (congrFun (congrFun (congrFun h n) W) vs)
     · have hrigF : (T == [i] && fixedBy G κ V i) = false := by
         simpa using hrig
-      simp only [hrigF, Bool.false_eq_true, if_false] at hrow
+      simp only [hrigF, Bool.false_eq_true, ite_false] at hrow
       cases hs : G.schemes i with
       | some s =>
         cases T with
@@ -1229,7 +1229,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
               · exact hrel p h
               · rw [hs] at hs'; cases hs'
             · intro v; simp [setSem, mixedValues]
-  · simp only [hp, if_true, Bool.and_eq_true, beq_iff_eq] at hrow
+  · simp only [hp, ite_true, Bool.and_eq_true, beq_iff_eq] at hrow
     obtain ⟨rfl, _⟩ := hrow
     have hr := hrel i (hself hp)
     obtain ⟨kind, hk⟩ : ∃ kind, G.parameterKinds i = some kind := by
@@ -1337,7 +1337,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
     exact hmix ηL' ηR' κ' S S' hS hrl m hm U (.inr vs)
   simp only [entryOk] at hrow
   cases hpar : G.params i
-  · simp only [hpar, Bool.false_eq_true, if_false] at hrow
+  · simp only [hpar, Bool.false_eq_true, ite_false] at hrow
     by_cases hrig : (T == [i] && fixedBy G κ V i) = true
     · -- its own image, the context fixing its free rows
       simp only [Bool.and_eq_true, beq_iff_eq] at hrig
@@ -1347,7 +1347,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
         (fixedBy_rel hfix hrel)]
     · have hrigF : (T == [i] && fixedBy G κ V i) = false := by
         simpa using hrig
-      simp only [hrigF, Bool.false_eq_true, if_false] at hrow
+      simp only [hrigF, Bool.false_eq_true, ite_false] at hrow
       cases hsch : G.schemes i with
       | some s =>
         cases hT : T with
@@ -1365,7 +1365,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             obtain ⟨hrow, hord⟩ := hrow
             obtain ⟨⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hkinds⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
             rw [singleton, qDenoteWithArgs_unfold, qDenoteWithArgs_unfold]
-            simp only [qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
+            simp only [qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, ite_false]
             change boundedSem _ ηL s _ G.domain n W v ↔ boundedSem _ ηR s2 _ G.domain n W v
             refine and_congr (by rw [sameShape_construct hord]) ?_
             rw [hlen]
@@ -1781,7 +1781,7 @@ theorem exactInstance_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAss
   obtain ⟨_, hm, hv⟩ := hv
   cases List.mem_singleton.mp hm
   have hscheme := (qDenoteWithArgs_unfold G (mixedParameters G) (η, i) n W v).mp hv
-  simp only [qLayerWithArgs, hp, hs, Bool.false_eq_true, if_false] at hscheme
+  simp only [qLayerWithArgs, hp, hs, Bool.false_eq_true, ite_false] at hscheme
   let F : List ι → MixedFamily := fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩
   let args := θs.map F
   let assigned := assign η s.binders args
@@ -1838,8 +1838,8 @@ theorem inst_covers_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
   obtain ⟨_, hm, hv⟩ := hv
   cases List.mem_singleton.mp hm
   have hs := (qDenoteWithArgs_unfold G (mixedParameters G) (η, i) n W v).mp hv
-  simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false] at hs
-  have hinv : Invocable v := by simpa only [Callee, hcon, Bool.false_eq_true, if_false] using hs.1
+  simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, ite_false] at hs
+  have hinv : Invocable v := by simpa only [Callee, hcon, Bool.false_eq_true, ite_false] using hs.1
   let F : List ι → MixedFamily := fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩
   let As : List MixedFamily := θs.map F
   have hc := bounded_substitution_elim η F
@@ -1849,7 +1849,7 @@ theorem inst_covers_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     hlen hal hbnd n W v hs
   change instanceTWithArgs (excOf G)
     (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G) n W v at hc
-  simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, if_false] at hc
+  simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, ite_false] at hc
   have himg : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
       mixedMeaning G (assign η s.binders As) S = mixedMeaning G η S' := himages
   have hfam : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →

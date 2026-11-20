@@ -787,7 +787,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
         exact iha x hx hf
   | invokeC σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
     intro f hf
-    simp only [ReadOnly.innermost, hfn.val, Bool.true_eq_false, if_false] at hf
+    simp only [ReadOnly.innermost, hfn.val, Bool.true_eq_false, ite_false] at hf
     split at hf
     · exact ihr hf
     · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
@@ -934,24 +934,24 @@ theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v,
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc
     split at hc
-    · rename_i hv; rw [if_pos hv] at hi; exact ihf hi cur hc
+    · rename_i hv; rw [ite_eq_left hv] at hi; exact ihf hi cur hc
     · rename_i hfv
-      rw [if_neg hfv] at hi
+      rw [ite_eq_right hfv] at hi
       split at hc
-      · rename_i hv; rw [if_pos hv] at hi; exact ihr hi cur hc
+      · rename_i hv; rw [ite_eq_left hv] at hi; exact ihr hi cur hc
       · rename_i hrv
-        rw [if_neg hrv] at hi
+        rw [ite_eq_right hrv] at hi
         refine activeArgs_out iha (fun htop => hout ?_) hi hc
         have hfv' : isVal f = true := by simpa using hfv
         exact (hV _ _ (hf.value hfv')).notOut htop
   | @invokeC _ _ _ _ f r args σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
     intro hi cur hc
     have hfv : isVal f = true := hfn.val
-    simp only [ReadOnly.innermost, hfv, Bool.true_eq_false, if_false] at hi
-    simp only [activeFrame, hfv, Bool.true_eq_false, if_false] at hc
+    simp only [ReadOnly.innermost, hfv, Bool.true_eq_false, ite_false] at hi
+    simp only [activeFrame, hfv, Bool.true_eq_false, ite_false] at hc
     by_cases hrv : isVal r = false
-    · rw [if_pos hrv] at hi hc; exact ihr hi cur hc
-    · rw [if_neg hrv] at hi hc
+    · rw [ite_eq_left hrv] at hi hc; exact ihr hi cur hc
+    · rw [ite_eq_right hrv] at hi hc
       refine activeArgs_out (fun x hx => iha (List.getElem?_of_mem hx).choose x
         (List.getElem?_of_mem hx).choose_spec) (fun htop => ?_) hi hc
       obtain ⟨fs, caps, k, comp, oid, rfl, -, hcomp⟩ := hfn
@@ -962,9 +962,9 @@ theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v,
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc
     split at hc
-    · rename_i hv; rw [if_pos hv] at hi; exact ihf hi cur hc
+    · rename_i hv; rw [ite_eq_left hv] at hi; exact ihf hi cur hc
     · rename_i hfv
-      rw [if_neg hfv] at hi
+      rw [ite_eq_right hfv] at hi
       refine activeArgs_out iha (fun htop => hout ?_) hi hc
       have hfv' : isVal f = true := by simpa using hfv
       exact (hV _ _ (hf.value hfv')).notOut htop
@@ -974,7 +974,7 @@ theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v,
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc
     split at hc
-    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · rename_i hv; rw [ite_eq_left hv] at hi; exact ihx hi cur hc
     · simp [OutCall] at hc
   | indexAt _ _ _ _ _ _ ihx ihk | writeAt _ _ _ _ ihx ihk | arith _ _ _ ihx ihk | elemAt _ _ _ _ ihx ihk
   | merge _ _ _ _ _ _ _ _ ihx ihk | makeKey _ _ _ _ _ ihx ihk =>
@@ -982,26 +982,26 @@ theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v,
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc
     split at hc
-    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · rename_i hv; rw [ite_eq_left hv] at hi; exact ihx hi cur hc
     · rename_i hxv
-      rw [if_neg hxv] at hi
+      rw [ite_eq_right hxv] at hi
       split at hc
-      · rename_i hv; rw [if_pos hv] at hi; exact ihk hi cur hc
+      · rename_i hv; rw [ite_eq_left hv] at hi; exact ihk hi cur hc
       · simp [OutCall] at hc
   | setElem _ _ _ _ _ _ _ ihx ihi ihv =>
     intro hi cur hc
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc
     split at hc
-    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · rename_i hv; rw [ite_eq_left hv] at hi; exact ihx hi cur hc
     · rename_i hxv
-      rw [if_neg hxv] at hi
+      rw [ite_eq_right hxv] at hi
       split at hc
-      · rename_i hv; rw [if_pos hv] at hi; exact ihi hi cur hc
+      · rename_i hv; rw [ite_eq_left hv] at hi; exact ihi hi cur hc
       · rename_i hiv
-        rw [if_neg hiv] at hi
+        rw [ite_eq_right hiv] at hi
         split at hc
-        · rename_i hv; rw [if_pos hv] at hi; exact ihv hi cur hc
+        · rename_i hv; rw [ite_eq_left hv] at hi; exact ihv hi cur hc
         · simp [OutCall] at hc
   | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ _ _ _ ih
   | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>

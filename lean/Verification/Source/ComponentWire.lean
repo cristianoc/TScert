@@ -175,7 +175,7 @@ and those it may return. -/
 structure Native where
   site : Nat
   passed : Nat
-  given : Nat
+  «given» : Nat
   all : Nat
   member : Bool
   name : Option String
@@ -359,7 +359,7 @@ structure Components where
   crossings : List Crossing
   stores : List Store
   calls : List Call
-  throws : List Place
+  «throws» : List Place
   catches : List Place
   holds : List Place
   exports : List Export

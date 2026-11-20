@@ -473,11 +473,11 @@ section reps
 variable {r : Nat → Nat} {S : Separation} {ρ : Env}
 
 theorem levelRep_lt {d ℓ : Nat} (h : ℓ < d) : levelRep r d ℓ < d := by
-  simp only [levelRep, h, if_true]; omega
+  simp only [levelRep, h, ite_true]; omega
 
 theorem levelRep_eq (hle : ∀ x, r x ≤ x) (hr : ∀ x, ρ (r x) = ρ x) {d ℓ : Nat} (h : ℓ < d) :
     ρ (d - 1 - levelRep r d ℓ) = ρ (d - 1 - ℓ) := by
-  simp only [levelRep, h, if_true]
+  simp only [levelRep, h, ite_true]
   have := hle (d - 1 - ℓ)
   rw [show d - 1 - (d - 1 - r (d - 1 - ℓ)) = r (d - 1 - ℓ) by omega]
   exact hr _
@@ -486,8 +486,8 @@ theorem levelRep_levelRep (hle : ∀ x, r x ≤ x) (hrr : ∀ x, r (r x) = r x) 
     levelRep r d (levelRep r d ℓ) = levelRep r d ℓ := by
   have hl := levelRep_lt (r := r) h
   have := hle (d - 1 - ℓ)
-  conv => lhs; rw [levelRep, if_pos hl]
-  simp only [levelRep, h, if_true]
+  conv => lhs; rw [levelRep, ite_eq_left hl]
+  simp only [levelRep, h, ite_true]
   rw [show d - 1 - (d - 1 - r (d - 1 - ℓ)) = r (d - 1 - ℓ) by omega, hrr]
 
 /-- **The compacted separation holds exactly where the separation does**,

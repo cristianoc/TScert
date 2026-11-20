@@ -130,11 +130,11 @@ theorem VJ.capOut {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat
     intro l hl
     obtain ⟨x, hx, hxl⟩ := leaves_self_vals hval hl
     refine Leaves.code ?_ hxl
-    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
+    simp only [codeVals, hc, Bool.false_eq_true, ite_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
     exact .inr ⟨u, hu, hx⟩
   have hF : FnsIn Fl S u := hv.fns.part fun fs cc i he => by
     subst he
-    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
+    simp only [codeVals, hc, Bool.false_eq_true, ite_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
     exact .inr ⟨_, hu, by rw [vals_objAt]; exact List.mem_cons_self ..⟩
   exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h), hF, hin⟩
 
@@ -484,11 +484,11 @@ theorem lookup_filter_key {α : Type} (q : PropKey → Bool) : ∀ (l : List (Pr
     · subst hk
       by_cases hq : q k = true
       · simp [hq, List.lookup]
-      · simp only [List.filter_cons, hq, Bool.false_eq_true, if_false]; simpa [hq] using ih
+      · simp only [List.filter_cons, hq, Bool.false_eq_true, ite_false]; simpa [hq] using ih
     · have : (k == j) = false := by simpa using hk
       by_cases hq : q j = true
-      · simp only [List.filter_cons, hq, if_true, List.lookup, this]; exact ih
-      · simp only [List.filter_cons, hq, Bool.false_eq_true, if_false, List.lookup, this]; exact ih
+      · simp only [List.filter_cons, hq, ite_true, List.lookup, this]; exact ih
+      · simp only [List.filter_cons, hq, Bool.false_eq_true, ite_false, List.lookup, this]; exact ih
 
 theorem lookup_filter_some {α : Type} {q : PropKey → Bool} {l : List (PropKey × α)} {k : PropKey} {x : α}
     (h : (l.filter fun p => q p.1).lookup k = some x) : l.lookup k = some x := by
@@ -626,7 +626,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨hf', hH'⟩ := ih hf hH
-      simp only [stepSite, activeFrame, hn, if_true] at hf' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hf' hH' ⊢
       exact ⟨.invoke hf' (hr.alloc hl) (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
     | invokeC _ _ _ _ _ _ hfn => have := hfn.val; rw [notVal_of_step hst] at this; cases this
   | callRecv hfv hst ih =>
@@ -638,13 +638,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨hr', hH'⟩ := ih hr hH
-      simp only [stepSite, activeFrame, hn, hfv, if_true, Bool.true_eq_false, if_false] at hr' hH' ⊢
+      simp only [stepSite, activeFrame, hn, hfv, ite_true, Bool.true_eq_false, ite_false] at hr' hH' ⊢
       exact ⟨.invoke (hf.alloc hl) hr' (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
     | invokeC σ c π Sa Sr hof hfn hcode hself hr hargs hat hpar hrest hS =>
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨hr', hH'⟩ := ih hr hH
-      simp only [stepSite, activeFrame, hn, hfv, if_true, Bool.true_eq_false, if_false] at hr' hH' ⊢
+      simp only [stepSite, activeFrame, hn, hfv, ite_true, Bool.true_eq_false, ite_false] at hr' hH' ⊢
       exact ⟨.invokeC σ c π Sa Sr hof hfn hcode (hself.alloc hl) hr' (fun i x hx => (hargs i x hx).alloc hl) hat hpar
         hrest hS ho, hH'⟩
   | callArg hfv hrv hai hpre hst ih =>
@@ -656,7 +656,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨ha', hH'⟩ := ih (hargs _ (List.mem_of_getElem? hai)) hH
-      simp only [stepSite, activeFrame, hfv, hrv, Bool.true_eq_false, if_false, activeArgs_at hai hpre hn] at ha' hH' ⊢
+      simp only [stepSite, activeFrame, hfv, hrv, Bool.true_eq_false, ite_false, activeArgs_at hai hpre hn] at ha' hH' ⊢
       refine ⟨.invoke (hf.alloc hl) (hr.alloc hl) (fun x hx => ?_) hS ha ho hSf hout, hH'⟩
       rcases mem_set_cases hx with hx | rfl
       · exact (hargs x hx).alloc hl
@@ -674,7 +674,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | construct hf hargs hS ha _ hSf hout =>
       obtain ⟨hx', hH'⟩ := ih hf hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.construct hx' (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
   | constructArg hfv hai hpre hst ih =>
     intro cur ou o S hfit hH
@@ -685,7 +685,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | construct hf hargs hS ha _ hSf hout =>
       obtain ⟨hx', hH'⟩ := ih (hargs _ (List.mem_of_getElem? hai)) hH
-      simp only [stepSite, activeFrame, hfv, Bool.true_eq_false, if_false, activeArgs_at hai hpre hn] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hfv, Bool.true_eq_false, ite_false, activeArgs_at hai hpre hn] at hx' hH' ⊢
       refine ⟨.construct (hf.alloc hl) (fun x hx => ?_) hS ha ho hSf hout, hH'⟩
       rcases mem_set_cases hx with hx | rfl
       · exact (hargs x hx).alloc hl
@@ -699,7 +699,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | letE hx hb =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.letE hx' (hb.alloc hl) ho, hH'⟩
   | spreadC hst ih =>
     intro cur ou o S hfit hH
@@ -710,7 +710,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | spread hx hc =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.spread hx' hc ho, hH'⟩
   | readC hst ih =>
     intro cur ou o S hfit hH
@@ -721,7 +721,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | readAt hx hq hcl hr =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.readAt hx' hq hcl hr ho, hH'⟩
   | indexC1 hst ih =>
     intro cur ou o S hfit hH
@@ -732,7 +732,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | indexAt hx hk hq hcl hr =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.indexAt hx' (hk.alloc hl) hq hcl hr ho, hH'⟩
   | indexC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -743,7 +743,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | indexAt hx hk hq hcl hr =>
       obtain ⟨hx', hH'⟩ := ih hk hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.indexAt (hx.alloc hl) hx' hq hcl hr ho, hH'⟩
   | writeC1 hst ih =>
     intro cur ou o S hfit hH
@@ -754,7 +754,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | writeAt hx hy hst' =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.writeAt hx' (hy.alloc hl) hst' ho, hH'⟩
   | writeC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -765,7 +765,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | writeAt hx hy hst' =>
       obtain ⟨hx', hH'⟩ := ih hy hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.writeAt (hx.alloc hl) hx' hst' ho, hH'⟩
   | testC hst ih =>
     intro cur ou o S hfit hH
@@ -776,7 +776,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | test hx =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.test hx' ho, hH'⟩
   | iteC hst ih =>
     intro cur ou o S hfit hH
@@ -787,7 +787,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | ite hc hx hy =>
       obtain ⟨hx', hH'⟩ := ih hc hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.ite hx' (hx.alloc hl) (hy.alloc hl) ho, hH'⟩
   | arithC1 hst ih =>
     intro cur ou o S hfit hH
@@ -798,7 +798,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | arith hx hy =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.arith hx' (hy.alloc hl) ho, hH'⟩
   | arithC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -809,7 +809,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | arith hx hy =>
       obtain ⟨hx', hH'⟩ := ih hy hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.arith (hx.alloc hl) hx' ho, hH'⟩
   | elemC1 hst ih =>
     intro cur ou o S hfit hH
@@ -820,7 +820,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | elemAt hx hi hc =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.elemAt hx' (hi.alloc hl) hc ho, hH'⟩
   | elemC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -831,7 +831,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | elemAt hx hi hc =>
       obtain ⟨hx', hH'⟩ := ih hi hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.elemAt (hx.alloc hl) hx' hc ho, hH'⟩
   | setC1 hst ih =>
     intro cur ou o S hfit hH
@@ -842,7 +842,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | setElem hx hi hv hst' hS ha =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.setElem hx' (hi.alloc hl) (hv.alloc hl) hst' hS ha ho, hH'⟩
   | setC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -853,7 +853,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | setElem hx hi hv hst' hS ha =>
       obtain ⟨hx', hH'⟩ := ih hi hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.setElem (hx.alloc hl) hx' (hv.alloc hl) hst' hS ha ho, hH'⟩
   | setC3 hav hiv hst ih =>
     intro cur ou o S hfit hH
@@ -864,7 +864,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | setElem hx hi hv hst' hS ha =>
       obtain ⟨hx', hH'⟩ := ih hv hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, hiv, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, hiv, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.setElem (hx.alloc hl) (hi.alloc hl) hx' hst' hS ha ho, hH'⟩
   | lenC hst ih =>
     intro cur ou o S hfit hH
@@ -875,7 +875,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | lenOf hx =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.lenOf hx' ho, hH'⟩
   | throwC hst ih =>
     intro cur ou o S hfit hH
@@ -886,7 +886,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | throw hx =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.throw hx' ho, hH'⟩
   | mergeC1 hst ih =>
     intro cur ou o S hfit hH
@@ -897,7 +897,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | merge hx hy hq hcl hst' hs hQ =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.merge hx' (hy.alloc hl) hq hcl hst' hs hQ ho, hH'⟩
   | mergeC2 hav hst ih =>
     intro cur ou o S hfit hH
@@ -908,7 +908,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | merge hx hy hq hcl hst' hs hQ =>
       obtain ⟨hx', hH'⟩ := ih hy hH
-      simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hav, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.merge (hx.alloc hl) hx' hq hcl hst' hs hQ ho, hH'⟩
   | makeKeyC1 hst ih =>
     intro cur ou o S hfit hH
@@ -919,7 +919,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | makeKey hk hst' hx hs =>
       obtain ⟨hx', hH'⟩ := ih hk hH
-      simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true] at hx' hH' ⊢
       exact ⟨.makeKey hx' hst' (hx.alloc hl) hs ho, hH'⟩
   | makeKeyC2 hkv hst ih =>
     intro cur ou o S hfit hH
@@ -930,7 +930,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | makeKey hk hst' hx hs =>
       obtain ⟨hx', hH'⟩ := ih hx hH
-      simp only [stepSite, activeFrame, hn, if_true, hkv, Bool.true_eq_false, if_false] at hx' hH' ⊢
+      simp only [stepSite, activeFrame, hn, ite_true, hkv, Bool.true_eq_false, ite_false] at hx' hH' ⊢
       exact ⟨.makeKey (hk.alloc hl) hst' hx' hs ho, hH'⟩
   | makeArg hai hpre hst ih =>
     intro cur ou o S hfit hH
@@ -1233,7 +1233,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · simp only [elemSlots, List.mem_map, List.mem_range, Option.some.injEq] at hl
         obtain ⟨i, hi', rfl⟩ := hl
         refine ⟨by simp; omega, ?_⟩
-        simp only [Ghost.alloc, Nat.not_lt.mpr (Nat.le_add_right _ _), if_false]
+        simp only [Ghost.alloc, Nat.not_lt.mpr (Nat.le_add_right _ _), ite_false]
         exact hs
       · have := hH.fresh hst hvj [] (by simp)
         rwa [List.append_nil] at this

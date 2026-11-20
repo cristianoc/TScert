@@ -238,7 +238,7 @@ handler delivering from the throw state (`handler`), each at `edgePreAJ`. `NodeM
 `exits`, stated for every value of the claim's type, restated at the values
 the step returns. -/
 structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (Tres : Fam) (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) : Prop where
@@ -251,7 +251,7 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     StateHolds G entry (w.implies l) startNames ε ρ m s →
     EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
     RefsOk s.W (instantiate 0 ρ node.expression) →
-    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated «given» edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
         ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧
           ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0))
@@ -260,7 +260,7 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated «given» edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 end Obligations
 

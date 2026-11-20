@@ -170,13 +170,13 @@ theorem Shape.separate {G : NormalGraph ι} {root : ι} {stable : List ι}
     dsimp only
     rw [qDenoteWithArgs_unfold]
     obtain ⟨hp, hs, hm⟩ := NormalGraph.plain_iff.mp shape.plain
-    simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, if_false]
+    simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, ite_false]
     exact ⟨_, shape.row, witness_clause G η shape.views shape.methods shape.bounds
       shape.proto shape.admitted, witness_builtins G _ _ _ shape.noArray⟩
   obtain ⟨l, hl, hv⟩ := sub 1 witnessWorld _ input
   rw [qDenoteWithArgs_unfold] at hv
   obtain ⟨hp, hs, hm⟩ := NormalGraph.plain_iff.mp (List.all_eq_true.mp shape.stablePlain l hl)
-  simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, if_false] at hv
+  simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, ite_false] at hv
   obtain ⟨c, hc, hv, _⟩ := hv
   exact reject_clause G θ _ shape.proto c (shape.reject l hl c hc) hv
 

@@ -263,7 +263,7 @@ theorem mergeVal_slots (hp : p < preds.length) (hlen : ∀ q ∈ preds, q.names.
     · rw [slot_pred hp hlen hS (hw ▸ hi), h1 _ hpm, hyi]
     · omega
   · have hex : ∃ i, (mergeSlots preds width fresh0).2.1.toList[i]? = some y := ⟨i, hy⟩
-    simp only [mergeVal, hy0, if_false, dif_pos hex]
+    simp only [mergeVal, hy0, ite_false, dite_eq_left hex]
     have hc := Classical.choose_spec hex
     have hci : Classical.choose hex < (mergeSlots preds width fresh0).2.1.size := by
       have := (List.getElem?_eq_some_iff.mp hc).1; simpa using this

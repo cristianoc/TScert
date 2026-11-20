@@ -2,6 +2,8 @@ import Verification.Programs.PointClaims
 import Verification.Semantics.HeapFacts
 -- Std.Data.HashMap.Lemmas reads a map built by insertion; without it the keyed restriction index has no proof.
 import Std.Data.HashMap.Lemmas
+-- PointerEquality.lean gives the pointer-equality fast path at a type variable; without it the generic fast equality does not compile.
+import Verification.Semantics.PointerEquality
 
 /-! Refinement of immutable environment slots under observed Boolean or tag outcomes.
 Heap contents are not refined: the witness concerns the tested value,
@@ -951,7 +953,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
       have hl' : flds.lookup (o.map X).key = some l := by simpa [OptionalField.map, hkey] using hl
       obtain ⟨c', hw, hsc⟩ := optT_present hmem' hopt hl'
       by_cases hcond : (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) = false
-      · rw [if_neg (by rw [hcond]; exact Bool.false_ne_true)]
+      · rw [ite_eq_right (by rw [hcond]; exact Bool.false_ne_true)]
         simp only [Bool.or_eq_false_iff, Bool.and_eq_false_iff, Bool.not_eq_false'] at hcond
         have hro : o.readonly = false := hcond.1
         refine ⟨⟨⟨flds, oid, rfl, ?_, ?_⟩, hbs.1, fun _ => ?_⟩, hview, hopt, hmeth, hkeys, hst⟩
@@ -987,7 +989,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
       · have hc' : (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) = true := by
           revert hcond
           cases (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) <;> simp
-        rw [if_pos hc']
+        rw [ite_eq_left hc']
         refine ⟨⟨⟨flds, oid, rfl, hown, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys, hst⟩
         intro f T hm
         simp only [ReferenceConjunctions.viewsOf, List.map_append, List.mem_append,
@@ -1023,21 +1025,21 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
 def within [DecidableEq β] (xs ys : List β) : Bool := xs.all fun x => decide (x ∈ ys)
 
 /-- `x ∈ ys`, each member answered at once where it is `x` itself
-(`withPtrEq`). -/
+(`sameObjectOr`). -/
 def memFast [DecidableEq β] (x : β) (ys : List β) : Bool :=
-  ys.any fun y => withPtrEq x y (fun _ => decide (x = y)) (fun h => by subst h; simp)
+  ys.any fun y => sameObjectOr x y (fun _ => decide (x = y)) (fun h => by subst h; simp)
 
 /-- `within` as the compiled verifier runs it (`within_eq_fast`): answered
 at once where the two lists are one object, each member by `memFast`. -/
 def withinFast [DecidableEq β] (xs ys : List β) : Bool :=
-  withPtrEq xs ys (fun _ => xs.all fun x => memFast x ys) (fun h => by
+  sameObjectOr xs ys (fun _ => xs.all fun x => memFast x ys) (fun h => by
     subst h
-    simp only [memFast, withPtrEq, List.all_eq_true, List.any_eq_true, decide_eq_true_eq]
+    simp only [memFast, sameObjectOr, List.all_eq_true, List.any_eq_true, decide_eq_true_eq]
     exact fun x hx => ⟨x, hx, rfl⟩)
 
 @[csimp] theorem within_eq_fast : @within = @withinFast := by
   funext β _ xs ys
-  simp only [within, withinFast, memFast, withPtrEq]
+  simp only [within, withinFast, memFast, sameObjectOr]
   congr 1
   funext x
   apply Bool.eq_iff_iff.mpr

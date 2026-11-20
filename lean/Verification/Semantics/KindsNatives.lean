@@ -107,7 +107,7 @@ theorem native_shaped {k : Nat} {W : WorldT k} {h h' : Heap} {s : Nat} {orig : L
     obtain ⟨i, rfl⟩ : ∃ i, l = (entries W).length + i := ⟨l - (entries W).length, by omega⟩
     rw [roleAt_appendWs']
     simp only [List.map_map, Function.comp_def, List.map_const', List.getElem?_replicate]
-    rw [if_pos (by omega)]
+    rw [ite_eq_left (by omega)]
   intro l r hr
   by_cases hl : l < h.length
   · have hrW : roleAt W l = some r := by

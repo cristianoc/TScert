@@ -527,7 +527,7 @@ the verdict's graph plans' runs frame none; without `fallback`, a walk
 leaving its footprint's bound is refused, as a framed plan's run reads
 the direct walk alone. -/
 def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
-    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) (fallback : Bool := true) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
@@ -1020,7 +1020,7 @@ def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
 /-- **One member's single pass**: a graph plan's (`passMemberGraph`); a
 framed plan's (`framedRun`). -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
-    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
@@ -1210,7 +1210,7 @@ def FilePlans.placeRefusal (f : FilePlans) (fuel : Nat) (located : Bool) (i : Na
 (`FilePlans.passMember`), no certificate built: per member its line, its
 outcome and counts; the group's verdict, the first member's refusal or
 construct not handled, else the group's dependencies. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
     List String × Except String (List String) :=
   -- (`located`: a refusal's text the source obligation it names, the

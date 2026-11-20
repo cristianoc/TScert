@@ -160,12 +160,12 @@ instance : StrictTotal UInt64 where
     omega
 
 instance : StrictTotal String where
-  irrefl := String.lt_irrefl
-  trans := String.lt_trans
+  irrefl _ := Std.lt_irrefl
+  trans := Std.lt_trans
   total {a b} h := by
-    rcases String.le_total a b with hab | hba
-    · exact Or.inl (String.not_le.mp fun hba => h (String.le_antisymm hab hba))
-    · exact Or.inr (String.not_le.mp fun hab => h (String.le_antisymm hab hba))
+    rcases (Std.le_total : a ≤ b ∨ b ≤ a) with hab | hba
+    · exact Or.inl (Std.not_le.mp fun hba => h (Std.le_antisymm hab hba))
+    · exact Or.inr (Std.not_le.mp fun hab => h (Std.le_antisymm hab hba))
 
 /-- Lexicographic order on lists is a strict total order. -/
 theorem lex_total {β : Type} [LT β] [DecidableLT β] [StrictTotal β] [DecidableEq β] :

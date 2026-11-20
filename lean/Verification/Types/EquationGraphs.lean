@@ -776,11 +776,11 @@ theorem meetRowOf_form [DecidableEq ι] (parts : List (ι × GraphRow ι)) :
   unfold meetRowOf
   have h := meetRigid_nil_iff parts
   split
-  · next hn => rw [if_pos (h.mp hn)]; rfl
+  · next hn => rw [ite_eq_left (h.mp hn)]; rfl
   · next p ps hn =>
     have : ¬ (parts.all (fun p => GraphRow.form p.2 == .clauses) = true) := fun ha => by
       rw [h.mpr ha] at hn; cases hn
-    rw [if_neg this]; rfl
+    rw [ite_eq_right this]; rfl
 
 /-- The row of a label that is not a meet, from a signature's templates
 (`Equations.baseRow`). -/

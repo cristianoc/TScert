@@ -95,7 +95,7 @@ theorem mapNamesSound_of_lt {names : List Nat} {m : PointClaims.Mapping}
     obtain ⟨hkle, hkrun⟩ := hd
     by_cases hjk : j < k
     · rw [List.getElem?_append_left (by simp; omega)] at hj
-      rw [List.getElem?_map, List.getElem?_take, if_pos hjk] at hj
+      rw [List.getElem?_map, List.getElem?_take, ite_eq_left hjk] at hj
       have hjs : j < slots.length := by omega
       rw [List.getElem?_eq_getElem hjs] at hj ⊢
       simp only [Option.map_some, Option.some.injEq, Option.getD_some] at hj ⊢

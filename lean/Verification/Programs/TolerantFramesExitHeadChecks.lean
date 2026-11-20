@@ -74,11 +74,11 @@ theorem headImplies_checked {env : WalkEnv ι G I} {t : Target} {names : List Na
       have ha' : a.1 = true := by
         cases hh : a.1 with
         | true => rfl
-        | false => simp only [step, hh, Bool.not_false, if_true] at hs; cases hs
+        | false => simp only [step, hh, Bool.not_false, ite_true] at hs; cases hs
       refine ⟨ha', ?_⟩
       intro z hz
       rcases List.mem_cons.mp hz with rfl | hz
-      · simp only [step, ha', Bool.not_true, Bool.false_eq_true, if_false] at hs
+      · simp only [step, ha', Bool.not_true, Bool.false_eq_true, ite_false] at hs
         obtain ⟨y, hy, hty⟩ := impliesHeld_checked hs
         obtain ⟨hy, hn⟩ := List.mem_filter.mp hy
         simp only [Bool.and_eq_true, beq_iff_eq] at hn
@@ -105,7 +105,7 @@ theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poi
             (if pushed then (env.claimed[l]!).context.length + 1 else (env.claimed[l]!).context.length)
             (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1)) req t.mapping = true := by
   unfold headExit at h
-  simp only [Bool.false_eq_true, if_false, Bool.not_false, Bool.true_and] at h
+  simp only [Bool.false_eq_true, ite_false, Bool.not_false, Bool.true_and] at h
   split at h
   · cases h
   rename_i hi
@@ -126,7 +126,7 @@ theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poi
     apply Classical.byContradiction
     intro hn
     have hf := Bool.eq_false_iff.mpr hn
-    simp only [timedKind, hf, Bool.not_false, if_true] at h
+    simp only [timedKind, hf, Bool.not_false, ite_true] at h
     cases h
   have hi' : (headImplies G I env t names carried a.answers).1 = true := by simpa using hi
   refine ⟨headImplies_checked hi', ?_, ?_, req, hreq, ?_⟩

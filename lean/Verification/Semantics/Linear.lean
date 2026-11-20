@@ -221,7 +221,7 @@ theorem Step.conclude_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· <
     simp only [Step.conclude] at h
     by_cases hg : g = 0
     · simp [hg] at h
-    · rw [if_neg hg] at h
+    · rw [ite_eq_right hg] at h
       cases hs : combineSum known ps with
       | none => simp [hs] at h
       | some st =>

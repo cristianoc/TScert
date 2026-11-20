@@ -84,7 +84,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- The facts the declaration states at its returns (`Fragment.Fn.ensures`),
   position `0` the result and `q + 1` input slot `q`'s entry value, which
   each return of its graph must establish (`ensuresResult`). -/
-  ensures : List HeapKnowledge.IndexFact := []
+  «ensures» : List HeapKnowledge.IndexFact := []
   /-- Whether the declaration is async, as the source states (`Fragment.Fn`):
   its footprint is then `top` (`RequestJson.asyncEffects`). -/
   async : Bool

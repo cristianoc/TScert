@@ -223,11 +223,11 @@ theorem edgesFields_holds {facts : List (List (Nat × String))} {Fs : List (Nat 
   simp only [mapEnv]
   generalize slot t.mapping p.1 = j at hs ⊢
   cases hpk : pushes k
-  · simp only [hpk, Bool.false_eq_true, if_false] at hs ⊢
+  · simp only [hpk, Bool.false_eq_true, ite_false] at hs ⊢
     cases j with
     | zero => exact hF (0, p.2) (by simpa [fieldSlot] using hs)
     | succ j => exact hF (j + 1, p.2) (by simpa [fieldSlot] using hs)
-  · simp only [hpk, if_true] at hs ⊢
+  · simp only [hpk, ite_true] at hs ⊢
     cases j with
     | zero => exact hout p.2 (by simpa [fieldSlot] using hs)
     | succ j => exact hF (j, p.2) (by simpa [fieldSlot] using hs)

@@ -148,10 +148,10 @@ theorem wfArgsS_wf {xs : List Tm} (ih : ∀ a ∈ xs, wfS a = true → wf a = tr
     simp only [wfArgsS] at h
     simp only [wfArgs]
     split
-    · rename_i hv; rw [if_pos hv] at h
+    · rename_i hv; rw [ite_eq_left hv] at h
       simp only [Bool.and_eq_true, frees_eq, List.all_eq_true] at h ⊢
       exact ⟨ih a List.mem_cons_self h.1, fun x hx => free_mono _ (h.2 x hx)⟩
-    · rename_i hv; rw [if_neg hv] at h
+    · rename_i hv; rw [ite_eq_right hv] at h
       simp only [Bool.and_eq_true] at h ⊢
       exact ⟨free_mono _ h.1, iha (fun x hx => ih x (List.mem_cons_of_mem _ hx)) h.2⟩
 
@@ -179,7 +179,7 @@ theorem wfArgsS_split : ∀ {xs : List Tm} {i : Nat} {a : Tm}, wfArgsS xs = true
   | b :: bs, 0, a, hw, h, _, ha => by
     simp only [List.getElem?_cons_zero, Option.some.injEq] at h
     subst h
-    simp only [wfArgsS, ha, if_true, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
+    simp only [wfArgsS, ha, ite_true, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
     refine ⟨hw.1, fun j x hx hj => ?_⟩
     cases j with
     | zero => exact (hj rfl).elim

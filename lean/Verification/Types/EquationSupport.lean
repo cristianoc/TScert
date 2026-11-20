@@ -332,7 +332,7 @@ private theorem Equations.row_support (equations : Equations) (label : Label equ
 theorem Clause.meet_operands {a b c : Clause α} (h : c ∈ PositiveNormalization.meet a b) {S : α}
     (hS : S ∈ c.operands) : S ∈ a.operands ∨ S ∈ b.operands := by
   cases a <;> cases b <;> unfold PositiveNormalization.meet at h <;>
-    simp only [List.mem_singleton, List.not_mem_nil] at h <;>
+    (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
     (try (rcases PositiveNormalization.mem_numSet h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
       simp [Clause.operands] at hS)) <;>
@@ -340,7 +340,7 @@ theorem Clause.meet_operands {a b c : Clause α} (h : c ∈ PositiveNormalizatio
       simp [Clause.operands] at hS)) <;>
     (try subst h) <;> simp only [Clause.operands, Tuple.operands, List.map_append, List.mem_append,
       List.flatMap_append, List.flatten_append, List.flatMap_cons] at hS ⊢ <;>
-    grind (splits := 40)
+    grind (branches := 40)
 
 /-- Normalization never meets two operands: a conjunction's operands are its
 clauses'. -/

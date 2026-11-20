@@ -46,7 +46,7 @@ theorem joined_of_exit {G : NormalGraph ι} {context : List (Ty ι)}
 /-- **What an exit into a node delivers, at a merge with its joined
 implications**: an edge state into `t` holds, and where `t` is a merge the
 implications it keeps (`joinedChecked`) hold at the target environment. -/
-def edgePreJ (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (given : Nat → Bool)
+def edgePreJ (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) («given» : Nat → Bool)
     (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :
     Nat → Assertion :=

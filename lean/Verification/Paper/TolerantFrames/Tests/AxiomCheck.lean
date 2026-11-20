@@ -85,12 +85,13 @@ run_cmd do
   -- Every safe declaration of the paper's formalisation rests on the standard
   -- axioms.
   let mut checked := 0
-  for (decl, info) in env.constants.map₁.toList do
-    let some i := env.getModuleIdxFor? decl | continue
-    let module := imported[i.toNat]!
-    unless library.isPrefixOf module && !info.isUnsafe do continue
-    checked := checked + 1
-    for axiom_ in ← liftCoreM <| collectAxioms decl do
-      unless standard.contains axiom_ do
-        throwError "{decl} depends on the axiom {axiom_}"
+  for module in imported, data in env.header.moduleData do
+    unless library.isPrefixOf module do continue
+    for info in data.constants do
+      if info.isUnsafe then continue
+      let decl := info.name
+      checked := checked + 1
+      for axiom_ in ← liftCoreM <| collectAxioms decl do
+        unless standard.contains axiom_ do
+          throwError "{decl} depends on the axiom {axiom_}"
   if checked == 0 then throwError "no declaration of the paper's formalisation found"

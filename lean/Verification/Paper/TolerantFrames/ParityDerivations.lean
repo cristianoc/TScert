@@ -1408,11 +1408,11 @@ theorem lengthSuccessor_sound {arena : AssertionArena} (hv : arena.Valid) {s : T
         subst hv'; simp only [Linear.Form.eval, hpi, Option.getD_some]; omega
       | const _ _ => simp [oneFacts] at ho
     cases lengthLeft
-    · simp only [Bool.false_eq_true, if_false] at hx hone
+    · simp only [Bool.false_eq_true, ite_false] at hx hone
       have := hxv hx hr
       have := h1 hone hl hon
       omega
-    · simp only [if_true] at hx hone
+    · simp only [ite_true] at hx hone
       have := hxv hx hl
       have := h1 hone hr hon
       omega
@@ -1488,9 +1488,9 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
     show Sat arena _ _ _ a' ↔ Sat arena _ _ _ a
     by_cases hq : q = p
     · subst hq
-      simp only [if_true] at h
+      simp only [ite_true] at h
       simpa only [TwoState.env_withEnv, TwoState.state_withEnv, TwoState.mark_withEnv] using sat_shift h x
-    · simp only [hq, if_false, beq_iff_eq] at h
+    · simp only [hq, ite_false, beq_iff_eq] at h
       subst h
       have : (s.withEnv p (push x (s.env p))).env q = s.env q := by cases p <;> cases q <;> simp_all [TwoState.withEnv, TwoState.env]
       rw [this, TwoState.state_withEnv, TwoState.mark_withEnv]
@@ -1506,18 +1506,18 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
   | .transition Φ, .transition Φ', h => by
     simp only [shiftFormula] at h
     cases p
-    · simp only [if_true, beq_iff_eq] at h
+    · simp only [ite_true, beq_iff_eq] at h
       subst h
       exact EffectAction.rename_iff _
-    · simp only [beq_iff_eq, reduceCtorEq, if_false] at h
+    · simp only [beq_iff_eq, reduceCtorEq, ite_false] at h
       subst h; exact Iff.rfl
   | .operation q, .operation q', h => by
     simp only [shiftFormula] at h
     cases p
-    · simp only [reduceCtorEq, if_false, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+    · simp only [reduceCtorEq, ite_false, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
       obtain ⟨hq, rfl⟩ := h
       exact OperationPostF.holds_before s _ hq
-    · simp only [if_true, beq_iff_eq] at h
+    · simp only [ite_true, beq_iff_eq] at h
       subst h; exact OperationPostF.holds_shift s x q
   | .transport θ, .transport θ', h => by
     simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_iff] at h

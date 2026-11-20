@@ -25,11 +25,11 @@ theorem moduleUnitId_inj {loc a b : String} (h : moduleUnitId loc a = moduleUnit
   exact String.ext this
 
 /-- Mode 8's preparation of a module in the interface computation. -/
-def mode8Prepare (given : Std.HashMap String Json) : String → FilePlans → FilePlans :=
+def mode8Prepare («given» : Std.HashMap String Json) : String → FilePlans → FilePlans :=
   fun location f => f.withHeadFacts (RequestCli.forModule location given) false given.isEmpty
 
 /-- Mode 8's check of a module's group in the interface computation. -/
-def mode8Check (fuel : Nat) (force : List String) (given : Std.HashMap String Json) :
+def mode8Check (fuel : Nat) (force : List String) («given» : Std.HashMap String Json) :
     FilePlans → List Nat → List String × Except String (List String) :=
   fun f group =>
     let r := f.passGroupMode8 given.isEmpty force (fun _ => []) fuel group
@@ -56,17 +56,17 @@ computation, its accepted set `ok` and a layout of the module at units of
 def entryRealized_of_step
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
-    {given : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
+    {«given» : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
       depends true true none true = .ok fm₀)
     {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}
-    (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.leaders,
-        moduleUnitId m.module.location ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
-        ∃ lines deps, mode8Check fuel force given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
-          ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
+    (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare «given») m.module.location fm₀ reads incoming tables).fr.leaders,
+        moduleUnitId m.module.location ((stepPlans (mode8Prepare «given») m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
+        ∃ lines deps, mode8Check fuel force «given» (stepPlans (mode8Prepare «given») m.module.location fm₀ reads incoming tables)
+          ((stepPlans (mode8Prepare «given») m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
           ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2))
-    {e : Entry} (L : StepLayout (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables) m.module.location ok e) :
+    {e : Entry} (L : StepLayout (stepPlans (mode8Prepare «given») m.module.location fm₀ reads incoming tables) m.module.location ok e) :
     EntryRealized e where
   fm := stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables
   selection := none
@@ -86,7 +86,7 @@ interface computation publishing `e` (its module, plans and accepted set as
 `EstablishedStep` states them), a layout of the module at units of the
 step's accepted set whose realization `Chosen` names. -/
 def StepLayouts (budget : PositiveCertificates.SearchBudget) (force : List String) (fuel : Nat)
-    (given : Std.HashMap String Json) (Chosen : (e : Entry) → EntryRealized e → Prop) (e : Entry) : Prop :=
+    («given» : Std.HashMap String Json) (Chosen : (e : Entry) → EntryRealized e → Prop) (e : Entry) : Prop :=
   ∀ (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     (m : ModuleNeed) (fm₀ : FilePlans) (forced : StandIns)
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed)) (depends : List (String × List String))

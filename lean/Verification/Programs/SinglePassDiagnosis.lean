@@ -156,7 +156,7 @@ def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
-    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    («ensures» : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (regional : Option Regional) : List (Nat × LeftOut) :=
   match setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
       suggestions known codes aliases passChecker answers #[] 1000000000 bound givenImplies givenArgs ensures

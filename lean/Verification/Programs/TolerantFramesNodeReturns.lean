@@ -24,7 +24,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
 /-- The inputs a return's postcondition tracks (`returnCheck`'s `tracked`):
 each named input's start name at a slot of the entry's names. -/
-def passTracked (ensures : List HeapKnowledge.IndexFact) (entry : SinglePass.State) (startNames : List Nat) :
+def passTracked («ensures» : List HeapKnowledge.IndexFact) (entry : SinglePass.State) (startNames : List Nat) :
     GraphCode.Tracked :=
   (GraphCode.namedInputs ensures).filterMap fun (_, q) => do
     let nm ← startNames[q]?
@@ -92,7 +92,7 @@ refuses nothing. -/
 def ReturnChecked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G images codes pc P w startNames ctx l)
-    (goal : Goal ι) (ensures : List HeapKnowledge.IndexFact) : Prop :=
+    (goal : Goal ι) («ensures» : List HeapKnowledge.IndexFact) : Prop :=
   r.node.continuation = .ret → ∃ (start : Nat) (argName : Option Nat) (yields : List (PromiseCalls.Yield ι))
     (debugNode : Nat) (answers : Answered G),
     (returnCheck G images goal ensures r.c l r.entry r.st.store r.st.result start startNames argName yields

@@ -112,7 +112,7 @@ inductive UnaryOp where
 domain obligation refuses; `throws`, a `TypeError` before any other step;
 `answersFalse`, `false` with no other step. -/
 inductive GuardUndefined where
-  | unadmitted | throws | answersFalse
+  | unadmitted | «throws» | answersFalse
   deriving Repr, DecidableEq, Inhabited
 
 /-- The test a logical assignment makes on the target's current value. -/
@@ -337,7 +337,7 @@ inductive Expr where
   certified at `top` (`asyncEffects`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (guard : Option Guard) (stated : Option EffectJson.StatedEffect) (async : Bool) (requires : List HeapKnowledge.IndexFact) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (stated : Option EffectJson.StatedEffect) (async : Bool) («requires» : List HeapKnowledge.IndexFact) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -719,11 +719,11 @@ structure Fn where
   /-- Its precondition, index facts at the call's positions: `0` the
   receiver, `i + 1` the `i`-th actual (ARITHMETIC.md, 
   "Preconditions"). -/
-  requires : List HeapKnowledge.IndexFact := []
+  «requires» : List HeapKnowledge.IndexFact := []
   /-- The facts it states of its result, index facts at position `0`, the
   result: its record type's invariant (ARITHMETIC.md, "Type
   invariants"), which each of its returns establishes. -/
-  ensures : List HeapKnowledge.IndexFact := []
+  «ensures» : List HeapKnowledge.IndexFact := []
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with

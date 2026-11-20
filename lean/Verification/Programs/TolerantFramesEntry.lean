@@ -135,7 +135,7 @@ theorem headEntry_start_names {g : HeapKnowledge.Knowledge} {w fresh : Nat} {goa
     (hargs : ∀ i ∈ argSlots, goal.slot = some i) (hinputs : ∀ p ∈ inputSlots, p.1 = p.2) :
     (SinglePass.headEntry g true w fresh (List.range w) (goal.slot.bind ((List.range w)[·]?)) argSlots inputSlots
       implies).1.names = List.range w := by
-  simp only [SinglePass.headEntry, if_true]
+  simp only [SinglePass.headEntry, ite_true]
   have hbase : (List.range w).headD 0 = 0 := by cases w <;> simp [List.range_succ_eq_map]
   rw [hbase]
   refine List.ext_getElem (by simp) fun i hi _ => ?_

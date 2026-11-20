@@ -1000,18 +1000,18 @@ theorem placeAt_getElem? (ls : List (Option Nat)) (k m i : Nat) :
   by_cases hik : i = k
   · subst hik
     rw [List.getElem?_set_self]
-    simp only [if_true]
+    simp only [ite_true]
     have : i < ls.length + (i + 1 - ls.length) := by omega
     simp [this]
   · rw [List.getElem?_set_ne (Ne.symm hik)]
-    simp only [hik, if_false]
+    simp only [hik, ite_false]
     by_cases hi : i < ls.length
     · simp [List.getElem?_append_left hi, hi]
-    · simp only [hi, if_false]
+    · simp only [hi, ite_false]
       rw [List.getElem?_append_right (by omega), List.getElem?_replicate]
       by_cases hk : i < k + 1
-      · simp only [hk, if_true]; simp; omega
-      · simp only [hk, if_false]; simp; omega
+      · simp only [hk, ite_true]; simp; omega
+      · simp only [hk, ite_false]; simp; omega
 
 /-- Placing at most at the end leaves a dense spine dense: every position is
 the placed one, or one the spine already had. -/
@@ -1093,7 +1093,7 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
       have := hpos' i hlt
       have hr : T.required[i]? = none := List.getElem?_eq_none (by omega)
       have ho : T.optional[i - T.required.length]? = none := List.getElem?_eq_none (by omega)
-      simp only [positionFam, hr, ho, hi, if_true] at this
+      simp only [positionFam, hr, ho, hi, ite_true] at this
       exact ⟨_, res (As[i]'hlt), this, hl i hlt, fun _ _ _ _ => SlotContract.refl _ _⟩
     · contradiction
 
@@ -1126,7 +1126,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       rintro rfl
       simp [hl] at hhole
     have hi : i < ls.length := (List.getElem?_eq_some_iff.mp hl).1
-    exact ⟨l, c, by rw [placeAt_getElem?]; simp only [hik, hi, if_false, if_true]; exact hl, hw, hag⟩
+    exact ⟨l, c, by rw [placeAt_getElem?]; simp only [hik, hi, ite_false, ite_true]; exact hl, hw, hag⟩
   · intro i A' l hA hl
     rw [placeAt_getElem?] at hl
     split at hl
@@ -1148,7 +1148,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       subst hik
       have hr : T.required[i]? = none := List.getElem?_eq_none (by omega)
       have ho : T.optional[i - T.required.length]? = none := List.getElem?_eq_none (by omega)
-      simp only [positionFam, hr, ho, hi, if_true] at hpos
+      simp only [positionFam, hr, ho, hi, ite_true] at hpos
       exact ⟨A, res A, hpos, hm, fun _ _ _ _ => SlotContract.refl _ _⟩
     · split at hl
       · exact hrest i l hi hl

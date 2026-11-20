@@ -183,7 +183,7 @@ theorem regionalAt_own_head {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {
     have hcells : C = here.cells := by
       have hk' : cellsKept G I sums rg.Φ F here.cells cEv t0 node.handler.isSome = true := by
         simpa only [F, hhere] using hk
-      exact if_pos hk'
+      exact ite_eq_left hk'
     have hfields' : Fs = here.fields := by
       apply List.filter_eq_self.mpr
       intro p hp

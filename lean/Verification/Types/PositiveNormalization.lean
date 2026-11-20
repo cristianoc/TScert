@@ -862,9 +862,9 @@ theorem meet_numIn_numLit (X : α → Fam) (P : α → ArgFam) (S : List UInt64)
       interT (semWithArgs Ξ X P (.numIn S)) (semWithArgs Ξ X P (.numLit c)) n W v := by
   simp only [meet, interT, semWithArgs]
   by_cases hc : c ∈ S
-  · simp only [List.contains_iff_mem, hc, if_true, singleton_sem, semWithArgs]
+  · simp only [List.contains_iff_mem, hc, ite_true, singleton_sem, semWithArgs]
     exact ⟨fun h => ⟨⟨c, hc, h⟩, h⟩, And.right⟩
-  · simp only [List.contains_iff_mem, hc, if_false, semList, setSem, List.not_mem_nil, false_and,
+  · simp only [List.contains_iff_mem, hc, ite_false, semList, setSem, List.not_mem_nil, false_and,
       exists_false, false_iff, not_and]
     rintro ⟨b, hb, rfl⟩ he
     cases he
@@ -893,9 +893,9 @@ theorem meet_strIn_strLit (X : α → Fam) (P : α → ArgFam) (S : List String)
       interT (semWithArgs Ξ X P (.strIn S)) (semWithArgs Ξ X P (.strLit c)) n W v := by
   simp only [meet, interT, semWithArgs]
   by_cases hc : c ∈ S
-  · simp only [List.contains_iff_mem, hc, if_true, singleton_sem, semWithArgs]
+  · simp only [List.contains_iff_mem, hc, ite_true, singleton_sem, semWithArgs]
     exact ⟨fun h => ⟨⟨c, hc, h⟩, h⟩, And.right⟩
-  · simp only [List.contains_iff_mem, hc, if_false, semList, setSem, List.not_mem_nil, false_and,
+  · simp only [List.contains_iff_mem, hc, ite_false, semList, setSem, List.not_mem_nil, false_and,
       exists_false, false_iff, not_and]
     rintro ⟨b, hb, rfl⟩ he
     cases he
@@ -931,10 +931,10 @@ theorem meet_int_numLit (X : α → Fam) (P : α → ArgFam) (c : UInt64) (n : N
       interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P (.numLit c)) n W v := by
   simp only [meet, interT, semWithArgs, intT]
   by_cases hc : (SafeIntegers.safeIntOfBits c).isSome
-  · simp only [hc, if_true, singleton_sem, semWithArgs]
+  · simp only [hc, ite_true, singleton_sem, semWithArgs]
     refine ⟨fun h => ⟨⟨c, h, ?_⟩, h⟩, And.right⟩
     exact Option.isSome_iff_ne_none.mp hc
-  · simp only [hc, Bool.false_eq_true, if_false, semList, setSem, List.not_mem_nil, false_and,
+  · simp only [hc, Bool.false_eq_true, ite_false, semList, setSem, List.not_mem_nil, false_and,
       exists_false, false_iff, not_and]
     rintro ⟨b, rfl, hb⟩ he
     cases he
@@ -1196,10 +1196,10 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       by_cases hfg : f = g
       · subst hfg
         show semList Ξ X P (if f = f then [Clause.view f (ms ++ ns)] else []) n W v ↔ _
-        simp only [if_true, singleton_sem, semWithArgs, List.map_append, methodT_append, interT]
+        simp only [ite_true, singleton_sem, semWithArgs, List.map_append, methodT_append, interT]
         exact ⟨fun ⟨h, m1, m2⟩ => ⟨⟨h, m1⟩, h, m2⟩, fun ⟨⟨h, m1⟩, _, m2⟩ => ⟨h, m1, m2⟩⟩
       · show semList Ξ X P (if f = g then [Clause.view f (ms ++ ns)] else []) n W v ↔ _
-        rw [if_neg hfg]
+        rw [ite_eq_right hfg]
         constructor
         · intro h; exact False.elim (nil_sem X P n W v h)
         · rintro ⟨⟨⟨_, _, _, _, rfl⟩, -⟩, ⟨⟨_, _, _, _, he⟩, -⟩⟩
@@ -1377,7 +1377,7 @@ theorem positionFam_tupleFams (X : α → Fam) (t : Tuple α) (i : Nat) :
 theorem Tuple.position_beyond {t : Tuple α} {i : Nat}
     (h : t.required.length + t.optional.length ≤ i) : t.position i = t.rest := by
   simp only [Tuple.position, List.getElem?_eq_none (show t.required.length ≤ i by omega),
-    List.getElem?_eq_none (show t.optional.length ≤ i - t.required.length by omega), h, if_true]
+    List.getElem?_eq_none (show t.optional.length ≤ i - t.required.length by omega), h, ite_true]
 
 /-- An index without a position is past the fixed positions of a contract
 without a rest. -/
@@ -1388,7 +1388,7 @@ theorem Tuple.position_none {t : Tuple α} {i : Nat} (h : t.position i = none) :
   cases ho : t.optional[i - t.required.length]? <;> simp only [ho, reduceCtorEq] at h
   rw [List.getElem?_eq_none_iff] at hr ho
   have hi : t.required.length + t.optional.length ≤ i := by omega
-  simp only [hi, if_true] at h
+  simp only [hi, ite_true] at h
   exact ⟨hi, h⟩
 
 /-- Current-level tuple membership preserves current-level agreement. -/

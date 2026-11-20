@@ -113,19 +113,19 @@ facts (`TraversedA`); each edge state into a head being the head's entry;
 the start entered. -/
 structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) where
   w : Walk ι
-  given : Nat → Bool
+  «given» : Nat → Bool
   ctx : Nat → List (Ty ι)
   edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)
   fresh : Nat → Nat
   stated : Nat → Option HeapKnowledge.Knowledge
   node : ∀ l, w.visited l → NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l
-  traversed : TraversedA G w (List.range c.inputs.length) given ctx edgesIn fresh stated
-  heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
+  traversed : TraversedA G w (List.range c.inputs.length) «given» ctx edgesIn fresh stated
+  heads : ∀ t, «given» t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
   start : StartEntered c w ctx stated
   /-- The written assertions by label are the table `runWalk` reads. -/
   stated_eq : ∀ t, stated t = (CertificateProducer.byLabel c.P.toArray.size c.assertions)[t]?.getD none
   /-- The head flags read by the pass. -/
-  given_eq : given = passHeads c
+  given_eq : «given» = passHeads c
   /-- The contexts read by the pass. -/
   ctx_eq : ctx = passCtx c
 

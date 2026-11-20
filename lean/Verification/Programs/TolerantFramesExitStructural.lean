@@ -48,7 +48,7 @@ theorem exitStep_handler_arrays {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     · exact hp.1.trans (exitTypes_core ht).1
   extract_lets freshImpl record at h
   have hh' : env.isHead[target.label]! = false := hh
-  simp only [hh', Bool.false_eq_true, if_false] at h
+  simp only [hh', Bool.false_eq_true, ite_false] at h
   split at h
   · cases h
   rename_i a3 ha
@@ -56,7 +56,7 @@ theorem exitStep_handler_arrays {env : WalkEnv ι G I} {l i : Nat} {en : Entered
   cases h
   dsimp only [pushExit]
   rw [hp3.incoming, hp3.incomingImpl, hp3.incomingEdges]
-  simp only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, if_true, List.append_nil]
+  simp only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, ite_true, List.append_nil]
   exact ⟨rfl, rfl, rfl⟩
 
 /-- The entry and implications of a head with a non-initial entry. -/
@@ -145,7 +145,7 @@ theorem handlerRecords_of_checked (s : Site c r l hl) (checked : WalkChecked c r
     obtain ⟨_, _, h3⟩ := exitStep_handler_arrays hb (flag.trans hg)
     refine ⟨exitsWalk b, s.raw, hedge, hx.trans hext, ?_⟩
     change _ ∈ (b.incomingEdges[t.label]?).getD []
-    rw [h3, s.mergingOfIncoming checked t.label hg hm, if_pos rfl, hc, he, hK, ← hi]
+    rw [h3, s.mergingOfIncoming checked t.label hg hm, ite_eq_left rfl, hc, he, hK, ← hi]
     simp only [Array.getElem?_modify, ↓reduceIte, Array.getElem?_eq_getElem b3,
       Option.map_some, Option.getD_some]
     exact List.mem_cons_self
@@ -176,7 +176,7 @@ theorem Site.head_written (s : Site c r l hl) {t : Nat} {req : HeapKnowledge.Kno
   obtain ⟨counts, hgiven⟩ := h.given
   rw [hgiven, setupGiven_get] at hg
   split at hg
-  · simp only [beq_iff_eq, ht, if_false, Option.some.injEq] at hg
+  · simp only [beq_iff_eq, ht, ite_false, Option.some.injEq] at hg
     refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[t]!).getD [], ?_⟩
     rw [← hg]
     have hst : s.env.stated[t]! = r.stated t := by
@@ -201,7 +201,7 @@ theorem Site.head_incoming (s : Site c r l hl) {e : Exit}
   have hany : s.raw.edges.toList.any (·.target.label == e.target.label) = true :=
     List.any_eq_true.mpr ⟨edge, hmem, by simp [htarget]⟩
   rw [hw]
-  simp only [ofPass, ← r.given_eq, hh, if_true, hany, List.mem_singleton]
+  simp only [ofPass, ← r.given_eq, hh, ite_true, hany, List.mem_singleton]
 
 /-- An edge into the start uses its ordinary fresh head entry. -/
 theorem Site.exit_noninitial (s : Site c r l hl) {e : Exit}
@@ -278,7 +278,7 @@ theorem Site.start_given (s : Site c r l hl) {req : HeapKnowledge.Knowledge}
   obtain ⟨counts, hgiven⟩ := h.given
   rw [hgiven, setupGiven_get] at hg
   split at hg
-  · simp only [BEq.rfl, if_true, Option.some.injEq] at hg
+  · simp only [BEq.rfl, ite_true, Option.some.injEq] at hg
     have hst : s.env.stated[c.start]! = r.stated c.start := by
       rw [h.stated, r.stated_eq]
       simp only [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]

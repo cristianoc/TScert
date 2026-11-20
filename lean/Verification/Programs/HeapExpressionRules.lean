@@ -334,7 +334,7 @@ theorem clauseField_typed [DecidableEq ι] {G : NormalGraph ι} {cs : List (Posi
         viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
       refine ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp, ?_⟩
       exact List.mem_flatMap.mpr ⟨_, hm, List.mem_append_right _
-        (by simp only [bne_iff_ne, ne_eq, hlen, not_false_eq_true, if_true]; exact List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
+        (by simp only [bne_iff_ne, ne_eq, hlen, not_false_eq_true, ite_true]; exact List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
   | callable a bs L S ms =>
     simp only [clauseField, clauseBagOperand, Bool.or_false, List.any_eq_true, decide_eq_true_eq] at hb
     obtain ⟨⟨g, s, El⟩, hmem, rfl⟩ := hb
@@ -682,7 +682,7 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
   obtain ⟨⟨⟨hal,hv⟩,ha⟩,hf⟩ := hm
   have hc : ρ g.cell = ρ i := HeapLinks.aliases_eq hk.2.2.1 hal
   have hgl := hk.2.2.1 g hg
-  simp only [ha, Bool.false_eq_true, if_false] at hgl
+  simp only [ha, Bool.false_eq_true, ite_false] at hgl
   have hread : ∃ flds c oid, ρ i = .objAt flds c oid ∧ ReadGave flds fld h (ρ y) := by
     split at hgl
     · obtain ⟨flds,c,oid,ho,hr⟩ := hgl
@@ -922,7 +922,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hg
       obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
       obtain ⟨hl, hv⟩ := hfield i hi
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact ⟨_, _, _, h.length + i, rfl, hl, by simpa [push] using hv⟩
 
 /-- An object allocated past the heap's end keeps what was known of the old
@@ -1534,10 +1534,10 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
         by_cases ha : g.alias = true
         · simpa [ha] using hold
         · have hw : writeKeeps k i fld g.cell g.field = true := by simpa [ha] using hkg
-          simp only [ha, if_false, Bool.false_eq_true] at hold ⊢
+          simp only [ha, ite_false, Bool.false_eq_true] at hold ⊢
           split at hold
           · rename_i hop
-            simp only [hop, if_true]
+            simp only [hop, ite_true]
             obtain ⟨flds0, c0, oid0, hs0, hr⟩ := hold
             refine ⟨flds0, c0, oid0, hs0, ?_⟩
             unfold ReadGave at hr ⊢
@@ -1547,7 +1547,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
               exact hr
             · exact hr
           · rename_i hop
-            simp only [hop, if_false, Bool.false_eq_true]
+            simp only [hop, ite_false, Bool.false_eq_true]
             obtain ⟨flds0, c0, oid0, l0, hs0, hfd0, hr⟩ := hold
             exact ⟨flds0, c0, oid0, l0, hs0, hfd0,
               by rw [List.getElem?_set_ne (writeKeeps_ne hk hρ hw hl hfd hs0 hfd0)]; exact hr⟩
@@ -2628,7 +2628,7 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
         obtain ⟨⟨⟨hal, -⟩, ha⟩, -⟩ := hm
         have hcell : ρ g.cell = ρ i' := HeapLinks.aliases_eq hk.2.2.1 hal
         have hgl := hk.2.2.1 g hg
-        simp only [ha, Bool.false_eq_true, if_false] at hgl
+        simp only [ha, Bool.false_eq_true, ite_false] at hgl
         have hobj : ∃ flds c oid, ρ i' = .objAt flds c oid := by
           split at hgl
           · obtain ⟨flds, c, oid, ho, -⟩ := hgl; exact ⟨flds, c, oid, hcell ▸ ho⟩
@@ -2666,7 +2666,7 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
               List.mem_map]
             rintro _ ⟨i, hi, rfl⟩
             have hv := (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hin i hi)))).1
-            simp only [Function.comp, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero]
+            simp only [Function.comp, instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero]
             cases hr : ρ i <;> simp_all [Purity.initTerm, Purity.operandTerm, isVal]
           · cases hc
         · cases hc

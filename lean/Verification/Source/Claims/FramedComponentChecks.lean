@@ -96,7 +96,7 @@ theorem idxOf_append' {α : Type} [BEq α] [LawfulBEq α] (a : α) : ∀ (l₁ l
     · have ih := idxOf_append' a xs l₂
       simp only [List.cons_append, List.idxOf_cons, List.mem_cons, List.length_cons]
       have : (x == a) = false := by simp [h]
-      simp only [this, cond_false, ih]
+      simp only [this, ih]
       by_cases hm : a ∈ xs
       · simp [hm]
       · simp [hm, Ne.symm h]; omega
@@ -111,7 +111,7 @@ theorem idxOf_map_pair {α β : Type} [BEq α] [LawfulBEq α] [BEq β] [LawfulBE
     · subst h; simp [List.idxOf_cons_self]
     · have : ((b, x) == (b, kx)) = false := by simp [h]
       have h2 : (x == kx) = false := by simp [h]
-      simp only [List.map_cons, List.idxOf_cons, this, h2, cond_false, idxOf_map_pair b kx xs]
+      simp only [List.map_cons, List.idxOf_cons, this, h2, idxOf_map_pair b kx xs]
 
 /-- **The position of a body's first node key among the bodies'
 allocation occurrences**: the node keys of the bodies before its first
@@ -141,7 +141,7 @@ theorem allocOccs_idxOf {b : Code} {kx : NodeKey} (hk : kx ∈ b.2) :
         rcases List.mem_cons.mp h with h | h
         · exact absurd h.symm he
         · exact h
-      simp only [hm, if_false, List.length_map, offsetOf, he, allocOccs_idxOf hk hr]
+      simp only [hm, ite_false, List.length_map, offsetOf, he, allocOccs_idxOf hk hr]
       omega
 
 /-- The canonical site of an occurrence, read from its body's offset where

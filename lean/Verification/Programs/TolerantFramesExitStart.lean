@@ -42,7 +42,7 @@ theorem union_keeps_left {S T : HeapSeparation.Separation} {ρ : Env}
   · exact h a ha
   · rename_i ht
     have heq : (S.depth == T.depth) = true := by simpa [hne, ht] using hd
-    rw [if_pos heq] at h
+    rw [ite_eq_left heq] at h
     have ham : a ∈ (S.facts ++ T.facts.filter (!S.facts.contains ·)).filter
         (fun a => !a.partners.isEmpty) := List.mem_filter.mpr ⟨List.mem_append_left _ ha, hap⟩
     unfold HeapSeparation.norm at h

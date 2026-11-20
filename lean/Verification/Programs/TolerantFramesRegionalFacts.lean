@@ -54,7 +54,7 @@ theorem expandedLinks_recover {k : Knowledge} {ρ : Env} {h : Heap}
         apply List.mem_filterMap.mpr
         refine ⟨x, hx, ?_⟩
         change (if LinkClasses.rep k.links x = x then none else some _) = some _
-        rw [if_neg e]
+        rw [ite_eq_right e]
         rfl)
       simpa using this
   intro g hg

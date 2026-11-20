@@ -57,7 +57,7 @@ theorem mergeEqAtoms_names {int : Bool} {φ x : Nat} {a : Atom} (ha : a ∈ merg
   · cases int with
     | false => simp at ha
     | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, if_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
       rcases ha with rfl | rfl <;>
       · intro y hy
         simp [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, HeapKnowledge.Term.slots,

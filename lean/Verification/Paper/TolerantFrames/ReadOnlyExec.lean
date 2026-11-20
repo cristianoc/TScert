@@ -289,7 +289,7 @@ what `C` holds after the step. -/
 theorem outsideNext_drop {tv : TypeView} {x y : Conf} {g : Ghost (F.at C)}
     (hA : g.A = []) :
     HStep tv y.s.h (g.alloc x.s.h.length (fun _ => none)) (outsideNext F C c x y g) := by
-  unfold outsideNext outsideNextAt; simp only [hA, if_true]
+  unfold outsideNext outsideNextAt; simp only [hA, ite_true]
   exact .drop _ _ hA
 
 /-- **The trim keeps the invariants**: outside every call of `C` the history
@@ -514,13 +514,13 @@ theorem kind_spec (x y : Conf) :
     (kind F C c x y = .body → depthC F C c y.t = depthC F C c x.t ∧ ¬ Outside F C c x) := by
   unfold kind stepKind
   by_cases h₁ : OutsideAt F C c x.t ∧ depthC F C c y.t = depthC F C c x.t
-  · rw [if_pos h₁]; refine ⟨fun _ => h₁, ?_, ?_, ?_⟩ <;> simp
-  · simp only [h₁, if_false]
+  · rw [ite_eq_left h₁]; refine ⟨fun _ => h₁, ?_, ?_, ?_⟩ <;> simp
+  · simp only [h₁, ite_false]
     by_cases h₂ : depthC F C c x.t < depthC F C c y.t
     · simp [h₂]
     · by_cases h₃ : depthC F C c y.t < depthC F C c x.t
       · simp [h₂, h₃]
-      · simp only [h₂, h₃, if_false]
+      · simp only [h₂, h₃, ite_false]
         refine ⟨by simp, by simp, by simp, fun _ => ⟨by omega, fun ho => h₁ ⟨ho, by omega⟩⟩⟩
 
 theorem kind_outside {x y : Conf} (ho : Outside F C c x) (he : depthC F C c y.t = depthC F C c x.t) :
@@ -577,12 +577,12 @@ theorem kind_enter {x y : Conf} (h : depthC F C c x.t < depthC F C c y.t) : kind
 
 theorem hyp_row {x y : Conf} {g : Ghost (F.at C)} (hk : kind F C c x y = .outside)
     (hh : StepHyp (c := c) Θ chk x y g) : Row Θ (lift F C c x g) (lift F C c y (Ghost.next F C c chk x y g)) := by
-  unfold StepHyp at hh; rw [if_pos hk] at hh; exact hh
+  unfold StepHyp at hh; rw [ite_eq_left hk] at hh; exact hh
 
 theorem hyp_props {x y : Conf} {g : Ghost (F.at C)} (hk : kind F C c x y ≠ .outside)
     (hh : StepHyp (c := c) Θ chk x y g) :
     PkgProps tv (lift F C c x g) (lift F C c y (Ghost.next F C c chk x y g)) (midOf chk x y g) (chk x y).xs := by
-  unfold StepHyp at hh; rw [if_neg hk] at hh; exact hh
+  unfold StepHyp at hh; rw [ite_eq_right hk] at hh; exact hh
 
 /-- **The checked steps of an execution**: at `R = StepRel.checked tv`, a
 step of `C`'s code is its checked step itself; `decompose`, `exec_bound`,
@@ -788,10 +788,10 @@ theorem XStep.inv {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
     · -- Outside every call: the step with its allocation, then the trim of `B`.
       have hrow' : Row Θ (lift F C c a.1 a.2)
           (lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none))) := by
-        unfold outsideNext outsideNextAt at hrow; simp only [hA, if_true] at hrow
+        unfold outsideNext outsideNextAt at hrow; simp only [hA, ite_true] at hrow
         exact hrow
       have h₁ := outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow') hi
-      unfold outsideNext outsideNextAt; simp only [hA, if_true]
+      unfold outsideNext outsideNextAt; simp only [hA, ite_true]
       exact Inv.trim (st := lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none))) hA _ h₁
     · rw [outsideNext_of_ne hA] at hrow ⊢
       exact outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow) hi

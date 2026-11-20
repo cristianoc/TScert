@@ -852,10 +852,12 @@ each item names what a theorem about it would need.
 - **Compiled replacements**: the proofs are about the logical definitions;
   the verifier runs the `implemented_by` replacements of some of them
   (measured 2026-11-12: `SinglePass.timedKind` and `clock`,
-  `CertificateProducer.timed` and `keepFirst`), which no theorem relates to
-  their definitions. A verdict flows through `timedKind`, `timed` (each
-  returns its function's result) and `keepFirst` (it passes over an element
-  that is one object with an element already met). A theorem needs each
+  `CertificateProducer.timed` and `keepFirst`; and `sameObjectOr`), which no
+  theorem relates to their definitions. A verdict flows through `timedKind`,
+  `timed` (each returns its function's result), `keepFirst` (it passes over
+  an element that is one object with an element already met) and
+  `sameObjectOr` (it answers `true` where its two values are one object,
+  which equals its definition at types whose values hold no erased types). A theorem needs each
   replacement's equality to its definition (`@[csimp]`, which `AxiomCheck`
   then checks), or the replacement removed.
 - **Replayed module lines and interfaces** (`InterfaceProvenance`): the

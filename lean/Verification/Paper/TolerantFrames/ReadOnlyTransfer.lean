@@ -274,7 +274,7 @@ theorem CallState.depth {F : Family} {C : Nat} {E : List Tm}
     (h : CallState F C E K L d k x comp t) : depthC F C none t = 1 := by
   obtain ⟨f, r, args, ⟨rfl, hc⟩, hf, hr, ha⟩ := h
   refine depthC_frame_val hc ?_
-  simp only [path, hf, hr, Bool.true_eq_false, if_false]
+  simp only [path, hf, hr, Bool.true_eq_false, ite_false]
   exact pathArgs_vals _ ha
 
 /-- A resumption holds one call of `C` (proved). -/
@@ -308,8 +308,8 @@ theorem pathArgs_tag {c : ComponentTag} {f : Tm} {key : FrameKey} :
     simp only [innermostArgs] at h
     simp only [pathArgs]
     split
-    · rename_i ha; rw [if_pos ha] at h; rw [wrap_fst]; exact ih a List.mem_cons_self c h hk
-    · rename_i ha; rw [if_neg ha] at h
+    · rename_i ha; rw [ite_eq_left ha] at h; rw [wrap_fst]; exact ih a List.mem_cons_self c h hk
+    · rename_i ha; rw [ite_eq_right ha] at h
       exact pathArgs_tag as _ (fun x hx => ih x (List.mem_cons_of_mem _ hx)) h hk
 
 /-- Through a wrapped path (proved). -/
@@ -342,19 +342,19 @@ theorem innermost_tag (t : Tm) :
     simp only [innermost] at h
     simp only [path]
     split
-    · rename_i hf; rw [if_pos hf] at h; rw [wrap_fst]; exact ihf c h hk
-    · rename_i hf; rw [if_neg hf] at h
+    · rename_i hf; rw [ite_eq_left hf] at h; rw [wrap_fst]; exact ihf c h hk
+    · rename_i hf; rw [ite_eq_right hf] at h
       split
-      · rename_i hr; rw [if_pos hr] at h; rw [wrap_fst]; exact ihr c h hk
-      · rename_i hr; rw [if_neg hr] at h
+      · rename_i hr; rw [ite_eq_left hr] at h; rw [wrap_fst]; exact ihr c h hk
+      · rename_i hr; rw [ite_eq_right hr] at h
         exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
   | construct f args ihf iha =>
     intro c f' key h hk
     simp only [innermost] at h
     simp only [path]
     split
-    · rename_i hf; rw [if_pos hf] at h; rw [wrap_fst]; exact ihf c h hk
-    · rename_i hf; rw [if_neg hf] at h
+    · rename_i hf; rw [ite_eq_left hf] at h; rw [wrap_fst]; exact ihf c h hk
+    · rename_i hf; rw [ite_eq_right hf] at h
       exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
   | makeBound t r pre ns args _ _ _ iha =>
     intro c f' key h hk

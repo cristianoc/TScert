@@ -441,7 +441,7 @@ noncomputable def constructor (p : NativePromise E) (A : Fam) : Fam :=
 theorem constructor_valid (p : NativePromise E) (A : Fam) (h : ValueFam A) :
     ValueFam (p.constructor A) := by
   classical
-  simp only [constructor, dif_pos h]
+  simp only [constructor, dite_eq_left h]
   exact (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
 
 /-- The actual source application denotes the fixed native constructor at
@@ -454,7 +454,7 @@ theorem application_meaning (p : NativePromise E)
   classical
   let V : ValueFamily := MixedFamily.value ⟨_, mixedMeaning_valid E.graph η A⟩
   have valid : ValueFam (fun n W v => mixedMeaning E.graph η A n W (.inl v)) := V.2
-  simp only [constructor, dif_pos valid]
+  simp only [constructor, dite_eq_left valid]
   change _ = p.applyFamily V
   let θ := assign (ParameterAssignment.empty .mixed) [parameter E] [MixedFamily.ofValue V]
   have kp : E.graph.parameterKinds (parameter E) = some .value := by
@@ -580,7 +580,7 @@ theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) 
     ¬ FamLe (c.promise.constructor A) c.stableFamily := by
   classical
   unfold NativePromise.constructor
-  rw [dif_pos valid]
+  rw [dite_eq_left valid]
   exact c.shape.separate _ _
 
 theorem source_values {G : NormalGraph ι} {A : List ι}
@@ -594,7 +594,7 @@ theorem native (c : ResolutionContext E) :
   native_source A valid := by
     classical
     unfold NativePromise.constructor
-    rw [dif_pos valid]
+    rw [dite_eq_left valid]
     exact source_values c.nativeSource _
   stable_source := source_values c.stableSource _
 

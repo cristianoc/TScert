@@ -207,7 +207,7 @@ theorem chk_entry_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {K : Tm �
           depthC spec.F spec.C none (K (.goto (realizedCode r).1 (realizedCode r).2 l' L' d' c'')) :=
         depthC_ctx hK none rfl rfl fun c => (tabRel_tags (A := realizedCode r) (B := requestCode r) (.goto hl') c).symm
       unfold FramedSpec.entryXs
-      rw [if_neg (fun h => by have := h.2.2; omega), if_neg (fun h => by have := h.2.2; omega)]
+      rw [ite_eq_right (fun h => by have := h.2.2; omega), ite_eq_right (fun h => by have := h.2.2; omega)]
     | @frame l' u' L' d' k' x' c'' hl' hk' =>
       have hd' : depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u' L' d' k' x' c'')) =
           depthC spec.F spec.C none (K (.frame (requestCode r).1 (requestCode r).2 u' L' d' k' x' c'')) :=

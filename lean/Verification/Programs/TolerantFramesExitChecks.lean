@@ -20,7 +20,7 @@ step `st` and kept yields `ys`, with the node's `here` answer, the step's
 name `thrown` and type `TT`. -/
 structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (w : Walk ι)
     (startNames : List Nat) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge)
-    (given : Nat → Bool)
+    («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) (here outFresh : Bool) (ysA : List (PromiseCalls.Yield ι)) (thrown : Nat)
@@ -33,17 +33,17 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
     j < (thrown :: entry.names).length
   normal : ∀ (i : Nat) t pushed observed promote, (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote) →
     ∃ ysE : List (PromiseCalls.Yield ι), ysE = ys ∧
-      (given t.label = false →
+      («given» t.label = false →
         NonHeadExitChecked G images w ctx stated edgesIn l node c entry st ys ysA ysE here outFresh i t pushed observed
           promote) ∧
-      (given t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
+      («given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
         (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
         HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here i t pushed observed promote req
           written cf gimp argName argSlots inputSlots hwidth hfresh ∧
         (∀ y ∈ startNames, y < hfresh) ∧ (∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a))
   handler : ∀ t, node.handler = some t →
-    HandlerExitChecked G images w startNames ctx stated given edgesIn l c entry st here outFresh TT thrown t
+    HandlerExitChecked G images w startNames ctx stated «given» edgesIn l c entry st here outFresh TT thrown t
   thrownBelow : node.handler.isSome = true → NamesBelow entry (w.implies l) startNames thrown
 
 /-- Exit checks reassign with the same kept yield lists. -/
@@ -73,18 +73,18 @@ theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCh
 /-- **A node's exits and handler deliver** (`NodeExitsY` with the step's
 result's freshness in the state after the step, `AfterStep`). -/
 structure NodeExitsYF (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) (outFresh : Bool) : Prop where
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
-    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated «given» edgesIn) G c.type c.context
       (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated «given» edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 /-- Exit checks, sound subtype answers and the kept exit yields deliver
 at the graph of the checks. Mapping bounds supply `MapNamesSound`. -/

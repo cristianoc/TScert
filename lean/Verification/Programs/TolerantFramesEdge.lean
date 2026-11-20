@@ -376,12 +376,12 @@ theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {�
       start ε (PointClaims.mapEnv θ (if pushed then push v ρ else ρ)) m s := by
   have hfo' : ∀ ρx : Env, ρx 0 = v → pushed = true → false = false → outFresh = true → result ∉ entry.fresh →
       (if pushed then result :: entry.names else entry.names)[0]? = some result ∧ FreshAt m (ρx 0) :=
-    fun ρx h0 hp _ ho hn => by simp only [hp, if_true, List.getElem?_cons_zero]; exact ⟨trivial, h0 ▸ hfo hp ho hn⟩
+    fun ρx h0 hp _ ho hn => by simp only [hp, ite_true, List.getElem?_cons_zero]; exact ⟨trivial, h0 ▸ hfo hp ho hn⟩
   cases pushed with
   | true =>
-    simp only [if_true] at hmap ⊢
+    simp only [ite_true] at hmap ⊢
     refine edgeTransfer_ok ?_ hmap (hfo' _ rfl)
-    simp only [edgeStoreOf, Bool.false_eq_true, if_false]
+    simp only [edgeStoreOf, Bool.false_eq_true, ite_false]
     cases observed with
     | some o => exact edgeStore_observed _ hS (he rfl) hobs
     | none =>
@@ -389,9 +389,9 @@ theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {�
       | some q => cases hpp rfl
       | none => exact hS
   | false =>
-    simp only [Bool.false_eq_true, if_false] at hmap ⊢
+    simp only [Bool.false_eq_true, ite_false] at hmap ⊢
     refine edgeTransfer_ok ?_ hmap (fun h => by cases h)
-    simp only [edgeStoreOf, Bool.false_eq_true, if_false]
+    simp only [edgeStoreOf, Bool.false_eq_true, ite_false]
     cases observed with
     | some o => cases hpo rfl
     | none =>

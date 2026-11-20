@@ -1,4 +1,5 @@
 import Init
+import Verification.Semantics.PointerEquality
 
 /-! # Equality of shared immutable lists
 
@@ -9,13 +10,13 @@ element's ordinary decision procedure. -/
 namespace Verification
 /-- Decide equality, ending at the first shared tail or unequal element. -/
 def sharedListEq {α : Type u} [DecidableEq α] (xs ys : List α) : Decidable (xs = ys) :=
-  withPtrEqDecEq xs ys fun _ =>
+  withPtrEqDecEq sameObjectOr (fun _ _ _ _ => rfl) xs ys fun _ =>
     match xs, ys with
     | [], [] => .isTrue rfl
     | _ :: _, [] => .isFalse (by intro h; cases h)
     | [], _ :: _ => .isFalse (by intro h; cases h)
     | x :: xs, y :: ys =>
-      match withPtrEqDecEq x y (fun _ => decEq x y) with
+      match withPtrEqDecEq sameObjectOr (fun _ _ _ _ => rfl) x y (fun _ => decEq x y) with
       | .isFalse h => .isFalse (fun e => h (List.cons.inj e).1)
       | .isTrue h =>
         match sharedListEq xs ys with

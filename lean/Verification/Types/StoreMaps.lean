@@ -273,7 +273,7 @@ theorem clauses_rel {i : ι} (hi : m.D i) : RowsRel m.φ (G i) (H (m.φ i)) := b
   rw [m.plain_eq hi]
   cases hp : G.plain i
   · exact ⟨(fun _ h => nomatch h), (fun _ h => nomatch h)⟩
-  · simp only [if_true]
+  · simp only [ite_true]
     exact m.rows i hi hp
 
 theorem mem_map_iff {bs : List ι} (hbs : ∀ b ∈ bs, m.D b)
@@ -315,8 +315,8 @@ theorem semWithArgs_on {Ξ : Fam} {c : Clause (List ι)} {X X' : List ι → Fam
   rw [← hcr, semWithArgs_map, semWithArgs_map]
   have hr : ∀ S, X (r S) = X' (r S) ∧ P (r S) = P' (r S) := fun S => by
     by_cases hS : S ∈ c.operands
-    · simp only [r, hS, if_true]; exact h S (.inl hS)
-    · simp only [r, hS, if_false]; exact h [] (.inr rfl)
+    · simp only [r, hS, ite_true]; exact h S (.inl hS)
+    · simp only [r, hS, ite_false]; exact h [] (.inr rfl)
   have h1 : (fun a => X (r a)) = fun a => X' (r a) := funext fun a => (hr a).1
   have h2 : (fun a => P (r a)) = fun a => P' (r a) := funext fun a => (hr a).2
   rw [h1, h2]
@@ -330,8 +330,8 @@ theorem clauseArguments_on {c : Clause (List ι)} {X X' : List ι → Fam}
   rw [← hcr, clauseArguments_map, clauseArguments_map]
   have h1 : (fun a => X (r a)) = fun a => X' (r a) := funext fun a => by
     by_cases hS : a ∈ c.operands
-    · simp only [r, hS, if_true]; exact h a (.inl hS)
-    · simp only [r, hS, if_false]; exact h [] (.inr rfl)
+    · simp only [r, hS, ite_true]; exact h a (.inl hS)
+    · simp only [r, hS, ite_false]; exact h [] (.inr rfl)
   rw [h1]
 
 /-- A reading of `κ`-types agrees with a reading of `ι`-types: a union of the

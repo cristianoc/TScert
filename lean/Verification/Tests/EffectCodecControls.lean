@@ -32,11 +32,11 @@ private def decoded (text : String) : Option Effect :=
   | .ok j => (EffectCodec.decode j).toOption
   | .error _ => none
 
-private def withNormal (frame ensures : String) : String :=
+private def withNormal (frame «ensures» : String) : String :=
   "{\"exits\":{\"normal\":{\"frame\":" ++ frame ++ ",\"ensures\":" ++ ensures ++
     "},\"exceptional\":{\"frame\":[],\"ensures\":[]}},\"promise\":null,\"requires\":null,\"pre\":[]}"
 
-private def withExceptional (ensures : String) : String :=
+private def withExceptional («ensures» : String) : String :=
   "{\"exits\":{\"normal\":{\"frame\":[],\"ensures\":[]},\"exceptional\":{\"frame\":[],\"ensures\":" ++ ensures ++
     "}},\"promise\":null,\"requires\":null,\"pre\":[]}"
 

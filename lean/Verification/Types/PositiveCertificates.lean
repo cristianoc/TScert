@@ -200,6 +200,12 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : 
     Decidable (CoversByProto G sub R known self fields bounds q) := by
   unfold CoversByProto; infer_instance
 
+/- A quantifier bounded by a list's members is decided over those members
+(`List.decidableBAll`, `List.decidableBEx`). The instance over every value of
+a fixed-width integer type (`UInt64.instDecidableForall`) enumerates the
+type's values, 2^64 for the number sets of `.numIn`. -/
+attribute [local instance high] List.decidableBAll List.decidableBEx
+
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
     {known : Known ι}

@@ -1121,14 +1121,14 @@ theorem inAnswer_keyAnswer {k : PropKey} {c : Clause α} {q : Bool} (h : inAnswe
   unfold inAnswer at h
   unfold keyAnswer
   by_cases hp : c.presentKeys.contains k = true
-  · rw [if_pos hp] at h ⊢; exact h
-  · rw [if_neg hp] at h ⊢
+  · rw [ite_eq_left hp] at h ⊢; exact h
+  · rw [ite_eq_right hp] at h ⊢
     by_cases hb : (c.keyBounds.any fun K => !K.admits k) = true
-    · rw [if_pos hb]
+    · rw [ite_eq_left hb]
       by_cases hb2 : (c.keyBounds.any fun K => !K.admits CallArguments.protoField) = true
-      · rw [if_pos (by simp [hb, hb2])] at h; exact h
-      · rw [if_neg (by simp [hb2])] at h; cases h
-    · rw [if_neg (by simp [hb])] at h; cases h
+      · rw [ite_eq_left (by simp [hb, hb2])] at h; exact h
+      · rw [ite_eq_right (by simp [hb2])] at h; cases h
+    · rw [ite_eq_right (by simp [hb])] at h; cases h
 
 /-- `Array.isArray` on an object clause: whether it owns the spine key. A
 clause saying its object owns the spine key is of arrays; one whose bound
@@ -1360,7 +1360,7 @@ theorem members_sound {G : NormalGraph ι} {C : Ty ι} {n W v} (hv : meaning G C
     unfold labelMembers
     split
     · rename_i c hrow
-      rw [if_neg (by simp [hnc c hrow])]
+      rw [ite_eq_right (by simp [hnc c hrow])]
       split
       · simp
       · rename_i hlen
@@ -1517,7 +1517,7 @@ theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} 
   by_cases hp : c.presentKeys.contains k = true
   · obtain ⟨flds, l, oid, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
     simp [protoFree, hl]
-  · rw [if_neg hp] at hin
+  · rw [ite_eq_right hp] at hin
     by_cases hb : ((c.keyBounds.any fun K => !K.admits k) &&
         c.keyBounds.any fun K => !K.admits CallArguments.protoField) = true
     · simp only [Bool.and_eq_true] at hb
@@ -1526,7 +1526,7 @@ theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} 
       have hl : flds.lookup CallArguments.protoField = none :=
         ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, oid, rfl, hk⟩ (by simpa using hadm)
       simp [protoFree, hl]
-    · rw [if_neg hb] at hin; cases hin
+    · rw [ite_eq_right hb] at hin; cases hin
 
 /-- A clause that answers `key in o` reads no prototype: its members own the
 key, or have no prototype. -/

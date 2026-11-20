@@ -262,12 +262,12 @@ theorem mixed_fold {γ : Type} (Γ Γ' : List (Ty ι)) (f : Array (Ty ι) × γ 
         cases b
         · cases hg : Γ[acc.1.size]? with
           | none =>
-            simp only [hg, Option.getD_none, Bool.false_eq_true, if_false, Option.some.injEq] at hj
+            simp only [hg, Option.getD_none, Bool.false_eq_true, ite_false, Option.some.injEq] at hj
             exact .inl (hj ▸ hA')
           | some Y =>
-            simp only [hg, Option.getD_some, Bool.false_eq_true, if_false, Option.some.injEq] at hj
+            simp only [hg, Option.getD_some, Bool.false_eq_true, ite_false, Option.some.injEq] at hj
             exact .inr (hj ▸ hg.symm ▸ rfl)
-        · simp only [if_true, Option.some.injEq] at hj; exact .inl (hj ▸ hA')
+        · simp only [ite_true, Option.some.injEq] at hj; exact .inl (hj ▸ hA')
       · exact hacc j X hj
     · have := hl (j + 1) X (by simpa using hj)
       rw [Nat.add_assoc, Nat.add_comm 1 j]; exact this

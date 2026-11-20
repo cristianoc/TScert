@@ -101,7 +101,7 @@ theorem Traversed.reassign {G : NormalGraph ι} {w : Walk ι} {startNames : List
 the walk is constructed (`Traversed` of the walk with entries `base`), and
 each visited label's entry is its base, with the label's written facts
 added at a node other than a head (`withWritten`). -/
-def TraversedA (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (given : Nat → Bool)
+def TraversedA (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) («given» : Nat → Bool)
     (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop :=
@@ -136,7 +136,7 @@ theorem entry_of_edgeA {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat
   have hp := entry_of_edge (w := { w with entry := base }) hTb (fun t' ρ' s' hg he' => by
       have := hheads t' ρ' s' hg he'
       obtain ⟨e, hein, -⟩ := he'
-      rw [hent t' (hTb.visited t' (List.ne_nil_of_mem hein)), if_pos hg] at this
+      rw [hent t' (hTb.visited t' (List.ne_nil_of_mem hein)), ite_eq_left hg] at this
       exact this) hnear he hJ
   refine ⟨hp.1, ?_⟩
   rw [hent t hp.1]
@@ -148,7 +148,7 @@ theorem entry_of_edgeA {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat
 assertion and, at a merge, its joined implications**: `edgePreA` and the
 joined part of `edgePreJ`. -/
 def edgePreAJ (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι))
-    (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (stated : Nat → Option HeapKnowledge.Knowledge) («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :
     Nat → Assertion :=
   fun t ρ m s => edgePreA G w startNames ε ctx stated t ρ m s ∧

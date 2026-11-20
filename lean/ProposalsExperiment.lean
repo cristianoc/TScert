@@ -182,7 +182,7 @@ def topInferred (why : String) : Inferred :=
 requests as `passMember` runs them, then its graph walked with no footprint
 bound (run A, the direct route) and with the regional fallback at `top`
 (run B); each visited step's local effect from its evidence; their join. -/
-def inferMember (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMap String Json)) :
+def inferMember (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.HashMap String Json)) :
     Except String Inferred := do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store

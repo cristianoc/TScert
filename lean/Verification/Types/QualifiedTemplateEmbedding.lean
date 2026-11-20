@@ -55,8 +55,8 @@ private theorem DomainRegion.arguments {G : NormalGraph ι}
   apply propext
   apply exists_congr fun i => and_congr_right fun hi => ?_
   by_cases hp : G.listParam i = true
-  · simp only [hp, if_true]
-  · simp only [hp, Bool.false_eq_true, if_false]
+  · simp only [hp, ite_true]
+  · simp only [hp, Bool.false_eq_true, ite_false]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hq := (NormalGraph.plain_iff.mp (NormalGraph.plain_of_clauses hc)).2.1
     apply clauseArguments_congr_on (D := PositiveRules.reads G i) (fun T hT j hj => ?_)

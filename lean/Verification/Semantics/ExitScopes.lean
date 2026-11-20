@@ -123,7 +123,7 @@ theorem callState_agreeBelow_take {n m : Nat} (hm : n ≤ m) (r : Tm) (args : Li
     split
     · rfl
     · simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
-      rw [if_pos (by omega)]
+      rw [ite_eq_left (by omega)]
   refine ⟨hc, fun i hi => ?_, rfl, rfl, rfl⟩
   change i < n + 2 at hi
   show ensuresEnv v r (args.take m) i = ensuresEnv v r args i

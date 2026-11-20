@@ -112,12 +112,12 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     by_cases ht : r.footprint = .top
     · rw [ht]; exact Footprints.Closed.holds_top.mpr hq.2
     · have := hq.1
-      simp only [ho, if_true] at this
+      simp only [ho, ite_true] at this
       exact this ht
   | none =>
     have hcond : ¬ ((!(r.footprint == .top && !r.onThrow && !r.fresh) &&
         !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)) = true) := by
-      intro hc; unfold mainBound at hb; rw [if_pos hc] at hb; cases hb
+      intro hc; unfold mainBound at hb; rw [ite_eq_left hc] at hb; cases hb
     have htop : (r.footprint == .top && !r.onThrow && !r.fresh) = false := by
       rcases heffect with hf | ho | hf
       · simp [beq_iff_eq, hf]
@@ -241,12 +241,12 @@ theorem framedFootprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} 
     by_cases ht : r.footprint = .top
     · rw [ht]; exact Footprints.Closed.holds_top.mpr hq.2
     · have := hq.1
-      simp only [ho, if_true] at this
+      simp only [ho, ite_true] at this
       exact this ht
   | none =>
     have hcond : ¬ ((!(r.footprint == .top && !r.onThrow && !r.fresh) &&
         !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)) = true) := by
-      intro hc; unfold mainBound at hb; rw [if_pos hc] at hb; cases hb
+      intro hc; unfold mainBound at hb; rw [ite_eq_left hc] at hb; cases hb
     have htop : (r.footprint == .top && !r.onThrow && !r.fresh) = false := by
       rcases heffect with hf | ho | hf
       · simp [beq_iff_eq, hf]

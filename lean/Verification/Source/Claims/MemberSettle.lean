@@ -19,7 +19,7 @@ own graph's and each code request's: the search's and the single pass's
 given invariants, in place of the claims'. With `entries` (the referee,
 mode 9), the other statement entries' facts too (`entryFacts`): the search
 holds at each statement entry only what its candidates there give. -/
-def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (entries : Bool := false)
+def FilePlans.withHeadFacts (f : FilePlans) («given» : Std.HashMap String Json) (entries : Bool := false)
     (inferred : Bool := false) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, i) => p.map (FunctionPlan.mapRequest fun r =>
       let line := given.get? (f.fr.unitId i)
@@ -137,7 +137,7 @@ edge check refuses, in place of a given line's. The regional checks'
 tables at its statement entries (`regionalLines`), its `regional` and
 `footprintRegional`; with `falseRegional` (`--force-proposals head-region-…`),
 an entry of that kind no edge establishes added at each. -/
-def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (falseInputs : Bool := false)
+def FilePlans.computedGiven (f : FilePlans) («given» : Std.HashMap String Json) (falseInputs : Bool := false)
     (falseImplications : Bool := false) (falseRegional : Option String := none) (group : List Nat) :
     Std.HashMap String Json :=
   f.plans.zipIdx.foldl (init := given) fun m (p, i) =>
@@ -175,7 +175,7 @@ def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (f
 
 /-- The given file's loop-head facts of plan `i` (`headFacts`), by label:
 the candidates no rerun drops. -/
-def FilePlans.givenAt (f : FilePlans) (given : Std.HashMap String Json) (i : Nat) :
+def FilePlans.givenAt (f : FilePlans) («given» : Std.HashMap String Json) (i : Nat) :
     List (Nat × List HeapKnowledge.IndexAtom) :=
   match f.plans[i]?, given.get? (f.fr.unitId i) with
   | some (.ok (.graph _ _ r)), some line =>
@@ -228,7 +228,7 @@ def implicationAt (why : String) : Option (Nat × Option (Nat × Nat)) := Single
 /-- The given line of unit `u` with an implication at label `l` left out:
 the one of tested and narrowed slots `which`, every one where `which` names
 none. Each implication is a proposal of its own. -/
-def withoutImplications (given : Std.HashMap String Json) (u : String) (l : Nat) (which : Option (Nat × Nat) := none) :
+def withoutImplications («given» : Std.HashMap String Json) (u : String) (l : Nat) (which : Option (Nat × Nat) := none) :
     Option (Std.HashMap String Json) := do
   let line ← given.get? u
   let rows ← ((line.getObjVal? "graph").bind Json.getArr?).toOption
@@ -246,7 +246,7 @@ def withoutImplications (given : Std.HashMap String Json) (u : String) (l : Nat)
 
 /-- The given line of unit `u` with its regional checks' tables
 (`regional`, `footprintRegional`) left out, where it states any. -/
-def withoutRegional (given : Std.HashMap String Json) (u : String) : Option (Std.HashMap String Json) := do
+def withoutRegional («given» : Std.HashMap String Json) (u : String) : Option (Std.HashMap String Json) := do
   let line ← given.get? u
   let .obj kvs := line | none
   guard (kvs.contains "regional" || kvs.contains "footprintRegional")
@@ -257,7 +257,7 @@ its line, its refusal where refused, and its failure, the refusal's text
 located with `located` (`FilePlans.placeRefusal`), deferred: a settling
 run's failure is read only where it is the member's last. -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
-    (observe : Option String) (counting located : Bool) (given : Option (Std.HashMap String Json)) (i : Nat) :
+    (observe : Option String) (counting located : Bool) («given» : Option (Std.HashMap String Json)) (i : Nat) :
     String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String) :=
   match g.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>
@@ -297,7 +297,7 @@ candidates there among the lacking facts left out, the given file's
 facts (`laterDrops`); a refusal lacking none of them stands. With `fixed` (an adversarial proposal forced)
 the forced fact is never left out, nor an implication or a regional table. -/
 def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.IndexAtom))
-    (given : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
+    («given» : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   if let some (l, which) := implicationAt w.1 then
     if fixed then none else do
@@ -359,7 +359,7 @@ facts `protect` kept), those facts at the heads that read their head's
 left out. With `fixed` (an adversarial proposal forced),
 `inferredNext`'s alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
-    (protect : List (Nat × List HeapKnowledge.IndexAtom)) (given : Option (Std.HashMap String Json)) (i : Nat)
+    (protect : List (Nat × List HeapKnowledge.IndexAtom)) («given» : Option (Std.HashMap String Json)) (i : Nat)
     (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   match f.inferredNext fixed protect given i w with
@@ -402,7 +402,7 @@ lines saying what was left out, the facts dropped, the runs made, and the
 last run. -/
 structure Settled (S G R : Type) where
   state : S
-  given : G
+  «given» : G
   lines : List String
   dropped : Nat
   runs : Nat
@@ -429,7 +429,7 @@ next state from `inferredNextAll`, at most `4·h + 4` of a member with `h`
 statement entries holding candidates. -/
 def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
-    (given : Option (Std.HashMap String Json)) (i : Nat) :
+    («given» : Option (Std.HashMap String Json)) (i : Nat) :
     Settled FilePlans (Option (Std.HashMap String Json))
       (String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String)) :=
   let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
@@ -448,7 +448,7 @@ plans, the given lines, the lines printed, the first failure, the facts
 dropped and the runs made. -/
 structure InferredAcc where
   plans : FilePlans
-  given : Option (Std.HashMap String Json)
+  «given» : Option (Std.HashMap String Json)
   lines : List String
   failed : Option String
   dropped : Nat
@@ -500,7 +500,7 @@ states: an accepted run needs no other. Beside the lines and the verdict,
 the facts dropped and the runs made. -/
 def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
     (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed : Bool := false) (compare : Bool := false)
-    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
     List String × Except String (List String) × Nat × Nat :=
   let acc := group.foldl (FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located)
@@ -519,7 +519,7 @@ verdict, the facts dropped and the runs made. -/
 def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String)
     (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fuel : Nat) (group : List Nat)
     (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1)
-    (given : Option (Std.HashMap String Json) := none) (observe : Option String := none)
+    («given» : Option (Std.HashMap String Json) := none) (observe : Option String := none)
     (counting : Bool := false) (located : Bool := false) :
     List String × Except String (List String) × Nat × Nat :=
   if infer then

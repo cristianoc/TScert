@@ -244,7 +244,7 @@ theorem goodIn_vals_vj {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : 
   all_goals try (simp [vals] at hx; done)
   all_goals try (simp [vals] at hx; subst hx; exact .inl ⟨S, hS, hv, hl⟩)
   case objBound fs oid t r pre iht ihr ihp =>
-    simp only [vals, if_true, List.mem_cons, List.mem_append, valsArgs_eq, List.mem_flatMap] at hx
+    simp only [vals, ite_true, List.mem_cons, List.mem_append, valsArgs_eq, List.mem_flatMap] at hx
     have hl' : ∀ u ∈ t :: r :: pre, LayDeep P Lay u := fun u hu w hw => hl w (.bound hu hw)
     rcases hx with rfl | (hx | hx) | ⟨a, ha, hx⟩
     · exact .inl ⟨S, hS, hv, hl⟩
@@ -252,7 +252,7 @@ theorem goodIn_vals_vj {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : 
     · exact ihr S hS (hv.boundPart (by simp)) (hl' r (by simp)) x hx
     · exact ihp a ha S hS (hv.boundPart (by simp [ha])) (hl' a (by simp [ha])) x hx
   case objGraph fs oid ar E K s caps k rest comp ihE ihc =>
-    simp only [vals, allC, if_true, Bool.false_eq_true, if_false, List.mem_cons, List.mem_append, valsArgs_eq,
+    simp only [vals, allC, ite_true, Bool.false_eq_true, ite_false, List.mem_cons, List.mem_append, valsArgs_eq,
       List.mem_flatMap] at hx
     rcases hx with rfl | ⟨e, he, hx⟩ | ⟨a, ha, hx⟩
     · exact .inl ⟨S, hS, hv, hl⟩
@@ -365,7 +365,7 @@ theorem Fits.frameIn : ∀ {Γ a o S t}, Fits Fl V Γ a o S t → ∀ cur, Frame
       · exact frameIn_args hc fun x hx => iha x hx cur hc
   | invokeC σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
     intro cur hc
-    simp only [activeFrame, hfn.val, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hfn.val, Bool.true_eq_false, ite_false]
     split
     · exact ihr cur hc
     · exact frameIn_args hc fun x hx => by

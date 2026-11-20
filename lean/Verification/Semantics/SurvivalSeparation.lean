@@ -248,7 +248,7 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
       have hsel : c.selects v = true := by simpa [Region.mem, hv] using hm
       simp only
       by_cases hcv : c.value = false
-      · simp only [hcv, Bool.not_false, if_true]
+      · simp only [hcv, Bool.not_false, ite_true]
         have harr : isArr v = true := Selector.selects_noValue hcv hsel
         refine ⟨hm, ?_⟩
         cases δ <;> simp only [Change.onSpine]
@@ -259,7 +259,7 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
         · exact hh
         · exact hh
       · simp only [Bool.not_eq_false] at hcv
-        simp only [hcv, Bool.not_true, Bool.false_eq_true, if_false]
+        simp only [hcv, Bool.not_true, Bool.false_eq_true, ite_false]
         split
         · rename_i hst
           simp only [Bool.and_eq_true, Bool.not_eq_true'] at hst
