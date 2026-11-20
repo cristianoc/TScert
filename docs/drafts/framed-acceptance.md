@@ -2132,35 +2132,34 @@ an own field, `field 0 [[proto]]` for the prototype field (`KeyLoc`,
 kinds and key (`Region.bound_sound`, `regionKeys_sound`), so its parts are
 read at the step, at any site.
 
-**The slot copies** $`\mathit{cp}`$ (`copiesOf m r.start arity`, to be
-written): $`(i,j,\pi)\in\mathit{cp}(l)`$ states that at every run of $`m`$
-at label $`l`$ reached from the request's start with slots `L₀`, while
-the locations a read of $`\pi`$ from `envOf L₀ d₀ j` passes keep their
-contents, slot $`i`$ holds the value `u` with `Reads h₀ (envOf L₀ d₀ j) π
-u`. `copiesB m start arity cp` decides it:
+**The slot copies** $`\mathit{cp}`$ (`FramedCopies.lean`; a table of
+entries per label, `CopyTable`): $`(i,j,\pi)\in\mathit{cp}(l)`$ states
+that at every run of $`m`$ at label $`l`$ reached from the request's start
+with slots `L₀`, while the locations the reads of $`\pi`$ from
+`envOf L₀ d₀ j` read at $`h_0`$ keep their contents, slot $`i`$ holds the
+value `u` with `Reads h₀ (envOf L₀ d₀ j) π u`. `copiesB Pe Pk start arity
+cp` decides it:
 
 - each entry of $`\mathit{cp}(\mathit{start})`$ is $`(j,j,[])`$ with
   $`j`$ below the arity;
-- for each node $`l`$ and each edge from it (the targets of its
-  continuation, `bind`, `effect`, `branch`, `branchBind` and `tagBind`, and
-  its handler), each $`(i',j,\pi)`$ of the target's label has the slot the
-  edge reads for $`i'`$ (by `envMap` of the target's mapping, over `L`, or
-  over `v :: L` for a bound edge) either a slot $`i`$ of `L` with
-  $`(i,j,\pi)\in\mathit{cp}(l)`$, or the bound value `v` of a `bind` or
-  `tagBind` edge of a node whose expression is
-  `.var i`, `readAt f (.var i)` or `elemAt (.var i) e`, with
-  $`(i,j,\pi_0)\in\mathit{cp}(l)`$ and $`\pi`$ respectively $`\pi_0`$,
-  $`\pi_0`$ followed by `field f`, or $`\pi_0`$ followed by `elem`. A
-  handler's bound value, a branch's Boolean and every other bound value
-  have no entry.
+- for each node $`l`$ and each edge from it (`nodeEdges`: the targets of
+  its continuation, `bind`, `effect`, `branch`, `branchBind` and
+  `tagBind`, and its handler), each $`(i',j,\pi)`$ of the target's label
+  has the slot the edge reads for $`i'`$ (`srcOf` of the target's
+  mapping, over `L`, or over `v :: L` for a bound edge, `envMap_src`)
+  either a slot $`i`$ of `L` with $`(i,j,\pi)\in\mathit{cp}(l)`$, or the
+  bound value `v` of a `bind` or `tagBind` edge of a node whose expression
+  is `.var i` or `readAt f (.var i)`, with $`(i,j,\pi_0)\in\mathit{cp}(l)`$
+  and $`\pi`$ respectively $`\pi_0`$ or $`\pi_0`$ followed by $`f`$
+  (`boundEntryB`). A handler's bound value, a branch's Boolean and every
+  other bound value have no entry.
 
-The proposal `entryCopies` (unproved, the greatest fixpoint by iteration
-from the start's diagonal, paths bounded by the longest region path the
-plan's supports name) is used where `copiesB` passes, and the empty
-table, which passes, otherwise. `const g = h` binds `.var`, so `g`'s slot
-gets `(j, [])`; `const w = h.widths` binds `readAt "widths" (.var h)`, so
-`w`'s slot gets `(j, [field widths])`; `h = w` maps `h`'s slot from `w`'s,
-whose entry names the other parameter.
+The proposal `copiesOf` (unproved: a must-analysis intersecting along the
+edges from the start's diagonal, paths at most a bound long) is used where
+`copiesB` passes, and the empty table, which passes, otherwise. `const g =
+h` binds `.var`, so `g`'s slot gets `(j, [])`; `const w = h.widths` binds
+`readAt "widths" (.var h)`, so `w`'s slot gets `(j, [widths])`; `h = w`
+maps `h`'s slot from `w`'s, whose entry names the other parameter.
 
 **A region read as protected.** A region $`r`$ names a slot
 $`\mathrm{slot}(r)`$ ($`x`$ of `field x k`, `path x p k`, `spine x p`,
@@ -2284,23 +2283,22 @@ proved results named.
    kept by the growth of the history (`XStep.grows`), the sites by
    `next_site` and the kinds and keys by `kindAt_kept`, `keyAt_kept`.
    The protection at the start is `start_protects` (step 4).
-7. **Slot copies** (`copies_sound`, a new `FramedCopies.lean`). Where
-   `copiesB` passes, every reached state of `spec.frame r` from a start at
-   `gotoOf r.program r.start L₀ d₀ r.comp` meets `CopyInv`: a top `goto`
-   at label $`l`$ with slots `L`, `d`, and each $`(i,j,\pi)\in\mathit{cp}(l)`$
-   whose passed locations kept their contents along the execution so far,
-   has `Reads h₀ (envOf L₀ d₀ j) π (envOf L d i)`; a top frame with
-   continuation and handler `(k, x)` has some $`l'`$ with
-   `m.2[l']? = some (k, x)` and the same at $`\mathit{cp}(l')`$. The
-   condition is monotone in the path and in the execution, so the
-   invariant is inductive. `copyInv_step` follows `TopRuns.step`'s cases:
-   `gotoEnter` keeps the slots, `frameC` keeps the frame (a read keeps the
-   heap), each of `frameBind`, `frameEffect`, `frameYes`, `frameNo`,
-   `frameYesBind`, `frameNoBind`, `frameTag` and `frameHandle` maps the
-   slots by its target's `envMap`, which `copiesB` checks, a bound read's
-   value given by `Step.readField`, `Step.readProto` or the element steps
-   at the frame's heap (`reads_congr` to $`h_0`$), and `frameRet` and
-   `frameRaise` leave the code.
+7. **Slot copies** (proved; `FramedCopies.lean`). `CopyInv` at a term
+   of the request's run, for a set `K` of locations: a `goto` at label
+   $`l`$ with slots of values holding $`\mathit{cp}(l)`$'s entries whose
+   reads read only locations of `K` (`SlotsHold`, `EntryKept`); a frame
+   of a node $`l'`$ with its continuation and handler, its slots holding
+   $`\mathit{cp}(l')`$'s entries and its term what its expression makes
+   it (`TermHolds`: the slot's value for `.var i`, a `Stage` of the read
+   for `readAt f (.var i)`, read at $`h_0`$ where its locations are in
+   `K`); or a term taking no step. `copyInv_step`: every step of the term
+   at a heap agreeing with $`h_0`$ on `K` and holding values keeps it,
+   by the step rules of `goto` and `frame` (`edge_holds`,
+   `copiesB_node`, `reads_snoc`, `readsAt_of_keyLoc`); `copiesB_start`:
+   the start's diagonal holds; `copies_along`: along an execution whose
+   stepping states agree with $`h_0`$ on `K`. A research `#guard` checks
+   the proposal at a walker reading `const w = h.widths` (retired in
+   piece 9).
 8. **The path and prefix unchanged** (`prefix_unchanged`). At a reached
    state $`b_0`$ entering a framed node $`l`$ (the premises of
    `framed_of_check`) with (C) and (P) at an entry $`(i,j,\pi)`$: the
