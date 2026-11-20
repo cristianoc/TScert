@@ -269,9 +269,20 @@ control("probe settings leave the production verdict intact", async (): Promise<
   assert.equal(observed.stdout, plain.stdout);
 });
 
+/** Install a verifier stand-in inside the control process and any worker it forks. */
+function standInOptions(directory: string, stand: string): string[] {
+  const adapter = pathToFileURL(join(root, "pipeline/stage-execution.mts")).href;
+  const preload = join(directory, "stand-in.mjs");
+  writeFileSync(preload, `import { mock } from "node:test";
+import * as adapter from ${JSON.stringify(adapter)};
+mock.module(${JSON.stringify(adapter)}, { exports: { ...adapter, verifier: ${JSON.stringify(stand)} } });
+`);
+  return ["--experimental-test-module-mocks", "--import", preload];
+}
+
 control("worker preparation over its limit: every unit recorded with its reason", async (): Promise<void> => {
   // The census's file run with the worker's preparation held past its limit
-  // (one millisecond for process startup and preparation): no unit has a verdict, and each
+  // by a sleeping test worker: no unit has a verdict, and each
   // selected unit of the file is recorded with the preparation's timeout as
   // its reason.
   const work = runDirectory("single-pass-preparation-limit-");
@@ -286,8 +297,15 @@ const run = await runFile(${JSON.stringify(examples)}, ${JSON.stringify(examples
 process.stdout.write(JSON.stringify({ select, units: run.units }));
 process.exit(0);
 `);
-  const p = spawnSync(process.execPath, [driver], { encoding: "utf8", timeout: 170_000,
-    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001",
+  const stand = join(work, "slow-worker.sh");
+  writeFileSync(stand, `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "--file-worker" ]; then exec sleep 30; fi
+done
+exec "${verifierBuild}" "$@"
+`, { mode: 0o755 });
+  const p = spawnSync(process.execPath, [...standInOptions(work, stand), driver], { encoding: "utf8", timeout: 170_000,
+    env: { ...process.env, TSCERT_STEP_LIMIT: "3",
       TSCERT_STAGE_STORE: join(work, "store") } });
   assert.equal(p.status, 0, p.stderr);
   const out: unknown = JSON.parse(p.stdout);
@@ -2752,13 +2770,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
     writeFileSync(stand, `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--file-worker" ]; then\n` +
       `    [ -n ${quoted} ] && echo ${quoted} >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`);
     chmodSync(stand, 0o755);
-    const adapter = pathToFileURL(join(root, "pipeline/stage-execution.mts")).href;
-    const preload = join(at, "stand-in.mjs");
-    writeFileSync(preload, `import { mock } from "node:test";
-import * as adapter from ${JSON.stringify(adapter)};
-mock.module(${JSON.stringify(adapter)}, { exports: { ...adapter, verifier: ${JSON.stringify(stand)} } });
-`);
-    const ran = spawnSync(process.execPath, ["--experimental-test-module-mocks", "--import", preload,
+    const ran = spawnSync(process.execPath, [...standInOptions(at, stand),
       join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
       { encoding: "utf8", timeout: 120_000 });
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
