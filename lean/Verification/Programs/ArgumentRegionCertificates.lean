@@ -186,15 +186,33 @@ theorem fieldStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι}
     (fun _ hq _ => by rw [hq]; exact Footprints.Post.refl _ _ _)
     (ExpressionEffects.fieldWriteStep_sound hc he hh hs)
 
+/-- A scalar field write (`ExpressionEffects.scalarWrite`): its frame at the
+node's slots, `{x.f: scalar}`, on normal return; a throw leaves the heap. -/
+def scalarFieldStepEffect (w : Nat × PropKey) : StepEffect := ⟨some, [(.field w.1 w.2, .scalar)], []⟩
+
+theorem scalarFieldStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool}
+    {w : Nat × PropKey} (hc : ExpressionEffects.fieldWriteStep G (entry c) t = some w)
+    (hw : ExpressionEffects.scalarWrite G (entry c) t = true) (ht : ExpressionOk G c t) :
+    StepOk G c t (scalarFieldStepEffect w) thr := by
+  intro ε n W h ρ he hi hk hwa hh hr hρ
+  refine ⟨ρ, fun p s hp => by cases hp; rfl, hρ, ?_⟩
+  have hs := HeapObservations.erase (HeapObservations.consequence
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hwa hh hr hρ))
+  exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq)
+    (fun _ hq _ => by rw [hq]; exact Footprints.Post.refl _ _ _)
+    (ExpressionEffects.scalarWrite_sound hc hw he hh hs)
+
 /-- A node's local effects: within the closed bound, a call's, an element
-write's, a field write's. -/
+write's, a field write's, a scalar field write's. -/
 @[nospecialize] def stepEffects [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
     (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) : List StepEffect :=
   (if checkClosedNode G images sums Φ c t thr then [closedStep Φ] else []) ++
     (callStep G images sums c t).toList ++
     ((ExpressionEffects.elemWriteStep G (entry c) t).map writeStepEffect).toList ++
-    ((ExpressionEffects.fieldWriteStep G (entry c) t).map fieldStepEffect).toList
+    ((ExpressionEffects.fieldWriteStep G (entry c) t).map fieldStepEffect).toList ++
+    (if ExpressionEffects.scalarWrite G (entry c) t then
+      ((ExpressionEffects.fieldWriteStep G (entry c) t).map scalarFieldStepEffect).toList else [])
 
 theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
@@ -203,7 +221,7 @@ theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
     (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     StepOk G c t se thr := by
   simp only [stepEffects, List.mem_append] at hm
-  rcases hm with ((hm | hm) | hm) | hm
+  rcases hm with (((hm | hm) | hm) | hm) | hm
   · split at hm
     · rename_i hc
       cases List.mem_singleton.mp hm
@@ -214,6 +232,11 @@ theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
     exact writeStep_ok hw ht
   · obtain ⟨w, hw, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
     exact fieldStep_ok hw ht
+  · split at hm
+    · rename_i hsw
+      obtain ⟨w, hw, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
+      exact scalarFieldStep_ok hw hsw ht
+    · cases hm
 
 /-! ## Fresh facts of a node
 

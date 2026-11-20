@@ -786,6 +786,27 @@ theorem sourceClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} 
     (hc : sourceClause c = true) (h : semWithArgs Ξ X P c n W v) : sourceT n W v := by
   apply semWithArgs_source (by intro e; subst c; cases hc) (by intros a bs e; subst c; cases hc) h
 
+/-- **A clause of primitives**: every member is neither an object nor a
+spine, so a location holding one may take a scalar's step (the note
+*Tolerant frames*, the change `scalar`). -/
+def scalarClause : Clause α → Bool
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .int | .numIn _ | .str | .strLit _ | .strIn _
+  | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
+  | _ => false
+
+theorem scalarClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : scalarClause c = true) (h : semWithArgs Ξ X P c n W v) :
+    (match v with | .objAt .. => false | .arr _ | .viewSpine .. => false | _ => true) = true := by
+  cases c <;> simp only [scalarClause, Bool.false_eq_true] at hc <;>
+    simp only [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT, intT] at h
+  all_goals first
+    | (subst h; rename_i b; cases b <;> rfl)
+    | (subst h; rfl)
+    | (rcases h with rfl | rfl <;> rfl)
+    | (obtain ⟨_, rfl⟩ := h; rfl)
+    | (obtain ⟨_, rfl, _⟩ := h; rfl)
+    | (obtain ⟨_, _, rfl⟩ := h; rfl)
+
 /-- **A clause's category**: its members are of sort `q`. A source clause's
 are source values; a spine clause's (`list`) are spines; a pack clause has
 no value members; `top` holds both sorts. -/

@@ -107,6 +107,85 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
+/-- A type every member of which is neither an object nor a spine
+(`PositiveNormalization.scalarClause`). -/
+def scalarTy (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all PositiveNormalization.scalarClause
+
+theorem scalarTy_sound {G : NormalGraph ι} {A n W v} (hs : scalarTy G A = true)
+    (hv : meaning G A n W v) : Footprints.isObj v = false ∧ Footprints.isArr v = false := by
+  simp only [scalarTy, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨c, hc, hcv⟩ := (expand_sem G A hs.1 n W v).mp hv
+  have := PositiveNormalization.scalarClause_sound (hs.2 c hc) hcv.1
+  cases v <;> simp_all [Footprints.isObj, Footprints.isArr]
+
+/-- Whether every alternative is a record whose first invariant operand has
+the field `fld`, at a type of primitives in each (`scalarTy`). -/
+def scalarField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || scalarTy G p.2.2)
+    | none => false
+
+theorem scalarField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : scalarField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B s A, (fld, s, A) ∈ B ∧ scalarTy G A = true ∧
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+  simp only [scalarField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  cases c <;> simp only [HeapExpressionRules.clauseBagOperand] at hb
+  all_goals try contradiction
+  all_goals
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+      decide_eq_false_iff_not] at hb
+    obtain ⟨hany, hall⟩ := hb
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+    have hsrc : scalarTy G El = true := (hall _ hmem).resolve_left (by simp)
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
+
+/-- **The contents of a primitive field are no object**: in a heap meeting
+its world at a positive budget, the location of the field `f` of an object
+whose type gives `f` a type of primitives holds neither an object nor a
+spine. -/
+theorem scalarField_contents [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} {f : PropKey} {n : Nat}
+    {W : WorldT (n + 1)} {h : Heap} {flds : List (PropKey × Nat)} {c : CallCode} {oid l : Nat} {v : Val}
+    (hsel : scalarField G (expand G Ref) f = true) (hm : meaning G Ref (n + 1) W (.objAt flds c oid))
+    (hh : HeapOk (n + 1) W h) (hfd : flds.lookup f = some l) (hv : h[l]? = some v) :
+    Footprints.isObj v = false ∧ Footprints.isArr v = false := by
+  obtain ⟨B, _, A, hmem, hsc, hbag⟩ := scalarField_sound hsel hm
+  obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
+  obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, hagree⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec
+  cases hl0
+  cases hproj
+  rw [hfd] at hfd1
+  cases hfd1
+  obtain ⟨u, hu, hmm⟩ := hh.1.2 l c1 hlookup
+  rw [hv] at hu
+  cases hu
+  exact scalarTy_sound hsc ((hagree 0 (by omega) _ v).mp (hmm 0 (by omega)))
+
+/-- A field write whose field and written value are primitives: the write
+of a field of the object in slot `i` whose type gives the field a type of
+primitives, of the value of a slot of a type of source values. Its old and
+new contents are neither objects nor spines, so it is a scalar's step. -/
+def scalarWrite (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Bool :=
+  match HeapExpressionRules.writeSlots t with
+  | some (f, i, k) => (match Γ[k]? with
+      | some B => sourceTy G B
+      | none => false) &&
+      match Γ[i]? with
+      | some Ref => scalarField G (expand G Ref) f
+      | none => false
+  | none => false
+
 /-- **A field write's frame** (the note *Tolerant frames*, Field-Write,
 `{x.f: any}`): the location of field `f` of the object in slot `i`. -/
 def fieldWriteFrame (i : Nat) (f : PropKey) : Footprints.Footprint := [(.field i f, .any)]
@@ -121,10 +200,12 @@ def fieldWriteStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option (N
   | none => none
 
 /-- A typed field write within the closed bound `Φ`: its frame's closed
-weakening, `{value: any, spine: keep}` (`fieldWriteFrame_closed`), within
-`Φ`. -/
+weakening, `{value: any, spine: keep}` (`fieldWriteFrame_closed`), or
+`{value: scalar, spine: keep}` where it is a scalar write
+(`scalarWrite_closed`), within `Φ`. -/
 def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
-  (fieldWriteStep G Γ t).isSome && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ
+  (fieldWriteStep G Γ t).isSome && (Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ ||
+    scalarWrite G Γ t && Footprints.Closed.le ⟨.scalar, .keep, .keep⟩ Φ)
 
 /-- **The closed bound of a field write is a weakening of its frame**: where
 every location the frame names holds a value of no spine, `{x.f: any}` is
@@ -271,16 +352,96 @@ theorem fieldWriteStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n 
           · exact False.elim (value_no_step rfl step')
   · cases hsel
 
+/-- **A scalar write's frame at a scalar's step**: a typed field write
+that is a scalar write (`scalarWrite`) changes its field by a scalar's step,
+`{x.f: scalar}`, on normal return, and raises, where it does, before it
+writes. -/
+theorem scalarWrite_sound [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n W h} {i : Nat} {f : PropKey}
+    (hc : fieldWriteStep G Γ t = some (i, f)) (hw : scalarWrite G Γ t = true) (he : EnvOk G Γ ρ n W)
+    (hh : HeapOk n W h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Footprints.Post [(.field i f, .scalar)] ρ h h') (fun h' => h' = h)
+      n W h (instantiate 0 ρ t) := by
+  have hsound := fieldWriteStep_sound hc he hh hs
+  unfold fieldWriteStep at hc
+  split at hc
+  case h_2 => cases hc
+  rename_i f' i' k hws
+  by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
+      | some Ref => sourceField G (expand G Ref) f'
+      | none => false) = true
+  case neg => rw [if_neg hcond] at hc; cases hc
+  rw [if_pos hcond] at hc
+  cases hc
+  simp only [scalarWrite, hws, Bool.and_eq_true] at hw
+  obtain ⟨hsk, hsc⟩ := hw
+  split at hsk
+  case h_2 => cases hsk
+  rename_i B hkB
+  split at hsc
+  case h_2 => cases hsc
+  rename_i Ref hiR
+  cases n with
+  | zero => exact hs
+  | succ n =>
+    refine SafePostExc.weaken (fun h' _ hq => ⟨hq.1.1, fun l v hv => ?_⟩) (fun _ hq => hq) hsound
+    obtain ⟨v', hv', ha⟩ := hq.1.2 l v hv
+    refine ⟨v', hv', ?_⟩
+    rcases ha with rfl | ⟨e, he', hm, -⟩
+    · exact .inl rfl
+    · simp only [fieldWriteFrame, List.mem_singleton] at he'
+      subst he'
+      refine .inr ⟨_, List.mem_singleton_self _, hm, .inr ?_⟩
+      have hm' := hm
+      simp only [Footprints.Region.mem, beq_iff_eq] at hm'
+      cases hρ : ρ i with
+      | objAt flds c oid =>
+        rw [hρ] at hm'
+        have hiv := he.2 i Ref hiR
+        rw [hρ] at hiv
+        obtain ⟨hobj, harr⟩ := scalarField_contents hsc hiv hh (by simpa [Footprints.fieldsOf] using hm') hv
+        have hnew := hq.2.2 l hm
+        rw [hv'] at hnew
+        cases hnew
+        have hsrc := sourceTy_sound hsk (he.2 k B hkB)
+        rw [HeapExpressionRules.writeSlots_eq hws]
+        simp only [writtenValueOf, instantiate]
+        have hk : k < Γ.length := (List.getElem?_eq_some_iff.mp hkB).1
+        refine ⟨hobj, harr, ?_⟩
+        cases hx : ρ k <;> simp_all [isSourceVal, Footprints.isArr]
+      | _ => rw [hρ] at hm'; simp [Footprints.fieldsOf] at hm'
+
+/-- **A scalar write's closed bound**: where every location its frame names
+holds a value of no spine, `{x.f: scalar}` is within `{value: scalar, spine:
+keep}`. -/
+theorem scalarWriteFrame_closed {i : Nat} {f : PropKey} {ρ : Env} {h h' : Heap}
+    (hp : Footprints.Post [(.field i f, .scalar)] ρ h h') :
+    Footprints.Closed.Holds ⟨.scalar, .keep, .keep⟩ h h' := by
+  rw [Footprints.Closed.holds_iff]
+  refine ⟨hp.1, fun l v hl => ?_⟩
+  obtain ⟨v', hl', ha⟩ := hp.2 l v hl
+  refine ⟨v', hl', ?_⟩
+  rcases ha with rfl | ⟨e, he, hm, hc⟩
+  · exact Footprints.Change.Holds.refl _ _ _
+  · simp only [List.mem_singleton] at he
+    subst he
+    rcases hc with rfl | hst
+    · exact Footprints.Change.Holds.refl _ _ _
+    · simp only [Footprints.Closed.at, hst.2.1]
+      exact .inr hst
+
 /-- **A typed field write is within `{value: any, spine: keep}`**: its
-frame's closed weakening (`fieldWriteFrame_closed`). -/
+frame's closed weakening (`fieldWriteFrame_closed`); a scalar write is within
+`{value: scalar, spine: keep}` (`scalarWriteFrame_closed`). -/
 theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
     (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  simp only [fieldWriteWithin, Bool.and_eq_true, Option.isSome_iff_exists] at hc
-  obtain ⟨⟨⟨i, f⟩, hi⟩, hle⟩ := hc
-  exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle (fieldWriteFrame_closed hq.1 hq.2.1))
-    (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl Φ h) (fieldWriteStep_sound hi he hh hs)
+  simp only [fieldWriteWithin, Bool.and_eq_true, Bool.or_eq_true, Option.isSome_iff_exists] at hc
+  obtain ⟨⟨⟨i, f⟩, hi⟩, hle | ⟨hsw, hle⟩⟩ := hc
+  · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle (fieldWriteFrame_closed hq.1 hq.2.1))
+      (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl Φ h) (fieldWriteStep_sound hi he hh hs)
+  · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle (scalarWriteFrame_closed hq))
+      (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl Φ h) (scalarWrite_sound hi hsw he hh hs)
 
 theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
     (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
@@ -2546,6 +2707,8 @@ theorem grantIf_any (c : Bool) (g : Footprints.Closed) (p : Footprints.Closed �
 step reads it. -/
 def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footprints.Closed :=
   ((fieldWriteStep G Γ t).map fun _ => (⟨.any, .keep, .keep⟩ : Footprints.Closed)).toList ++
+  ((fieldWriteStep G Γ t).bind fun _ =>
+    if scalarWrite G Γ t then some (⟨.scalar, .keep, .keep⟩ : Footprints.Closed) else none).toList ++
   ((elemWriteStep G Γ t).map fun w => Footprints.Closed.ofSpines .any w.2).toList
 
 /-- **A typed write's check is its grades' below the bound** (proved). -/
@@ -2554,7 +2717,7 @@ theorem writeWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Foo
   simp only [writeWithin, writeGrades, List.any_append]
   congr 1
   · unfold fieldWriteWithin
-    cases fieldWriteStep G Γ t <;> simp
+    cases fieldWriteStep G Γ t <;> cases scalarWrite G Γ t <;> simp
   · unfold elemWriteWithin
     rcases elemWriteStep G Γ t with _ | ⟨i, s⟩ <;> simp
 
