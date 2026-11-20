@@ -210,17 +210,19 @@ provenance and the residual invariant, the realm meets both, the initial
 configurations fit the flow and their heap is free of runs. -/
 theorem progOk_initial (r : SourceRequest σ ι) (hEf : ∀ e ∈ spec.initE, TolerantFrames.ReadOnly.free false e = true)
     (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true)
-    (hEw : ∀ e ∈ spec.initE, WOk e) (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
+    (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
+    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
     (hinit : spec.InitialFits r) {x₀ : Conf} (hx : spec.Initial x₀) (hRf : HeapFree x₀.s.h) :
     spec.ProgOk r (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) := by
-  have hl := (spec.initial_lay hEl hEw hRl hRw x₀ hx).1
+  have hl := (spec.initial_lay hEl hEw hLi hRl hRw x₀ hx).1
   have hfit := hinit x₀ hx
   obtain ⟨client, hh, ht, hc, -⟩ := hx
   refine ⟨?_, hRf, hl, ?_, hfit⟩
   · rw [ht]
     simp only [wfS, isVal, ↓reduceIte, runParts, frees_eq, List.all_eq_true,
       Bool.and_eq_true, bodyOk, Bool.or_eq_true]
-    exact ⟨⟨⟨hEf, by simp⟩, rfl⟩, .inl (loweredSrc_free hc false)⟩
+    exact ⟨⟨⟨hEf, fun v hv => (hLi v hv).2.2⟩, rfl⟩, .inl (loweredSrc_free hc false)⟩
   · rw [ht]; exact noPend_letGoto hc
 
 /-- **The realization runs the prologue** (proved, `Step_det` at the
@@ -389,7 +391,7 @@ noncomputable def progFrame (r : SourceRequest σ ι) : ClientFrame (Ty ι) wher
   codes := (spec.frame r).codes
   start _ _ _ t g := g = bareStart (spec.core r).F (spec.core r).C t
   start_total _ _ _ _ := ⟨_, rfl⟩
-  enters _ _ h t := ∃ client, h = spec.realm ∧ t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client ∧
+  enters _ _ h t := ∃ client, h = spec.realm ∧ t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client ∧
     LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
 
 /-- **The program's frame starts from the entry history with no argument**
@@ -550,6 +552,7 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
     (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
     (hcomp₀ : spec.componentRefusal.val = none)
     (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
     (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
     (hFa : spec.fflow.flow.Facts) (hmk : spec.fflow.marksB = true)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
@@ -592,11 +595,11 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
   have hr : noRestB spec.lay = true := hnone.2.2.2.2.2.1
   have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
-    fun x hx => spec.progOk_initial r hEf hEl hEw hRl hRw hinitF hx (hinitE x hx).2.1.2
+    fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
   have hE := spec.entryFits r hr hFa hst hreal hcomp hinit
   exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
-    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hRl hRw hFa hE (spec.noKeys r) htok hlow
+    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE (spec.noKeys r) htok hlow
     hcomp hatom hT hle hslots hcheck (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ
 
 end Verification.SourceClaimJson.PassUnit

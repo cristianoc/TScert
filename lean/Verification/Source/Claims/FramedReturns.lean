@@ -873,6 +873,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
     (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv)
     (hcomp₀ : spec.componentRefusal.val = none)
     (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
     (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
     (hFa : spec.fflow.flow.Facts) (hE : (spec.frame r).EntryFits spec.fflow.flow) (hK : (spec.frame r).NoKeys)
     (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
@@ -917,7 +918,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) := by
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
-  have hinit := spec.initial_lay hEl hEw hRl hRw
+  have hinit := spec.initial_lay hEl hEw hLi hRl hRw
   exact ret_reachedW_frame spec r hsrc (spec.call_typed r) hvals hc hi (Fl := spec.fflow) rfl
     (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE hK htok hlow hcomp hatom hT hle hslots
     hcheck hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ

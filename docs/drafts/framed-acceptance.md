@@ -761,16 +761,6 @@ the fit (`InitialFits`) only where the flow has a proposal for it, the
 rule `gotoC` being the only rule fitting a run of $`C`$'s code
 (`initialFits_code`).
 
-**P22 is such a case** (observed, by construction). `componentInit`
-writes each capture of a realm value as the realm's identity
-(`realmValue`, an `objAt` at the realm's location), and `initB` requires
-it (`capOk`: a capture naming no module function is an `objAt` below the
-realm's length); `walk` names two realm values (`%ElementAt%`,
-`[[Array.prototype]]`), so `initC`'s first node is not lowered code. The
-flow the pass solves (`componentCodes`) proposes for the module
-functions' codes, the natives' and the closures they create, and for no
-initialization's code.
-
 **A closure whose code names a signature at a capture** is created by no
 lowered code (proved, `capSig_not_lowered`): `Lowered`'s clause for a
 closure of $`C`$'s code requires `SelfFn` at every context of the created
@@ -789,15 +779,18 @@ their consumers need:
 
 - **The initial configuration** is
   `letE (.goto initE initK 0 Lr .undef c_C) client`, `Lr` the realm's
-  identities in `componentInit`'s order. `initE`'s captures of realm
-  values are the variables of the slots holding them (at node `k`, the
-  slot `k + j` of the realm value `j`, past the `k` closures bound before
-  it); `initB` checks them so.
-- **The flow proposes for `initC`** (`componentCodes`: one more code of
-  $`C`$, a unit entered at `entryCx` at its node `0` with no closure of
-  its own, each slot holding a realm value seeded with that value's
-  signature where it is a native's closure, as a module function's
-  sibling slots are; its returns reach $`O`$, as a unit's do).
+  identities in `componentInit`'s order (`FramedSpec.initL`, the
+  identity `j` the realm's object at its location `j`, `realmValueAt`).
+  `initE`'s captures of realm values are the variables of the slots
+  holding them (at node `k`, the slot `k + j` of the realm value `j`, past
+  the `k` closures bound before it); `initB` checks them so (a capture
+  naming no module function a slot of an identity, `k ≤ v < k + |Lr|`;
+  `Lr`'s length the realm's, its identity `j` at location `j`).
+- **The flow proposes for `initC`** (`componentCodes`'s `init`: one more
+  code of $`C`$, a unit entered at `entryCx` at its node `0` with no
+  closure of its own, each slot holding a realm value seeded with that
+  value's signature where it is a native's closure, as a module
+  function's sibling slots are; its returns reach $`O`$, as a unit's do).
   `FFlow.check`, `codesCoverB` and `marksB` then cover it.
 - **The open fit of a closure creation reads the creating node's
   signatures** (`OFits.makeGraphC`, decided by `graphSites` with
@@ -817,14 +810,21 @@ their consumers need:
   property (`codesLoweredB_sound`). `Lowered` is the condition on outside
   code (`LoweredSrc.lowered`) and on the code of a closure a term creates
   (`Fits.makeGraphC`), which `walk`'s code meets.
-- **The checks `frameFlowB` adds**, the premises of the two rules the
-  initial term fits by: `initC`'s proposal at `entryCx`, its return set
-  within $`O`$ (the exports' array reaches the client); at each slot of
-  the entry the realm identity it holds meeting the slot's set at the
-  history before any entry (outside storage in the set; for a native's
-  closure, its token in the set, the native's proposal at `entryCx`, open
-  where its token lies in $`O`$, and the slot naming its signature,
-  `EnvFn`); and each value of the realm's heap a primitive (`primVal`).
+- **The checks `frameFlowB` adds** (`initFlowB`, `realmSlotB`,
+  controls in `Tests/FramedBindingControls.lean`), the premises of the
+  two rules the initial term fits by: `initC`'s proposal at `entryCx`,
+  its return set within $`O`$ (the exports' array reaches the client); at
+  each slot of the entry the realm identity it holds meeting the slot's
+  set (an identity is an object with no field, which holds no location;
+  for a native's closure, with no capture and its code holding no value,
+  its token in the set, the native's proposal at `entryCx`, open where its
+  token lies in $`O`$, only its own slot naming a signature at its entry,
+  and the slot naming none or its signature, `EnvFn`; no slot past `Lr`
+  naming one); every code `initE` and `Lr` hold at a tag of $`C`$ a code
+  of the flow and every such code carrying a tag of $`C`$ (provenance and
+  outside source); each value of the realm's heap a primitive
+  (`primVal`); and each identity meeting layout provenance, the residual
+  invariant and free of runs.
 - **What they give.** `InitialFits`: the `letE` by `Fits.letE` at the set
   $`O`$, the run by `gotoC` at `initC`'s proposal (its slots by the checks
   above, the default `undefined` a primitive), the client by
@@ -836,11 +836,26 @@ their consumers need:
   source (the client; no value of the realm is code) and closed values
   (`Lr` closed, `Scoped 1 client`, primitives).
 
-**At P22** (measured, the two rules relaxed executably, their proofs not
-built): the component's checks pass, `initC` among the flow's codes, and
-the framed plan reaches `FramedObligations`; `initC`'s proposal returns
-within $`O`$; its slot `0` (`[[Array.prototype]]`) holds outside storage,
-its slot `1` names `%ElementAt%`'s signature and holds the native's token,
+**A linked capture fits by no proposal** (measured, at
+`bounds-pattern-framed-shared-code-refused`; by definition of the check of
+a node's value, `CodeChk`): a module function's capture slot of another
+module function names that function's signature (`sibSig`, by which its
+call is a known call), and the initialization's slot binding that
+function's closure names none, as a node's value names a signature only
+where its expression is a slot naming it, and a closure creation is no
+slot. So `initC`'s creation of a closure capturing another module
+function's closure fails its open fit (`OCapFn`), and `FFlow.check`
+refuses the initialization. A component whose module functions name no
+other module function, as P22's, is unaffected. Admitting linked captures
+reads a closure creation's value as a closure of the signature it creates
+(the rule `Fits.frameC`'s value clause, which reads the running term,
+and `CodeChk`'s), a change of the semantic rules left to a later
+milestone.
+
+**At P22** (measured): the component's checks pass, `initC` among the
+flow's codes, `initFlowB` among them; `initC`'s proposal returns within
+$`O`$; its slot `0` (`[[Array.prototype]]`) holds outside storage, its
+slot `1` names `%ElementAt%`'s signature and holds the native's token,
 which lies outside $`O`$. The five restrictions are unchanged.
 
 ## The frame of a request
@@ -1094,11 +1109,12 @@ token, `componentCodes`): each module
   `FramedRealize.lean`): every continuation and handler of the request's
   program targets one of its labels, and its start is one, so the
   realized code and the request's agree on the body (`realized_agree`).
-- **lowered codes and layouts** (`codesLoweredB`, `tokensSomeB`,
-  `ReadOnlyLayouts.lean`): every code of the flow is lowered, every context
-  has a `some` token, and every closure of $`C`$'s code the initialization's
-  and the flow's node expressions create has its code's layout `lay`
-  (`layP (layQ F lay)`).
+- **codes holding no located value, and layouts** (`codesLoweredB`,
+  `tokensSomeB`, `ReadOnlyLayouts.lean`): every node expression of a code
+  of the flow holds no located value, every context has a `some` token,
+  and every closure of $`C`$'s code the initialization's and the flow's
+  node expressions and the realm's identities create or are has its
+  code's layout `lay` (`layP (layQ F lay)`).
 - **$`\Theta_C`$** (`clientsB`, `clientsB_sound`, `FramedBinding.lean`):
   the rows of $`C`$'s exported types state class keys only
   (`clientsByKindB`), and the plan's $`\Theta_C`$ is, at every part of
@@ -1259,9 +1275,10 @@ premises on the initial configurations (`InitialFits`, `InitialEntry`),
 which no check establishes. The component's checks include
 `frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
 `marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
-sites and $`O`$ checked closed, the initialization's node expressions free
-of runs, and with the realm's values meeting `layP` and `WOk`, decided by
-`wokB`), the flow the frame reads with its tags decided (`frameFlowOf`,
+sites and $`O`$ checked closed, the initialization's node expressions and
+the realm's identities free of runs, and with the realm's values meeting
+`layP` and `WOk`, decided by `wokB`, the realm's values primitives, and
+the initialization in the flow, `initFlowB`), the flow the frame reads with its tags decided (`frameFlowOf`,
 `framePkg`), equal to the frame's (`frame_transport`). Each binding
 check has a control forging its document, its flow, its initialization,
 its plan or its family (`tests/single-pass-control-inputs.mts`,

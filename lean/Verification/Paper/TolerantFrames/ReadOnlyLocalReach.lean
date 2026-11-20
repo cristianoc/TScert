@@ -464,13 +464,14 @@ end FrameCore
 
 /-- **An initial configuration's term meets the residual invariant**
 (proved, `lowered_wok`): the initialization's run, its node expressions
-meeting it, at no slot and the default `undefined`, and the client's
+meeting it, at plain slots and the default `undefined`, and the client's
 lowered source, in its scope. -/
 theorem wok_initial {P : Package} {Fl : Flow P} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-    {l : Nat} {c : ComponentTag} {client : Tm} (hE : ∀ e ∈ E, WOk e) (hc : Lowered Fl client) :
-    WOk (.letE (.goto E K l [] .undef c) client) := by
-  simp only [WOk, wOks_iff, plainArgs_iff, List.not_mem_nil, false_imp_iff, imp_true_iff, true_and]
-  exact ⟨⟨hE, rfl, trivial⟩, lowered_wok client hc⟩
+    {l : Nat} {L : List Tm} {c : ComponentTag} {client : Tm} (hE : ∀ e ∈ E, WOk e) (hL : ∀ v ∈ L, Plain v)
+    (hc : Lowered Fl client) :
+    WOk (.letE (.goto E K l L .undef c) client) := by
+  simp only [WOk, wOks_iff, plainArgs_iff]
+  exact ⟨⟨hE, hL, rfl, trivial⟩, lowered_wok client hc⟩
 
 /-! ## The values at the active redex of outside code -/
 

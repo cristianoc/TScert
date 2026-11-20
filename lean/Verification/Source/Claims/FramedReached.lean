@@ -162,8 +162,9 @@ variable {ι : Type} (spec : FramedSpec ι)
 `frame_transport` from the check `componentBindingRefusal` runs at the
 flow with the frame's sites and decided tags). -/
 theorem frameFlow_checks (h : spec.componentRefusal.val = none) :
-    frameFlowB spec.fflow spec.lay spec.realm spec.initE = true :=
-  frame_transport spec.C spec.checked (fun _ Fl => frameFlowB Fl spec.lay spec.realm spec.initE = true)
+    frameFlowB spec.fflow spec.lay spec.realm spec.initE spec.initK spec.initL = true :=
+  frame_transport spec.C spec.checked
+    (fun _ Fl => frameFlowB Fl spec.lay spec.realm spec.initE spec.initK spec.initL = true)
     (componentBindingRefusal_none (spec.componentRefusal_none h)).2.2.2.2.2.2.2.1
 
 /-- **The checks of a plan's framed nodes at the frame's flow** (proved,
@@ -192,7 +193,7 @@ theorem starts_checks {σ : Type} [Labels ι] [StoreView σ ι] {r : SourceReque
       ∀ e ∈ spec.initE, free false e = true := by
   simp only [FramedSpec.requestB, Bool.and_eq_true, decide_eq_true_eq] at hreq
   obtain ⟨⟨⟨⟨⟨-, -⟩, -⟩, hst⟩, hreal⟩, -⟩ := hreq
-  obtain ⟨-, hmk, -, -, -, -, -, -, -, hEf⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
+  obtain ⟨-, hmk, -, -, -, -, -, -, -, hEf, -, -, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   exact ⟨hmk, hst, spec.realized_frame hreal, hEf⟩
 end FramedSpec
 
@@ -219,10 +220,10 @@ theorem FramedObligations.reached {spec : FramedSpec ι} {r : SourceRequest σ �
   obtain ⟨hmk, hst, hreal, hEf⟩ := spec.starts_checks hcomp₀ hreq
   simp only [FramedSpec.requestB, Bool.and_eq_true] at hreq
   obtain ⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩ := hreq
-  obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
+  obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -, -, hLi, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound (spec.framedNodes_frame hn)
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
-    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hRl hRw hFa hmk hst hreal hEf
+    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
     hob.fits hob.entry htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT

@@ -323,20 +323,22 @@ theorem noPend_start (r : SourceRequest σ ι) :
 omit [Labels ι] in
 /-- **An initial configuration meets layout provenance and the residual
 invariant** (proved, `lay_initial`, `wok_initial`): where the
-initialization's node expressions meet both, the realm's heap meets both,
-and the client is lowered source. -/
+initialization's node expressions and the realm's identities its slots
+hold meet both, the realm's heap meets both, and the client is lowered
+source. -/
 theorem initial_starts {q : Code → ComponentTag → Layout → Bool}
     (hq : ∀ m c l, spec.F.ofC spec.C c = false → q m c l = true) {x₀ : Conf} (hx : spec.Initial x₀)
-    (hsrc : ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client →
+    (hsrc : ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client →
       LoweredSrc (spec.F.ofC spec.C) client)
     (hEl : ∀ e ∈ spec.initE, layP q e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hLl : ∀ v ∈ spec.initL, layP q v = true) (hLw : ∀ v ∈ spec.initL, Plain v)
     (hRl : HeapLay q spec.realm) (hRw : HeapW spec.realm) :
     (layP q x₀.t = true ∧ HeapLay q x₀.s.h) ∧ (WOk x₀.t ∧ HeapW x₀.s.h) := by
   obtain ⟨client, hh, ht, -, -⟩ := hx
   have hc := hsrc client ht
   rw [ht, hh]
-  exact ⟨⟨lay_initial hq hEl hc, hRl⟩,
-    ⟨wok_initial (Fl := spec.flow) hEw (LoweredSrc.lowered (P := spec.F.at spec.C) (Fl := spec.flow) hc), hRw⟩⟩
+  exact ⟨⟨lay_initial hq hEl hLl hc, hRl⟩,
+    ⟨wok_initial (Fl := spec.flow) hEw hLw (LoweredSrc.lowered (P := spec.F.at spec.C) (Fl := spec.flow) hc), hRw⟩⟩
 
 /-- **The checks read the flow's sites** (proved, by definition). -/
 theorem flowSites (r : SourceRequest σ ι) : (spec.frame r).FlowSites spec.flow := fun _ _ _ _ => rfl
@@ -356,16 +358,19 @@ theorem call_typed (r : SourceRequest σ ι) :
 omit [Labels ι] in
 /-- **The initial configurations meet layout provenance at the plan's
 layouts and the residual invariant** (proved, `initial_starts` at
-`initial_lowered`): where the initialization's node expressions and the
-realm's heap meet both. -/
+`initial_lowered`): where the initialization's node expressions, the
+realm's identities its slots hold and the realm's heap meet both. -/
 theorem initial_lay (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true)
-    (hEw : ∀ e ∈ spec.initE, WOk e) (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm) :
+    (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
+    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm) :
     ∀ x, spec.Initial x →
       (layP (layQ spec.fflow spec.lay) x.t = true ∧ HeapLay (layQ spec.fflow spec.lay) x.s.h) ∧
         (WOk x.t ∧ HeapW x.s.h) := fun _ hx =>
   spec.initial_starts (fun _ _ _ hc => by
     show (!(spec.F.ofC spec.C _) || _) = true
-    rw [hc]; rfl) hx (spec.initial_lowered hx) hEl hEw hRl hRw
+    rw [hc]; rfl) hx (spec.initial_lowered hx) hEl hEw (fun v hv => (hLi v hv).1) (fun v hv => (hLi v hv).2.1)
+    hRl hRw
 
 end FramedSpec
 

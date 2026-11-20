@@ -203,7 +203,10 @@ def closable (mods : List ProbeModule) : List ProbeModule :=
 
 /-- **A component's codes, as the flow's solver reads them**: the module
 functions of `C`'s modules (`ofC`), the natives with a step model they name
-(`hostModel?`) and the closures their codes create; each code's
+(`hostModel?`), the closures their codes create, and the component's
+initialization where one is given (`init`: its code and the names of the
+realm values its slots hold, a unit entered at its node `0`, each slot
+holding a native's closure naming that native's signature); each code's
 signatures, sites and entry. A code is a term: module functions of one
 code, arity, rest and number of captures are one code of the flow (`reps`, the
 first of each, beside `modCodes`), its entry's slots naming a signature
@@ -220,7 +223,7 @@ structure ComponentCodes (ofC : ComponentTag → Bool) where
   cs : List (SolveCode (probePackage ofC))
 
 def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entryNames : List String)
-    (body : Code → Code := id) : ComponentCodes ofC :=
+    (body : Code → Code := id) (init : Option (Code × List String) := none) : ComponentCodes ofC :=
   let P := probePackage ofC
   let mods := mods.filter fun g => P.ofC g.comp
   let closed := closable mods
@@ -254,6 +257,13 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
   let base' := reps.length + hosts.length
   let cs : List (SolveCode P) := modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
     ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx, fun _ => alloc (i + base'), false⟩
+  -- (the initialization, a unit past the other codes)
+  let base'' := base' + closures.length
+  let cs : List (SolveCode P) := cs ++ match init with
+    | some (c, realmNames) =>
+      [⟨c, 0, false, 0, 0, realmNames.map hostSig, alloc base'', false, tok base'', entryCx, fun _ => alloc base'',
+        false⟩]
+    | none => []
   -- each node's allocation sites: one object site and one array site per
   -- continuation and handler of a code's body (`body`, a realized code's
   -- its request's), numbered past the codes' sites (`canonSite` at the

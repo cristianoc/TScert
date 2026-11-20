@@ -27,9 +27,10 @@ acceptance reads of its component, evaluated once per component
   node by node, in its order (`order`, by name), each module function's
   closure once, every linked capture the slot holding the closure of the
   function the capture's name names, allocated earlier, and every other
-  capture an identity of the realm's heap; its continuations bind each
-  closure in turn and return; its last node is the array of the entries'
-  closures, each read at the slot holding it.
+  capture a slot holding an identity of the realm, one per location of the
+  realm's heap; its continuations bind each closure in turn and return;
+  its last node is the array of the entries' closures, each read at the
+  slot holding it.
 - **The checks (S), (K) and (O)** (`componentFrameDiags`): their failures
   at `C`'s bodies (`ComponentChecks.suspensionDiags`, `marksDiags`,
   `ownershipDiags`), each rendered with its module and span. -/
@@ -54,27 +55,31 @@ def componentFrameDiags (F : ComponentWire.Components) (file : String) (fns : Li
 /-- **The initialization check** (`initB`, the draft "Initialization"): the
 code `(E, K)` of the initialization of a component whose module functions
 have the codes `codes` and the names, arities and slot names `names`
-(parallel lists), whose realm's heap has `realmN` identities, whose
-entries are `entries` and which allocates the module functions' closures
-in the order `order` (by name). The order names each module function
-once; node `k` below the last allocates a closure of `C`'s code (`ofC`)
-of the code of the function `order` names at `k`, entered at its last
-node (the realized code's prologue), at its arity, with no field and no
-initializer; each capture whose name names a module function is the slot
-holding the closure of that function, allocated at an earlier node (the
-slots after node `k`'s predecessors bound are their closures, the latest
-first), and every other capture an identity of the realm's heap. Each
-node's continuation binds its value and continues at the next node, the
-last's returns; the last node is the array of the entries' closures, each
-read at the slot holding it. -/
-def initB (ofC : ComponentTag → Bool) (realmN : Nat) (codes : List Code) (names : List (String × Nat × List String))
-    (entries order : List String) (E : List Tm) (K : List (Continuation × Option Target)) : Bool :=
+(parallel lists), whose realm's heap has `realmN` locations, whose
+initial slots hold the realm's identities `L`, whose entries are `entries`
+and which allocates the module functions' closures in the order `order`
+(by name). The order names each module function once; node `k` below the
+last allocates a closure of `C`'s code (`ofC`) of the code of the function
+`order` names at `k`, entered at its last node (the realized code's
+prologue), at its arity, with no field and no initializer; each capture
+whose name names a module function is the slot holding the closure of
+that function, allocated at an earlier node (the slots after node `k`'s
+predecessors bound are their closures, the latest first, then the realm's
+identities), and every other capture the slot holding a realm's identity.
+The identity `j` is the realm's object at its location `j`. Each node's
+continuation binds its value and continues at the next node, the last's
+returns; the last node is the array of the entries' closures, each read
+at the slot holding it. -/
+def initB (ofC : ComponentTag → Bool) (realmN : Nat) (L : List Tm) (codes : List Code)
+    (names : List (String × Nat × List String)) (entries order : List String) (E : List Tm)
+    (K : List (Continuation × Option Target)) : Bool :=
   let n := names.length
   -- (slot `v` at node `k` holds the closure node `k - 1 - v` allocated)
   let slotName (k v : Nat) : Option String := if v < k then order[k - 1 - v]? else none
   let capOk (k : Nat) (x : String) (c : Tm) : Bool :=
     if names.any (·.1 == x) then (match c with | .var v => slotName k v == some x | _ => false)
-    else (match c with | .objAt [] _ loc => decide (loc < realmN) | _ => false)
+    else (match c with | .var v => decide (k ≤ v ∧ v < k + L.length) | _ => false)
+  L.length == realmN && L.zipIdx.all (fun (v, j) => match v with | .objAt [] _ loc => loc == j | _ => false) &&
   E.length == n + 1 && codes.length == n && order.length == n && order.eraseDups.length == n &&
   K == ((List.range n).map fun k => (Continuation.bind ⟨k + 1, none⟩, (none : Option Target))) ++ [(.ret, none)] &&
   (List.range n).all (fun k => match E[k]?, (order[k]?).bind fun x => names.findIdx? (·.1 == x) with
@@ -213,7 +218,7 @@ reads (`frameFlowB` at the frame's sites, `frameFlowOf`) and the checks
 def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) (codes : List Code) (names : List (String × Nat × List String))
     (entries : List String) (realm : Heap) (order : List String) (initE : List Tm)
-    (initK : List (Continuation × Option Target)) (family : ComponentWire.Components) (file : String)
+    (initK : List (Continuation × Option Target)) (initL : List Tm) (family : ComponentWire.Components) (file : String)
     (fns : List (String × Span × Bool)) (C : Nat) : Option String :=
   let body := moduleBody codes
   let checks : List (String × (Unit → Bool)) := [
@@ -222,8 +227,8 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
     ("its codes covered (codesCoverB)", fun _ => codesCoverB F (codes ++ codes.map body)),
     ("its allocation sites (allocB)", fun _ =>
       allocSomeB F && allocCanonAtB id (3 * lay.length) (F.codes.map fun e => body e.1) body F),
-    ("its initialization (initB)", fun _ => initB ofC realm.length codes names entries order initE initK),
-    ("its flow at the frame's sites (frameFlowB)", fun _ => frameFlowB (frameFlowOf C F) lay realm initE)]
+    ("its initialization (initB)", fun _ => initB ofC realm.length initL codes names entries order initE initK),
+    ("its flow at the frame's sites (frameFlowB)", fun _ => frameFlowB (frameFlowOf C F) lay realm initE initK initL)]
   match checks.find? (!·.2 ()) with
   | some (w, _) => some s!"framed plan: the binding check of {w} fails"
   | none => (componentFrameDiags family file fns C).head?.map fun d =>
@@ -237,15 +242,15 @@ frame reads and (S), (K) and (O) pass. -/
 theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Option Nat)}
     {F : FFlow (markedPackage ofC O)} {lay : List (Nat × Bool × Nat × Nat)} {codes : List Code}
     {names : List (String × Nat × List String)} {entries : List String} {realm : Heap} {order : List String}
-    {initE : List Tm} {initK : List (Continuation × Option Target)} {family : ComponentWire.Components}
-    {file : String} {fns : List (String × Span × Bool)} {C : Nat}
-    (h : componentBindingRefusal F lay codes names entries realm order initE initK family file fns C = none) :
+    {initE : List Tm} {initK : List (Continuation × Option Target)} {initL : List Tm}
+    {family : ComponentWire.Components} {file : String} {fns : List (String × Span × Bool)} {C : Nat}
+    (h : componentBindingRefusal F lay codes names entries realm order initE initK initL family file fns C = none) :
     F.check = true ∧ F.marksB = true ∧ codesCoverB F (codes ++ codes.map (moduleBody codes)) = true ∧
       allocSomeB F = true ∧
       allocCanonB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F = true ∧
       noRestB lay = true ∧
-      initB ofC realm.length codes names entries order initE initK = true ∧
-      frameFlowB (frameFlowOf C F) lay realm initE = true ∧ componentFrameDiags family file fns C = [] := by
+      initB ofC realm.length initL codes names entries order initE initK = true ∧
+      frameFlowB (frameFlowOf C F) lay realm initE initK initL = true ∧ componentFrameDiags family file fns C = [] := by
   unfold componentBindingRefusal at h
   dsimp only at h
   rw [← allocCanonAtB_eq]

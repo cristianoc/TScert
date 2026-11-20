@@ -82,6 +82,8 @@ structure FramedSpec (ι : Type) where
   /-- The module functions in the order the initialization allocates their
   closures, by name. -/
   initOrder : List String
+  /-- The realm's identities the initialization's slots hold at its entry. -/
+  initL : List Tm
   arity : Nat
   ofC : ComponentTag → Bool
   marks : List (Option Nat)
@@ -105,7 +107,7 @@ structure FramedSpec (ι : Type) where
   is: computed once per component and shared by its plans; `none` where
   they pass. -/
   componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
-    realm initOrder initE initK family file fns C }
+    realm initOrder initE initK initL family file fns C }
   framed : List (Nat × List Footprints.Footprint)
 
 namespace FramedSpec
@@ -118,7 +120,7 @@ abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
 plan's refusal of them is none (proved, by the refusal's evaluation). -/
 theorem componentRefusal_none (h : spec.componentRefusal.val = none) :
     componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
-      spec.initOrder spec.initE spec.initK spec.family spec.file spec.fns spec.C = none :=
+      spec.initOrder spec.initE spec.initK spec.initL spec.family spec.file spec.fns spec.C = none :=
   spec.componentRefusal.property ▸ h
 
 /-- **The family of a framed plan**: the one component `C`, each site of its
@@ -193,7 +195,7 @@ noncomputable def core (r : SourceRequest σ ι) : FrameCore (Ty ι) :=
 run in front of a client term of lowered outside source whose one free
 variable is the exports. -/
 def Initial (x₀ : Conf) : Prop :=
-  ∃ client, x₀.s.h = spec.realm ∧ x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client ∧
+  ∃ client, x₀.s.h = spec.realm ∧ x₀.t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client ∧
     LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
 
 /-- **The realization of an entering step** (the draft, "Realization",
@@ -259,7 +261,7 @@ omit [Labels ι] in
 /-- **An initial configuration's client is lowered outside source**
 (proved, by definition). -/
 theorem initial_lowered {x₀ : Conf} (hx : spec.Initial x₀) :
-    ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client →
+    ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client →
       LoweredSrc (spec.F.ofC spec.C) client := by
   obtain ⟨c, -, ht, hc, -⟩ := hx
   intro client hcl

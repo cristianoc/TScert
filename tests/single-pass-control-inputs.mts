@@ -25,8 +25,9 @@ export const forcedProposals: readonly ForcedProposal[] = [
     at: /a framed plan's document is refused: the document's framed call nodes \[10, 13, 0\] are not the flow's \[10, 13\]/ },
   { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-support",
     at: /a framed plan's document is refused: at the document's framed call node 10, 1 of the supports it keeps fail the frame's check/ },
+  // (at another component, the initialization's codes are not its code)
   { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-component",
-    at: /framed plan: the binding check of its component \(compB\) fails \(the request's tag \(some 0\), the plan's component 1\)/ },
+    at: /framed plan: the binding check of its flow at the frame's sites \(frameFlowB\) fails/ },
   { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-entries",
     at: /a framed plan's document is refused: the document's entries \[%forged%\] are not the component's \[walk\]/ },
   // (a framed plan's document, component or plan forged past its decoder:

@@ -558,15 +558,14 @@ theorem lay_program {Init : Conf → Prop} {m : Code} {x₀ : Conf} {n : Nat} {x
 end FrameCore
 
 /-- **An initial configuration meets layout provenance** (proved,
-`layP_of_loweredSrc`): the initialization's run, its node expressions
-meeting it, and the client's lowered source, which creates closures of
-outside code only. -/
+`layP_of_loweredSrc`): the initialization's run, its node expressions and
+slots meeting it, and the client's lowered source, which creates closures
+of outside code only. -/
 theorem lay_initial {ofC : ComponentTag → Bool} (hq : ∀ m c l, ofC c = false → q m c l = true) {E : List Tm}
-    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat} {c : ComponentTag} {client : Tm}
-    (hE : ∀ e ∈ E, layP q e = true) (hc : LoweredSrc ofC client) :
-    layP q (.letE (.goto E K l [] .undef c) client) = true := by
-  simp only [layP, layPs_eq, List.all_eq_true, Bool.and_eq_true, List.not_mem_nil, false_imp_iff,
-    imp_true_iff, and_true]
-  exact ⟨hE, layP_of_loweredSrc hq client hc⟩
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat} {L : List Tm} {c : ComponentTag}
+    {client : Tm} (hE : ∀ e ∈ E, layP q e = true) (hL : ∀ v ∈ L, layP q v = true) (hc : LoweredSrc ofC client) :
+    layP q (.letE (.goto E K l L .undef c) client) = true := by
+  simp only [layP, layPs_eq, List.all_eq_true, Bool.and_eq_true]
+  exact ⟨⟨⟨hE, hL⟩, trivial⟩, layP_of_loweredSrc hq client hc⟩
 
 end Verification.TolerantFrames.ReadOnly

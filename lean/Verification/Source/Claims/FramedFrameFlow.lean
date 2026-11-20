@@ -162,36 +162,84 @@ theorem frame_transport {ofC : ComponentTag → Bool} {O : List (Option Nat)} (C
 section
 variable {P : Package} [DecidableEq P.Site] [Hashable P.Site]
 
+/-- **A slot of the initialization's entry holding a realm's identity**,
+decided at the initialization's proposal `c`: the identity meets the slot's
+set. An identity is an object with no field, which holds no location: an
+object, the slot naming no signature; a closure of `C`'s code with no
+capture whose code holds no value, its code's token in the set, its code
+open at its entry where the token lies in `O`, only its own slot naming a
+signature at its entry at every context, and the slot naming none or its
+signature. -/
+def realmSlotB (F : FFlow P) (c : FCode P) (i : Nat) : Tm → Bool
+  | .objAt [] .absent _ => (c.flow.fn 0 i).isNone
+  | .objAt [] (.graph ar E K s [] _ rest comp) _ =>
+    P.ofC comp && (valsArgs P.ofC true E).isEmpty &&
+      ((F.at (E, K) entryCx).any fun c' =>
+        decide (c'.tok ∈ c.flow.env 0 i) && (!decide (c'.tok ∈ F.O) || openB F c' ar s rest 0)) &&
+      (F.ctxs (E, K)).all (fun c' => selfFnB c'.2 ar E K s rest 0) &&
+      (c.flow.fn 0 i).all fun σ => decide (σ = ⟨(E, K), ar, s, rest, 0⟩)
+  | _ => false
+
+/-- **A code the flow proposes for, at a tag of `C`**, decided: a code at a
+tag of outside code, or one with a proposal at its entry context. -/
+def codeOkB (F : FFlow P) : Code → ComponentTag → Bool := fun m c => !P.ofC c || (F.at m entryCx).isSome
+
+/-- **The initialization in the flow**, decided (the draft, "The
+initialization in the flow"): the initialization's code `(initE, initK)`
+has a proposal at its entry context whose returns lie within `O`, whose
+entry names a signature only at a slot holding a realm's identity, and at
+each slot of which the identity it holds meets the slot's set
+(`realmSlotB`); every code its node expressions and the identities hold at
+a tag of `C` has a proposal (`codeOkB`), and every such code carries a tag
+of `C`. -/
+def initFlowB (F : FFlow P) (initE : List Tm) (initK : List (Continuation × Option Target)) (initL : List Tm) :
+    Bool :=
+  ((F.at (initE, initK) entryCx).any fun c => decide (Sub c.ret F.O) && decide ((c.node 0).fn.size ≤ initL.length) &&
+    initL.zipIdx.all fun (v, i) => realmSlotB F c i v) &&
+  provs (codeOkB F) initE && provs (codeOkB F) initL && provs (fun _ c => P.ofC c) initE &&
+  provs (fun _ c => P.ofC c) initL
+
 /-- **The checks of the flow the frame reads, over the component alone**:
 its facts (`FFlow.check`), its marks (`marksB`), its tokens sites (`tokensSomeB`), its codes
-lowered (`codesLoweredB`), the closure of its capture sites and `O` closed
-(`capClosedB`), and each node expression of the initialization and each
-value of the realm meeting layout provenance at the flow's layouts and the
-residual invariant, each node expression of the initialization free of
-runs, each value of the realm plain. -/
-def frameFlowB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (realm : Heap) (initE : List Tm) : Bool :=
+holding no located value (`codesLoweredB`), the closure of its capture sites and `O` closed
+(`capClosedB`), and each node expression of the initialization, each
+value of the realm and each realm's identity the initialization's slots
+hold meeting layout provenance at the flow's layouts and the residual
+invariant, each node expression of the initialization and each identity
+free of runs, each value of the realm a primitive, and the initialization
+in the flow (`initFlowB`). -/
+def frameFlowB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (realm : Heap) (initE : List Tm)
+    (initK : List (Continuation × Option Target)) (initL : List Tm) : Bool :=
   let S := captureSites F lay ++ F.O
   F.check && F.marksB && tokensSomeB F && codesLoweredB F &&
     capClosedB F (tokenCaps F lay) S (capClose F (tokenCaps F lay) S) &&
     initE.all (fun e => layP (layQ F lay) e && wokB e && free false e) &&
-    realm.all (fun v => layP (layQ F lay) v && plainB v)
+    realm.all (fun v => layP (layQ F lay) v && plainB v && primVal v) &&
+    initL.all (fun v => layP (layQ F lay) v && plainB v && free false v) && initFlowB F initE initK initL
 
 /-- **What the checks of the frame's flow give** (proved): the flow's
-facts and marks, its tokens and lowered codes, the closure of its capture sites and
+facts and marks, its tokens and the codes holding no located value, the closure of its capture sites and
 `O` closed, layout provenance and the residual invariant of the
-initialization's node expressions and of the realm's heap, and the
-initialization's node expressions free of runs. -/
+initialization's node expressions and of the realm's heap, the
+initialization's node expressions free of runs, the realm's values
+primitives, layout provenance, the residual invariant and freedom of runs
+of the realm's identities, and the initialization in the flow. -/
 theorem frameFlowB_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat)} {realm : Heap} {initE : List Tm}
-    (h : frameFlowB F lay realm initE = true) :
+    {initK : List (Continuation × Option Target)} {initL : List Tm}
+    (h : frameFlowB F lay realm initE initK initL = true) :
     F.flow.Facts ∧ F.marksB = true ∧ tokensSomeB F = true ∧ codesLoweredB F = true ∧
       capClosedB F (tokenCaps F lay) (captureSites F lay ++ F.O)
         (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) = true ∧
       (∀ e ∈ initE, layP (layQ F lay) e = true) ∧ (∀ e ∈ initE, WOk e) ∧
-      HeapLay (layQ F lay) realm ∧ HeapW realm ∧ (∀ e ∈ initE, free false e = true) := by
+      HeapLay (layQ F lay) realm ∧ HeapW realm ∧ (∀ e ∈ initE, free false e = true) ∧
+      (∀ v ∈ realm, primVal v = true) ∧
+      (∀ v ∈ initL, layP (layQ F lay) v = true ∧ Plain v ∧ free false v = true) ∧
+      initFlowB F initE initK initL = true := by
   simp only [frameFlowB, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨hc, hm⟩, ht⟩, hl⟩, hT⟩, hi⟩, hr⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hc, hm⟩, ht⟩, hl⟩, hT⟩, hi⟩, hr⟩, hL⟩, hI⟩ := h
   exact ⟨FFlow.check_sound hc, hm, ht, hl, hT, fun e he => (hi e he).1.1, fun e he => wokB_sound e (hi e he).1.2,
-    fun v hv => (hr v hv).1, fun v hv => plainB_sound (hr v hv).2, fun e he => (hi e he).2⟩
+    fun v hv => (hr v hv).1.1, fun v hv => plainB_sound (hr v hv).1.2, fun e he => (hi e he).2,
+    fun v hv => (hr v hv).2, fun v hv => ⟨(hL v hv).1.1, plainB_sound (hL v hv).1.2, (hL v hv).2⟩, hI⟩
 end
 
 end Verification.SourceClaimJson

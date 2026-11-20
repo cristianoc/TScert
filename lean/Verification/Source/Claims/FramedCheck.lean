@@ -43,10 +43,12 @@ structure ComponentFlow (ofC : ComponentTag → Bool) where
 
 /-- The component flow of `mods` (`componentCodes`, `solveStart`,
 `solveLoop`, `propose`, `remark`), at the member `member`, its allocation
-sites numbered by the codes' bodies (`body`). -/
+sites numbered by the codes' bodies (`body`), its initialization `init`
+among its codes where one is given. -/
 def componentFlow (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entryNames : List String)
-    (member : String) (fuel : Nat := 10000000) (body : Code → Code := id) : ComponentFlow ofC :=
-  let cc := componentCodes ofC mods entryNames body
+    (member : String) (fuel : Nat := 10000000) (body : Code → Code := id) (init : Option (Code × List String) := none) :
+    ComponentFlow ofC :=
+  let cc := componentCodes ofC mods entryNames body init
   let s := solveStart cc.cs
   let (st, _, _) := solveLoop s fuel s.st
   let F := s.propose st
@@ -163,22 +165,43 @@ def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clien
     else (entries.find? fun x => !(mods.any (·.name == x))).map fun x =>
       s!"a framed plan's component exports {x}, which is no module function"
 
+/-- **The realm's identity of a realm value** a module function reads, at
+the realm's location `loc`: a native with a step model (`hostModel?`) is a
+closure of its model's code, tagged `tag`; an intrinsic object an object. -/
+def realmValueAt (tag : ComponentTag) (x : String) (loc : Nat) : Tm :=
+  match hostModel? x with
+  | some (c, ar) => .objAt [] (.graph ar c.1 c.2 0 [] .call false tag) loc
+  | none => .objAt [] .absent loc
+
+/-- **The realm and the initialization of a component** (the draft,
+"Initialization", `initC`). -/
+structure ComponentInit where
+  /-- The realm's heap: one location per audited realm value the module
+  functions read. -/
+  realm : Heap
+  initE : List Tm
+  initK : List (Continuation × Option Target)
+  /-- The module functions by name, in the order the initialization
+  allocates their closures. -/
+  order : List String
+  /-- The realm's identities the initialization's slots hold at its entry,
+  one per realm value, in order. -/
+  initL : List Tm
+  /-- The realm values' names, in order. -/
+  realmNames : List String
+
 /-- **The realm and the initialization of a component** (the draft,
 "Initialization", `initC`): the realm's heap, one identity per audited
-realm value the module functions read; the initialization's code, each
+realm value the module functions read (`realmValueAt`), held by the
+initialization's slots at its entry; the initialization's code, each
 module function's closure allocated after those it names (its captures
 each named module function's closure, read at the slot binding it, or the
-realm value), then the array of the entries; and its order, the module functions by
-name. Node `k`'s slots hold the closures nodes `0` to `k - 1` allocated,
-the latest first. -/
-def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List String) :
-    Heap × List Tm × List (Continuation × Option Target) × List String := Id.run do
+realm value, read at the slot holding it), then the array of the entries;
+and its order, the module functions by name. Node `k`'s slots hold the
+closures nodes `0` to `k - 1` allocated, the latest first, then the realm's
+identities. -/
+def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List String) : ComponentInit := Id.run do
   let realmNames := (mods.flatMap (·.siblings)).filter (fun x => !(mods.any (·.name == x))) |>.eraseDups
-  let realmValue (x : String) : Tm :=
-    let loc := realmNames.idxOf x
-    match hostModel? x with
-    | some (c, ar) => .objAt [] (.graph ar c.1 c.2 0 [] .call false tag) loc
-    | none => .objAt [] .absent loc
   -- (the module functions in an order where each comes after those it names)
   let mut order : List ProbeModule := []
   for _ in mods do
@@ -187,13 +210,16 @@ def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List
           g.siblings.all fun x => !(mods.any (·.name == x)) || order.any (·.name == x) then
         order := order ++ [g]
   let slotOf (x : String) : Nat := order.findIdx (·.name == x)
-  -- (at node `k`, the closure of node `j < k` is at slot `k - 1 - j`)
+  -- (at node `k`, the closure of node `j < k` is at slot `k - 1 - j`, the
+  -- realm value `j` at slot `k + j`)
   let closures : List Tm := order.zipIdx.map fun (g, k) =>
     .makeAt (.graph g.ar g.code.1 g.code.2 (g.code.1.length - 1)
-      (g.siblings.map fun x => if mods.any (·.name == x) then .var (k - 1 - slotOf x) else realmValue x) .call g.rest tag) [] []
+      (g.siblings.map fun x => if mods.any (·.name == x) then .var (k - 1 - slotOf x) else .var (k + realmNames.idxOf x))
+      .call g.rest tag) [] []
   let exports : Tm := .arrLit (entries.map fun x => .var (order.length - 1 - slotOf x))
-  return (realmNames.map fun _ => .nul, closures ++ [exports],
-    (List.range order.length).map (fun k => (.bind ⟨k + 1, none⟩, none)) ++ [(.ret, none)], order.map (·.name))
+  return ⟨realmNames.map fun _ => .nul, closures ++ [exports],
+    (List.range order.length).map (fun k => (.bind ⟨k + 1, none⟩, none)) ++ [(.ret, none)], order.map (·.name),
+    realmNames.zipIdx.map fun (x, j) => realmValueAt tag x j, realmNames⟩
 
 /-- An object's fields, exactly `ks`, in any order. -/
 def exactFields (j : Json) (ks : List String) (what : String) : Except String Unit := do
@@ -276,19 +302,20 @@ structure FramedComponent where
   initE : List Tm
   initK : List (Continuation × Option Target)
   initOrder : List String
+  initL : List Tm
   /-- The refusal of the checks that read the component alone, with the
   evaluation it is where the component meets the restrictions. -/
   refusal : { w : Option String // restriction = none → w = componentBindingRefusal cf.flow cf.lay cf.codes
-    cf.names entries realm initOrder initE initK family file fns C }
+    cf.names entries realm initOrder initE initK initL family file fns C }
 
 /-- **A framed plan's component flow**: the component flow of `mods`
 (`componentFlow`), its allocation sites numbered by the codes' bodies
 (`moduleBody`), each module function's request code beside its realized
-code (`FFlow.withCode`). -/
-def framedComponentFlow (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entries : List String) :
-    ComponentFlow ofC :=
+code (`FFlow.withCode`), its initialization `init` among its codes. -/
+def framedComponentFlow (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entries : List String)
+    (init : Code × List String) : ComponentFlow ofC :=
   let codes := (mods.filter fun g => ofC g.comp).map (·.code)
-  let cf := componentFlow ofC mods entries "" (body := moduleBody codes)
+  let cf := componentFlow ofC mods entries "" (body := moduleBody codes) (init := some init)
   { cf with flow := cf.codes.foldl (fun F m => F.withCode m (moduleBody cf.codes m)) cf.flow }
 
 /-- **A framed plan's component, prepared** (`FramedComponent`): where the
@@ -300,16 +327,18 @@ def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List S
     (force : List String) : FramedComponent :=
   let rows := componentRows family C
   let restriction := framedRestriction mods rows entries unplanned
-  let cf := if restriction.isSome then componentFlow ofC [] entries "" else framedComponentFlow ofC mods entries
   let tag := (mods.head?.map (·.comp)).getD none
-  let (realm, initE, initK, initOrder) := componentInit tag mods entries
+  let ci := componentInit tag mods entries
+  let (realm, initK, initOrder, initL) := (ci.realm, ci.initK, ci.order, ci.initL)
+  let cf := if restriction.isSome then componentFlow ofC [] entries ""
+    else framedComponentFlow ofC mods entries ((ci.initE, initK), ci.realmNames)
   -- (forged where `force` asks, `forgeComponent`)
-  let (cf, initE) := forgeComponent force cf initE
+  let (cf, initE) := forgeComponent force cf ci.initE
   let psiDef := if restriction.isSome then [] else protocolParts cf.flow cf.lay
   -- (evaluated once per component, where it meets the restrictions)
   let refusal := if restriction.isSome then none else
-    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm initOrder initE initK family file fns C
-  { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, initOrder,
+    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm initOrder initE initK initL family file fns C
+  { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, initOrder, initL,
     refusal := ⟨refusal, fun h => by simp [refusal, h]⟩ }
 
 /-- **The refusal of the checks that read the component alone, at the
@@ -318,7 +347,7 @@ at its own index; evaluated at another index; none where the component
 fails a restriction. -/
 def FramedComponent.refusalAt (fc : FramedComponent) (C : Nat) :
     Option { w : Option String // w = componentBindingRefusal fc.cf.flow fc.cf.lay fc.cf.codes fc.cf.names fc.entries
-      fc.realm fc.initOrder fc.initE fc.initK fc.family fc.file fc.fns C } :=
+      fc.realm fc.initOrder fc.initE fc.initK fc.initL fc.family fc.file fc.fns C } :=
   match hr : fc.restriction with
   | some _ => none
   | none => some (if hC : C = fc.C then ⟨fc.refusal.val, by subst hC; exact fc.refusal.property hr⟩ else ⟨_, rfl⟩)
@@ -366,7 +395,7 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
       throw s!"at the document's framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
   let some componentRefusal := fc.refusalAt C | throw (fc.restriction.getD "")
   return { C, readOnly := readOnlyInputs fc.family C member r.inputs, outType := [], realm := fc.realm,
-           initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder,
+           initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder, initL := fc.initL,
            arity := r.inputs.length - r.siblings.length, ofC := fc.ofC,
            marks := fc.cf.O, checked := F, lay := fc.cf.lay, host := fc.cf.host, family := fc.family,
            file := fc.file, fns := fc.fns, codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
