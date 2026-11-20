@@ -1,0 +1,369 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-299"><code>3ba496aceb580caf6531d8bd16348075dc0a3cbc..pr-299</code></a><ul><li>2 commits, units 5 verified</li><li>changes: 1 Lowering, 2 Docs, 1 Example</li><li>parts: <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-299"><code>3ba496aceb580caf6531d8bd16348075dc0a3cbc..pr-299</code></h2><article class="card" id="c-4eb2fb72b"><header><div><div class="sha">4eb2fb72b · Cristiano Calcagno · Nov 20, 10:39</div><h3>State one separation at every statement entry: a binding's allocation apart from earlier slots</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>blocker-for-of-fresh-record.ts#last</span><span>fresh-object-separation-older-fresh.ts#older</span><span>fresh-object-separation-older-fresh.ts#rebound</span><span>fresh-object-separation-operand.ts#cast</span><span>fresh-object-separation-operand.ts#conditional</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>A cut (a loop's head, a statement entry with several predecessors) resets heap knowledge to what it states. It restated an allocation's freshness by kind of binding: a <code>let</code>'s cell apart from every older slot and some younger ones; a <code>for...of</code> iterator apart from older slots but fresh constants; an array literal's spine apart from older value slots' spines; an object literal a constant holds not at all. Each kind had its own partners, and safe programs outside the list were refused: two object literals where a write of the older one's field dropped the younger one's facts past a loop's head, and blocker-for-of-fresh-record, a <code>let</code> given a fresh record on each pass of a <code>for...of</code> loop, refused at the loop's entry because the iterator's separation from the <code>let</code>'s fields held only while the <code>let</code> kept its first value.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">statement entries: the separation an allocation establishes</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="label">per kind</span><span class="tgt"><span class="m-text">cell (field value, older and younger partners), iterator (all</span></span></div><div class="cond"><span class="tgt"><span class="m-text">own locations, older non-fresh partners), array constant (spine field</span>,</span></div><div class="cond"><span class="tgt"><span class="m-text">older value slots' spines), object constant</span></span><span class="note">(none)</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">one rule for every binding whose value is allocated at the binding (a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">cell, an iterator, a constant whose value is fresh</span><span class="m-rel">:</span> <span class="m-text">the result of a step</span></span></div><div class="cond"><span class="tgt"><span class="m-text">whose rule states it apart, an object or array literal's allocation or</span></span></div><div class="cond"><span class="tgt"><span class="m-text">a call whose callee's contract states a fresh result (call-fresh), or of</span></span></div><div class="cond"><span class="tgt"><code class="m-code">e <span class="tk-k">as</span> <span class="tk-t">T</span></code> <span class="m-text">or a conditional where each operand it may yield is fresh), for</span></span></div><div class="cond"><span class="tgt"><span class="m-text">every slot bound before the allocation, its fields named</span> <span class="m-text">then</span><span class="m-rel">:</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the slot still holds its value of then (no assignment, no key-adding</span></span></div><div class="cond"><span class="tgt"><span class="m-text">write rebinds it</span>)  ⟹  <span class="m-text">apart from all the value's own locations</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the slot may come to hold a later allocation (a key-adding write's</span></span></div><div class="cond"><span class="tgt"><span class="m-text">copy; any slot where the value is no source value</span><span class="m-rel">:</span> <span class="m-text">a cell, an iterator</span>)</span></div><div class="cond"><span class="tgt">⟹  <span class="m-text">apart from the fields the value's type names, which that later</span></span></div><div class="cond"><span class="tgt"><span class="m-text">allocation separates from it</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the slot may come to hold the value itself (an assigned <code class="m-code"><span class="tk-k">let</span></code>, where</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the value is a source value</span>)  ⟹  <span class="m-text">no pair</span></span></div><div class="cond"><span class="tgt"><span class="m-text">a closure's capture states none</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md no general frame rule and writing, SOURCE-REWRITES.md, WORK.md</span></h4><div class="prose"><p>the rule above as one statement; the loop replacing a binding's record verifies; its WORK.md row is closed</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-for-of-fresh-record</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the iterator's named fields apart from each fresh record's fields</span></summary><pre class="code"><span class="tk-c">// A loop that replaces a binding's record with a fresh one on each pass.</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// fragment-expressions.mts#template (written as a reduce).</span>
+<span class="tk-k">type</span> <span class="tk-t">S</span> = { k: <span class="tk-s">&quot;lit&quot;</span>; v: string };
+<span class="tk-k">export</span> <span class="tk-k">function</span> last(xs: <span class="tk-k">readonly</span> string[], e: <span class="tk-t">S</span>): <span class="tk-t">S</span> {
+  <span class="tk-k">let</span> acc: <span class="tk-t">S</span> = e;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> x <span class="tk-k">of</span> xs) acc = { k: <span class="tk-s">&quot;lit&quot;</span>, v: x };
+  <span class="tk-k">return</span> acc;
+}</pre></details></li><li><details><summary><code>fresh-object-separation-older-fresh</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">an older constant's literal, also rebound by a key-adding write, is a partner</span></summary><pre class="code"><span class="tk-c">// Two object literals two constants hold, the younger one's field facts</span>
+<span class="tk-c">// stated at a loop's head: a write of the older one's field keeps them, the</span>
+<span class="tk-c">// older constant holding a value bound before the younger allocation</span>
+<span class="tk-c">// (`older`), and so does a write after a key-adding write rebinds the older</span>
+<span class="tk-c">// constant to its copy, allocated later and apart from the younger object's</span>
+<span class="tk-c">// named fields (`rebound`).</span>
+<span class="tk-k">type</span> <span class="tk-t">C</span> = { i: number };
+<span class="tk-k">type</span> <span class="tk-t">O</span> = { i: number; j?: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> older(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">const</span> o: <span class="tk-t">C</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> c: <span class="tk-t">C</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    o.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = xs[c.i]!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total + o.i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rebound(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">const</span> o: <span class="tk-t">O</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> c: <span class="tk-t">C</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    o.j = s;
+    o.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = xs[c.i]!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total + o.i;
+}</pre></details></li><li><details><summary><code>invalid-fresh-object-separation-younger-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a younger constant bound to the object is no partner</span></summary><pre class="code"><span class="tk-c">// An object literal a constant holds, its field's facts stated at a loop's</span>
+<span class="tk-c">// head, and a younger constant bound to the same object: the younger</span>
+<span class="tk-c">// constant is no value bound before the allocation, so the write through it</span>
+<span class="tk-c">// keeps no fact of the object's field and the read is refused. Under Node</span>
+<span class="tk-c">// the read is `xs[-1]`, `undefined` at `number`.</span>
+<span class="tk-k">type</span> <span class="tk-t">C</span> = { i: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> alias(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">const</span> c: <span class="tk-t">C</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> o: <span class="tk-t">C</span> = c;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    o.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = <mark>xs[c.i]</mark>!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-fresh-object-separation-rebound-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">both constants hold the key-adding write's copy</span></summary><pre class="code"><span class="tk-c">// An object literal two constants hold, rebound to its copy by a key-adding</span>
+<span class="tk-c">// write through the younger one, its field's facts stated at a loop's head:</span>
+<span class="tk-c">// both constants hold the copy, so the write through the younger one writes</span>
+<span class="tk-c">// the field and the read is refused. Under Node the read is `xs[-1]`,</span>
+<span class="tk-c">// `undefined` at `number`.</span>
+<span class="tk-k">type</span> <span class="tk-t">O</span> = { i: number; j?: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> alias(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">const</span> c: <span class="tk-t">O</span> = { i: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> o: <span class="tk-t">O</span> = c;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    o.j = s;
+    o.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = <mark>xs[c.i]</mark>!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>fresh-object-separation-operand</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>{ i: 0 } as C</code> and a conditional of two literals are fresh</span></summary><pre class="code"><span class="tk-c">// An initializer whose value is one of its operands', each operand an</span>
+<span class="tk-c">// object literal: `{ i: 0 } as C`, and a conditional of two literals. The</span>
+<span class="tk-c">// value is fresh, so the constant's field facts stated at a loop's head</span>
+<span class="tk-c">// survive a write of a parameter's field in the body.</span>
+<span class="tk-k">type</span> <span class="tk-t">C</span> = { i: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cast(xs: <span class="tk-k">readonly</span> number[], p: <span class="tk-t">C</span>): number {
+  <span class="tk-k">const</span> c = { i: <span class="tk-n">0</span> } <span class="tk-k">as</span> <span class="tk-t">C</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    p.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = xs[c.i]!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> conditional(xs: <span class="tk-k">readonly</span> number[], p: <span class="tk-t">C</span>): number {
+  <span class="tk-k">const</span> c: <span class="tk-t">C</span> = xs.length &gt; <span class="tk-n">3</span> ? { i: <span class="tk-n">0</span> } : { i: <span class="tk-n">1</span> };
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    p.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = xs[c.i]!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-fresh-object-separation-cast-parameter</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>p as C</code> is the parameter's value</span></summary><pre class="code"><span class="tk-c">// A cast of a parameter, `p as C`: the value is the parameter's, no</span>
+<span class="tk-c">// allocation, so the write of `p.i` keeps no fact of `c.i` and the read is</span>
+<span class="tk-c">// refused. Under Node `c` is `p`, and the read is `xs[-1]`, `undefined` at</span>
+<span class="tk-c">// `number`.</span>
+<span class="tk-k">type</span> <span class="tk-t">C</span> = { i: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cast(xs: <span class="tk-k">readonly</span> number[], p: <span class="tk-t">C</span>): number {
+  <span class="tk-k">const</span> c = p <span class="tk-k">as</span> <span class="tk-t">C</span>;
+  c.i = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    p.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = <mark>xs[c.i]</mark>!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-fresh-object-separation-conditional-parameter</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">one arm yields the parameter</span></summary><pre class="code"><span class="tk-c">// A conditional of a literal and a parameter: where it yields the</span>
+<span class="tk-c">// parameter, the write of `p.i` writes `c.i`, so no fact of `c.i` survives</span>
+<span class="tk-c">// the write and the read is refused. Under Node, for three elements `c` is</span>
+<span class="tk-c">// `p`, and the read is `xs[-1]`, `undefined` at `number`.</span>
+<span class="tk-k">type</span> <span class="tk-t">C</span> = { i: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> conditional(xs: <span class="tk-k">readonly</span> number[], p: <span class="tk-t">C</span>): number {
+  <span class="tk-k">const</span> c: <span class="tk-t">C</span> = xs.length &gt; <span class="tk-n">3</span> ? { i: <span class="tk-n">0</span> } : p;
+  c.i = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(c.i) &amp;&amp; 0 &lt;= c.i */</span>
+  <span class="tk-k">while</span> (c.i &lt; xs.length) {
+    <span class="tk-k">const</span> s = c.i;
+    c.i = s;
+    p.i = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = <mark>xs[c.i]</mark>!;
+    total = total + x;
+    c.i = s + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p><code>new K()</code> of a program's class and a factory <code>make()</code>: a code definition's call or construction states no fresh result (a stated <code>Fresh&lt;T&gt;</code> is a fresh spine, not a fresh object), so neither is fresh and both stay refused; making one fresh needs a contract stating it and a check certifying it.</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>The restated separation is required knowledge of the entry: every incoming edge must establish it by the separation check proved for edges, so a pair stated wrongly is refused at its edge. A pair of a slot's value of the allocation's time holds by the allocation's freshness; a pair of named fields with a slot rebound to a later allocation is established by that allocation's own separation, in the other orientation.</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">the four negatives under <span class="tk-t">Node</span> read xs[-<span class="tk-n">1</span>] <span class="tk-k">from</span> the second iteration:</span><span class="ln"><span class="tk-s">`undefined`</span> where <span class="tk-s">`number`</span> is claimed.</span></pre>
+<h4 class="change">Validation</h4><div class="prose"><p>Cases fresh, separation, for-of, key-adding, sibling, field-write, loop, for-, while, pretext, literal, map-, cell, class, new-, error (662): all as expected, at most 3 at once. lake build with the axiom check, tools tsc, docs.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceElaboration.separationFacts · SourceElaboration.separationAt · ScopeBinding.allocated · ScopeBinding.reachable · LoweringBindings.allocates · LoweringBindings.freshResultContract · rebindingHolders</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">fresh-object-separation-older-fresh</span> <span class="test pos">fresh-object-separation-operand</span> <span class="test neg">invalid-fresh-object-separation-younger-alias</span> <span class="test neg">invalid-fresh-object-separation-rebound-alias</span> <span class="test neg">invalid-fresh-object-separation-cast-parameter</span> <span class="test neg">invalid-fresh-object-separation-conditional-parameter</span></dd></dl>
+<details><summary>16 files changed, 311 insertions(+), 98 deletions(-)</summary><pre class="code"> WORK.md                                            |   1 -
+ docs/PROGRAM-TYPING.md                             |  31 +++++-
+ docs/SOURCE-REWRITES.md                            |  17 ++-
+ lean/Verification/Source/Lowering.lean             |   2 +-
+ lean/Verification/Source/Lowering/Bindings.lean    |  38 +++++--
+ lean/Verification/Source/Lowering/Closures.lean    |   2 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   5 +-
+ .../Verification/Source/Lowering/Observations.lean | 114 +++++++++------------
+ lean/Verification/Source/Lowering/State.lean       |  24 +++--
+ pipeline/cases.mts                                 |  12 ++-
+ .../fresh-object-separation-older-fresh.ts         |  41 ++++++++
+ .../examples/fresh-object-separation-operand.ts    |  35 +++++++
+ ...valid-fresh-object-separation-cast-parameter.ts |  21 ++++
+ ...resh-object-separation-conditional-parameter.ts |  21 ++++
+ ...nvalid-fresh-object-separation-rebound-alias.ts |  23 +++++
+ ...nvalid-fresh-object-separation-younger-alias.ts |  22 ++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-7ca48d248"><header><div><div class="sha">7ca48d248 · Cristiano Calcagno · Nov 20, 10:39</div><h3>Keep a fresh cursor's facts across a write of a parameter's field in a loop</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>fresh-object-separation-loop.ts#walk</span><span>fresh-object-separation-loop.ts#walkDefaulted</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>In pretext's walkPreparedLinesRaw a fresh cursor <code>{ segmentIndex: 0, … }</code> carries <code>safeInteger(cursor.segmentIndex) &amp;&amp; 0 &lt;= cursor.segmentIndex</code> through the loop's invariant, and the body writes <code>stats.lineCount++</code> before a callee requiring those facts. The write x.f := v keeps a fact over z.g only where a separation fact states the two locations apart, or where z is x's object and g another key (write-sibling): that rule is right, since in the model two objects may share a location unless a fact separates them. The cursor's allocation separates it from <code>stats.lineCount</code>, but the loop's head stated no separation of an object literal a constant holds, so past it the write dropped the cursor's facts. The statement-entry separation of the previous commit states it; these cases show the shape at minimal size.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">fresh-object-separation-loop: the parameter with and without a <span class="tk-k">default</span>;</span><span class="ln">invalid-fresh-object-separation-loop-alias: an older <span class="tk-s">`let`</span> the body</span><span class="ln">assigns the object to, then written through</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, no general frame rule and writing</span></h4><div class="prose"><p>the two cases cited at the rule</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>fresh-object-separation-loop</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the write of <code>stats</code>'s fields keeps the cursor's facts past the loop's head</span></summary><pre class="code"><span class="tk-c">// A fresh object a constant holds, its field's facts stated at a loop's</span>
+<span class="tk-c">// head, then a write of another object's field in the body: the object's</span>
+<span class="tk-c">// allocation separates its fields from the fields of every older value</span>
+<span class="tk-c">// slot, the loop's head restates that separation, so the write keeps the</span>
+<span class="tk-c">// facts. Pretext's walkPreparedLinesRaw: `cursor.segmentIndex = start`,</span>
+<span class="tk-c">// `stats.lineCount++`, then a callee requiring the cursor's index.</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { segmentIndex: number; graphemeIndex: number };
+<span class="tk-k">type</span> <span class="tk-t">Stats</span> = { lineCount: number; maxLineWidth: number };
+
+<span class="tk-c">/** @requires safeInteger(cursor.segmentIndex) &amp;&amp; 0 &lt;= cursor.segmentIndex */</span>
+<span class="tk-k">function</span> step(cursor: <span class="tk-t">Cursor</span>): number {
+  <span class="tk-k">return</span> cursor.segmentIndex;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(stats: <span class="tk-t">Stats</span>, xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">const</span> cursor: <span class="tk-t">Cursor</span> = { segmentIndex: <span class="tk-n">0</span>, graphemeIndex: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> count = xs.length;
+  <span class="tk-c">/** @invariant safeInteger(cursor.segmentIndex) &amp;&amp; 0 &lt;= cursor.segmentIndex */</span>
+  <span class="tk-k">while</span> (cursor.segmentIndex &lt; count) {
+    <span class="tk-k">const</span> start = cursor.segmentIndex + <span class="tk-n">1</span>;
+    cursor.segmentIndex = start;
+    stats.lineCount++;
+    stats.maxLineWidth = step(cursor);
+  }
+  <span class="tk-k">return</span> stats.lineCount;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> walkDefaulted(
+  xs: <span class="tk-k">readonly</span> number[],
+  stats: <span class="tk-t">Stats</span> = { lineCount: <span class="tk-n">0</span>, maxLineWidth: <span class="tk-n">0</span> },
+): number {
+  <span class="tk-k">const</span> cursor: <span class="tk-t">Cursor</span> = { segmentIndex: <span class="tk-n">0</span>, graphemeIndex: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> count = xs.length;
+  <span class="tk-c">/** @invariant safeInteger(cursor.segmentIndex) &amp;&amp; 0 &lt;= cursor.segmentIndex */</span>
+  <span class="tk-k">while</span> (cursor.segmentIndex &lt; count) {
+    <span class="tk-k">const</span> start = cursor.segmentIndex + <span class="tk-n">1</span>;
+    cursor.segmentIndex = start;
+    stats.lineCount++;
+    stats.maxLineWidth = step(cursor);
+  }
+  <span class="tk-k">return</span> stats.lineCount;
+}</pre></details></li><li><details><summary><code>invalid-fresh-object-separation-loop-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an older <code>let</code> assigned the object is no partner</span></summary><pre class="code"><span class="tk-c">// A fresh object a constant holds, its field's facts stated at a loop's</span>
+<span class="tk-c">// head, and an older `let` the body assigns the object to: from the second</span>
+<span class="tk-c">// iteration on, the write through the `let` writes the object's field, so</span>
+<span class="tk-c">// the loop's head restates no separation from the `let`'s fields and the</span>
+<span class="tk-c">// read `xs[cursor.segmentIndex]!` is refused. Under Node the second</span>
+<span class="tk-c">// iteration reads `xs[-1]`, `undefined` at `number`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { segmentIndex: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> aliased(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">let</span> target: <span class="tk-t">Cursor</span> = { segmentIndex: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> cursor: <span class="tk-t">Cursor</span> = { segmentIndex: <span class="tk-n">0</span> };
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(cursor.segmentIndex) &amp;&amp; 0 &lt;= cursor.segmentIndex */</span>
+  <span class="tk-k">while</span> (cursor.segmentIndex &lt; xs.length) {
+    <span class="tk-k">const</span> start = cursor.segmentIndex;
+    cursor.segmentIndex = start;
+    target.segmentIndex = -<span class="tk-n">1</span>;
+    <span class="tk-k">const</span> x: number = <mark>xs[cursor.segmentIndex]</mark>!;
+    total = total + x;
+    target = cursor;
+    cursor.segmentIndex = start + <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">invalid-fresh-object-separation-loop-alias under <span class="tk-t">Node</span> reads xs[-<span class="tk-n">1</span>] at</span><span class="ln">the second iteration: <span class="tk-s">`undefined`</span> where <span class="tk-s">`number`</span> is claimed.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext v-p6 walkPreparedLinesRaw, the loop's back edge: lacks 6 facts -&gt; lacks 4, the cursor's two facts established (dev/check-functions.mts, TSCERT_STEP_LIMIT=300)</dd><dt>Tests</dt><dd><span class="test pos">fresh-object-separation-loop</span> <span class="test neg">invalid-fresh-object-separation-loop-alias</span></dd></dl>
+<details><summary>4 files changed, 75 insertions(+), 3 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  9 +++--
+ pipeline/cases.mts                                 |  3 ++
+ pipeline/examples/fresh-object-separation-loop.ts  | 42 ++++++++++++++++++++++
+ .../invalid-fresh-object-separation-loop-alias.ts  | 24 +++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
