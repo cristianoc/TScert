@@ -231,7 +231,7 @@ theorem framedReturns_reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT
     (fun l _ p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).2) hslots
-    (Φ := fun l => (eff l).getD []) hcheck hTm
+    (Φ := fun l => (eff l).getD []) hcheck ClientFrame.ProtWitness.none hTm
     (fun p => thetaKeepB_sound hθ _ p)
     (fun l p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).1)
     (fun l b₀ a m e L d k x v hl hb he hk hL hbt hex hat hv =>

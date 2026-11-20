@@ -549,12 +549,14 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint}
+    {Φ : Nat → Footprints.Footprint} {prot : Nat → Footprints.Region → Bool}
     (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt classQuery (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt classQuery (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') (prot l) = true)
+    (hw : (spec.frame r).ProtWitness (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+      r.comp F S prot)
     (hTm : capClosedB spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)
       (capClose spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)) = true)
     (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol spec.fflow spec.lay p) = true)
@@ -579,6 +581,6 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
   exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
     (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE htok hlow
-    hcomp hatom hT hle hslots hcheck (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ
+    hcomp hatom hT hle hslots hcheck hw (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ
 
 end Verification.SourceClaimJson.PassUnit

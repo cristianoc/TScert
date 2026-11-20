@@ -2317,15 +2317,19 @@ proved results named.
    `FramedSpec.prot_witness`: the same at the plan's frame, the start's
    protection by `start_protects`, at a checked table; `copiesOf_sound`:
    the proposal's table is checked.
-10. **The returns with protection**. `framed_of_check` takes
-    `prot : Nat → Region → Bool` and the witness premise at depth `1` in
-    place of `fun _ _ hp => by cases hp`, its check at `prot l`;
-    `framedNodesAt_sound` (`FramedReached.lean`) and
-    `ret_reachedW_of_checks`, `ret_reachedW_of_charges`,
-    `ret_reachedW_of_entries`, `ret_reachedW_frame` and `ret_reachedW_spec`
-    carry it; `ret_reachedW_spec` discharges the premise by `prot_witness`
-    at `protRegionB`. The headline `PassUnit.mode8Accepted_sound` and its
-    premise `Mode8Accepted` are unchanged.
+10. **The returns with protection** (proved; `FramedReturns.lean`,
+    `FramedStarts.lean`). `ClientFrame.ProtWitness`: at every reached
+    state entering a framed node $`l`$, each lent location of a region
+    `prot l` reads as protected has a live witness at depth `1`;
+    `framed_of_check` takes `prot : Nat → Region → Bool` and that premise,
+    its check at `prot l`; `ret_reachedW_of_checks`,
+    `ret_reachedW_of_charges`, `ret_reachedW_of_entries`,
+    `ret_reachedW_frame`, `ret_reachedW_spec` and `ret_reachedW_public`
+    carry both. `framedReturns_reached` (`FramedReached.lean`) reads them at
+    the pass's checks, discharging the premise by
+    `FramedSpec.prot_witness` at `protRegionB`. The headline
+    `PassUnit.mode8Accepted_sound` and its premise `Mode8Accepted` are
+    unchanged.
 
 ### The pieces in commit order
 
