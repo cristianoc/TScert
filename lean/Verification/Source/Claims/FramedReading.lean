@@ -198,3 +198,160 @@ theorem region_reached [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C
 end ClientFrame
 
 end Verification.TolerantFrames.ReadOnly
+
+namespace Verification.SourceClaimJson
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
+open Verification.TolerantFrames.ReadOnly HeapObservations Verification.Footprints
+
+section
+variable {P : Package} [DecidableEq P.Site] [Hashable P.Site]
+
+/-- **A region read as protected at a framed node** (the Read-only frames
+note, §4.1, decided): a region read from a slot whose read locations'
+steps `Ψ` keeps, where at every node sharing the node's continuation and
+handler the slot holds a copy of an argument at a read-only position
+below the arity, read along a path whose steps `Ψ` keeps. -/
+def protRegionB (Ψ : Protocol P) (cp : CopyTable) (arity : Nat) (roPos : Nat → Bool) (m : Code) (l : Nat)
+    (r : Region) : Bool :=
+  match regionSlot r with
+  | none => false
+  | some x => stepsKeptB Ψ (regionSteps r) && (sharingNodes m l).all fun l' =>
+      (cp.at l').any fun (i, j, π) => i == x && decide (j < arity) && roPos j && stepsKeptB Ψ (pathSteps π)
+end
+
+/-- **The proposal of the copies passes the check** (proved, by its
+definition): `copiesOf` returns a table `copiesB` passes, or the empty
+table, which passes. -/
+theorem copiesOf_sound (Pe : List Tm) (Pk : List (Continuation × Option Target)) (start arity bound : Nat) :
+    copiesB Pe Pk start arity (copiesOf Pe Pk start arity bound) = true := by
+  unfold copiesOf
+  simp only
+  split
+  · assumption
+  · simp only [copiesB, CopyTable.at, List.getD_nil, List.all_nil, Bool.true_and, List.all_eq_true]
+    intro l _
+    split
+    · simp [edgeOkB, CopyTable.at]
+    · rfl
+
+end Verification.SourceClaimJson
+
+namespace Verification.TolerantFrames.ReadOnly.ClientFrame
+open Verification ControlFlow Footprints Verification.SourceClaimJson
+variable {τ : Type} {fr : ClientFrame τ}
+
+/-- **Every lent location of a region read as protected has a live
+witness** (proved, `region_reached`, `witness_of_start`): from a call's
+start meeting the invariants of states, at a run of the code whose slots
+below the arity at read-only positions reach only locations the start
+protects, and witnesses where they are released or outside storage, at a
+frame of the code entering the node `l`, every released or outside
+location of a region `protRegionB` reads as protected at the node is
+reached from the argument at the entry's heap, so witnessed at the start
+and, the history growing inside the call, at the frame's state. -/
+theorem prot_witness [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hc : fr.ChkSound) (hi : fr.StartInv) (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow)
+    (hE : fr.EntryFits Fl.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
+    (hΘ : ∀ p, fr.Θ p = .keep) {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
+    {start arity : Nat} {cp : CopyTable} (hcp : copiesB Pe Pk start arity cp = true) (hlen : Pe.length = Pk.length)
+    {roPos : Nat → Bool} {a : Conf × Ghost (fr.F.at fr.C)} (hN : fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t)
+    (hg : fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2) (hc₀ : fr.F.ofC fr.C c₀ = true) {L₀ : List Tm} {d₀ : Tm}
+    (hat : a.1.t = .goto Pe Pk start L₀ d₀ c₀) (hL₀ : SlotVals L₀ d₀)
+    (hprot : ∀ j, j < arity → roPos j = true → ∀ ℓ, Reaches (fr.F.at fr.C).ofC a.1.s.h (envOf L₀ d₀ j) ℓ →
+      ℓ < a.1.s.h.length ∧ RowProtects a.2 ℓ ∧ (a.2.Lent ℓ → Witness fr.view.view 1 (lift fr.F fr.C none a.1 a.2) ℓ))
+    {n : Nat} {b₀ : Conf × Ghost (fr.F.at fr.C)} (hex : Ex fr.KStep (fun _ => True) n a b₀) {u : Tm}
+    {L : List Tm} {d : Tm} {k : Continuation} {x : Option Target} {l : Nat} (hkl : Pk[l]? = some (k, x))
+    (hbt : b₀.1.t = .frame Pe Pk u L d k x c₀) :
+    ∀ r', protRegionB (componentProtocol Fl lay) cp arity roPos (Pe, Pk) l r' = true → ∀ w,
+      r'.mem (envOf L d) b₀.1.s.h w = true → b₀.2.Lent w →
+      Witness fr.view.view 1 (lift fr.F fr.C none b₀.1 b₀.2) w := by
+  obtain ⟨l'', hkx, hreach⟩ := region_reached hc hi hFa hS hE hwk hst hΘ hcp hlen hN hg hc₀ hat hL₀
+    (fun j hj hpos ℓ hr => ⟨(hprot j hj hpos ℓ hr).1, (hprot j hj hpos ℓ hr).2.1⟩) hex hbt
+  intro r' hr' w hw hL
+  unfold protRegionB at hr'
+  split at hr'
+  · cases hr'
+  · rename_i xr hslot
+    simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hr'
+    obtain ⟨hsteps, hall⟩ := hr'
+    have hshare : l'' ∈ sharingNodes (Pe, Pk) l := by
+      simp only [sharingNodes, List.mem_filter, List.mem_range, beq_iff_eq]
+      exact ⟨(List.getElem?_eq_some_iff.mp hkx).1, by rw [hkx, hkl]⟩
+    obtain ⟨⟨i, j, π⟩, he, hcond⟩ := hall l'' hshare
+    simp only [beq_iff_eq, decide_eq_true_eq] at hcond
+    obtain ⟨⟨⟨rfl, hj⟩, hpos⟩, hπ⟩ := hcond
+    have hr := hreach _ he hj hpos hπ r' hslot hsteps w hw
+    obtain ⟨hlt, -, hwit⟩ := hprot j hj hpos w hr
+    have hsite : b₀.2.site w = a.2.site w := (ex_sites hS hex).2 w hlt
+    have hL₀ : a.2.Lent w := by
+      unfold Ghost.Lent Ghost.origin at hL ⊢; rw [hsite] at hL; exact hL
+    have hdx : 1 ≤ depthC fr.F fr.C none a.1.t := by rw [hat]; exact depthC_goto hc₀
+    have hde : 1 ≤ δ fr.F fr.C none b₀ := by simp only [δ]; rw [hbt]; exact depthC_frame hc₀
+    exact witness_of_start hc hi hN hg (.inl ⟨_, _, _, _, _, _, hat, hc₀⟩) hdx hex hde (hwit hL₀)
+
+end Verification.TolerantFrames.ReadOnly.ClientFrame
+
+namespace Verification.SourceClaimJson
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
+open Verification.TolerantFrames.ReadOnly HeapObservations Verification.Footprints
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+namespace FramedSpec
+variable (spec : FramedSpec ι)
+
+/-- **The witness at a framed plan's frame** (proved, `start_protects`,
+`ClientFrame.prot_witness`): at a reached state whose term is a frame of
+the request's code entering the node `l`, every released or outside
+location of a region `protRegionB` reads as protected there, at the
+component's protocol and a checked table of copies, has a live witness at
+depth `1`. The call it is reached from starts at an entry of the request
+(`EntryAt`), whose slots at read-only positions reach only locations its
+start protects and witnesses. -/
+theorem prot_witness (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
+    (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
+    (hcomp : (spec.F.at spec.C).ofC r.comp = true) (har : spec.arityB r = true)
+    (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true)
+    (hm : Lendable spec.flow.O ∧ LocalHeld spec.flow.H) (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
+    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv) (hE : (spec.frame r).EntryFits spec.flow)
+    (hwk : ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
+      (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
+        WOk a.1.t ∧ HeapW a.1.s.h)
+    (hΘ : ∀ p, (spec.frame r).Θ p = .keep) {cp : CopyTable}
+    (hcp : copiesB (requestCode r).1 (requestCode r).2 r.start spec.arity cp = true)
+    {b₀ : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)} (hb : (spec.frame r).Reached b₀) {u : Tm}
+    {L : List Tm} {d : Tm} {k : Continuation} {x : Option Target} {l : Nat}
+    (hkl : (requestCode r).2[l]? = some (k, x))
+    (hbt : b₀.1.t = .frame (requestCode r).1 (requestCode r).2 u L d k x r.comp) :
+    ∀ r', protRegionB (componentProtocol spec.fflow spec.lay) cp spec.arity spec.roPos (requestCode r) l r' = true →
+      ∀ w, r'.mem (envOf L d) b₀.1.s.h w = true → b₀.2.Lent w →
+        Witness spec.view.view 1 (lift (spec.frame r).F (spec.frame r).C none b₀.1 b₀.2) w := by
+  obtain ⟨a, n, hN, hg, hex⟩ := hb
+  rcases hg with ⟨a₂, he, hga⟩ | ⟨hne, -⟩
+  · obtain ⟨L₀, d₀, hat, hprot⟩ := spec.start_protects r hr hF hst hcomp har hro hm hinitF hinitE hinit he a.1 rfl rfl
+    have hL₀ : SlotVals L₀ d₀ :=
+      spec.slotVals r hr hF hst hreal hcomp hinit a.1.s.n a.1.s.W a.1.s.h L₀ d₀ (by rw [← hat]; exact hN)
+    have hF' : spec.fflow.flow.Facts := hF
+    have hS' : (spec.frame r).FlowSites spec.fflow.flow := spec.flowSites r
+    have hE' : (spec.frame r).EntryFits spec.fflow.flow := hE
+    have hlen : (requestCode r).1.length = (requestCode r).2.length := by simp [requestCode]
+    have hg' : (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 := by rw [hga]; exact .inl ⟨a₂, he, rfl⟩
+    have hat' : a.1.t = .goto (requestCode r).1 (requestCode r).2 r.start L₀ d₀ r.comp := by rw [hat]; rfl
+    exact ClientFrame.prot_witness (fr := spec.frame r) (Fl := spec.fflow) (lay := spec.lay) hc hi hF' hS' hE' hwk
+      (spec.wfS_start r) hΘ hcp hlen hN hg' hcomp hat' hL₀
+      (fun j hj hpos ℓ hreach => by
+        obtain ⟨hlt, -, -, hrow, hw⟩ := hprot j hj hpos ℓ hreach
+        exact ⟨hlt, by rw [hga]; exact hrow, fun hL => hw (by rw [← hga]; exact hL) _ hga⟩)
+      hex hkl hbt
+  · exact absurd hN.2 hne
+
+end FramedSpec
+end
+end Verification.SourceClaimJson
