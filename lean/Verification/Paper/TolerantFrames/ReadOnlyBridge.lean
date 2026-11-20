@@ -65,7 +65,7 @@ end Ex
 location is exposed or protected, and each call of `C` active at the term
 has one set of the history, empty. -/
 noncomputable def bareStart (F : Family) (C : Nat) (t : Tm) : Ghost (F.at C) :=
-  ⟨fun _ => none, fun _ => none, fun _ => False, List.replicate (depthC F C none t) (fun _ => False),
+  ⟨fun _ => none, fun _ => False, List.replicate (depthC F C none t) (fun _ => False),
     fun _ => False⟩
 
 /-- **The history at an entry** (Appendix A, the start of an execution):
@@ -93,7 +93,7 @@ theorem bareStart_uniform (F : Family) (C : Nat) (t : Tm) : (bareStart F C t).Un
 /-- The entry history keeps every location outside storage. -/
 theorem entryStart_site {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} {args : List (tv.Ty × Val)} :
     (entryStart F C tv h t args).site = fun _ => none :=
-  (Ghost.crosses_site _ _).1
+  (Ghost.crosses_site _ _)
 
 /-- **The entry history meets the invariants of states** (proved, by
 `Inv.of_lent`): crossings keep it uniform, every location of it is outside

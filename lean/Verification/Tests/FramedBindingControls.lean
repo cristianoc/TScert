@@ -139,9 +139,11 @@ private def pathRow : ComponentWire.Clients :=
 /-! ## The protocol -/
 
 -- the wire's protocol at least the charges' at every part of the flow's sites
-#guard protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .any)
+#guard protocolAtLeastB (P := Pk) [none, some 0] [none, some (.str "f")] (probeProtocol [(some .field, some (.str "f"))] [])
+  (fun _ => .any)
 -- a wire protocol keeping the field parts the charges change
-#guard !protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .keep)
+#guard !protocolAtLeastB (P := Pk) [none, some 0] [none, some (.str "f")] (probeProtocol [(some .field, some (.str "f"))] [])
+  (fun _ => .keep)
 
 /-! ## The component -/
 

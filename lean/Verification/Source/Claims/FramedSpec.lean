@@ -94,11 +94,11 @@ structure FramedSpec (ι : Type) where
   names : List (String × Nat × List String)
   entries : List String
   theta : List (Option Verification.Kind × Footprints.Change)
-  psi : List (Option Nat × Option Verification.Kind × Footprints.Change)
+  psi : List (Option Nat × Option Verification.Kind × Option PropKey × Footprints.Change)
   /-- The component's protocol as defined (`componentProtocol`) at every
   part of its flow's sites, each change but `keep`, computed once per
   component. -/
-  psiDef : List (Option Nat × Option Verification.Kind × Footprints.Change)
+  psiDef : List (Option Nat × Option Verification.Kind × Option PropKey × Footprints.Change)
   /-- The refusal of the binding checks that read the component alone,
   with the evaluation of `componentBindingRefusal` at the plan's fields it
   is: computed once per component and shared by its plans; `none` where
@@ -176,13 +176,12 @@ noncomputable def entryXs (r : SourceRequest σ ι) (t t' : Tm) : List (Crossing
   else []
 
 /-- **What the checks give at a step** (the draft, "The binding checks" and
-"The history of a program"): the flow's site of its fresh locations, no
-keys, its arguments crossing in at an entering step, and every value
+"The history of a program"): the flow's site of its fresh locations, its
+arguments crossing in at an entering step, and every value
 reaching outside code crossing out at `outType`. -/
 noncomputable def chk (r : SourceRequest σ ι) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
     CheckData (spec.F.at spec.C) spec.view.view :=
-  ⟨fun _ => stepSite spec.flow none t, fun _ => none,
-    spec.entryXs r t t' ++ actualXs spec.F spec.C spec.outType h t h' t'⟩
+  ⟨fun _ => stepSite spec.flow none t, spec.entryXs r t t' ++ actualXs spec.F spec.C spec.outType h t h' t'⟩
 
 /-- **The frame's core** for a request. -/
 noncomputable def core (r : SourceRequest σ ι) : FrameCore (Ty ι) :=

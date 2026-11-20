@@ -71,7 +71,7 @@ the row protects at the history `g`, holding `v` at the heap `h`, holds
 kind read at the world `W`. -/
 def RowAt {P : Package} (Θ : Protocol P) {k : Nat} (W : WorldT k) (g : Ghost P) (h h' : Heap) : Prop :=
   ∀ l v, RowProtects g l → h[l]? = some v →
-    ∃ v', h'[l]? = some v' ∧ (Θ ⟨g.site l, kindAt W l, g.key l⟩).Holds h.length v v'
+    ∃ v', h'[l]? = some v' ∧ (Θ ⟨g.site l, kindAt W l, keyAt W l⟩).Holds h.length v v'
 
 /-- `Row` is `RowAt` at the states' heaps, the first world and history. -/
 theorem row_iff {P : Package} {Θ : Protocol P} {st st' : St P} :

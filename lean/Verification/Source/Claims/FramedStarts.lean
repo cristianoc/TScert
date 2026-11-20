@@ -20,7 +20,7 @@ program's executions from its initial configurations:
   proposal that is the request's at its body labels (`realizedFlowB`).
 - **The frame's invariants**: every entry fits the flow (`entryFits`), its
   slots are values (`slotVals`), the checks give (S), (K) and (O)
-  (`chkSound`), no key (`noKeys`), and its start meets the invariants of
+  (`chkSound`), and its start meets the invariants of
   states (`startInv`), the program's history meeting them at the program's
   frame (`progFrame`, from initial configurations that are entries,
   `InitialEntry`) and its truncation keeping them.
@@ -351,26 +351,6 @@ theorem slotVals (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : 
   · have := (henv L.length).val
     rwa [envOf_default] at this
 
-/-- **The frame's checks give no key, and its starts none** (proved): the
-checks' keys are `none` by definition, the history before any entry has
-none, and every step of the program keeps them (`stepAt_key`). -/
-theorem noKeys (r : SourceRequest σ ι) : (spec.frame r).NoKeys := by
-  have hck : ∀ h t h' t', (spec.chk r h t h' t').key = fun _ => none := fun _ _ _ _ => rfl
-  refine ⟨hck, fun k W h t g hs => ?_⟩
-  rcases hs with ⟨a₂, he, rfl⟩ | ⟨-, rfl⟩
-  · obtain ⟨x₀, n, x, a₁, L, d, hp, ⟨-, ⟨j, hj⟩, -⟩, -⟩ := he
-    have hstep : ∀ (a b : Conf × Ghost ((spec.core r).F.at (spec.core r).C)), True → (spec.core r).KStep a b →
-        a.2.key = (fun _ => none) → b.2.key = fun _ => none := by
-      intro a b _ hab ha
-      obtain ⟨-, hg, -⟩ := hab
-      rw [hg]
-      simp only [FrameCore.next, stepAt_key, Ghost.alloc, ha]
-      funext l; split
-      · rfl
-      · exact congrFun (hck _ _ _ _) l
-    exact (hj.mono fun _ _ => trivial).carry hstep (hp.ex.carry hstep rfl)
-  · rfl
-
 /-- **What the checks give, at a framed plan's frame** (proved,
 `chkSound_of_sitesIn`): where every entry fits the flow and its marks lend
 `O` and hold local storage locally, the flow's sites give the checks at the
@@ -540,8 +520,7 @@ and fit the flow (`InitialEntry`, `InitialFits`, named check premises),
 through the program's executions, every entry fits the flow
 (`FramedSpec.entryFits`), so its slots are values (`FramedSpec.slotVals`)
 and the checks give (S), (K) and (O) (`FramedSpec.chkSound`); its start
-meets the invariants of states (`FramedSpec.startInv`); no step and no
-start has a key (`FramedSpec.noKeys`); the class separation is sound at
+meets the invariants of states (`FramedSpec.startInv`); the class separation is sound at
 every state (`classQuery_sound`). What it reads besides
 `ret_reachedW_spec`'s other premises: the request's start a body label,
 the realized code's proposals the request's (`realizedFlowB`) and the
@@ -575,7 +554,7 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt classQuery (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt classQuery (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') (fun _ => false) = true)
     (hTm : capClosedB spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)
       (capClose spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)) = true)
     (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol spec.fflow spec.lay p) = true)
@@ -599,7 +578,7 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
   have hE := spec.entryFits r hr hFa hst hreal hcomp hinit
   exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
-    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE (spec.noKeys r) htok hlow
+    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE htok hlow
     hcomp hatom hT hle hslots hcheck (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ
 
 end Verification.SourceClaimJson.PassUnit

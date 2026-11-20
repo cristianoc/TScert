@@ -67,7 +67,7 @@ theorem RBoundBelow.trans {Ψ : Protocol P} {d b : Nat} {st₁ st₂ st₃ : St 
   refine ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun l v₁ hb hr hv₁ => ?_⟩
   have hl : l < st₁.s.h.length := (List.getElem?_eq_some_iff.mp hv₁).1
   obtain ⟨v₂, hv₂, hc₁⟩ := h₁.2.2 l v₁ hb hr hv₁
-  have hr₂ : st₂.g.InR l := InR.mono h₁.2.1 (h₁.1.2 l hl).1 hr
+  have hr₂ : st₂.g.InR l := InR.mono h₁.2.1 (h₁.1.2 l hl) hr
   obtain ⟨v₃, hv₃, hc₂⟩ := h₂.2.2 l v₂ hb hr₂ hv₂
   rw [h₁.1.part hl] at hc₂
   exact ⟨v₃, hv₃, Change.Holds.trans h₁.1.1.length_le hc₁ hc₂⟩

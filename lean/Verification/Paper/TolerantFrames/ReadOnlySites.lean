@@ -161,20 +161,20 @@ theorem HeapSites.set {g : Ghost P} {H : SiteHeap P} {h : Heap} {w : Nat} {u : V
 /-- **A value whose locations exist keeps its sites at an allocation**
 (proved): the allocation keeps the site of every old location. -/
 theorem SitesOf.alloc {g : Ghost P} {S : List (Option P.Site)} {v : Val} {n : Nat}
-    {site : Nat → Option P.Site} {key : Nat → Option PropKey} (hv : SitesOf g S v)
-    (hn : ∀ l, Leaves P.ofC v l → l < n) : SitesOf (g.alloc n site key) S v := by
+    {site : Nat → Option P.Site} (hv : SitesOf g S v)
+    (hn : ∀ l, Leaves P.ofC v l → l < n) : SitesOf (g.alloc n site) S v := by
   intro l hl
-  rw [(Ghost.alloc_old (hn l hl)).1]
+  rw [(Ghost.alloc_old (hn l hl))]
   exact hv l hl
 
 /-- **The code's values keep reaching no local location at an allocation**
 (proved): the allocation keeps the site of every old location. -/
 theorem CodeNoLocal.alloc {g : Ghost P} {v : Val} {n : Nat} {site : Nat → Option P.Site}
-    {key : Nat → Option PropKey} (hv : CodeNoLocal g v) (hn : ∀ l, Leaves P.ofC v l → l < n) :
-    CodeNoLocal (g.alloc n site key) v := by
+    (hv : CodeNoLocal g v) (hn : ∀ l, Leaves P.ofC v l → l < n) :
+    CodeNoLocal (g.alloc n site) v := by
   intro x hx l hl
   unfold Ghost.origin
-  rw [(Ghost.alloc_old (hn l (Leaves.code hx hl))).1]
+  rw [(Ghost.alloc_old (hn l (Leaves.code hx hl)))]
   exact hv x hx l hl
 
 /-- **A value of a set with no local site holds no local value in its code**
@@ -195,19 +195,19 @@ theorem CodeNoLocal.of_sites {g : Ghost P} {S : List (Option P.Site)} {v : Val} 
 the old values reference old locations, and each new value meets the sites
 of its fresh location's site. -/
 theorem HeapSites.alloc {g : Ghost P} {H : SiteHeap P} {h : Heap} {xs : List Val} {site : Nat → Option P.Site}
-    {key : Nat → Option PropKey} (hH : HeapSites g H h)
+    (hH : HeapSites g H h)
     (hold : ∀ (w : Nat) (u : Val), h[w]? = some u → ∀ l, Leaves P.ofC u l → l < h.length)
     (hnew : ∀ (i : Nat) (u : Val), xs[i]? = some u →
-      SitesOf (g.alloc h.length site key) (H.contents (site (h.length + i))) u ∧
-      CodeNoLocal (g.alloc h.length site key) u) :
-    HeapSites (g.alloc h.length site key) H (h ++ xs) := by
+      SitesOf (g.alloc h.length site) (H.contents (site (h.length + i))) u ∧
+      CodeNoLocal (g.alloc h.length site) u) :
+    HeapSites (g.alloc h.length site) H (h ++ xs) := by
   intro w u hw
   by_cases hlt : w < h.length
   · rw [List.getElem?_append_left hlt] at hw
-    rw [(Ghost.alloc_old hlt).1]
+    rw [(Ghost.alloc_old hlt)]
     exact ⟨(hH w u hw).1.alloc (hold w u hw), (hH w u hw).2.alloc (hold w u hw)⟩
   · rw [List.getElem?_append_right (by omega)] at hw
-    have hs : (g.alloc h.length site key).site w = site (h.length + (w - h.length)) := by
+    have hs : (g.alloc h.length site).site w = site (h.length + (w - h.length)) := by
       simp [Ghost.alloc, hlt, show h.length + (w - h.length) = w by omega]
     rw [hs]
     exact hnew _ u hw
@@ -299,13 +299,13 @@ code changes only locations its roots reach and leaves in them only what
 they reach or what it allocates (`outsideStep_reach`,
 `outsideStep_writes`), and its roots reach afterwards only what they
 reached or what it allocated (`outsideStep_noForge`). -/
-theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option PropKey} {H : SiteHeap (F.at C)}
+theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {H : SiteHeap (F.at C)}
     {O : List (Option (F.at C).Site)} (hs : AStep x y) (hact : Outside F C none x) (hO : Closed H O)
     (hnone : none ∈ O) (hnl : NoLocal O) (hW : OutsideWritable H O) (hH : HeapSites g H x.s.h)
     (hR : ∀ r ∈ rootsOf F C none x.t, SitesOf g O r) :
-    HeapSites (g.alloc x.s.h.length (fun _ => none) key) H y.s.h ∧
-      ∀ r ∈ rootsOf F C none y.t, SitesOf (g.alloc x.s.h.length (fun _ => none) key) O r := by
-  let g' := g.alloc x.s.h.length (fun _ => none) key
+    HeapSites (g.alloc x.s.h.length (fun _ => none)) H y.s.h ∧
+      ∀ r ∈ rootsOf F C none y.t, SitesOf (g.alloc x.s.h.length (fun _ => none)) O r := by
+  let g' := g.alloc x.s.h.length (fun _ => none)
   have hr0 : (lift F C none x g).roots = vals (F.ofC C) (!F.ofC C none) x.t := rfl
   have hr1 : (lift F C none y g').roots = vals (F.ofC C) (!F.ofC C none) y.t := rfl
   -- A location the old roots reach, or a fresh one, is of a site of `O`.
@@ -313,7 +313,7 @@ theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option Pr
       g'.site l ∈ O := by
     intro l hl
     by_cases hlt : l < x.s.h.length
-    · have he : g'.site l = g.site l := (Ghost.alloc_old hlt).1
+    · have he : g'.site l = g.site l := (Ghost.alloc_old hlt)
       rw [he]
       rcases hl with ⟨r, hr, hreach⟩ | hge
       · exact reach_sites hH hO (hR r hr) l hreach
@@ -328,7 +328,7 @@ theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option Pr
     · obtain ⟨v, hv, hv'⟩ := hsame
       obtain rfl : v = u := Option.some.inj (hv'.symm.trans hu)
       have hw : w < x.s.h.length := (List.getElem?_eq_some_iff.mp hv).1
-      have he : g'.site w = g.site w := (Ghost.alloc_old hw).1
+      have he : g'.site w = g.site w := (Ghost.alloc_old hw)
       rw [he]
       exact ⟨(hH w v hv).1.alloc (heap_leaves_lt hv), (hH w v hv).2.alloc (heap_leaves_lt hv)⟩
     · -- A changed or allocated location: reached by the old roots, or fresh.
@@ -355,8 +355,8 @@ theorem HeapSites.congr {g g' : Ghost P} {H : SiteHeap P} {h : Heap} (he : g'.si
   unfold Ghost.origin; rw [he]; exact (hH w u hu).2 x hx l hl
 
 /-- The sites after a step of outside code are its allocation's (proved). -/
-theorem outsideNextAt_site {key : Nat → Option PropKey} {len : Nat} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
-    (outsideNextAt F C none key len h' t' g).site = (g.alloc len (fun _ => none) key).site := by
+theorem outsideNextAt_site {len : Nat} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
+    (outsideNextAt F C none len h' t' g).site = (g.alloc len (fun _ => none)).site := by
   unfold outsideNextAt; split <;> rfl
 
 namespace ClientFrame
@@ -389,11 +389,11 @@ theorem sitesAt_outside {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at
     fr.SitesAt H O b := by
   obtain ⟨hs, hg, -⟩ := hk
   have hact := ((kind_spec (F := fr.F) (C := fr.C) (c := none) a.1 b.1).1 ho).1
-  have hsite : b.2.site = (a.2.alloc a.1.s.h.length (fun _ => none) (fr.chkConf a.1 b.1).key).site := by
+  have hsite : b.2.site = (a.2.alloc a.1.s.h.length (fun _ => none)).site := by
     rw [hg, fr.next_conf]
     simp only [Ghost.next, Ghost.stepAt, stepKind_conf, ho]
     exact outsideNextAt_site
-  obtain ⟨hH, hR⟩ := sites_outside (key := (fr.chkConf a.1 b.1).key) hs hact hO hnone hnl hW ha.1 ha.2
+  obtain ⟨hH, hR⟩ := sites_outside hs hact hO hnone hnl hW ha.1 ha.2
   exact ⟨hH.congr hsite, fun r hr => (hR r hr).congr hsite⟩
 
 /-- **The sites at an entry** (proved): every location of the entry history

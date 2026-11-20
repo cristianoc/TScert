@@ -276,24 +276,27 @@ theorem mem_allKinds (k : Option Verification.Kind) : k ∈ allKinds := by
   · simp [allKinds]
   · cases k <;> simp [allKinds]
 
-/-- **The parts at a universe of sites**: each site of `U`, each kind, the
-key `none` (`NoKeys`). -/
-def partsU (U : Sites P) : List (Part P) := U.flatMap fun s => allKinds.map fun k => ⟨s, k, none⟩
+/-- **The parts at a universe of sites and keys**: each site of `U`, each
+kind, each key of `K`. -/
+def partsU (U : Sites P) (K : List (Option PropKey)) : List (Part P) :=
+  U.flatMap fun s => allKinds.flatMap fun k => K.map fun key => ⟨s, k, key⟩
 
-theorem mem_partsU {U : Sites P} {p : Part P} (hs : p.site ∈ U) (hk : p.key = none) : p ∈ partsU U := by
+theorem mem_partsU {U : Sites P} {K : List (Option PropKey)} {p : Part P} (hs : p.site ∈ U) (hk : p.key ∈ K) :
+    p ∈ partsU U K := by
   obtain ⟨s, k, key⟩ := p
-  simp only at hs hk; subst hk
-  exact List.mem_flatMap.mpr ⟨s, hs, List.mem_map.mpr ⟨k, mem_allKinds k, rfl⟩⟩
+  exact List.mem_flatMap.mpr ⟨s, hs, List.mem_flatMap.mpr ⟨k, mem_allKinds k, List.mem_map.mpr ⟨key, hk, rfl⟩⟩⟩
 
 /-- **A protocol at least another at a universe**, decided (the draft's
-check of the wire's $`\Psi_C`$): at every part of `partsU U`, `Ψ` is at most
-`Ψ'`. -/
-def protocolAtLeastB (U : Sites P) (Ψ Ψ' : Protocol P) : Bool := (partsU U).all fun p => (Ψ p).le (Ψ' p)
+check of the wire's $`\Psi_C`$): at every part of `partsU U K`, `Ψ` is at
+most `Ψ'`. -/
+def protocolAtLeastB (U : Sites P) (K : List (Option PropKey)) (Ψ Ψ' : Protocol P) : Bool :=
+  (partsU U K).all fun p => (Ψ p).le (Ψ' p)
 
 /-- **The check is sound** (proved): at every part whose site is in `U` and
-whose key is `none`, `Ψ` is at most `Ψ'`. -/
-theorem protocolAtLeastB_sound {U : Sites P} {Ψ Ψ' : Protocol P} (h : protocolAtLeastB U Ψ Ψ' = true)
-    {p : Part P} (hs : p.site ∈ U) (hk : p.key = none) : (Ψ p).le (Ψ' p) = true :=
+whose key is in `K`, `Ψ` is at most `Ψ'`. -/
+theorem protocolAtLeastB_sound {U : Sites P} {K : List (Option PropKey)} {Ψ Ψ' : Protocol P}
+    (h : protocolAtLeastB U K Ψ Ψ' = true) {p : Part P} (hs : p.site ∈ U) (hk : p.key ∈ K) :
+    (Ψ p).le (Ψ' p) = true :=
   List.all_eq_true.mp h p (mem_partsU hs hk)
 
 end Verification.TolerantFrames.ReadOnly

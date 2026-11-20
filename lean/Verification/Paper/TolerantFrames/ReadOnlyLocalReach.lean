@@ -142,7 +142,7 @@ are among `K`, at states whose ghost keeps the sites of `h₀`'s locations,
 every location of `R_P` below `|h₀|` changes within the protocol from `K`
 and a set of sites `h₀` and the run's first term's values meet in depth. -/
 theorem stepWithin_reach {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
-    {K₀ K : List (Option Verification.Kind)} {L : Sites P} {site : Nat → Option P.Site} {h₀ : Heap} {u₀ : Tm}
+    {K₀ K : List Charge} {L : Sites P} {site : Nat → Option P.Site} {h₀ : Heap} {u₀ : Tm}
     {st st' : St P} {t t' : Tm} (hr : ValRun h₀ u₀ st.s.h t) (hs : Step st.s.h t st'.s.h t')
     (hw : WOk t) (hk : writesK t ⊆ K₀) (hrefs : RefsOk st.s.W t) (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
     (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
@@ -425,7 +425,7 @@ end Frames
 
 /-- **A frame of the flow's code has its charges among the flow's**
 (proved): a code the finite flow proposes for is one of its codes. -/
-theorem frameKinds_flow {P : Package} [DecidableEq P.Site] {F : FFlow P} {K₀ : List (Option Verification.Kind)}
+theorem frameKinds_flow {P : Package} [DecidableEq P.Site] {F : FFlow P} {K₀ : List Charge}
     {cur : Option FrameKey} (hc : FrameIn F.flow cur) (hC : ∀ key, cur = some key → P.ofC key.1.2 = true) :
     frameKinds K₀ cur ⊆ K₀ ++ flowKinds F := by
   intro k hk

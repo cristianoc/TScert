@@ -274,7 +274,7 @@ theorem rowAt_reads_world :
       RowAt Θ W₁ g h h' ∧ ¬ RowAt Θ W₂ g h h' := by
   let P : Package := ⟨Unit, fun _ => .exposed, fun _ => false⟩
   let Θ : Protocol P := fun p => if p.kind = some .field then .any else .keep
-  let g : Ghost P := ⟨fun _ => some (), fun _ => none, fun _ => True, [], fun _ => False⟩
+  let g : Ghost P := ⟨fun _ => some (), fun _ => True, [], fun _ => False⟩
   let W₁ : WorldT 1 := ofEntries [(.field "f", fun _ _ _ _ => True)]
   let W₂ : WorldT 1 := ofEntries []
   refine ⟨P, Θ, g, [.num 0], [.num 1], W₁, W₂, fun l v _ hv => ⟨.num 1, ?_, ?_⟩, fun hrow => ?_⟩
@@ -329,8 +329,8 @@ certificates at `Ψj` (`Θ ⊑ Ψj ⊑ Ψc l`), the segment's own steps within
 `Ψc l` (`SegWithin`, by `segWithin_of_run`), the callee's effect `Φ l`
 bounding the heap along the call's segment (the callback's arrow, part of
 `Θ_C`), and the rule's premise at the call state (`Framed`, by
-`framed_at_innermost_keys` and `framed_of_cover` from the pass's check of
-the node's kept supports). -/
+`framed_at_innermost` from the pass's check of the node's kept
+supports). -/
 theorem nodeTransfer_of_transfer {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
     {F : Nat → Bool} {S : Nat → List Footprints.Footprint} (hc : fr.ChkSound) (hi : fr.StartInv)
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
@@ -500,21 +500,21 @@ theorem frame_rootsOk {n : Nat} {W : WorldT n} {E : List Tm} {K : List (Continua
   · simp only [envOf] at hr; rw [hm] at hr; exact .inr hr
 
 /-- **The rule's premise at each framed node, from the frame's check**
-(proved, `framed_at_innermost_keys`): at a reached state entering a framed
+(proved, `framed_at_innermost`): at a reached state entering a framed
 node `l` whose call's operands are read from slots, the frame is the
 term's innermost, so where the pass's check of each support of `S l`
 passes at every context of the code and every node with `l`'s
-continuation and handler, the separation it reads holds at the state, and
-every location's key is `none` (`NoKeys`), each support meets `Framed` at
+continuation and handler, and the separation it reads holds at the state,
+each support meets `Framed` at
 `Ψc l`, protection read nowhere (milestone 1). -/
 theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Continuation × Option Target)}
     {c₀ : ComponentTag} {F : Nat → Bool} {S : Nat → List Footprints.Footprint} {Φ : Nat → Footprints.Footprint}
     {Ψc : Nat → Protocol (fr.F.at fr.C)} {q : Nat → Footprints.SepQuery} {tv : TypeView} {dp : Nat}
-    (hFa : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) (hK : fr.NoKeys)
+    (hFa : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl)
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
     (hcheck : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
       Fl.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       (q l).Sound (envOf L d) b₀.1.s.h) :
@@ -536,7 +536,7 @@ theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Co
       exact this args ha
     rw [hbt]; simp only [innermost, hinst, hi]; rfl
   obtain ⟨-, c, π, l', hcode, hn, hfr⟩ :=
-    framed_at_innermost_keys hFa hS hE hK hb hinn (by simpa [Family.at] using hcomp)
+    ClientFrame.framed_at_innermost hFa hS hE hb hinn (by simpa [Family.at] using hcomp)
   have hρ : RootsOk b₀.1.s.W (envOf L d) := frame_rootsOk (by rw [← hbt]; exact b₀.1.ok)
   exact hfr (tv := tv) (dp := dp) (hcheck l e k x hFl he hk c π l' hcode hn T hT)
     (hq l b₀ e L d k x hFl hb he hk hL hbt) hρ (fun _ _ hp => by cases hp)
@@ -599,7 +599,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
-    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow) (hK : fr.NoKeys)
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
     (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -620,7 +620,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -643,7 +643,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
   ret_reachedW hsrc hty hvals
     (ClientFrame.nodeTransfer_of_transfer hc hi hcomp hatom certs hΘ hW
       (ClientFrame.own_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
-      (ClientFrame.framed_of_check (tv := fr.view.view) (dp := 0) hFa hS hE hK hcomp hatom hcheck hq) hΦ)
+      (ClientFrame.framed_of_check (tv := fr.view.view) (dp := 0) hFa hS hE hcomp hatom hcheck hq) hΦ)
 
 /-- **The returns at reached executions, from the checks and the charges**
 (proved; `ret_reachedW_of_checks` at the members' certificates
@@ -664,7 +664,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
-    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow) (hK : fr.NoKeys)
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
     (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -685,7 +685,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -714,7 +714,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
         r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hK hwk hly htok hlow hcomp hatom hT hle hslots hcheck hq
+  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hq
     (fun m => ClientFrame.cert_of_charges hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ
 
 /-- **The returns at reached executions, from the checks, the charges and
@@ -737,7 +737,7 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
-    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow) (hK : fr.NoKeys)
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
     (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -758,7 +758,7 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -785,7 +785,7 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
         r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hK hwk hly htok hlow hcomp hatom hT hle hslots hcheck hq
+  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hq
     (fun m => ClientFrame.cert_of_deep hFa hS hE hst hwk hly hTm htok hlow
       (ClientFrame.entry_roots hFa hS hE hst hly hnp hTm htok hlow hr) m) hΘ hW hΦ
 
@@ -811,7 +811,7 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
     {Fl : FFlow ((spec.frame r).F.at (spec.frame r).C)} (hFl : Fl.flow = spec.flow) {lay : List Layout}
     (hinitW : ∀ x, spec.Initial x → WOk x.t ∧ HeapW x.s.h)
     (hinitL : ∀ x, spec.Initial x → layP (layQ Fl lay) x.t = true ∧ HeapLay (layQ Fl lay) x.s.h)
-    (hFa : Fl.flow.Facts) (hE : (spec.frame r).EntryFits Fl.flow) (hK : (spec.frame r).NoKeys)
+    (hFa : Fl.flow.Facts) (hE : (spec.frame r).EntryFits Fl.flow)
     (htok : tokensSomeB Fl = true) (hlow : codesLoweredB Fl = true)
     (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
     (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
@@ -829,7 +829,7 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) e L d k x, F l = true →
       (spec.frame r).Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
@@ -854,7 +854,7 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
         r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_entries (Fl := Fl) hsrc hty hvals hc hi hFa (hFl ▸ spec.flowSites r) hE hK
+  ret_reachedW_of_entries (Fl := Fl) hsrc hty hvals hc hi hFa (hFl ▸ spec.flowSites r) hE
     (spec.wok_start r hinitW) (spec.lay_start r hinitL) htok hlow hcomp hatom hT hle hslots hcheck hq
     (spec.wfS_start r) hTm (spec.noPend_start r) hr hΘ hW hΦ
 
@@ -875,7 +875,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
     (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
     (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
     (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
-    (hFa : spec.fflow.flow.Facts) (hE : (spec.frame r).EntryFits spec.fflow.flow) (hK : (spec.frame r).NoKeys)
+    (hFa : spec.fflow.flow.Facts) (hE : (spec.frame r).EntryFits spec.fflow.flow)
     (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
     (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
     (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
@@ -893,7 +893,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
-      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') noKeys (fun _ => false) = true)
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') (fun _ => false) = true)
     (hq : ∀ l (b₀ : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) e L d k x, F l = true →
       (spec.frame r).Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
@@ -920,7 +920,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
   have hinit := spec.initial_lay hEl hEw hLi hRl hRw
   exact ret_reachedW_frame spec r hsrc (spec.call_typed r) hvals hc hi (Fl := spec.fflow) rfl
-    (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE hK htok hlow hcomp hatom hT hle hslots
+    (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE htok hlow hcomp hatom hT hle hslots
     hcheck hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ
 
 end Verification.SourceClaimJson.PassUnit

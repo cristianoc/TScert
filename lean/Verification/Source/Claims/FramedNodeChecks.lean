@@ -111,7 +111,7 @@ def supportKeptB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Pr
     (Φ : Footprints.Footprint) (S : Footprints.Footprint) : Bool :=
   let Ψ := nodeProtocol F lay Θ (nodeSet F lay m l e)
   (F.ctxs m).all fun (_, c) => (sharingNodes m l).all fun l' =>
-    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt noKeys (fun _ => false)
+    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt (fun _ => false)
 
 /-- **The supports a framed node keeps, of those offered** (`supportKeptB`):
 the producer's proposal of a framed plan's supports. -/

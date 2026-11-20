@@ -123,7 +123,7 @@ theorem seg_run {d : Nat} (hd0 : 0 < d) {Q : Conf × Ghost (F.at C) → Prop}
         have hk' := kind_outside ho heq
         have hA : a.2.A ≠ [] := by
           intro h; rw [h] at hl; simp only [δ, List.length_nil] at hl hda; omega
-        have hbg : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
+        have hbg : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) := by
           rw [hg]; simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk']; exact outsideNext_of_ne hA
         have hrow := hyp_row hk' hh
         rw [← hg, hbg] at hrow
@@ -608,7 +608,7 @@ theorem ex_sites {Fl : Flow (fr.F.at fr.C)} (hS : fr.FlowSites Fl) {q : Conf × 
     have hlen := Footprints.step_length_le hab.1.step
     refine ⟨Nat.le_trans hlen hl, fun l hla => ?_⟩
     rw [hs l (Nat.lt_of_lt_of_le hla hlen), next_site hS hab l (Nat.lt_of_lt_of_le hla hlen)]
-    exact (Ghost.alloc_old hla).1
+    exact (Ghost.alloc_old hla)
 
 /-- **The segment's own steps within the probe's protocol** (proved; the
 draft's `SegWithin` at `W_c`, by `within_run` at each step): at a reached

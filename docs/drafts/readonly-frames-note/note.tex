@@ -684,7 +684,7 @@ $\Psi_c=\Psi_\cC\sqcup\Theta_\cC\sqcup W_c$. At \code{visit(c.i)} of
 Example~\ref{ex:rocursor} the cursor's site is in no capture slot and in no row of $H$, so it is
 outside $L(c)$ and outside $\overline{\mathit{Cap}\cup O}$, and both
 $\Psi_\cC$ and $W_c$ keep it
-\status{Lean: \lean{writesT}, \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, \lean{segCodes}, \lean{callReach}, \lean{depthCharges}, \lean{probeProtocol}; each closure decided, \lean{capClosedB\_sound}, \lean{segClosedB\_sound}; a step changes an old location only at its active writing redex, \lean{step\_writes\_active}, whose receiver's site is in a set it meets, \lean{write\_site}; that $\Psi_\cC$ bounds the members and the depth charges the steps of $\cC$'s code at the caller's depth during the call, at the node's protocol of Section~\ref{sec:accept-alg}'s (B2), \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} (Section~\ref{sec:accept-proof}, (A3)), at parts of the key $\kw{none}$; conj.\ at the keys of a write}.
+\status{Lean: \lean{writesT}, \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, \lean{segCodes}, \lean{callReach}, \lean{depthCharges}, \lean{probeProtocol}; each closure decided, \lean{capClosedB\_sound}, \lean{segClosedB\_sound}; a step changes an old location only at its active writing redex, \lean{step\_writes\_active}, whose receiver's site is in a set it meets, \lean{write\_site}; that $\Psi_\cC$ bounds the members and the depth charges the steps of $\cC$'s code at the caller's depth during the call, at the node's protocol of Section~\ref{sec:accept-alg}'s (B2), \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} (Section~\ref{sec:accept-proof}, (A3)), at parts $(s,\kappa,k')$, a write under a key charging that key (\lean{writesK}, \lean{slotKey}, \lean{slotKey\_sound}, \lean{slotKind\_sound}, \lean{step\_kind\_charged}), every write of the calculus at a constant key}.
 
 \noindent
 At a call node $l$, a region $r$ of a support has the sites
@@ -703,7 +703,7 @@ $l$} are the parts $(s,\kappa,k)$ with $s\in\Sigma_l(r)$, $\kappa$ a kind
 of $r$'s locations and $k\in K(r)$. At \code{visit(c.i)} of
 Example~\ref{ex:rocursor}, the region $c.i$ has the one part (the
 cursor's site, $\kF$, \code{i})
-\status{Lean: the check below is proved sound at every assignment of key sets to regions, given that each location of a region has one of its keys (\lean{framed\_of\_sites}, its premise on keys), a location's key being ghost state fixed at its allocation (\lean{Part}, \lean{Ghost.alloc}, \lean{Kept}). conj.: that each location's key is the key the world records, which the Lean world does not record; the code gives every location the key $\kw{none}$ and every region the key set $\{\kw{none}\}$ (\lean{ClientFrame.NoKeys}, \lean{noKeys}), at which a part is every location of one site and kind}.
+\status{Lean: a location's key is the key its role in the world records (\lean{keyAt}, \lean{St.part}), fixed along admissible transitions (\lean{keyAt\_kept}, \lean{Kept.part}); $K(r)$ is \lean{regionKeys}, every location of a region having one of its keys (\lean{regionKeys\_sound}, by \lean{Region.key\_sound} and \lean{Region.bound\_sound}), finitely many where the region has sites (\lean{regionKeys\_of\_sites}); the parts of $r$ at $l$, \lean{callParts}}.
 The \emph{frame's check} of a support $S$ at $l$, at a
 protocol $\Psi$ and the callee's effect $\Phi$, is, for each $(r:\delta)$
 of $S$ and each part $p=(s,\kappa,k)$ of $r$ at $l$, both
@@ -734,7 +734,7 @@ Proposition~\ref{prop:rorely}.
 The context and the node are not known statically, since a frame names
 its node key, so the check is run at every context of the code and at
 every node of $l$'s key that may call outside code.
-\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost\_keys}, the keys \lean{noKeys} by \lean{ClientFrame.NoKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}; disjoint classes, \lean{classQuery}, \lean{classQuery\_sound}}.\par}
+\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost}, each region at its keys \lean{regionKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}; disjoint classes, \lean{classQuery}, \lean{classQuery\_sound}}.\par}
 
 \paragraph{The examples by the flow.}
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
@@ -1098,7 +1098,7 @@ of outside code within $\Psi_\cC\sqcup\Theta_\cC$ by
 Proposition~\ref{prop:rorely}'s argument, every other location within
 $\Phi$. The frame's check gives the premise at some context and node of
 the call's key (Proposition~\ref{prop:frameflow})
-\status{Lean: \lean{frameCheck\_sound}, \lean{ClientFrame.framed\_at\_innermost\_keys}, the framed transfer \lean{ClientFrame.framed\_transfer}, \lean{nodeTransfer\_of\_transfer}}.
+\status{Lean: \lean{frameCheck\_sound}, \lean{ClientFrame.framed\_at\_innermost}, the framed transfer \lean{ClientFrame.framed\_transfer}, \lean{nodeTransfer\_of\_transfer}}.
 \item[(B3)] The graph theorem at framed returns: a walk the framed pass
 accepts is safe along the paths whose framed returns meet their premise,
 the kept facts holding at each framed node's exits; the ordinary graph

@@ -19,13 +19,17 @@ are read from the sites:
   none here: the check refuses it.
 - **They hold** (`regionSites_sound`): in a heap meeting the heap of sites,
   every location of the region is of one of them.
+- **The keys of a region** (`regionKeys`, `regionKeys_sound`): the key a
+  region's form fixes, or none where its bound holds no field or cell; the
+  world records each location's key in its role, so every location of a
+  region has one of its keys. A region given sites has finitely many
+  (`regionKeys_of_sites`).
 - **The check at a call** (`frameCheckAt`, `framed_of_sites`): the frame's
-  check over the parts of those sites, every region of the support given
-  sites, gives `Framed` where the query is sound, the roots valid, the
-  environment meets the slots' sites, the heap the heap of sites, each
-  location's key is among the region's keys, and each lent location of a
-  region read as protected has a live history witness
-  (`prot_of_witness`).
+  check over the parts of those sites and keys, every region of the
+  support given sites, gives `Framed` where the query is sound, the roots
+  valid, the environment meets the slots' sites, the heap the heap of
+  sites, and each lent location of a region read as protected has a live
+  history witness (`prot_of_witness`).
 - **At a frame of `C`'s code** (`frame_sites`, `framed_of_frame`): a frame
   of `C`'s code fitting the flow runs a node of a code of the flow, its
   environment meeting the node's slots; with a heap meeting the flow, the
@@ -211,16 +215,77 @@ theorem regionSites_sound {g : Ghost P} {H : SiteHeap P} {h : Heap} {τ : Nat �
   | cls _ => intro _ _ hr; simp [regionSites] at hr
   | all => intro _ _ hr; simp [regionSites] at hr
 
-/-- **The parts at a call**: a region's sites' parts, at its keys. -/
-def callParts (H : SiteHeap P) (τ : Nat → List (Option P.Site)) (keys : Region → List (Option PropKey))
-    (r : Region) : List (Part P) :=
-  partsOf ((regionSites H τ r).getD []) (keys r) r
+/-- **The keys of a region's locations** (the Read-only frames note,
+§4.1, $`K(r)`$), where finitely many: the key `k` of a region whose form
+fixes it (`Region.key?`: a field `x.k` and a path ending in `k`, `k` not the
+spine key); `none` for a region whose bound holds no field or cell class
+(a spine, cells, a field at the spine key); `none` (every key) for a
+region whose bound holds fields or cells at no fixed key. -/
+def regionKeys (r : Region) : Option (List (Option PropKey)) :=
+  match r.key? with
+  | some k => some [some k]
+  | none => if r.bound.field || r.bound.cell then none else some [none]
+
+/-- **A region's locations have its keys** (proved, `Region.key_sound`,
+`Region.bound_sound`): in a well-formed state at valid roots, the key the
+world records for each location of a region is among the region's keys. -/
+theorem regionKeys_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    {r : Region} {K : List (Option PropKey)} (hK : regionKeys r = some K) {l : Nat} (hl : l < h.length)
+    (hm : r.mem ρ h l = true) : keyAt W l ∈ K := by
+  unfold regionKeys at hK
+  split at hK
+  · rename_i k hk
+    cases hK
+    obtain ⟨role, hrole, hkr⟩ := Region.key_sound hok hρ r hk hm
+    simp [keyAt, hrole, hkr]
+  · split at hK
+    · cases hK
+    · rename_i hb
+      cases hK
+      obtain ⟨role, hrole, hc⟩ := Region.bound_sound hok hρ r hl hm
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hb
+      cases role with
+      | field k => simp [Role.cls, RoleSet.contains, hb.1] at hc
+      | cell k => simp [Role.cls, RoleSet.contains, hb.2] at hc
+      | _ => simp [keyAt, hrole, Role.key?]
+
+/-- **A region given sites has finitely many keys** (proved, by cases on
+the region): a field, a path, a spine and cells fix their keys, and a
+region filtered by class those of the region it filters. -/
+theorem regionKeys_of_sites {H : SiteHeap P} {τ : Nat → List (Option P.Site)} :
+    ∀ {r : Region} {T : List (Option P.Site)}, regionSites H τ r = some T → (regionKeys r).isSome = true
+  | .field _ k, _, _ | .path _ _ k, _, _ => by
+    unfold regionKeys
+    by_cases hk : k = arraySpineKey <;>
+      simp [Region.key?, Region.bound, Footprints.slotBound, hk, Footprints.RoleSet.arraySpine]
+  | .spine _ _, _, _ | .cells _, _, _ | .pathCells _ _, _, _ => by
+    simp [regionKeys, Region.key?, Region.bound, Footprints.RoleSet.spines, Footprints.RoleSet.elems]
+  | .inCls r c, T, hr => by
+    have ih := regionKeys_of_sites (r := r) (by simpa [regionSites] using hr)
+    unfold regionKeys at ih ⊢
+    simp only [Region.key?]
+    split
+    · rfl
+    · rename_i hk
+      rw [hk] at ih
+      simp only at ih
+      split at ih
+      · cases ih
+      · rename_i hb
+        simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hb
+        simp [Region.bound, RoleSet.inter, hb.1, hb.2]
+  | .fields _, _, hr | .pathFields _ _, _, hr | .cls _, _, hr | .all, _, hr => by simp [regionSites] at hr
+
+/-- **The parts at a call** (the note, §4.1, the parts of `r` at `l`): a
+region's sites' parts, at its kinds and its keys. -/
+def callParts (H : SiteHeap P) (τ : Nat → List (Option P.Site)) (r : Region) : List (Part P) :=
+  partsOf ((regionSites H τ r).getD []) ((regionKeys r).getD []) r
 
 /-- **The frame's check at a call**: every region of the support given
 sites, and the check over their parts. -/
 def frameCheckAt (q : SepQuery) (Ψ : Protocol P) (Φ S : Footprint) (H : SiteHeap P)
-    (τ : Nat → List (Option P.Site)) (keys : Region → List (Option PropKey)) (prot : Region → Bool) : Bool :=
-  S.all (fun e => (regionSites H τ e.1).isSome) && frameCheck q Ψ Φ S (callParts H τ keys) prot
+    (τ : Nat → List (Option P.Site)) (prot : Region → Bool) : Bool :=
+  S.all (fun e => (regionSites H τ e.1).isSome) && frameCheck q Ψ Φ S (callParts H τ) prot
 
 /-- **The class of a region's locations**: a class region's selector, every
 category for any other region. -/
@@ -254,15 +319,14 @@ theorem classQuery_sound (ρ : Env) (h : Heap) : classQuery.Sound ρ h := by
 /-- **The frame's check at a call gives the rule's premise** (proved, by
 `flow_of_sites`, `regionSites_sound` and `frameCheck_sound`): where the
 query is sound, the roots valid, the environment meets the slots' sites,
-the heap the heap of sites, each location's key is among its region's,
-and each lent location of a region read as protected has a live history
-witness. -/
+the heap the heap of sites, and each lent location of a region read as
+protected has a live history witness; each location's key is among its
+region's (`regionKeys_sound`, `regionKeys_of_sites`). -/
 theorem framed_of_sites {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {H : SiteHeap P}
-    {τ : Nat → List (Option P.Site)} {keys : Region → List (Option PropKey)} {prot : Region → Bool}
+    {τ : Nat → List (Option P.Site)} {prot : Region → Bool}
     {tv : TypeView} {d : Nat} {ρ : Env} {st : St P}
-    (hc : frameCheckAt q Ψ Φ S H τ keys prot = true) (hq : q.Sound ρ st.s.h) (hρ : RootsOk st.s.W ρ)
+    (hc : frameCheckAt q Ψ Φ S H τ prot = true) (hq : q.Sound ρ st.s.h) (hρ : RootsOk st.s.W ρ)
     (henv : ∀ i, SitesOf st.g (τ i) (ρ i)) (hH : HeapSites st.g H st.s.h)
-    (hkey : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.key l ∈ keys e.1)
     (hw : ∀ e ∈ S, prot e.1 = true → ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.Lent l →
       Witness tv d st l) :
     Framed Φ Ψ S ρ st := by
@@ -276,7 +340,15 @@ theorem framed_of_sites {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {H :
     obtain ⟨T', hT'⟩ := Option.isSome_iff_exists.mp (hsome e' he')
     rw [hT']
     exact regionSites_sound hH henv hT' hm'
-  exact flow_of_sites (sites := fun r => (regionSites H τ r).getD []) hρ hsite hkey e he l hl hm
+  have hkey : ∀ e' ∈ S, ∀ l, l < st.s.h.length → e'.1.mem ρ st.s.h l = true →
+      keyAt st.s.W l ∈ (regionKeys e'.1).getD [] := by
+    intro e' he' l' hl' hm'
+    obtain ⟨T', hT'⟩ := Option.isSome_iff_exists.mp (hsome e' he')
+    obtain ⟨K, hK⟩ := Option.isSome_iff_exists.mp (regionKeys_of_sites hT')
+    rw [hK]
+    exact regionKeys_sound st.s.ok hρ hK hl' hm'
+  exact flow_of_sites (sites := fun r => (regionSites H τ r).getD []) (keys := fun r => (regionKeys r).getD [])
+    hρ hsite hkey e he l hl hm
 
 /-- **A frame of `C`'s code runs at a node whose slots its environment
 meets** (proved, the rule `Fits.frameC`). -/
@@ -300,16 +372,14 @@ theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Frame
     {st : St P} (hf : Fits Fl (VJ Fl st.g st.s.h.length) Γ a o S₀ (.frame E K t L d k x comp))
     (hc : P.ofC comp = true) (hH : HeapInv Fl st.g st.s.h) :
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
-      ∀ {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
-        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
-        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) st.s.h →
+      ∀ {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) prot = true → q.Sound (envOf L d) st.s.h →
         RootsOk st.s.W (envOf L d) →
-        (∀ e ∈ S, ∀ w, w < st.s.h.length → e.1.mem (envOf L d) st.s.h w = true → st.g.key w ∈ keys e.1) →
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < st.s.h.length → e.1.mem (envOf L d) st.s.h w = true →
           st.g.Lent w → Witness tv dp st w) →
         Framed Φ Ψ S (envOf L d) st := by
   obtain ⟨c, π, l, hcode, hn, henv⟩ := frame_sites hf hc
-  exact ⟨c, π, l, hcode, hn, fun hck hq hρ hkey hw => framed_of_sites hck hq hρ henv hH.sites hkey hw⟩
+  exact ⟨c, π, l, hcode, hn, fun hck hq hρ hw => framed_of_sites hck hq hρ henv hH.sites hw⟩
 
 /-- **The check at the unit's frame of a reached state** (proved): where
 the flow's facts hold, the checks give fresh locations the flow's sites and
@@ -323,11 +393,9 @@ theorem ClientFrame.framed_at_frame {τ : Type} {fr : ClientFrame τ} {Fl : Flow
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : b.1.t = .frame E K t L d k x comp) (hc : (fr.F.at fr.C).ofC comp = true) :
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
-      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
-        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
-        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) prot = true → q.Sound (envOf L d) b.1.s.h →
         RootsOk b.1.s.W (envOf L d) →
-        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
           b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
         Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
@@ -795,11 +863,9 @@ theorem ClientFrame.framed_at_innermost {τ : Type} {fr : ClientFrame τ} {Fl : 
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
     (activeFrame none b.1.t).1 = some (((E, K), comp), (k, x)) ∧
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
-      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
-        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
-        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) prot = true → q.Sound (envOf L d) b.1.s.h →
         RootsOk b.1.s.W (envOf L d) →
-        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
           b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
         Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
@@ -960,11 +1026,9 @@ theorem ClientFrame.framed_at_call {τ : Type} {fr : ClientFrame τ} {Fl : Flow 
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true)
     (hcall : OutCall (fr.F.at fr.C) (activeFrame none b.1.t).2) :
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧ π.out l = true ∧
-      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
-        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
-        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) prot = true → q.Sound (envOf L d) b.1.s.h →
         RootsOk b.1.s.W (envOf L d) →
-        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
           b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
         Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
@@ -976,90 +1040,9 @@ theorem ClientFrame.framed_at_call {τ : Type} {fr : ClientFrame τ} {Fl : Flow 
   | val hv => simp [isVal] at hv
   | frameC c π l _ hcode hn henv _ _ hrun =>
     have hout : (π.at l (k, x)).out = true := hrun.outCall (fun _ _ hv => hv.fns) hi _ (by rw [← hred]; exact hcall)
-    exact ⟨c, π, l, hcode, hn, hout, fun hck hq hρ hkey hw =>
-      framed_of_sites hck hq hρ (fun i => (henv i).sites) hH.sites hkey hw⟩
+    exact ⟨c, π, l, hcode, hn, hout, fun hck hq hρ hw =>
+      framed_of_sites hck hq hρ (fun i => (henv i).sites) hH.sites hw⟩
   | frameOut hc' => rw [hc] at hc'; cases hc'
-
-/-! ## The keys of a region's locations
-
-The checks read the protocol per site and kind: they give every location
-the key `none` (`ClientFrame.NoKeys`), so a part's key is `none` at every
-reached state and a region's keys are `[none]` (`noKeys`). A protocol is
-then read at `(σ, κ, none)` for every key of a site, a change bounding
-every field of the site's records. -/
-
-/-- **The keys after a step** (proved): the step's allocation's; entries,
-crossings and exits change no key. -/
-theorem stepAt_key {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {d : CheckData (F.at C) tv}
-    {h : Heap} {t : Tm} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
-    (Ghost.stepAt F C c d h t h' t' g).key = (g.alloc h.length (fun _ => none) d.key).key := by
-  unfold Ghost.stepAt
-  split <;> rename_i hk
-  · unfold outsideNextAt; split <;> rfl
-  · exact (Ghost.crosses_site _ _).2
-  · exact (Ghost.crosses_site _ _).2
-  · exact (Ghost.crosses_site _ _).2
-
-/-- The keys of every region: `none`. -/
-def noKeys : Region → List (Option PropKey) := fun _ => [none]
-
-namespace ClientFrame
-variable {τ : Type} (fr : ClientFrame τ)
-
-/-- **The checks give no key**: every location a step allocates has the key
-`none`, and so does every location of a history an entry starts from. -/
-def NoKeys : Prop :=
-  (∀ h t h' t', (fr.chk h t h' t').key = fun _ => none) ∧
-    ∀ k W h t g, fr.start k W h t g → g.key = fun _ => none
-
-variable {fr}
-
-/-- **Every reached state's keys are `none`** (proved, `stepAt_key`). -/
-theorem reached_key (hk : fr.NoKeys) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) :
-    b.2.key = fun _ => none := by
-  obtain ⟨a, n, _, hst, hex⟩ := hb
-  refine hex.carry (r := fun x : Conf × Ghost (fr.F.at fr.C) => x.2.key = fun _ => none) ?_ (hk.2 _ _ _ _ _ hst)
-  intro x y _ hxy hx
-  obtain ⟨-, hg, -⟩ := hxy
-  rw [hg]
-  simp only [FrameCore.next, stepAt_key, Ghost.alloc, hk.1, hx]
-  funext l; split <;> rfl
-
-/-- **A region's locations have the region's keys** (proved): at a reached
-state, every location's key is `none`, the one key `noKeys` gives. -/
-theorem reached_hkey (hk : fr.NoKeys) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) (S : Footprint)
-    (ρ : Env) : ∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem ρ b.1.s.h w = true → b.2.key w ∈ noKeys e.1 := by
-  intro _ _ w _ _
-  rw [reached_key hk hb]; simp [noKeys]
-
-/-- **Entries start with no key** (proved): the entry history keeps the
-keys of `bareStart`, which are `none`. -/
-theorem entryStart_key (F : Family) (C : Nat) (tv : TypeView) (h : Heap) (t : Tm) (args : List (tv.Ty × Val)) :
-    (entryStart F C tv h t args).key = fun _ => none :=
-  (Ghost.crosses_site _ _).2
-
-end ClientFrame
-
-/-- **The check at the innermost frame, keys read** (proved): at a reached
-state of a frame whose checks give no key, `framed_at_innermost` with the
-keys `noKeys`. -/
-theorem ClientFrame.framed_at_innermost_keys {τ : Type} {fr : ClientFrame τ} {Fl : Flow (fr.F.at fr.C)}
-    (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) (hK : fr.NoKeys)
-    {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b)
-    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
-    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
-    (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
-    (activeFrame none b.1.t).1 = some (((E, K), comp), (k, x)) ∧
-    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
-      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView}
-        {dp : Nat},
-        frameCheckAt q Ψ Φ S Fl.H (π.env l) noKeys prot = true → q.Sound (envOf L d) b.1.s.h →
-        RootsOk b.1.s.W (envOf L d) →
-        (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
-          b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
-        Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
-  obtain ⟨ha, c, π, l, hcode, hn, hfr⟩ := ClientFrame.framed_at_innermost hF hS hE hb ht hc
-  exact ⟨ha, c, π, l, hcode, hn, fun hck hq hρ hw => hfr hck hq hρ (ClientFrame.reached_hkey hK hb _ _) hw⟩
 
 /-! ## Live protection witnesses -/
 
@@ -1115,7 +1098,7 @@ theorem XStep.grows {d : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
   have hlen : d ≤ a.2.A.length := by omega
   by_cases hk : kind F C c a.1 b.1 = .outside
   · have hA : a.2.A ≠ [] := by intro h; rw [h] at hlen; simp at hlen; omega
-    have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
+    have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) := by
       rw [hg]; simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk]; exact outsideNext_of_ne hA
     rw [hb]
     exact ⟨hd, hlen, by simpa using hlen, rfl, fun _ h => h, fun _ h => h⟩

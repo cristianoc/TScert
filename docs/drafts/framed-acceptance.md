@@ -48,7 +48,7 @@ Three mechanisms, each kept, each changed at one place.
    [read-only handles](readonly-handles.md#what-the-lean-states)), with its
    consequence over the paper's executions (proved: `exec_rely`,
    `ClientFrame.call_rely`), its premise checked at a frame of $`C`$'s code
-   (proved: `ClientFrame.framed_at_call`, `framed_at_innermost_keys`,
+   (proved: `ClientFrame.framed_at_call`, `ClientFrame.framed_at_innermost`,
    `frameCheck_sound`) and the flow of sites (proved: `FFlow.check_sound`,
    `fitsAt_reached`). This design generalizes the rule's premise from a
    call of outside code to a call whose run may reach outside code, a
@@ -494,22 +494,19 @@ built.
 At a framed call node $`l`$ of code $`m`$, for each fact the ordinary
 transfer drops, the pass runs the frame's check of its support for every
 context of $`m`$ and every node $`l'`$ of $`m`$ with $`l`$'s continuation
-and handler, and keeps the fact where all pass: `framed_at_innermost_keys`
+and handler, and keeps the fact where all pass: `ClientFrame.framed_at_innermost`
 (proved) gives `Framed` at some such context and node.
 
-- **Keys.** Every location has the key `none` (`NoKeys`, `reached_key`,
-  proved); `ComponentChecks.Ctx.boundAt` joins every entry of a site and
-  kind at `none`, so `noKeys` is sound for `Framed`.
-- **The part universe.** The check at a universe (`frameCheckAtU`,
-  `ReadOnlyCover.lean`) reads a region with no sites at the parts of
-  $`U=(\mathrm{sites}(F)\cup\{\mathsf{none}\})\times\mathrm{kinds}\times\{\mathsf{none}\}`$
-  (`flowSites`); `framed_of_cover` (proved) gives `Framed` from it where
-  every location's site is in $`U`$, which `sites_in_flow` (proved) gives
-  at every reached state from starts whose sites are the flow's: a step's
-  fresh locations take the allocation sites of the innermost frame's
-  proposal or outside storage (`stepSite_mem`), and the canonical
-  allocation sites are the flow's ([the binding checks](#the-binding-checks)).
-  At the base `callParts` reads such a region at `[]` (`NoSites.lean`).
+- **Keys.** A part's key is the key the world records in the location's
+  role (`keyAt`, `St.part`), fixed along admissible transitions
+  (`keyAt_kept`). A region's keys (`regionKeys`) are the key its form fixes,
+  or none where its bound holds no field or cell; every location of a
+  region has one of them (`regionKeys_sound`, proved), and a region given
+  sites has finitely many (`regionKeys_of_sites`). A write at the key `k`
+  charges the kinds of a slot under `k` at `k` (`writesK`, `slotKey`,
+  `slotKind_sound`).
+- **A region with no sites.** `frameCheckAt` refuses a region with no
+  computed sites (`fields`, `pathFields`, `cls`, `all`).
 
 ### Protection
 
@@ -1655,7 +1652,7 @@ Lean (proved, `FramedReturns.lean`):
   $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$, `SegWithin`
   $`\Psi_c(l)`$ at the node's entry, `Framed` $`\Phi_l`$
   $`\Psi_c(l)`$ of each support at the node's entry (the pass's check,
-  by `framed_at_innermost_keys` and `framed_of_cover`), and the callee's
+  by `ClientFrame.framed_at_innermost`), and the callee's
   effect $`\Phi_l`$ bounding the heap along the call (the callback's
   arrow, part of $`\Theta_C`$).
 - `own_of_run`: that `SegWithin` premise by `segWithin_of_run` at each
@@ -1671,15 +1668,15 @@ Lean (proved, `FramedReturns.lean`):
   `segWithin_of_deep` (`within_deep`, `ReadOnlySegment.lean`).
 - `framed_of_check`: the `Framed` premise from the pass's check of each
   support at every context of the code and every node with $`l`$'s
-  continuation and handler (`frameCheckAt`, keys `noKeys`, no
-  protection), by `framed_at_innermost_keys`, where the separation the
+  continuation and handler (`frameCheckAt`, each region at its keys, no
+  protection), by `ClientFrame.framed_at_innermost`, where the separation the
   check reads holds at the node's entry.
 - `ret_reachedW_of_checks`: `ret_reachedW` with its transfer premise
   assembled from `nodeTransfer_of_transfer`, `own_of_fit` and
   `framed_of_check`. Its premises besides the checks (`atomCallB`,
   `hslots`, the closure check of each $`T_l`$, $`W_c(T_l)\sqsubseteq\Psi_c(l)`$,
   the frame check): the spec's (`hsrc`, `hty`, `hvals`, `ChkSound`,
-  `StartInv`, `Facts`, `FlowSites`, `EntryFits`, `NoKeys`, the residual
+  `StartInv`, `Facts`, `FlowSites`, `EntryFits`, the residual
   invariant and layout provenance at the starts, `tokensSomeB`,
   `codesLoweredB`), the trace certificates at $`\Psi_j`$ with
   $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$,
@@ -1717,7 +1714,7 @@ Lean (proved, `FramedReturns.lean`):
     expressions, the realm's heap, and the client's lowered source, which
     `Initial` states, `initial_lowered`);
   - *invariants of the frame*: `ChkSound`, `StartInv`, `EntryFits`,
-    `NoKeys`, `hvals` and the separation the frame check reads at each
+    `hvals` and the separation the frame check reads at each
     framed node's entry (`hq`), which `ret_reachedW_public` discharges.
 
 - `ret_reachedW_spec` (proved, `FramedReturns.lean`): `ret_reachedW_frame`
@@ -1760,7 +1757,7 @@ Lean (proved, `FramedReturns.lean`):
   history before any entry; `progFrame_chkSound`, `reached_ok`), and its
   truncation keeps them: the request's run at the top holds no root of
   outside code, and the protected set, the sites and the heap are the
-  program's (`startInv`). No step and no start has a key (`noKeys`); the
+  program's (`startInv`). The
   pass's frame check reads `classQuery`, sound at every state. Its
   premises besides `ret_reachedW_spec`'s checks and trust: the request's
   start a body label, `realizedFlowB` and `marksB` at `spec.fflow`, the
@@ -1826,9 +1823,9 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 
 **Proved at the base**, reused: `FFlow.check_sound`, `fitsAt_reached`
 (its proof), `fits_step`, `fits_roots`, `fits_graphEntry`, `fits_lowered`,
-`chkSound_of_sites`, `sitesSound_of_fits`, `framed_at_innermost_keys`,
+`chkSound_of_sites`, `sitesSound_of_fits`, `ClientFrame.framed_at_innermost`,
 `frameCheck_sound`, `framed_of_sites`, `regionSites_sound`, `reach_sites`,
-`reached_key`, `witness_along`, `HStep.uniform`, `call_segment`,
+`regionKeys_sound`, `witness_along`, `HStep.uniform`, `call_segment`,
 `decompose`, `Run.bound`, `MemberRun.within`, `RBoundBelow.trans`,
 `RBound.mono`, `RBoundBelow.mono`, `StepWithin.mono`, `approx_stable`,
 `step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
@@ -1862,9 +1859,7 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
 `probeProtocol_charged`, `stepWithin_charged`, `ClientFrame.wok_reached`,
-`lowered_wok` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
-`framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
-(`ReadOnlyCover.lean`); `graph_stepR`, `graph_safeR`,
+`lowered_wok` (`ReadOnlyWriteKinds.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
 `keeps_postExcR`, `safeRet_of_sim` (`TolerantFramesGuaranteeRuns.lean`),
 `nodesChecked_of_walkJR`, `nodesChecked_of_walkR`; `framedKept_holds`,

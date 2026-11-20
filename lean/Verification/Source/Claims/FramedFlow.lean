@@ -119,20 +119,24 @@ def kindCode : Option Verification.Kind → Nat
   | none => 0 | some .field => 1 | some .cell => 2 | some .elem => 3 | some .spine => 4
   | some .identity => 5
 
-/-- **A protocol by numbered site and kind, indexed**: each listed part's
-change (the first listing of a part), by the part's site number and
-kind. -/
-def partsIndex (tab : List (Option Nat × Option Verification.Kind × Change)) :
-    Std.HashMap (Option Nat × Nat) Change :=
-  tab.foldl (fun m (s, k, c) => if m.contains (s, kindCode k) then m else m.insert (s, kindCode k) c) {}
+/-- **A protocol by numbered site, kind and key, indexed**: each listed
+part's change (the first listing of a part), by the part's site number,
+kind and key. -/
+def partsIndex (tab : List (Option Nat × Option Verification.Kind × Option PropKey × Change)) :
+    Std.HashMap (Option Nat × Nat × Option PropKey) Change :=
+  tab.foldl (fun m (s, k, key, c) => if m.contains (s, kindCode k, key) then m else m.insert (s, kindCode k, key) c) {}
 
-/-- **A protocol by numbered site and kind**, as the wire states one, read
-through its index (`partsIndex`): the change each listed part (a site's
-number, `none` outside storage, and a kind) has at every key, `keep` at a
+/-- The keys a protocol by parts lists, and `none`. -/
+def partsKeys (tab : List (Option Nat × Option Verification.Kind × Option PropKey × Change)) : List (Option PropKey) :=
+  (none :: tab.map (·.2.2.1)).eraseDups
+
+/-- **A protocol by numbered site, kind and key**, as the wire states one,
+read through its index (`partsIndex`): the change each listed part (a
+site's number, `none` outside storage, a kind and a key) has, `keep` at a
 part it does not list. -/
 def protocolOfParts {P : TolerantFrames.ReadOnly.Package} (num : P.Site → Nat)
-    (idx : Std.HashMap (Option Nat × Nat) Change) : Protocol P := fun p =>
-  idx.getD (p.site.map num, kindCode p.kind) .keep
+    (idx : Std.HashMap (Option Nat × Nat × Option PropKey) Change) : Protocol P := fun p =>
+  idx.getD (p.site.map num, kindCode p.kind, p.key) .keep
 
 /-! ## The framed calls and the supports they keep -/
 
@@ -197,7 +201,7 @@ def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (hos
     let req := sharing.filter fun l' => (c.node l').out || framedNodeAt F host c m l'
     (c, if req.isEmpty then [l] else req)
   Ss.filter fun S => required.all fun (c, req) => req.all fun l' =>
-    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt noKeys (fun _ => false)
+    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt (fun _ => false)
 
 /-- **A flow holding a second code with the proposals of a first** at each
 of its contexts: the request's code beside its realized code, whose nodes
@@ -208,14 +212,15 @@ end
 
 /-- **A framed plan's document** (the producer's inputs, the draft's
 plan on the wire): the component, its entries, the client obligation by
-kind and the component's protocol by numbered site and kind (each change
+kind and the component's protocol by numbered site, kind and key (each change
 but `keep`), and each framed call node with the supports its frame keeps. -/
 def framedDocument (C : Nat) (entries : List String) (theta : List (Option Verification.Kind × Change))
-    (psi : List (Option Nat × Option Verification.Kind × Change)) (framed : List (Nat × List Footprints.Footprint)) :
+    (psi : List (Option Nat × Option Verification.Kind × Option PropKey × Change)) (framed : List (Nat × List Footprints.Footprint)) :
     Json :=
   Json.mkObj [("component", toJson C), ("entries", toJson entries),
     ("theta", Json.arr (theta.map fun (k, c) => Json.arr #[kindNameJ k, EffectCodec.changeJ c]).toArray),
-    ("protocol", Json.arr (psi.map fun (s, k, c) => Json.arr #[toJson s, kindNameJ k, EffectCodec.changeJ c]).toArray),
+    ("protocol", Json.arr (psi.map fun (s, k, key, c) =>
+      Json.arr #[toJson s, kindNameJ k, (key.map EffectCodec.keyJ).getD .null, EffectCodec.changeJ c]).toArray),
     ("framed", Json.arr (framed.map fun (l, Ss) => Json.mkObj [("node", toJson l),
       ("supports", Json.arr (Ss.map EffectCodec.frameJ).toArray)]).toArray)]
 
