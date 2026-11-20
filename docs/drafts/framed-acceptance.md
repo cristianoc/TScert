@@ -2535,84 +2535,99 @@ the flow's contexts of $`f`$'s code.
 ### A call of the component's own closure
 
 (B1) bounds a framed call of a closure of $`C`$ by the charges of its
-segment, in $`\Psi_c(l)`$ of (B2). The code reads the callee's stated
-effect there (`CallbacksWithin`), which assumes of $`C`$'s own arrow what
-$`\Theta_C`$ assumes of clients (observed: Fable's `s-q6-arrow-exceeds.ts`,
-whose arrow writes `stats.lines` beyond its type's `values: "keep"`, is
-accepted). Reading the closed top effect at such a node instead refuses
-inner-walker (observed): the frame's check reads the callee's effect at
-every part of a site in $`O`$ not read as protected (`Part.mayOut`),
-since a run of outside code inside the call may change such a location
-at will.
+segment. The check reads one bound at each framed node $`l`$
+(`FramedSpec.boundAt`, `callBound`):
+
+1. **A call of a function the client passes** (`clientCallee`: a request
+   checked at its entry, the callee an argument's own value,
+   `calleeArgB`): the callee's stated effect $`\Phi`$, by the callback row
+   of $`\Theta_C`$, "a function value outside code passes at a function
+   type meets that type" (`CallbacksWithin`). The frame's check reads
+   $`\Psi_c(l)`$ at a part that may lie in $`R_C`$ and $`\Phi`$ at one that
+   may lie outside it (`frameCheckAt`).
+2. **Any other call, where no node of the flow may call outside code**
+   (`noOutB`: `CodeFlow.out` false at every node of every code at every
+   context): the segment's charges. The segment changes every location
+   below the call's heap within $`\Psi_c(l)`$, in $`R_C`$ or not, and the
+   check reads $`\Psi_c(l)`$ at every part (`frameCheckOwnAt`).
+3. **Any other call**: the top effect, the frame's check of 1 at
+   $`\Phi = \top`$ (`Closed.top`), its action holding of every admissible
+   transition (`action_top`).
+
+A mixed segment, the component's code calling outside code
+(`bounds-pattern-framed-mixed-local`, `u-q1-through`), is bound 3: the
+charges bound $`R_C`$, the top effect every other location.
 
 **The existing mechanisms this extends.**
 
 1. **Whether a run at a node may call outside code** (`CodeFlow.out`,
    `Fits.outCall`): a frame whose next step calls outside code fits at a
-   node whose `out` holds, by the rule of an unknown call (`outB`: a
-   callee set holding $`\circ`$ only at such a node). The flag is direct:
-   it reads the node's own callees, and a known call's callee code may
-   call outside code from a node of its own.
-2. **The segment's codes** $`\mathrm{seg}(c)`$ (`segCodes`, `segClosedB`,
-   `segClosedB_sound`, proved and read by no theorem) and **a framed
-   call** (`reachesOut`).
-3. **The transfer at a call** (`transfer_at`, `seg_bound`): own steps of
-   $`C`$'s code at the caller's depth within $`\Psi_c`$ (`StepWithin`),
-   runs of outside code bounded by $`\Theta_C`$, both on $`R_C`$ alone;
-   every other location within $`\Phi`$ (`Leads.of_bound`).
+   node whose `out` holds, the callee set holding $`\circ`$ only there
+   (`outB`).
+2. **The transfer at a call** (`transfer_at`, `seg_bound`): own steps of
+   $`C`$'s code at the caller's depth within $`\Psi_c`$, runs of outside
+   code bounded by $`\Theta_C`$, both on $`R_C`$; every other location
+   within $`\Phi`$ (`Leads.of_bound`).
+3. **The own steps within the charges** (`within_run`, `stepWithin_reach`,
+   `stepWithin_charged`): a step whose innermost frame runs $`C`$'s code
+   changes a location below the call's heap only where the step charges
+   its part and the call's values reach its site.
 
-**The change.** A node's `out` reads as the note's "a run at the node may
-call outside code", transitively:
+**Bound 2, proved** (`ClientFrame.segAll_of_deep`, `all_of_fit`,
+`supported_of_own`, `nodeTransfer_of_transfer`):
 
-- the rules `Fits.gotoC` and `Fits.frameC` gain the premise that at a
-  position whose run may not call outside code, every node of the
-  entered code's proposal is one whose run may not either; `Fits.invokeC`
-  and the rule of an unknown call of a closure of $`C`$ gain the same of
-  the callee's code at the call's context, and of every code whose token
-  the callee's set holds; `Fits.gotoOut` and `Fits.frameOut` are admitted
-  only at a position whose run may call outside code. `fits_step` keeps
-  each premise: an entering step reads it from the call's rule, a frame's
-  continuation from its own;
-- **no outside run** (to be proved): from a call state at a node whose
-  `out` is false, every step of the segment is a step of $`C`$'s code at
-  the caller's depth (`Fits.outCall` at each state of the segment, by the
-  premises above);
-- **the charges at every location** (to be proved): `StepWithin` on every
-  location below the call's heap, not on $`R_C`$ alone (`within_run`,
-  whose argument reads the charged kinds of a step, `step_kind_charged`,
-  at any location);
-- **the check at such a node** (`frameCheckOwn`): $`\Psi_c(l)`$ at every
-  part, the callee's effect read nowhere; its soundness from the two
-  above, `Framed` with $`\Phi`$ the closed top effect;
-- **the callback row** (`CallbacksWithin`) ranges over the framed nodes
-  whose `out` holds; at the others the top effect's action holds of every
-  admissible transition (`action_top`).
+- *No outside run.* A frame or a run of outside code fits only at a
+  position that may call outside code (`Fits.frameOut`, `Fits.gotoOut`;
+  the call of a closure of outside code reads the premise of
+  `Fits.invoke`). Where every node's `out` is false, every frame inside
+  the top frame's running term runs $`C`$'s code (`Fits.innermostC`), at
+  every state of the segment (`fitsAt_reached`).
+- *The charges at every location.* Each step of the segment changes every
+  location below the call's heap within the protocol from the flow's
+  charges and the node's set (`within_deep_all`, `stepAll_reach`,
+  `stepAll_charged`: the argument of `within_run`, which reads no
+  location's membership in $`R_C`$); the steps compose (`AllBelow.trans`),
+  the marks fixing each location's part (`kept_of_kstep`).
+- *The check.* $`\Psi_c(l)`$ within each region's change at every part a
+  location of the region may have (`frameCheckOwnAt`,
+  `ownFramed_of_sites`) gives each support supported.
 
-The flow's check and the solver decide the transitive flag (`callsOut`
-joined with the callee codes' flags, iterated to a fixed point).
-Inner-walker's `visit(c.i)` at its known call's context, its callee the
-arrow, whose code calls nothing, is a node whose run may not call outside
-code; the cursor and `xs` are kept by $`\Psi_c(l)`$, which keeps every part
-no code of $`C`$ writes. Fable's `s-q6-arrow-exceeds.ts` is decided by
-the charges: the arrow writes `stats`, which is outside the walker's
-facts.
+**The segment's code as lowered.** Bound 2 reads the segment's codes as
+the flow lowers them. A lowering is faithful where the unit holding the
+code is accepted: a template literal of an object lowers to an addition,
+which calls no code, and under Node the conversion calls the object's
+`toString` (`invalid-bounds-pattern-framed-template`). A verdict reading
+bound 2 at a node rests on the verdict of each module function holding a
+code of the node's $`\mathrm{seg}(c)`$ (`FramedComponent.segOwners`), on
+the verdict line's `depends`; a unit accepted under client trust is
+refused where a unit it depends on is refused (`verify-source.mts`).
+
+**Proof scope.** Bound 2's condition is the flow's, at every node: a
+component one of whose nodes may call outside code bounds each call of a
+function the client does not pass by the top effect. (B1)'s notion is the
+segment's (`reachesOut` over `segCodes`); reading it at the segment needs
+the callee sets of a fitting term tied to the flow's `callSets` along the
+segment, which is not proved.
 
 ### What milestone 3 trusts
 
-At a framed node whose callee is a closure of $`C`$ alone, the claim reads
-the callee's action within its stated effect (`CallbacksWithin`), the
-callback row "a function value outside code passes at a function type
-meets that type", there an assumption about $`C`$'s own code; [a call of
-the component's own closure](#a-call-of-the-components-own-closure)
-replaces it by the segment's charges.
+The callback row ranges over the calls of functions the client passes
+(`clientCallee`). A call of a closure of $`C`$ that $`C`$'s own code
+passes is bounded by its segment's charges (bound 2) or by the top effect
+(bound 3), with no assumption about that closure.
 
 ### Tests
 
 | Case | Outcome | Shows |
 | --- | --- | --- |
-| `bounds-pattern-framed-inner-walker` (Example "A walker that is no entry") | `walk` accepted under client trust | the visit's callee the arrow's token alone, the cursor kept |
-| `bounds-pattern-framed-known-calls` | `walk` accepted under client trust | the cursor its caller's, outside the visit's reach at the known call; exported, `walk` is refused at the visit (observed) |
-| `invalid-bounds-pattern-framed-known-calls` | negative | the arrow moves the caller's cursor; `total([1, 2])` reads past the array (`NaN` under Node) |
+| `bounds-pattern-framed-inner-walker` (Example "A walker that is no entry") | gap: `walk` refused by its dependency on `countLines` | the visit's callee the arrow's token alone, bound 2 keeping the cursor; `countLines` refused at its call of `walk` (milestone 5) |
+| `bounds-pattern-framed-known-calls` | gap: `walk` refused by its dependency on `total` | the cursor its caller's, outside the visit's reach at the known call, kept by bound 2; exported, `walk` is refused at the visit (observed) |
+| `invalid-bounds-pattern-framed-known-calls` | negative | the arrow moves the caller's cursor, charged at its site; `total([1, 2])` reads past the array (`NaN` under Node) |
+| `bounds-pattern-framed-arrow-exceeds` | gap: `walk` refused by its dependency on `countLines` | the arrow writes beyond its type's effect; bound 2 keeps the walker's array and cursor |
+| `invalid-bounds-pattern-framed-template` | negative | bound 2 at an arrow whose template literal lowers to an addition; `walk` refused by its dependency on `total`; `NaN` under Node |
+| `invalid-bounds-pattern-framed-construct` | negative | the arrow constructs a client's class: bound 3, the client's array may shrink; `NaN` under Node |
+| `bounds-pattern-framed-mixed-local` | `walk` accepted under client trust | a mixed segment, bound 3: the walker's own array and cursor lie in $`R_C`$, kept by the charges |
+| `invalid-bounds-pattern-framed-mixed` | negative | the same over the client's array, which the top effect may shrink; `NaN` under Node |
 | `bounds-pattern-framed-closure` | accepted under client trust | a closure a module function creates and calls |
 | `bounds-pattern-framed-shared-helper` | both walkers accepted under client trust, the helper verified | a module function naming another |
 | `bounds-pattern-unreachable-handle` | accepted under client trust | a known call of a module function after a framed visit |
