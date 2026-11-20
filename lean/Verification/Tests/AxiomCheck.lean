@@ -282,6 +282,7 @@ import Verification.Source.Claims.FramedPassChecks
 import Verification.Source.Claims.FramedRealize
 import Verification.Source.Claims.FramedReturns
 import Verification.Source.Claims.FramedReached
+import Verification.Source.Claims.FramedStarts
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference

@@ -892,19 +892,21 @@ total.
   the protected set is built from the entries' arguments at their
   declared types and from `Held`, which reads whether a location's site is
   `some`, which the canonical allocation sites decide from the lowering.
-- **The flow along a program** (to be proved over `ProgReached core x₀`,
-  the states of executions from initial configurations, by the proofs of
-  `fitsAt_reached`, `chkSound_of_sites`, `sitesSound_of_fits`, `XStep.inv`
-  and `Ex.inv` with the start predicate generalized from `fr.Call` to an
-  initial configuration): `fits_program` (every state fits $`O`$ at a
-  position of outside code and its heap meets the flow; at $`x_0`$ the
-  initialization by its code's check and `client` by `fits_lowered`,
-  proved), `chkSound_program` ((S), (K) and (O) at every step of $`C`$'s
-  code, the initialization's and earlier calls' included),
-  `inv_program` (`Inv` at the empty heap, kept by every step,
-  `pkg_step_inv` at an entry). Then `entryFits_public` (the isolated start
-  fits, its slots those `graphEntry` and the prologue fill, related by
-  `prologue_sim`), `startInv_public` and `ChkSound` for the frame.
+- **The flow along a program** (proved, `FramedStarts.lean`): the
+  program's frame (`progFrame`, the plan's core and codes, its calls the
+  initial configurations, its start the history before any entry) reaches
+  the program's states, so `fitsAt_reached`, `chkSound_of_sitesIn` and
+  `reached_ok` read them: every state fits $`O`$ at a position of outside
+  code and its heap meets the flow (`progOk_ex`, from initial
+  configurations fitting it, `InitialFits`), (S), (K) and (O) hold at
+  every step of $`C`$'s code, the initialization's and earlier calls'
+  included (`progFrame_chkSound`), and every state meets the invariants of
+  states (`reached_ok` at `progFrame`, from initial configurations that
+  are entries, `InitialEntry`). Then the frame's entries fit
+  (`entryFits`, its slots those `graphEntry` and the prologue fill, at the
+  realized code's proposal, the request's at its body labels), its starts
+  meet the invariants of states (`startInv`), and `ChkSound` holds for the
+  frame (`chkSound`).
 - **An inhabitant.** Milestone 1's first check builds one public call of
   P22's `walk` from an initial configuration of a client program.
 
@@ -939,7 +941,7 @@ the direction the headline promises: every actual public call is covered.
 **`PublicCall` with `KStep` and the depth**: its execution is of
 `core.KStep` (actual steps, the history `next`, `Keeps`), and its entering
 step is a `KStep` raising $`\delta`$ by one; `PkgProps` at that step is
-`chkSound_program`'s conclusion, never a premise of the definition.
+`progFrame_chkSound`'s conclusion, never a premise of the definition.
 
 ### The binding checks
 
@@ -1062,10 +1064,15 @@ stands for) is `checked` with its sites renamed into the family's (`FFlow.mapSit
 - `Initial x₀`: the realm's heap, and `letE (goto initE initK 0 [] undefined C) client`
   with `client` lowered outside source whose one free variable is the
   exports;
-- `RealizedAt r a₁ a₂ L d`: `a₁` runs the realized code, and `a₂` is the
-  first state after it, along steps keeping $`\Theta_C`$, whose innermost
-  run is the realized code at `r.start`, with slots `L`, default `d` and
-  the request's tag;
+- `RealizedAt r a₁ a₂ L d`: `a₁`'s innermost run is the realized code at
+  the prologue's label, and `a₂` is the first state after it, along steps
+  keeping $`\Theta_C`$, whose innermost run is the realized code at
+  `r.start`, with slots `L`, default `d` and the request's tag. The label
+  makes the realization the prologue's two steps (`prologue_det`): a run
+  of the realized code entered at a body label could reach its start
+  inside a frame of $`C`$'s code, where the fit bounds its returns by a
+  set of $`C`$'s, not by $`O`$; `publicCall_safe` reads that every closure
+  of the realized code enters at the prologue's label;
 - `frame r`: its core `(fam, C, view, Θ_C, chk r)`, its codes those the
   flow holds, its entries `EntryAt`, the realizations of the public calls
   of the realized code (`FrameCore.PublicCall`, `ReadOnlyPublic.lean`) at
@@ -1506,11 +1513,9 @@ Lean (proved, `FramedReturns.lean`):
     invariant (`initial_starts`, from checks of the initialization's node
     expressions, the realm's heap, and the client's lowered source, which
     `Initial` states, `initial_lowered`);
-  - *invariants of the frame to be proved*: `ChkSound` and `StartInv`
-    (`chkSound_program`, `startInv_public`), `EntryFits`
-    (`entryFits_public`), `NoKeys` at the starts, `hvals` (from
-    `EntryAt`), and the separation the frame check reads at each framed
-    node's entry (`hq`).
+  - *invariants of the frame*: `ChkSound`, `StartInv`, `EntryFits`,
+    `NoKeys`, `hvals` and the separation the frame check reads at each
+    framed node's entry (`hq`), which `ret_reachedW_public` discharges.
 
 - `ret_reachedW_spec` (proved, `FramedReturns.lean`): `ret_reachedW_frame`
   at the plan's flow (`spec.fflow`) and layouts (`spec.lay`), the hashing
@@ -1534,6 +1539,29 @@ Lean (proved, `FramedReturns.lean`):
   checks `ret_reachedW_public` (track C1) reads in their place: `marksB`
   and `realizedFlowB` at the frame's flow, the start a label, the
   initialization free of runs.
+- `ret_reachedW_public` (proved, `FramedStarts.lean`): `ret_reachedW_spec`
+  with the frame's invariants read along the program. The program's
+  states (`ProgOk`: `wfS`, a heap free of runs, layout provenance,
+  `NoPend`, the fit) are kept by every step (`progOk_ex`) from the
+  initial configurations (`progOk_initial`). At an entry the entering
+  step pushes the realized code's run at a position of outside code
+  (`enter_hole_out`), the realization is the prologue (`prologue_det`),
+  so the run fits $`O`$ there at a proposal that is the request's at its
+  body labels (`entry_hole`, `realizedFlowB_sound`): every entry fits
+  (`entryFits`), its slots are values (`slotVals`), and the checks give
+  (S), (K) and (O) (`chkSound`, by `chkSound_of_sitesIn`). The program's
+  history meets the invariants of states at the program's frame
+  (`progFrame`, its calls the initial configurations, its start the
+  history before any entry; `progFrame_chkSound`, `reached_ok`), and its
+  truncation keeps them: the request's run at the top holds no root of
+  outside code, and the protected set, the sites and the heap are the
+  program's (`startInv`). No step and no start has a key (`noKeys`); the
+  pass's frame check reads `classQuery`, sound at every state. Its
+  premises besides `ret_reachedW_spec`'s checks and trust: the request's
+  start a body label, `realizedFlowB` and `marksB` at `spec.fflow`, the
+  initialization's node expressions free of runs, and two named check
+  premises on the initial configurations, the fit of the flow
+  (`InitialFits`) and the premises of an entry (`InitialEntry`).
 
 With no framed node the returns hold of every frame
 (`framedReturnsReachedW_none`, proved).
@@ -1692,7 +1720,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public` (`FramedStarts.lean`); `entryXs_root` (`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1703,9 +1731,10 @@ review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
 `project`, `keeps_canonical`,
-`fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, the fields of `FramedObligations` (the frame's
-invariants) from the program's initial configurations,
+`InitialFits` and `InitialEntry` from the checks of the initialization
+and the realm and the client being lowered source, which then make up
+`FramedObligations` once `FramedObligations.reached` reads
+`ret_reachedW_public`,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 

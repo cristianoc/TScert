@@ -197,13 +197,13 @@ def Initial (x₀ : Conf) : Prop :=
     LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
 
 /-- **The realization of an entering step** (the draft, "Realization",
-`RealizedAt`): `a₁` runs the realized code, and `a₂` is the first state
-after it, along steps keeping the obligation, whose innermost run is the
-realized code at the request's start, with slots `L`, default `d` and the
-request's tag. -/
+`RealizedAt`): `a₁`'s innermost run is the realized code at its prologue's
+label, the closure's entry, and `a₂` is the first state after it, along
+steps keeping the obligation, whose innermost run is the realized code at
+the request's start, with slots `L`, default `d` and the request's tag. -/
 def RealizedAt (r : SourceRequest σ ι) (a₁ a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)) (L : List Tm)
     (d : Tm) : Prop :=
-  entered none a₁.1.t = some (realizedCode r) ∧
+  (∃ L₁ d₁ c₁, innermostGoto a₁.1.t = some (realizedCode r, r.program.length, L₁, d₁, c₁)) ∧
     (∃ j, Ex (spec.core r).KStep
       (fun a => ¬ ∃ L' d' c', innermostGoto a.1.t = some (realizedCode r, r.start, L', d', c')) j a₁ a₂) ∧
     innermostGoto a₂.1.t = some (realizedCode r, r.start, L, d, r.comp)

@@ -36,20 +36,19 @@ theorem entryXs_into (r : SourceRequest σ ι) {t t' : Tm} {c : Crossing spec.vi
       | cases hc
   · cases hc
 
-/-- **The entering step's crossings are roots of outside code, or hold no
-location** (proved, the draft's `entryXs_roots`, `redex_arg_root`): each is
-an argument of the call the step reduces, in a frame of outside code. -/
-theorem entryXs_roots (r : SourceRequest σ ι) :
-    (spec.frame r).IncomingRoots (fun _ t _ t' => spec.entryXs r t t') := by
-  intro a b _ _ _ c hc
-  have hc : c ∈ spec.entryXs r a.1.t b.1.t := hc
+/-- **An entering step's crossing is a root of outside code, or holds no
+location** (proved, `redex_arg_root`): it is an argument of the call the
+step reduces, in a frame of outside code. -/
+theorem entryXs_root (r : SourceRequest σ ι) {t t' : Tm} {c : Crossing spec.view.view}
+    (hc : c ∈ spec.entryXs r t t') :
+    c.val ∈ rootsOf spec.F spec.C none t ∨ ∀ l, ¬ Leaves (spec.F.at spec.C).ofC c.val l := by
   unfold entryXs at hc
   split at hc
   · rename_i hcond
-    have hroot : ∀ f r' (args : List Tm), ((activeFrame none a.1.t).2 = .invoke f r' args ∨
-        (activeFrame none a.1.t).2 = .construct f args) → c ∈ ((args.take spec.arity).zip (r.inputs.take spec.arity)).map
+    have hroot : ∀ f r' (args : List Tm), ((activeFrame none t).2 = .invoke f r' args ∨
+        (activeFrame none t).2 = .construct f args) → c ∈ ((args.take spec.arity).zip (r.inputs.take spec.arity)).map
           (fun (v, T) => (⟨.into, T, v⟩ : Crossing spec.view.view)) →
-        c.val ∈ rootsOf spec.F spec.C none a.1.t ∨ ∀ l, ¬ Leaves (spec.F.at spec.C).ofC c.val l := by
+        c.val ∈ rootsOf spec.F spec.C none t ∨ ∀ l, ¬ Leaves (spec.F.at spec.C).ofC c.val l := by
       intro f r' args hp hm
       obtain ⟨⟨v, T⟩, hvT, rfl⟩ := List.mem_map.mp hm
       exact redex_arg_root (ofC := spec.F.ofC spec.C) hcond.1 hp
@@ -59,6 +58,12 @@ theorem entryXs_roots (r : SourceRequest σ ι) :
     · rename_i f args heq; exact hroot f .undef args (.inr heq) hc
     · cases hc
   · cases hc
+
+/-- **The entering step's crossings are roots of outside code, or hold no
+location** (proved, the draft's `entryXs_roots`, `entryXs_root`). -/
+theorem entryXs_roots (r : SourceRequest σ ι) :
+    (spec.frame r).IncomingRoots (fun _ t _ t' => spec.entryXs r t t') :=
+  fun _ _ _ _ _ _ hc => spec.entryXs_root r hc
 
 end FramedSpec
 end Verification.SourceClaimJson
