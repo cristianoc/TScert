@@ -820,7 +820,8 @@ accepts, the group's verdict is acceptance under the client obligation of
 the framed members' components (`FilePlans.clientComponents`,
 `Mode8Accepted.framed`); otherwise the group's refusal, its text gaining the
 framed plan's line: the component's, a restriction's or the decoder's
-refusal, or the framed plan's check's. With `TSCERT_FRAMED`, the
+refusal, or the framed plan's check's, followed by why each framed node
+that drops a support drops the first. With `TSCERT_FRAMED`, the
 producer's lines (observation). -/
 def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans) (i : Nat) (reason : String) :
     IO (Except String (List String) × List Nat) := do
@@ -843,12 +844,12 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
       return (.error s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}", [])
     | .ok none =>
       if observing then IO.eprintln s!"framed plan of {fr.unitId j}: no framed call node"
-    | .ok (some (f', shown)) =>
+    | .ok (some (f', shown, why)) =>
       if observing then for line in shown do IO.eprintln line
       let (_, v, _, _) ← IO.lazyPure fun _ => f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel
         (f'.fr.group i) (located := true)
       return match v with
-        | .error w => (.error s!"{reason}\n{w}", [])
+        | .error w => (.error ("\n".intercalate (s!"{reason}\n{w}" :: why)), [])
         | .ok deps => (.ok deps, f'.clientComponents (f'.fr.group i))
   return (.error reason, [])
 

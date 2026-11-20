@@ -113,7 +113,7 @@ theorem overStore_withPlan {f : FilePlans} (hover : OverStore f) {i : Nat}
 /-- **A framed plan keeps the plans over the store** (proved): it replaces a
 graph plan by the framed plan of the same request. -/
 theorem framedPlan_overStore {f : FilePlans} (hover : OverStore f) {fuel i : Nat} {fc : FramedComponent}
-    {force : List String} {f' : FilePlans} {shown : List String}
+    {force : List String} {f' : FilePlans} {shown : List String × List String}
     (h : f.framedPlan fuel i fc force = .ok (some (f', shown))) : OverStore f' := by
   unfold FilePlans.framedPlan at h
   simp only [bind, Except.bind, pure, Except.pure] at h
@@ -181,7 +181,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i j fuel fuel' : Nat} {compare : Bool}
     {debugNode repeats : Nat} {given : Option (Std.HashMap String Json)} {observe : Option String}
-    {counting located : Bool} {deps : List String} {fc : FramedComponent} {f' : FilePlans} {shown : List String}
+    {counting located : Bool} {deps : List String} {fc : FramedComponent} {f' : FilePlans} {shown : List String × List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =

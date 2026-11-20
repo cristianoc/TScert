@@ -447,6 +447,18 @@ def frameCheck (q : SepQuery) (Ψ : Protocol P) (Φ S : Footprint) (parts : Regi
   S.all fun e => (parts e.1).all fun p =>
     (!p.mayIn || (Ψ p).le e.2) && (!p.mayOut (prot e.1) || Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1)
 
+/-- **The first part at which a frame's check fails** (a diagnostic): of
+the support's entries in order, the first entry and part of it where
+`frameCheck` fails, with whether `Ψ` exceeds the entry's change there
+(the part may lie in `R_P`) and whether an entry of `Φ` the query cannot
+separate from the region does (the part may lie outside it). -/
+def frameCheckFailure (q : SepQuery) (Ψ : Protocol P) (Φ S : Footprint) (parts : Region → List (Part P))
+    (prot : Region → Bool) : Option ((Region × Change) × Part P × Bool × Bool) :=
+  S.findSome? fun e => (parts e.1).findSome? fun p =>
+    let inside := p.mayIn && !(Ψ p).le e.2
+    let outside := p.mayOut (prot e.1) && !(Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1)
+    if inside || outside then some (e, p, inside, outside) else none
+
 theorem Part.held_of_origin {st : St P} {l : Nat}
     (h : st.g.origin l = some .local ∨ st.g.origin l = some .exposed) : (st.part l).held = true := by
   have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
