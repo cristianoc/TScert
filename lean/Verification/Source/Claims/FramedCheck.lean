@@ -1,4 +1,5 @@
 import Verification.Source.Claims.FlowProbe
+import Verification.Source.Claims.FramedInhabited
 import Verification.Source.Claims.MemberSettle
 
 /-! # A framed plan's check, run beside the verdict
@@ -637,6 +638,9 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
   let some (.ok (.graph name pos r)) := f.plans[i]? | return none
   if !(fc.mods.any (·.name == name)) then throw "a framed plan needs a realized entry"
   if let some w := fc.restriction then throw w
+  -- (the initial premise inhabited: every outside slot's type has a value,
+  -- `slotsWitnessed_inhabited`)
+  if let some w := outsideInhabitedRefusal fc.mods then throw w
   let some m := (fc.cf.codes.zip fc.cf.names).find? (·.2.1 == name) |>.map (·.1)
     | throw "a framed plan needs a realized entry"
   let F := fc.cf.flow

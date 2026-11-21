@@ -1,4 +1,5 @@
 import Verification.Source.Claims.Json
+import Verification.Types.InhabitedTypes
 import Verification.Source.Claims.FramedFlow
 import Verification.Source.EffectCodec
 import Verification.Semantics.Survival
@@ -157,6 +158,19 @@ structure ProbeModule where
   comp : ComponentTag
   sm : RequestJson.SourceMap := []
   rest : Bool := false
+  /-- Per slot, in the siblings' order, whether the inhabitance check
+  (`InhabitedTypes.typeWitnessB`) passes the type its request reads the slot
+  at, in its request's graph (`slotsWitnessed`). -/
+  witnessed : List Bool := []
+
+/-- **The inhabitance of a request's slots**: per sibling, whether the type
+the request reads it at (its inputs past its parameters, one per sibling)
+passes the inhabitance check in the request's graph. -/
+def slotsWitnessed {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
+    (r : SourceElaboration.SourceRequest σ ι) : List Bool :=
+  (List.range r.siblings.length).map fun k =>
+    (r.inputs[r.inputs.length - r.siblings.length + k]?).any
+      (InhabitedTypes.typeWitnessB (LabelStore.StoreView.graph r.types))
 
 def ProbeModule.ofRequest {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (name : String)
     (r : SourceElaboration.SourceRequest σ ι) : Option ProbeModule :=
@@ -167,7 +181,7 @@ def ProbeModule.ofRequest {σ ι : Type} [LabelStore.Labels ι] [LabelStore.Stor
   let conts := r.program.map fun n => (n.continuation, n.handler)
   let code : Code := (exprs ++ [.undef],
     conts ++ [(.effect ⟨r.start, some ((List.range (r.inputs.length + 1)).map (· + 1))⟩, none)])
-  some ⟨name, code, ar, r.siblings, r.comp, r.sourceMap, r.restParam⟩
+  some ⟨name, code, ar, r.siblings, r.comp, r.sourceMap, r.restParam, slotsWitnessed r⟩
 
 /-- The signature of a module function's closure. -/
 def ProbeModule.sig (g : ProbeModule) : FnSig := ⟨g.code, g.ar, g.code.1.length - 1, g.rest, g.siblings.length⟩
