@@ -421,7 +421,7 @@ theorem linked : HeapObservations.Steps 26 hR x0 ((at? 26).get (by decide)).1 ((
   runTo_steps 26 _
 
 /-- **The calls of `C` active** (`depthC` at the tag `cC`, computed). -/
-def depth (t : Tm) : Nat := blocks ((path none t).map fun p => p.1 == cC)
+def depth (t : Tm) : Nat := blocks ((path Realm.empty none false t).map fun p => p.1 == cC)
 
 -- the entering step: outside code invokes `walk`'s closure, then one more call
 -- of `C` is active

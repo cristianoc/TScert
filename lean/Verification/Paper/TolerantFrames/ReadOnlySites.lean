@@ -306,8 +306,8 @@ theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {H : SiteHeap (F.at C)}
     HeapSites (g.alloc x.s.h.length (fun _ => none)) H y.s.h ∧
       ∀ r ∈ rootsOf F C none y.t, SitesOf (g.alloc x.s.h.length (fun _ => none)) O r := by
   let g' := g.alloc x.s.h.length (fun _ => none)
-  have hr0 : (lift F C none x g).roots = vals (F.ofC C) (!F.ofC C none) x.t := rfl
-  have hr1 : (lift F C none y g').roots = vals (F.ofC C) (!F.ofC C none) y.t := rfl
+  have hr0 : (lift F C none x g).roots = vals (F.ofC C) F.realm (!F.ofC C none) false x.t := rfl
+  have hr1 : (lift F C none y g').roots = vals (F.ofC C) F.realm (!F.ofC C none) false y.t := rfl
   -- A location the old roots reach, or a fresh one, is of a site of `O`.
   have hsite : ∀ l, ReachesFrom (F.at C).ofC x.s.h (rootsOf F C none x.t) l ∨ x.s.h.length ≤ l →
       g'.site l ∈ O := by

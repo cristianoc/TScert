@@ -46,7 +46,7 @@ theorem map_self_mem {f : Tm → Tm} : ∀ {l : List Tm}, l.map f = l → ∀ u 
 /-- A value's own first locations are those of a value it holds as itself
 (proved). -/
 theorem leaves_self_vals {u : Val} (hu : isVal u = true) {l : Nat} (hl : Leaves P.ofC u l) :
-    ∃ x ∈ vals P.ofC true u, Leaves P.ofC x l := by
+    ∃ x ∈ vals P.ofC Realm.all true true u, Leaves P.ofC x l := by
   cases u with
   | objAt fs cc i => exact ⟨_, by rw [vals_objAt]; exact List.mem_cons_self .., hl⟩
   | arr ls => exact ⟨_, by simp [vals], hl⟩

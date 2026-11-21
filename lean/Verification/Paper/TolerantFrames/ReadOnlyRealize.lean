@@ -256,47 +256,50 @@ theorem flatMap_set_congr {α β : Type} {f : α → List β} {a b : α} (hab : 
 /-- **Related runs hold the same values** (proved): where the two codes'
 node expressions hold the same values, related runs do, their slots,
 default and running term being the same. -/
-theorem vals_tabRel {A B : Code} {n : Nat} (hv : valsArgs ofC true A.1 = valsArgs ofC true B.1) {t₁ t₂ : Tm}
-    (hr : TabRel A B n t₁ t₂) (o : Bool) : vals ofC o t₁ = vals ofC o t₂ := by
+theorem vals_tabRel {A B : Code} {n : Nat} (hv : valsArgs ofC Realm.all true true A.1 = valsArgs ofC Realm.all true true B.1)
+    {rl : Realm} (hAB : ∀ comp kx, rl.native (A, comp) kx = rl.native (B, comp) kx) {t₁ t₂ : Tm}
+    (hr : TabRel A B n t₁ t₂) (o nk : Bool) : vals ofC rl o nk t₁ = vals ofC rl o nk t₂ := by
   cases hr with
   | same => rfl
   | goto => simp only [vals, hv]
-  | frame => simp only [vals, hv]
+  | frame => simp only [vals, hv, hAB]
 
 /-- **A context around terms holding the same values holds the same
 values** (proved, by induction on the context). -/
 theorem vals_ctx {K : Tm → Tm} (hK : EvalCtx K) :
-    ∀ {t₁ t₂ : Tm}, (∀ o, vals ofC o t₁ = vals ofC o t₂) → ∀ o, vals ofC o (K t₁) = vals ofC o (K t₂) := by
+    ∀ {t₁ t₂ : Tm}, (∀ o nk, vals ofC rl o nk t₁ = vals ofC rl o nk t₂) →
+      ∀ o nk, vals ofC rl o nk (K t₁) = vals ofC rl o nk (K t₂) := by
   induction hK with
   | hole => exact fun h => h
   | callArg _ _ _ _ _ ih =>
-    intro t₁ t₂ h o
+    intro t₁ t₂ h o nk
     simp only [vals, valsArgs_eq]
-    rw [flatMap_set_congr (ih h o)]
+    rw [flatMap_set_congr (ih h o nk)]
   | constructArg _ _ _ _ ih =>
-    intro t₁ t₂ h o
+    intro t₁ t₂ h o nk
     simp only [vals, valsArgs_eq]
-    rw [flatMap_set_congr (ih h o)]
+    rw [flatMap_set_congr (ih h o nk)]
   | @makeArg _ c _ _ _ _ _ _ ih =>
-    intro t₁ t₂ h o
-    cases c <;> simp only [vals, valsArgs_eq] <;> rw [flatMap_set_congr (ih h o)]
+    intro t₁ t₂ h o nk
+    cases c <;> simp only [vals, valsArgs_eq] <;> rw [flatMap_set_congr (ih h o nk)]
   | arrArg _ _ _ ih =>
-    intro t₁ t₂ h o
+    intro t₁ t₂ h o nk
     simp only [vals, valsArgs_eq]
-    rw [flatMap_set_congr (ih h o)]
+    rw [flatMap_set_congr (ih h o nk)]
   | frameC _ _ _ _ _ _ _ _ ih =>
-    intro t₁ t₂ h o
+    intro t₁ t₂ h o nk
     simp only [vals, ih h]
   | _ =>
     rename_i ih
-    intro t₁ t₂ h o
+    intro t₁ t₂ h o nk
     simp only [vals, ih h]
 
 /-- **Steps holding the same values cross the same values out** (proved,
 by the definitions): the new roots and the values left where outside code
 reaches are read from the terms' values and the heaps. -/
 theorem actualXs_congr {F : Family} {C : Nat} {tv : TypeView} (T : tv.Ty) (h h' : Heap) {t₁ t₂ t₁' t₂' : Tm}
-    (hv : ∀ o, vals (F.ofC C) o t₁ = vals (F.ofC C) o t₂) (hv' : ∀ o, vals (F.ofC C) o t₁' = vals (F.ofC C) o t₂') :
+    (hv : ∀ o, vals (F.ofC C) F.realm o false t₁ = vals (F.ofC C) F.realm o false t₂)
+    (hv' : ∀ o, vals (F.ofC C) F.realm o false t₁' = vals (F.ofC C) F.realm o false t₂') :
     actualXs F C T h t₁ h' t₁' = actualXs F C T h t₂ h' t₂' := by
   have e : rootsOf F C none t₁ = rootsOf F C none t₂ := hv _
   have e' : rootsOf F C none t₁' = rootsOf F C none t₂' := hv' _
@@ -333,83 +336,85 @@ theorem wrap_wrap_append (h g : Tm → Tm) (S : List (ComponentTag × Tm)) :
 
 /-- The path of a context's hole in its context: its wrapped path, then the
 context's (shape). -/
-def PathCtx (K : Tm → Tm) (c : ComponentTag) : Prop :=
-  ∃ c' g S, ∀ t, isVal t = false → path c (K t) = wrap g (path c' t) ++ S
+def PathCtx (K : Tm → Tm) (rl : Realm) (c : ComponentTag) (nk : Bool) : Prop :=
+  ∃ c' nk' g S, ∀ t, isVal t = false → path rl c nk (K t) = wrap g (path rl c' nk' t) ++ S
 
 /-- A context rebuilding its hole's path keeps the shape (proved). -/
-theorem PathCtx.wrap' {K K₀ : Tm → Tm} {c c₀ : ComponentTag} (ih : PathCtx K c)
-    (h : ∃ h : Tm → Tm, ∀ t, isVal t = false → path c₀ (K₀ t) = wrap h (path c (K t))) : PathCtx K₀ c₀ := by
-  obtain ⟨c', g, S, hP⟩ := ih
+theorem PathCtx.wrap' {K K₀ : Tm → Tm} {rl : Realm} {c c₀ : ComponentTag} {nk nk₀ : Bool} (ih : PathCtx K rl c nk)
+    (h : ∃ h : Tm → Tm, ∀ t, isVal t = false → path rl c₀ nk₀ (K₀ t) = wrap h (path rl c nk (K t))) :
+    PathCtx K₀ rl c₀ nk₀ := by
+  obtain ⟨c', nk', g, S, hP⟩ := ih
   obtain ⟨hh, hK⟩ := h
   obtain ⟨g', S', hw⟩ := wrap_wrap_append hh g S
-  exact ⟨c', g', S', fun t ht => by rw [hK t ht, hP t ht, hw]⟩
+  exact ⟨c', nk', g', S', fun t ht => by rw [hK t ht, hP t ht, hw]⟩
 
 /-- **The path through a context** (proved, by induction on the context):
 around a term that is not a value, the whole term's path is the term's
 path, its last element rebuilt, then the context's frames. -/
-theorem path_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c, PathCtx K c := by
+theorem path_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ rl c nk, PathCtx K rl c nk := by
   induction hK with
   | hole =>
-    refine fun c => ⟨c, id, [], fun t _ => ?_⟩
+    refine fun rl c nk => ⟨c, nk, id, [], fun t _ => ?_⟩
     have e : (fun p : ComponentTag × Tm => (p.1, id p.2)) = fun p => p := funext fun _ => rfl
     simp only [wrap, List.append_nil, e, mapLast_self]
   | frameC E Kc L d k x comp hK ih =>
-    intro c
-    obtain ⟨c', g, S, hP⟩ := ih comp
+    intro rl c nk
+    obtain ⟨c', nk', g, S, hP⟩ := ih rl (rl.own c nk comp) (rl.native ((E, Kc), comp) (k, x))
     obtain ⟨g', S', hw⟩ := wrap_wrap_append (fun s => .frame E Kc s L d k x comp) g S
-    exact ⟨c', g', S' ++ [(c, hole)], fun t ht => by
+    exact ⟨c', nk', g', S' ++ [(c, hole)], fun t ht => by
       simp only [path]; rw [hP t ht, hw, List.append_assoc]⟩
   | @callArg K₀ f r args i hf hr hi hpre hK ih =>
-    intro c
-    refine (ih c).wrap' ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩
+    intro rl c nk
+    refine (ih rl c nk).wrap' ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩
     simp only [path, hf, hr, Bool.true_eq_false, ite_false]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @constructArg K₀ f args i hf hi hpre hK ih =>
-    intro c
-    refine (ih c).wrap' ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩
+    intro rl c nk
+    refine (ih rl c nk).wrap' ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩
     simp only [path, hf, Bool.true_eq_false, ite_false]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @makeArg K₀ cc ns inits i hi hpre hK ih =>
-    intro c
-    refine (ih c).wrap' ⟨fun s => .makeAt cc ns (inits.set i s), fun t ht => ?_⟩
+    intro rl c nk
+    refine (ih rl c nk).wrap' ⟨fun s => .makeAt cc ns (inits.set i s), fun t ht => ?_⟩
     simp only [path]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @arrArg K₀ inits i hi hpre hK ih =>
-    intro c
-    refine (ih c).wrap' ⟨fun s => .arrLit (inits.set i s), fun t ht => ?_⟩
+    intro rl c nk
+    refine (ih rl c nk).wrap' ⟨fun s => .arrLit (inits.set i s), fun t ht => ?_⟩
     simp only [path]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | _ =>
     rename_i hK ih
-    intro c
-    refine (ih c).wrap' ⟨?_, fun t ht => ?_⟩
+    intro rl c nk
+    refine (ih rl c nk).wrap' ⟨?_, fun t ht => ?_⟩
     rotate_left
     · simp only [path, hK.not_val ht, *, ite_true, ite_false, Bool.true_eq_false]
       rfl
 
 /-- **Related runs have the same tags on their paths** (proved). -/
-theorem tabRel_tags {A B : Code} {n : Nat} {t₁ t₂ : Tm} (hr : TabRel A B n t₁ t₂) (c : ComponentTag) :
-    (path c t₁).map Prod.fst = (path c t₂).map Prod.fst := by
+theorem tabRel_tags {A B : Code} {n : Nat} {t₁ t₂ : Tm} (hr : TabRel A B n t₁ t₂) {rl : Realm}
+    (hAB : ∀ comp kx, rl.native (A, comp) kx = rl.native (B, comp) kx) (c : ComponentTag) (nk : Bool) :
+    (path rl c nk t₁).map Prod.fst = (path rl c nk t₂).map Prod.fst := by
   cases hr with
   | same => rfl
   | goto => simp [path]
-  | frame => simp [path, wrap_fst]
+  | frame => simp [path, wrap_fst, hAB]
 
 /-- **The calls of `C` in a context depend on the tags of its hole's path**
 (proved, `path_ctx`). -/
 theorem depthC_ctx {F : Family} {C : Nat} {K : Tm → Tm} (hK : EvalCtx K) (c : ComponentTag) {t₁ t₂ : Tm}
     (h₁ : isVal t₁ = false) (h₂ : isVal t₂ = false)
-    (ht : ∀ c, (path c t₁).map Prod.fst = (path c t₂).map Prod.fst) :
+    (ht : ∀ c nk, (path F.realm c nk t₁).map Prod.fst = (path F.realm c nk t₂).map Prod.fst) :
     depthC F C c (K t₁) = depthC F C c (K t₂) := by
-  obtain ⟨c', g, S, hP⟩ := path_ctx hK c
-  have e : ∀ t, isVal t = false → (path c (K t)).map (fun p => F.ofC C p.1) =
-      ((path c' t).map Prod.fst ++ S.map Prod.fst).map (F.ofC C) := by
+  obtain ⟨c', nk', g, S, hP⟩ := path_ctx hK F.realm c false
+  have e : ∀ t, isVal t = false → (path F.realm c false (K t)).map (fun p => F.ofC C p.1) =
+      ((path F.realm c' nk' t).map Prod.fst ++ S.map Prod.fst).map (F.ofC C) := by
     intro t ht'
     rw [hP t ht', List.map_append, List.map_append,
       show (fun p : ComponentTag × Tm => F.ofC C p.1) = F.ofC C ∘ Prod.fst from rfl, ← List.map_map,
       ← List.map_map, wrap_fst]
   unfold depthC
-  rw [e t₁ h₁, e t₂ h₂, ht c']
+  rw [e t₁ h₁, e t₂ h₂, ht c' nk']
 
 /-- **Related frames enter the same code** (proved, `path_ctx`): in a
 context, a frame's path heads at its running term's innermost run, which
@@ -418,11 +423,11 @@ theorem entered_frame {K : Tm → Tm} (hK : EvalCtx K) (c : ComponentTag) {E₁ 
     {K₁ K₂ : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag} :
     entered c (K (.frame E₁ K₁ u L d k x comp)) = entered c (K (.frame E₂ K₂ u L d k x comp)) := by
-  obtain ⟨c', g, S, hP⟩ := path_ctx hK c
+  obtain ⟨c', nk', g, S, hP⟩ := path_ctx hK Realm.empty c false
   unfold entered
   rw [hP _ rfl, hP _ rfl]
-  simp only [path]
-  obtain ⟨init, s, hp⟩ := path_last u comp
+  simp only [path, Realm.own_empty, Realm.native_empty]
+  obtain ⟨init, s, hp⟩ := path_last (rl := Realm.empty) u comp false
   rw [hp]
   have hne : [(c', hole)] ≠ [] := by simp
   simp only [wrap, mapLast_append hne]
@@ -439,8 +444,8 @@ theorem frame_goto_tags {h h' : Heap} {E : List Tm} {K : List (ControlFlow.Conti
     {u : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target}
     {comp : ComponentTag} {E' : List Tm} {K' : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat}
     {L' : List Tm} {d' : Tm} {comp' : ComponentTag}
-    (hs : Step h (.frame E K u L d k x comp) h' (.goto E' K' l L' d' comp')) (c : ComponentTag) :
-    (path c (.frame E K u L d k x comp)).map Prod.fst = (path c (.goto E' K' l L' d' comp')).map Prod.fst := by
+    (hs : Step h (.frame E K u L d k x comp) h' (.goto E' K' l L' d' comp')) (rl : Realm) (c : ComponentTag) (nk : Bool) :
+    (path rl c nk (.frame E K u L d k x comp)).map Prod.fst = (path rl c nk (.goto E' K' l L' d' comp')).map Prod.fst := by
   cases hs with
   | frameRet hv => simp [isVal] at hv
   | frameBind hv => rw [path_frame (path_val hv)]; simp [path]
@@ -450,6 +455,6 @@ theorem frame_goto_tags {h h' : Heap} {E : List Tm} {K : List (ControlFlow.Conti
   | frameYesBind => rw [path_frame (path_val (v := .tru) rfl)]; simp [path]
   | frameNoBind => rw [path_frame (path_val (v := .fls) rfl)]; simp [path]
   | frameTag hv => rw [path_frame (path_val hv)]; simp [path]
-  | frameHandle hr => rw [path_frame (raises_path hr _)]; simp [path]
+  | frameHandle hr => rw [path_frame (raises_path hr _ _)]; simp [path]
 
 end Verification.TolerantFrames.ReadOnly

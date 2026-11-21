@@ -48,7 +48,7 @@ theorem activeFrame_pathAt {K : Tm → Tm} (hK : EvalCtx K) :
     obtain ⟨g', S', hw⟩ := wrap_wrap_append (fun s => .frame E Kc s L d k x comp) g S
     refine ⟨c', fun u hu => by simp only [activeFrame]; exact hc' u hu, g', S' ++ [(frameTag cur, hole)],
       fun t ht => ?_⟩
-    simp only [path]
+    simp only [path, Realm.own_empty, Realm.native_empty]
     rw [show frameTag (some (((E, Kc), comp), (k, x))) = comp from rfl] at hP
     rw [hP t ht, hw, List.append_assoc]
   | @callArg K₀ f r args i hf hr hi hpre hK ih =>
@@ -106,7 +106,8 @@ read at a tag outside `C`, which is the term's active frame's tag and its
 redex; the step keeps the heap, and the run's slots are the receiver, the
 closure's parameters of the actuals, its captures and the closure
 (`CallArguments.graphEntry`, no rest), its default `null`. -/
-theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hw : wfS t = true)
+theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hrn : ∀ t, F.realm.tags t = false)
+    (hs : Step h t h' t') (hw : wfS t = true)
     (hh : HeapFree h) (hnp : NoPend (F.at C) t) (hd : depthC F C none t' = depthC F C none t + 1)
     {K : Tm → Tm} {E : List Tm} {Kc : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
     {cc : ComponentTag} (hK : EvalCtx K) (ht' : t' = K (.goto E Kc l L d cc)) :
@@ -126,7 +127,7 @@ theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h
   have hdepth : depthC F C none (K (.goto E Kc l L d cc)) = depthC F C none (K u) + 1 := by
     rw [← ht', ← hat]; exact hd
   have hgv : isVal (Tm.goto E Kc l L d cc) = false := rfl
-  have hpg : ∀ c, (path c (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
+  have hpg : ∀ c, (path Realm.empty c false (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
   have hact : ∀ f r args, isVal f = true → isVal r = true → (∀ a ∈ args, isVal a = true) →
       u = .invoke f r args → activeFrame none t = (c', u) := by
     intro f r args hf hr ha hu'
@@ -151,7 +152,7 @@ theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      obtain ⟨hcc, hc⟩ := depth_push hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg _) hdepth
+      obtain ⟨hcc, hc⟩ := depth_push hrn hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg _) hdepth
       have ha := hact _ _ _ rfl hr' hargs rfl
       exact ⟨_, _, _, _, _, _, _, _, hat, rfl, hr', hargs, hcc, by rw [ha]; exact hc, by rw [ha],
         .inl rfl, rfl, rfl⟩
@@ -161,7 +162,7 @@ theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      obtain ⟨hcc, hc⟩ := depth_push hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg _) hdepth
+      obtain ⟨hcc, hc⟩ := depth_push hrn hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg _) hdepth
       have ha := hactC _ _ rfl hargs rfl
       exact ⟨_, _, _, _, _, _, _, _, hat, rfl, rfl, hargs, hcc, by rw [ha]; exact hc, by rw [ha],
         .inr rfl, rfl, rfl⟩
@@ -177,14 +178,15 @@ theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h
       simp only [subst, Tm.goto.injEq] at eg
       obtain ⟨-, -, -, -, -, rfl⟩ := eg
       have h1 := hnp K _ _ _ _ _ _ cc hK hat
-      obtain ⟨h2, -⟩ := depth_push hP hnu hgv (by simp [path, ha]) (hpg _) hdepth
+      obtain ⟨h2, -⟩ := depth_push hrn hP hnu hgv (by simp [path, ha]) (hpg _) hdepth
       simp_all [Family.at]
   -- A frame's step to its code's next node: the calls of `C` active kept.
   all_goals try (
     exfalso
     simp only [Tm.goto.injEq] at eg
     obtain ⟨-, -, -, -, -, rfl⟩ := eg
-    have := depthC_ctx (F := F) (C := C) hK none hnu hgv fun c => by
+    have := depthC_ctx (F := F) (C := C) hK none hnu hgv fun c nk => by
+      rw [path_noRealm hrn, path_noRealm hrn]
       first
         | simp [path, path_val ‹isVal _ = true›, wrap, mapLast]
         | simp [path, raises_path ‹Raises _ _›, wrap, mapLast]
@@ -284,10 +286,10 @@ theorem prologue_run (r : SourceRequest σ ι) (hst : r.start < r.program.length
             (K (.frame (realizedCode r).1 (realizedCode r).2 .undef L₁ d₁ (.effect (prologueTarget r)) none c₁)) =
             depthC (spec.core r).F (spec.core r).C none a₁.1.t := by
           rw [ht₁]
-          exact depthC_ctx hK none rfl rfl fun c => by simp [path, wrap, mapLast]
+          exact depthC_ctx hK none rfl rfl fun c nk => by simp [path, wrap, mapLast]
         refine ⟨hL.symm, hd.symm, hc.symm, eh2.trans eh1, ?_, .next rfl k1 (.next ?_ k2 (.refl _))⟩
         · rw [e2, ht₁]
-          exact depthC_ctx hK none rfl rfl fun c => by simp [path]
+          exact depthC_ctx hK none rfl rfl fun c nk => by simp [path]
         · rw [e1]; exact hmid
       | next q3 _ _ =>
         exact absurd ⟨_, _, _, by rw [e2, innermostGoto_ctx_goto hK]; rfl⟩ q3
@@ -330,7 +332,7 @@ theorem enter_args (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
   obtain ⟨K, hK, ht₁⟩ := innermostGoto_ctx hin₁
   obtain ⟨hL, hd, hc, hh₂, hda₂, hm'⟩ := spec.prologue_run r hst hK ht₁ hm hin₂
   obtain ⟨u, fs, nn, caps, kk, oid, recv, args, hxu, hh₁, -, -, -, htag, hred, hu, hL₁, hd₁⟩ :=
-    enter_call (F := (spec.core r).F) (C := (spec.core r).C) hk.1.step hx.1 hx.2.1 hx.2.2.2.1 hdep hK ht₁
+    enter_call (F := (spec.core r).F) (C := (spec.core r).C) (fun _ => rfl) hk.1.step hx.1 hx.2.1 hx.2.2.2.1 hdep hK ht₁
   -- The entered closure's arity is the plan's.
   have hlay : layP (layQ spec.fflow spec.lay) u = true := hK.layP_hole (by rw [← hxu]; exact hx.2.2.1.1)
   have hq : layQ spec.fflow spec.lay (realizedCode r) c₁ (nn, false, caps.length, r.program.length) = true := by

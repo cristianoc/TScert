@@ -50,65 +50,71 @@ mutual
 `c`: the frames on it, innermost first, each with its tag and its term with
 the nested frame on the path cut out (`hole`), then the top segment. It
 follows `Step`'s congruence rules: the first position whose term is not a
-value, in their order; into a frame's running term (`frameC`), whose code
-is the frame's tag. A `goto` is a frame not yet entered. -/
-def path (c : ComponentTag) : Tm → List (ComponentTag × Tm)
+value, in their order; into a frame's running term (`frameC`). A `goto` is
+a frame not yet entered. A frame's entry carries its owner (`Realm.own`):
+its tag, or for a frame of the realm's code the owner of the frame that
+called it where that frame is suspended at a native-call key (`nk`, read by
+`rl.native` at the caller's code, tag and node key), the client `none`
+otherwise. -/
+def path (rl : Realm) (c : ComponentTag) (nk : Bool) : Tm → List (ComponentTag × Tm)
   | .invoke f r args =>
-    if isVal f = false then wrap (fun s => .invoke s r args) (path c f)
-    else if isVal r = false then wrap (fun s => .invoke f s args) (path c r)
-    else pathArgs c (.invoke f r) args
+    if isVal f = false then wrap (fun s => .invoke s r args) (path rl c nk f)
+    else if isVal r = false then wrap (fun s => .invoke f s args) (path rl c nk r)
+    else pathArgs rl c nk (.invoke f r) args
   | .construct f args =>
-    if isVal f = false then wrap (fun s => .construct s args) (path c f)
-    else pathArgs c (.construct f) args
-  | .letE a b => if isVal a = false then wrap (fun s => .letE s b) (path c a) else [(c, .letE a b)]
-  | .makeAt cc ns xs => pathArgs c (.makeAt cc ns) xs
-  | .readAt f a => if isVal a = false then wrap (.readAt f) (path c a) else [(c, .readAt f a)]
+    if isVal f = false then wrap (fun s => .construct s args) (path rl c nk f)
+    else pathArgs rl c nk (.construct f) args
+  | .letE a b => if isVal a = false then wrap (fun s => .letE s b) (path rl c nk a) else [(c, .letE a b)]
+  | .makeAt cc ns xs => pathArgs rl c nk (.makeAt cc ns) xs
+  | .readAt f a => if isVal a = false then wrap (.readAt f) (path rl c nk a) else [(c, .readAt f a)]
   | .indexAt a key =>
-    if isVal a = false then wrap (fun s => .indexAt s key) (path c a)
-    else if isVal key = false then wrap (.indexAt a) (path c key) else [(c, .indexAt a key)]
+    if isVal a = false then wrap (fun s => .indexAt s key) (path rl c nk a)
+    else if isVal key = false then wrap (.indexAt a) (path rl c nk key) else [(c, .indexAt a key)]
   | .writeAt f a b =>
-    if isVal a = false then wrap (fun s => .writeAt f s b) (path c a)
-    else if isVal b = false then wrap (.writeAt f a) (path c b) else [(c, .writeAt f a b)]
-  | .test k a => if isVal a = false then wrap (.test k) (path c a) else [(c, .test k a)]
-  | .ite x a b => if isVal x = false then wrap (fun s => .ite s a b) (path c x) else [(c, .ite x a b)]
+    if isVal a = false then wrap (fun s => .writeAt f s b) (path rl c nk a)
+    else if isVal b = false then wrap (.writeAt f a) (path rl c nk b) else [(c, .writeAt f a b)]
+  | .test k a => if isVal a = false then wrap (.test k) (path rl c nk a) else [(c, .test k a)]
+  | .ite x a b => if isVal x = false then wrap (fun s => .ite s a b) (path rl c nk x) else [(c, .ite x a b)]
   | .arith op a b =>
-    if isVal a = false then wrap (fun s => .arith op s b) (path c a)
-    else if isVal b = false then wrap (.arith op a) (path c b) else [(c, .arith op a b)]
-  | .arrLit xs => pathArgs c .arrLit xs
+    if isVal a = false then wrap (fun s => .arith op s b) (path rl c nk a)
+    else if isVal b = false then wrap (.arith op a) (path rl c nk b) else [(c, .arith op a b)]
+  | .arrLit xs => pathArgs rl c nk .arrLit xs
   | .elemAt a i =>
-    if isVal a = false then wrap (fun s => .elemAt s i) (path c a)
-    else if isVal i = false then wrap (.elemAt a) (path c i) else [(c, .elemAt a i)]
+    if isVal a = false then wrap (fun s => .elemAt s i) (path rl c nk a)
+    else if isVal i = false then wrap (.elemAt a) (path rl c nk i) else [(c, .elemAt a i)]
   | .setElem a i v =>
-    if isVal a = false then wrap (fun s => .setElem s i v) (path c a)
-    else if isVal i = false then wrap (fun s => .setElem a s v) (path c i)
-    else if isVal v = false then wrap (.setElem a i) (path c v) else [(c, .setElem a i v)]
-  | .lenOf a => if isVal a = false then wrap .lenOf (path c a) else [(c, .lenOf a)]
-  | .spread a => if isVal a = false then wrap .spread (path c a) else [(c, .spread a)]
-  | .throw a => if isVal a = false then wrap .throw (path c a) else [(c, .throw a)]
+    if isVal a = false then wrap (fun s => .setElem s i v) (path rl c nk a)
+    else if isVal i = false then wrap (fun s => .setElem a s v) (path rl c nk i)
+    else if isVal v = false then wrap (.setElem a i) (path rl c nk v) else [(c, .setElem a i v)]
+  | .lenOf a => if isVal a = false then wrap .lenOf (path rl c nk a) else [(c, .lenOf a)]
+  | .spread a => if isVal a = false then wrap .spread (path rl c nk a) else [(c, .spread a)]
+  | .throw a => if isVal a = false then wrap .throw (path rl c nk a) else [(c, .throw a)]
   | .merge d a b =>
-    if isVal a = false then wrap (fun s => .merge d s b) (path c a)
-    else if isVal b = false then wrap (.merge d a) (path c b) else [(c, .merge d a b)]
+    if isVal a = false then wrap (fun s => .merge d s b) (path rl c nk a)
+    else if isVal b = false then wrap (.merge d a) (path rl c nk b) else [(c, .merge d a b)]
   | .makeKey k a =>
-    if isVal k = false then wrap (fun s => .makeKey s a) (path c k)
-    else if isVal a = false then wrap (.makeKey k) (path c a) else [(c, .makeKey k a)]
-  | .goto E K l L d comp => [(comp, .goto E K l L d comp), (c, hole)]
-  | .frame E K t L d k x comp => wrap (fun s => .frame E K s L d k x comp) (path comp t) ++ [(c, hole)]
+    if isVal k = false then wrap (fun s => .makeKey s a) (path rl c nk k)
+    else if isVal a = false then wrap (.makeKey k) (path rl c nk a) else [(c, .makeKey k a)]
+  | .goto E K l L d comp => [(rl.own c nk comp, .goto E K l L d comp), (c, hole)]
+  | .frame E K t L d k x comp =>
+    wrap (fun s => .frame E K s L d k x comp) (path rl (rl.own c nk comp) (rl.native ((E, K), comp) (k, x)) t) ++ [(c, hole)]
   | t => [(c, t)]
 termination_by structural t => t
 
 /-- The path through a list of terms evaluated left to right, `k` rebuilding
 the term from the list. -/
-def pathArgs (c : ComponentTag) (k : List Tm → Tm) : List Tm → List (ComponentTag × Tm)
+def pathArgs (rl : Realm) (c : ComponentTag) (nk : Bool) (k : List Tm → Tm) : List Tm → List (ComponentTag × Tm)
   | [] => [(c, k [])]
   | a :: as =>
-    if isVal a = false then wrap (fun s => k (s :: as)) (path c a)
-    else pathArgs c (fun xs => k (a :: xs)) as
+    if isVal a = false then wrap (fun s => k (s :: as)) (path rl c nk a)
+    else pathArgs rl c nk (fun xs => k (a :: xs)) as
 termination_by structural xs => xs
 end
 
-/-- **The active tag**: the tag of the innermost frame on the path, or of
-the top segment when no frame is on it. -/
-def activeTag (c : ComponentTag) (t : Tm) : ComponentTag := ((path c t).head?.map Prod.fst).getD c
+/-- **The active tag**: the owner of the innermost frame on the path, or the
+top segment's tag when no frame is on it. -/
+def activeTag (rl : Realm) (c : ComponentTag) (nk : Bool) (t : Tm) : ComponentTag :=
+  ((path rl c nk t).head?.map Prod.fst).getD c
 
 /-! ### Lists of frames -/
 
@@ -157,20 +163,20 @@ theorem wrap_ex {g : Tm → Tm} {c : ComponentTag} {P : List (ComponentTag × Tm
   exact ⟨init, g s, wrap_snoc⟩
 
 theorem pathArgs_ex {c : ComponentTag} :
-    ∀ {xs : List Tm}, (∀ a ∈ xs, ∀ c, ∃ init s, path c a = init ++ [(c, s)]) →
-      ∀ k, ∃ init s, pathArgs c k xs = init ++ [(c, s)]
+    ∀ {xs : List Tm}, (∀ a ∈ xs, ∀ c nk, ∃ init s, path rl c nk a = init ++ [(c, s)]) →
+      ∀ k, ∃ init s, pathArgs rl c nk k xs = init ++ [(c, s)]
   | [], _, k => ⟨[], k [], rfl⟩
   | a :: as, h, k => by
     simp only [pathArgs]
     split
-    · exact wrap_ex (h a List.mem_cons_self c)
+    · exact wrap_ex (h a List.mem_cons_self c nk)
     · exact pathArgs_ex (fun x hx => h x (List.mem_cons_of_mem _ hx)) _
 
 /-- **The path ends at the top segment**, tagged with the code that runs
 it. -/
-theorem path_last (t : Tm) : ∀ c, ∃ init s, path c t = init ++ [(c, s)] := by
+theorem path_last (t : Tm) : ∀ c nk, ∃ init s, path rl c nk t = init ++ [(c, s)] := by
   induction t using Tm.induct
-  all_goals intro c
+  all_goals intro c nk
   all_goals simp only [path]
   all_goals repeat' split
   all_goals first
@@ -180,16 +186,16 @@ theorem path_last (t : Tm) : ∀ c, ∃ init s, path c t = init ++ [(c, s)] := b
     | (apply wrap_ex; solve_by_elim)
     | (apply pathArgs_ex; assumption)
 
-theorem path_ne_nil (c : ComponentTag) (t : Tm) : path c t ≠ [] := by
-  obtain ⟨init, s, h⟩ := path_last t c
+theorem path_ne_nil (c : ComponentTag) (t : Tm) : path rl c nk t ≠ [] := by
+  obtain ⟨init, s, h⟩ := path_last t c nk
   rw [h]; simp
 
 /-- A value's path is its top segment alone. -/
-theorem path_val {c : ComponentTag} {v : Tm} (hv : isVal v = true) : path c v = [(c, v)] := by
+theorem path_val {c : ComponentTag} {v : Tm} (hv : isVal v = true) : path rl c nk v = [(c, v)] := by
   cases v <;> simp_all [isVal, path]
 
 theorem pathArgs_vals {c : ComponentTag} :
-    ∀ {xs : List Tm} (k : List Tm → Tm), (∀ a ∈ xs, isVal a = true) → pathArgs c k xs = [(c, k xs)]
+    ∀ {xs : List Tm} (k : List Tm → Tm), (∀ a ∈ xs, isVal a = true) → pathArgs rl c nk k xs = [(c, k xs)]
   | [], _, _ => rfl
   | a :: as, k, h => by
     simp only [pathArgs, h a List.mem_cons_self]
@@ -197,7 +203,7 @@ theorem pathArgs_vals {c : ComponentTag} :
 
 theorem pathArgs_append {c : ComponentTag} :
     ∀ {pre : List Tm} (xs : List Tm) (k : List Tm → Tm), (∀ a ∈ pre, isVal a = true) →
-      pathArgs c k (pre ++ xs) = pathArgs c (fun ys => k (pre ++ ys)) xs
+      pathArgs rl c nk k (pre ++ xs) = pathArgs rl c nk (fun ys => k (pre ++ ys)) xs
   | [], _, _, _ => rfl
   | a :: as, xs, k, h => by
     simp only [List.cons_append, pathArgs, h a List.mem_cons_self]
@@ -207,7 +213,7 @@ theorem pathArgs_append {c : ComponentTag} :
 theorem pathArgs_at {c : ComponentTag} :
     ∀ {xs : List Tm} {i : Nat} {a : Tm} (k : List Tm → Tm), xs[i]? = some a →
       (∀ j, j < i → ∀ w, xs[j]? = some w → isVal w = true) → isVal a = false →
-      pathArgs c k xs = wrap (fun s => k (xs.set i s)) (path c a)
+      pathArgs rl c nk k xs = wrap (fun s => k (xs.set i s)) (path rl c nk a)
   | [], _, _, _, h, _, _ => by simp at h
   | b :: bs, 0, a, k, h, _, ha => by
     simp only [List.getElem?_cons_zero, Option.some.injEq] at h
@@ -219,6 +225,25 @@ theorem pathArgs_at {c : ComponentTag} :
     rw [pathArgs_at (fun xs => k (b :: xs)) (by simpa using h)
       (fun j hj w hw => hpre (j + 1) (by omega) w (by simpa using hw)) ha]
     rfl
+
+/-- A path through a list where no realm tag is read (proved). -/
+theorem pathArgs_noRealm (hrl : ∀ t, rl.tags t = false) {c : ComponentTag} {nk : Bool} :
+    ∀ (xs : List Tm), (∀ a ∈ xs, ∀ c nk, path rl c nk a = path Realm.empty c false a) →
+      ∀ k, pathArgs rl c nk k xs = pathArgs Realm.empty c false k xs
+  | [], _, _ => rfl
+  | a :: as, h, k => by
+    simp only [pathArgs]
+    rw [h a List.mem_cons_self, pathArgs_noRealm hrl as (fun x hx => h x (List.mem_cons_of_mem _ hx))]
+
+/-- **A realm with no tag reads the path with no realm** (proved): every
+frame's owner is its tag. -/
+theorem path_noRealm (hrl : ∀ t, rl.tags t = false) :
+    ∀ (t : Tm) (c : ComponentTag) (nk : Bool), path rl c nk t = path Realm.empty c false t := by
+  intro t
+  induction t using Tm.induct
+  all_goals intro c nk
+  all_goals simp only [path, Realm.own, Realm.tags_empty, Bool.false_eq_true, ↓reduceIte, Realm.native_empty, *]
+  all_goals (try rw [pathArgs_noRealm hrl _ ‹_›])
 
 /-! ### How a step changes the path -/
 
@@ -259,12 +284,12 @@ theorem PathStep.append {P P' : List (ComponentTag × Tm)} (Q : List (ComponentT
 stepped position's, and where the position's new term is a value the
 context's evaluation moves on, the top segment changing. -/
 theorem PathStep.ctx {c : ComponentTag} {a a' A A' : Tm} {g : Tm → Tm}
-    (hrel : PathStep (path c a) (path c a')) (hA : path c A = ReadOnly.wrap g (path c a))
-    (hA' : isVal a' = false → path c A' = ReadOnly.wrap g (path c a')) : PathStep (path c A) (path c A') := by
+    (hrel : PathStep (path rl c nk a) (path rl c nk a')) (hA : path rl c nk A = ReadOnly.wrap g (path rl c nk a))
+    (hA' : isVal a' = false → path rl c nk A' = ReadOnly.wrap g (path rl c nk a')) : PathStep (path rl c nk A) (path rl c nk A') := by
   cases hv : isVal a'
   · rw [hA, hA' hv]; exact hrel.wrap g
   · rw [path_val hv] at hrel
-    obtain ⟨init, s, hl⟩ := path_last A' c
+    obtain ⟨init, s, hl⟩ := path_last A' c nk
     rw [hA, hl]
     rcases hrel with ⟨new, F, F', rest, hP, hP', ht⟩ | ⟨new, F, G, G', rest, hP, hP', ht⟩
     · obtain ⟨rfl, rfl, rfl⟩ : new = [] ∧ F' = (c, a') ∧ rest = [] := by
@@ -281,9 +306,9 @@ theorem PathStep.ctx {c : ComponentTag} {a a' A A' : Tm} {g : Tm → Tm}
       exact .inr ⟨init, F, (G.1, g G.2), (c, s), [], rfl, by simp, by simp [← ht]⟩
 
 /-- A step of a frame-free redex: its path is the top segment alone. -/
-theorem PathStep.base {c : ComponentTag} {t t' : Tm} {x : Tm} (h : path c t = [(c, x)]) :
-    PathStep (path c t) (path c t') := by
-  obtain ⟨init, s, hl⟩ := path_last t' c
+theorem PathStep.base {c : ComponentTag} {t t' : Tm} {x : Tm} (h : path rl c nk t = [(c, x)]) :
+    PathStep (path rl c nk t) (path rl c nk t') := by
+  obtain ⟨init, s, hl⟩ := path_last t' c nk
   rw [h, hl]
   exact .inl ⟨init, (c, x), (c, s), [], rfl, rfl, rfl⟩
 
@@ -308,34 +333,34 @@ theorem set_self {xs : List Tm} {i : Nat} {a : Tm} (h : xs[i]? = some a) : xs.se
     simp [hl, he]
   · rfl
 
-theorem raises_path {t v : Tm} (hr : Raises t v) : ∀ c, path c t = [(c, t)] := by
+theorem raises_path {t v : Tm} (hr : Raises t v) : ∀ c nk, path rl c nk t = [(c, t)] := by
   induction hr with
-  | throwV hv _ => intro c; simp [path, hv]
+  | throwV hv _ => intro c nk; simp [path, hv]
   | callArg hf hr' ha hpre _ ih =>
-    intro c
+    intro c nk
     have hna := raises_not_val ‹Raises _ _›
     simp only [path, hf, hr']
-    rw [pathArgs_at _ ha hpre hna, ih c]; simp [wrap, mapLast, set_self ha]
+    rw [pathArgs_at _ ha hpre hna, ih c nk]; simp [wrap, mapLast, set_self ha]
   | constructArg hf ha hpre _ ih =>
-    intro c
+    intro c nk
     have hna := raises_not_val ‹Raises _ _›
     simp only [path, hf]
-    rw [pathArgs_at _ ha hpre hna, ih c]; simp [wrap, mapLast, set_self ha]
+    rw [pathArgs_at _ ha hpre hna, ih c nk]; simp [wrap, mapLast, set_self ha]
   | makeArg ha hpre _ ih =>
-    intro c
+    intro c nk
     have hna := raises_not_val ‹Raises _ _›
     simp only [path]
-    rw [pathArgs_at _ ha hpre hna, ih c]; simp [wrap, mapLast, set_self ha]
+    rw [pathArgs_at _ ha hpre hna, ih c nk]; simp [wrap, mapLast, set_self ha]
   | arrArg ha hpre _ ih =>
-    intro c
+    intro c nk
     have hna := raises_not_val ‹Raises _ _›
     simp only [path]
-    rw [pathArgs_at _ ha hpre hna, ih c]; simp [wrap, mapLast, set_self ha]
+    rw [pathArgs_at _ ha hpre hna, ih c nk]; simp [wrap, mapLast, set_self ha]
   | _ =>
     rename_i ih
-    intro c
+    intro c nk
     have hna := raises_not_val ‹Raises _ _›
-    simp [path, ih c, wrap, mapLast, *]
+    simp [path, ih c nk, wrap, mapLast, *]
 
 @[simp] theorem isVal_objAt {fs : List (PropKey × Nat)} {cc : CallCode} {i : Nat} : isVal (.objAt fs cc i) = true := rfl
 @[simp] theorem isVal_arr {ls : List (Option Nat)} : isVal (.arr ls) = true := rfl
@@ -349,23 +374,24 @@ theorem raises_path {t v : Tm} (hr : Raises t v) : ∀ c, path c t = [(c, t)] :=
 the top segment. -/
 theorem path_frame {c : ComponentTag} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {u : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
-    (hu : path comp u = [(comp, u)]) : path c (.frame E K u L d k x comp) = [(comp, .frame E K u L d k x comp), (c, hole)] := by
+    (hu : path rl (rl.own c nk comp) (rl.native ((E, K), comp) (k, x)) u = [(rl.own c nk comp, u)]) :
+    path rl c nk (.frame E K u L d k x comp) = [(rl.own c nk comp, .frame E K u L d k x comp), (c, hole)] := by
   simp [path, hu, wrap, mapLast]
 
-theorem PathStep.framePop {c : ComponentTag} {t t' : Tm} {F : ComponentTag × Tm} (h : path c t = [F, (c, hole)]) :
-    PathStep (path c t) (path c t') := by
-  obtain ⟨init, s, hl⟩ := path_last t' c
+theorem PathStep.framePop {c : ComponentTag} {t t' : Tm} {F : ComponentTag × Tm} (h : path rl c nk t = [F, (c, hole)]) :
+    PathStep (path rl c nk t) (path rl c nk t') := by
+  obtain ⟨init, s, hl⟩ := path_last t' c nk
   exact PathStep.pop h hl rfl
 
 theorem PathStep.frameGoto {c : ComponentTag} {t : Tm} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    {F : ComponentTag × Tm} (h : path c t = [F, (c, hole)]) (ht : F.1 = comp) :
-    PathStep (path c t) (path c (.goto E K l L d comp)) :=
+    {F : ComponentTag × Tm} (h : path rl c nk t = [F, (c, hole)]) (ht : F.1 = rl.own c nk comp) :
+    PathStep (path rl c nk t) (path rl c nk (.goto E K l L d comp)) :=
   PathStep.stay (new := []) h rfl ht.symm
 
-theorem PathStep.base' {c : ComponentTag} {t t' : Tm} (h : (path c t).length = 1) :
-    PathStep (path c t) (path c t') := by
-  obtain ⟨init, s, hl⟩ := path_last t c
+theorem PathStep.base' {c : ComponentTag} {t t' : Tm} (h : (path rl c nk t).length = 1) :
+    PathStep (path rl c nk t) (path rl c nk t') := by
+  obtain ⟨init, s, hl⟩ := path_last t c nk
   have : init = [] := by
     have := congrArg List.length hl
     rw [h] at this; simpa using this
@@ -385,7 +411,7 @@ theorem set_pre {xs : List Tm} {i : Nat} {a' : Tm}
 /-- The path through a list at a position a step sets. -/
 theorem pathArgs_set {c : ComponentTag} {xs : List Tm} {i : Nat} {a a' : Tm} (k : List Tm → Tm)
     (ha : xs[i]? = some a) (hpre : ∀ j, j < i → ∀ w, xs[j]? = some w → isVal w = true) (hv : isVal a' = false) :
-    pathArgs c k (xs.set i a') = wrap (fun s => k (xs.set i s)) (path c a') := by
+    pathArgs rl c nk k (xs.set i a') = wrap (fun s => k (xs.set i s)) (path rl c nk a') := by
   rw [pathArgs_at k (set_at ha) (set_pre hpre) hv]
   simp [List.set_set]
 
@@ -394,45 +420,46 @@ draft, "Frames and whose code runs"): that frame's term changes, the
 frames outside it unchanged, or it is popped, a return or a throw out of a
 node without a handler, and its parent's term changes; the frames on the
 path of what the step produces are pushed, a call's run among them. -/
-theorem step_path {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') : ∀ c, PathStep (path c t) (path c t') := by
+theorem step_path {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') : ∀ c nk, PathStep (path rl c nk t) (path rl c nk t') := by
   induction hs
   case callArg hf hr ha hpre hs ih =>
-    intro c
+    intro c nk
     have hna := not_val_of_step hs
-    exact PathStep.ctx (ih c) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
+    exact PathStep.ctx (ih c nk) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path, hf, hr]; exact pathArgs_set _ ha hpre hv)
   case constructArg hf ha hpre hs ih =>
-    intro c
+    intro c nk
     have hna := not_val_of_step hs
-    exact PathStep.ctx (ih c) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
+    exact PathStep.ctx (ih c nk) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path, hf]; exact pathArgs_set _ ha hpre hv)
   case makeArg ha hpre hs ih =>
-    intro c
+    intro c nk
     have hna := not_val_of_step hs
-    exact PathStep.ctx (ih c) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
+    exact PathStep.ctx (ih c nk) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv)
   case arrArg ha hpre hs ih =>
-    intro c
+    intro c nk
     have hna := not_val_of_step hs
-    exact PathStep.ctx (ih c) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
+    exact PathStep.ctx (ih c nk) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv)
   case frameC ih =>
-    intro c
+    intro c nk
     simp only [path]
-    exact ((ih _).wrap _).append _
+    exact ((ih _ _).wrap _).append _
   all_goals try (
     rename_i ih
-    intro c
+    intro c nk
     have hna := not_val_of_step ‹Step _ _ _ _›
-    exact PathStep.ctx (ih c) (by simp [path, *] <;> rfl) (fun hv => by simp [path, *] <;> rfl))
-  all_goals intro c
+    exact PathStep.ctx (ih c nk) (by simp [path, *] <;> rfl) (fun hv => by simp [path, *] <;> rfl))
+  all_goals intro c nk
   case gotoEnter E l e K k x _ L d comp _ _ =>
-    obtain ⟨init, s, hl⟩ := path_last (instantiate 0 (envOf L d) e) comp
-    refine PathStep.stay (new := init) (F := (comp, .goto E K l L d comp))
-      (F' := (comp, .frame E K s L d k x comp)) rfl ?_ rfl
+    obtain ⟨init, s, hl⟩ := path_last (rl := rl) (instantiate 0 (envOf L d) e) (rl.own c nk comp)
+      (rl.native ((E, K), comp) (k, x))
+    refine PathStep.stay (new := init) (F := (rl.own c nk comp, .goto E K l L d comp))
+      (F' := (rl.own c nk comp, .frame E K s L d k x comp)) rfl ?_ rfl
     simp only [path, hl, wrap_snoc, List.append_assoc]; rfl
-  case frameHandle hr => exact PathStep.frameGoto (path_frame (raises_path hr _)) rfl
-  case frameRaise hr => exact PathStep.framePop (path_frame (raises_path hr _))
+  case frameHandle hr => exact PathStep.frameGoto (path_frame (raises_path hr _ _)) rfl
+  case frameRaise hr => exact PathStep.framePop (path_frame (raises_path hr _ _))
   case frameRet hv => exact PathStep.framePop (path_frame (path_val hv))
   case frameBind hv => exact PathStep.frameGoto (path_frame (path_val hv)) rfl
   case frameEffect hv => exact PathStep.frameGoto (path_frame (path_val hv)) rfl
@@ -461,15 +488,17 @@ theorem step_path {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') : ∀ c, PathS
 
 /-! ### The active tag -/
 
-theorem activeTag_wrap {c : ComponentTag} {A a : Tm} {g : Tm → Tm} (h : path c A = ReadOnly.wrap g (path c a)) :
-    activeTag c A = activeTag c a := by
+theorem activeTag_wrap {c : ComponentTag} {A a : Tm} {g : Tm → Tm} (h : path rl c nk A = ReadOnly.wrap g (path rl c nk a)) :
+    activeTag rl c nk A = activeTag rl c nk a := by
   simp only [activeTag, h, wrap_head]
 
 theorem activeTag_frame {c : ComponentTag} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {u : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag} :
-    activeTag c (.frame E K u L d k x comp) = activeTag comp u := by
-  have hne := path_ne_nil comp u
-  have hw := wrap_head (g := fun s => .frame E K s L d k x comp) (path comp u)
+    activeTag rl c nk (.frame E K u L d k x comp) =
+      activeTag rl (rl.own c nk comp) (rl.native ((E, K), comp) (k, x)) u := by
+  have hne := path_ne_nil (rl := rl) (nk := rl.native ((E, K), comp) (k, x)) (rl.own c nk comp) u
+  have hw := wrap_head (g := fun s => .frame E K s L d k x comp)
+    (path rl (rl.own c nk comp) (rl.native ((E, K), comp) (k, x)) u)
   obtain ⟨p, ps, hp⟩ := List.exists_cons_of_ne_nil (wrap_ne_nil (g := fun s => .frame E K s L d k x comp) hne)
   simp only [activeTag, path]
   rw [hp] at hw ⊢
@@ -479,7 +508,7 @@ theorem activeTag_frame {c : ComponentTag} {E : List Tm} {K : List (ControlFlow.
 /-! ## The roots of code outside a set of components
 
 The roots of outside code at a term whose top segment runs code tagged `c`
-are `vals ofC (!ofC c) t` (`ReadOnlyRegion`): the values at the positions
+are `vals ofC rl (!ofC c) nk t` (`ReadOnlyRegion`): the values at the positions
 of frames whose tags `ofC` does not mark. -/
 
 section Roots
@@ -496,7 +525,7 @@ theorem inert_nul : Inert ofC .nul := ⟨fun a => by cases a <;> rfl, rfl⟩
 
 /-- A value a path step leaves is among the roots of a position of outside
 code holding it. -/
-theorem mem_vals_self {u : Val} (hu : ¬ Inert ofC u) : u ∈ vals ofC true u := by
+theorem mem_vals_self {u : Val} (hu : ¬ Inert ofC u) : u ∈ vals ofC rl true nk u := by
   cases u
   case objAt fs cc i => rw [vals_objAt]; exact List.mem_cons_self
   case arr ls => simp [vals]
@@ -504,7 +533,7 @@ theorem mem_vals_self {u : Val} (hu : ¬ Inert ofC u) : u ∈ vals ofC true u :=
   all_goals exact (hu ⟨fun a => by cases a <;> rfl, rfl⟩).elim
 
 theorem vals_makeAt {o : Bool} {cc : CallCode} {ns : List PropKey} {xs : List Tm} {u : Val}
-    (hu : u ∈ valsArgs ofC o xs) : u ∈ vals ofC o (.makeAt cc ns xs) := by
+    (hu : u ∈ valsArgs ofC rl o nk xs) : u ∈ vals ofC rl o nk (.makeAt cc ns xs) := by
   cases cc <;> simp_all [vals]
 
 end Roots
@@ -515,15 +544,15 @@ section Steps
 variable {ofC : ComponentTag → Bool}
 
 theorem mem_valsArgs {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val} (ha : xs[i]? = some a)
-    (hu : u ∈ vals ofC o a) : u ∈ valsArgs ofC o xs := by
+    (hu : u ∈ vals ofC rl o nk a) : u ∈ valsArgs ofC rl o nk xs := by
   rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨a, List.mem_of_getElem? ha, hu⟩
 
-theorem mem_valsArgs_of {o : Bool} {xs : List Tm} {a : Tm} {u : Val} (ha : a ∈ xs) (hu : u ∈ vals ofC o a) :
-    u ∈ valsArgs ofC o xs := by
+theorem mem_valsArgs_of {o : Bool} {xs : List Tm} {a : Tm} {u : Val} (ha : a ∈ xs) (hu : u ∈ vals ofC rl o nk a) :
+    u ∈ valsArgs ofC rl o nk xs := by
   rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨a, ha, hu⟩
 
 theorem mem_valsArgs_set {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val}
-    (hu : u ∈ valsArgs ofC o (xs.set i a)) : u ∈ valsArgs ofC o xs ∨ u ∈ vals ofC o a := by
+    (hu : u ∈ valsArgs ofC rl o nk (xs.set i a)) : u ∈ valsArgs ofC rl o nk xs ∨ u ∈ vals ofC rl o nk a := by
   rw [valsArgs_eq] at hu ⊢
   obtain ⟨x, hx, hux⟩ := List.mem_flatMap.mp hu
   rcases List.mem_or_eq_of_mem_set hx with hx | rfl
@@ -536,10 +565,10 @@ a step changes, the step's active frame running no code `ofC` names, is
 the slot of an object or the element cell of a spine held at a position of
 outside code. -/
 theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
-    ∀ c, ofC (activeTag c t) = false → ∀ {l : Nat} {v : Val}, h[l]? = some v → h'[l]? ≠ some v →
-      ∃ u ∈ vals ofC (!ofC c) t, ∃ a, next u a = some l := by
+    ∀ c nk, ofC (activeTag rl c nk t) = false → ∀ {l : Nat} {v : Val}, h[l]? = some v → h'[l]? ≠ some v →
+      ∃ u ∈ vals ofC rl (!ofC c) nk t, ∃ a, next u a = some l := by
   induction hs
-  all_goals intro c hc l v hv hn
+  all_goals intro c nk hc l v hv hn
   all_goals try first
     | exact (hn hv).elim
     | exact (hn (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv)).elim
@@ -548,26 +577,26 @@ theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   case callArg hf hr ha hpre hs ih =>
     simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    obtain ⟨u, hu, b, hb⟩ := ih c hc hv hn
+    obtain ⟨u, hu, b, hb⟩ := ih c nk hc hv hn
     exact ⟨u, by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hu), b, hb⟩
   case constructArg hf ha hpre hs ih =>
     simp only [activeTag, path, hf, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    obtain ⟨u, hu, b, hb⟩ := ih c hc hv hn
+    obtain ⟨u, hu, b, hb⟩ := ih c nk hc hv hn
     exact ⟨u, by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hu), b, hb⟩
   case makeArg ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    obtain ⟨u, hu, b, hb⟩ := ih c hc hv hn
+    obtain ⟨u, hu, b, hb⟩ := ih c nk hc hv hn
     exact ⟨u, vals_makeAt (mem_valsArgs ha hu), b, hb⟩
   case arrArg ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    obtain ⟨u, hu, b, hb⟩ := ih c hc hv hn
+    obtain ⟨u, hu, b, hb⟩ := ih c nk hc hv hn
     exact ⟨u, by simp only [vals]; exact mem_valsArgs ha hu, b, hb⟩
   case frameC ih =>
-    obtain ⟨u, hu, b, hb⟩ := ih _ (by rwa [activeTag_frame] at hc) hv hn
-    exact ⟨u, by simp only [vals, List.mem_append]; exact .inr hu, b, hb⟩
+    obtain ⟨u, hu, b, hb⟩ := ih _ _ (by rwa [activeTag_frame] at hc) hv hn
+    exact ⟨u, by simp only [vals, List.mem_append, Realm.flag_own rl ofC rfl]; exact .inr hu, b, hb⟩
   case writeField oid f fs cc l' _ w hw hf _ =>
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
     by_cases he : l = l'
@@ -591,7 +620,7 @@ theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   all_goals (
     rename_i ih
     have hna := not_val_of_step ‹Step _ _ _ _›
-    obtain ⟨u, hu, b, hb⟩ := ih c (by rwa [activeTag_wrap (by simp [path, *] <;> rfl)] at hc) hv hn
+    obtain ⟨u, hu, b, hb⟩ := ih c nk (by rwa [activeTag_wrap (by simp [path, *] <;> rfl)] at hc) hv hn
     exact ⟨u, by simp [vals, hu], b, hb⟩)
 
 theorem append_new {h xs : Heap} {w : Nat} {u : Val} (hs : ¬ ∃ v, h[w]? = some v ∧ (h ++ xs)[w]? = some v)
@@ -620,30 +649,30 @@ theorem set_new {h : Heap} {l w : Nat} {x u : Val} (hs : ¬ ∃ v, h[w]? = some 
 path step reaches a location, is held at a position of outside code: the
 value written, or an initializer of the allocation. -/
 theorem step_writes {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
-    ∀ c, ofC (activeTag c t) = false → ∀ {w : Nat} {u : Val}, ¬ (∃ v, h[w]? = some v ∧ h'[w]? = some v) →
-      h'[w]? = some u → ¬ Inert ofC u → u ∈ vals ofC (!ofC c) t := by
+    ∀ c nk, ofC (activeTag rl c nk t) = false → ∀ {w : Nat} {u : Val}, ¬ (∃ v, h[w]? = some v ∧ h'[w]? = some v) →
+      h'[w]? = some u → ¬ Inert ofC u → u ∈ vals ofC rl (!ofC c) nk t := by
   induction hs
-  all_goals intro c hc w u hsame hu hn
+  all_goals intro c nk hc w u hsame hu hn
   all_goals try exact (hsame ⟨u, hu, hu⟩).elim
   case callArg hf hr ha hpre hs ih =>
     simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha (ih c hc hsame hu hn))
+    simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha (ih c nk hc hsame hu hn))
   case constructArg hf ha hpre hs ih =>
     simp only [activeTag, path, hf, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha (ih c hc hsame hu hn))
+    simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha (ih c nk hc hsame hu hn))
   case makeArg ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    exact vals_makeAt (mem_valsArgs ha (ih c hc hsame hu hn))
+    exact vals_makeAt (mem_valsArgs ha (ih c nk hc hsame hu hn))
   case arrArg ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    simp only [vals]; exact mem_valsArgs ha (ih c hc hsame hu hn)
+    simp only [vals]; exact mem_valsArgs ha (ih c nk hc hsame hu hn)
   case frameC ih =>
-    simp only [vals, List.mem_append]
-    exact .inr (ih _ (by rwa [activeTag_frame] at hc) hsame hu hn)
+    simp only [vals, List.mem_append, Realm.flag_own rl ofC rfl]
+    exact .inr (ih _ _ (by rwa [activeTag_frame] at hc) hsame hu hn)
   case makeFields hvs _ =>
     simp only [activeTag, path] at hc
     rw [pathArgs_vals _ hvs] at hc
@@ -678,7 +707,7 @@ theorem step_writes {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   all_goals (
     rename_i ih
     have hna := not_val_of_step ‹Step _ _ _ _›
-    have hu' := ih c (by rwa [activeTag_wrap (by simp [path, *] <;> rfl)] at hc) hsame hu hn
+    have hu' := ih c nk (by rwa [activeTag_wrap (by simp [path, *] <;> rfl)] at hc) hsame hu hn
     simp [vals, hu'])
 
 end Steps
@@ -689,11 +718,11 @@ end Steps
 a step whose active frame runs no code of `C` changes only locations one
 path step from the roots of outside code. -/
 theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
-    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag F.realm c false t) C)
+    (hroots : st.roots = vals (F.ofC C) F.realm (!F.ofC C c) false t) :
     ∀ l, Changes st st' l → ReachesFrom (F.at C).ofC st.s.h st.roots l := by
   rintro l ⟨v, hv, hn⟩
-  obtain ⟨u, hu, a, ha⟩ := step_reach (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hv hn
+  obtain ⟨u, hu, a, ha⟩ := step_reach (ofC := F.ofC C) (rl := F.realm) hs c false (by simp [Family.ofC, hact]) hv hn
   exact ⟨u, hroots ▸ hu, [a], ha⟩
 
 /-- **`OutsideStep.writes` of a step of the calculus** at the component
@@ -701,8 +730,8 @@ theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : Com
 it changes or allocates references, in one path step, only what the roots
 of outside code reach in one. -/
 theorem outsideStep_writes {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
-    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag F.realm c false t) C)
+    (hroots : st.roots = vals (F.ofC C) F.realm (!F.ofC C c) false t) :
     ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
       ∀ l, Leaves (F.at C).ofC u l → ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
   intro _ u hsame hu l hl
@@ -712,12 +741,12 @@ theorem outsideStep_writes {F : Family} {C : Nat} {st st' : St (F.at C)} {c : Co
     cases hy with
     | refl => rw [hi.1 a] at hn; cases hn
     | step hx _ => change _ ∈ codeVals (F.ofC C) u at hx; rw [hi.2] at hx; cases hx
-  have hm := step_writes (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hsame hu hni
+  have hm := step_writes (ofC := F.ofC C) (rl := F.realm) hs c false (by simp [Family.ofC, hact]) hsame hu hni
   exact .inl ⟨u, hroots ▸ hm, hl.reaches⟩
 
 /-- **The roots of a valid term are valid** (`RootsValid`). -/
 theorem rootsValid_of_term {P : Package} {st : St P} {o : Bool} {t : Tm}
-    (hroots : st.roots = vals P.ofC o t) (ht : RefsOk st.s.W t) : RootsValid st := by
+    (hroots : st.roots = vals P.ofC rl o nk t) (ht : RefsOk st.s.W t) : RootsValid st := by
   intro u hu
   rw [hroots] at hu
   exact vals_refsOkN (RefsOk.refsOkN ht) hu
@@ -795,12 +824,72 @@ theorem follows_good {h' : Heap} (hheap : ∀ l u, Good ofC h R l → h'[l]? = s
 
 /-! ### The values of a term after substitution -/
 
-theorem vals_mono : ∀ (t : Tm) {x : Val}, x ∈ vals ofC false t → x ∈ vals ofC true t := by
+theorem vals_mono : ∀ (t : Tm) {rl : Realm} {nk : Bool} {x : Val}, x ∈ vals ofC rl false nk t → x ∈ vals ofC rl true nk t := by
   intro t
   induction t using Tm.induct
-  all_goals intro x hx
+  case frame E K u L d k xx comp _ ihu _ _ =>
+    intro rl nk x hx
+    simp only [vals, List.mem_append] at hx ⊢
+    unfold Realm.flag at hx ⊢
+    by_cases ht : rl.tags comp = true
+    · cases nk
+      · simpa [ht] using hx
+      · simp only [ht, ↓reduceIte, Bool.false_eq_true, List.not_mem_nil, false_or] at hx
+        simp only [ht, ↓reduceIte]
+        exact .inr (ihu hx)
+    · simpa [ht] using hx
+  case goto E K l L d comp _ _ _ =>
+    intro rl nk x hx
+    simp only [vals] at hx ⊢
+    unfold Realm.flag at hx ⊢
+    by_cases ht : rl.tags comp = true
+    · cases nk
+      · simpa [ht] using hx
+      · simp [ht] at hx
+    · simpa [ht] using hx
+  all_goals intro rl nk x hx
   all_goals simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap, Bool.false_eq_true,
     ↓reduceIte, List.not_mem_nil, Bool.false_and] at hx ⊢
+  all_goals grind
+
+/-- **The roots at a realm are among those with no realm** (proved): a
+frame of the realm's code is read at no realm as outside code's, its
+positions all outside code's, where no realm tag is one `ofC` names. -/
+theorem vals_empty_of (hrl : ∀ t, rl.tags t = true → ofC t = false) :
+    ∀ (t : Tm) {o nk : Bool} {x : Val}, x ∈ vals ofC rl o nk t → x ∈ vals ofC Realm.empty o false t := by
+  intro t
+  induction t using Tm.induct
+  case frame E K u L d k xx comp _ ihu _ _ =>
+    intro o nk x hx
+    simp only [vals, List.mem_append, Realm.flag_empty, Realm.native_empty] at hx ⊢
+    by_cases ht : rl.tags comp = true
+    · have hc := hrl comp ht
+      simp only [hc, Bool.not_false, ↓reduceIte]
+      rcases hx with hx | hx
+      · split at hx
+        · exact .inl hx
+        · cases hx
+      · have := ihu hx
+        revert this; cases rl.flag ofC o nk comp
+        · exact fun h => .inr (vals_mono _ h)
+        · exact fun h => .inr h
+    · have hf : rl.flag ofC o nk comp = !ofC comp := by simp [Realm.flag, ht]
+      rw [hf] at hx
+      rcases hx with hx | hx
+      · exact .inl hx
+      · exact .inr (ihu hx)
+  case goto E K l L d comp _ _ _ =>
+    intro o nk x hx
+    simp only [vals, Realm.flag_empty] at hx ⊢
+    by_cases ht : rl.tags comp = true
+    · simp only [hrl comp ht, Bool.not_false, ↓reduceIte]
+      split at hx
+      · exact hx
+      · cases hx
+    · have hf : rl.flag ofC o nk comp = !ofC comp := by simp [Realm.flag, ht]
+      rwa [hf] at hx
+  all_goals intro o nk x hx
+  all_goals simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hx ⊢
   all_goals grind
 
 theorem objAt_next_eq {fs : List (PropKey × Nat)} {i : Nat} {cc cc' : CallCode}
@@ -810,21 +899,19 @@ theorem objAt_next_eq {fs : List (PropKey × Nat)} {i : Nat} {cc cc' : CallCode}
 
 /-- **Substitution keeps the values good**: the values of `subst j a b` are
 `a`'s, or `b`'s with the same location steps and good code. -/
-theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC true a, GV ofC h R x) :
-    ∀ (b : Tm) (j : Nat) (o : Bool), (∀ x ∈ vals ofC o b, GV ofC h R x) →
-      ∀ x ∈ vals ofC o (subst j a b), GV ofC h R x := by
+theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC Realm.all true true a, GV ofC h R x) :
+    ∀ (b : Tm) (j : Nat) (rl : Realm) (o nk : Bool), (∀ x ∈ vals ofC rl o nk b, GV ofC h R x) →
+      ∀ x ∈ vals ofC rl o nk (subst j a b), GV ofC h R x := by
   intro b
   induction b using Tm.induct
   case var i =>
-    intro j o _ x hx
+    intro j rl o nk _ x hx
     simp only [subst] at hx
     split at hx
-    · cases o
-      · exact ha x (vals_mono a hx)
-      · exact ha x hx
+    · exact ha x (vals_all ofC a rl o nk hx)
     · split at hx <;> simp [vals] at hx
   case objBound fs oid t r pre iht ihr ihp =>
-    intro j o hb x hx
+    intro j rl o nk hb x hx
     cases o
     · simp [subst, vals] at hx
     · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
@@ -836,16 +923,16 @@ theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC true a, GV ofC h R x) :
         intro y hy
         simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap, substArgs_eq_map, List.mem_map] at hy
         rcases hy with (hy | hy) | ⟨_, ⟨p, hp, rfl⟩, hy⟩
-        · exact iht j true (fun z hz => hpart z (.inl (.inl hz))) y hy
-        · exact ihr j true (fun z hz => hpart z (.inl (.inr hz))) y hy
-        · exact ihp p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+        · exact iht j Realm.all true true (fun z hz => hpart z (.inl (.inl hz))) y hy
+        · exact ihr j Realm.all true true (fun z hz => hpart z (.inl (.inr hz))) y hy
+        · exact ihp p hp j Realm.all true true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
       simp only [subst] at hx
       rw [vals_objAt] at hx
       rcases List.mem_cons.mp hx with rfl | hx
       · exact hself.same_next (objAt_next_eq rfl) hcode
       · exact hcode x hx
   case objGraph fs oid n E K st caps k r comp ihE ihc =>
-    intro j o hb x hx
+    intro j rl o nk hb x hx
     cases o
     · simp [subst, vals] at hx
     · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
@@ -862,13 +949,13 @@ theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC true a, GV ofC h R x) :
             substArgs_eq_map, List.mem_map] at hy hpart
           rcases hy with ⟨e, he, hy⟩ | ⟨_, ⟨p, hp, rfl⟩, hy⟩
           · exact hpart y (.inl ⟨e, he, hy⟩)
-          · exact ihc p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+          · exact ihc p hp j Realm.all true true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
       simp only [subst] at hx
       rw [vals_objAt] at hx
       rcases List.mem_cons.mp hx with rfl | hx
       · exact hself.same_next (objAt_next_eq rfl) hcode
       · exact hcode x hx
-  all_goals intro j o hb x hx
+  all_goals intro j rl o nk hb x hx
   all_goals simp only [subst, vals, valsArgs_eq, substArgs_eq_map, List.mem_append, List.mem_flatMap,
     List.mem_map] at hx hb
   all_goals (repeat' split at hx) <;> (repeat' split at hb) <;> grind
@@ -876,21 +963,19 @@ theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC true a, GV ofC h R x) :
 /-- **Instantiation keeps the values good**: the values of
 `instantiate j ρ b` are the environment's, or `b`'s with the same location
 steps and good code. -/
-theorem instantiate_cover {ρ : Env} (ha : ∀ i, ∀ x ∈ vals ofC true (ρ i), GV ofC h R x) :
-    ∀ (b : Tm) (j : Nat) (o : Bool), (∀ x ∈ vals ofC o b, GV ofC h R x) →
-      ∀ x ∈ vals ofC o (instantiate j ρ b), GV ofC h R x := by
+theorem instantiate_cover {ρ : Env} (ha : ∀ i, ∀ x ∈ vals ofC Realm.all true true (ρ i), GV ofC h R x) :
+    ∀ (b : Tm) (j : Nat) (rl : Realm) (o nk : Bool), (∀ x ∈ vals ofC rl o nk b, GV ofC h R x) →
+      ∀ x ∈ vals ofC rl o nk (instantiate j ρ b), GV ofC h R x := by
   intro b
   induction b using Tm.induct
   case var i =>
-    intro j o _ x hx
+    intro j rl o nk _ x hx
     simp only [instantiate] at hx
     split at hx
     · simp [vals] at hx
-    · cases o
-      · exact ha _ x (vals_mono _ hx)
-      · exact ha _ x hx
+    · exact ha _ x (vals_all ofC _ rl o nk hx)
   case objBound fs oid t r pre iht ihr ihp =>
-    intro j o hb x hx
+    intro j rl o nk hb x hx
     cases o
     · simp [instantiate, vals] at hx
     · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
@@ -902,16 +987,16 @@ theorem instantiate_cover {ρ : Env} (ha : ∀ i, ∀ x ∈ vals ofC true (ρ i)
         intro y hy
         simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap, instantiateArgs_eq_map, List.mem_map] at hy
         rcases hy with (hy | hy) | ⟨_, ⟨p, hp, rfl⟩, hy⟩
-        · exact iht j true (fun z hz => hpart z (.inl (.inl hz))) y hy
-        · exact ihr j true (fun z hz => hpart z (.inl (.inr hz))) y hy
-        · exact ihp p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+        · exact iht j Realm.all true true (fun z hz => hpart z (.inl (.inl hz))) y hy
+        · exact ihr j Realm.all true true (fun z hz => hpart z (.inl (.inr hz))) y hy
+        · exact ihp p hp j Realm.all true true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
       simp only [instantiate] at hx
       rw [vals_objAt] at hx
       rcases List.mem_cons.mp hx with rfl | hx
       · exact hself.same_next (objAt_next_eq rfl) hcode
       · exact hcode x hx
   case objGraph fs oid n E K st caps k r comp ihE ihc =>
-    intro j o hb x hx
+    intro j rl o nk hb x hx
     cases o
     · simp [instantiate, vals] at hx
     · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
@@ -928,13 +1013,13 @@ theorem instantiate_cover {ρ : Env} (ha : ∀ i, ∀ x ∈ vals ofC true (ρ i)
             instantiateArgs_eq_map, List.mem_map] at hy hpart
           rcases hy with ⟨e, he, hy⟩ | ⟨_, ⟨p, hp, rfl⟩, hy⟩
           · exact hpart y (.inl ⟨e, he, hy⟩)
-          · exact ihc p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+          · exact ihc p hp j Realm.all true true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
       simp only [instantiate] at hx
       rw [vals_objAt] at hx
       rcases List.mem_cons.mp hx with rfl | hx
       · exact hself.same_next (objAt_next_eq rfl) hcode
       · exact hcode x hx
-  all_goals intro j o hb x hx
+  all_goals intro j rl o nk hb x hx
   all_goals simp only [instantiate, vals, valsArgs_eq, instantiateArgs_eq_map, List.mem_append, List.mem_flatMap,
     List.mem_map] at hx hb
   all_goals (repeat' split at hx) <;> (repeat' split at hb) <;> grind
@@ -951,7 +1036,7 @@ theorem GV.reach {v x : Val} (hv : GV ofC h R v) (hx : CodeReach ofC v x) : GV o
 
 /-- The values a value holds at a position of outside code are the values
 its code steps reach. -/
-theorem vals_codeReach {v x : Val} {o : Bool} (hv : isVal v = true) (hx : x ∈ vals ofC o v) : CodeReach ofC v x := by
+theorem vals_codeReach {v x : Val} {o : Bool} (hv : isVal v = true) (hx : x ∈ vals ofC rl o nk v) : CodeReach ofC v x := by
   cases v
   case objAt fs cc i =>
     cases o
@@ -965,17 +1050,17 @@ theorem vals_codeReach {v x : Val} {o : Bool} (hv : isVal v = true) (hx : x ∈ 
   all_goals simp [isVal, vals] at hv hx
 
 /-- **A good value holds only good values.** -/
-theorem GV.held {v x : Val} {o : Bool} (hv : GV ofC h R v) (hval : isVal v = true) (hx : x ∈ vals ofC o v) :
+theorem GV.held {v x : Val} {o : Bool} (hv : GV ofC h R v) (hval : isVal v = true) (hx : x ∈ vals ofC rl o nk v) :
     GV ofC h R x :=
   hv.reach (vals_codeReach hval hx)
 
 /-- The contents of a good location, at a heap holding values, hold only
 good values. -/
 theorem GV.heapHeld {l : Nat} {v x : Val} {o : Bool} (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true)
-    (hg : Good ofC h R l) (hl : h[l]? = some v) (hx : x ∈ vals ofC o v) : GV ofC h R x :=
+    (hg : Good ofC h R l) (hl : h[l]? = some v) (hx : x ∈ vals ofC rl o nk v) : GV ofC h R x :=
   (GV.heap hg hl).held (hh _ _ hl) hx
 
-theorem GV.ofHeapVal {l : Nat} {x : Val} {o : Bool} (hg : Good ofC h R l) (hx : x ∈ vals ofC o (heapVal h l)) :
+theorem GV.ofHeapVal {l : Nat} {x : Val} {o : Bool} (hg : Good ofC h R l) (hx : x ∈ vals ofC rl o nk (heapVal h l)) :
     GV ofC h R x := by
   unfold Verification.heapVal at hx
   split at hx
@@ -985,7 +1070,7 @@ theorem GV.ofHeapVal {l : Nat} {x : Val} {o : Bool} (hg : Good ofC h R l) (hx : 
   · simp [vals] at hx
 
 /-- A value with no reference holds only inert values. -/
-theorem noRefs_cover {v x : Val} {o : Bool} (hv : isVal v = true) (hr : refs v = []) (hx : x ∈ vals ofC o v) :
+theorem noRefs_cover {v x : Val} {o : Bool} (hv : isVal v = true) (hr : refs v = []) (hx : x ∈ vals ofC rl o nk v) :
     GV ofC h R x := by
   cases v
   case objAt fs cc i => cases cc <;> simp [refs, objRefs] at hr
@@ -1014,7 +1099,7 @@ theorem noRefs_cover {v x : Val} {o : Bool} (hv : isVal v = true) (hr : refs v =
     exact GV.inert ⟨fun a => by cases a <;> simp [ReadOnly.next, spineEntries, HeapKnowledge.descriptorSpine, fieldsOf], rfl⟩
   all_goals first | (simp [vals] at hx; done) | (simp [isVal] at hv)
 
-theorem raises_vals {t v : Tm} (hr : Raises t v) : ∀ {o : Bool} {x : Val}, x ∈ vals ofC o v → x ∈ vals ofC o t := by
+theorem raises_vals {t v : Tm} (hr : Raises t v) : ∀ {o : Bool} {x : Val}, x ∈ vals ofC rl o nk v → x ∈ vals ofC rl o nk t := by
   induction hr
   all_goals intro o x hx
   case throwV => simpa [vals] using hx
@@ -1025,7 +1110,7 @@ theorem raises_vals {t v : Tm} (hr : Raises t v) : ∀ {o : Bool} {x : Val}, x �
 theorem readElems_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {ls : List (Option Nat)}
     (hls : GV ofC h R (.arr ls)) :
     ∀ {i : Nat} {vs : List Tm}, readElems h (ls.drop i) = some vs → ∀ v ∈ vs, ∀ {o : Bool} {x : Val},
-      x ∈ vals ofC o v → GV ofC h R x := by
+      x ∈ vals ofC rl o nk v → GV ofC h R x := by
   intro i
   induction hd : ls.drop i generalizing i with
   | nil => intro vs he; simp [readElems] at he; subst he; simp
@@ -1147,7 +1232,7 @@ theorem mergeParts_cover {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm
     (hm : mergeParts h d a b = some ps)
     (hA : ∀ k l, ReadOnly.next a k = some l → Good ofC h R l)
     (hB : ∀ k l, ReadOnly.next b k = some l → Good ofC h R l) :
-    ∀ e ∈ ps, ∀ {o : Bool} {x : Val}, x ∈ vals ofC o e.2 → GV ofC h R x := by
+    ∀ e ∈ ps, ∀ {o : Bool} {x : Val}, x ∈ vals ofC rl o nk e.2 → GV ofC h R x := by
   simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
   obtain ⟨p, hp, q, hq, rfl⟩ := hm
   have hfield : ∀ (v : Tm) (fs : List (PropKey × Nat)) (cc : CallCode) (i : Nat),
@@ -1205,10 +1290,12 @@ theorem slots_lookup_ge : ∀ {base : Nat} {ns : List PropKey} {k : PropKey} {l 
 
 theorem graphEntry_vals {n : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {st : Nat} {caps : List Tm} {self : Tm} {rest : Bool} {comp : ComponentTag} {r : Tm} {args : List Tm} {x : Val}
-    (hx : x ∈ vals ofC true (CallArguments.graphEntry n E K st caps self rest comp r args)) :
-    (ofC comp = false ∧ ((∃ e ∈ E, x ∈ vals ofC true e) ∨ (∃ y ∈ caps, x ∈ vals ofC true y) ∨
-      x ∈ vals ofC true self)) ∨ x ∈ vals ofC true r ∨ ∃ y ∈ args, x ∈ vals ofC true y := by
-  have hp : ∀ y ∈ CallArguments.parameters n args, x ∈ vals ofC true y → ∃ y ∈ args, x ∈ vals ofC true y := by
+    (hx : x ∈ vals ofC rl true nk (CallArguments.graphEntry n E K st caps self rest comp r args)) :
+    (rl.flag ofC true nk comp = true ∧ ((∃ e ∈ E, x ∈ vals ofC Realm.all true true e) ∨
+      (∃ y ∈ caps, x ∈ vals ofC Realm.all true true y) ∨ x ∈ vals ofC Realm.all true true self)) ∨
+      x ∈ vals ofC Realm.all true true r ∨ ∃ y ∈ args, x ∈ vals ofC Realm.all true true y := by
+  have hp : ∀ y ∈ CallArguments.parameters n args, x ∈ vals ofC Realm.all true true y →
+      ∃ y ∈ args, x ∈ vals ofC Realm.all true true y := by
     intro y hy hxy
     rcases Kinds.parameters_mem hy with hy | rfl
     · exact ⟨y, hy, hxy⟩
@@ -1218,28 +1305,33 @@ theorem graphEntry_vals {n : Nat} {E : List Tm} {K : List (ControlFlow.Continuat
     simp only [CallArguments.graphEntry, vals, valsArgs_eq, List.flatMap_cons, List.flatMap_append,
       List.flatMap_nil] at hx
     split at hx
-    · simp at hx
     · rename_i hcomp
-      simp only [Bool.not_eq_true] at hcomp
       simp only [List.mem_append, List.mem_flatMap, List.append_nil] at hx
       grind
+    · simp at hx
   | true =>
     simp only [CallArguments.graphEntry, vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hx
     have hd : ∀ y ∈ args.drop n, y ∈ args := fun y hy => List.mem_of_mem_drop hy
+    have hall : ∀ y {o nk'}, x ∈ vals ofC rl o nk' y → x ∈ vals ofC Realm.all true true y :=
+      fun y _ _ hy => vals_all ofC y _ _ _ hy
     split at hx
-    · simp only [List.not_mem_nil, or_false] at hx
-      grind
     · rename_i hcomp
-      simp only [Bool.not_eq_true] at hcomp
       simp only [List.mem_append, List.mem_flatMap, List.flatMap_cons, List.flatMap_append, List.flatMap_nil, vals,
         List.append_nil] at hx
       grind
+    · simp only [List.not_mem_nil, or_false] at hx
+      grind
 
-
-theorem mem_vals_true {o : Bool} {v x : Val} (hx : x ∈ vals ofC o v) : x ∈ vals ofC true v := by
+theorem mem_vals_true {o : Bool} {v x : Val} (hx : x ∈ vals ofC rl o nk v) : x ∈ vals ofC rl true nk v := by
   cases o
   · exact vals_mono v hx
   · exact hx
+
+/-- A value's values at a position of outside code are the same at every
+realm and key, and include those at any position. -/
+theorem mem_vals_val {o : Bool} {v : Tm} {x : Val} (hv : isVal v = true) (rl' : Realm) (nk' : Bool)
+    (hx : x ∈ vals ofC rl o nk v) : x ∈ vals ofC rl' true nk' v := by
+  rw [vals_val ofC rl' rl true nk' nk hv]; exact mem_vals_true hx
 
 theorem GV.fresh {v : Val} (hn : ∀ a l, ReadOnly.next v a = some l → h.length ≤ l) (hc : codeVals ofC v = []) :
     GV ofC h R v :=
@@ -1247,13 +1339,13 @@ theorem GV.fresh {v : Val} (hn : ∀ a l, ReadOnly.next v a = some l → h.lengt
 
 
 theorem makeAt_code {fs : List (PropKey × Nat)} {i : Nat} {cc : CallCode} {ns : List PropKey} {xs : List Tm} {x : Val}
-    (hx : x ∈ codeVals ofC (.objAt fs cc i)) : x ∈ vals ofC true (.makeAt cc ns xs) := by
+    (hx : x ∈ codeVals ofC (.objAt fs cc i)) : x ∈ vals ofC rl true nk (.makeAt cc ns xs) := by
   cases cc <;> simp [codeVals, vals] at hx ⊢ <;> grind
 
 theorem codeUnitAt_val (s : String) (b : UInt64) : isVal (codeUnitAt s b) = true := by
   unfold codeUnitAt; split <;> rfl
 
-theorem thrown_cover {n : Nat} {o : Bool} {x : Val} (hx : x ∈ vals ofC o (.throw (thrownError n))) :
+theorem thrown_cover {n : Nat} {o : Bool} {x : Val} (hx : x ∈ vals ofC rl o nk (.throw (thrownError n))) :
     GV ofC h R x := by
   cases o <;> simp [vals, thrownError] at hx
   subst hx
@@ -1263,13 +1355,12 @@ theorem thrown_cover {n : Nat} {o : Bool} {x : Val} (hx : x ∈ vals ofC o (.thr
 environment it maps and its default are good. -/
 theorem goto_cover {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat}
     {m : Option (List Nat)} {L₀ : List Tm} {d : Tm} {comp : ComponentTag} {o : Bool}
-    (hold : ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L₀, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d →
-      GV ofC h R y) :
-    ∀ x ∈ vals ofC o (.goto E K l (envMap m L₀ d).1 (envMap m L₀ d).2 comp), GV ofC h R x := by
+    (hold : ∀ y, (∃ e ∈ E, y ∈ vals ofC Realm.all true true e) ∨ (∃ y' ∈ L₀, y ∈ vals ofC Realm.all true true y') ∨
+      y ∈ vals ofC Realm.all true true d → GV ofC h R y) :
+    ∀ x ∈ vals ofC rl o nk (.goto E K l (envMap m L₀ d).1 (envMap m L₀ d).2 comp), GV ofC h R x := by
   intro x hx
   simp only [vals, valsArgs_eq] at hx
   split at hx
-  · cases hx
   · simp only [List.mem_append, List.mem_flatMap] at hx
     rcases hx with (hx | ⟨y, hy, hx⟩) | hx
     · exact hold x (.inl hx)
@@ -1279,17 +1370,18 @@ theorem goto_cover {E : List Tm} {K : List (ControlFlow.Continuation × Option C
     · rcases envMap_mem (x := (envMap m L₀ d).2) (.inr rfl) with hy | hy
       · exact hold x (.inr (.inl ⟨_, hy, hx⟩))
       · rw [hy] at hx; exact hold x (.inr (.inr hx))
+  · cases hx
 
 
 theorem frame_hold {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm}
     {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {xx : Option ControlFlow.Target} {comp : ComponentTag}
-    {o : Bool} (hc : ofC comp = false) (hR : ∀ x ∈ vals ofC o (.frame E K u L d k xx comp), GV ofC h R x) :
-    ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d ∨
-      y ∈ vals ofC true u → GV ofC h R y := by
+    {o : Bool} (hc : rl.flag ofC o nk comp = true)
+    (hR : ∀ x ∈ vals ofC rl o nk (.frame E K u L d k xx comp), GV ofC h R x) :
+    ∀ y, (∃ e ∈ E, y ∈ vals ofC Realm.all true true e) ∨ (∃ y' ∈ L, y ∈ vals ofC Realm.all true true y') ∨
+      y ∈ vals ofC Realm.all true true d ∨ y ∈ vals ofC rl true (rl.native ((E, K), comp) (k, xx)) u → GV ofC h R y := by
   intro y hy
   refine hR y ?_
-  simp only [vals, hc, Bool.false_eq_true, ↓reduceIte, Bool.not_false, valsArgs_eq, List.mem_append,
-    List.mem_flatMap]
+  simp only [vals, hc, ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap]
   rcases hy with hy | hy | hy | hy
   · exact .inl (.inl (.inl hy))
   · exact .inl (.inl (.inr hy))
@@ -1299,19 +1391,21 @@ theorem frame_hold {E : List Tm} {K : List (ControlFlow.Continuation × Option C
 theorem activeTag_frame_tag {c : ComponentTag} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {xx : Option ControlFlow.Target} {comp : ComponentTag}
-    (hu : path comp u = [(comp, u)]) : activeTag c (.frame E K u L d k xx comp) = comp := by
+    (hu : path rl (rl.own c nk comp) (rl.native ((E, K), comp) (k, xx)) u = [(rl.own c nk comp, u)]) :
+    activeTag rl c nk (.frame E K u L d k xx comp) = rl.own c nk comp := by
   simp [activeTag, path_frame hu]
 
 /-- **What outside code holds after a step is good**: every value at a
 position of outside code after a step whose active frame runs no code
 `ofC` names, from a term whose such values are good, at a heap holding
 values, is good. -/
-theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
+theorem step_cover (hrl : ∀ t, rl.tags t = true → ofC t = false)
+    (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
     (hs : Step h t h' t') :
-    ∀ c, ofC (activeTag c t) = false → (∀ x ∈ vals ofC (!ofC c) t, GV ofC h R x) →
-      ∀ x ∈ vals ofC (!ofC c) t', GV ofC h R x := by
+    ∀ c nk, ofC (activeTag rl c nk t) = false → (∀ x ∈ vals ofC rl (!ofC c) nk t, GV ofC h R x) →
+      ∀ x ∈ vals ofC rl (!ofC c) nk t', GV ofC h R x := by
   induction hs
-  all_goals intro c hc hR x hx
+  all_goals intro c nk hc hR x hx
   case callArg hf hr ha hpre hs ih =>
     simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
@@ -1321,7 +1415,7 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     · exact hR x (by simp only [vals, List.mem_append]; exact .inl (.inr hx))
     · rcases mem_valsArgs_set hx with hx | hx
       · exact hR x (by simp only [vals, List.mem_append]; exact .inr hx)
-      · exact ih hh c hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
+      · exact ih hh c nk hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
   case constructArg hf ha hpre hs ih =>
     simp only [activeTag, path, hf, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
@@ -1330,36 +1424,38 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     · exact hR x (by simp only [vals, List.mem_append]; exact .inl hx)
     · rcases mem_valsArgs_set hx with hx | hx
       · exact hR x (by simp only [vals, List.mem_append]; exact .inr hx)
-      · exact ih hh c hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
+      · exact ih hh c nk hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
   case makeArg cc ns inits i _ _ a a' ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
-    have hsplit : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC o (.makeAt cc ns ys) →
-        y ∈ vals ofC o (.makeAt cc ns []) ∨ y ∈ valsArgs ofC o ys := by
+    have hsplit : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC rl o nk (.makeAt cc ns ys) →
+        y ∈ vals ofC rl o nk (.makeAt cc ns []) ∨ y ∈ valsArgs ofC rl o nk ys := by
       intro o ys y hy
       cases cc <;> simp only [vals, valsArgs_eq, List.mem_append, List.flatMap_nil, List.append_nil] at hy ⊢ <;> grind
-    have hjoin : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC o (.makeAt cc ns []) →
-        y ∈ vals ofC o (.makeAt cc ns ys) := by
+    have hjoin : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC rl o nk (.makeAt cc ns []) →
+        y ∈ vals ofC rl o nk (.makeAt cc ns ys) := by
       intro o ys y hy
       cases cc <;> simp only [vals, valsArgs_eq, List.mem_append, List.flatMap_nil, List.append_nil] at hy ⊢ <;> grind
     rcases hsplit hx with hx | hx
     · exact hR x (hjoin hx)
     · rcases mem_valsArgs_set hx with hx | hx
       · exact hR x (vals_makeAt hx)
-      · exact ih hh c hc (fun y hy => hR y (vals_makeAt (mem_valsArgs ha hy))) x hx
+      · exact ih hh c nk hc (fun y hy => hR y (vals_makeAt (mem_valsArgs ha hy))) x hx
   case arrArg ha hpre hs ih =>
     simp only [activeTag, path] at hc
     rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
     simp only [vals] at hx
     rcases mem_valsArgs_set hx with hx | hx
     · exact hR x (by simp only [vals]; exact hx)
-    · exact ih hh c hc (fun y hy => hR y (by simp only [vals]; exact mem_valsArgs ha hy)) x hx
+    · exact ih hh c nk hc (fun y hy => hR y (by simp only [vals]; exact mem_valsArgs ha hy)) x hx
   case frameC ih =>
     rw [activeTag_frame] at hc
     simp only [vals, List.mem_append] at hx
     rcases hx with hx | hx
     · exact hR x (by simp only [vals, List.mem_append]; exact .inl hx)
-    · exact ih hh _ hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr hy)) x hx
+    · rw [Realm.flag_own rl ofC rfl] at hx
+      exact ih hh _ _ hc (fun y hy => hR y (by
+        simp only [vals, List.mem_append, Realm.flag_own rl ofC rfl]; exact .inr hy)) x hx
   -- Results that hold no value, or the term's own.
   case testV => split at hx <;> simp [vals] at hx
   case iteT => exact hR x (List.mem_append_left _ (List.mem_append_right _ hx))
@@ -1445,52 +1541,60 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     · cases hx
   -- Frames.
   case frameRet v _ E K L d xx comp hv =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
-    exact frame_hold hc' hR x (.inr (.inr (.inr (mem_vals_true hx))))
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val hv)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
+    exact frame_hold hc' hR x (.inr (.inr (.inr (mem_vals_val hv rl _ hx))))
   case frameRaise u v _ E K L d k comp hr =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (raises_path hr _)] at hc; exact hc
-    exact frame_hold hc' hR x (.inr (.inr (.inr (raises_vals hr (mem_vals_true (by simpa [vals] using hx))))))
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (raises_path hr _ _)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
+    exact frame_hold hc' hR x (.inr (.inr (.inr (raises_vals hr (mem_vals_val (raises_val hr) rl _ (by simpa [vals] using hx))))))
   case frameHandle u v _ E K L d k l comp hr =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (raises_path hr _)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (raises_path hr _ _)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · rcases List.mem_cons.mp hy' with rfl | hy'
-      · exact .inr (.inr (.inr (raises_vals hr hy)))
+      · exact .inr (.inr (.inr (raises_vals hr (mem_vals_val (raises_val hr) rl _ hy))))
       · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameBind v _ E K L d l xx comp hv =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val hv)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · rcases List.mem_cons.mp hy' with rfl | hy'
-      · exact .inr (.inr (.inr hy))
+      · exact .inr (.inr (.inr (mem_vals_val hv rl _ hy)))
       · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameEffect v _ E K L d l xx comp hv =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val hv)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameYes _ E K L d y n xx comp =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val rfl)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameNo _ E K L d y n xx comp =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val rfl)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameYesBind _ E K L d y n xx comp =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val rfl)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
@@ -1499,7 +1603,8 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameNoBind _ E K L d y n xx comp =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val rfl)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
@@ -1508,12 +1613,13 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   case frameTag v _ E K L d tg y n xx comp hv =>
-    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      rw [activeTag_frame_tag (path_val hv)] at hc; simp [Realm.flag_own rl ofC rfl, hc]
     refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
     rcases hy with hy | ⟨y', hy', hy⟩ | hy
     · exact .inl hy
     · rcases List.mem_cons.mp hy' with rfl | hy'
-      · exact .inr (.inr (.inr hy))
+      · exact .inr (.inr (.inr (mem_vals_val hv rl _ hy)))
       · exact .inr (.inl ⟨y', hy', hy⟩)
     · exact .inr (.inr (.inl hy))
   all_goals try (simp [vals] at hx; done)
@@ -1522,13 +1628,13 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     have hc' : ofC c = false := by simpa [activeTag, path] using hc
     simp only [hc', Bool.not_false] at hR hx
     have hobj := hR (.objAt fs cc oid)
-      (by show _ ∈ vals ofC true (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
+      (by show _ ∈ vals ofC rl true nk (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
     exact GV.heapHeld hh (hobj.next (a := .key f) (by simpa [ReadOnly.next, fieldsOf] using hf)) hv hx
   case readProto oid f fs cc l _ p _ hp hv =>
     have hc' : ofC c = false := by simpa [activeTag, path] using hc
     simp only [hc', Bool.not_false] at hR hx
     have hobj := hR (.objAt fs cc oid)
-      (by show _ ∈ vals ofC true (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
+      (by show _ ∈ vals ofC rl true nk (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
     exact GV.heapHeld hh (hobj.next (a := .key _) (by simpa [ReadOnly.next, fieldsOf] using hp)) hv hx
   case indexField oid key f fs cc l _ v hk hf hv =>
     have hc' : ofC c = false := by simpa [activeTag, path, propertyKey_val hk] using hc
@@ -1557,27 +1663,28 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
   case letV ha =>
     have hc' : ofC c = false := by simpa [activeTag, path, ha] using hc
     simp only [hc', Bool.not_false] at hR hx
-    exact subst_cover (fun y hy => hR y (List.mem_append_left _ hy)) _ 0 true
+    exact subst_cover (fun y hy => hR y (List.mem_append_left _ (mem_vals_val ha rl nk hy))) _ 0 rl true nk
       (fun y hy => hR y (List.mem_append_right _ hy)) x hx
   case gotoEnter E l e K k xx hp L d comp he _ =>
-    have hc' : ofC comp = false := by simpa [activeTag, path] using hc
-    have hR' : ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d →
-        GV ofC hp R y := by
+    have hc' : rl.flag ofC (!ofC c) nk comp = true := by
+      simp only [activeTag, path, List.head?_cons, Option.map_some, Option.getD_some] at hc
+      simp [Realm.flag_own rl ofC rfl, hc]
+    have hR' : ∀ y, (∃ e ∈ E, y ∈ vals ofC Realm.all true true e) ∨ (∃ y' ∈ L, y ∈ vals ofC Realm.all true true y') ∨
+        y ∈ vals ofC Realm.all true true d → GV ofC hp R y := by
       intro y hy
       refine hR y ?_
-      simp only [vals, hc', Bool.false_eq_true, ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap]
+      simp only [vals, hc', ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap]
       rcases hy with hy | hy | hy
       · exact .inl (.inl hy)
       · exact .inl (.inr hy)
       · exact .inr hy
-    simp only [vals, hc', Bool.false_eq_true, ↓reduceIte, Bool.not_false, valsArgs_eq, List.mem_append,
-      List.mem_flatMap] at hx
+    simp only [vals, hc', ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap] at hx
     rcases hx with ((hx | hx) | hx) | hx
     · exact hR' x (.inl hx)
     · exact hR' x (.inr (.inl hx))
     · exact hR' x (.inr (.inr hx))
-    · refine instantiate_cover (fun i y hy => ?_) e 0 true (fun y hy => hR' y (.inl ⟨e, List.mem_of_getElem? he, hy⟩))
-        x hx
+    · refine instantiate_cover (fun i y hy => ?_) e 0 rl true _
+        (fun y hy => hR' y (.inl ⟨e, List.mem_of_getElem? he, vals_all ofC e _ _ _ hy⟩)) x hx
       rcases getD_mem_or L i d with hi | hi
       · exact hR' y (.inr (.inl ⟨_, hi, by simp only [envOf] at hy; exact hy⟩))
       · exact hR' y (.inr (.inr (by simp only [envOf] at hy; rw [hi] at hy; exact hy)))
@@ -1591,9 +1698,11 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       (List.mem_append_left _ (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self)))
     simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
     rcases hx with ((hx | hx) | hx | hx)
-    · exact hobj.code (by simp [codeVals, hx])
-    · exact hobj.code (by simp [codeVals, hx])
-    · exact hobj.code (by simp only [codeVals, valsArgs_eq, List.mem_append]; exact .inr hx)
+    · exact hobj.code (by simp [codeVals, vals_all ofC _ _ _ _ hx])
+    · exact hobj.code (by simp [codeVals, vals_all ofC _ _ _ _ hx])
+    · obtain ⟨y, hy, hx⟩ := List.mem_flatMap.mp hx
+      exact hobj.code (by simp only [codeVals, valsArgs_eq, List.mem_append, List.mem_flatMap]
+                          exact .inr ⟨y, hy, vals_all ofC _ _ _ _ hx⟩)
     · exact hR x (List.mem_append_right _ (by rw [valsArgs_eq]; exact hx))
   case callGraph r args _ fs n E K st caps k rest comp oid hr hargs _ =>
     simp only [activeTag, path, isVal_objAt, hr, Bool.true_eq_false, ↓reduceIte] at hc
@@ -1603,13 +1712,13 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     have hobj := hR (.objAt fs (.graph n E K st caps k rest comp) oid)
       (List.mem_append_left _ (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self)))
     rcases graphEntry_vals hx with ⟨hcomp, (hx | hx | hx)⟩ | hx | ⟨y, hy, hx⟩
-    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
-        List.mem_append, List.mem_flatMap]; exact .inl hx)
-    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
-        List.mem_append, List.mem_flatMap]; exact .inr hx)
+    · exact hobj.code (by simp only [codeVals, Realm.ofC_of_flag hrl hcomp, Bool.false_eq_true, ↓reduceIte,
+        valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl hx)
+    · exact hobj.code (by simp only [codeVals, Realm.ofC_of_flag hrl hcomp, Bool.false_eq_true, ↓reduceIte,
+        valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr hx)
     · exact hobj.held rfl hx
-    · exact hR x (List.mem_append_left _ (List.mem_append_right _ hx))
-    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy hx))
+    · exact hR x (List.mem_append_left _ (List.mem_append_right _ (mem_vals_val hr rl nk hx)))
+    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy (mem_vals_val (hargs y hy) rl nk hx)))
   case constructGraph args _ fs n E K st caps rest comp oid hargs =>
     simp only [activeTag, path, isVal_objAt, Bool.true_eq_false, ↓reduceIte] at hc
     rw [pathArgs_vals _ hargs] at hc
@@ -1618,13 +1727,13 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     have hobj := hR (.objAt fs (.graph n E K st caps .construct rest comp) oid)
       (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self))
     rcases graphEntry_vals hx with ⟨hcomp, (hx | hx | hx)⟩ | hx | ⟨y, hy, hx⟩
-    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
-        List.mem_append, List.mem_flatMap]; exact .inl hx)
-    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
-        List.mem_append, List.mem_flatMap]; exact .inr hx)
+    · exact hobj.code (by simp only [codeVals, Realm.ofC_of_flag hrl hcomp, Bool.false_eq_true, ↓reduceIte,
+        valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl hx)
+    · exact hobj.code (by simp only [codeVals, Realm.ofC_of_flag hrl hcomp, Bool.false_eq_true, ↓reduceIte,
+        valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr hx)
     · exact hobj.held rfl hx
     · simp [vals] at hx
-    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy hx))
+    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy (mem_vals_val (hargs y hy) rl nk hx)))
   -- Spreads.
   case callSpread f r hp args pre post ls vs hf hr hargs hpre he =>
     subst hargs
@@ -1633,7 +1742,7 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       rw [pathArgs_append _ _ hpre] at hc
       simpa [pathArgs, path, wrap, mapLast] using hc
     simp only [hc', Bool.not_false] at hR hx
-    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC rl true nk (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
       fun hy => hR _ (List.mem_append_right _ hy)
     have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
     simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
@@ -1651,7 +1760,7 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       rw [pathArgs_append _ _ hpre] at hc
       simpa [pathArgs, path, wrap, mapLast] using hc
     simp only [hc', Bool.not_false] at hR hx
-    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC rl true nk (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
       fun hy => hR _ (List.mem_append_right _ hy)
     have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
     simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
@@ -1668,7 +1777,7 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
       rw [pathArgs_append _ _ hpre] at hc
       simpa [pathArgs, path, wrap, mapLast] using hc
     simp only [hc', Bool.not_false] at hR hx
-    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC rl true nk (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
       fun hy => hR _ hy
     have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
     simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
@@ -1682,7 +1791,7 @@ theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = t
     have hna := not_val_of_step ‹Step _ _ _ _›
     have hc₁ := hc
     rw [activeTag_wrap (by simp [path, *] <;> rfl)] at hc₁
-    have ih' := ih hh c hc₁ (fun y hy => hR y (by simp [vals, hy]))
+    have ih' := ih hh c nk hc₁ (fun y hy => hR y (by simp [vals, hy]))
     simp only [vals, List.mem_append] at hx hR
     grind)
 
@@ -1693,14 +1802,15 @@ A path after the step runs through good values only: the roots after it
 are good (`step_cover`), and so are the new contents of every good
 location, which the step stored among its roots (`step_writes`) or left
 as they were (`GV.heap`). -/
-theorem step_noForge (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
-    (hs : Step h t h' t') (c : ComponentTag) (hc : ofC (activeTag c t) = false) :
-    ∀ l, ReachesFrom ofC h' (vals ofC (!ofC c) t') l →
-      ReachesFrom ofC h (vals ofC (!ofC c) t) l ∨ h.length ≤ l := by
-  have hR : ∀ x ∈ vals ofC (!ofC c) t, GV ofC h (vals ofC (!ofC c) t) x := fun _ hx => GV.root hx
-  have hcover := step_cover (R := vals ofC (!ofC c) t) hh hs c hc hR
-  have hheap : ∀ l u, Good ofC h (vals ofC (!ofC c) t) l → h'[l]? = some u →
-      GV ofC h (vals ofC (!ofC c) t) u := by
+theorem step_noForge (hrl : ∀ t, rl.tags t = true → ofC t = false)
+    (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
+    (hs : Step h t h' t') (c : ComponentTag) (hc : ofC (activeTag rl c nk t) = false) :
+    ∀ l, ReachesFrom ofC h' (vals ofC rl (!ofC c) nk t') l →
+      ReachesFrom ofC h (vals ofC rl (!ofC c) nk t) l ∨ h.length ≤ l := by
+  have hR : ∀ x ∈ vals ofC rl (!ofC c) nk t, GV ofC h (vals ofC rl (!ofC c) nk t) x := fun _ hx => GV.root hx
+  have hcover := step_cover (R := vals ofC rl (!ofC c) nk t) hrl hh hs c nk hc hR
+  have hheap : ∀ l u, Good ofC h (vals ofC rl (!ofC c) nk t) l → h'[l]? = some u →
+      GV ofC h (vals ofC rl (!ofC c) nk t) u := by
     intro l u hg hu
     by_cases hsame : ∃ v, h[l]? = some v ∧ h'[l]? = some v
     · obtain ⟨v, hv, hv'⟩ := hsame
@@ -1708,7 +1818,7 @@ theorem step_noForge (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v =
       exact GV.heap hg hv
     · by_cases hi : Inert ofC u
       · exact GV.inert hi
-      · exact GV.root (step_writes hs c hc hsame hu hi)
+      · exact GV.root (step_writes hs c nk hc hsame hu hi)
   rintro l ⟨v, hv, π, hf⟩
   exact follows_good hheap (hcover v hv) hf
 
@@ -1738,11 +1848,12 @@ theorem heap_isVal {s : IndexedHeap} {l : Nat} {v : Val} (hv : s.h[l]? = some v)
 outside code reach only what they reached before or what the step
 allocated. -/
 theorem outsideStep_noForge {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
-    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) (hroots' : st'.roots = vals (F.ofC C) (!F.ofC C c) t') :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag F.realm c false t) C)
+    (hroots : st.roots = vals (F.ofC C) F.realm (!F.ofC C c) false t) (hroots' : st'.roots = vals (F.ofC C) F.realm (!F.ofC C c) false t') :
     ∀ l, ReachesFrom (F.at C).ofC st'.s.h st'.roots l →
       ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
-  have := step_noForge (ofC := F.ofC C) (fun _ _ hv => heap_isVal hv) hs c (by simp [Family.ofC, hact])
+  have := step_noForge (ofC := F.ofC C) (rl := F.realm) (nk := false) (Family.realm_ofC C)
+    (fun _ _ hv => heap_isVal hv) hs c (by simp [Family.ofC, hact])
   rw [hroots, hroots']
   exact this
 
@@ -1760,8 +1871,8 @@ field, the closure's code and the capture's slot. -/
 theorem capture_reached :
     let h : Heap := [captureClosure, .nul]
     let t : Tm := .readAt "f" (.objAt [("f", 0)] .absent 0)
-    Step h t h captureClosure ∧ ReachesFrom (fun _ => false) h (vals (fun _ => false) true captureClosure) 1 ∧
-      ReachesFrom (fun _ => false) h (vals (fun _ => false) true t) 1 := by
+    Step h t h captureClosure ∧ ReachesFrom (fun _ => false) h (vals (fun _ => false) Realm.empty true false captureClosure) 1 ∧
+      ReachesFrom (fun _ => false) h (vals (fun _ => false) Realm.empty true false t) 1 := by
   intro h t
   refine ⟨Step.readField (l := 0) rfl rfl, ⟨.objAt [("k", 1)] .absent 1, by simp [vals, captureClosure],
     [.key "k"], rfl⟩, ⟨.objAt [("f", 0)] .absent 0, by simp [t, vals], [.key "f", .code 0, .key "k"], ?_⟩⟩

@@ -20,6 +20,74 @@ exposed locations `E`, and the one membership test of the protected region
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
+/-! ## The realm's code and the owner of its frames -/
+
+/-- **The realm's code and the calls of a native** (Read-only frames, its
+natives item; the draft "Framed acceptance", Natives): the tags of the
+realm's code, the code of the standard natives, and the node keys at which
+a frame calls a native, each read with the frame's code and tag. A frame
+of the realm's code is owned by the frame that called it where that frame
+is suspended at a native-call key, and by the client otherwise. -/
+structure Realm where
+  tags : ComponentTag → Bool
+  native : (List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)) × ComponentTag →
+    ControlFlow.Continuation × Option ControlFlow.Target → Bool
+
+/-- The realm of a program with no realm code. -/
+def Realm.empty : Realm := ⟨fun _ => false, fun _ _ => false⟩
+
+/-- The realm at which every frame is the realm's, called at a native-call
+key: every frame takes its caller's owner, so a reading at it is the
+widest (`vals_all`). The values of code are read at it. -/
+def Realm.all : Realm := ⟨fun _ => true, fun _ _ => true⟩
+
+/-- **The owner of a frame** tagged `comp` whose caller is owned by `c`, `nk`
+telling whether the caller is suspended at a native-call key: the caller's
+owner for a frame of the realm's code called at a native-call key, the
+client `none` for one called elsewhere, its own tag for any other frame. -/
+def Realm.own (rl : Realm) (c : ComponentTag) (nk : Bool) (comp : ComponentTag) : ComponentTag :=
+  if rl.tags comp then (if nk then c else none) else comp
+
+/-- **Whether a frame's positions run outside code**, the frame tagged
+`comp` and its caller's positions' flag `o`: the flag of its owner
+(`Realm.flag_own`). -/
+def Realm.flag (rl : Realm) (ofC : ComponentTag → Bool) (o nk : Bool) (comp : ComponentTag) : Bool :=
+  if rl.tags comp then (if nk then o else !ofC none) else !ofC comp
+
+theorem Realm.flag_own (rl : Realm) (ofC : ComponentTag → Bool) {c : ComponentTag} {o : Bool} (ho : (!ofC c) = o)
+    (nk : Bool) (comp : ComponentTag) : rl.flag ofC o nk comp = !ofC (rl.own c nk comp) := by
+  unfold Realm.flag Realm.own
+  by_cases h : rl.tags comp = true
+  · cases nk <;> simp [h, ho]
+  · simp [h]
+
+@[simp] theorem Realm.flag_empty (ofC : ComponentTag → Bool) (o nk : Bool) (comp : ComponentTag) :
+    Realm.empty.flag ofC o nk comp = !ofC comp := rfl
+
+/-- A frame whose positions are outside code's runs no code `ofC` names,
+where no realm tag is one `ofC` names. -/
+theorem Realm.ofC_of_flag {rl : Realm} {ofC : ComponentTag → Bool} (hrl : ∀ t, rl.tags t = true → ofC t = false)
+    {o nk : Bool} {comp : ComponentTag} (h : rl.flag ofC o nk comp = true) : ofC comp = false := by
+  unfold Realm.flag at h
+  by_cases ht : rl.tags comp = true
+  · exact hrl _ ht
+  · simpa [ht] using h
+
+@[simp] theorem Realm.flag_all (ofC : ComponentTag → Bool) (o : Bool) (comp : ComponentTag) :
+    Realm.all.flag ofC o true comp = o := rfl
+
+@[simp] theorem Realm.native_all (m : (List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)) × ComponentTag)
+    (kx : ControlFlow.Continuation × Option ControlFlow.Target) : Realm.all.native m kx = true := rfl
+
+@[simp] theorem Realm.native_empty
+    (m : (List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)) × ComponentTag)
+    (kx : ControlFlow.Continuation × Option ControlFlow.Target) : Realm.empty.native m kx = false := rfl
+
+@[simp] theorem Realm.tags_empty (t : ComponentTag) : Realm.empty.tags t = false := rfl
+
+@[simp] theorem Realm.own_empty (c : ComponentTag) (nk : Bool) (comp : ComponentTag) :
+    Realm.empty.own c nk comp = comp := rfl
+
 /-! ## The values outside code holds -/
 
 section Roots
@@ -28,75 +96,102 @@ variable (ofC : ComponentTag → Bool)
 mutual
 /-- **The values held at the positions of outside code** (the draft,
 "Frames and whose code runs"; `ofC` tells the tags whose code is the
-package's, `o` whether the position runs outside code): objects, spines and
-view spines, a frame's or a `goto`'s positions run by its own tag. A bound
+package's, `o` whether the position runs outside code, `nk` whether the
+frame around it is suspended at a native-call key): objects, spines and
+view spines, a frame's or a `goto`'s positions run by its owner
+(`Realm.flag`, the flag of `Realm.own`). A value's code, and a frame's
+code, environment and default, are read at `Realm.all`, the widest
+reading (`vals_all`). A bound
 function holds the values it saved and a closure of outside code those of
 its code (node expressions and captures, `codeVals`); a closure whose code
 is the package's holds none outside code reaches without calling it. An
 allocation of a typed array holds its view spine, as the object it
 allocates names it. -/
-def vals (o : Bool) : Tm → List Val
+def vals (rl : Realm) (o nk : Bool) : Tm → List Val
   | .var _ => []
-  | .invoke f r args => vals o f ++ vals o r ++ valsArgs o args
-  | .construct f args => vals o f ++ valsArgs o args
-  | .letE a b => vals o a ++ vals o b
+  | .invoke f r args => vals rl o nk f ++ vals rl o nk r ++ valsArgs rl o nk args
+  | .construct f args => vals rl o nk f ++ valsArgs rl o nk args
+  | .letE a b => vals rl o nk a ++ vals rl o nk b
   | .objAt fs .absent i => if o then [.objAt fs .absent i] else []
   | .objAt fs (.view s f n) i => if o then [.objAt fs (.view s f n) i] else []
   | .objAt fs (.bound t r pre) i =>
-    if o then .objAt fs (.bound t r pre) i :: (vals true t ++ vals true r ++ valsArgs true pre) else []
+    if o then .objAt fs (.bound t r pre) i :: (vals Realm.all true true t ++ vals Realm.all true true r ++ valsArgs Realm.all true true pre) else []
   | .objAt fs (.graph n E K s caps k r comp) i =>
     if o then .objAt fs (.graph n E K s caps k r comp) i ::
-      (if ofC comp then [] else valsArgs true E ++ valsArgs true caps) else []
-  | .makeAt .absent _ xs => valsArgs o xs
-  | .makeAt (.view s f n) _ xs => (if o then [.objAt [] (.view s f n) 0] else []) ++ valsArgs o xs
-  | .makeAt (.bound t r pre) _ xs => (vals o t ++ vals o r ++ valsArgs o pre) ++ valsArgs o xs
+      (if ofC comp then [] else valsArgs Realm.all true true E ++ valsArgs Realm.all true true caps) else []
+  | .makeAt .absent _ xs => valsArgs rl o nk xs
+  | .makeAt (.view s f n) _ xs => (if o then [.objAt [] (.view s f n) 0] else []) ++ valsArgs rl o nk xs
+  | .makeAt (.bound t r pre) _ xs => (vals Realm.all o true t ++ vals Realm.all o true r ++ valsArgs Realm.all o true pre) ++ valsArgs rl o nk xs
   | .makeAt (.graph _ E _ _ caps _ _ comp) _ xs =>
-    (if o && !ofC comp then valsArgs true E ++ valsArgs true caps else []) ++ valsArgs o xs
-  | .readAt _ a => vals o a
-  | .indexAt a key => vals o a ++ vals o key
-  | .writeAt _ a b => vals o a ++ vals o b
-  | .test _ a => vals o a
-  | .ite x a b => vals o x ++ vals o a ++ vals o b
-  | .arith _ a b => vals o a ++ vals o b
+    (if o && !ofC comp then valsArgs Realm.all true true E ++ valsArgs Realm.all true true caps else []) ++ valsArgs rl o nk xs
+  | .readAt _ a => vals rl o nk a
+  | .indexAt a key => vals rl o nk a ++ vals rl o nk key
+  | .writeAt _ a b => vals rl o nk a ++ vals rl o nk b
+  | .test _ a => vals rl o nk a
+  | .ite x a b => vals rl o nk x ++ vals rl o nk a ++ vals rl o nk b
+  | .arith _ a b => vals rl o nk a ++ vals rl o nk b
   | .arr ls => if o then [.arr ls] else []
   | .viewSpine f cs => if o then [.viewSpine f cs] else []
-  | .arrLit xs => valsArgs o xs
-  | .elemAt a i => vals o a ++ vals o i
-  | .setElem a i v => vals o a ++ vals o i ++ vals o v
-  | .lenOf a => vals o a
-  | .spread a => vals o a
-  | .throw a => vals o a
-  | .merge _ a b => vals o a ++ vals o b
-  | .makeKey k a => vals o k ++ vals o a
-  | .goto E _ _ L d comp => if ofC comp then [] else valsArgs true E ++ valsArgs true L ++ vals true d
-  | .frame E _ t L d _ _ comp =>
-    (if ofC comp then [] else valsArgs true E ++ valsArgs true L ++ vals true d) ++ vals (!ofC comp) t
+  | .arrLit xs => valsArgs rl o nk xs
+  | .elemAt a i => vals rl o nk a ++ vals rl o nk i
+  | .setElem a i v => vals rl o nk a ++ vals rl o nk i ++ vals rl o nk v
+  | .lenOf a => vals rl o nk a
+  | .spread a => vals rl o nk a
+  | .throw a => vals rl o nk a
+  | .merge _ a b => vals rl o nk a ++ vals rl o nk b
+  | .makeKey k a => vals rl o nk k ++ vals rl o nk a
+  | .goto E _ _ L d comp =>
+    if rl.flag ofC o nk comp then valsArgs Realm.all true true E ++ valsArgs Realm.all true true L ++
+      vals Realm.all true true d else []
+  | .frame E K t L d k x comp =>
+    (if rl.flag ofC o nk comp then valsArgs Realm.all true true E ++ valsArgs Realm.all true true L ++
+      vals Realm.all true true d else []) ++ vals rl (rl.flag ofC o nk comp) (rl.native ((E, K), comp) (k, x)) t
   | _ => []
 termination_by structural t => t
 
-def valsArgs (o : Bool) : List Tm → List Val
+def valsArgs (rl : Realm) (o nk : Bool) : List Tm → List Val
   | [] => []
-  | x :: xs => vals o x ++ valsArgs o xs
+  | x :: xs => vals rl o nk x ++ valsArgs rl o nk xs
 termination_by structural xs => xs
 end
 
-@[simp] theorem valsArgs_eq (o : Bool) (xs : List Tm) : valsArgs ofC o xs = xs.flatMap (vals ofC o) := by
+@[simp] theorem valsArgs_eq (rl : Realm) (o nk : Bool) (xs : List Tm) :
+    valsArgs ofC rl o nk xs = xs.flatMap (vals ofC rl o nk) := by
   induction xs <;> simp_all [valsArgs]
 
 /-- **The values a value's code holds**: a bound function's saved target,
 receiver and arguments; a closure of outside code's node expressions and
 captures. A closure whose code is the package's has none. -/
 def codeVals : Val → List Val
-  | .objAt _ (.bound t r pre) _ => vals ofC true t ++ vals ofC true r ++ valsArgs ofC true pre
+  | .objAt _ (.bound t r pre) _ =>
+    vals ofC Realm.all true true t ++ vals ofC Realm.all true true r ++ valsArgs ofC Realm.all true true pre
   | .objAt _ (.graph _ E _ _ caps _ _ comp) _ =>
-    if ofC comp then [] else valsArgs ofC true E ++ valsArgs ofC true caps
+    if ofC comp then [] else valsArgs ofC Realm.all true true E ++ valsArgs ofC Realm.all true true caps
   | _ => []
 
 /-- An object at a position of outside code holds itself and its code's
 values. -/
-theorem vals_objAt (fs : List (PropKey × Nat)) (cc : CallCode) (i : Nat) :
-    vals ofC true (.objAt fs cc i) = .objAt fs cc i :: codeVals ofC (.objAt fs cc i) := by
+theorem vals_objAt (rl : Realm) (nk : Bool) (fs : List (PropKey × Nat)) (cc : CallCode) (i : Nat) :
+    vals ofC rl true nk (.objAt fs cc i) = .objAt fs cc i :: codeVals ofC (.objAt fs cc i) := by
   cases cc <;> simp [vals, codeVals]
+
+/-- A value holds no frame: its values are the same at every realm. -/
+theorem vals_val (rl rl' : Realm) (o nk nk' : Bool) {v : Tm} (hv : isVal v = true) :
+    vals ofC rl o nk v = vals ofC rl' o nk' v := by
+  cases v with
+  | objAt fs cc i => cases cc <;> simp [vals]
+  | _ => simp_all [isVal, vals]
+
+/-- **The widest reading**: the values held at the positions of outside
+code at any realm, flag and key are among those at `Realm.all`, every
+position outside code's. -/
+theorem vals_all : ∀ (t : Tm) (rl : Realm) (o nk : Bool) {x : Val}, x ∈ vals ofC rl o nk t →
+    x ∈ vals ofC Realm.all true true t := by
+  intro t
+  induction t using Tm.induct
+  all_goals intro rl o nk x hx
+  all_goals simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap, Realm.flag_all, Realm.native_all] at hx ⊢
+  all_goals (repeat' split at hx) <;> (try split) <;> grind
 
 end Roots
 
@@ -216,11 +311,11 @@ theorem RefsOk.refsOkN {k : Nat} {W : WorldT k} {v : Val} (h : RefsOk W v) : Ref
 /-- **The references of a value outside code holds**: the term's, but an
 identity, or the view spine of a typed array's allocation, which the term
 names in its descriptor. -/
-theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ u ∈ vals ofC o t, ∀ r ∈ refs u,
+theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) : ∀ rl o nk, ∀ u ∈ vals ofC rl o nk t, ∀ r ∈ refs u,
     r ∈ refs t ∨ (∃ l, r = .ident l) ∨ ∃ s f n p, r = .view s f n true ∧ Ref.view s f n p ∈ refs t := by
   induction t using Tm.induct
   case makeView s f n ns args ih =>
-    intro o u hu r hr
+    intro rl o nk u hu r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hu
     rcases hu with hu | ⟨a, ha, hu⟩
     · split at hu
@@ -232,12 +327,12 @@ theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ u ∈ vals
         · exact .inr (.inl ⟨0, rfl⟩)
         · exact .inr (.inr ⟨s, f, n, !ns.contains arraySpineKey, rfl, by simp [refs]⟩)
       · simp at hu
-    · rcases ih a ha o u hu r hr with h | h | ⟨s', f', n', p, h₁, h₂⟩
+    · rcases ih a ha rl o nk u hu r hr with h | h | ⟨s', f', n', p, h₁, h₂⟩
       · exact .inl (by simp only [refs, refsArgs_eq, List.mem_cons, List.mem_flatMap]; exact .inr ⟨a, ha, h⟩)
       · exact .inr (.inl h)
       · exact .inr (.inr ⟨s', f', n', p, h₁, by
           simp only [refs, refsArgs_eq, List.mem_cons, List.mem_flatMap]; exact .inr ⟨a, ha, h₂⟩⟩)
-  all_goals intro o u hu r hr
+  all_goals intro rl o nk u hu r hr
   all_goals simp only [vals, valsArgs_eq] at hu
   all_goals (repeat' split at hu)
   all_goals (try simp only [List.mem_cons, List.mem_append, List.mem_flatMap, List.not_mem_nil,
@@ -249,10 +344,10 @@ theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ u ∈ vals
 
 /-- **The values outside code holds have valid references** where the term
 does, identities aside. -/
-theorem vals_refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} {t : Tm} {o : Bool} {u : Val}
-    (ht : RefsOkN W t) (hu : u ∈ vals ofC o t) : RefsOkN W u := by
+theorem vals_refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} {t : Tm} {rl : Realm} {o nk : Bool}
+    {u : Val} (ht : RefsOkN W t) (hu : u ∈ vals ofC rl o nk t) : RefsOkN W u := by
   intro r hr hn
-  rcases vals_refs t o u hu r hr with h | ⟨l, rfl⟩ | ⟨s, f, n, p, rfl, hp⟩
+  rcases vals_refs t rl o nk u hu r hr with h | ⟨l, rfl⟩ | ⟨s, f, n, p, rfl, hp⟩
   · exact ht r h hn
   · exact (hn l rfl).elim
   · have := ht _ hp (by simp)
@@ -265,7 +360,8 @@ theorem codeVals_refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} 
     (hv : RefsOkN W v) (hw : w ∈ codeVals ofC v) : RefsOkN W w := by
   cases v
   case objAt fs cc i =>
-    have hm : w ∈ vals ofC true (.objAt fs cc i) := by rw [vals_objAt]; exact List.mem_cons_of_mem _ hw
+    have hm : w ∈ vals ofC Realm.all true true (.objAt fs cc i) := by
+      rw [vals_objAt]; exact List.mem_cons_of_mem _ hw
     exact vals_refsOkN hv hm
   all_goals simp [codeVals] at hw
 

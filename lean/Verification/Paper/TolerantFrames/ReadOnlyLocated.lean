@@ -42,8 +42,8 @@ open Verification ControlFlow
 /-- **Every step changes the runs so** (proved): a step of a well-formed
 term on a heap free of runs, at every top tag. -/
 theorem step_runs {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hw : wf t = true) (hh : HeapFree h) :
-    ∀ c, PathRuns (path c t) (path c t') :=
-  (step_runs_wf hs hw hh).2.2
+    ∀ c, PathRuns (path Realm.empty c false t) (path Realm.empty c false t') :=
+  fun c => (step_runs_wf hs hw hh).2.2 Realm.empty c false
 
 /-! ## Labels -/
 
@@ -88,7 +88,7 @@ structure Located where
 /-- **A located step** at the top tag `c`: an actual step, the labels after
 it the step's relabelling. -/
 def LStep (c : ComponentTag) (a b : Located) : Prop :=
-  AStep a.x b.x ∧ Relabel (path c a.x.t) (path c b.x.t) a.ls b.ls
+  AStep a.x b.x ∧ Relabel (path Realm.empty c false a.x.t) (path Realm.empty c false b.x.t) a.ls b.ls
 
 /-- **A located step's erasure is the calculus's step** (proved). -/
 theorem locatedStep_erase {c : ComponentTag} {a b : Located} (hs : LStep c a b) :
@@ -133,8 +133,8 @@ well-formed term on a heap free of runs, from labels agreeing with the
 path, is the erasure of a located step to labels agreeing with the path
 again. -/
 theorem step_lift {c : ComponentTag} {a : Located} {y : Conf} (hs : AStep a.x y) (hw : a.x.WF)
-    (hl : LabelsOk (path c a.x.t) a.ls) :
-    ∃ ls', LStep c a ⟨y, ls'⟩ ∧ LabelsOk (path c y.t) ls' := by
+    (hl : LabelsOk (path Realm.empty c false a.x.t) a.ls) :
+    ∃ ls', LStep c a ⟨y, ls'⟩ ∧ LabelsOk (path Realm.empty c false y.t) ls' := by
   rcases step_runs hs.step hw.1 hw.2 c with ⟨new, F, F', rest, hP, hP', hF, hn, hg⟩ |
     ⟨new, F, G, G', rest, hP, hP', hG, hn, hg⟩
   · rw [hP] at hl
@@ -156,7 +156,7 @@ theorem step_lift {c : ComponentTag} {a : Located} {y : Conf} (hs : AStep a.x y)
 node, `goto`, at the top tag `c`, with its own label and any label for the
 top segment. -/
 theorem labelsOk_goto {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
-    {comp c : ComponentTag} (l₀ : Nat) : LabelsOk (path c (.goto E K l L d comp)) [l, l₀] := by
+    {comp c : ComponentTag} (l₀ : Nat) : LabelsOk (path Realm.empty c false (.goto E K l L d comp)) [l, l₀] := by
   simp only [path]
   exact .cons (by simp [LabelAt, runHead]) (.cons (by simp [LabelAt, runHead, hole]) .nil)
 
@@ -173,7 +173,7 @@ structure Occ where
 /-- **The occurrence of a located configuration's next step**: the run of
 its innermost entry at its label; none in the top segment. -/
 def occ (c : ComponentTag) (a : Located) : Option Occ :=
-  match (path c a.x.t).head?, a.ls.head? with
+  match (path Realm.empty c false a.x.t).head?, a.ls.head? with
   | some p, some l =>
     match runHead p.2 with
     | .goto m comp _ => some ⟨m, comp, l, p.2⟩

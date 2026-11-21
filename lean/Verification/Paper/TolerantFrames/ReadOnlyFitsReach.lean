@@ -73,141 +73,159 @@ def frameTag : Option FrameKey → ComponentTag
   | some ((_, c), _) => c
   | none => none
 
-theorem activeFrame_cong {cur : Option FrameKey} {a : Tm} (A : Tm)
-    (hf : activeFrame cur A = activeFrame cur a) (hp : activeTag (frameTag cur) A = activeTag (frameTag cur) a)
-    (ih : frameTag (activeFrame cur a).1 = activeTag (frameTag cur) a) :
-    frameTag (activeFrame cur A).1 = activeTag (frameTag cur) A := by
+/-- The congruence of the tag of a step's frame, read with no realm. -/
+theorem activeFrame_cong_eq {cur : Option FrameKey} {a : Tm} (A : Tm)
+    (hf : activeFrame cur A = activeFrame cur a)
+    (hp : activeTag Realm.empty (frameTag cur) false A = activeTag Realm.empty (frameTag cur) false a)
+    (ih : frameTag (activeFrame cur a).1 = activeTag Realm.empty (frameTag cur) false a) :
+    frameTag (activeFrame cur A).1 = activeTag Realm.empty (frameTag cur) false A := by
   rw [hf, ih, hp]
 
-/-- **The frame of a step that allocates is the path's innermost**
-(proved, by induction on the step): `activeFrame` and `path` follow the
-same congruences, and a step allocating runs no `goto`. -/
-theorem activeFrame_tag {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : h.length < h'.length) :
-    ∀ cur : Option FrameKey, frameTag (activeFrame cur t).1 = activeTag (frameTag cur) t := by
+theorem activeFrame_cong {cur : Option FrameKey} {a : Tm} (A : Tm) {c : ComponentTag} {nk : Bool}
+    (hf : activeFrame cur A = activeFrame cur a) (hp : activeTag rl c nk A = activeTag rl c nk a)
+    (ih : P.ofC (activeTag rl c nk a) = false → P.ofC (frameTag (activeFrame cur a).1) = false) :
+    P.ofC (activeTag rl c nk A) = false → P.ofC (frameTag (activeFrame cur A).1) = false := by
+  rw [hf, hp]; exact ih
+
+/-- **The frame of a step that allocates runs no code of the package where
+its owner runs none** (proved, by induction on the step): `activeFrame`
+and `path` follow the same congruences, a frame's owner is its tag or, for
+a frame of the realm's code, which runs no code of the package, its
+caller's or the client's, and a step allocating runs no `goto`. -/
+theorem activeFrame_out (hrl : ∀ t, rl.tags t = true → P.ofC t = false) {h h' : Heap} {t t' : Tm}
+    (hs : Step h t h' t') (hlen : h.length < h'.length) :
+    ∀ (cur : Option FrameKey) (c : ComponentTag) (nk : Bool), (P.ofC c = false → P.ofC (frameTag cur) = false) →
+      P.ofC (activeTag rl c nk t) = false → P.ofC (frameTag (activeFrame cur t).1) = false := by
   induction hs
-  all_goals intro cur
+  all_goals intro cur c nk hc
   -- Steps that keep the heap's length allocate nothing.
   all_goals try (exfalso; simp_all; done)
   all_goals try (exfalso; simp at hlen; done)
   case callL hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case callRecv hfv hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hfv]) (by simp [activeTag, path, wrap_head, hn, hfv]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hfv]) (by simp [activeTag, path, wrap_head, hn, hfv]) (ih hlen cur c nk hc)
   case callArg hfv hrv hai hpre hst ih =>
     have hn := notVal_of_step hst
     refine activeFrame_cong _ (by simp only [activeFrame, hfv, hrv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur c nk hc)
   case constructL hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case constructArg hfv hai hpre hst ih =>
     have hn := notVal_of_step hst
     refine activeFrame_cong _ (by simp only [activeFrame, hfv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+      (by simp only [activeTag, path, hfv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur c nk hc)
   case letC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case spreadC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case makeArg hai hpre hst ih =>
     have hn := notVal_of_step hst
     refine activeFrame_cong _ (by simp only [activeFrame]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+      (by simp only [activeTag, path, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur c nk hc)
   case readC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case indexC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case indexC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case writeC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case writeC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case testC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case iteC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case arithC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case arithC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case arrArg hai hpre hst ih =>
     have hn := notVal_of_step hst
     refine activeFrame_cong _ (by simp only [activeFrame]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+      (by simp only [activeTag, path, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur c nk hc)
   case elemC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case elemC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case setC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case setC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case setC3 hav hiv hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav, hiv]) (by simp [activeTag, path, wrap_head, hn, hav, hiv]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav, hiv]) (by simp [activeTag, path, wrap_head, hn, hav, hiv]) (ih hlen cur c nk hc)
   case lenC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case throwC hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case mergeC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case mergeC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case makeKeyC1 hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur c nk hc)
   case makeKeyC2 hav hst ih =>
     have hn := notVal_of_step hst
-    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur)
+    exact activeFrame_cong _ (by simp [activeFrame, hn, hav]) (by simp [activeTag, path, wrap_head, hn, hav]) (ih hlen cur c nk hc)
   case frameC ih =>
     rw [activeTag_frame]
     simp only [activeFrame]
-    exact ih hlen _
+    refine ih hlen _ _ _ fun ho => ?_
+    simp only [frameTag]
+    unfold Realm.own at ho
+    split at ho
+    · exact hrl _ ‹_›
+    · exact ho
   case makeFields hvs _ =>
-    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; rfl
+    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; exact hc
   case arrAlloc hvs _ =>
-    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; rfl
+    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; exact hc
   case arrAllocThrow hvs _ =>
-    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; rfl
+    simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; exact hc
   case setGrow ls b _ _ v hv _ _ =>
     simp only [activeFrame, path, hv, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl,
       Bool.true_eq_false, ite_false, activeTag, List.head?_cons, Option.map_some, Option.getD_some]
+    exact hc
   case lenStrThrow =>
-    simp [activeFrame, path, activeTag, isVal]
+    simpa [activeFrame, path, activeTag, isVal] using hc
   case arithThrow hb =>
     obtain ⟨ha, hb'⟩ := binopThrows_values hb
-    simp [activeFrame, path, activeTag, ha, hb']
+    simpa [activeFrame, path, activeTag, ha, hb'] using hc
 
 /-- **A step of outside code allocates outside storage** (proved): where
 the path's innermost tag runs no code of `C`, the innermost frame's
 allocation sites are outside storage's. -/
 theorem stepSite_outside {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : h.length < h'.length)
-    {cur : Option FrameKey} (hout : P.ofC (activeTag (frameTag cur) t) = false) :
+    (hrl : ∀ t, rl.tags t = true → P.ofC t = false) {cur : Option FrameKey} {nk : Bool}
+    (hout : P.ofC (activeTag rl (frameTag cur) nk t) = false) :
     stepSite Fl cur t = none := by
-  have htag := activeFrame_tag hs hlen cur
+  have hout := activeFrame_out hrl hs hlen cur _ nk id hout
   have hal : allocOf Fl (activeFrame cur t).1 = Alloc.outside := by
-    rw [← htag] at hout
     cases hfr : (activeFrame cur t).1 with
     | none => rfl
     | some p =>
@@ -237,10 +255,11 @@ theorem stepAt_site {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {d
 /-! ## The roots of outside code -/
 
 theorem vals_sites_of_value {g : Ghost P} {n : Nat} {S : Sites P} {v r : Val} (hv : VJ Fl g n S v)
-    (hr : r ∈ vals P.ofC true v) : SitesOf g S r :=
-  fun l hl => hv.sites l (leaves_of_vals hv.val hr hl)
+    (hr : r ∈ vals P.ofC rl true nk v) : SitesOf g S r := by
+  rw [vals_val P.ofC rl Realm.all true nk true hv.val] at hr
+  exact fun l hl => hv.sites l (leaves_of_vals hv.val hr hl)
 
-theorem vals_false_value {v r : Val} (hv : isVal v = true) (hr : r ∈ vals P.ofC false v) : False := by
+theorem vals_false_value {v r : Val} (hv : isVal v = true) (hr : r ∈ vals P.ofC rl false nk v) : False := by
   cases v with
   | objAt fs cc i => cases cc <;> simp_all [vals]
   | _ => simp_all [isVal, vals]
@@ -248,7 +267,7 @@ theorem vals_false_value {v r : Val} (hv : isVal v = true) (hr : r ∈ vals P.of
 /-- **A position of a value or a variable holds values meeting the set**
 (proved): a value of a set within `O` at a position of outside code. -/
 theorem vor_roots {g : Ghost P} {n : Nat} {Γ : Nat → Option (Sites P)} {S : Sites P} {o : Bool} {u : Tm}
-    (h : VOr (VJ Fl g n) Γ S u) (ho : o = true → Sub S Fl.O) : ∀ r ∈ vals P.ofC o u, SitesOf g Fl.O r := by
+    (h : VOr (VJ Fl g n) Γ S u) (ho : o = true → Sub S Fl.O) : ∀ r ∈ vals P.ofC rl o nk u, SitesOf g Fl.O r := by
   intro r hr
   rcases h with hv | ⟨j, _, rfl, _, _⟩
   · cases o with
@@ -283,7 +302,7 @@ theorem vor_default {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P
   rwa [envOf_default] at this
 
 theorem lowered_roots {g : Ghost P} {E : List Tm} (hE : ∀ e ∈ E, Lowered Fl e) :
-    ∀ r ∈ valsArgs P.ofC true E, SitesOf g Fl.O r := by
+    ∀ r ∈ valsArgs P.ofC Realm.all true true E, SitesOf g Fl.O r := by
   intro r hr
   simp only [valsArgs_eq, List.mem_flatMap] at hr
   obtain ⟨e, he, hr⟩ := hr
@@ -295,7 +314,7 @@ theorem lowered_roots {g : Ghost P} {E : List Tm} (hE : ∀ e ∈ E, Lowered Fl 
 `Fits`): a value at a position of outside code fits a subset of `O`; a run
 of outside code holds lowered code and an environment of `O`. -/
 theorem fits_roots {g : Ghost P} {n : Nat} :
-    ∀ {Γ a o S t}, Fits Fl (VJ Fl g n) Γ a o S t → ∀ r ∈ vals P.ofC o t, SitesOf g Fl.O r := by
+    ∀ {Γ a o S t}, Fits Fl (VJ Fl g n) Γ a o S t → ∀ r ∈ vals P.ofC Realm.empty o false t, SitesOf g Fl.O r := by
   intro Γ a o S t h
   induction h with
   | val hv h₀ ho => exact vor_roots (Γ := fun _ => none) (.inl h₀) ho
@@ -336,7 +355,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     intro r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
-    · exact vor_roots (Γ := fun _ => none) (.inl hv) ho r (by simpa only [vals] using hr)
+    · exact vor_roots (Γ := fun _ => none) (rl := Realm.empty) (nk := false) (.inl hv) ho r (by simpa only [vals] using hr)
     · exact ih x hx r hr
   | makeBound _ _ _ _ _ hb _ hp ho ih =>
     intro r hr
@@ -404,7 +423,8 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
   | gotoC _ _ hc _ _ _ _ _ => intro r hr; simp [vals, hc] at hr
   | gotoOut hc hE henv _ _ =>
     intro r hr
-    simp only [vals, hc, Bool.false_eq_true, ite_false, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
+    simp only [vals, Realm.flag_empty, hc, Bool.not_false, ite_true, valsArgs_eq, List.mem_append,
+      List.mem_flatMap] at hr
     rcases hr with (hr | ⟨x, hx, hr⟩) | hr
     · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
     · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
@@ -414,12 +434,13 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact vor_roots (vor_default henv) (fun _ => Sub.refl _) r hr
   | frameC _ _ _ hc _ _ _ _ _ _ _ _ ih =>
     intro r hr
-    simp only [vals, hc, ite_true, List.nil_append, Bool.not_true] at hr
+    simp only [vals, Realm.flag_empty, Realm.native_empty, hc, Bool.not_true, Bool.false_eq_true, ite_false,
+      List.nil_append] at hr
     exact ih r hr
   | frameOut hc hE henv _ _ _ _ ih =>
     intro r hr
-    simp only [vals, hc, Bool.false_eq_true, ite_false, Bool.not_false, valsArgs_eq, List.mem_append,
-      List.mem_flatMap] at hr
+    simp only [vals, Realm.flag_empty, Realm.native_empty, hc, Bool.not_false, ite_true, valsArgs_eq,
+      List.mem_append, List.mem_flatMap] at hr
     rcases hr with ((hr | ⟨x, hx, hr⟩) | hr) | hr
     · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
     · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
@@ -470,9 +491,9 @@ theorem next_site (hS : fr.FlowSites Fl) {a b : Conf × Ghost (fr.F.at fr.C)} (h
     split
     · rename_i hk
       have hout : OutsideAt fr.F fr.C none a.1.t := ((kind_spec (F := fr.F) (C := fr.C) (c := none) a.1 b.1).1 hk).1
-      have hof : (fr.F.at fr.C).ofC (activeTag (frameTag none) a.1.t) = false := by
+      have hof : (fr.F.at fr.C).ofC (activeTag fr.F.realm (frameTag none) false a.1.t) = false := by
         simpa [Family.at, Family.ofC, OutsideAt, frameTag] using hout
-      exact (stepSite_outside hst.step (by omega) hof).symm
+      exact (stepSite_outside hst.step (by omega) (Family.realm_ofC fr.C) hof).symm
     · rw [hS]
 
 /-- **Every step keeps a state fitting the flow** (proved, `fits_step`). -/
@@ -506,8 +527,10 @@ theorem sitesSound_of_fits (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.Entry
   rw [hmid]
   refine ⟨hH.sites, fun r hr => fits_roots hfit r ?_⟩
   have hn : fr.F.ofC fr.C none = false := by simp [Family.ofC, Family.Runs]
-  have : rootsOf fr.F fr.C none b.1.t = vals (fr.F.at fr.C).ofC true b.1.t := by simp [rootsOf, hn]; rfl
-  rw [← this]; exact hr
+  have : rootsOf fr.F fr.C none b.1.t = vals (fr.F.at fr.C).ofC fr.F.realm true false b.1.t := by
+    simp [rootsOf, hn]; rfl
+  rw [this] at hr
+  exact vals_empty_of (Family.realm_ofC fr.C) _ hr
 
 end ClientFrame
 

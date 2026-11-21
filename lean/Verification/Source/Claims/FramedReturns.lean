@@ -402,6 +402,7 @@ theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
     {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
     {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -412,7 +413,7 @@ theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
     (hroots : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
-      ∀ v ∈ vals allC true (instantiate 0 (envOf L d) e), ∃ S', VJ Fl.flow b₀.2 b₀.1.s.h.length S' v ∧
+      ∀ v ∈ vals allC Realm.empty true false (instantiate 0 (envOf L d) e), ∃ S', VJ Fl.flow b₀.2 b₀.1.s.h.length S' v ∧
         Sub S' (T l) ∧ layP (layQ Fl lay) v = true) :
     ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
@@ -421,7 +422,7 @@ theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
   obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
   have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
     ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
-  refine segWithin_of_run hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall fun f' r' args' ht v hv => ?_
+  refine segWithin_of_run hrn hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall fun f' r' args' ht v hv => ?_
   rw [hbt, hinst] at ht
   cases ht
   rw [← hinst] at hv
@@ -465,7 +466,7 @@ theorem roots_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).
     ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       ∀ f' r' args', b₀.1.t = .frame Pe Pk (.invoke f' r' args') L d k x c₀ →
-      ∀ v ∈ vals allC true (.invoke f' r' args'), DeepIn b₀.2.site (T l) v := by
+      ∀ v ∈ vals allC Realm.empty true false (.invoke f' r' args'), DeepIn b₀.2.site (T l) v := by
   intro l b₀ e L d k x hFl hb he hk hL hbt
   obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
   have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
@@ -523,6 +524,7 @@ theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
     {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
     {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -540,7 +542,7 @@ theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
   obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
   have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
     ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
-  exact segWithin_of_deep hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall
+  exact segWithin_of_deep hrn hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall
     (roots_of_fit hFa hS hE hly hT htok hlow hcomp hatom hslots l b₀ e L d k x hFl hb he hk hL hbt)
 
 /-- **The segment at each framed node within its protocol at every
@@ -734,6 +736,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -781,7 +784,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       (fun _ _ _ _ => True) :=
   ret_reachedW hsrc hty hvals
     (ClientFrame.nodeTransfer_of_transfer (own := own) hc hi hcomp hatom certs hΘ hW
-      (ClientFrame.own_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
+      (ClientFrame.own_of_fit hrn hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
       (ClientFrame.framed_of_check hFa hS hE hcomp hatom hcheck hw hq) hΦ
       (fun l b₀ e L d k x hFl ho => ClientFrame.all_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots
         (hownc.1 l hFl ho) l b₀ e L d k x hFl)
@@ -806,6 +809,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -843,7 +847,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       (capClose Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)) = true)
     (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
       δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, HeapObservations.EvalCtx K →
-      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC Realm.empty true false (.goto E Kc l L d cc),
         ∃ S', VJ Fl.flow a₁.2 a₁.1.s.h.length S' x ∧
           Sub S' (capClose Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)) ∧ layP (layQ Fl lay) x = true)
     (hΘ : ∀ p, (fr.Θ p).le (componentProtocol Fl lay p) = true)
@@ -860,8 +864,8 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
     (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
-    (fun m => ClientFrame.cert_of_charges hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ hownc
+  ret_reachedW_of_checks hsrc hty hvals hc hi hrn hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
+    (fun m => ClientFrame.cert_of_charges hrn hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ hownc
 
 /-- **The returns at reached executions, from the checks, the charges and
 the entries** (proved; `ret_reachedW_of_charges` with its premise `hroots`
@@ -883,6 +887,7 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       SlotVals L d)
     (hc : fr.ChkSound) (hi : fr.StartInv)
     {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -935,9 +940,9 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
     (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
-    (fun m => ClientFrame.cert_of_deep hFa hS hE hst hwk hly hTm htok hlow
-      (ClientFrame.entry_roots hFa hS hE hst hly hnp hTm htok hlow hr) m) hΘ hW hΦ hownc
+  ret_reachedW_of_checks hsrc hty hvals hc hi hrn hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
+    (fun m => ClientFrame.cert_of_deep hrn hFa hS hE hst hwk hly hTm htok hlow
+      (ClientFrame.entry_roots hrn hFa hS hE hst hly hnp hTm htok hlow hr) m) hΘ hW hΦ hownc
 
 /-- **The returns at reached executions of a framed plan's frame** (proved,
 `ret_reachedW_of_entries` at `spec.frame r` and the spec's flow): its
@@ -1009,7 +1014,7 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
     (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
-  ret_reachedW_of_entries (Fl := Fl) hsrc hty hvals hc hi hFa (hFl ▸ spec.flowSites r) hE
+  ret_reachedW_of_entries (Fl := Fl) hsrc hty hvals hc hi (fun _ => rfl) hFa (hFl ▸ spec.flowSites r) hE
     (spec.wok_start r hinitW) (spec.lay_start r hinitL) htok hlow hcomp hatom hT hle hslots hcheck hw hq
     (spec.wfS_start r) hTm (spec.noPend_start r) hr hΘ hW hΦ hownc
 

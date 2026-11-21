@@ -273,7 +273,7 @@ inductive Within (P : Package) : Val → Val → Prop where
   | refl (v : Val) : Within P v v
   | cap {fs n E K s caps k rest comp oid u w} : u ∈ caps → Within P u w →
       Within P (.objAt fs (.graph n E K s caps k rest comp) oid) w
-  | code {fs n E K s caps k rest comp oid u w} : u ∈ valsArgs P.ofC true E → Within P u w →
+  | code {fs n E K s caps k rest comp oid u w} : u ∈ valsArgs P.ofC Realm.all true true E → Within P u w →
       Within P (.objAt fs (.graph n E K s caps k rest comp) oid) w
   | bound {fs t r pre oid u w} : u ∈ t :: r :: pre → Within P u w → Within P (.objAt fs (.bound t r pre) oid) w
 
@@ -918,7 +918,7 @@ theorem VJ.thrown {S : Sites P} (i : Nat) : VJ Fl g n S (thrownError i) := by
 expression's value of graph code, a part of a bound function. -/
 def Child (v u : Val) : Prop :=
   (∃ fs n E K s caps k rest comp oid, v = .objAt fs (.graph n E K s caps k rest comp) oid ∧
-    (u ∈ caps ∨ u ∈ valsArgs P.ofC true E)) ∨
+    (u ∈ caps ∨ u ∈ valsArgs P.ofC Realm.all true true E)) ∨
   ∃ fs t r pre oid, v = .objAt fs (.bound t r pre) oid ∧ u ∈ t :: r :: pre
 
 /-- **An object meets a set of sites** (proved): its field locations and
@@ -966,7 +966,7 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     exact hv.inner w hw'
 
 /-- **A value's positions reach only what the value reaches** (proved). -/
-theorem leaves_of_vals {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC true v) {l : Nat}
+theorem leaves_of_vals {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC Realm.all true true v) {l : Nat}
     (hl : Leaves P.ofC x l) : Leaves P.ofC v l := by
   cases v with
   | objAt fs cc i =>
@@ -979,7 +979,7 @@ theorem leaves_of_vals {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC 
   | _ => simp [vals, isVal] at hx hv
 
 /-- **A value's positions hold only what the value holds** (proved). -/
-theorem fnsIn_of_vals {S : Sites P} {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC true v)
+theorem fnsIn_of_vals {S : Sites P} {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC Realm.all true true v)
     (h : FnsIn Fl S v) : FnsIn Fl S x := by
   cases v with
   | objAt fs cc i =>
@@ -1159,7 +1159,7 @@ theorem bound_code {fs : List (PropKey × Nat)} {t r : Tm} {pre : List Tm} {oid 
     ∀ x ∈ codeVals P.ofC (.objAt fs (.bound t r pre) oid), ∀ l, Leaves P.ofC x l → l < n ∧ g.site l ∈ S := by
   intro x hx l hl
   simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap] at hx
-  obtain ⟨y, hy, hxy⟩ : ∃ y ∈ t :: r :: pre, x ∈ vals P.ofC true y := by
+  obtain ⟨y, hy, hxy⟩ : ∃ y ∈ t :: r :: pre, x ∈ vals P.ofC Realm.all true true y := by
     rcases hx with (hx | hx) | ⟨y, hy, hx⟩
     · exact ⟨_, List.mem_cons_self .., hx⟩
     · exact ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), hx⟩
@@ -1183,7 +1183,7 @@ theorem bound_fns {fs : List (PropKey × Nat)} {t r : Tm} {pre : List Tm} {oid :
     ∀ x ∈ codeVals P.ofC (.objAt fs (.bound t r pre) oid), FnsIn Fl S x := by
   intro x hx
   simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap] at hx
-  obtain ⟨y, hy, hxy⟩ : ∃ y ∈ t :: r :: pre, x ∈ vals P.ofC true y := by
+  obtain ⟨y, hy, hxy⟩ : ∃ y ∈ t :: r :: pre, x ∈ vals P.ofC Realm.all true true y := by
     rcases hx with (hx | hx) | ⟨y, hy, hx⟩
     · exact ⟨_, List.mem_cons_self .., hx⟩
     · exact ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), hx⟩
@@ -1207,7 +1207,7 @@ theorem VJ.graphC {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : Lis
     (hcaps : ∀ c π', Fl.code (E, K) c = some π' →
       (∀ i u, caps[i]? = some u → VJ Fl g n (π'.env s (capSlot ar rest i)) u) ∧ CapFn π' ar E K s caps rest)
     (htok : π.tok ∈ S) (hop : π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length)
-    (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u) :
+    (hE : ∀ u ∈ valsArgs P.ofC Realm.all true true E, VJ Fl g n S u) :
     VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid) := by
   have hcm : ∀ u ∈ caps, ∃ S', VJ Fl g n S' u := fun u hu =>
     let ⟨i, hi⟩ := List.getElem?_of_mem hu; ⟨_, (hcaps _ π hcode).1 i u hi⟩
@@ -1238,10 +1238,10 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = false)
     (hfs : ∀ k l, (k, l) ∈ fs → l < n ∧ g.site l ∈ S)
-    (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u)
+    (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC Realm.all true true E, VJ Fl g n S u)
     (hlow : ∀ e ∈ E, Lowered Fl e) (hnone : none ∈ S)
     (hnlc : ∀ u ∈ caps, ∀ l, Leaves P.ofC u l → g.origin l ≠ some .local)
-    (hnlE : ∀ u ∈ valsArgs P.ofC true E, ∀ l, ¬ Leaves P.ofC u l) :
+    (hnlE : ∀ u ∈ valsArgs P.ofC Realm.all true true E, ∀ l, ¬ Leaves P.ofC u l) :
     VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid) := by
   refine VJ.obj (closed_graph fun x hx => (hcaps x hx).closed) hfs
     (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_ ?_ ?_ ?_
@@ -1284,13 +1284,13 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
       obtain ⟨y, hy, hxy⟩ := hx
       exact fnsIn_of_vals (hcaps y hy).val hxy (hcaps y hy).fns
 
-theorem vals_codePart {t : Tm} (o : Bool) (h : CodePart t) : vals P.ofC o t = [] := by
+theorem vals_codePart {t : Tm} (o : Bool) (h : CodePart t) : vals P.ofC Realm.all o true t = [] := by
   rcases h with ⟨i, rfl⟩ | h
   · simp [vals]
   · cases t <;> simp [primVal] at h <;> simp [vals]
 
 /-- **Lowered code holds only spines without cells as values** (proved). -/
-theorem lowered_vals : ∀ (e : Tm) (o : Bool) {u : Val}, Lowered Fl e → u ∈ vals P.ofC o e →
+theorem lowered_vals : ∀ (e : Tm) (o : Bool) {u : Val}, Lowered Fl e → u ∈ vals P.ofC Realm.all o true e →
     ∃ ls, u = .arr ls ∧ ∀ x ∈ ls, x = none := by
   intro e
   induction e using Tm.induct
@@ -1299,7 +1299,7 @@ theorem lowered_vals : ∀ (e : Tm) (o : Bool) {u : Val}, Lowered Fl e → u ∈
   all_goals grind [vals_codePart]
 
 theorem lowered_vj {E : List Tm} {S : Sites P} (hE : ∀ e ∈ E, Lowered Fl e) :
-    ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u := by
+    ∀ u ∈ valsArgs P.ofC Realm.all true true E, VJ Fl g n S u := by
   intro u hu
   simp only [valsArgs_eq, List.mem_flatMap] at hu
   obtain ⟨e, he, hu⟩ := hu

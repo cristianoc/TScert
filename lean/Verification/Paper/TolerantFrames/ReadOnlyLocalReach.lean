@@ -71,20 +71,20 @@ every tag's code as outside code): every location the values of the run's
 last term reach at its last heap was reached by the first term's values at
 the first heap, or is fresh. -/
 theorem valRun_noForge {h h' : Heap} {t t' : Tm} (hr : ValRun h t h' t') :
-    ∀ l, ReachesFrom allC h' (vals allC true t') l → ReachesFrom allC h (vals allC true t) l ∨ h.length ≤ l := by
+    ∀ l, ReachesFrom allC h' (vals allC Realm.empty true false t') l → ReachesFrom allC h (vals allC Realm.empty true false t) l ∨ h.length ≤ l := by
   induction hr with
   | refl => exact fun l hl => .inl hl
   | step hh hs hr ih =>
     intro l hl
     rcases ih l hl with hl₁ | hl₁
-    · exact step_noForge (ofC := allC) hh hs none rfl l hl₁
+    · exact step_noForge (ofC := allC) (rl := Realm.empty) (nk := false) (fun _ h => by cases h) hh hs none rfl l hl₁
     · exact .inr (Nat.le_trans (Footprints.step_length_le hs) hl₁)
 
 /-- **A changed location is one step from a value of the term** (proved,
 `step_reach` with every tag's code as outside code). -/
 theorem step_changed_reached {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') {l : Nat} {v : Val}
-    (hv : h[l]? = some v) (hne : h'[l]? ≠ some v) : ReachesFrom allC h (vals allC true t) l := by
-  obtain ⟨u, hu, a, hn⟩ := step_reach (ofC := allC) hs none rfl hv hne
+    (hv : h[l]? = some v) (hne : h'[l]? ≠ some v) : ReachesFrom allC h (vals allC Realm.empty true false t) l := by
+  obtain ⟨u, hu, a, hn⟩ := step_reach (ofC := allC) (rl := Realm.empty) hs none false rfl hv hne
   exact ⟨u, hu, [a], hn⟩
 
 variable {α : Type}
@@ -127,7 +127,7 @@ term's values reached at `h₀` (`valRun_noForge`, the location being old),
 so a location of a site of the set (`reach_deep`). -/
 theorem local_reach {site : Nat → α} {L : List α} {h₀ h h' : Heap} {u₀ u u' : Tm}
     (hr : ValRun h₀ u₀ h u) (hs : Step h u h' u') (hH : HeapDeep site L h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, DeepIn site L x)
     {l : Nat} {v : Val} (hlt : l < h₀.length) (hv : h[l]? = some v) (hne : h'[l]? ≠ some v) :
     site l ∈ L := by
   rcases valRun_noForge hr l (step_changed_reached hs hv hne) with ⟨x, hx, π, hf⟩ | hfresh
@@ -146,7 +146,7 @@ theorem stepAll_reach {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawf
     {K₀ K : List Charge} {L : Sites P} {site : Nat → Option P.Site} {h₀ : Heap} {u₀ : Tm}
     {st st' : St P} {t t' : Tm} (hr : ValRun h₀ u₀ st.s.h t) (hs : Step st.s.h t st'.s.h t')
     (hw : WOk t) (hk : writesK t ⊆ K₀) (hrefs : RefsOk st.s.W t) (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
-    (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
+    (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, DeepIn site L x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = site l) :
     StepAll (probeProtocol K L) h₀.length st st' :=
   stepAll_charged hs hw hk hrefs hK fun l _ hlt hv hne _ => by
@@ -163,7 +163,7 @@ theorem stepWithin_reach {P : Package} [DecidableEq P.Site] [Hashable P.Site] [L
     {K₀ K : List Charge} {L : Sites P} {site : Nat → Option P.Site} {h₀ : Heap} {u₀ : Tm}
     {st st' : St P} {t t' : Tm} (hr : ValRun h₀ u₀ st.s.h t) (hs : Step st.s.h t st'.s.h t')
     (hw : WOk t) (hk : writesK t ⊆ K₀) (hrefs : RefsOk st.s.W t) (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
-    (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
+    (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, DeepIn site L x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = site l) :
     StepWithin (probeProtocol K L) h₀.length st st' :=
   (stepAll_reach hr hs hw hk hrefs hK hH hroots hsite).within
@@ -177,12 +177,12 @@ variable {P : Package} {Fl : Flow P} {g : Ghost P} {n : Nat}
 (proved, by induction on the term): lowered code holds no object, no view
 spine and no run, and the code parts of the closures it creates are
 variables or primitive values. -/
-theorem codePart_vals {t : Tm} (h : CodePart t) (o : Bool) : vals allC o t = [] := by
+theorem codePart_vals {t : Tm} (h : CodePart t) (o : Bool) : vals allC Realm.all o true t = [] := by
   rcases h with ⟨i, rfl⟩ | hp
   · simp [vals]
   · cases t <;> simp_all [primVal, vals]
 
-theorem lowered_vals_all : ∀ (e : Tm), Lowered Fl e → ∀ (o : Bool) (x : Val), x ∈ vals allC o e →
+theorem lowered_vals_all : ∀ (e : Tm), Lowered Fl e → ∀ (o : Bool) (x : Val), x ∈ vals allC Realm.all o true e →
     ∃ ls, x = .arr ls ∧ ∀ y ∈ ls, y = none := by
   intro e
   induction e using Tm.induct
@@ -234,7 +234,7 @@ variable (Fl) in
 each of their node expressions are spines with no cell, as the values of
 lowered code are (`lowered_vals_all`). -/
 def CodesLowered : Prop :=
-  ∀ m c π, Fl.code m c = some π → ∀ e ∈ m.1, ∀ x ∈ vals allC true e, ∃ ls, x = .arr ls ∧ ∀ y ∈ ls, y = none
+  ∀ m c π, Fl.code m c = some π → ∀ e ∈ m.1, ∀ x ∈ vals allC Realm.all true true e, ∃ ls, x = .arr ls ∧ ∀ y ∈ ls, y = none
 
 variable (Fl g n) in
 /-- A value meeting a set within `L`, its closures at their layouts, or a
@@ -251,7 +251,7 @@ lowered, whose values are spines with no cell. -/
 theorem goodIn_vals_vj {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : Sites P} (hcap : CapClosed Fl Lay L)
     (hlow : CodesLowered Fl) :
     ∀ (y : Val) (S : Sites P), Sub S L → VJ Fl g n S y → LayDeep P Lay y →
-      ∀ x ∈ vals allC true y, GoodIn Fl g n Lay L x := by
+      ∀ x ∈ vals allC Realm.all true true y, GoodIn Fl g n Lay L x := by
   intro y
   induction y using Tm.induct
   all_goals intro S hS hv hl x hx
@@ -297,7 +297,7 @@ theorem goodIn_vals_vj {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : 
 /-- **The values a good value holds are good** (proved, `goodIn_vals_vj`). -/
 theorem goodIn_vals {Lay : Code → Nat × Bool × Nat × Nat → Prop} {L : Sites P} (hcap : CapClosed Fl Lay L)
     (hlow : CodesLowered Fl) {y : Val} (hy : GoodIn Fl g n Lay L y) :
-    ∀ x ∈ vals allC true y, GoodIn Fl g n Lay L x := by
+    ∀ x ∈ vals allC Realm.all true true y, GoodIn Fl g n Lay L x := by
   rcases hy with ⟨S, hS, hv, hl⟩ | ⟨ls, rfl, hls⟩
   · exact goodIn_vals_vj hcap hlow y S hS hv hl
   · intro x hx; simp [vals] at hx; subst hx; exact .inr ⟨ls, rfl, hls⟩
@@ -501,12 +501,12 @@ next redex runs outside code, every value at a position of the redex is a
 value at a position of outside code of the term, read from the frame `cur`
 outside it. -/
 theorem active_vals : ∀ (t : Tm) (cur : Option FrameKey) (p : Option FrameKey × Tm), activeFrame cur t = p →
-    ofC (frameTag p.1) = false → ∀ x ∈ vals ofC true p.2, x ∈ vals ofC (!ofC (frameTag cur)) t := by
+    ofC (frameTag p.1) = false → ∀ x ∈ vals ofC Realm.empty true false p.2, x ∈ vals ofC Realm.empty (!ofC (frameTag cur)) false t := by
   have hargs : ∀ (xs : List Tm) (T : Tm) (cur : Option FrameKey) (p : Option FrameKey × Tm),
       (∀ a ∈ xs, ∀ cur p, activeFrame cur a = p → ofC (frameTag p.1) = false →
-        ∀ x ∈ vals ofC true p.2, x ∈ vals ofC (!ofC (frameTag cur)) a) →
-      activeArgs cur T xs = p → ofC (frameTag p.1) = false → ∀ x ∈ vals ofC true p.2,
-        x ∈ vals ofC (!ofC (frameTag cur)) T ∨ ∃ a ∈ xs, x ∈ vals ofC (!ofC (frameTag cur)) a := by
+        ∀ x ∈ vals ofC Realm.empty true false p.2, x ∈ vals ofC Realm.empty (!ofC (frameTag cur)) false a) →
+      activeArgs cur T xs = p → ofC (frameTag p.1) = false → ∀ x ∈ vals ofC Realm.empty true false p.2,
+        x ∈ vals ofC Realm.empty (!ofC (frameTag cur)) false T ∨ ∃ a ∈ xs, x ∈ vals ofC Realm.empty (!ofC (frameTag cur)) false a := by
     intro xs T cur p ih hp hc x hx
     rcases activeArgs_split (cur := cur) (t := T) xs with ⟨he, _⟩ | ⟨a, ha, he, _⟩
     · rw [he] at hp; subst hp; simp only at hc hx; exact .inl (by simpa [hc] using hx)
@@ -556,14 +556,14 @@ outside code, is a value at a position of outside code; any other value
 reaches no location. -/
 theorem redex_arg_root {t f r v : Tm} {args : List Tm} (hc : ofC (frameTag (activeFrame none t).1) = false)
     (hp : (activeFrame none t).2 = .invoke f r args ∨ (activeFrame none t).2 = .construct f args) (hv : v ∈ args) :
-    v ∈ vals ofC (!ofC (frameTag none)) t ∨ ∀ l, ¬ Leaves ofC v l := by
+    v ∈ vals ofC Realm.empty (!ofC (frameTag none)) false t ∨ ∀ l, ¬ Leaves ofC v l := by
   cases hl : LocatedVal v
   · refine .inr fun l ⟨w, hw, a, hn⟩ => ?_
     have hcv : codeVals ofC v = [] := by cases v <;> simp_all [LocatedVal, codeVals]
     cases hw with
     | refl => cases v <;> cases a <;> simp_all [LocatedVal, next, Footprints.fieldsOf, HeapKnowledge.descriptorSpine, spineEntries]
     | step hx _ => rw [hcv] at hx; cases hx
-  · have hself : v ∈ vals ofC true v := by
+  · have hself : v ∈ vals ofC Realm.empty true false v := by
       cases v <;> simp_all [LocatedVal, vals_objAt]
       all_goals simp [vals]
     refine .inl (active_vals t none _ rfl hc v ?_)

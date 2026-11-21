@@ -250,7 +250,7 @@ theorem within_run_all {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Law
     (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
     (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepAll (probeProtocol (flowKinds F) T) h₀.length st st' := by
   have hu : isVal u = false := by
@@ -290,7 +290,7 @@ theorem within_run {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulH
     (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
     (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' :=
   (within_run_all hK hrun hvals hs hw₀ hk₀ hW₀ hrefs hfit hC hT htok hlow hH hl hroots hsite).within
@@ -307,7 +307,7 @@ theorem within_deep_all {P : Package} [DecidableEq P.Site] [Hashable P.Site] [La
     (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
     (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, DeepIn g₀.site T x)
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, DeepIn g₀.site T x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepAll (probeProtocol (flowKinds F) T) h₀.length st st' := by
   have hu : isVal u = false := by
@@ -337,7 +337,7 @@ theorem within_deep {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawful
     (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
     (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, DeepIn g₀.site T x)
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, DeepIn g₀.site T x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' :=
   (within_deep_all hK hrun hvals hs hw₀ hk₀ hW₀ hrefs hfit hC hT htok hlow hH hl hroots hsite).within
@@ -345,7 +345,7 @@ theorem within_deep {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawful
 /-- **A value meeting a set in depth meets it at every value it holds**
 (proved, `vals_codeReach`, `CodeReach.trans`). -/
 theorem DeepIn.held {α : Type} {site : Nat → α} {L : List α} {v x : Val} (hv : DeepIn site L v)
-    (hval : isVal v = true) {o : Bool} (hx : x ∈ vals allC o v) : DeepIn site L x :=
+    (hval : isVal v = true) {rl : Realm} {o nk : Bool} (hx : x ∈ vals allC rl o nk v) : DeepIn site L x :=
   fun w hw => hv w ((vals_codeReach (ofC := allC) hval hx).trans hw)
 
 /-- **At a call node's segment, within its depth charges** (proved,
@@ -363,7 +363,7 @@ theorem within_depth {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawfu
     (hT : capClosedB F (tokenCaps F lay) (Sf ++ Sr ++ args.flatten) (callReach F lay Sf Sr args) = true)
     (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀)
     (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' (callReach F lay Sf Sr args) ∧
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' (callReach F lay Sf Sr args) ∧
       layP (layQ F lay) x = true)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepWithin (depthCharges F (callReach F lay Sf Sr args)) h₀.length st st' :=
@@ -385,7 +385,7 @@ theorem within_member {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawf
       (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) = true)
     (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀)
     (hl : HeapLay (layQ F lay) h₀)
-    (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧
+    (hroots : ∀ x ∈ vals allC Realm.empty true false u₀, ∃ S', VJ F.flow g₀ n S' x ∧
       Sub S' (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) ∧ layP (layQ F lay) x = true)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
     StepWithin (componentProtocol F lay) h₀.length st st' :=
