@@ -101,7 +101,7 @@ export type UnitContracts = { unit: string; reads: ContractRead[] };
  * caller reads, by a member's function name (`initOmission` for the
  * initialization), or all: a selection lifts the check's overall time
  * limit, each stage keeping its own. */
-export type UnitSelection = { omitted: string[]; select: string[] | null };
+export type UnitSelection = { omitted: string[]; select: string[] | null; reportComponents?: boolean };
 /** A unit member's name as a selection names it. */
 export const memberName = (member: string): string => member === "init" ? initOmission : member.replace(/@\d+$/, "");
 /** A unit's own result in a check of each unit: its identity and members as
@@ -331,7 +331,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     if (!("modules" in parsedData) || !Array.isArray(parsedData.modules)) throw Error("parser omitted modules");
     phase = "proposal";
     return singlePass(recorder, artifacts, ast, snapshot, parsedData.modules.length > 0, subtypeRounds, functions, unitIds, initialization,
-      (detail) => refusedByTypeScript(detail, refusedErrors), units.select);
+      (detail) => refusedByTypeScript(detail, refusedErrors), units);
   } catch (e) {
     return {
       status: "error",
@@ -356,13 +356,14 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
  * limit is an error. */
 function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, hasModules: boolean, subtypeRounds: number | undefined,
     functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string,
-    select: string[] | null = null): Outcome {
+    units: UnitSelection): Outcome {
   // The names a check of one unit selects: each function's, and the
   // initialization's where it runs code.
   const all = [...new Set(functions), ...(initialization.length > 0 ? [":init"] : [])];
   // A selection's roots, the file's names it names; the verifier checks
   // them and every unit their verdicts rest on (`selectionClosure`). A
   // selection of every name is the whole file.
+  const select = units.select;
   const roots = select === null ? all : all.filter((n) => select.includes(n));
   const names = roots.length === all.length ? "" : roots.join(",");
   let checked: CheckedUnits;
@@ -370,7 +371,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
-    }, hasModules);
+    }, hasModules, units.reportComponents);
   } catch (error) {
     const message = messageOf(error);
     return { status: "error", artifacts, phase: "check", units: null,
@@ -606,8 +607,10 @@ function readRequest(value: unknown): Request {
   const strings = (x: unknown): string[] | null =>
     Array.isArray(x) && x.every((u): u is string => typeof u === "string") ? x : null;
   const omitted = strings(field(given, "omitted")), select = field(given, "select");
-  if (!omitted || !(select === null || strings(select))) throw Error("not a request");
-  const units: UnitSelection = { omitted, select: select === null ? null : strings(select) };
+  const reportComponents = field(given, "reportComponents");
+  if (!omitted || !(select === null || strings(select)) ||
+      (reportComponents !== undefined && typeof reportComponents !== "boolean")) throw Error("not a request");
+  const units: UnitSelection = { omitted, select: select === null ? null : strings(select), reportComponents };
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
     retainArtifacts: value.retainArtifacts, units };
 }

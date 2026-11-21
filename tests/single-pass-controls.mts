@@ -2732,6 +2732,27 @@ control("units: each listed with its dependencies, a names list selecting", asyn
   say("units: module-cells' units listed with their dependencies, the initialization among them; a names list checks bump alone");
 });
 
+control("units: component reporting does not change worker verdicts", async (): Promise<void> => {
+  const artifacts = run("readonly-frame-walker");
+  const fragment = fragmentOf(artifacts);
+  const interfaces = join(runDirectory("quiet-worker-"), "interfaces.json");
+  writeFileSync(interfaces, '{"modules":[]}');
+  const worker = (environment: Record<string, string>) => invokeWorker(verifierCall(verifierBuild,
+    ["--file-worker", "8", fragment, interfaces, sourceKey(artifacts), "12", ""], environment), fileWorkerProtocol,
+    { limitMs: 60_000, force: false, recorder: null });
+  const full = worker({});
+  const quiet = worker({ TSCERT_REPORT_COMPONENTS: "0" });
+  assert.equal(full.preparation.status, 0, full.preparation.stderr);
+  assert.equal(quiet.preparation.status, 0, quiet.preparation.stderr);
+  const fullPreparation = decodeWorkerPrepared(full.preparation.stdout.trim());
+  const quietPreparation = decodeWorkerPrepared(quiet.preparation.stdout.trim());
+  assert.ok(fullPreparation.components.length > 0);
+  assert.deepEqual(quietPreparation, { ...fullPreparation, components: [] });
+  assert.ok(full.parts.length > 0);
+  assert.deepEqual(quiet.parts.map((p) => p.stdout), full.parts.map((p) => p.stdout));
+  say("units: omitting the component report preserves preparation and unit verdicts");
+});
+
 control("forged fragment: a guard's undefined behaviour", async (): Promise<void> => {
   // A node guard on a `parent` that may be absent throws there, so both its edges
   // hold a present `parent`. Its behaviour on undefined forged unadmitted,
