@@ -17,7 +17,7 @@ each item's design and evidence, not its progress.
 | Investigation: a concrete subclass of an identity generic subclass | open, cause not established: `class Mid<T> extends Box<T> {}; class Leaf extends Mid<number> {}` is refused for every kind of type argument at the middle class's base call ("the edge from node 6 does not establish the claims") | the refusal's cause is established and the item restated as a fix, or the shape verifies with a case |
 | Spreading a pack into a callback in a generic base constructor | open: a base constructor calling `cb(...values)` and extended at a concrete tuple is refused ("a field undetermined"); the call needs `callPacked`'s relationship ([packed binders](docs/PROGRAM-TYPING.md#packed-binders)) | the construction states the pack's relationship to the callback's parameters and the shape verifies, with a case and an unsafe counterpart refused |
 | Cross-field null implications in clauses | open: the clause language states a null test only as a leading guard, so `this.sourceStarts !== null || (this.sourceEnds === null && this.sourceUnits === null)`, a clause of the paragraph handle's invariant in the [read-only handles](docs/drafts/readonly-handles.md) draft, is refused ("the clause names null, which is no parameter") | a clause relating the null-ness of two fields, `P === null` or `P !== null` as an atom, elaborates and is used at boundaries, with a case |
-| Pretext's walkers under the read-only frame | open, phase 1, step 1.3. **Goal:** pretext's `walkPreparedLinesRaw` and `walkPreparedComplexLines` verify with all 51 bound sites in upstream form, under Θ_C only, pretext's own modules members of the component. **In place:** the read-only frame of P22's example; parts at field keys and field regions in stated effects ([the check at a call](docs/drafts/framed-acceptance.md#the-check-at-a-call)); a field write keeping facts at other keys and through its frame; protection ([milestone 2](docs/drafts/framed-acceptance.md#milestone-2-the-protected-reading)); the contexts of known calls and created closures ([milestone 3](docs/drafts/framed-acceptance.md#milestone-3-the-contexts-of-known-calls)). **Phase 1**, the frame reads the shared model of outside slots, natives and the initialization ([the design](docs/drafts/framed-acceptance.md#outside-slots-and-the-initialization-shared-with-verification); its pieces in brackets): 1.1 the general inhabitance check (piece 2), done; 1.2 the initial configurations as a premise (piece 2): built on branch `shared-slots`, it lands with 1.4, since until 1.4 nothing shows the premise met for P22's plan (the flow's `%ElementAt%` slot holds a step-model closure no contract relates to the intrinsic's signature); piece 0, `writesK` exhaustive, done; 1.3 a standard native's steps are the component's at a call of a native and the client's otherwise (piece 1): the note's sentence and the design done; the Lean on branch `shared-slots`: the owner of each frame read on the evaluation path, and the flow's theorems reading it, built; next, the flow rule for a native frame the component owns and its steps' properties from row (b), which remove the interim premise "the realm has no code" from 22 theorems, then the closure-provenance invariant; a native that passes storage it allocates to a function argument (`JSON.stringify` with a replacer, `JSON.parse` with a reviver) is read as outside code, marked on its contract (owner, 2026-11-21); 1.4 natives read at their contracts, `hostModel?` and the coarse charge deleted, the initial premise proved inhabited, its unfoldings stated through `approx` (`PassUnitRealize.lean`) rather than a second relation (piece 2); 1.5 every outside-slot kind across modules (piece 3), where the inhabitance check's limit (`typeWitnessB` answers no for clauses such as `top`, `int`, `list`, `dict` and for stored fields) is met first; 1.6 cycles of names (piece 4); 1.7 the tests table, the deletion list, the `retains` audit, the note's statuses and the natives' trust rows in DESIGN.md (piece 5). Each step lands on `single-pass` when done and reviewed. Checkpoint: a framed plan forms for pretext's package. **Phase 2**, the walkers' verdicts: 2.1 a guarded fact kept across a field write, done; 2.2 `walkPreparedLinesRaw` with its site restored (its stepper is refused by the frame's region check at `cursor.graphemeIndex = g`, cause not established); 2.3 the builders establishing the handle invariant (bounds chain 2); 2.4 the complex walker's 19 handle-array sites; 2.5 the 32 harder sites, each by an example, the note's text and then the Lean. **Phase 3:** all 51 sites restored on `tscert-bounds` | the 51 sites are restored on `tscert-bounds` with pretext's functions verified |
+| [Pretext's walkers under the read-only frame](#pretexts-walkers-under-the-read-only-frame) | open, step 1.3 (1.3.4 to 1.3.6 in progress on branch `shared-slots`) | the walkers verify with all 51 sites restored (step 3.2) |
 | Where the read-only frame applies | open: in the [read-only handles](docs/drafts/readonly-handles.md) design, the pass tries the frame check of [Read-only frames](docs/drafts/readonly-frames-note/note.tex) only at a call of outside code where the graph plan loses a fact, and a unit some fact of which survives only through it is accepted under client trust. For TScert's own code, the census over `tools/`, three things are undecided: which units form a component and what its interface is; whether a verdict accepted under client trust is counted apart from shallow and deep; and whether the client obligation Θ, where a component's clients are themselves modules the census checks, is checked on them rather than trusted | the component of a census unit, the census's count of verdicts accepted under client trust, and the status of Θ for clients inside the census are stated in [DESIGN.md](docs/DESIGN.md) |
 | [A framed plan's outside slots and initialization](docs/drafts/framed-acceptance.md#outside-slots-and-the-initialization-shared-with-verification) | open, designed; the paper's text approved and applied (2026-11-21): the framed plan reads each outside slot at its ordinary kind and contract with its sites added, a call of a native at its stated footprint and by the frame's check, the native's own steps charged at its operands' reach under the owner's rows on standard natives (throws, retention; 2026-11-21), and its initial configurations as a premise (fit, entry, outside contracts) with its inhabitance for P22 stated; six pieces, the paper's text in [Read-only frames](docs/drafts/readonly-frames-note/note.tex) | the design's pieces are merged, its cases at their stated outcomes's text |
 | Native footprints read by name in proposals | open: the front's proposals recognize natives by method name: `HeadInference.lean`'s `resized`, `touched` and `Ctx.pushed`, and `Synthesis.lean`'s first-use freshness (`map`, `flatMap`), `generalArrayUse` and the evolving writes (`push`, `unshift`) | each reads the callee's stated footprint or result freshness from its contract, and no list of method names remains |
@@ -135,6 +135,86 @@ each item's design and evidence, not its progress.
 ## Open work
 
 <a id="next-steps"></a>
+
+### Pretext's walkers under the read-only frame
+
+**Goal.** Pretext's `walkPreparedLinesRaw` and `walkPreparedComplexLines`
+(`src/line-break.ts`) verify with all 51 bound sites in upstream form,
+assuming only Θ_C of code outside pretext.
+
+**In place.** The read-only frame of P22's example; parts at field keys and
+field regions in stated effects; a field write keeping facts at other keys
+and through its frame; protection
+([milestone 2](docs/drafts/framed-acceptance.md#milestone-2-the-protected-reading));
+known calls and created closures
+([milestone 3](docs/drafts/framed-acceptance.md#milestone-3-the-contexts-of-known-calls)).
+
+Each step lands on `single-pass` when done and reviewed. A step in progress
+names its branch; the branch is on GitHub.
+
+#### Phase 1: the frame reads the shared model of outside slots
+
+Design: [outside slots and the initialization, shared with verification](docs/drafts/framed-acceptance.md#outside-slots-and-the-initialization-shared-with-verification).
+Branch: `shared-slots`.
+
+| Step | What | Done when | State |
+| --- | --- | --- | --- |
+| 1.1 | Inhabitance check of a plan's outside slots | runs on every framed plan, proved sound | done |
+| 1.2 | Initial configurations stated as a premise, the hand-built initialization deleted | builds, no verdict changes | built; lands with 1.4 |
+| 1.3.1 | The realm in the family: which code is a built-in's, which call sites call a built-in; empty for existing plans | builds, no verdict changes | done |
+| 1.3.2 | Each frame's owner computed along the evaluation path | structural theorems hold for any realm | done |
+| 1.3.3 | The flow's root theorems read the owner | builds, no verdict changes | done |
+| 1.3.4 | Built-ins that pass objects they allocate to a callback (`JSON.stringify` with a replacer) marked on their contracts and read as outside code (owner, 2026-11-21) | every contract audited; a `JSON.stringify` case refused | in progress |
+| 1.3.5 | Flow rule for a built-in's frame the component owns (`Fits.native`) | proved for built-in steps; the flow check decides it | in progress |
+| 1.3.6 | Properties of the component's built-in steps from trust row (b) | each property proved | in progress |
+| 1.3.7 | The interim premise "the realm has no code" removed | no theorem carries it (22 today) | |
+| 1.3.8 | Closure-origin invariant and its decided check | proved; the check runs on every plan | |
+| 1.3.9 | Cases and review | `push`/`fill` keep facts; `pop` as visitor refused; review passes | |
+| 1.4.1 | Built-in slots read at their contracts in the flow | builds, no verdict changes | |
+| 1.4.2 | `hostModel?`, the coarse native charge and the initialization's seed deleted | nothing reads them | |
+| 1.4.3 | `RealmSlots`: a built-in slot holds the realm's code | stated in the premise | |
+| 1.4.4 | The premise proved met for layouts with no linked slot (`initial_inhabited`), P22's included | proved | |
+| 1.4.5 | The unfoldings stated through `approx` (`PassUnitRealize.lean`) | no second relation | |
+| 1.4.6 | Review; 1.2, 1.3 and 1.4 land | merged, P22 keeps its verdict | |
+| 1.5.1 | Inhabitance for `int`, `list`, `dict`, stored fields and the other clauses answered no today | each answered or stated | |
+| 1.5.2 | Module cells and constants as outside slots, met through the `:init` units | a cell case and its negative | |
+| 1.5.3 | Imports, declared and established | a two-module case | |
+| 1.5.4 | A component of several modules closed under imports | pretext's package forms one component | |
+| 1.6.1 | Cycles of names as unfoldings (`unfold_budget`), the premise met with linked slots | a mutual-call case | |
+| 1.7.1 | The design's tests table | every row at its expected outcome, unsafe ones under Node | |
+| 1.7.2 | The deletion list | every item deleted or replaced | |
+| 1.7.3 | `retains` audit | every built-in keeping a function marked; a control | |
+| 1.7.4 | The note's statuses and the natives' trust rows in DESIGN.md | statuses at Lean names | |
+| 1.7.5 | Review and land | merged | |
+| 1.8 | Checkpoint | a framed plan forms for pretext's package | |
+
+#### Phase 2: the walkers' verdicts
+
+| Step | What | Done when | State |
+| --- | --- | --- | --- |
+| 2.1 | A guarded fact kept across a field write | merged (#306) | done |
+| 2.2.1 | Cause of the stepper's refusal by the frame's region check at `cursor.graphemeIndex = g` | cause established | |
+| 2.2.2 | Its fix | the stepper verifies | |
+| 2.2.3 | `walkPreparedLinesRaw` with its site restored | accepted | |
+| 2.3.1 | `prepareInternal` establishes the handle invariant (bounds chain 2) | verifies | |
+| 2.3.2 | The rich-inline builders establish it | verify | |
+| 2.3.3 | `layout.ts` and `rich-inline.ts` verify again | 210 of 210 pretext functions | |
+| 2.4 | The complex walker's 19 handle-array sites | accepted | |
+| 2.5.1 | The 20 sites reading locals taken from `items` | accepted, or a stated blocker | |
+| 2.5.2 | The 3 sites without a lower bound (`i - 1`, `hangEndSegmentIndex`), run first under Node at `i = 0` | accepted, or a pretext bug recorded | |
+| 2.5.3 | The per-grapheme sites (quantified facts, the clause-elements work) | accepted | |
+
+A step of 2.5 that needs a new rule follows the process: a small example,
+the note's text approved by the owner, then the Lean.
+
+#### Phase 3: land in pretext
+
+| Step | What | Done when | State |
+| --- | --- | --- | --- |
+| 3.1 | All 51 sites restored on `tscert-bounds` | every site in upstream form | |
+| 3.2 | Pretext verified | 210 of 210 functions | |
+| 3.3 | Chain 2 merged into the fork | merged | |
+
 
 ### Coverage of the front end
 
