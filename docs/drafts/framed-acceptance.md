@@ -2839,6 +2839,93 @@ read by `line-break.ts`) and writes (`%ByteSet%`) are intrinsics of kind
 trust the row on the overlay's typed arrays: each a call of a native,
 `%ByteSet%` charged at its view's reach, no name of them read.
 
+### The rule at a call of a native
+
+`Fits.native` is the flow's rule at a call node that `nativeAt` decides
+(step 4 of [the algorithm](#the-algorithm)), and its reading of the
+native's run until the call's frame is innermost again. It is to be
+reviewed before it is built.
+
+**The existing mechanism this extends.** The flow's term rules, `Fits`
+(`ReadOnlyFits.lean`; Read-only frames, "The flow of sites", steps (1) and
+(2)), each decided by `FFlow.check` and preserved by a step (`fits_step`).
+Two of them are calls: `invoke`, whose callee may be outside code, gives
+its receiver and actuals out ($`\subseteq O`$) and returns a value of
+$`O`$; `invokeC`, whose callee is a closure of $`C`$'s code of a known
+signature, puts its receiver and actuals in its entry's slots and returns
+a value of the code's return set. `Fits.native` is a third call rule
+between them. Its callee is the realm's code (`nativeAt_sound`), so it
+reads no flow of the callee's code. Its operands stay out of $`O`$. Its
+result meets a set the rule states at the node. The native's steps are
+$`C`$'s, owned by the frame that called it (the owner on the evaluation
+path, step 1.3.2), and are bounded by the rows on standard natives: (a)
+for a throw, (b) and (b′) (`NativeRowB`, `NativeRowB'`), and (A2)'s
+sentence on a built-in's own sites. Its charges are $`\mathsf{any}`$ at
+every part of a site of $`L_n(c)`$ (`nativeReach`, step 6), already in
+place.
+
+**The rule.**
+
+```
+Fits.native  (node c of code m, key kx;  nativeAtB m c = true)
+  Fits Sf f      Fits Sr r      ∀ i, Fits (Sa i) args[i]
+  Ln := close_H (Sr ∪ ⋃ i, Sa i)            -- the operands' sets, closed under H's contents
+  K  := sites(kx)                           -- the node's allocation sites (stepSite at C's frame)
+  Ln ∪ K ∪ O ⊆ S                            -- the result: (b′), its own allocations, realm storage
+  ∀ s ∈ Ln, Stores s (Ln ∪ K)               -- (b′): existing storage gets operand values or its own
+  ∀ s ∈ K,  Stores s (Ln ∪ K ∪ O)           -- (A2): its own sites
+  o = true → S ⊆ O
+  ───────────────────────────────────────
+  Fits S (.invoke f r args)
+
+Fits.nativeRun  (a frame of the realm's code on the path, called at kx from C's frame)
+  NativeRun rl h₀ (.invoke f r args) h t A, with f r args fitting at h₀ as above
+  every location of A is of a site of K
+  ───────────────────────────────────────
+  the term fits; its value or thrown value meets Ln ∪ K ∪ O
+```
+
+`FFlow.check` decides the first rule as it decides `invokeC`: $`L_n`$ by
+the iteration `capClose` already runs, the two `Stores` premises against
+the flow's site heap. The second rule is no check: `fits_step` reads it
+at each step of the native's run, where row (b) and the stores of (b′)
+keep the site heap's premises at $`L_n`$, (A2) keeps them at $`K`$,
+and the result and throw clauses of (b′) put the value the run ends with
+in $`L_n\cup K\cup O`$. The native takes no function argument, so its run
+calls no code but the realm's, and no step of it is outside code.
+
+**Two runs.**
+
+- `s += xs[i]` (P22): the element read calls `%ElementAt%` read from its
+  slot, with receiver `xs` and actual `i`. $`S_r = S_{xs}`$, $`S_a =
+  \{\mathrm{prim}\}`$; $`L_n`$ is $`S_{xs}`$ closed under contents, so it
+  holds the sites of `xs`'s spine and elements; $`K = \varnothing`$ (an
+  element read allocates nothing); the result's set holds $`L_n \cup O`$.
+  No site stores anything new. The rule keeps the facts at `xs`'s parts,
+  whose charges $`\mathsf{any}`$ at $`L_n`$ the node protocol reads
+  against $`\Psi_C`$.
+- `const t = xs.slice()`: $`S_r = S_{xs}`$, no actual; $`L_n`$ as above;
+  $`K`$ is the node's array and spine sites; `t`'s set holds $`L_n \cup K
+  \cup O`$; the fresh spine's site (in $`K`$) stores the elements of
+  `xs`, which are in $`L_n`$, as (A2) states; no site of $`L_n`$ stores
+  anything new.
+
+`out.push(s)` runs the same way once its callee, read through `out`'s
+prototype, is decided (the next sub-step of step 1.4.3): $`L_n`$ is
+$`S_{out} \cup S_s`$ closed, and `out`'s spine site stores $`S_s \subseteq
+L_n`$.
+
+**What this duplicates.** The step model of `%ElementAt%` (`hostModel?`,
+`sibSig`): a code of $`C`$ that stands for the native in the flow, so the
+slot's set holds its token. `Fits.native` replaces it, and step 1.4.2
+deletes it. The set it gives the result is coarser than the step model's
+(the receiver's element sites): $`L_n \cup O`$ also holds the spine's
+site. Whether P22 keeps its verdict with it is the first thing the
+review asks; the note's (A2) states the result's set as "what its
+contract states of the result", which would keep the element sites. The
+`Stores` premises repeat those of `writeAt` and `setElem` at a node that
+writes through no expression of $`C`$'s code.
+
 ### Natives
 
 **A native run.** At a call of a native $`c`$ from a frame $`f`$ of
