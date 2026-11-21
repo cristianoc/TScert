@@ -1478,8 +1478,10 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       const passed = new Set<number>();
       for (const a of args) for (const t of ts.isSpreadElement(a) ? reads(value(a.expression, f)) : value(a, f)) passed.add(t);
       const given = new Set<number>([...(receiver ?? []), ...passed]);
-      const all = new Set([result, ...given, ...reads(given)]);
-      const elements = new Set([...passed, ...reachable(reads(given))]);
+      const contents = reads(given);
+      const all = new Set([result, ...given, ...contents]);
+      // Only a fresh result that can hold references uses transitive reach.
+      const elements = fresh && !primitiveElements ? new Set([...passed, ...reachable(contents)]) : null;
       const passedRef = event ? synthetic(n, f, event.args.map((a): SourceAst => a.spread ? { read: a.value } : { value: a.value })) : -1;
       const givenRef = event ? synthetic(n, f, [...(event.receiver !== null ? [{ value: event.receiver }] : []), { value: passedRef }]) : -1;
       const allFrom: SourceAst[] = [{ site: result }, { value: givenRef }, { read: givenRef }];
@@ -1491,8 +1493,9 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         return code ? [code] : [];
       }));
       for (const code of callbacks) {
-        for (const t of setOf(code.result)) all.add(t);
-        for (const t of reachable(setOf(code.result))) elements.add(t);
+        const returned = setOf(code.result);
+        for (const t of returned) all.add(t);
+        if (elements !== null) for (const t of reachable(returned)) elements.add(t);
         if (event) allFrom.push({ value: refOf(code.result) });
       }
       for (const code of callbacks) for (const p of code.params) bindParameter(p, all, code.file);
@@ -1506,7 +1509,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       // Else its result may be any of these, and its own storage hold them.
       if (fresh) {
         addAll(setOf(n), [result]);
-        if (!primitiveElements) addAll(contentOf(result), elements);
+        if (elements !== null) addAll(contentOf(result), elements);
       } else {
         addAll(setOf(n), all);
         addAll(contentOf(result), all);
