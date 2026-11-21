@@ -28,7 +28,7 @@ open Verification Footprints
 its path (`path`, a `goto` is a frame not yet entered), with its code,
 label, slots, default and tag. -/
 def innermostGoto (t : Tm) : Option (Code × Nat × List Tm × Tm × ComponentTag) :=
-  match (path none t).head? with
+  match (path Realm.empty none false t).head? with
   | some (_, .goto E K l L d c) => some ((E, K), l, L, d, c)
   | _ => none
 

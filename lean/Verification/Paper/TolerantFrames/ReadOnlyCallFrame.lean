@@ -1288,11 +1288,16 @@ theorem blocks_append_ge : ∀ (xs ys : List Bool), blocks ys ≤ blocks (xs ++ 
 theorem depthC_frame {F : Family} {C : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {t : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target}
     {comp : ComponentTag} (hc : F.ofC C comp = true) : 1 ≤ depthC F C none (.frame E K t L d k x comp) := by
-  obtain ⟨init, s, hp⟩ := path_last t comp
+  have hnr : F.realm.tags comp = false := by
+    cases h : F.realm.tags comp
+    · rfl
+    · rw [Family.realm_ofC C comp h] at hc; cases hc
+  have ho : F.realm.own none false comp = comp := by simp [Realm.own, hnr]
+  obtain ⟨init, s, hp⟩ := path_last (rl := F.realm) t comp (F.realm.native ((E, K), comp) (k, x))
   have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
-  have hm : (path none (.frame E K t L d k x comp)).map (fun p => F.ofC C p.1) =
+  have hm : (path F.realm none false (.frame E K t L d k x comp)).map (fun p => F.ofC C p.1) =
       (init.map fun p => F.ofC C p.1) ++ [true, false] := by
-    simp only [path, List.map_append, hp]
+    simp only [path, List.map_append, ho, hp]
     have e : (wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map (fun p => F.ofC C p.1) =
         ((wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map Prod.fst).map (F.ofC C) := by
       simp [List.map_map, Function.comp_def]
@@ -1307,7 +1312,11 @@ theorem depthC_goto {F : Family} {C : Nat} {E : List Tm} {K : List (ControlFlow.
     {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag} (hc : F.ofC C comp = true) :
     1 ≤ depthC F C none (.goto E K l L d comp) := by
   have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
-  simp [depthC, path, blocks, hc, hn]
+  have hnr : F.realm.tags comp = false := by
+    cases h : F.realm.tags comp
+    · rfl
+    · rw [Family.realm_ofC C comp h] at hc; cases hc
+  simp [depthC, path, blocks, hc, hn, Realm.own, hnr]
 
 /-- **The top of the term of a unit's call** at the tag `comp` of `C`'s
 code: a `goto` or a frame of it, a value, or a throw of a value. -/

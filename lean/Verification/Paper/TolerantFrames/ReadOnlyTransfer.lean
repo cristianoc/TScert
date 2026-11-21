@@ -262,10 +262,18 @@ def Resumes (F : Family) (C : Nat) (E : List Tm) (K : List (ControlFlow.Continua
 theorem depthC_frame_val {F : Family} {C : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
-    (hc : F.ofC C comp = true) (hu : path comp u = [(comp, u)]) :
+    (hc : F.ofC C comp = true) (hu : path F.realm comp (F.realm.native ((E, K), comp) (k, x)) u = [(comp, u)]) :
     depthC F C none (.frame E K u L d k x comp) = 1 := by
   have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
-  simp [depthC, path_frame hu, blocks, hc, hn]
+  have ho : F.realm.own none false comp = comp := by
+    cases h : F.realm.tags comp
+    · simp [Realm.own, h]
+    · rw [Family.realm_ofC C comp h] at hc; cases hc
+  have hu' : path F.realm (F.realm.own none false comp) (F.realm.native ((E, K), comp) (k, x)) u =
+      [(F.realm.own none false comp, u)] := by rw [ho]; exact hu
+  unfold depthC
+  rw [path_frame hu', ho]
+  simp [blocks, hc, hn]
 
 /-- A call state holds one call of `C` (proved). -/
 theorem CallState.depth {F : Family} {C : Nat} {E : List Tm}
@@ -284,7 +292,7 @@ theorem Resumes.depth {F : Family} {C : Nat} {E : List Tm}
     (h : Resumes F C E K L d k x comp t) : depthC F C none t = 1 := by
   obtain ⟨u, ⟨rfl, hc⟩, hu | ⟨w, hw⟩⟩ := h
   · exact depthC_frame_val hc (path_val hu)
-  · exact depthC_frame_val hc (raises_path hw _)
+  · exact depthC_frame_val hc (raises_path hw _ _)
 
 /-- A state inside the call holds at least one call of `C` (proved,
 `depthC_frame`). -/
@@ -301,8 +309,8 @@ theorem Inside.depth {F : Family} {C : Nat} {E : List Tm}
 `innermost_tag`): through a list evaluated left to right. -/
 theorem pathArgs_tag {c : ComponentTag} {f : Tm} {key : FrameKey} :
     ∀ (xs : List Tm) (k : List Tm → Tm),
-      (∀ a ∈ xs, ∀ c, innermost a = some f → frameOf f = some key → key.1.2 ∈ (path c a).map Prod.fst) →
-      innermostArgs xs = some f → frameOf f = some key → key.1.2 ∈ (pathArgs c k xs).map Prod.fst
+      (∀ a ∈ xs, ∀ c, innermost a = some f → frameOf f = some key → key.1.2 ∈ (path Realm.empty c false a).map Prod.fst) →
+      innermostArgs xs = some f → frameOf f = some key → key.1.2 ∈ (pathArgs Realm.empty c false k xs).map Prod.fst
   | [], _, _, h, _ => by simp [innermostArgs] at h
   | a :: as, k, ih, h, hk => by
     simp only [innermostArgs] at h
@@ -315,27 +323,27 @@ theorem pathArgs_tag {c : ComponentTag} {f : Tm} {key : FrameKey} :
 /-- Through a wrapped path (proved). -/
 theorem tag_wrap {a f : Tm} {key : FrameKey} {c : ComponentTag} {g : Tm → Tm}
     (ih : ∀ (c : ComponentTag) {f : Tm} {key : FrameKey}, innermost a = some f → frameOf f = some key →
-      key.1.2 ∈ (path c a).map Prod.fst)
-    (h : innermost a = some f) (hk : frameOf f = some key) : key.1.2 ∈ (wrap g (path c a)).map Prod.fst := by
+      key.1.2 ∈ (path Realm.empty c false a).map Prod.fst)
+    (h : innermost a = some f) (hk : frameOf f = some key) : key.1.2 ∈ (wrap g (path Realm.empty c false a)).map Prod.fst := by
   rw [wrap_fst]; exact ih c h hk
 
 /-- **The innermost frame's tag is on the path** (proved, by induction on
 the term, `innermost` and `path` following the same congruences). -/
 theorem innermost_tag (t : Tm) :
     ∀ (c : ComponentTag) {f : Tm} {key : FrameKey}, innermost t = some f → frameOf f = some key →
-      key.1.2 ∈ (path c t).map Prod.fst := by
+      key.1.2 ∈ (path Realm.empty c false t).map Prod.fst := by
   induction t using Tm.induct with
   | frame E K t L d k x comp _ iht =>
     intro c f key h hk
     simp only [innermost] at h
-    simp only [path, List.map_append, List.mem_append, wrap_fst]
+    simp only [path, List.map_append, List.mem_append, wrap_fst, Realm.own_empty, Realm.native_empty]
     left
     cases hi : innermost t with
     | some f' => rw [hi] at h; cases h; exact iht comp hi hk
     | none =>
       rw [hi] at h; cases h
       simp only [frameOf, Option.some.injEq] at hk; subst hk
-      obtain ⟨init, s, hp⟩ := path_last t comp
+      obtain ⟨init, s, hp⟩ := path_last (rl := Realm.empty) t comp false
       simp [hp]
   | invoke f r args ihf ihr iha =>
     intro c f' key h hk
@@ -419,26 +427,30 @@ active frame runs `C`'s code, every frame on its running term's path runs
 theorem activeFrame_runsC {F : Family} {C : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (hnr : ∀ t, F.realm.tags t = false)
     (hc : F.ofC C comp = true) (hd : depthC F C none (.frame E K u L d k x comp) = 1)
     (hin : ¬ OutsideAt F C none (.frame E K u L d k x comp)) :
     ∀ key, (activeFrame none u).1 = some key → F.ofC C key.1.2 = true := by
   intro key hkey
-  obtain ⟨init, s, hp⟩ := path_last u comp
+  unfold depthC at hd
+  unfold OutsideAt activeTag at hin
+  rw [path_noRealm hnr] at hd hin
+  obtain ⟨init, s, hp⟩ := path_last (rl := Realm.empty) u comp false
   have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
-  have hm : (path none (.frame E K u L d k x comp)).map (fun p => F.ofC C p.1) =
+  have hm : (path Realm.empty none false (.frame E K u L d k x comp)).map (fun p => F.ofC C p.1) =
       (init.map fun p => F.ofC C p.1) ++ [true, false] := by
-    simp only [path, List.map_append, hp]
+    simp only [path, List.map_append, Realm.own_empty, Realm.native_empty, hp]
     have e : (wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map (fun p => F.ofC C p.1) =
         ((wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map Prod.fst).map (F.ofC C) := by
       simp [List.map_map, Function.comp_def]
     rw [e, wrap_fst]
     simp [hc, hn, Function.comp_def]
   have hb : blocks ((init.map fun p => F.ofC C p.1) ++ [true, false]) = 1 := by
-    unfold depthC at hd; rwa [hm] at hd
+    rwa [hm] at hd
   have hhead : (init.map fun p => F.ofC C p.1).head?.getD true = true := by
-    have ht : F.ofC C (activeTag comp u) = true := by
+    have ht : F.ofC C (activeTag Realm.empty comp false u) = true := by
       have := hin
-      simp only [OutsideAt, activeTag_frame] at this
+      rw [← activeTag, activeTag_frame] at this
       simpa [Family.ofC] using this
     cases init with
     | nil => rfl
@@ -626,6 +638,7 @@ the old locations keep their sites (`ex_sites`). -/
 theorem segWithin_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
     {S₀ T : Sites (fr.F.at fr.C)} {Ψc : Protocol (fr.F.at fr.C)}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -637,7 +650,7 @@ theorem segWithin_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
     (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
-      ∀ v ∈ vals allC true (.invoke f r args), ∃ S', VJ F.flow a.2 a.1.s.h.length S' v ∧ Sub S' T ∧
+      ∀ v ∈ vals allC Realm.empty true false (.invoke f r args), ∃ S', VJ F.flow a.2 a.1.s.h.length S' v ∧ Sub S' T ∧
         layP (layQ F lay) v = true) :
     fr.SegWithin Ψc E K L d k x comp a := by
   intro m y z hex hy hyz hdy ho
@@ -670,7 +683,7 @@ theorem segWithin_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr
       rw [← hyt]; have : δ fr.F fr.C none y = 1 := by rw [hdy]; exact hda
       exact this
     have hin : ¬ OutsideAt fr.F fr.C none (.frame E K u L d k x comp) := by rw [← hyt]; exact ho
-    exact activeFrame_runsC hc hdy1 hin
+    exact activeFrame_runsC hrn hc hdy1 hin
 
 /-- **The segment's own steps within the probe's protocol, from the call's
 values in depth** (proved; `segWithin_of_run` with the root premise read in
@@ -679,6 +692,7 @@ at the call state's sites, a set `T` passing the closure check. -/
 theorem segWithin_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
     {S₀ T : Sites (fr.F.at fr.C)} {Ψc : Protocol (fr.F.at fr.C)}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
@@ -690,7 +704,7 @@ theorem segWithin_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at f
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
     (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
-      ∀ v ∈ vals allC true (.invoke f r args), DeepIn a.2.site T v) :
+      ∀ v ∈ vals allC Realm.empty true false (.invoke f r args), DeepIn a.2.site T v) :
     fr.SegWithin Ψc E K L d k x comp a := by
   intro m y z hex hy hyz hdy ho
   obtain ⟨f, r, args, ⟨hat, hc⟩, hfv, hrv, hargs⟩ := id hcall
@@ -722,7 +736,7 @@ theorem segWithin_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at f
       rw [← hyt]; have : δ fr.F fr.C none y = 1 := by rw [hdy]; exact hda
       exact this
     have hin : ¬ OutsideAt fr.F fr.C none (.frame E K u L d k x comp) := by rw [← hyt]; exact ho
-    exact activeFrame_runsC hc hdy1 hin
+    exact activeFrame_runsC hrn hc hdy1 hin
 
 /-- **A segment within `Ψ` at every location meets every support the
 premise holds of** (proved): each location of a region changes within
@@ -772,7 +786,7 @@ theorem segAll_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
     (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
-      ∀ v ∈ vals allC true (.invoke f r args), DeepIn a.2.site T v) {m : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
+      ∀ v ∈ vals allC Realm.empty true false (.invoke f r args), DeepIn a.2.site T v) {m : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
     (hex : Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) m a e) :
     AllBelow Ψc a.1.s.h.length (lift fr.F fr.C none a.1 a.2) (lift fr.F fr.C none e.1 e.2) := by
   obtain ⟨f, r, args, ⟨hat, hc⟩, hfv, hrv, hargs⟩ := id hcall

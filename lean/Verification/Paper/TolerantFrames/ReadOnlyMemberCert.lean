@@ -35,7 +35,7 @@ theorem enter_keeps_heap {F : Family} {C : Nat} {c : ComponentTag} {h h' : Heap}
     h' = h := by
   rcases (step_wfS hs hw hh).2 with e | hst
   · exact e
-  · obtain ⟨F₀, F', rest, hP, hP', ht⟩ := hst c
+  · obtain ⟨F₀, F', rest, hP, hP', ht⟩ := hst F.realm c false
     exfalso
     unfold depthC at hd
     rw [hP, hP'] at hd
@@ -50,22 +50,22 @@ path, so the term after the step is that run in an evaluation context
 (`path_goto_ctx`); the context's path is the hole's, then frames `S` below
 a top segment tagged `c'`, which hold the calls active before the step;
 the run's tag is `C`'s and `c'` is not. -/
-theorem enter_ctx {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hw : wf t = true)
-    (hh : HeapFree h) (hd : depthC F C none t' = depthC F C none t + 1) :
+theorem enter_ctx {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hrn : ∀ t, F.realm.tags t = false) (hs : Step h t h' t')
+    (hw : wf t = true) (hh : HeapFree h) (hd : depthC F C none t' = depthC F C none t + 1) :
     ∃ K E Kc l L d cc c' g S, EvalCtx K ∧ t' = K (.goto E Kc l L d cc) ∧
-      (∀ u, isVal u = false → path none (K u) = wrap g (path c' u) ++ S) ∧
+      (∀ u, isVal u = false → path Realm.empty none false (K u) = wrap g (path Realm.empty c' false u) ++ S) ∧
       F.ofC C cc = true ∧ F.ofC C c' = false ∧ blocks (tagsC F C ((c', hole) :: S)) = depthC F C none t := by
-  have hp := (step_runs_wf hs hw hh).2.2 none
+  have hp := (step_runs_wf hs hw hh).2.2 Realm.empty none false
   -- The pushed run heads the new path.
-  have hpush : ∃ x rest', path none t' = x :: rest' ∧ IsGoto x := by
+  have hpush : ∃ x rest', path Realm.empty none false t' = x :: rest' ∧ IsGoto x := by
     rcases hp with ⟨new, F₀, F', rest, hP, hP', ht, hn, hg⟩ | ⟨new, F₀, G, G', rest, hP, hP', ht, hn, hg⟩
     · cases new with
       | nil =>
-        exfalso; unfold depthC at hd; rw [hP, hP'] at hd; simp [ht.1] at hd
+        exfalso; simp only [depthC_noRealm hrn] at hd; rw [hP, hP'] at hd; simp [ht.1] at hd
       | cons x xs => exact ⟨x, _, by rw [hP']; rfl, hg x List.mem_cons_self⟩
     · cases new with
       | nil =>
-        exfalso; unfold depthC at hd; rw [hP, hP'] at hd
+        exfalso; simp only [depthC_noRealm hrn] at hd; rw [hP, hP'] at hd
         simp only [List.nil_append, List.map_cons, blocks_cons_cons, ht.1] at hd
         omega
       | cons x xs => exact ⟨x, _, by rw [hP']; rfl, hg x List.mem_cons_self⟩
@@ -78,25 +78,27 @@ theorem enter_ctx {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h 
   have hgo : isGoto x.2 = true := by rw [hx2]; rfl
   obtain ⟨K, hK, ht'⟩ := path_goto_ctx t' none x (by rw [hx]; rfl) hgo
   rw [hx2] at ht'
-  obtain ⟨c', g, S, hP⟩ := path_ctx hK none
-  have hpt' : path none t' = (cc, .goto E Kc l L d cc) :: (c', g hole) :: S := by
+  obtain ⟨c', nk', g, S, hP₀⟩ := path_ctx hK Realm.empty none false
+  have hP : ∀ u, isVal u = false → path Realm.empty none false (K u) = wrap g (path Realm.empty c' false u) ++ S :=
+    fun u hu => by rw [hP₀ u hu, path_noRealm (rl := Realm.empty) (fun _ => rfl) u c' nk']
+  have hpt' : path Realm.empty none false t' = (cc, .goto E Kc l L d cc) :: (c', g hole) :: S := by
     rw [ht', hP _ rfl]; simp [path, wrap, mapLast]
   refine ⟨K, E, Kc, l, L, d, cc, c', g, S, hK, ht', hP, ?_⟩
   have hdt' : depthC F C none t' = blocks (F.ofC C cc :: tagsC F C ((c', hole) :: S)) := by
-    unfold depthC; rw [hpt']; rfl
+    simp only [depthC_noRealm hrn]; rw [hpt']; rfl
   rcases hp with ⟨new, F₀, F', rest, hP0, hP', ht, hn, -⟩ | ⟨new, F₀, G, G', rest, hP0, hP', ht, hn, -⟩
   · match new, hn with
     | [], _ =>
       exfalso
       have : depthC F C none t' = depthC F C none t := by
-        unfold depthC; rw [hP0, hP']; simp [ht.1]
+        simp only [depthC_noRealm hrn]; rw [hP0, hP']; simp [ht.1]
       omega
     | [y], _ =>
       rw [hpt'] at hP'
       simp only [List.cons_append, List.nil_append, List.cons.injEq] at hP'
       obtain ⟨-, rfl, rfl⟩ := hP'
       have hdt : depthC F C none t = blocks (tagsC F C ((c', hole) :: S)) := by
-        unfold depthC; rw [hP0]; simp [tagsC, ← ht.1]
+        simp only [depthC_noRealm hrn]; rw [hP0]; simp [tagsC, ← ht.1]
       rw [hdt', hdt] at hd
       rw [hdt]
       simp only [tagsC, List.map_cons, blocks_cons_cons] at hd ⊢
@@ -106,7 +108,7 @@ theorem enter_ctx {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h 
     | [], _ =>
       exfalso
       have : depthC F C none t' ≤ depthC F C none t := by
-        unfold depthC; rw [hP0, hP']
+        simp only [depthC_noRealm hrn]; rw [hP0, hP']
         simp only [List.nil_append, List.map_cons, blocks_cons_cons, ht.1]; omega
       omega
     | [y], _ =>
@@ -114,7 +116,7 @@ theorem enter_ctx {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h 
       simp only [List.cons_append, List.nil_append, List.cons.injEq] at hP'
       obtain ⟨-, rfl, rfl⟩ := hP'
       have hdt : depthC F C none t = blocks (F.ofC C F₀.1 :: tagsC F C ((c', hole) :: S)) := by
-        unfold depthC; rw [hP0]; simp [tagsC, ← ht.1]
+        simp only [depthC_noRealm hrn]; rw [hP0]; simp [tagsC, ← ht.1]
       rw [hdt', hdt] at hd
       rw [hdt]
       simp only [tagsC, List.map_cons, blocks_cons_cons] at hd ⊢
@@ -152,27 +154,32 @@ theorem RunOf.step {cc : ComponentTag} {h h' : Heap} {u u' : Tm} (hr : RunOf cc 
 
 /-- The calls of `C` at a term, from its path's tags. -/
 theorem depthC_tags {F : Family} {C : Nat} {c : ComponentTag} {t : Tm} :
-    depthC F C c t = blocks (((path c t).map Prod.fst).map (F.ofC C)) := by
+    depthC F C c t = blocks (((path F.realm c false t).map Prod.fst).map (F.ofC C)) := by
   simp [depthC, List.map_map, Function.comp_def]
 
 section HoleRun
 variable {F : Family} {C : Nat} {K : Tm → Tm} {c' : ComponentTag} {g : Tm → Tm} {S : List (ComponentTag × Tm)}
-  (hK : EvalCtx K) (hP : ∀ u, isVal u = false → path none (K u) = wrap g (path c' u) ++ S)
-include hK hP
+  (hrn : ∀ t, F.realm.tags t = false) (hK : EvalCtx K) (hP : ∀ u, isVal u = false → path Realm.empty none false (K u) = wrap g (path Realm.empty c' false u) ++ S)
+include hrn hK hP
 
 omit hK in
 /-- **A term whose path is its top segment holds the context's calls**
 (proved). -/
-theorem depth_top {u : Tm} (hu : isVal u = false) (h : path c' u = [(c', u)]) :
+theorem depth_top {u : Tm} (hu : isVal u = false) (h : path Realm.empty c' false u = [(c', u)]) :
     depthC F C none (K u) = blocks (tagsC F C ((c', hole) :: S)) := by
-  unfold depthC; rw [hP u hu, h]; simp [wrap, mapLast, tagsC]
+  rw [depthC_noRealm hrn, hP u hu, h]; simp [wrap, mapLast, tagsC]
 
 /-- **A value in the context holds the context's calls** (proved,
 `ctx_val_tags`, `depth_top`). -/
 theorem depth_val {u v : Tm} (hu : isVal u = false) (hwu : wfS (K u) = true) (hv : isVal v = true)
     (hwv : wfS (K v) = true) : depthC F C none (K v) = blocks (tagsC F C ((c', hole) :: S)) := by
-  rw [depthC_tags, ctx_val_tags hK none hu hwu hv hwv, ← depthC_tags]
-  exact depth_top hP rfl (by simp [path])
+  have e := ctx_val_tags (rl := Realm.empty) hK none false hu hwu hv hwv
+  have e' : (path Realm.empty none false (K v)).map (fun p => F.ofC C p.1) =
+      (path Realm.empty none false (K (.var 0))).map (fun p => F.ofC C p.1) := by
+    have := congrArg (List.map (F.ofC C)) e
+    simpa [List.map_map, Function.comp_def] using this
+  rw [depthC_noRealm hrn, e', ← depthC_noRealm hrn]
+  exact depth_top hrn hP rfl (by simp [path])
 
 /-- **The call's run stays in its hole** (proved, by induction on the
 execution, `EvalCtx.step_hole`, `RunOf.step`): along an execution whose
@@ -210,9 +217,9 @@ theorem hole_ex {P : Type} {R : Conf × P → Conf × P → Prop} {I : Conf × P
         | next st hs₂ =>
           obtain ⟨rfl, rfl⟩ := Step_det st hs'
           exact hpre _ _ _ (by omega) hs₂
-      · have := depth_val (F := F) (C := C) hK hP hu₁ hw₁ hv (by rw [← hbt]; exact hwf b hIb)
+      · have := depth_val (F := F) (C := C) hrn hK hP hu₁ hw₁ hv (by rw [← hbt]; exact hwf b hIb)
         rw [hbt, this, hD] at hb; omega
-      · have := depth_top (F := F) (C := C) hP (raises_not_val hw) (raises_path hw c')
+      · have := depth_top (F := F) (C := C) hrn hP (raises_not_val hw) (raises_path hw c' false)
         rw [hbt, this, hD] at hb; omega
     · exact absurd hw hr.not_raises
 
@@ -233,24 +240,25 @@ theorem blocks_split : ∀ (A R : List Bool), blocks (A ++ false :: R) = blocks 
 /-- **The path of a run** (proved): its frames, its own tag's, above the
 top segment. -/
 theorem RunOf.path {cc : ComponentTag} {u : Tm} (hr : RunOf cc u) :
-    ∃ init s, (∀ c, path c u = init ++ [(cc, s), (c, hole)]) := by
+    ∃ init s, (∀ c, path Realm.empty c false u = init ++ [(cc, s), (c, hole)]) := by
   rcases hr with ⟨E, K, l, L, d, rfl⟩ | ⟨E, K, t, L, d, k, x, rfl⟩
   · exact ⟨[], _, fun c => rfl⟩
-  · obtain ⟨init, s, hp⟩ := path_last t cc
-    exact ⟨init, _, fun c => by simp only [ReadOnly.path, hp, wrap_snoc, List.append_assoc]; rfl⟩
+  · obtain ⟨init, s, hp⟩ := path_last (rl := Realm.empty) t cc false
+    exact ⟨init, _, fun c => by
+      simp only [ReadOnly.path, Realm.own_empty, Realm.native_empty, hp, wrap_snoc, List.append_assoc]; rfl⟩
 
 /-- **At one call more than its context, a run whose active frame runs
 `C`'s code runs `C`'s code in every frame** (proved, `blocks_split`,
 `blocks_one_all`, `innermost_tag`, as `activeFrame_runsC`). -/
 theorem hole_runsC {F : Family} {C : Nat} {K : Tm → Tm} {c' : ComponentTag} {g : Tm → Tm}
-    {S : List (ComponentTag × Tm)} (hP : ∀ u, isVal u = false → path none (K u) = wrap g (path c' u) ++ S)
+    {S : List (ComponentTag × Tm)} (hrn : ∀ t, F.realm.tags t = false) (hP : ∀ u, isVal u = false → path Realm.empty none false (K u) = wrap g (path Realm.empty c' false u) ++ S)
     {cc : ComponentTag} {u : Tm} {d : Nat} (hcc : F.ofC C cc = true) (hc' : F.ofC C c' = false)
     (hD : blocks (tagsC F C ((c', hole) :: S)) = d) (hr : RunOf cc u) (hd : depthC F C none (K u) = d + 1)
     (hin : ¬ OutsideAt F C none (K u)) :
     ∀ key, (activeFrame none u).1 = some key → F.ofC C key.1.2 = true := by
   intro key hkey
   obtain ⟨init, s, hp⟩ := hr.path
-  have hpK : path none (K u) = init ++ (cc, s) :: (c', g hole) :: S := by
+  have hpK : path Realm.empty none false (K u) = init ++ (cc, s) :: (c', g hole) :: S := by
     rw [hP u hr.not_val, hp c', show init ++ [(cc, s), (c', hole)] = (init ++ [(cc, s)]) ++ [(c', hole)] by simp,
       wrap_snoc]
     simp
@@ -258,16 +266,15 @@ theorem hole_runsC {F : Family} {C : Nat} {K : Tm → Tm} {c' : ComponentTag} {g
     rw [← hD]; simp [tagsC, blocks, hc']
   have hb : blocks ((init.map fun p => F.ofC C p.1) ++ [true, false]) = 1 := by
     have e := hd
-    unfold depthC at e
-    rw [hpK] at e
+    rw [depthC_noRealm hrn, hpK] at e
     simp only [List.map_append, List.map_cons, hcc, hc'] at e
     have := blocks_split ((init.map fun p => F.ofC C p.1) ++ [true]) (S.map fun p => F.ofC C p.1)
     simp only [List.append_assoc, List.cons_append, List.nil_append] at this
     rw [this, hDs] at e
     omega
   have hhead : (init.map fun p => F.ofC C p.1).head?.getD true = true := by
-    have ht : F.ofC C (activeTag none (K u)) = true := by
-      simpa [OutsideAt, Family.ofC] using hin
+    have ht : F.ofC C (activeTag Realm.empty none false (K u)) = true := by
+      simpa [outsideAt_noRealm hrn, Family.ofC] using hin
     cases init with
     | nil => rfl
     | cons p ps =>
@@ -325,6 +332,7 @@ terms (`reached_wfS`), meet the flow (`fitsAt_reached`), the residual
 invariant (`wok_reached`) and layout provenance (`lay_reached`). -/
 theorem cert_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
@@ -337,7 +345,7 @@ theorem cert_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).
     (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true)
     (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
       δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, EvalCtx K →
-      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC Realm.empty true false (.goto E Kc l L d cc),
         DeepIn a₁.2.site (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) x)
     (m : Option Code) :
     TraceCert fr.F fr.C none fr.Θ fr.chkConf fr.Reached (componentProtocol F lay) (fun _ => False) m := by
@@ -356,10 +364,10 @@ theorem cert_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).
     have hA₁ := Reached.xstep hA hx
     have hent := (Reached.entry hA).2.1
     obtain ⟨K, E, Kc, l, L, d, cc, c', g, S, hK, ht₁, hP, hcc, hc', hD⟩ :=
-      enter_ctx (F := fr.F) (C := fr.C) hx.1.step hent.1 hent.2 (by simpa only [δ] using hd)
+      enter_ctx (F := fr.F) (C := fr.C) hrn hx.1.step hent.1 hent.2 (by simpa only [δ] using hd)
     have hw₁ : wfS (K (.goto E Kc l L d cc)) = true := by rw [← ht₁]; exact reached_wfS hst hA₁
     have hgo : RunOf cc (.goto E Kc l L d cc) := .inl ⟨_, _, _, _, _, rfl⟩
-    obtain ⟨⟨u, hrun, hyt, hru⟩, hpre⟩ := hole_ex (F := fr.F) (C := fr.C) hK hP
+    obtain ⟨⟨u, hrun, hyt, hru⟩, hpre⟩ := hole_ex (F := fr.F) (C := fr.C) hrn hK hP
       (fun a b _ h => h.1.step) (fun a b h hab => Reached.xstep h hab) (fun a h => reached_wfS hst h) hD
       (u₁ := .goto E Kc l L d cc) rfl hw₁ (a := a₁) (e := y) (n := n) hex hA₁ ht₁ hgo
       (by simp only [δ] at hdy; omega)
@@ -377,7 +385,7 @@ theorem cert_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).
     have hla := lay_reached hly hA₁
     have hdyK : depthC fr.F fr.C none (K u) = depthC fr.F fr.C none a.1.t + 1 := by
       rw [← hyt]; simpa only [δ] using hdy
-    have hC := hole_runsC (F := fr.F) (C := fr.C) hP hcc hc' hD hru hdyK (by rw [← hyt]; exact hoy)
+    have hC := hole_runsC (F := fr.F) (C := fr.C) hrn hP hcc hc' hD hru hdyK (by rw [← hyt]; exact hoy)
     rw [← hh]
     refine within_deep (S₀ := captureSites F lay ++ F.O) (st := lift fr.F fr.C none y.1 y.2)
       (st' := lift fr.F fr.C none z.1 z.2) hK hrun
@@ -397,6 +405,7 @@ sites and `O`, each meeting layout provenance, they meet it in depth
 (`deepIn_of_checks`). -/
 theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
@@ -409,12 +418,12 @@ theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.
     (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true)
     (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
       δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, EvalCtx K →
-      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC Realm.empty true false (.goto E Kc l L d cc),
         ∃ S', VJ F.flow a₁.2 a₁.1.s.h.length S' x ∧
           Sub S' (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) ∧ layP (layQ F lay) x = true)
     (m : Option Code) :
     TraceCert fr.F fr.C none fr.Θ fr.chkConf fr.Reached (componentProtocol F lay) (fun _ => False) m :=
-  cert_of_deep hFa hS hE hst hwk hly hT htok hlow
+  cert_of_deep hrn hFa hS hE hst hwk hly hT htok hlow
     (fun a a₁ hA hx hd K E Kc l L d cc hK ht x hx' =>
       let ⟨_, hv, hS', hl⟩ := hroots a a₁ hA hx hd K E Kc l L d cc hK ht x hx'
       deepIn_of_checks hT htok hlow hv hS' hl) m

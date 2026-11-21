@@ -138,7 +138,7 @@ theorem chk_site_sim {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site] 
 /-- The prologue's node holds no value, so the realized code's node
 expressions hold its request's (proved). -/
 theorem realized_vals (ofC : ComponentTag → Bool) (r : SourceRequest σ ι) :
-    valsArgs ofC true (realizedCode r).1 = valsArgs ofC true (requestCode r).1 := by
+    valsArgs ofC Realm.all true true (realizedCode r).1 = valsArgs ofC Realm.all true true (requestCode r).1 := by
   simp [realizedCode, requestCode, vals]
 
 /-- **Related steps cross the same values out** (proved, `vals_tabRel`,
@@ -148,10 +148,11 @@ out the same values at the same type. -/
 theorem chk_actual_sim {F : TolerantFrames.ReadOnly.Family} {C : Nat} {tv : TypeView} (T : tv.Ty) (h h' : Heap)
     {r : SourceRequest σ ι} {K : Tm → Tm} (hK : EvalCtx K) {t₁ t₂ t₁' t₂' : Tm}
     (hr : TabRel (realizedCode r) (requestCode r) r.program.length t₁ t₂)
-    (hr' : TabRel (realizedCode r) (requestCode r) r.program.length t₁' t₂') :
+    (hr' : TabRel (realizedCode r) (requestCode r) r.program.length t₁' t₂')
+    (hAB : ∀ comp kx, F.realm.native (realizedCode r, comp) kx = F.realm.native (requestCode r, comp) kx) :
     actualXs F C T h (K t₁) h' (K t₁') = actualXs F C T h (K t₂) h' (K t₂') :=
-  actualXs_congr T h h' (vals_ctx hK (vals_tabRel (realized_vals _ r) hr))
-    (vals_ctx hK (vals_tabRel (realized_vals _ r) hr'))
+  actualXs_congr T h h' (fun o => vals_ctx hK (vals_tabRel (realized_vals _ r) hAB hr) o false)
+    (fun o => vals_ctx hK (vals_tabRel (realized_vals _ r) hAB hr') o false)
 
 /-- **Related steps cross the same values in** (proved; the entering
 crossings of the draft's `chk_sim`): in any context, a step of related runs
@@ -193,7 +194,7 @@ theorem chk_entry_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {K : Tm �
       exact activeFrame_snd u _ _
     have hd : depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c)) =
         depthC spec.F spec.C none (K (.frame (requestCode r).1 (requestCode r).2 u L d k x c)) :=
-      depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl hk))
+      depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl hk) fun _ _ => rfl)
     cases hr' with
     | same =>
       unfold FramedSpec.entryXs
@@ -201,16 +202,16 @@ theorem chk_entry_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {K : Tm �
     | @goto l' L' d' c'' hl' =>
       have hd' : depthC spec.F spec.C none (K (.goto (realizedCode r).1 (realizedCode r).2 l' L' d' c'')) =
           depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c)) :=
-        depthC_ctx hK none rfl rfl fun c => (frame_goto_tags hs₁ c).symm
+        depthC_ctx hK none rfl rfl fun c nk => (frame_goto_tags hs₁ _ c nk).symm
       have hd'' : depthC spec.F spec.C none (K (.goto (requestCode r).1 (requestCode r).2 l' L' d' c'')) =
           depthC spec.F spec.C none (K (.goto (realizedCode r).1 (realizedCode r).2 l' L' d' c'')) :=
-        depthC_ctx hK none rfl rfl fun c => (tabRel_tags (A := realizedCode r) (B := requestCode r) (.goto hl') c).symm
+        depthC_ctx hK none rfl rfl fun c nk => (tabRel_tags (A := realizedCode r) (B := requestCode r) (.goto hl') (fun _ _ => rfl) c nk).symm
       unfold FramedSpec.entryXs
       rw [ite_eq_right (fun h => by have := h.2.2; omega), ite_eq_right (fun h => by have := h.2.2; omega)]
     | @frame l' u' L' d' k' x' c'' hl' hk' =>
       have hd' : depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u' L' d' k' x' c'')) =
           depthC spec.F spec.C none (K (.frame (requestCode r).1 (requestCode r).2 u' L' d' k' x' c'')) :=
-        depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl' hk'))
+        depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl' hk') fun _ _ => rfl)
       have he : entered none (K (.frame (realizedCode r).1 (realizedCode r).2 u' L' d' k' x' c'')) =
           entered none (K (.frame (requestCode r).1 (requestCode r).2 u' L' d' k' x' c'')) := entered_frame hK none
       unfold FramedSpec.entryXs
@@ -231,7 +232,7 @@ theorem chk_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {num : (spec.F.
     spec.chk r h (K t₁) h' (K t₁') = spec.chk r h (K t₂) h' (K t₂') := by
   have hs : stepSite spec.flow none (K t₁) = stepSite spec.flow none (K t₂) := chk_site_sim hnum hb h₁ h₂ hK hr
   simp only [FramedSpec.chk, hs, chk_entry_sim spec r hK hr hs₁ hs₂ hr',
-    chk_actual_sim (F := spec.F) (C := spec.C) (tv := spec.view.view) spec.outType h h' hK hr hr']
+    chk_actual_sim (F := spec.F) (C := spec.C) (tv := spec.view.view) spec.outType h h' hK hr hr' fun _ _ => rfl]
 
 namespace FramedSpec
 variable (spec : FramedSpec ι)

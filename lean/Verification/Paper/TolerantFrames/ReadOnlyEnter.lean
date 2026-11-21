@@ -555,8 +555,8 @@ theorem _root_.Verification.HeapObservations.EvalCtx.step_hole {K : Tm → Tm} (
 /-! ## A value in a context enters no run -/
 
 /-- A path of one entry is tagged with its top segment's tag (proved). -/
-theorem tags_one {c : ComponentTag} {t : Tm} (h : (path c t).length = 1) : (path c t).map Prod.fst = [c] := by
-  obtain ⟨i, s, hl⟩ := path_last t c
+theorem tags_one {c : ComponentTag} {t : Tm} (h : (path rl c nk t).length = 1) : (path rl c nk t).map Prod.fst = [c] := by
+  obtain ⟨i, s, hl⟩ := path_last t c nk
   have hi : i = [] := by have := congrArg List.length hl; rw [h] at this; simpa using this
   subst hi; rw [hl]; rfl
 
@@ -564,10 +564,10 @@ theorem tags_one {c : ComponentTag} {t : Tm} (h : (path c t).length = 1) : (path
 that is no value is the term's, wrapped, and whose path around a value is
 its top segment, keeps the tags of a hole's value and of a variable equal. -/
 theorem layer_tags {K₀ L : Tm → Tm} (hK : EvalCtx K₀) {v : Tm} {c : ComponentTag}
-    (hP : ∀ t, isVal t = false → (path c (L t)).map Prod.fst = (path c t).map Prod.fst)
-    (ih : (path c (K₀ v)).map Prod.fst = (path c (K₀ (.var 0))).map Prod.fst)
-    (hQ : isVal (K₀ v) = true → (path c (L (K₀ v))).length = 1) :
-    (path c (L (K₀ v))).map Prod.fst = (path c (L (K₀ (.var 0)))).map Prod.fst := by
+    (hP : ∀ t, isVal t = false → (path rl c nk (L t)).map Prod.fst = (path rl c nk t).map Prod.fst)
+    (ih : (path rl c nk (K₀ v)).map Prod.fst = (path rl c nk (K₀ (.var 0))).map Prod.fst)
+    (hQ : isVal (K₀ v) = true → (path rl c nk (L (K₀ v))).length = 1) :
+    (path rl c nk (L (K₀ v))).map Prod.fst = (path rl c nk (L (K₀ (.var 0)))).map Prod.fst := by
   have hn0 : isVal (K₀ (.var 0)) = false := hK.not_val rfl
   rw [hP _ hn0]
   cases hv : isVal (K₀ v)
@@ -608,16 +608,16 @@ that is no value is a reached term, so its positions after the hole are
 free of runs, the path around a value has the tags of the path around a
 variable, the context's own. -/
 theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
-    ∀ {u v : Tm} (c : ComponentTag), isVal u = false → wfS (K u) = true → isVal v = true → wfS (K v) = true →
-      (path c (K v)).map Prod.fst = (path c (K (.var 0))).map Prod.fst := by
+    ∀ {u v : Tm} (c : ComponentTag) (nk : Bool), isVal u = false → wfS (K u) = true → isVal v = true → wfS (K v) = true →
+      (path rl c nk (K v)).map Prod.fst = (path rl c nk (K (.var 0))).map Prod.fst := by
   induction hK with
-  | hole => intro u v c _ _ hv _; simp [path_val hv, path]
+  | hole => intro u v c nk _ _ hv _; simp [path_val hv, path]
   | @frameC K₀ E Kc L d k x comp hK ih =>
-    intro u v c hu hwu hv hwv
+    intro u v c nk hu hwu hv hwv
     simp only [wfS, Bool.and_eq_true] at hwu hwv
-    simp only [path, List.map_append, wrap_fst, ih comp hu hwu.2 hv hwv.2]
+    simp only [path, List.map_append, wrap_fst, ih _ _ hu hwu.2 hv hwv.2]
   | @callL K₀ r args hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -627,14 +627,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.invoke s r args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.invoke s r args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @callRecv K₀ f args hf hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -644,14 +644,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.invoke f s args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.invoke f s args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @constructL K₀ args hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -661,14 +661,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.construct s args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.construct s args) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @letC K₀ b hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -678,14 +678,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.letE s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.letE s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @spreadC K₀ hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -695,14 +695,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.spread s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.spread s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @readC K₀ f hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -712,14 +712,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.readAt f s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.readAt f s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @indexC1 K₀ key hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -729,14 +729,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.indexAt s key) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.indexAt s key) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @indexC2 K₀ a ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -746,14 +746,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.indexAt a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.indexAt a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @writeC1 K₀ f b hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -763,14 +763,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.writeAt f s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.writeAt f s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @writeC2 K₀ f a ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -780,14 +780,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.writeAt f a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.writeAt f a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @testC K₀ k hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -797,14 +797,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.test k s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.test k s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @iteC K₀ a b hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -814,14 +814,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.ite s a b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.ite s a b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @arithC1 K₀ op b hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -831,14 +831,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.arith op s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.arith op s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @arithC2 K₀ op a ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -848,14 +848,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.arith op a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.arith op a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @elemC1 K₀ i hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -865,14 +865,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.elemAt s i) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.elemAt s i) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @elemC2 K₀ a ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -882,14 +882,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.elemAt a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.elemAt a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @setC1 K₀ i v hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -899,14 +899,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.setElem s i v) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.setElem s i v) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @setC2 K₀ a v ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -916,14 +916,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.setElem a s v) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.setElem a s v) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @setC3 K₀ a i ha hi hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -933,14 +933,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.setElem a i s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.setElem a i s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @lenC K₀ hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -950,14 +950,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.lenOf s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.lenOf s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @throwC K₀ hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -967,14 +967,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.throw s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.throw s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @mergeC1 K₀ d b hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -984,14 +984,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.merge d s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.merge d s b) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @mergeC2 K₀ d a ha hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -1001,14 +1001,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.merge d a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.merge d a s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @makeKeyC1 K₀ a hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -1018,14 +1018,14 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.makeKey s a) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.makeKey s a) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @makeKeyC2 K₀ k hk hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hwu' : wfS (K₀ u₁) = true := by simp_all [wfS]
@@ -1035,56 +1035,56 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
       · rw [wfS_val hv']
         simp only [wfS, hv', ↓reduceIte, Bool.true_eq_false] at hwv
         (repeat' split at hwv) <;> simp_all
-    refine layer_tags (L := fun s => Tm.makeKey k s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c hu hwu' hv hwv') (fun hv' => ?_)
+    refine layer_tags (L := fun s => Tm.makeKey k s) hK (fun t ht => by simp [path, wrap_fst, *]) (ih c nk hu hwu' hv hwv') (fun hv' => ?_)
     first
       | (simp [path, *]; done)
       | exact nr_path _ (by
           simp only [wfS, hv', hn, ↓reduceIte, Bool.and_eq_true, Bool.true_eq_false] at hwv hwu
-          (repeat' split at hwv) <;> simp_all [free]) c
+          (repeat' split at hwv) <;> simp_all [free]) c nk
   | @callArg K₀ f r args i hf hr hi hpre hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     simp only [wfS, hf, hr, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hwu hwv
     have hwa := wfArgsS_split (hwu.2) (List.getElem?_set_self hi) (set_pre hpre) hn
     refine layer_tags (L := fun s => Tm.invoke f r (args.set i s)) hK
       (fun t ht => by simp only [path, *, Bool.true_eq_false, ↓reduceIte]; rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre ht, wrap_fst])
-      (ih c hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c)
+      (ih c nk hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c nk)
     · cases hv' : isVal (K₀ v₁)
       · exact (wfArgsS_split hwv.2 (List.getElem?_set_self hi) (set_pre hpre) hv').1
       · rw [wfS_val hv']; exact wfArgsS_at_val hwv.2 (List.getElem?_set_self hi) (set_pre hpre) hv'
     · have hl := list_free hi hpre hn hwu.2 hv' hwv.2
       simp_all [free]
   | @constructArg K₀ f args i hf hi hpre hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     simp only [wfS, hf, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hwu hwv
     have hwa := wfArgsS_split (hwu.2) (List.getElem?_set_self hi) (set_pre hpre) hn
     refine layer_tags (L := fun s => Tm.construct f (args.set i s)) hK
       (fun t ht => by simp only [path, *, Bool.true_eq_false, ↓reduceIte]; rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre ht, wrap_fst])
-      (ih c hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c)
+      (ih c nk hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c nk)
     · cases hv' : isVal (K₀ v₁)
       · exact (wfArgsS_split hwv.2 (List.getElem?_set_self hi) (set_pre hpre) hv').1
       · rw [wfS_val hv']; exact wfArgsS_at_val hwv.2 (List.getElem?_set_self hi) (set_pre hpre) hv'
     · have hl := list_free hi hpre hn hwu.2 hv' hwv.2
       simp_all [free]
   | @arrArg K₀ inits i hi hpre hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     simp only [wfS] at hwu hwv
     have hwa := wfArgsS_split hwu (List.getElem?_set_self hi) (set_pre hpre) hn
     refine layer_tags (L := fun s => Tm.arrLit (inits.set i s)) hK
       (fun t ht => by simp only [path, *]; rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre ht, wrap_fst])
-      (ih c hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c)
+      (ih c nk hu hwa.1 hv ?_) (fun hv' => nr_path _ ?_ c nk)
     · cases hv' : isVal (K₀ v₁)
       · exact (wfArgsS_split hwv (List.getElem?_set_self hi) (set_pre hpre) hv').1
       · rw [wfS_val hv']; exact wfArgsS_at_val hwv (List.getElem?_set_self hi) (set_pre hpre) hv'
     · have hl := list_free hi hpre hn hwu hv' hwv
       simp_all [free]
   | @makeArg K₀ cc ns inits i hi hpre hK ih =>
-    intro u₁ v₁ c hu hwu hv hwv
+    intro u₁ v₁ c nk hu hwu hv hwv
     dsimp only at hwu hwv ⊢
     have hn := hK.not_val hu
     have hcode : ∀ xs, wfS (.makeAt cc ns xs) = true → wfArgsS xs = true := by
@@ -1094,11 +1094,11 @@ theorem ctx_val_tags {K : Tm → Tm} (hK : EvalCtx K) :
     have hwa := wfArgsS_split hwu₁ (List.getElem?_set_self hi) (set_pre hpre) hn
     refine layer_tags (L := fun s => Tm.makeAt cc ns (inits.set i s)) hK
       (fun t ht => by simp only [path]; rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre ht, wrap_fst])
-      (ih c hu hwa.1 hv ?_) (fun hv' => ?_)
+      (ih c nk hu hwa.1 hv ?_) (fun hv' => ?_)
     · cases hv' : isVal (K₀ v₁)
       · exact (wfArgsS_split hwv₁ (List.getElem?_set_self hi) (set_pre hpre) hv').1
       · rw [wfS_val hv']; exact wfArgsS_at_val hwv₁ (List.getElem?_set_self hi) (set_pre hpre) hv'
     · have hl := list_free hi hpre hn hwu₁ hv' hwv₁
-      exact nr_path _ (by cases cc <;> simp_all [wfS, free]) c
+      exact nr_path _ (by clear ih hcode hwa; cases cc <;> simp_all [wfS, free]) c nk
 
 end Verification.TolerantFrames.ReadOnly

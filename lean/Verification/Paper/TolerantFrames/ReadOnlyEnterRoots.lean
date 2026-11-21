@@ -438,12 +438,12 @@ variable {P : Package} {Fl : Flow P} {V : Sites P → Val → Prop}
 /-- **The path through a context, at the tag its hole's path is read
 at.** -/
 def PathAt (K : Tm → Tm) (c c' : ComponentTag) : Prop :=
-  ∃ g S, ∀ t, isVal t = false → path c (K t) = wrap g (path c' t) ++ S
+  ∃ g S, ∀ t, isVal t = false → path Realm.empty c false (K t) = wrap g (path Realm.empty c' false t) ++ S
 
 /-- A context rebuilding its hole's path keeps the tag the hole's path is
 read at (proved, `wrap_wrap_append`). -/
 theorem PathAt.keep {K K₀ : Tm → Tm} {c c₀ c' : ComponentTag} (hP : PathAt K c c')
-    (h : ∃ hh : Tm → Tm, ∀ t, isVal t = false → path c₀ (K₀ t) = wrap hh (path c (K t))) :
+    (h : ∃ hh : Tm → Tm, ∀ t, isVal t = false → path Realm.empty c₀ false (K₀ t) = wrap hh (path Realm.empty c false (K t))) :
     PathAt K₀ c₀ c' := by
   obtain ⟨g, S, hP⟩ := hP
   obtain ⟨hh, hK⟩ := h
@@ -468,7 +468,8 @@ theorem fits_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c : ComponentTag, ∃ c'
     intro c
     obtain ⟨c', ⟨g, S, hP⟩, hF⟩ := ih comp
     obtain ⟨g', S', hw⟩ := wrap_wrap_append (fun s => .frame E Kc s L d k x comp) g S
-    refine ⟨c', ⟨g', S' ++ [(c, hole)], fun t ht => by simp only [path]; rw [hP t ht, hw, List.append_assoc]⟩,
+    refine ⟨c', ⟨g', S' ++ [(c, hole)], fun t ht => by
+      simp only [path, Realm.own_empty, Realm.native_empty]; rw [hP t ht, hw, List.append_assoc]⟩,
       fun hu hf => ?_⟩
     cases hf with
     | val hv => simp [isVal] at hv
@@ -539,16 +540,16 @@ end Fits
 (proved): around a context whose hole's path is read at `c'`, a step from
 a term with one path entry to a run with one more raises the calls of `C`
 active by one exactly when the run is `C`'s and `c'` is not. -/
-theorem depth_push {F : Family} {C : Nat} {K : Tm → Tm} {c' cc : ComponentTag} (hP : PathAt K none c')
-    {u w : Tm} (hu : isVal u = false) (hw : isVal w = false) (hpu : (path c' u).map Prod.fst = [c'])
-    (hpw : (path c' w).map Prod.fst = [cc, c'])
+theorem depth_push {F : Family} {C : Nat} {K : Tm → Tm} {c' cc : ComponentTag} (hrn : ∀ t, F.realm.tags t = false)
+    (hP : PathAt K none c')
+    {u w : Tm} (hu : isVal u = false) (hw : isVal w = false) (hpu : (path Realm.empty c' false u).map Prod.fst = [c'])
+    (hpw : (path Realm.empty c' false w).map Prod.fst = [cc, c'])
     (hd : depthC F C none (K w) = depthC F C none (K u) + 1) : F.ofC C cc = true ∧ F.ofC C c' = false := by
   obtain ⟨g, S, hP⟩ := hP
   have e : ∀ t, isVal t = false → depthC F C none (K t) =
-      blocks (((path c' t).map Prod.fst ++ S.map Prod.fst).map (F.ofC C)) := by
+      blocks (((path Realm.empty c' false t).map Prod.fst ++ S.map Prod.fst).map (F.ofC C)) := by
     intro t ht
-    unfold depthC
-    rw [hP t ht, List.map_append, List.map_append,
+    rw [depthC_noRealm hrn, hP t ht, List.map_append, List.map_append,
       show (fun p : ComponentTag × Tm => F.ofC C p.1) = F.ofC C ∘ Prod.fst from rfl, ← List.map_map,
       ← List.map_map, wrap_fst]
   rw [e w hw, e u hu, hpw, hpu] at hd
@@ -564,12 +565,12 @@ theorem deep_entry {α : Type} {site : Nat → α} {T : List α} {fs : List (Pro
     {cc : ComponentTag} {oid : Nat} {r : Tm} {args : List Tm}
     (hdf : DeepIn site T (.objAt fs (.graph n E Kc s caps k false cc) oid)) (hdr : DeepIn site T r)
     (hrv : isVal r = true) (hda : ∀ x ∈ args, DeepIn site T x) (hav : ∀ x ∈ args, isVal x = true) :
-    ∀ x ∈ vals allC true (.goto E Kc s (r :: CallArguments.parameters n args ++
+    ∀ x ∈ vals allC Realm.empty true false (.goto E Kc s (r :: CallArguments.parameters n args ++
       (caps ++ [.objAt fs (.graph n E Kc s caps k false cc) oid])) .nul cc), DeepIn site T x := by
-  have hf : ∀ x, x ∈ vals allC true (.objAt fs (.graph n E Kc s caps k false cc) oid) → DeepIn site T x :=
+  have hf : ∀ x, x ∈ vals allC Realm.empty true false (.objAt fs (.graph n E Kc s caps k false cc) oid) → DeepIn site T x :=
     fun x hx => hdf.held rfl hx
   intro x hx
-  simp only [vals, allC, Bool.false_eq_true, ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap,
+  simp only [vals, Realm.flag_empty, allC, Bool.not_false, ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap,
     List.mem_cons, List.not_mem_nil, or_false] at hx
   rcases hx with ⟨e, he, hx⟩ | ⟨y, hy, hx⟩
   · exact hf x (by simp only [vals, allC, Bool.false_eq_true, ↓reduceIte, valsArgs_eq, List.mem_cons,
@@ -628,6 +629,7 @@ within `O` (`Fits.invoke`), hence the closure in depth
 holds (`deep_entry`). -/
 theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
@@ -640,7 +642,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
     (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true) (hr : noRestB lay = true) :
     ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
       δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, EvalCtx K →
-      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC Realm.empty true false (.goto E Kc l L d cc),
         DeepIn a₁.2.site (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) x := by
   intro a a₁ hA hx hd K E Kc l L d cc hK ht₁
   have hw := reached_wfS hst hA
@@ -669,7 +671,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
       DeepIn a₁.2.site (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) v :=
     fun v S₁ hv hS₁ hl => deepIn_of_checks hT htok hlow (hv.congr hsite) (Sub.trans hS₁ hOT) hl
   have hgv : isVal (Tm.goto E Kc l L d cc) = false := rfl
-  have hpg : ∀ c, (path c (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
+  have hpg : ∀ c, (path Realm.empty c false (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
   generalize eg : Tm.goto E Kc l L d cc = gt at hu
   generalize eh₀ : a.1.s.h = h₀ at hu
   generalize eh₁ : a₁.1.s.h = h₁ at hu
@@ -683,7 +685,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      obtain ⟨-, hc'⟩ := depth_push hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg c') hdepth
+      obtain ⟨-, hc'⟩ := depth_push hrn hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg c') hdepth
       rw [show (fr.F.at fr.C).ofC c' = fr.F.ofC fr.C c' from rfl, hc'] at hfit
       rw [layP_invoke] at hlu
       simp only [layPs_eq, Bool.and_eq_true, List.all_eq_true] at hlu
@@ -699,7 +701,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      obtain ⟨-, hc'⟩ := depth_push hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg c') hdepth
+      obtain ⟨-, hc'⟩ := depth_push hrn hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg c') hdepth
       rw [show (fr.F.at fr.C).ofC c' = fr.F.ofC fr.C c' from rfl, hc'] at hfit
       rw [layP_construct] at hlu
       simp only [layPs_eq, Bool.and_eq_true, List.all_eq_true] at hlu
@@ -721,7 +723,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
       simp only [subst, Tm.goto.injEq] at eg
       obtain ⟨-, -, -, -, -, rfl⟩ := eg
       have h1 := hnp' K _ _ _ _ _ _ cc hK hat
-      obtain ⟨h2, -⟩ := depth_push hP hnu hgv (by simp [path, ha]) (hpg c') hdepth
+      obtain ⟨h2, -⟩ := depth_push hrn hP hnu hgv (by simp [path, ha]) (hpg c') hdepth
       simp_all [Family.at]
   -- A frame's step to its code's next node: the calls of `C` active kept.
   all_goals try (

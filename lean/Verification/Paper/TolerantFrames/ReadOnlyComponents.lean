@@ -35,6 +35,11 @@ structure Family where
   laminar : ∀ a b, nested a b ∨ nested b a ∨ ∀ c, ¬ (nested c a ∧ nested c b)
   siteOf : Site → ComponentTag
   mark : Site → Nat → Mark
+  /-- The realm's code and the calls of a native. -/
+  realm : Realm := Realm.empty
+  /-- The realm's code is no component's: a frame of it runs no component's
+  code. -/
+  realm_out : ∀ c C, realm.tags (some c) = true → ¬ nested c C := by intro _ _ h; cases h
 
 namespace Family
 variable (F : Family)
@@ -61,6 +66,13 @@ noncomputable def restrict (C : Nat) (site : Nat → Option F.Site) : Nat → Op
     | none => none
 
 variable {F}
+
+/-- **A tag of the realm's code runs no code of `C`.** -/
+theorem realm_ofC (C : Nat) : ∀ t, F.realm.tags t = true → F.ofC C t = false := by
+  intro t ht
+  simp only [ofC, decide_eq_false_iff_not]
+  rintro ⟨c, rfl, hc⟩
+  exact F.realm_out c C ht hc
 
 /-- **A frame running a nested component's code runs the enclosing
 one's.** -/

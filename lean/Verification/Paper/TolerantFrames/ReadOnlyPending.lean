@@ -265,10 +265,10 @@ theorem Stay.append {P P' : List (ComponentTag × Tm)} (Q : List (ComponentTag �
   exact ⟨F, F', rest ++ Q, rfl, rfl, ht⟩
 
 /-- Two terms whose paths are their top segments. -/
-theorem Stay.base {c : ComponentTag} {t t' : Tm} (h : (path c t).length = 1) (h' : (path c t').length = 1) :
-    Stay (path c t) (path c t') := by
-  obtain ⟨i, s, hl⟩ := path_last t c
-  obtain ⟨i', s', hl'⟩ := path_last t' c
+theorem Stay.base {c : ComponentTag} {t t' : Tm} (h : (path rl c nk t).length = 1) (h' : (path rl c nk t').length = 1) :
+    Stay (path rl c nk t) (path rl c nk t') := by
+  obtain ⟨i, s, hl⟩ := path_last t c nk
+  obtain ⟨i', s', hl'⟩ := path_last t' c nk
   have hi : i = [] := by have := congrArg List.length hl; rw [h] at this; simpa using this
   have hi' : i' = [] := by have := congrArg List.length hl'; rw [h'] at this; simpa using this
   subst hi hi'
@@ -276,9 +276,9 @@ theorem Stay.base {c : ComponentTag} {t t' : Tm} (h : (path c t).length = 1) (h'
 
 /-- **A step inside an evaluation context that is no run**. -/
 theorem Stay.ctx {c : ComponentTag} {a a' A A' : Tm} {g : Tm → Tm}
-    (hrel : Stay (path c a) (path c a')) (hA : path c A = ReadOnly.wrap g (path c a))
-    (hA' : isVal a' = false → path c A' = ReadOnly.wrap g (path c a'))
-    (hv : isVal a' = true → (path c A').length = 1) : Stay (path c A) (path c A') := by
+    (hrel : Stay (path rl c nk a) (path rl c nk a')) (hA : path rl c nk A = ReadOnly.wrap g (path rl c nk a))
+    (hA' : isVal a' = false → path rl c nk A' = ReadOnly.wrap g (path rl c nk a'))
+    (hv : isVal a' = true → (path rl c nk A').length = 1) : Stay (path rl c nk A) (path rl c nk A') := by
   cases e : isVal a'
   · rw [hA, hA' e]; exact hrel.wrap g
   · rw [path_val e] at hrel
@@ -354,7 +354,7 @@ reaching a value enters no run, and the only runs a step pushes are those a
 graph call or a binding's step produces, neither of which changes the
 heap. -/
 theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
-    wfS t = true → HeapFree h → wfS t' = true ∧ (h' = h ∨ ∀ c, Stay (path c t) (path c t')) := by
+    wfS t = true → HeapFree h → wfS t' = true ∧ (h' = h ∨ ∀ rl c nk, Stay (path rl c nk t) (path rl c nk t')) := by
   induction hs
   case callArg hf hr ha hpre hs ih =>
     intro hw hh
@@ -363,8 +363,8 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgsS_split hw.2 ha hpre hna
     obtain ⟨w', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hp.imp id fun hp c => Stay.ctx (hp c) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path, hf, hr]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c)⟩
+    refine ⟨?_, hp.imp id fun hp rl c nk => Stay.ctx (hp rl c nk) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path, hf, hr]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c nk)⟩
     · simp only [wfS, hf, hr, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true]
       exact ⟨hw.1, wfArgsS_mk (set_at ha) (set_pre hpre) w' ho⟩
     · simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]
@@ -376,8 +376,8 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgsS_split hw.2 ha hpre hna
     obtain ⟨w', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hp.imp id fun hp c => Stay.ctx (hp c) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path, hf]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c)⟩
+    refine ⟨?_, hp.imp id fun hp rl c nk => Stay.ctx (hp rl c nk) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path, hf]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c nk)⟩
     · simp only [wfS, hf, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true]
       exact ⟨hw.1, wfArgsS_mk (set_at ha) (set_pre hpre) w' ho⟩
     · simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]
@@ -389,8 +389,8 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgsS_split hw ha hpre hna
     obtain ⟨w', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hp.imp id fun hp c => Stay.ctx (hp c) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c)⟩
+    refine ⟨?_, hp.imp id fun hp rl c nk => Stay.ctx (hp rl c nk) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv) (fun hv => nr_path _ ?_ c nk)⟩
     · simp only [wfS]
       exact wfArgsS_mk (set_at ha) (set_pre hpre) w' ho
     · simp only [free, frees_eq, List.all_eq_true]
@@ -407,10 +407,10 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgsS_split hw' ha hpre hna
     obtain ⟨w', hp⟩ := ih wa hh
     have ho := set_others (b := a') hoth
-    exact ⟨hcode _ (wfArgsS_mk (set_at ha) (set_pre hpre) w' ho), hp.imp id fun hp c' => Stay.ctx (hp c')
+    exact ⟨hcode _ (wfArgsS_mk (set_at ha) (set_pre hpre) w' ho), hp.imp id fun hp rl c' nk => Stay.ctx (hp rl c' nk)
       (by simp only [path]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv)
-      (fun hv => nr_path _ (hcode' _ (all_set ho (free_wfS_val hv w'))) c')⟩
+      (fun hv => nr_path _ (hcode' _ (all_set ho (free_wfS_val hv w'))) c' nk)⟩
   case letC h₀ a h₁ a' b hs ih =>
     intro hw hh
     have hna := not_val_of_step hs
@@ -422,7 +422,7 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
       · exact .inl h
       · obtain ⟨r₁, r₂⟩ := restHead_step hs h₂
         exact .inr ⟨⟨r₂, r₁⟩, h₃⟩
-    refine ⟨?_, hp.imp id fun hp c => Stay.ctx (g := fun s => Tm.letE s b) (hp c) (by simp [path, hna])
+    refine ⟨?_, hp.imp id fun hp rl c nk => Stay.ctx (g := fun s => Tm.letE s b) (hp rl c nk) (by simp [path, hna])
       (fun hv => by simp [path, hv]) (fun hv => by simp [path, hv])⟩
     simp only [wfS]
     split
@@ -467,9 +467,9 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     intro hw hh
     simp only [wfS, Bool.and_eq_true] at hw
     obtain ⟨w', hp⟩ := ih hw.2 hh
-    refine ⟨by simp only [wfS, Bool.and_eq_true]; exact ⟨hw.1, w'⟩, hp.imp id fun hp c => ?_⟩
+    refine ⟨by simp only [wfS, Bool.and_eq_true]; exact ⟨hw.1, w'⟩, hp.imp id fun hp rl c nk => ?_⟩
     simp only [path]
-    exact Stay.append _ (Stay.wrap _ (hp _))
+    exact Stay.append _ (Stay.wrap _ (hp _ _ _))
   case frameRet hv =>
     intro hw hh
     simp only [wfS, Bool.and_eq_true] at hw
@@ -531,7 +531,7 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     intro hw hh
     have hargs : wfArgsS vs = true := by
       cases c <;> simp only [wfS, Bool.and_eq_true] at hw <;> first | exact hw | exact hw.2
-    refine ⟨wfS_of_free _ ?pf, .inr fun c' => Stay.base (by simp [path, pathArgs_vals _ hvs]) (nr_path _ ?pf c')⟩
+    refine ⟨wfS_of_free _ ?pf, .inr fun rl c' nk => Stay.base (by simp [path, pathArgs_vals _ hvs]) (nr_path _ ?pf c' nk)⟩
     case pf => cases c <;> simp_all [wfS, free]
   case readField =>
     rename_i hl hv
@@ -553,7 +553,7 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   case writeField =>
     rename_i hv hl hlt
     intro hw hh
-    exact ⟨rfl, .inr fun c => Stay.base (by simp [path, hv]) (by simp [path])⟩
+    exact ⟨rfl, .inr fun rl c nk => Stay.base (by simp [path, hv]) (by simp [path])⟩
   case testV =>
     rename_i hv
     intro _ hh
@@ -566,11 +566,11 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   case arrAlloc =>
     rename_i hvs hlen
     intro hw hh
-    exact ⟨rfl, .inr fun c => Stay.base (by simp [path, pathArgs_vals _ hvs]) (by simp [path])⟩
+    exact ⟨rfl, .inr fun rl c nk => Stay.base (by simp [path, pathArgs_vals _ hvs]) (by simp [path])⟩
   case arrAllocThrow =>
     rename_i hvs hlen
     intro _ hh
-    exact ⟨by simp [wfS, free, thrownError], .inr fun c => Stay.base (by simp [path, pathArgs_vals _ hvs])
+    exact ⟨by simp [wfS, free, thrownError], .inr fun rl c nk => Stay.base (by simp [path, pathArgs_vals _ hvs])
       (by simp [path, thrownError])⟩
   case elemRead =>
     rename_i hl hv
@@ -579,14 +579,14 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   case setPresent =>
     rename_i hv hl hlt
     intro hw hh
-    exact ⟨rfl, .inr fun c => Stay.base (by simp [path, hv]) (by simp [path])⟩
+    exact ⟨rfl, .inr fun rl c nk => Stay.base (by simp [path, hv]) (by simp [path])⟩
   case setGrow =>
     rename_i hv hk hl
     intro hw hh
-    exact ⟨rfl, .inr fun c => Stay.base (by simp [path, hv]) (by simp [path])⟩
+    exact ⟨rfl, .inr fun rl c nk => Stay.base (by simp [path, hv]) (by simp [path])⟩
   case lenStrThrow =>
     intro _ hh
-    exact ⟨by simp [wfS, free, thrownError], .inr fun c => Stay.base (by simp [path]) (by simp [path, thrownError])⟩
+    exact ⟨by simp [wfS, free, thrownError], .inr fun rl c nk => Stay.base (by simp [path]) (by simp [path, thrownError])⟩
   case elemStr =>
     intro _ hh
     exact ⟨wfS_of_free _ (by simp only [codeUnitAt]; split <;> rfl), .inl rfl⟩
@@ -594,7 +594,7 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     rename_i hb
     intro _ hh
     obtain ⟨ha, hb'⟩ := binopThrows_values hb
-    exact ⟨by simp [wfS, free, thrownError], .inr fun c => Stay.base (by simp [path, ha, hb'])
+    exact ⟨by simp [wfS, free, thrownError], .inr fun rl c nk => Stay.base (by simp [path, ha, hb'])
       (by simp [path, thrownError])⟩
   case mergeV =>
     rename_i ha hb hm
@@ -642,8 +642,8 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     have hna := not_val_of_step ‹Step _ _ _ _›
     simp [wfS, *] at hw
     obtain ⟨w', hp⟩ := ih (by simp_all) hh
-    refine ⟨?_, hp.imp id fun hp c => Stay.ctx (hp c) (by simp [path, *] <;> rfl)
-      (fun hv => by simp [path, *] <;> rfl) (fun hv => nr_path _ ?_ c)⟩
+    refine ⟨?_, hp.imp id fun hp rl c nk => Stay.ctx (hp rl c nk) (by simp [path, *] <;> rfl)
+      (fun hv => by simp [path, *] <;> rfl) (fun hv => nr_path _ ?_ c nk)⟩
     · simp only [wfS]; (repeat' split) <;> simp_all [free_wfS_val, wfS_of_free, wfArgsS_of]
     · simp_all [free, free_wfS_val]
     done)
@@ -652,7 +652,7 @@ theorem step_wfS {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     intro hw hh
     refine ⟨wfS_of_free _ ?pf, ?heap⟩
     case pf => simp_all [wfS, free]
-    case heap => first | exact .inl rfl | exact .inr fun c => Stay.base (by simp [path, *]) (nr_path _ ?pf c)
+    case heap => first | exact .inl rfl | exact .inr fun rl c nk => Stay.base (by simp [path, *]) (nr_path _ ?pf c nk)
     done)
 
 end Verification.TolerantFrames.ReadOnly

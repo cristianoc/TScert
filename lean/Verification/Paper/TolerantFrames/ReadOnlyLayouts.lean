@@ -339,9 +339,9 @@ theorem step_layP {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
 /-- **A value a term holds meets layout provenance** where the term does
 (proved). -/
 theorem vals_layP {ofC : ComponentTag → Bool} (t : Tm) :
-    ∀ o, layP q t = true → ∀ u ∈ vals ofC o t, layP q u = true := by
+    ∀ rl o nk, layP q t = true → ∀ u ∈ vals ofC rl o nk t, layP q u = true := by
   induction t using Tm.induct
-  all_goals intro o hp u hu
+  all_goals intro rl o nk hp u hu
   all_goals simp only [vals, valsArgs_eq] at hu
   all_goals (repeat' split at hu)
   all_goals (try simp only [List.mem_cons, List.mem_append, List.mem_flatMap, List.not_mem_nil,
@@ -363,7 +363,7 @@ theorem Within.layP {P : Package} {v w : Val} (hw : Within P v w) (hv : ReadOnly
     simp only [ReadOnly.layP, layPs_eq, List.all_eq_true, Bool.and_eq_true] at hv
     simp only [valsArgs_eq, List.mem_flatMap] at hu
     obtain ⟨e, he, hu⟩ := hu
-    exact ih (vals_layP e true (hv.1.2 e he) _ hu)
+    exact ih (vals_layP e Realm.all true true (hv.1.2 e he) _ hu)
   | bound hu _ ih =>
     simp only [ReadOnly.layP, layPs_eq, List.all_eq_true, Bool.and_eq_true] at hv
     simp only [List.mem_cons] at hu
@@ -483,7 +483,7 @@ def spineB : Val → Bool
 /-- **The flow's codes hold no located value**, decided: each value of
 each node expression of each code the flow proposes for is a spine with no
 cell. -/
-def codesLoweredB (F : FFlow P) : Bool := F.codes.all fun mc => mc.1.1.all fun e => (vals allC true e).all spineB
+def codesLoweredB (F : FFlow P) : Bool := F.codes.all fun mc => mc.1.1.all fun e => (vals allC Realm.all true true e).all spineB
 
 omit [Hashable P.Site] in
 /-- **The check is sound** (proved): the node expressions of every code

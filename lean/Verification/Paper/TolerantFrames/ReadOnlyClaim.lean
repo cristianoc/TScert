@@ -51,10 +51,14 @@ structure NumberedFamily where
   laminar : ∀ a b, nested a b ∨ nested b a ∨ ∀ c, ¬ (nested c a ∧ nested c b)
   siteOf : Nat → ComponentTag
   mark : Nat → Nat → Mark
+  /-- The realm's code and the calls of a native. -/
+  realm : Realm := Realm.empty
+  /-- The realm's code is no component's. -/
+  realm_out : ∀ c C, realm.tags (some c) = true → ¬ nested c C := by intro _ _ h; cases h
 
 /-- The family a numbered family is. -/
 def NumberedFamily.family (N : NumberedFamily) : Family :=
-  ⟨Nat, N.nested, N.refl, N.trans, N.laminar, N.siteOf, N.mark⟩
+  ⟨Nat, N.nested, N.refl, N.trans, N.laminar, N.siteOf, N.mark, N.realm, N.realm_out⟩
 
 /-- **A type view over the types `τ`**: `TypeView` at `Ty := τ`. -/
 structure ViewOver (τ : Type) where

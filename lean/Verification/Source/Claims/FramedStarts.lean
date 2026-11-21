@@ -34,7 +34,7 @@ open Verification ControlFlow HeapObservations
 theorem innermostGoto_ctx_goto {K : Tm → Tm} (hK : EvalCtx K) (E : List Tm)
     (Kc : List (Continuation × Option Target)) (l : Nat) (L : List Tm) (d : Tm) (cc : ComponentTag) :
     innermostGoto (K (.goto E Kc l L d cc)) = some ((E, Kc), l, L, d, cc) := by
-  obtain ⟨c', g, S, hP⟩ := path_ctx hK none
+  obtain ⟨c', nk', g, S, hP⟩ := path_ctx hK Realm.empty none false
   unfold innermostGoto
   rw [hP _ rfl]
   simp [path, wrap, mapLast]
@@ -44,7 +44,7 @@ theorem innermostGoto_ctx_goto {K : Tm → Tm} (hK : EvalCtx K) (E : List Tm)
 theorem innermostGoto_ctx_frame {K : Tm → Tm} (hK : EvalCtx K) (E : List Tm)
     (Kc : List (Continuation × Option Target)) (L : List Tm) (d : Tm) (k : Continuation) (x : Option Target)
     (cc : ComponentTag) : innermostGoto (K (.frame E Kc .undef L d k x cc)) = none := by
-  obtain ⟨c', g, S, hP⟩ := path_ctx hK none
+  obtain ⟨c', nk', g, S, hP⟩ := path_ctx hK Realm.empty none false
   unfold innermostGoto
   rw [hP _ rfl]
   simp [path, wrap, mapLast]
@@ -56,7 +56,8 @@ one to a context around a run, the hole's path is read at a tag outside
 `C`. The step is a call of graph code (`depth_push`); a binding's body is
 no run of `C` (`NoPend`), and a frame's step keeps the calls of `C`
 active (`depthC_ctx`). -/
-theorem enter_hole_out {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t')
+theorem enter_hole_out {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hrn : ∀ t, F.realm.tags t = false)
+    (hs : Step h t h' t')
     (hw : wfS t = true) (hh : HeapFree h) (hnp : NoPend (F.at C) t)
     (hd : depthC F C none t' = depthC F C none t + 1) {K : Tm → Tm} (hK : EvalCtx K) {E : List Tm}
     {Kc : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {cc : ComponentTag}
@@ -67,7 +68,7 @@ theorem enter_hole_out {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : St
   have hdepth : depthC F C none (K (.goto E Kc l L d cc)) = depthC F C none (K u) + 1 := by
     rw [← ht', ← hat]; exact hd
   have hgv : isVal (Tm.goto E Kc l L d cc) = false := rfl
-  have hpg : ∀ c, (path c (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
+  have hpg : ∀ c, (path Realm.empty c false (Tm.goto E Kc l L d cc)).map Prod.fst = [cc, c] := fun c => by simp [path]
   generalize eg : Tm.goto E Kc l L d cc = gt at hu
   cases hu
   all_goals first
@@ -78,14 +79,14 @@ theorem enter_hole_out {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : St
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      exact (depth_push hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg c') hdepth).2
+      exact (depth_push hrn hP hnu hgv (by simp [path, hr', pathArgs_vals _ hargs]) (hpg c') hdepth).2
     · intro eg; simp at eg
   case constructGraph hargs =>
     revert eg; unfold CallArguments.graphEntry; split
     · intro eg
       simp only [Tm.goto.injEq] at eg
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := eg
-      exact (depth_push hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg c') hdepth).2
+      exact (depth_push hrn hP hnu hgv (by simp [path, pathArgs_vals _ hargs]) (hpg c') hdepth).2
     · intro eg; simp at eg
   case letV ha =>
     exfalso
@@ -97,13 +98,14 @@ theorem enter_hole_out {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : St
       simp only [subst, Tm.goto.injEq] at eg
       obtain ⟨-, -, -, -, -, rfl⟩ := eg
       have h1 := hnp K _ _ _ _ _ _ cc hK hat
-      obtain ⟨h2, -⟩ := depth_push hP hnu hgv (by simp [path, ha]) (hpg c') hdepth
+      obtain ⟨h2, -⟩ := depth_push hrn hP hnu hgv (by simp [path, ha]) (hpg c') hdepth
       simp_all [Family.at]
   all_goals try (
     exfalso
     simp only [Tm.goto.injEq] at eg
     obtain ⟨-, -, -, -, -, rfl⟩ := eg
-    have := depthC_ctx (F := F) (C := C) hK none hnu hgv fun c => by
+    have := depthC_ctx (F := F) (C := C) hK none hnu hgv fun c nk => by
+      rw [path_noRealm hrn, path_noRealm hrn]
       first
         | simp [path, path_val ‹isVal _ = true›, wrap, mapLast]
         | simp [path, raises_path ‹Raises _ _›, wrap, mapLast]
@@ -299,7 +301,7 @@ theorem entry_hole (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
     | true => exact hrets hi c π hcode
     | false =>
       have hout : spec.F.ofC spec.C c' = false :=
-        enter_hole_out (F := spec.F) (C := spec.C) hp.2.2.1.1.step hx.1 hx.2.1 hx.2.2.2.1 (hp.2.2.2 hi).2.2.2 hK ht₁
+        enter_hole_out (F := spec.F) (C := spec.C) (fun _ => rfl) hp.2.2.1.1.step hx.1 hx.2.1 hx.2.2.2.1 (hp.2.2.2 hi).2.2.2 hK ht₁
           hP
       exact fun s hs => ho (by rw [hout]; rfl) s (hret s hs)
   cases hfit with
@@ -427,10 +429,11 @@ theorem startInv (r : SourceRequest σ ι) (hF : spec.flow.Facts)
       (ClientFrame.startInv_of_entry (spec.progFrame_starts r)) hreach
     have hc' : (spec.frame r).F.ofC (spec.frame r).C r.comp = true := hcomp
     have hn' : (spec.frame r).F.ofC (spec.frame r).C none = false := by simp [Family.ofC, Family.Runs]
+    have hrl : (spec.frame r).F.realm = Realm.empty := rfl
     have hroots : ∀ v, v ∈ rootsOf (spec.frame r).F (spec.frame r).C none x.t → False := by
       intro v hv
       rw [ht] at hv
-      simp [rootsOf, PassUnit.gotoOf, vals, hc'] at hv
+      simp [rootsOf, PassUnit.gotoOf, vals, hc', hrl, Realm.flag_empty] at hv
     refine ⟨⟨fun X hX l => ?_, fun l ⟨v, hv, _⟩ => (hroots v hv).elim, fun l ⟨v, hv, _⟩ => (hroots v hv).elim,
       fun v hv => (hroots v hv).elim, fun w u hw => ?_, fun w u hw => ?_⟩, ?_⟩
     · have hX' : X = fun l => a₂.2.Prot l := List.mem_singleton.mp hX
@@ -441,7 +444,7 @@ theorem startInv (r : SourceRequest σ ι) (hF : spec.flow.Facts)
     · exact hI.localClosed w u (by simpa [lift, hh] using hw)
     · exact hI.bindings w u (by simpa [lift, hh] using hw)
     · rw [ht]
-      simp [truncate, depthC, PassUnit.gotoOf, path, blocks, hc', hn']
+      simp [truncate, depthC, PassUnit.gotoOf, path, blocks, hc', hn', hrl, Realm.own_empty]
   · exact ⟨entryStart_inv (tv := (spec.frame r).view.view) x [], by simp only [bareStart, List.length_replicate]; rfl⟩
 
 end FramedSpec

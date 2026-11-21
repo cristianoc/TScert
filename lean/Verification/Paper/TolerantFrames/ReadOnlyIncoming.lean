@@ -94,8 +94,10 @@ theorem sitesAt_reached {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) (hS : fr.Flow
   have hfa := fitsAt_reached hF hS hE ha
   refine ⟨hfa.2.sites, fun r hr => fits_roots hfa.1 r ?_⟩
   have hn : fr.F.ofC fr.C none = false := by simp [Family.ofC, Family.Runs]
-  have : rootsOf fr.F fr.C none a.1.t = vals (fr.F.at fr.C).ofC true a.1.t := by simp [rootsOf, hn]; rfl
-  rw [← this]; exact hr
+  have : rootsOf fr.F fr.C none a.1.t = vals (fr.F.at fr.C).ofC fr.F.realm true false a.1.t := by
+    simp [rootsOf, hn]; rfl
+  rw [this] at hr
+  exact vals_empty_of (Family.realm_ofC fr.C) _ hr
 
 /-- **An incoming crossing meets the marks** (proved, the draft's
 `crossOk_incoming`): its value is a root of outside code at the state
@@ -170,10 +172,11 @@ def LocatedVal : Tm → Bool
 term holds at its positions (`vals`) is an object, a spine or a view
 spine; a number, a string or `undefined` passed as an argument is no
 root. -/
-theorem vals_located {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ v ∈ vals ofC o t, LocatedVal v = true := by
+theorem vals_located {ofC : ComponentTag → Bool} (t : Tm) :
+    ∀ rl o nk, ∀ v ∈ vals ofC rl o nk t, LocatedVal v = true := by
   induction t using Tm.induct with
   | _ =>
-    intro o v hv
+    intro rl o nk v hv
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hv
     repeat' split at hv
     all_goals first
@@ -186,6 +189,6 @@ reading every incoming value as a root): at an entering step whose
 argument is a number, the crossing's value is no root of outside code,
 whatever the term. -/
 theorem num_not_root (F : Family) (C : Nat) (t : Tm) (b : UInt64) : Tm.num b ∉ rootsOf F C none t :=
-  fun h => by simpa [LocatedVal] using vals_located t _ _ h
+  fun h => by simpa [LocatedVal] using vals_located t _ _ _ _ h
 
 end Verification.TolerantFrames.ReadOnly

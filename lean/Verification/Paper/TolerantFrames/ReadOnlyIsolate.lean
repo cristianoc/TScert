@@ -44,9 +44,9 @@ theorem not_val {a : Tm} (h : ¬ isVal a = false) : isVal a = true := by simpa u
 and the rebuilding is never one, that run is on the path of the list's
 first term that is not a value. -/
 theorem pathArgs_innermost {c : ComponentTag} {x : ComponentTag × Tm} (hx : isGoto x.2 = true) :
-    ∀ (xs : List Tm) (k : List Tm → Tm), (∀ ys, isGoto (k ys) = false) → (pathArgs c k xs).head? = some x →
+    ∀ (xs : List Tm) (k : List Tm → Tm), (∀ ys, isGoto (k ys) = false) → (pathArgs Realm.empty c false k xs).head? = some x →
       ∃ (i : Nat) (a : Tm), xs[i]? = some a ∧ (∀ j, j < i → ∀ v, xs[j]? = some v → isVal v = true) ∧ isVal a = false ∧
-        (path c a).head? = some x
+        (path Realm.empty c false a).head? = some x
   | [], k, hk, h => by
     simp only [pathArgs, List.head?_cons, Option.some.injEq] at h
     subst h
@@ -73,7 +73,7 @@ theorem argCtx {xs : List Tm} {i : Nat} {a : Tm} (hi : xs[i]? = some a) {Ka : Tm
 of a term's path is a run of graph code not yet entered, the term is that
 run in an evaluation context. -/
 theorem path_goto_ctx (t : Tm) :
-    ∀ (c : ComponentTag) (x : ComponentTag × Tm), (path c t).head? = some x → isGoto x.2 = true →
+    ∀ (c : ComponentTag) (x : ComponentTag × Tm), (path Realm.empty c false t).head? = some x → isGoto x.2 = true →
       ∃ Kx, EvalCtx Kx ∧ t = Kx x.2 := by
   induction t using Tm.induct with
   | goto E K l L d comp =>

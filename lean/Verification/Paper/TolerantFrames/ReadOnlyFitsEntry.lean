@@ -48,9 +48,9 @@ variable {P : Package}
 /-- **A value outside code holds meets code provenance** where the term
 does (proved). -/
 theorem vals_prov {ok : Code → ComponentTag → Bool} {ofC : ComponentTag → Bool} (t : Tm) :
-    ∀ o, prov ok t = true → ∀ u ∈ vals ofC o t, prov ok u = true := by
+    ∀ rl o nk, prov ok t = true → ∀ u ∈ vals ofC rl o nk t, prov ok u = true := by
   induction t using Tm.induct
-  all_goals intro o hp u hu
+  all_goals intro rl o nk hp u hu
   all_goals simp only [vals, valsArgs_eq] at hu
   all_goals (repeat' split at hu)
   all_goals (try simp only [List.mem_cons, List.mem_append, List.mem_flatMap, List.not_mem_nil,
@@ -80,7 +80,7 @@ theorem Within.prov {ok : Code → ComponentTag → Bool} {v w : Val} (hw : With
     simp only [ReadOnly.prov, provs_eq, List.all_eq_true, Bool.and_eq_true] at hv
     simp only [valsArgs_eq, List.mem_flatMap] at hu
     obtain ⟨e, he, hu⟩ := hu
-    exact ih (vals_prov e true (hv.1.2 e he) _ hu)
+    exact ih (vals_prov e Realm.all true true (hv.1.2 e he) _ hu)
   | bound hu _ ih =>
     simp only [ReadOnly.prov, provs_eq, List.all_eq_true, Bool.and_eq_true] at hv
     simp only [List.mem_cons] at hu

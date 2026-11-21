@@ -97,6 +97,7 @@ keeps, at the frame's slots and heap, reached from the argument at the
 start's heap. -/
 theorem region_reached [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hc : fr.ChkSound) (hi : fr.StartInv) (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow)
     (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -123,7 +124,7 @@ theorem region_reached [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C
   let K : Nat → Prop := fun ℓ => (∃ j, j < arity ∧ roPos j = true ∧ Reaches (fr.F.at fr.C).ofC h₀ (ρ₀ j) ℓ) ∧
     componentProtocol Fl lay ⟨none, kindAt a.1.s.W ℓ, keyAt a.1.s.W ℓ⟩ = .keep
   have htop : TopC fr.F fr.C a.1.t := .inl ⟨_, _, _, _, _, _, hat, hc₀⟩
-  obtain ⟨hexK, hlastK⟩ := kept_along hc hi hFa hS hE hwk hst hΘ (x := a.1) (g := a.2) hN hg htop (Rel := K)
+  obtain ⟨hexK, hlastK⟩ := kept_along hrn hc hi hFa hS hE hwk hst hΘ (x := a.1) (g := a.2) hN hg htop (Rel := K)
     (fun ℓ ⟨⟨j, hj, hpos, hr⟩, hΨ⟩ => ⟨(hprot j hj hpos ℓ hr).1, (hprot j hj hpos ℓ hr).2, hΨ⟩) hex
   -- The reached states hold values in their heaps.
   have hhv : ∀ y, fr.Reached y → ∀ (l : Nat) (v : Tm), y.1.s.h[l]? = some v → isVal v = true :=
@@ -224,6 +225,7 @@ reached from the argument at the entry's heap, so witnessed at the start
 and, the history growing inside the call, at the frame's state. -/
 theorem prot_witness [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hrn : ∀ t, fr.F.realm.tags t = false)
     (hc : fr.ChkSound) (hi : fr.StartInv) (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow)
     (hE : fr.EntryFits Fl.flow)
     (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -243,7 +245,7 @@ theorem prot_witness [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).
     ∀ r', protRegionB (componentProtocol Fl lay) cp arity roPos (Pe, Pk) l r' = true → ∀ w,
       r'.mem (envOf L d) b₀.1.s.h w = true → b₀.2.Lent w →
       Witness fr.view.view 1 (lift fr.F fr.C none b₀.1 b₀.2) w := by
-  obtain ⟨l'', hkx, hreach⟩ := region_reached hc hi hFa hS hE hwk hst hΘ hcp hlen hN hg hc₀ hat hL₀
+  obtain ⟨l'', hkx, hreach⟩ := region_reached hrn hc hi hFa hS hE hwk hst hΘ hcp hlen hN hg hc₀ hat hL₀
     (fun j hj hpos ℓ hr => ⟨(hprot j hj hpos ℓ hr).1, (hprot j hj hpos ℓ hr).2.1⟩) hex hbt
   intro r' hr' w hw hL
   unfold protRegionB at hr'
@@ -317,7 +319,7 @@ theorem prot_witness (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (h
     have hlen : (requestCode r).1.length = (requestCode r).2.length := by simp [requestCode]
     have hg' : (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 := by rw [hga]; exact .inl ⟨a₂, he, rfl⟩
     have hat' : a.1.t = .goto (requestCode r).1 (requestCode r).2 r.start L₀ d₀ r.comp := by rw [hat]; rfl
-    exact ClientFrame.prot_witness (fr := spec.frame r) (Fl := spec.fflow) (lay := spec.lay) hc hi hF' hS' hE' hwk
+    exact ClientFrame.prot_witness (fr := spec.frame r) (Fl := spec.fflow) (lay := spec.lay) (fun _ => rfl) hc hi hF' hS' hE' hwk
       (spec.wfS_start r) hΘ hcp hlen hN hg' hcomp hat' hL₀
       (fun j hj hpos ℓ hreach => by
         obtain ⟨hlt, -, -, hrow, hw⟩ := hprot j hj hpos ℓ hreach

@@ -64,7 +64,7 @@ variable {F : Family} {C : Nat} {c : ComponentTag}
 /-- **The roots of outside code at a term**: the values at the positions
 of the frames that run no code of `C`, the top segment's run by `c`. -/
 noncomputable def rootsOf (F : Family) (C : Nat) (c : ComponentTag) (t : Tm) : List Val :=
-  vals (F.ofC C) (!F.ofC C c) t
+  vals (F.ofC C) F.realm (!F.ofC C c) false t
 
 /-- **The lifted state** of a configuration with a ghost: its roots are its
 term's. -/
@@ -72,7 +72,7 @@ noncomputable def lift (F : Family) (C : Nat) (c : ComponentTag) (x : Conf) (g :
   ⟨x.s, g, rootsOf F C c x.t⟩
 
 /-- **A term whose active frame runs no code of `C`.** -/
-def OutsideAt (F : Family) (C : Nat) (c : ComponentTag) (t : Tm) : Prop := ¬ F.Runs (activeTag c t) C
+def OutsideAt (F : Family) (C : Nat) (c : ComponentTag) (t : Tm) : Prop := ¬ F.Runs (activeTag F.realm c false t) C
 
 /-- **A step whose active frame runs no code of `C`.** -/
 def Outside (F : Family) (C : Nat) (c : ComponentTag) (x : Conf) : Prop := OutsideAt F C c x.t
@@ -135,7 +135,19 @@ def blocks : List Bool → Nat
 a closure of `C` from outside code adds one; a return or a throw out of the
 last frame of `C`'s innermost block removes it. -/
 noncomputable def depthC (F : Family) (C : Nat) (c : ComponentTag) (t : Tm) : Nat :=
-  blocks ((path c t).map fun p => F.ofC C p.1)
+  blocks ((path F.realm c false t).map fun p => F.ofC C p.1)
+
+/-- **A family whose realm has no tag reads its calls with no realm**
+(proved, `path_noRealm`). -/
+theorem depthC_noRealm (hrn : ∀ t, F.realm.tags t = false) (t : Tm) :
+    depthC F C c t = blocks ((path Realm.empty c false t).map fun p => F.ofC C p.1) := by
+  unfold depthC; rw [path_noRealm hrn]
+
+/-- A family whose realm has no tag reads its active frame with no realm
+(proved, `path_noRealm`). -/
+theorem outsideAt_noRealm (hrn : ∀ t, F.realm.tags t = false) (t : Tm) :
+    OutsideAt F C c t ↔ ¬ F.Runs (activeTag Realm.empty c false t) C := by
+  unfold OutsideAt activeTag; rw [path_noRealm hrn]
 
 /-- **The call discipline of a step** (hypothesis): a step whose active
 frame runs no code of `C` keeps the calls of `C` active or enters one; a
@@ -238,7 +250,7 @@ theorem HSteps.trans {P : Package} {tv : TypeView} {d : Nat} {g₁ g₂ g₃ : G
 reachable from a value at a position of `C`'s code, a closure of `C`'s
 bindings among them, or from storage a site of `C` allocated. -/
 def HeldAt (F : Family) (C : Nat) (c : ComponentTag) (h : Heap) (t : Tm) (g : Ghost (F.at C)) (l : Nat) : Prop :=
-  ReachesFrom (fun t => !F.ofC C t) h (vals (fun t => !F.ofC C t) (F.ofC C c) t) l ∨
+  ReachesFrom (fun t => !F.ofC C t) h (vals (fun t => !F.ofC C t) F.realm (F.ofC C c) false t) l ∨
     ∃ w u, (g.site w).isSome ∧ h[w]? = some u ∧ Leaves (fun t => !F.ofC C t) u l
 
 /-- What `C` holds at a configuration: at its heap and term. -/
@@ -468,7 +480,7 @@ abbrev Code := List Tm × List (ControlFlow.Continuation × Option ControlFlow.T
 /-- **The code a step enters**: the graph of the innermost frame on the
 path, when it is a run not yet entered. -/
 def entered (c : ComponentTag) (t : Tm) : Option Code :=
-  match (path c t).head? with
+  match (path Realm.empty c false t).head? with
   | some (_, .goto E K _ _ _ _) => some (E, K)
   | _ => none
 
