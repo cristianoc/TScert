@@ -852,46 +852,6 @@ theorem vals_mono : ∀ (t : Tm) {rl : Realm} {nk : Bool} {x : Val}, x ∈ vals 
     ↓reduceIte, List.not_mem_nil, Bool.false_and] at hx ⊢
   all_goals grind
 
-/-- **The roots at a realm are among those with no realm** (proved): a
-frame of the realm's code is read at no realm as outside code's, its
-positions all outside code's, where no realm tag is one `ofC` names. -/
-theorem vals_empty_of (hrl : ∀ t, rl.tags t = true → ofC t = false) :
-    ∀ (t : Tm) {o nk : Bool} {x : Val}, x ∈ vals ofC rl o nk t → x ∈ vals ofC Realm.empty o false t := by
-  intro t
-  induction t using Tm.induct
-  case frame E K u L d k xx comp _ ihu _ _ =>
-    intro o nk x hx
-    simp only [vals, List.mem_append, Realm.flag_empty, Realm.native_empty] at hx ⊢
-    by_cases ht : rl.tags comp = true
-    · have hc := hrl comp ht
-      simp only [hc, Bool.not_false, ↓reduceIte]
-      rcases hx with hx | hx
-      · split at hx
-        · exact .inl hx
-        · cases hx
-      · have := ihu hx
-        revert this; cases rl.flag ofC o nk comp
-        · exact fun h => .inr (vals_mono _ h)
-        · exact fun h => .inr h
-    · have hf : rl.flag ofC o nk comp = !ofC comp := by simp [Realm.flag, ht]
-      rw [hf] at hx
-      rcases hx with hx | hx
-      · exact .inl hx
-      · exact .inr (ihu hx)
-  case goto E K l L d comp _ _ _ =>
-    intro o nk x hx
-    simp only [vals, Realm.flag_empty] at hx ⊢
-    by_cases ht : rl.tags comp = true
-    · simp only [hrl comp ht, Bool.not_false, ↓reduceIte]
-      split at hx
-      · exact hx
-      · cases hx
-    · have hf : rl.flag ofC o nk comp = !ofC comp := by simp [Realm.flag, ht]
-      rwa [hf] at hx
-  all_goals intro o nk x hx
-  all_goals simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hx ⊢
-  all_goals grind
-
 theorem objAt_next_eq {fs : List (PropKey × Nat)} {i : Nat} {cc cc' : CallCode}
     (h : HeapKnowledge.descriptorSpine (.objAt fs cc i) = HeapKnowledge.descriptorSpine (.objAt fs cc' i)) :
     ∀ a, ReadOnly.next (.objAt fs cc' i) a = ReadOnly.next (.objAt fs cc i) a := by

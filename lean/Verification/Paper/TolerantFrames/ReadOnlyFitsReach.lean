@@ -311,69 +311,72 @@ theorem lowered_roots {g : Ghost P} {E : List Tm} (hE : ∀ e ∈ E, Lowered Fl 
   exact absurd (hls _ (arr_leaves hl)) (by simp)
 
 /-- **The roots of a fitting term meet `O`** (proved, by induction on
-`Fits`): a value at a position of outside code fits a subset of `O`; a run
-of outside code holds lowered code and an environment of `O`. -/
-theorem fits_roots {g : Ghost P} {n : Nat} :
-    ∀ {Γ a o S t}, Fits Fl (VJ Fl g n) Γ a o S t → ∀ r ∈ vals P.ofC Realm.empty o false t, SitesOf g Fl.O r := by
+`Fits`), at every realm whose tags run no code of the package and at
+either key: a value at a position of outside code fits a subset of `O`; a
+run of outside code holds lowered code and an environment of `O`, read at
+its owner's flag, which holds fewer values where the owner is `C`'s
+(`vals_mono`). -/
+theorem fits_roots {g : Ghost P} {n : Nat} (hrl : ∀ t, rl.tags t = true → P.ofC t = false) :
+    ∀ {Γ a o S t}, Fits Fl (VJ Fl g n) Γ a o S t → ∀ nk, ∀ r ∈ vals P.ofC rl o nk t, SitesOf g Fl.O r := by
   intro Γ a o S t h
   induction h with
-  | val hv h₀ ho => exact vor_roots (Γ := fun _ => none) (.inl h₀) ho
-  | var _ _ _ => intro r hr; simp [vals] at hr
+  | val hv h₀ ho => intro nk; exact vor_roots (Γ := fun _ => none) (.inl h₀) ho
+  | var _ _ _ => intro nk r hr; simp [vals] at hr
   | invoke _ _ _ _ _ _ _ _ ihf ihr iha =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with (hr | hr) | ⟨x, hx, hr⟩
-    · exact ihf r hr
-    · exact ihr r hr
-    · exact iha x hx r hr
+    · exact ihf nk r hr
+    · exact ihr nk r hr
+    · exact iha x hx nk r hr
   | invokeC σ c π Sa Sr hof hfn _ _ _ hargs _ _ _ _ _ ihr iha =>
-    intro r hr
+    intro nk r hr
     subst hof
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with (hr | hr) | ⟨x, hx, hr⟩
     · exact (vals_false_value hfn.val hr).elim
-    · exact ihr r hr
+    · exact ihr nk r hr
     · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
-      exact iha i x hi r hr
+      exact iha i x hi nk r hr
   | construct _ _ _ _ _ _ _ ihf iha =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
-    · exact ihf r hr
-    · exact iha x hx r hr
+    · exact ihf nk r hr
+    · exact iha x hx nk r hr
   | letE _ _ _ ihx ihb =>
-    intro r hr
+    intro nk r hr
     simp only [vals, List.mem_append] at hr
-    exact hr.elim (ihx r) (ihb r)
-  | spread _ _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr
+    exact hr.elim (ihx nk r) (ihb nk r)
+  | spread _ _ _ ih => intro nk r hr; simp only [vals] at hr; exact ih nk r hr
   | makeAbsent _ _ _ _ _ ih =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
-    exact ih x hx r hr
+    exact ih x hx nk r hr
   | makeView _ _ _ _ hv ho ih =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
-    · exact vor_roots (Γ := fun _ => none) (rl := Realm.empty) (nk := false) (.inl hv) ho r (by simpa only [vals] using hr)
-    · exact ih x hx r hr
+    · exact vor_roots (Γ := fun _ => none) (rl := rl) (nk := nk) (.inl hv) ho r (by simpa only [vals] using hr)
+    · exact ih x hx nk r hr
   | makeBound _ _ _ _ _ hb _ hp ho ih =>
-    intro r hr
+    intro nk r hr
     have ho' := fun h' => Sub.trans hb (ho h')
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with ((hr | hr) | ⟨x, hx, hr⟩) | ⟨x, hx, hr⟩
     · exact vor_roots (hp _ (List.mem_cons_self ..)) ho' r hr
     · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho' r hr
     · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho' r hr
-    · exact ih x hx r hr
+    · exact ih x hx nk r hr
   | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
-    intro r hr
+    intro nk r hr
     simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false, List.nil_append, valsArgs_eq,
       List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
-    exact ih x hx r hr
+    exact ih x hx nk r hr
   | makeGraphOut _ _ _ _ hc hE _ hb _ hcaps ho _ ih =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
     · split at hr
@@ -386,70 +389,82 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
           rw [← hot.1] at hr
           exact vor_roots (hcaps x hx) (fun h' => Sub.trans hb (ho h')) r hr
       · simp at hr
-    · exact ih x hx r hr
-  | readAt _ _ _ _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr
+    · exact ih x hx nk r hr
+  | readAt _ _ _ _ _ ih => intro nk r hr; simp only [vals] at hr; exact ih nk r hr
   | indexAt _ _ _ _ _ _ ihx ihk =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihk r)
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx nk r) (ihk nk r)
   | writeAt _ _ _ _ ihx ihy =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihy r)
-  | test _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx nk r) (ihy nk r)
+  | test _ _ ih => intro nk r hr; simp only [vals] at hr; exact ih nk r hr
   | ite _ _ _ _ ihc ihx ihy =>
-    intro r hr; simp only [vals, List.mem_append] at hr
+    intro nk r hr; simp only [vals, List.mem_append] at hr
     rcases hr with (hr | hr) | hr
-    · exact ihc r hr
-    · exact ihx r hr
-    · exact ihy r hr
+    · exact ihc nk r hr
+    · exact ihx nk r hr
+    · exact ihy nk r hr
   | arith _ _ _ ihx ihy =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihy r)
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx nk r) (ihy nk r)
   | arrLit _ _ _ _ _ ih =>
-    intro r hr
+    intro nk r hr
     simp only [vals, valsArgs_eq, List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
-    exact ih x hx r hr
+    exact ih x hx nk r hr
   | elemAt _ _ _ _ ihx ihi =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihi r)
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx nk r) (ihi nk r)
   | setElem _ _ _ _ _ _ _ ihx ihi ihv =>
-    intro r hr; simp only [vals, List.mem_append] at hr
+    intro nk r hr; simp only [vals, List.mem_append] at hr
     rcases hr with (hr | hr) | hr
-    · exact ihx r hr
-    · exact ihi r hr
-    · exact ihv r hr
-  | lenOf _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr
-  | throw _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr
+    · exact ihx nk r hr
+    · exact ihi nk r hr
+    · exact ihv nk r hr
+  | lenOf _ _ ih => intro nk r hr; simp only [vals] at hr; exact ih nk r hr
+  | throw _ _ ih => intro nk r hr; simp only [vals] at hr; exact ih nk r hr
   | merge _ _ _ _ _ _ _ _ ihx ihy =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihy r)
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx nk r) (ihy nk r)
   | makeKey _ _ _ _ _ ihk ihx =>
-    intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihk r) (ihx r)
-  | gotoC _ _ hc _ _ _ _ _ => intro r hr; simp [vals, hc] at hr
+    intro nk r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihk nk r) (ihx nk r)
+  | gotoC _ _ hc _ _ _ _ _ =>
+    intro nk r hr
+    have hf := fun o => Realm.flag_C (o := o) (nk := nk) hrl hc
+    simp only [vals, hf, Bool.false_eq_true, ite_false] at hr
+    cases hr
   | gotoOut hc hE henv _ _ =>
-    intro r hr
-    simp only [vals, Realm.flag_empty, hc, Bool.not_false, ite_true, valsArgs_eq, List.mem_append,
-      List.mem_flatMap] at hr
-    rcases hr with (hr | ⟨x, hx, hr⟩) | hr
-    · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
-    · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
-      have := henv i
-      simp only [envOf, List.getD_eq_getElem?_getD, hi, Option.getD_some] at this
-      exact vor_roots this (fun _ => Sub.refl _) r hr
-    · exact vor_roots (vor_default henv) (fun _ => Sub.refl _) r hr
+    intro nk r hr
+    simp only [vals] at hr
+    split at hr
+    · simp only [valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
+      rcases hr with (hr | ⟨x, hx, hr⟩) | hr
+      · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
+      · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+        have := henv i
+        simp only [envOf, List.getD_eq_getElem?_getD, hi, Option.getD_some] at this
+        exact vor_roots this (fun _ => Sub.refl _) r hr
+      · exact vor_roots (vor_default henv) (fun _ => Sub.refl _) r hr
+    · cases hr
   | frameC _ _ _ hc _ _ _ _ _ _ _ _ ih =>
-    intro r hr
-    simp only [vals, Realm.flag_empty, Realm.native_empty, hc, Bool.not_true, Bool.false_eq_true, ite_false,
-      List.nil_append] at hr
-    exact ih r hr
+    intro nk r hr
+    have hf := fun o => Realm.flag_C (o := o) (nk := nk) hrl hc
+    simp only [vals, hf, Bool.false_eq_true, ite_false, List.nil_append] at hr
+    exact ih _ r hr
   | frameOut hc hE henv _ _ _ _ ih =>
-    intro r hr
-    simp only [vals, Realm.flag_empty, Realm.native_empty, hc, Bool.not_false, ite_true, valsArgs_eq,
-      List.mem_append, List.mem_flatMap] at hr
-    rcases hr with ((hr | ⟨x, hx, hr⟩) | hr) | hr
-    · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
-    · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
-      have := henv i
-      simp only [envOf, List.getD_eq_getElem?_getD, hi, Option.getD_some] at this
-      exact vor_roots (Γ := fun _ => none) (.inl this) (fun _ => Sub.refl _) r hr
-    · exact vor_roots (Γ := fun _ => none) (.inl (vor_default (V := VJ Fl g n) (Γ := fun _ => none)
-        (fun i => .inl (henv i))).top) (fun _ => Sub.refl _) r hr
-    · exact ih r hr
+    intro nk r hr
+    simp only [vals, List.mem_append] at hr
+    rcases hr with hr | hr
+    · split at hr
+      · simp only [valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
+        rcases hr with (hr | ⟨x, hx, hr⟩) | hr
+        · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
+        · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+          have := henv i
+          simp only [envOf, List.getD_eq_getElem?_getD, hi, Option.getD_some] at this
+          exact vor_roots (Γ := fun _ => none) (.inl this) (fun _ => Sub.refl _) r hr
+        · exact vor_roots (Γ := fun _ => none) (.inl (vor_default (V := VJ Fl g n) (Γ := fun _ => none)
+            (fun i => .inl (henv i))).top) (fun _ => Sub.refl _) r hr
+      · cases hr
+    · revert hr
+      cases rl.flag P.ofC _ nk _
+      · exact fun hr => ih _ r (vals_mono _ hr)
+      · exact ih _ r
 
 /-! ## Along the executions of a client frame -/
 
@@ -525,12 +540,11 @@ theorem sitesSound_of_fits (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.Entry
       a.2.alloc a.1.s.h.length (fun _ => stepSite Fl none a.1.t) := by
     simp only [midOf, chkConf]; rw [hS]
   rw [hmid]
-  refine ⟨hH.sites, fun r hr => fits_roots hfit r ?_⟩
+  refine ⟨hH.sites, fun r hr => fits_roots (Family.realm_ofC fr.C) hfit false r ?_⟩
   have hn : fr.F.ofC fr.C none = false := by simp [Family.ofC, Family.Runs]
   have : rootsOf fr.F fr.C none b.1.t = vals (fr.F.at fr.C).ofC fr.F.realm true false b.1.t := by
     simp [rootsOf, hn]; rfl
-  rw [this] at hr
-  exact vals_empty_of (Family.realm_ofC fr.C) _ hr
+  rwa [this] at hr
 
 end ClientFrame
 

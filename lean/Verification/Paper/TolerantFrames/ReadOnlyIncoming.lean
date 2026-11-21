@@ -92,12 +92,11 @@ heap of sites and its roots of outside code meet `O` (`fits_roots`). -/
 theorem sitesAt_reached {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl)
     {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) : fr.SitesAt Fl.H Fl.O a := by
   have hfa := fitsAt_reached hF hS hE ha
-  refine ⟨hfa.2.sites, fun r hr => fits_roots hfa.1 r ?_⟩
+  refine ⟨hfa.2.sites, fun r hr => fits_roots (Family.realm_ofC fr.C) hfa.1 false r ?_⟩
   have hn : fr.F.ofC fr.C none = false := by simp [Family.ofC, Family.Runs]
   have : rootsOf fr.F fr.C none a.1.t = vals (fr.F.at fr.C).ofC fr.F.realm true false a.1.t := by
     simp [rootsOf, hn]; rfl
-  rw [this] at hr
-  exact vals_empty_of (Family.realm_ofC fr.C) _ hr
+  rwa [this] at hr
 
 /-- **An incoming crossing meets the marks** (proved, the draft's
 `crossOk_incoming`): its value is a root of outside code at the state
