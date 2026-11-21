@@ -10,6 +10,7 @@
 import type { CallEffect, DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import { footprintEffect } from "./type-graph.mts";
 import type { FamilyDescription } from "./host-families.mts";
+import { storesOther, withinB } from "./builtin-trust.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
 import * as sync from "typescript/unstable/sync";
@@ -147,18 +148,30 @@ export const compilerApiFamily: FamilyDescription = {
   footprints: [
     { owner: "Node", member: "forEachChild",
       text: "forEachChild<T>(visitor: (node: Node) => T, visitArray?: (nodes: NodeArray<Node>) => T): T | undefined;",
-      kind: "callbacks" },
-    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;", kind: "empty" },
-    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;", kind: "empty" },
-    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;", kind: "empty" },
-    { owner: "Node", member: "getEnd", text: "getEnd(): number;", kind: "empty" },
-    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;", kind: "empty" },
-    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;", kind: "empty" },
-    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;", kind: "empty" },
-    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;", kind: "empty" },
-    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;", kind: "empty" },
+      kind: "callbacks",
+      trust: { onThrow: "top", stores: "other", callsArgs: "during", passesOwnAllocations: true,
+        spec: "TypeScript 7.0.2 dist/api/node/node.generated.js RemoteNode.forEachChild, getOrCreateChildAtNodeIndex" } },
+    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getSourceFile", "footprint") },
+    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;", kind: "empty",
+      trust: storesOther("TypeScript 7.0.2 dist/api/node/node.generated.js getStart; dist/ast/astnav.js getTokenPosOfNode; RemoteNode.jsDoc", "footprint") },
+    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getFullStart", "footprint") },
+    { owner: "Node", member: "getEnd", text: "getEnd(): number;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getEnd", "footprint") },
+    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getWidth", "footprint") },
+    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getFullWidth", "footprint") },
+    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getLeadingTriviaWidth", "footprint") },
+    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getFullText", "footprint") },
+    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;", kind: "empty",
+      trust: withinB("TypeScript 7.0.2 dist/api/node/node.generated.js getText", "footprint") },
     { owner: "SourceFile", member: "getLineAndCharacterOfPosition",
-      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;", kind: "empty" },
+      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;", kind: "empty",
+      trust: storesOther("TypeScript 7.0.2 dist/api/node/node.js RemoteSourceFile.getLineStarts", "footprint") },
   ],
   // Every property member of a shape, required or optional, is stable
   // (reading rule 1, checked by C3's walk).

@@ -91,22 +91,37 @@ push: {
 }
 ```
 
-The fields are each overlay entry's and each global entry's `trust`
-(`tools/array-prototype.mts`, `tools/library-globals.mts`) and the
-intrinsics' table (`intrinsicTrust`, `tools/intrinsics.mts`), of the type
-`BuiltinTrust` (`tools/builtin-trust.mts`), and are checked when the
-contracts are loaded (`checkTrust`): a contract missing one, or stating an
-`onThrow` its effects do not, is refused. A built-in whose contract states `stores: "other"`,
-`callsArgs: "later"` or `passesOwnAllocations: true` is read as outside
-code: `Error.captureStackTrace` (`stores: "other"`), `setTimeout`
+The fields are each overlay entry's, each global entry's and each Node
+module entry's `trust` (`tools/array-prototype.mts`,
+`tools/library-globals.mts`, `tools/library-modules.mts`), each footprint
+method's of a host family (`FootprintMember.trust`,
+`tools/host-families.mts`), the tables of the intrinsics
+(`intrinsicTrust`, `tools/intrinsics.mts`, and the iteration, spread,
+rest, open-read and enum intrinsics where each is made) and of the stated
+library types' methods (`typeMemberTrust`, `tools/library-types.mts`;
+`hashMemberTrust`), of the type `BuiltinTrust`
+(`tools/builtin-trust.mts`). They are checked when the contracts are
+loaded (`checkTrust`; `checkStatedTrust` for a stated type, every method
+it states with its entry and every entry naming one): a contract missing
+one, or stating an `onThrow` its effects do not, is refused. A built-in
+whose contract states `stores: "other"`, `callsArgs: "later"` or
+`passesOwnAllocations: true` is read as outside code:
+`Error.captureStackTrace` (`stores: "other"`), `setTimeout`
 (`callsArgs: "later"`), `JSON.stringify` with a replacer and `JSON.parse`
-with a reviver (`passesOwnAllocations: true`).
+with a reviver (`passesOwnAllocations: true`), `assert.throws` with a
+validation function (called with `this` a fresh object), the first
+`stripTypeScriptTypes` (a warning queued on the tick queue), the compiler
+API's `forEachChild`, `getStart` and `getLineAndCharacterOfPosition`
+(nodes or line starts they create, stored into the source file), and the
+DOM's `getContext`, `appendChild`, `removeChild` and `setProperty` (a
+context stored into the canvas, a mutation record queued on an observer).
 
 The audit rule, approved by the owner: each value is checked against the
 section its `spec` cites; each value that makes a built-in outside code has
 a run under Node showing the behaviour (`tests/builtin-trust.mts`, which
-fails on a built-in read as outside code with no such run); the owner
-reviews the values as trust.
+fails on a built-in read as outside code with no such run), but for a
+built-in Node does not provide (the DOM's), which states the section
+instead; the owner reviews the values as trust.
 
 ### Review obligations
 

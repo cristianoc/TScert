@@ -23,7 +23,7 @@
  * is refused. A built-in outside a clause of row (b) is read as outside
  * code (`outsideCode`).
  */
-import type { CallEffect } from "./declaration-types.mts";
+import type { CallEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 
 export type BuiltinTrust = {
   readonly onThrow: "footprint" | "top";
@@ -39,6 +39,11 @@ export type BuiltinTrust = {
  * as its effects state it. */
 export const withinB = (spec: string, onThrow: BuiltinTrust["onThrow"]): BuiltinTrust =>
   ({ onThrow, stores: "operands", callsArgs: "during", passesOwnAllocations: false, spec });
+
+/** **A built-in storing another value into existing storage**: within row
+ * (b) but for `stores`. */
+export const storesOther = (spec: string, onThrow: BuiltinTrust["onThrow"]): BuiltinTrust =>
+  ({ ...withinB(spec, onThrow), stores: "other" });
 
 /** **Whether a built-in is read as outside code**: its contract states it
  * outside a clause of row (b). */
@@ -70,4 +75,50 @@ export function checkTrust(name: string, trust: unknown, effects: readonly (Call
   const stated = effects.length > 0 && effects.every(throwWithinFootprint) ? "footprint" : "top";
   if (onThrow !== stated) return fail(`states onThrow ${onThrow}, its effects ${stated}`);
   return { onThrow, stores, callsArgs, passesOwnAllocations: passes, spec };
+}
+
+/** The effects a method's type states: a signature's own, each part of an
+ * intersection's, each signature of a scheme's; `undefined` for a type
+ * stating no signature's effect. */
+export const signatureEffects = (type: TypeTerm): (CallEffect | undefined)[] =>
+  type.k === "function" || type.k === "constructor" ? [type.effect]
+  : type.k === "intersection" ? type.parts.flatMap(signatureEffects)
+  : type.k === "scheme" ? type.signatures.map(s => s.effect) : [undefined];
+
+/** Whether a member's type is a method's: a signature, a scheme, or an
+ * intersection with one among its parts. */
+const isMethod = (type: TypeTerm): boolean => type.k === "function" || type.k === "scheme" ||
+  (type.k === "intersection" && type.parts.some(isMethod));
+
+/** **The methods a stated type states**, by `Declaration.member`: each
+ * method-typed member of the object types its equation states, an
+ * intersection's parts included, with the effects its signatures state. A
+ * reference among an intersection's parts is another definition's, whose
+ * methods are its own. */
+export function statedMethods(definition: TypeDefinition): { name: string; effects: (CallEffect | undefined)[] }[] {
+  const methods: { name: string; effects: (CallEffect | undefined)[] }[] = [];
+  const walk = (type: TypeTerm): void => {
+    if (type.k === "intersection") { type.parts.forEach(walk); return; }
+    if (type.k !== "object") return;
+    for (const field of type.fields)
+      if (isMethod(field.type))
+        methods.push({ name: `${definition.declaration.name}.${String(field.name)}`, effects: signatureEffects(field.type) });
+  };
+  if (definition.expression) walk(definition.expression);
+  return methods;
+}
+
+/** **The check of stated types' trust fields**, run when the definitions
+ * are loaded: every method each definition states has its entry in `table`,
+ * checked at its effects (`checkTrust`), and every entry of `table` names
+ * such a method. */
+export function checkStatedTrust(definitions: readonly TypeDefinition[], table: ReadonlyMap<string, BuiltinTrust>): void {
+  const named = new Set<string>();
+  for (const definition of definitions)
+    for (const { name, effects } of statedMethods(definition)) {
+      checkTrust(name, table.get(name), effects);
+      named.add(name);
+    }
+  for (const name of table.keys())
+    if (!named.has(name)) throw Error(`the trust fields of ${name} name no method a stated type states`);
 }
