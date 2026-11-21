@@ -218,6 +218,8 @@ run_test 30 "Caught error helpers" node tests/caught-errors.mts
 run_test 240 "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: the Node version, pinned declarations, resolved files, imports, the array overlay.
 run_test 80 "Trusted inputs" node tests/trusted-inputs.mts
+# tests/builtin-trust.mts runs, under Node, each behaviour that makes a built-in outside code, and refuses a contract missing a trust field.
+run_test 30 "Built-in trust fields" node tests/builtin-trust.mts
 # tests/tool-failures.mts forces a failure of the compiler's API at each kind of catching site: each is reported as a tool failure.
 run_test 75 "Tool failures stay tool failures" node tests/tool-failures.mts
 # The keyed closures are identified and hold no policy, store or orchestration module, and the stages' code reads the file system only through tools/files.mts; the observed stages' replay controls run beside the controls.

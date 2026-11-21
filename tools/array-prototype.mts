@@ -34,8 +34,12 @@ import type { DeclarationIdentity, ElementKind, IndexFact, PropertyKey, TypeDefi
 import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, frameEffect, ordinaryEffect,
   receiverExtendFrame } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
+import { checkTrust, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export type OverlayEntry = {
+  /** The trust fields of the member (`builtin-trust.mts`), checked when the
+   * overlay is loaded. */
+  trust: BuiltinTrust;
   /** The member's key on the prototype, as declared: a name, or a computed
    * key such as `[Symbol.iterator]`. */
   name: string;
@@ -171,11 +175,11 @@ export const overlay: readonly OverlayEntry[] = [
   // `forEach` reads the length once and the present elements, data
   // properties, and writes nothing beside its callback's calls, as `every`
   // below: within the callback's footprint.
-  { name: "forEach", from: "ReadonlyArray",
+  { name: "forEach", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.foreach", "top"),
     signature: "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;",
     stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
       result: atomOf("undefined") })) },
-  { name: "map", from: "ReadonlyArray",
+  { name: "map", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.map", "top"),
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
     // `map` relies on every index below the length it captured staying
     // present until it tests it. A callback whose footprint changes array
@@ -219,7 +223,7 @@ export const overlay: readonly OverlayEntry[] = [
   // skipped; `thisArg` is not stated, so a call must omit it. The sparse
   // receiver signature also passes a sparse array as the callback's third
   // argument: visiting a present entry does not establish other entries.
-  { name: "flatMap", from: "ReadonlyArray",
+  { name: "flatMap", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.flatmap", "top"),
     signature: "flatMap<U, This = undefined>(\n" +
       "        callback: (this: This, value: T, index: number, array: T[]) => U | ReadonlyArray<U>,\n" +
       "        thisArg?: This,\n" +
@@ -241,10 +245,10 @@ export const overlay: readonly OverlayEntry[] = [
   // present element with the accumulator, and returns the last answer: it
   // writes nothing and allocates nothing, so beside the callback's calls it
   // runs no client code, and it is within the callback's footprint.
-  { name: "reduce", from: "ReadonlyArray",
+  { name: "reduce", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.reduce", "top"),
     signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;",
     stated: atEachFootprint((effect) => ({ params: [reducer(effect), mappedElement], result: mappedElement })) },
-  { name: "reduceRight", from: "ReadonlyArray",
+  { name: "reduceRight", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.reduceright", "top"),
     signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;",
     stated: atEachFootprint((effect) => ({ params: [reducer(effect), mappedElement], result: mappedElement })) },
   // These callbacks run only for properties still present when visited.
@@ -261,7 +265,7 @@ export const overlay: readonly OverlayEntry[] = [
   // answered `true` of each: a guard's answer is a Boolean, which `every`'s
   // test reads as itself. So a `true` result leaves every present element
   // of the receiver of the guard's type (`elements`, `native-guard-every`).
-  { name: "every", from: "ReadonlyArray",
+  { name: "every", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.every", "top"),
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     stated: [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
@@ -270,7 +274,7 @@ export const overlay: readonly OverlayEntry[] = [
         params: [callback(element, type, footprintEffect(emptyFootprint, { promise: { guards: { param: 0 } } }))],
         result: atomOf("boolean"), effect: footprintEffect(emptyFootprint, { elements: [kind] }) })),
     ] },
-  { name: "some", from: "ReadonlyArray",
+  { name: "some", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.some", "top"),
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     // `some` visits only present positions, including on a sparse receiver.
     // Its third callback argument is that same array and retains its holes.
@@ -288,7 +292,7 @@ export const overlay: readonly OverlayEntry[] = [
   // collection itself only reads and writes its fresh result. A sparse
   // receiver is tested for presence before each visit too; its callback's
   // third argument stays sparse.
-  { name: "filter", from: "ReadonlyArray",
+  { name: "filter", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.filter", "top"),
     signature: "filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): S[];",
     stated: [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
@@ -313,7 +317,7 @@ export const overlay: readonly OverlayEntry[] = [
   // is not stated, so a call must omit it. The receiver's elements are read
   // as `IsArray` and the arrays' own data properties; it runs no client code
   // and writes no existing location.
-  { name: "flat", from: "ReadonlyArray",
+  { name: "flat", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.flat", "top"),
     signature: "flat<A, D extends number = 1>(\n" +
       "        this: A,\n" +
       "        depth?: D,\n" +
@@ -338,7 +342,7 @@ export const overlay: readonly OverlayEntry[] = [
   // copy. Stated per receiver presence, the result at the receiver's
   // presence and length (ECMA-262, `Array.prototype.slice`, audited).
   // With arguments it copies a range, its result readable.
-  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
+  { name: "slice", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.slice", "top"), signature: "slice(start?: number, end?: number): T[];",
     effect: footprintEffect(emptyFootprint, { fresh: true }),
     stated: [
       ...presences.map((presence): StatedSignature => ({ receiver: arrayOf(element, true, presence), params: [],
@@ -350,7 +354,7 @@ export const overlay: readonly OverlayEntry[] = [
         ] }) })),
       { params: [optionalNumber], result: arrayOf(element, false) },
       { params: [optionalNumber, optionalNumber], result: arrayOf(element, false) }] },
-  { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
+  { name: "join", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.join", "top"), signature: "join(separator?: string): string;",
     bounds: new Map([["T", stringConvertible]]), effect: emptyEffect,
     // Get at a missing numeric key yields undefined, converted to empty text.
     // Present elements meet the same conversion bound as a readable array.
@@ -358,9 +362,9 @@ export const overlay: readonly OverlayEntry[] = [
       { receiver: arrayOf(element, true, "sparse"), params: [], result: atomOf("string") },
       { receiver: arrayOf(element, true, "sparse"),
         params: [{ k: "union", parts: [atomOf("string"), atomOf("undefined")], span: at }], result: atomOf("string") }] },
-  { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
+  { name: "toString", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.tostring", "top"), signature: "toString(): string;",
     bounds: new Map([["T", stringConvertible]]), effect: emptyEffect },
-  { name: "indexOf", from: "ReadonlyArray",
+  { name: "indexOf", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.indexof", "top"),
     signature: "indexOf(searchElement: T, fromIndex?: number): number;",
     // Strict equality invokes no conversion; the numeric start invokes no
     // client code. The receiver keeps its captured length throughout.
@@ -370,11 +374,11 @@ export const overlay: readonly OverlayEntry[] = [
       { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
         [{ kind: "length", slot: 1, path: [] }, -1]], bound: -1 } } } },
     ] }) },
-  { name: "lastIndexOf", from: "ReadonlyArray",
+  { name: "lastIndexOf", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.lastindexof", "top"),
     signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
-  { name: "includes", from: "ReadonlyArray",
+  { name: "includes", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.includes", "top"),
     signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: emptyEffect },
-  { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;",
+  { name: "at", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.at", "top"), signature: "at(index: number): T | undefined;",
     effect: emptyEffect },
   // `find` is reviewed against its guard overload, whose declaration binds
   // `S`, and states both of TypeScript's: the predicate one at each
@@ -383,7 +387,7 @@ export const overlay: readonly OverlayEntry[] = [
   // receiver's contract, and where the answer is `true` the native returns
   // that very value, which the promise leaves an `S`, running no client code
   // after the callback's call; where none answers `true`, `undefined`.
-  { name: "find", from: "ReadonlyArray",
+  { name: "find", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.find", "top"),
     signature: "find<S extends T>(predicate: (value: T, index: number, obj: readonly T[]) => value is S, thisArg?: any): S | undefined;",
     stated: [
       ...atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
@@ -393,12 +397,12 @@ export const overlay: readonly OverlayEntry[] = [
         result: { k: "union", parts: [guarded, atomOf("undefined")], span: at } satisfies TypeTerm,
         effect: footprintEffect(footprint) })),
     ] },
-  { name: "findIndex", from: "ReadonlyArray",
+  { name: "findIndex", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.findindex", "top"),
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
     stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
       result: atomOf("number") })) },
   // Mutators take a mutable array.
-  { name: "sort", from: "Array",
+  { name: "sort", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.sort", "top"),
     signature: "sort(compareFn?: (a: T, b: T) => number): this;",
     // These are independent call contracts, not a restriction on every T.
     // An explicit comparator avoids element coercion. Omitted/undefined
@@ -436,26 +440,26 @@ export const overlay: readonly OverlayEntry[] = [
   // comparator's spine changes do. The spine relations are proved of the
   // specification steps (FootprintNatives.lean); that each native changes
   // nothing but its spine and element contents is this entry's audit.
-  { name: "push", from: "Array", signature: "push(...items: T[]): number;",
+  { name: "push", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.push", "top"), signature: "push(...items: T[]): number;",
     effect: frameEffect(receiverExtendFrame, { receiverGrows: true }) },
-  { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverSpineEffect },
-  { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverSpineEffect },
-  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
+  { name: "pop", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.pop", "top"), signature: "pop(): T | undefined;", effect: receiverSpineEffect },
+  { name: "shift", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.shift", "top"), signature: "shift(): T | undefined;", effect: receiverSpineEffect },
+  { name: "unshift", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.unshift", "top"), signature: "unshift(...items: T[]): number;",
     effect: footprintEffect({ value: "any", spine: "grow" }) },
-  { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverSpineEffect },
+  { name: "reverse", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.reverse", "top"), signature: "reverse(): T[];", effect: receiverSpineEffect },
   // `splice` converts primitive numeric offsets, copies the removed range
   // with its holes to fresh array storage, shifts the remaining indices and
   // writes the already evaluated inserted values. Only its receiver's spine
   // and existing element values may change. One variadic contract covers
   // both installed overloads: omission of deleteCount and explicit undefined
   // have different deletion counts but the same result and effect contracts.
-  { name: "splice", from: "Array", signature: "splice(start: number, deleteCount: number, ...items: T[]): T[];",
+  { name: "splice", from: "Array", trust: withinB("ECMA-262 sec-array.prototype.splice", "top"), signature: "splice(start: number, deleteCount: number, ...items: T[]): T[];",
     stated: [{ params: [atomOf("number"), optionalNumber], rest: element, result: arrayOf(element, false),
       effect: footprintEffect({ value: "any", spine: "keep" }, { receiverSpine: true, fresh: true }) }] },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
-  { name: "[Symbol.iterator]", from: "ReadonlyArray",
+  { name: "[Symbol.iterator]", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype-%symbol.iterator%", "top"),
     signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
   // `values` is the same function as `[Symbol.iterator]`; `keys` and
   // `entries` are iterators of the same kind (CreateArrayIterator), each step
@@ -466,11 +470,11 @@ export const overlay: readonly OverlayEntry[] = [
   // `IterableIterator`: the iterator is its own (`%IteratorPrototype%`'s
   // `[Symbol.iterator]` returns it), and a loop steps it by the iterator
   // protocol, its chain holding no `return` (DESIGN.md, "Trust surface").
-  { name: "values", from: "ReadonlyArray", signature: "values(): ArrayIterator<T>;", resultAs: "IterableIterator",
+  { name: "values", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.values", "top"), signature: "values(): ArrayIterator<T>;", resultAs: "IterableIterator",
     effect: emptyEffect },
-  { name: "keys", from: "ReadonlyArray", signature: "keys(): ArrayIterator<number>;", resultAs: "IterableIterator",
+  { name: "keys", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.keys", "top"), signature: "keys(): ArrayIterator<number>;", resultAs: "IterableIterator",
     effect: emptyEffect },
-  { name: "entries", from: "ReadonlyArray", signature: "entries(): ArrayIterator<[number, T]>;",
+  { name: "entries", from: "ReadonlyArray", trust: withinB("ECMA-262 sec-array.prototype.entries", "top"), signature: "entries(): ArrayIterator<[number, T]>;",
     resultAs: "IterableIterator", effect: emptyEffect },
   // Not listed: `concat` names `ConcatArray`.
 ];
@@ -490,13 +494,13 @@ export const overlay: readonly OverlayEntry[] = [
 const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
   Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>> = {
   string: [
-    { name: "toString", from: "String", signature: "toString(): string;" },
-    { name: "valueOf", from: "String", signature: "valueOf(): string;" },
-    { name: "charAt", from: "String", signature: "charAt(pos: number): string;" },
+    { name: "toString", from: "String", trust: withinB("ECMA-262 sec-string.prototype.tostring", "top"), signature: "toString(): string;" },
+    { name: "valueOf", from: "String", trust: withinB("ECMA-262 sec-string.prototype.valueof", "top"), signature: "valueOf(): string;" },
+    { name: "charAt", from: "String", trust: withinB("ECMA-262 sec-string.prototype.charat", "top"), signature: "charAt(pos: number): string;" },
     // Primitive receiver and numeric position have no coercion callbacks.
     // The bounded form returns a safe integer code unit; the general form
     // includes NaN for an out-of-range converted position.
-    { name: "charCodeAt", from: "String", signature: "charCodeAt(index: number): number;",
+    { name: "charCodeAt", from: "String", trust: withinB("ECMA-262 sec-string.prototype.charcodeat", "top"), signature: "charCodeAt(index: number): number;",
       stated: [
         { params: [atomOf("number")], result: atomOf("number"), effect: footprintEffect(emptyFootprint, {
           pre: [
@@ -513,8 +517,8 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
         }) },
         { params: [atomOf("number")], result: atomOf("number") }
       ] },
-    { name: "concat", from: "String", signature: "concat(...strings: string[]): string;" },
-    { name: "indexOf", from: "String", signature: "indexOf(searchString: string, position?: number): number;",
+    { name: "concat", from: "String", trust: withinB("ECMA-262 sec-string.prototype.concat", "top"), signature: "concat(...strings: string[]): string;" },
+    { name: "indexOf", from: "String", trust: withinB("ECMA-262 sec-string.prototype.indexof", "top"), signature: "indexOf(searchString: string, position?: number): number;",
       stated: [
         { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
         effect: footprintEffect(emptyFootprint, {
@@ -531,7 +535,7 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
           { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: 0 } } } },
         ] }) }
       ] },
-    { name: "lastIndexOf", from: "String",
+    { name: "lastIndexOf", from: "String", trust: withinB("ECMA-262 sec-string.prototype.lastindexof", "top"),
       signature: "lastIndexOf(searchString: string, position?: number): number;",
       stated: [
         { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
@@ -549,8 +553,8 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
           { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: 0 } } } },
         ] }) }
       ] },
-    { name: "localeCompare", from: "String", signature: "localeCompare(that: string): number;" },
-    { name: "slice", from: "String", signature: "slice(start?: number, end?: number): string;",
+    { name: "localeCompare", from: "String", trust: withinB("ECMA-262 sec-string.prototype.localecompare", "top"), signature: "localeCompare(that: string): number;" },
+    { name: "slice", from: "String", trust: withinB("ECMA-262 sec-string.prototype.slice", "top"), signature: "slice(start?: number, end?: number): string;",
       stated: [
         { params: [atomOf("number"), atomOf("number")], result: atomOf("string"),
           effect: footprintEffect(emptyFootprint, {
@@ -568,19 +572,19 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
           }) },
         { params: [optionalNumber, optionalNumber], result: atomOf("string") }
       ] },
-    { name: "substring", from: "String", signature: "substring(start: number, end?: number): string;" },
-    { name: "toLowerCase", from: "String", signature: "toLowerCase(): string;" },
-    { name: "toUpperCase", from: "String", signature: "toUpperCase(): string;" },
-    { name: "trim", from: "String", signature: "trim(): string;" },
-    { name: "includes", from: "String", signature: "includes(searchString: string, position?: number): boolean;" },
-    { name: "startsWith", from: "String",
+    { name: "substring", from: "String", trust: withinB("ECMA-262 sec-string.prototype.substring", "top"), signature: "substring(start: number, end?: number): string;" },
+    { name: "toLowerCase", from: "String", trust: withinB("ECMA-262 sec-string.prototype.tolowercase", "top"), signature: "toLowerCase(): string;" },
+    { name: "toUpperCase", from: "String", trust: withinB("ECMA-262 sec-string.prototype.touppercase", "top"), signature: "toUpperCase(): string;" },
+    { name: "trim", from: "String", trust: withinB("ECMA-262 sec-string.prototype.trim", "top"), signature: "trim(): string;" },
+    { name: "includes", from: "String", trust: withinB("ECMA-262 sec-string.prototype.includes", "top"), signature: "includes(searchString: string, position?: number): boolean;" },
+    { name: "startsWith", from: "String", trust: withinB("ECMA-262 sec-string.prototype.startswith", "top"),
       signature: "startsWith(searchString: string, position?: number): boolean;" },
-    { name: "endsWith", from: "String", signature: "endsWith(searchString: string, endPosition?: number): boolean;" },
+    { name: "endsWith", from: "String", trust: withinB("ECMA-262 sec-string.prototype.endswith", "top"), signature: "endsWith(searchString: string, endPosition?: number): boolean;" },
     // Any other form is a `RangeError`, an outcome: the overload taking any
     // string, or none, is read.
-    { name: "normalize", from: "String", signature: "normalize(form?: string): string;" },
+    { name: "normalize", from: "String", trust: withinB("ECMA-262 sec-string.prototype.normalize", "top"), signature: "normalize(form?: string): string;" },
     // A negative or infinite count is a `RangeError`.
-    { name: "repeat", from: "String", signature: "repeat(count: number): string;" },
+    { name: "repeat", from: "String", trust: withinB("ECMA-262 sec-string.prototype.repeat", "top"), signature: "repeat(count: number): string;" },
     // With a string pattern, the host reads no `[Symbol.split]` or
     // `[Symbol.replace]` of the client's (a string primitive's lookup ends at
     // `String.prototype`, which has none), and `$` patterns in a string
@@ -588,13 +592,13 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     // callback, are not stated. `split` gives a fresh array of strings,
     // whose spine its result is; `replaceAll` of a non-global `RegExp` would
     // throw.
-    { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
+    { name: "split", from: "String", trust: withinB("ECMA-262 sec-string.prototype.split", "top"), signature: "split(separator: string | RegExp, limit?: number): string[];",
       effect: footprintEffect(emptyFootprint, { fresh: true }),
       stated: [{ params: [atomOf("string"), optionalNumber],
         result: { k: "array", presence: "dense", readonly: false, element: atomOf("string"), span: at } }] },
-    { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
+    { name: "replace", from: "String", trust: withinB("ECMA-262 sec-string.prototype.replace", "top"), signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
       stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
-    { name: "replaceAll", from: "String",
+    { name: "replaceAll", from: "String", trust: withinB("ECMA-262 sec-string.prototype.replaceall", "top"),
       signature: "replaceAll(searchValue: string | RegExp, replaceValue: string): string;",
       stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
     // `codePointAt` of a string primitive at a number: RequireObjectCoercible
@@ -607,7 +611,7 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     // an `i` is its own ToIntegerOrInfinity and inside the string (the
     // receiver at position 0, the position at 1; the result at 0 of the
     // postcondition).
-    { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;",
+    { name: "codePointAt", from: "String", trust: withinB("ECMA-262 sec-string.prototype.codepointat", "top"), signature: "codePointAt(pos: number): number | undefined;",
       stated: [
         { params: [atomOf("number")], result: optionalNumber },
         { params: [atomOf("number")], result: atomOf("number"), effect: footprintEffect(emptyFootprint, {
@@ -629,37 +633,37 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
               bound: 0xffff - 0x100000 } } } },
           ] }) },
       ] },
-    { name: "trimStart", from: "String", signature: "trimStart(): string;" },
-    { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
+    { name: "trimStart", from: "String", trust: withinB("ECMA-262 sec-string.prototype.trimstart", "top"), signature: "trimStart(): string;" },
+    { name: "trimEnd", from: "String", trust: withinB("ECMA-262 sec-string.prototype.trimend", "top"), signature: "trimEnd(): string;" },
     // The pad is a string; a length past the host's string limit is a
     // `RangeError`.
-    { name: "padStart", from: "String", signature: "padStart(targetLength: number, padString?: string): string;" },
-    { name: "padEnd", from: "String", signature: "padEnd(targetLength: number, padString?: string): string;" },
-    { name: "at", from: "String", signature: "at(index: number): string | undefined;" },
+    { name: "padStart", from: "String", trust: withinB("ECMA-262 sec-string.prototype.padstart", "top"), signature: "padStart(targetLength: number, padString?: string): string;" },
+    { name: "padEnd", from: "String", trust: withinB("ECMA-262 sec-string.prototype.padend", "top"), signature: "padEnd(targetLength: number, padString?: string): string;" },
+    { name: "at", from: "String", trust: withinB("ECMA-262 sec-string.prototype.at", "top"), signature: "at(index: number): string | undefined;" },
   ],
   number: [
     // Each throws a `RangeError` outside 2..36 radixes, 0..100 digits, 1..100
     // precision: an outcome, not a wrong value.
-    { name: "toString", from: "Number", signature: "toString(radix?: number): string;" },
-    { name: "valueOf", from: "Number", signature: "valueOf(): number;" },
-    { name: "toFixed", from: "Number", signature: "toFixed(fractionDigits?: number): string;" },
-    { name: "toExponential", from: "Number", signature: "toExponential(fractionDigits?: number): string;" },
-    { name: "toPrecision", from: "Number", signature: "toPrecision(precision?: number): string;" },
-    { name: "toLocaleString", from: "Number",
+    { name: "toString", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.tostring", "top"), signature: "toString(radix?: number): string;" },
+    { name: "valueOf", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.valueof", "top"), signature: "valueOf(): number;" },
+    { name: "toFixed", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.tofixed", "top"), signature: "toFixed(fractionDigits?: number): string;" },
+    { name: "toExponential", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.toexponential", "top"), signature: "toExponential(fractionDigits?: number): string;" },
+    { name: "toPrecision", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.toprecision", "top"), signature: "toPrecision(precision?: number): string;" },
+    { name: "toLocaleString", from: "Number", trust: withinB("ECMA-262 sec-number.prototype.tolocalestring", "top"),
       signature: "toLocaleString(locales?: string | string[], options?: Intl.NumberFormatOptions): string;",
       stated: [{ params: [locales], result: atomOf("string") }] },
   ],
   bigint: [
-    { name: "toString", from: "BigInt", signature: "toString(radix?: number): string;" },
-    { name: "valueOf", from: "BigInt", signature: "valueOf(): bigint;" },
-    { name: "toLocaleString", from: "BigInt",
+    { name: "toString", from: "BigInt", trust: withinB("ECMA-262 sec-bigint.prototype.tostring", "top"), signature: "toString(radix?: number): string;" },
+    { name: "valueOf", from: "BigInt", trust: withinB("ECMA-262 sec-bigint.prototype.valueof", "top"), signature: "valueOf(): bigint;" },
+    { name: "toLocaleString", from: "BigInt", trust: withinB("ECMA-262 sec-bigint.prototype.tolocalestring", "top"),
       signature: "toLocaleString(locales?: Intl.LocalesArgument, options?: BigIntToLocaleStringOptions): string;",
       stated: [{ params: [locales], result: atomOf("string") }] },
   ],
   boolean: [
-    { name: "valueOf", from: "Boolean", signature: "valueOf(): boolean;" },
+    { name: "valueOf", from: "Boolean", trust: withinB("ECMA-262 sec-boolean.prototype.valueof", "top"), signature: "valueOf(): boolean;" },
     // TypeScript reads it from `Object`; `Boolean.prototype` owns it.
-    { name: "toString", from: "Object", signature: "toString(): string;" },
+    { name: "toString", from: "Object", trust: withinB("ECMA-262 sec-boolean.prototype.tostring", "top"), signature: "toString(): string;" },
   ],
 };
 
@@ -699,27 +703,27 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
 const changesValues = footprintEffect({ value: "scalar", spine: "keep" });
 export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
   ["Set", [
-    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
-    { name: "clear", from: "Set", signature: "clear(): void;", effect: changesValues },
-    { name: "delete", from: "Set", signature: "delete(value: T): boolean;", effect: changesValues },
-    { name: "forEach", from: "Set",
+    { name: "add", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.add", "top"), signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
+    { name: "clear", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.clear", "top"), signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.delete", "top"), signature: "delete(value: T): boolean;", effect: changesValues },
+    { name: "forEach", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: emptyEffect },
-    { name: "size", from: "Set", signature: "readonly size: number;" },
+    { name: "has", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.has", "top"), signature: "has(value: T): boolean;", effect: emptyEffect },
+    { name: "size", from: "Set", trust: withinB("ECMA-262 sec-get-set.prototype.size", "top"), signature: "readonly size: number;" },
     // A host collection's tag, which its prototype holds: no object the
     // fragment builds has one (a literal or class writes no well-known
     // symbol key but `Symbol.iterator`), so none passes for a host `Set`,
     // whose iteration is the host's (`%Iterate:Set%`).
-    { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
+    { name: "[Symbol.toStringTag]", from: "Set", trust: withinB("ECMA-262 sec-set.prototype-%symbol.tostringtag%", "top"), signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
-    { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
+    { name: "[Symbol.iterator]", from: "Set", trust: withinB("ECMA-262 sec-set.prototype-%symbol.iterator%", "top"), signature: "[Symbol.iterator](): SetIterator<T>;",
       resultAs: "NativeIterator", effect: emptyEffect },
     // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
     // one steps it as the host's (`intrinsics.mts`).
-    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
-    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
-    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "keys", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.keys", "top"), signature: "keys(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "values", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.values", "top"), signature: "values(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "entries", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.entries", "top"), signature: "entries(): SetIterator<[T, T]>;", resultAs: "NativeIterator", effect: emptyEffect },
   ]],
   // Results describe normal returns. Native set throws TypeError for keys
   // other than objects and non-registered symbols; get/has/delete return
@@ -730,31 +734,31 @@ export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<st
   // the empty footprint, as `%ByteSet%` does (SOURCE-CONTRACTS.md, "Weak
   // tables").
   ["WeakMap", [
-    { name: "get", from: "WeakMap", signature: "get(key: K): V | undefined;", effect: emptyEffect },
-    { name: "has", from: "WeakMap", signature: "has(key: K): boolean;", effect: emptyEffect },
-    { name: "set", from: "WeakMap", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
+    { name: "get", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype.get", "top"), signature: "get(key: K): V | undefined;", effect: emptyEffect },
+    { name: "has", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype.has", "top"), signature: "has(key: K): boolean;", effect: emptyEffect },
+    { name: "set", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype.set", "top"), signature: "set(key: K, value: V): this;", resultIsReceiver: true,
       effect: emptyEffect },
-    { name: "delete", from: "WeakMap", signature: "delete(key: K): boolean;", effect: emptyEffect },
-    { name: "[Symbol.toStringTag]", from: "WeakMap", signature: "readonly [Symbol.toStringTag]: string;" },
+    { name: "delete", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype.delete", "top"), signature: "delete(key: K): boolean;", effect: emptyEffect },
+    { name: "[Symbol.toStringTag]", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype-%symbol.tostringtag%", "top"), signature: "readonly [Symbol.toStringTag]: string;" },
   ]],
   ["Map", [
-    { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
-    { name: "delete", from: "Map", signature: "delete(key: K): boolean;", effect: changesValues },
-    { name: "forEach", from: "Map",
+    { name: "clear", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.clear", "top"), signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.delete", "top"), signature: "delete(key: K): boolean;", effect: changesValues },
+    { name: "forEach", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
     // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
-    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: emptyEffect },
-    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: emptyEffect },
-    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
+    { name: "get", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.get", "top"), signature: "get(key: K): V | undefined;", effect: emptyEffect },
+    { name: "has", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.has", "top"), signature: "has(key: K): boolean;", effect: emptyEffect },
+    { name: "set", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.set", "top"), signature: "set(key: K, value: V): this;", resultIsReceiver: true,
       effect: changesValues },
-    { name: "size", from: "Map", signature: "readonly size: number;" },
-    { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
-    { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
+    { name: "size", from: "Map", trust: withinB("ECMA-262 sec-get-map.prototype.size", "top"), signature: "readonly size: number;" },
+    { name: "[Symbol.toStringTag]", from: "Map", trust: withinB("ECMA-262 sec-map.prototype-%symbol.tostringtag%", "top"), signature: "readonly [Symbol.toStringTag]: string;" },
+    { name: "[Symbol.iterator]", from: "Map", trust: withinB("ECMA-262 sec-map.prototype-%symbol.iterator%", "top"), signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
       resultAs: "NativeIterator", effect: emptyEffect },
-    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "NativeIterator", effect: emptyEffect },
-    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "NativeIterator", effect: emptyEffect },
-    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "keys", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.keys", "top"), signature: "keys(): MapIterator<K>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "values", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.values", "top"), signature: "values(): MapIterator<V>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "entries", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.entries", "top"), signature: "entries(): MapIterator<[K, V]>;", resultAs: "NativeIterator", effect: emptyEffect },
   ]],
   // The readers' views of a `Set` and a `Map`, read through the overlay as
   // `ReadonlyArray` is through `ArrayProto`, at the restriction of the
@@ -768,38 +772,38 @@ export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<st
   // protocol (`iterationKind` in `declaration-graph.mts` picks it for a call
   // of `keys`, `values` or `entries`).
   ["ReadonlySet", [
-    { name: "forEach", from: "ReadonlySet",
+    { name: "forEach", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: T, value2: T, set: ReadonlySet<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "has", from: "ReadonlySet", signature: "has(value: T): boolean;" },
-    { name: "size", from: "ReadonlySet", signature: "readonly size: number;" },
-    { name: "[Symbol.iterator]", from: "ReadonlySet", signature: "[Symbol.iterator](): SetIterator<T>;",
+    { name: "has", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype.has", "top"), signature: "has(value: T): boolean;" },
+    { name: "size", from: "ReadonlySet", trust: withinB("ECMA-262 sec-get-set.prototype.size", "top"), signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype-%symbol.iterator%", "top"), signature: "[Symbol.iterator](): SetIterator<T>;",
       resultAs: "Iterator" },
-    { name: "keys", from: "ReadonlySet", signature: "keys(): SetIterator<T>;", resultAs: "IterableIterator" },
-    { name: "values", from: "ReadonlySet", signature: "values(): SetIterator<T>;", resultAs: "IterableIterator" },
-    { name: "entries", from: "ReadonlySet", signature: "entries(): SetIterator<[T, T]>;", resultAs: "IterableIterator" },
+    { name: "keys", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype.keys", "top"), signature: "keys(): SetIterator<T>;", resultAs: "IterableIterator" },
+    { name: "values", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype.values", "top"), signature: "values(): SetIterator<T>;", resultAs: "IterableIterator" },
+    { name: "entries", from: "ReadonlySet", trust: withinB("ECMA-262 sec-set.prototype.entries", "top"), signature: "entries(): SetIterator<[T, T]>;", resultAs: "IterableIterator" },
   ]],
   ["ReadonlyMap", [
-    { name: "forEach", from: "ReadonlyMap",
+    { name: "forEach", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "get", from: "ReadonlyMap", signature: "get(key: K): V | undefined;" },
-    { name: "has", from: "ReadonlyMap", signature: "has(key: K): boolean;" },
-    { name: "size", from: "ReadonlyMap", signature: "readonly size: number;" },
-    { name: "[Symbol.iterator]", from: "ReadonlyMap", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
+    { name: "get", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.get", "top"), signature: "get(key: K): V | undefined;" },
+    { name: "has", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.has", "top"), signature: "has(key: K): boolean;" },
+    { name: "size", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-get-map.prototype.size", "top"), signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype-%symbol.iterator%", "top"), signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
       resultAs: "Iterator" },
-    { name: "keys", from: "ReadonlyMap", signature: "keys(): MapIterator<K>;", resultAs: "IterableIterator" },
-    { name: "values", from: "ReadonlyMap", signature: "values(): MapIterator<V>;", resultAs: "IterableIterator" },
-    { name: "entries", from: "ReadonlyMap", signature: "entries(): MapIterator<[K, V]>;", resultAs: "IterableIterator" },
+    { name: "keys", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.keys", "top"), signature: "keys(): MapIterator<K>;", resultAs: "IterableIterator" },
+    { name: "values", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.values", "top"), signature: "values(): MapIterator<V>;", resultAs: "IterableIterator" },
+    { name: "entries", from: "ReadonlyMap", trust: withinB("ECMA-262 sec-map.prototype.entries", "top"), signature: "entries(): MapIterator<[K, V]>;", resultAs: "IterableIterator" },
   ]],
   ["Date", [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: emptyEffect })),
-    { name: "setTime", from: "Date", signature: "setTime(time: number): number;", effect: changesValues },
+      .map((name): OverlayEntry => ({ name, from: "Date", trust: withinB(`ECMA-262 sec-date.prototype.${name.toLowerCase()}`, "top"), signature: `${name}(): number;`, effect: emptyEffect })),
+    { name: "setTime", from: "Date", trust: withinB("ECMA-262 sec-date.prototype.settime", "top"), signature: "setTime(time: number): number;", effect: changesValues },
     ...["toString", "toISOString"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
+      .map((name): OverlayEntry => ({ name, from: "Date", trust: withinB(`ECMA-262 sec-date.prototype.${name.toLowerCase()}`, "top"), signature: `${name}(): string;`, effect: emptyEffect })),
   ]],
 ]);
 
@@ -1010,7 +1014,7 @@ export function primitivePrototype(checker: Checker, at: Node, library: OverlayL
  * (SOURCE-CONTRACTS.md, "Function.prototype.toString"), and external code's
  * are assumed to (DESIGN.md, "Trust surface"). */
 const functionOverlay: readonly OverlayEntry[] =
-  [{ name: "toString", from: "Function", signature: "toString(): string;" }];
+  [{ name: "toString", from: "Function", trust: withinB("ECMA-262 sec-function.prototype.tostring", "top"), signature: "toString(): string;" }];
 const functionProtoIdentity: DeclarationIdentity =
   { module: "tscert/function-prototype", name: "FunctionProto", span: [0, 0] };
 export const functionPrototypeName = "[[Function.prototype]]";
@@ -1231,6 +1235,11 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     return first;
   };
 
+  // Each entry's trust fields are checked as the overlay is loaded, at the
+  // effects its signatures state (`checkTrust`).
+  for (const entry of proto.entries)
+    checkTrust(`${entry.from}.prototype.${entry.name}`, entry.trust,
+      entry.stated?.length ? entry.stated.map(s => s.effect ?? entry.effect) : [entry.effect]);
   const fields = proto.entries.flatMap(entry => {
     // The reviewed declaration is the library's: a merged one is validated
     // by its contract (`mergeRefusal`), never selected by its spelling.

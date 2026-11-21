@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { collectDeclarations, declarationSpanOf, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
+import { withinB } from "../tools/builtin-trust.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import type { DeclarationDocument } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
@@ -217,13 +218,20 @@ function fixtureProject(files: Record<string, string>, lib?: string[]): { graphO
     ? { ...e, signature: e.signature.replace("initialValue: U", "initialValue?: U") } : e);
   assert.throws(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: changed }),
     /is not declared as reviewed/);
-  const unsound = [{ name: "reduce", from: "ReadonlyArray" as const,
+  const unsound = [{ name: "reduce", from: "ReadonlyArray" as const, trust: withinB("ECMA-262 sec-array.prototype.reduce", "top"),
     signature: "reduce(callbackfn: (previousValue: T, currentValue: T, currentIndex: number, array: readonly T[]) => T): T;" }];
   assert.doesNotThrow(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: unsound }),
     "the overlay, not the declaration reader, decides which overloads are trusted");
   // A member the project's library does not declare is absent, not refused.
   const absent = collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: [
-    { name: "notDeclared", from: "ReadonlyArray", signature: "notDeclared(): T;" }] });
+    { name: "notDeclared", from: "ReadonlyArray", trust: withinB("none", "top"), signature: "notDeclared(): T;" }] });
+  // A built-in's contract missing a trust field is refused when the overlay
+  // is loaded (SOURCE-CONTRACTS.md, "A built-in's trust fields").
+  const { callsArgs: _, ...missing } = withinB("ECMA-262 sec-array.prototype.reduce", "top");
+  assert.throws(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: [{ name: "reduce", from: "ReadonlyArray",
+    trust: missing as ReturnType<typeof withinB>, // asserted: the forged contract this control refuses
+    signature: "reduce(callbackfn: (previousValue: T, currentValue: T, currentIndex: number, array: readonly T[]) => T): T;" }] }),
+    /the built-in ReadonlyArray\.prototype\.reduce's contract states no callsArgs/);
   const absentProto = absent.definitions.find(d => d.declaration.module === "tscert/array-prototype");
   assert(absentProto?.expression?.k === "object" && absentProto.expression.fields.length === 0);
   closeParser();
