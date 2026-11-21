@@ -1,6 +1,6 @@
 // The pretext tier (`make test-pretext`): what an agent adding a bounds
 // capability for pretext runs, in place of the whole suite and the census.
-//   node tests/pretext-tier.mts --pretext <checkout> [--files a.ts,b.ts] [--update]
+//   node tests/pretext-tier.mts --pretext <checkout> [--files a.ts,b.ts] [--interfaces <declaration-directory>] [--update]
 // Three parts, each against its recorded expectation:
 // 1. the bounds pattern cases (`bounds-pattern-*` of pipeline/cases.mts): a
 //    gap now verified is a pattern the capability closed, to be restated
@@ -14,9 +14,9 @@
 // `--update` records the selected files' functions for the checkout's commit.
 // Stages replay from the stage store; the summary counts the stage
 // invocations each part executed and replayed.
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, lstatSync, mkdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { cases, type Case } from "../pipeline/cases.mts";
 import { expectOutcome, pooled } from "../pipeline/run-cases.mts";
@@ -215,9 +215,15 @@ async function checkCase(c: Case, into: Counts): Promise<Outcome> {
 }
 
 /** One pretext file checked unit by unit, as `dev/check-functions.mts` checks it. */
-async function checkPretextFile(root: string, project: string, file: string, into: Counts): Promise<FileRecord | string> {
+async function checkPretextFile(root: string, project: string, file: string, into: Counts,
+    declarationsOnly: boolean = false): Promise<FileRecord | string> {
   using result = await checkApart(join(root, "src", file), project, false, undefined, true, { omitted: [], select: null });
   count(result, into);
+  if (declarationsOnly) {
+    const imported = readInvocationLog(join(result.artifacts, invocationLog)).find((r) =>
+      r.stage === "module" || r.stage === "interface-plan" || r.stage === "module-interface");
+    if (imported) return `the consumer executed an import implementation stage (${imported.stage})`;
+  }
   if (result.units === null || result.units === undefined)
     return `the file is refused: ${result.status} ${result.phase}: ${"detail" in result ? result.detail.split("\n")[0] : ""}`;
   const record: [string, string][] = [];
@@ -227,6 +233,30 @@ async function checkPretextFile(root: string, project: string, file: string, int
     for (const m of u.members.map(memberName)) record.push([m, line]);
   }
   return Object.fromEntries(record.sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** Check one implementation in a project containing only supplied declarations
+ * for its imports. Keep the source project out of the consumer's include set. */
+async function checkPretextInterfaces(root: string, interfaces: string, file: string, into: Counts): Promise<FileRecord | string> {
+  const consumer = mkdtempSync(join(tmpdir(), "pretext-interface-consumer-"));
+  try {
+    const src = join(consumer, "src");
+    const ownDeclaration = join(interfaces, file.replace(/\.([cm]?ts)$/, ".d.$1"));
+    cpSync(interfaces, src, { recursive: true, filter: (path) => {
+      const entry = lstatSync(path);
+      return entry.isDirectory() || (entry.isFile() && path !== ownDeclaration && /\.d\.[cm]?ts$/.test(path));
+    } });
+    const implementation = join(src, file);
+    mkdirSync(dirname(implementation), { recursive: true });
+    copyFileSync(join(root, "src", file), implementation);
+    copyFileSync(join(root, "package.json"), join(consumer, "package.json"));
+    const project = join(consumer, "tsconfig.json");
+    writeFileSync(project, JSON.stringify({ extends: join(root, "tsconfig.json"),
+      compilerOptions: { types: [] }, files: [implementation], include: ["src/**/*.d.ts"], exclude: [] }));
+    return await checkPretextFile(consumer, project, file, into, true);
+  } finally {
+    rmSync(consumer, { recursive: true, force: true });
+  }
 }
 
 const args = process.argv.slice(2);
@@ -240,6 +270,11 @@ if (checkout === undefined) {
   process.exit(2);
 }
 const update = args.includes("--update");
+const interfaces = option("--interfaces");
+if ((args.includes("--interfaces") && interfaces === undefined) || (interfaces !== undefined && update)) {
+  process.stderr.write("--interfaces needs a declaration directory and compares against the existing expectations\n");
+  process.exit(2);
+}
 const files = (option("--files") ?? "").split(",").filter((f) => f !== "");
 const selectedFiles = files.length ? files : pretextFiles;
 const started = performance.now();
@@ -259,7 +294,9 @@ writeFileSync(join(project, "tsconfig.json"), JSON.stringify({
 }, null, 2));
 const pretextCounts = counts();
 let pretextTime: string = "";
-const pretextChecks = Promise.all(selectedFiles.map((f) => checkPretextFile(root, project, f, pretextCounts)))
+const pretextChecks = Promise.all(selectedFiles.map((f) => interfaces === undefined
+  ? checkPretextFile(root, project, f, pretextCounts)
+  : checkPretextInterfaces(root, resolve(interfaces), f, pretextCounts)))
   .finally(() => { pretextTime = seconds(started); });
 
 const patternCases = cases.filter((c) => c.file.includes("bounds-pattern-"));
@@ -295,7 +332,7 @@ if (update) {
   out.push(`pretext: recorded ${selectedFiles.length} files at ${head.slice(0, 8)}${dirty ? " (src/ has uncommitted changes)" : ""}`);
 }
 let total: number = 0, verified: number = 0;
-out.push(`pretext at ${head.slice(0, 8)}${dirty ? " with uncommitted changes in src/" : ""}:`);
+out.push(`pretext at ${head.slice(0, 8)}${dirty ? " with uncommitted changes in src/" : ""}${interfaces === undefined ? "" : " with supplied declarations"}:`);
 for (const [i, f] of selectedFiles.entries()) {
   const r = records[i];
   const was = atHead?.[f];

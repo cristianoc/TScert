@@ -8,6 +8,60 @@ The processing boundary is one function, including all its offered signatures, o
 
 **Evidence.** Code citations below describe the inspected worktree. `Claims/` abbreviates `lean/Verification/Source/Claims/`; `Lowering/` abbreviates `lean/Verification/Source/Lowering/`. The census counts and CPU totals are supplied measurements, not reproduced here. Statements about the proposed algorithm are design requirements; outstanding mathematical statements are labelled proof obligations.
 
+## Pretext interface boundary
+
+The producer finishes an interface before checking its consumers. An import resolves to the supplied declaration or contract entry. The consumer checks against that entry once. An unresolved import or an unmet call obligation is a result of that check. If testing exposes a missing guarantee, change the producer or correct the consumer's premise, then repeat both stages with the new inputs.
+
+The Pretext experiment uses Pretext's own declaration emit as the first producer. The tier copies the emitted declaration files into a fresh project for each consumer and adds just the implementation being checked. It fails the boundary test if any imported-module lowering, interface planning or interface proving stage runs. The existing Pretext verdicts identify where the declaration producer's output differs from what the current pipeline supplies.
+
+Run the two stages from the TScert checkout, replacing the two paths with the pinned Pretext checkout and a fresh output directory:
+
+```sh
+tools/node_modules/.bin/tsc -p /path/to/pretext/tsconfig.build.json \
+  --emitDeclarationOnly --declarationMap false --outDir /path/to/interfaces
+cp /path/to/pretext/src/resolvable.d.ts /path/to/interfaces/
+node tests/pretext-tier.mts --pretext /path/to/pretext --interfaces /path/to/interfaces
+```
+
+The experimental verdicts are conditional on the supplied declaration contracts. The production interface needs the binding and overload identities, callable contracts, and any facts about initialization or binding stability that the consumer uses. The producer is responsible for supplying those facts under the applicable trust assumptions. The importer resolves imports against that data and has no dependency on how the producer obtained it. In particular, [`decodeInterfaces`](../../lean/Verification/Source/Claims/ModuleInterfaces.lean) currently compares complete module documents, and [`resolveRead`](../../lean/Verification/Source/Claims/Imports.lean) determines stability from imported bodies. Remove those dependencies on bodies when replacing the wire. A source digest can identify a producer input without making the source part of the consumer's contract.
+
+On 21 November 2026, `single-pass` at `d8d4fc55` checked Pretext at `0dafecb3` with this declaration bundle. The tier verified 150 of the 210 recorded functions. Nine files reached unit checks, with 150 of 154 functions verified and four refusals in `prepare.ts`. `analysis.ts`, `layout.ts`, and `rich-inline.ts` hit the ambient `Modifies` gate before unit checks. The importer executed zero module-lowering, interface-plan, and interface-proof stages. The 76 pattern cases and 223 listed cases matched their existing expectations.
+
+In a separate producer-side check of `line-breaks.ts`, TScert established 32 callable rows. The checked row for `hasProperty` guarantees that array spines stay unchanged on normal return. Pretext's declaration emitter represents the same export as `(cp: number, property: number) => boolean`. The call to `hasProperty` in `prepare.ts`'s `spaceSharesScriptRun` then fails the caller's frame check with that declaration. The producer needs a body-free representation that carries its established effect and the importer's binding identity together. The draft's existing wire includes the entire producer module with those rows.
+
+### Publishing checked frames
+
+The producer uses the module interface check to establish effects. For a stable function with one fixed, ordinary signature, it publishes the normal-return frame under the emitted module path, declaration name, and span. The bundle includes the emitted declarations and their digests. The consumer resolves each import against these declarations, installs the published normal frame in that signature's declaration graph, and checks the consumer's units. A changed declaration bundle fails at load. The graph keeps the declaration's other contracts, including its exceptional exit.
+
+For example, the producer's entry for `readScriptRuns`' dependency `getClass` states that a normal return preserves existing locations. Its declaration supplies the parameter and result types. `prepare.ts` can then establish the part of `readScriptRuns`' frame that crosses the call to `getClass`. `hasProperty` supplies the normal frame used in `spaceSharesScriptRun`, and `findGraphemeEnds` supplies the frame used when checking `getUnspacedGraphemes`.
+
+The experiment imports the published frames as external contracts. The producer obtains them from the existing verified stage and checks binding stability using `ModuleCode`. The prototype relies on TypeScript's declaration emission and a controlled producer bundle for the connection between the checked source signature and the published declaration. The production wire needs to check that connection using the semantic signature identity and the stage store's evidence. Regional frames, returned callables, and annotation-bearing ambient declarations require additional representation and validation.
+
+```sh
+node dev/pretext-interface-frames.mts produce /path/to/pretext /path/to/new-bundle /path/to/producer-work
+node dev/pretext-interface-frames.mts measure /path/to/pretext /path/to/new-bundle /path/to/consumer-work
+```
+
+The command file dispatches to separate producer and checker modules. The checker takes one source path and an opened bundle. The bundle carries the compiler options, so the checker can construct the project without the original checkout. The measure command checks transitive unit verdicts and fails if a consumer runs an imported-module lowering, planning, or proof stage. Its total counts the functions in the pinned expectation, including those in files refused at the declaration gate.
+
+On 21 November 2026, the producer published 78 normal frames for the pinned Pretext checkout. The isolated consumer run retained 153 of 210 functions, up from 150 with declarations alone. It recovered `readScriptRuns`, `spaceSharesScriptRun`, and `getUnspacedGraphemes` in `prepare.ts`. Its remaining function, `measureAnalysis`, failed to establish the claims at a control-flow edge. The same ambient `Modifies` gate blocked 56 functions across the three files above. The existing single-pass tier verified all 210 functions.
+
+For example, `analysis.ts` imports `isSpaceOrTabOrSegmentBreak`, which declaration emission describes as `(ch: number) => Modifies<{}, boolean>`. The declaration reader encounters this effect before it can use the frame bundle. The interface must carry producer evidence for stated contracts as well as inferred frames, including effects in callback signatures such as `layout.ts`'s `walkLineRanges`.
+
+### Stated effects in emitted declarations
+
+The declaration reader recognizes a reference to the verifier's `Modifies` alias in `statement`. It checks that the reference and the value whose signature it describes belong to the checked program. Plain declaration emission leaves the reference in the signature and supplies no evidence about the program that declared it. For example, a read of `isSpaceOrTabOrSegmentBreak` cannot interpret its `Modifies<{}, boolean>` result.
+
+For the controlled Pretext experiment, the producer checks the source module's full verdict, including initialization, before publishing its emitted declaration for effect reading. The consumer checks the digest of the declaration TypeScript resolved and uses `statement` to read the same contract grammar. Thus an imported `isSpaceOrTabOrSegmentBreak` has the frame stated on its result, and an imported `walkLineRanges` states the callback contract at its parameter. A declaration reached through an unrelated external value remains subject to the checks on external statements. The consumer has the emitted declaration and the publication record.
+
+The producer also publishes the checked signature’s elaborated preconditions and postconditions at the emitted declaration’s identity. For example, every call to `measureAnalysis` must establish the bounds on `from` and `to` against the three analysis arrays. The consumer installs those obligations before planning any unit. The guarantees from `analyzeText` and the line-break scanners likewise travel as their elaborated postconditions.
+
+The published signature can carry a checked frame and conditions together. `getWebKitLineBreaks` preserves the array bounds needed by its caller's loop and guarantees the length of its returned view. Both facts are used by `getWebKitParagraphBreaks`. The producer also carries separate frames for the normal and exceptional exits of the exported and returned callables. `lazyRegExp` returns a function whose checked normal frame preserves array spines. `measureAnalysis` uses that fact when the returned function is called in the measuring loop.
+
+This extends the existing declaration reader and full file verifier. The experiment reuses their existing annotation grammar and check, and relies on the controlled producer and TypeScript’s emission for correspondence between the source check and the declaration. A production interface needs to bind the evidence to the semantic declaration.
+
+On 21 November 2026, the run with published stated and inferred contracts verified all 210 functions across the 12 pinned files. Publishing the stated contracts cleared the source gate for `analysis.ts`, `layout.ts`, and `rich-inline.ts`. The WebKit scanner's combined frame and conditions brought the total to 209. Publishing `lazyRegExp`'s returned callable frame recovered `measureAnalysis`. Consumers ran a single check per file and executed zero dependency-lowering, planning, or proof stages. A call to `measureAnalysis` with `from = -1` was refused using the published precondition.
+
 ## 1. The computation today
 
 | Step | Actual computation and grain |

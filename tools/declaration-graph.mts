@@ -4,6 +4,7 @@
  * resolve exactly as the compiler resolves them. This module turns each
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
+import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isIntersectionType, isNumberLiteralType, isStringLiteralType, isTupleType, isTypeParameter, isTypeReference, isUnionType, type Checker, type DocumentIdentifier, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
@@ -558,6 +559,9 @@ export interface DeclarationInput {
 }
 
 export interface DeclarationPolicy {
+  /** Exact declaration bytes authorized by the experimental interface producer.
+   * Each key is an absolute path in the consuming TypeScript project. */
+  publishedEffects?: ReadonlyMap<string, string>;
   /** The overlay `Array.prototype` is read through; tests vary it. */
   arrayOverlay?: readonly OverlayEntry[];
   /** The run's tag selection of a host family, by its marker
@@ -1088,6 +1092,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (at.flags & ts.NodeFlags.Ambient) return true;
       return false;
     };
+    const published = new Map<SourceFile, boolean>();
+    const publishedEffects = (source: SourceFile): boolean => {
+      const expected = policy.publishedEffects?.get(source.fileName);
+      if (expected === undefined || !source.isDeclarationFile) return false;
+      const prior = published.get(source);
+      if (prior !== undefined) return prior;
+      if (expected !== createHash("sha256").update(source.text).digest("hex"))
+        throw Error(`published declaration changed: ${source.fileName}`);
+      published.set(source, true);
+      return true;
+    };
     const statedDefinitions = new Set<string>();
     const programClasses = new Set<string>();
     // A statement belongs to its explicit owner, including one reached
@@ -1095,7 +1110,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const statement = (reading: DeclarationReading, reference: ts.TypeReferenceNode, owner: string | null,
         alias: "Modifies" | "Fresh" = "Modifies"): boolean => {
       if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== alias) return false;
-      if (!programFile(reference.getSourceFile()) || ambient(reference))
+      if ((!programFile(reference.getSourceFile()) || ambient(reference)) &&
+          !(alias === "Modifies" && publishedEffects(reference.getSourceFile())))
         throw Error(`\`${alias}\` outside the program's sources, or in an ambient declaration, states an effect of code no run checks`);
       if (reading.externalReads > 0)
         throw Error(`a value declared outside the program's sources is typed by a statement (\`${alias}\`), an effect of code no run checks`);
@@ -1886,7 +1902,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     // `guard` is the listed guard a client's import binds to (`bindingGuard`).
     const valueOf = (reading: DeclarationReading, declared: readonly Node[], what: string, guard: GuardEntry | null = null, bound: boolean = false): Omit<ValueRoot, "binding"> => {
-      const external = declared.some(n => !programFile(n.getSourceFile()) || ambient(n));
+      const external = declared.some(n => (!programFile(n.getSourceFile()) || ambient(n)) &&
+        !publishedEffects(n.getSourceFile()));
       const nested = { ...reading, externalReads: reading.externalReads + (external ? 1 : 0) };
       const read = valueRead(nested, declared, what, bound);
       if (external) externalTypes.push({ what, type: read.type });

@@ -176,6 +176,10 @@ function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void>
 }
 ```
 
+The [Pretext interface experiment](drafts/on-demand-processing.md#stated-effects-in-emitted-declarations)
+reads `Modifies` in declarations whose exact bytes the experiment’s producer
+publishes with a complete source-verification verdict.
+
 ### `Fresh<T>`
 
 As a written signature's result type, alone or as the `T` of `Modifies`: a
