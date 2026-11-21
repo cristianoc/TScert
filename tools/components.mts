@@ -30,9 +30,9 @@
  * primitive, and a reference to a parameter declared primitive, holds no
  * reference. Marks are the least the crossings, the holds by bindings and
  * the stores allow, a site's mark for a component at least its mark for
- * each component enclosing it. Once the flow is solved, one more round
- * records what each set includes by the code's statements and the code's
- * events (stores, calls, throws, catches, held and exported bindings,
+ * each component enclosing it. The worklist propagates these facts to
+ * convergence. A source-order pass then records each set's inclusions
+ * and the code's events (stores, calls, throws, catches, held and exported bindings,
  * suspensions), which the verifier's checks of the read-only frame read
  * (`ComponentChecks`). */
 import * as ts from "typescript/unstable/ast";
@@ -48,6 +48,7 @@ import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Frame
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
+import { FlowTokens, FlowWorklist, type FlowRule } from "./flow-worklist.mts";
 
 /** A program the family is read from: its files by absolute path, each
  * one's tree, and whether TypeScript's type of each node is primitive, so
@@ -211,110 +212,7 @@ type File = { absolute: string; location: string; source: SourceFile; module: nu
  * code's result or receiver, a site's contents, a class's instances, or
  * the values thrown, by an object of its own. */
 type Key = object;
-type FlowRule = () => void;
-
-/** A growing set stored by the solver. Transient sets have no copy cursor. */
-class FlowTokens implements Iterable<number> {
-  private readonly tokens: Set<number>;
-  private added?: number[];
-  private copies?: WeakMap<FlowTokens, number>;
-
-  constructor(tokens: Iterable<number> = []) {
-    this.tokens = new Set(tokens);
-  }
-
-  get size(): number { return this.tokens.size; }
-  has(token: number): boolean { return this.tokens.has(token); }
-  [Symbol.iterator](): SetIterator<number> { return this.tokens.values(); }
-
-  add(token: number): void {
-    const before = this.tokens.size;
-    this.tokens.add(token);
-    if (this.tokens.size > before) this.added?.push(token);
-  }
-
-  *since(start: number): Iterable<number> {
-    if (start === this.size) return;
-    const added = this.added ??= [...this.tokens];
-    for (let i = start; i < added.length; i++) {
-      const token = added[i];
-      if (token !== undefined) yield token;
-    }
-  }
-
-  copyFrom(source: FlowTokens): void {
-    const copies = this.copies ??= new WeakMap();
-    const start = copies.get(source) ?? 0;
-    if (start === source.size) return;
-    for (const token of source.since(start)) this.add(token);
-    copies.set(source, source.size);
-  }
-}
 type FlowValues = FlowTokens | Set<number>;
-
-/** A rule reads dependencies as it runs, including those discovered through
- * new tokens. Only growth of a dependency schedules its readers. */
-class FlowWorklist {
-  private readonly readers = new Map<Key | string, Set<FlowRule>>();
-  private pending = new Set<FlowRule>();
-  private readonly grown = new Set<Key | string>();
-  private deferred = new Set<FlowRule>();
-  private runningDeferred = false;
-  private current: FlowRule | null = null;
-
-  get active(): boolean { return this.current !== null; }
-
-  read(fact: Key | string): void {
-    if (this.current === null) return;
-    let readers = this.readers.get(fact);
-    if (!readers) this.readers.set(fact, readers = new Set());
-    readers.add(this.current);
-  }
-
-  grow(fact: Key | string): void {
-    if (this.current !== null && this.readers.has(fact)) this.grown.add(fact);
-  }
-
-  add(rule: FlowRule): void {
-    this.pending.add(rule);
-  }
-
-  /** A shared projection can establish its first value on demand. */
-  run(rule: FlowRule): void {
-    const parent = this.current;
-    this.current = rule;
-    try {
-      rule();
-    } finally {
-      this.current = parent;
-    }
-  }
-
-  /** An unresolved call is considered after its ordinary dependencies settle. */
-  defer(): boolean {
-    if (this.current === null || this.runningDeferred) return false;
-    this.deferred.add(this.current);
-    return true;
-  }
-
-  solve(beforeRule: () => void): void {
-    while (this.pending.size > 0 || this.deferred.size > 0) {
-      this.runningDeferred = this.pending.size === 0;
-      const ready = this.runningDeferred ? this.deferred : this.pending;
-      if (this.runningDeferred) this.deferred = new Set();
-      else this.pending = new Set();
-      for (const rule of ready) {
-        beforeRule();
-        this.run(rule);
-      }
-      for (const fact of this.grown)
-        for (const rule of this.readers.get(fact) ?? []) this.pending.add(rule);
-      this.grown.clear();
-    }
-    this.current = null;
-    this.readers.clear();
-  }
-}
 type Code = { node: Node; file: File; component: number; params: Node[]; result: Key; receiver: Key };
 type Site = { node: Node; file: File; kind: SiteAst["kind"]; component: number };
 
