@@ -136,6 +136,53 @@ def NativeRowB (rl : Realm) : Prop :=
     (∀ g r' args', (activeFrame none t).2 = .invoke g r' args' → isVal g = true → ¬ RealmFn rl g →
       ∀ x ∈ r' :: args', ∀ l', Reaches allC h x l' → l' ∉ A)
 
+/-- **The locations a value reaches through storage of a set `A`**: a
+first location of the value, or one of the contents of a location of `A`
+it so reaches. With `A` the locations a native's own steps allocated, it is
+what the value carries out of the native's own storage. -/
+inductive ReachesVia (A : List Nat) (h : Heap) (v : Val) : Nat → Prop where
+  | first {l : Nat} : Leaves allC v l → ReachesVia A h v l
+  | through {l₀ l : Nat} {w : Val} : ReachesVia A h v l₀ → l₀ ∈ A → h[l₀]? = some w → Leaves allC w l →
+      ReachesVia A h v l
+
+/-- **Row (b′) of the trust on standard natives** (Read-only frames, the
+natives item, approved by the owner on 2026-11-21), stated of every run of
+a call of a closure of the realm's code as `NativeRowB` is, `own` holding
+the realm's own storage: the run's result and the value it throws, the
+values its own steps pass to a function of other code, and the values they
+store into storage their steps did not allocate, reach through storage its
+own steps allocated only locations its operands reach and locations the
+run allocated; the result and the thrown value may also reach the realm's
+own storage. A value is followed through the native's own allocations
+alone: a callback's allocation, and the realm's storage, hold what their
+own code stored there, which a client may extend (a callback returning
+`Object.getPrototypeOf([])` to `reduce`, a client adding a field to
+`Array.prototype`). -/
+def NativeRowB' (rl : Realm) (own : Nat → Prop) : Prop :=
+  ∀ (h₀ : Heap) (f r : Val) (args : List Tm) (h : Heap) (t : Tm) (A : List Nat),
+    RealmFn rl f → isVal r = true → (∀ a ∈ args, isVal a = true) →
+    (∀ (l : Nat) (v : Val), h₀[l]? = some v → isVal v = true) →
+    NativeRun rl h₀ (.invoke f r args) h t A → (∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) →
+    -- the result and the thrown value
+    (∀ v l', (t = v ∧ isVal v = true ∨ t = .throw v ∧ isVal v = true) → ReachesVia A h v l' →
+      ReachesFrom allC h (r :: args) l' ∨ h₀.length ≤ l' ∨ own l') ∧
+    ∀ (h' : Heap) (t' : Tm), Step h t h' t' → ownStep rl t = true →
+      -- the values it stores into storage it did not allocate
+      (∀ l v, l < h.length → l ∉ A → h'[l]? = some v → h[l]? ≠ some v →
+        ∀ l', ReachesVia A h v l' → ReachesFrom allC h (r :: args) l' ∨ h₀.length ≤ l') ∧
+      -- the values it passes to a function of other code
+      (∀ g r' args', (activeFrame none t).2 = .invoke g r' args' → isVal g = true → ¬ RealmFn rl g →
+        ∀ x ∈ r' :: args', ∀ l', ReachesVia A h x l' → ReachesFrom allC h (r :: args) l' ∨ h₀.length ≤ l')
+
+/-- **Row (b′) at a larger set of the realm's own storage** (proved): the
+theorems read it at a set holding the realm's own storage, such as the
+locations of outside storage. -/
+theorem NativeRowB'.mono {rl : Realm} {own own' : Nat → Prop} (hb : NativeRowB' rl own)
+    (ho : ∀ l, own l → own' l) : NativeRowB' rl own' := by
+  intro h₀ f r args h t A hf hr ha hh₀ hrun hh
+  obtain ⟨hres, hst⟩ := hb h₀ f r args h t A hf hr ha hh₀ hrun hh
+  exact ⟨fun v l' hv hl => (hres v l' hv hl).imp_right (Or.imp_right (ho l')), hst⟩
+
 /-- **A changed location is one step from a value of the term** (proved,
 `step_reach` with every tag's code as outside code). -/
 theorem step_changed_reached {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') {l : Nat} {v : Val}
