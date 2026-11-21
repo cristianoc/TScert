@@ -211,6 +211,110 @@ type File = { absolute: string; location: string; source: SourceFile; module: nu
  * code's result or receiver, a site's contents, a class's instances, or
  * the values thrown, by an object of its own. */
 type Key = object;
+type FlowRule = () => void;
+
+/** A growing set stored by the solver. Transient sets have no copy cursor. */
+class FlowTokens implements Iterable<number> {
+  private readonly tokens: Set<number>;
+  private added?: number[];
+  private copies?: WeakMap<FlowTokens, number>;
+
+  constructor(tokens: Iterable<number> = []) {
+    this.tokens = new Set(tokens);
+  }
+
+  get size(): number { return this.tokens.size; }
+  has(token: number): boolean { return this.tokens.has(token); }
+  [Symbol.iterator](): SetIterator<number> { return this.tokens.values(); }
+
+  add(token: number): void {
+    const before = this.tokens.size;
+    this.tokens.add(token);
+    if (this.tokens.size > before) this.added?.push(token);
+  }
+
+  *since(start: number): Iterable<number> {
+    if (start === this.size) return;
+    const added = this.added ??= [...this.tokens];
+    for (let i = start; i < added.length; i++) {
+      const token = added[i];
+      if (token !== undefined) yield token;
+    }
+  }
+
+  copyFrom(source: FlowTokens): void {
+    const copies = this.copies ??= new WeakMap();
+    const start = copies.get(source) ?? 0;
+    if (start === source.size) return;
+    for (const token of source.since(start)) this.add(token);
+    copies.set(source, source.size);
+  }
+}
+type FlowValues = FlowTokens | Set<number>;
+
+/** A rule reads dependencies as it runs, including those discovered through
+ * new tokens. Only growth of a dependency schedules its readers. */
+class FlowWorklist {
+  private readonly readers = new Map<Key | string, Set<FlowRule>>();
+  private pending = new Set<FlowRule>();
+  private readonly grown = new Set<Key | string>();
+  private deferred = new Set<FlowRule>();
+  private runningDeferred = false;
+  private current: FlowRule | null = null;
+
+  get active(): boolean { return this.current !== null; }
+
+  read(fact: Key | string): void {
+    if (this.current === null) return;
+    let readers = this.readers.get(fact);
+    if (!readers) this.readers.set(fact, readers = new Set());
+    readers.add(this.current);
+  }
+
+  grow(fact: Key | string): void {
+    if (this.current !== null && this.readers.has(fact)) this.grown.add(fact);
+  }
+
+  add(rule: FlowRule): void {
+    this.pending.add(rule);
+  }
+
+  /** A shared projection can establish its first value on demand. */
+  run(rule: FlowRule): void {
+    const parent = this.current;
+    this.current = rule;
+    try {
+      rule();
+    } finally {
+      this.current = parent;
+    }
+  }
+
+  /** An unresolved call is considered after its ordinary dependencies settle. */
+  defer(): boolean {
+    if (this.current === null || this.runningDeferred) return false;
+    this.deferred.add(this.current);
+    return true;
+  }
+
+  solve(beforeRule: () => void): void {
+    while (this.pending.size > 0 || this.deferred.size > 0) {
+      this.runningDeferred = this.pending.size === 0;
+      const ready = this.runningDeferred ? this.deferred : this.pending;
+      if (this.runningDeferred) this.deferred = new Set();
+      else this.pending = new Set();
+      for (const rule of ready) {
+        beforeRule();
+        this.run(rule);
+      }
+      for (const fact of this.grown)
+        for (const rule of this.readers.get(fact) ?? []) this.pending.add(rule);
+      this.grown.clear();
+    }
+    this.current = null;
+    this.readers.clear();
+  }
+}
 type Code = { node: Node; file: File; component: number; params: Node[]; result: Key; receiver: Key };
 type Site = { node: Node; file: File; kind: SiteAst["kind"]; component: number };
 
@@ -459,11 +563,12 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     };
     visit(f.source);
   }
-  const enclosing = (c: number): number[] => {
-    const out: number[] = [];
-    for (let at: number | null = c; at !== null; at = components[at]?.parent ?? null) out.push(at);
-    return out;
-  };
+  const ancestors = components.map((_, c): number[] => {
+    const chain: number[] = [];
+    for (let at: number | null = c; at !== null; at = components[at]?.parent ?? null) chain.push(at);
+    return chain;
+  });
+  const enclosing = (c: number): readonly number[] => ancestors[c] ?? [];
   const within = (inner: number, outer: number): boolean => enclosing(inner).includes(outer);
 
   // Codes and sites.
@@ -472,15 +577,19 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const anchors = new Map<Key, { node: Node; file: File }>();
   const codes: Code[] = [];
   const codeOf = new Map<Node, Code>();
+  const worklist = new FlowWorklist();
   const sites: Site[] = [];
+  let onSite: ((index: number, site: Site) => void) | undefined;
   const siteOf = new Map<Node, number>();
   const fileOfNode = new Map<Node, File>();
   const site = (node: Node, f: File, kind: SiteAst["kind"]): number => {
     const known = siteOf.get(node);
     if (known !== undefined) return known;
     const index = sites.length;
-    sites.push({ node, file: f, kind, component: innermost(node, f) });
+    const allocated = { node, file: f, kind, component: innermost(node, f) };
+    sites.push(allocated);
     siteOf.set(node, index);
+    onSite?.(index, allocated);
     return index;
   };
   for (const f of files) {
@@ -620,12 +729,16 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   };
 
   // The flow's sets.
-  const sets = new Map<Key, Set<number>>();
-  let changed = true;
-  const setOf = (key: Key): Set<number> => {
+  const sets = new Map<Key, FlowTokens>();
+  const storageOf = (key: Key): FlowTokens => {
     let s = sets.get(key);
-    if (!s) sets.set(key, s = new Set());
+    if (!s) sets.set(key, s = new FlowTokens());
     return s;
+  };
+  const setOf = (key: Key): FlowTokens => {
+    const tokens = storageOf(key);
+    worklist.read(tokens);
+    return tokens;
   };
   /** Each site's contents, by a key of its own. */
   const contentKeys = new Map<number, Key>();
@@ -638,23 +751,38 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     }
     return k;
   };
-  const contentOf = (i: number): Set<number> => setOf(contentKey(i));
-  const contentsNow = (i: number): Set<number> | undefined => sets.get(contentKey(i));
+  const contentOf = (i: number): FlowTokens => storageOf(contentKey(i));
+  const contentsNow = (i: number): FlowTokens => setOf(contentKey(i));
   /** The identifiers bindings are declared at that hold a set. */
   const bindingDecls = new Set<Node>();
-  const addAll = (into: Set<number>, from: Iterable<number>): void => {
-    for (const t of from) if (!into.has(t)) { into.add(t); changed = true; }
+  let onBinding: ((decl: Node) => void) | undefined;
+  const bindDecl = (decl: Node): void => {
+    if (bindingDecls.has(decl)) return;
+    bindingDecls.add(decl);
+    onBinding?.(decl);
+  };
+  const addAll = (into: FlowTokens, from: Iterable<number>): void => {
+    if (into === from) return;
+    const size = into.size;
+    if (from instanceof FlowTokens) into.copyFrom(from);
+    else for (const t of from) into.add(t);
+    if (into.size > size) worklist.grow(into);
   };
   const keys = new Map<number, Set<string>>();
   const anyKey = new Set<number>();
+  const keyFact = (i: number): string => `keys:${i}`;
+  const mayHoldKey = (i: number, key: string): boolean => {
+    worklist.read(keyFact(i));
+    return anyKey.has(i) || (keys.get(i)?.has(key) ?? false);
+  };
   const addKey = (i: number, key: string | null): void => {
     if (key === null) {
-      if (!anyKey.has(i)) { anyKey.add(i); changed = true; }
+      if (!anyKey.has(i)) { anyKey.add(i); worklist.grow(keyFact(i)); }
       return;
     }
     let s = keys.get(i);
     if (!s) keys.set(i, s = new Set());
-    if (!s.has(key)) { s.add(key); changed = true; }
+    if (!s.has(key)) { s.add(key); worklist.grow(keyFact(i)); }
   };
   const incomingKeys = new Map<number, Set<string | null>>();
   const outsideTokens = (): number[] => components.map((_, c) => INCOMING + c);
@@ -857,12 +985,16 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     return s;
   };
   const marks = new Map<string, Mark>();
-  const markOf = (s: number, c: number): Mark => marks.get(`${s}:${c}`) ?? "local";
-  const raise = (s: number, c: number, m: Mark): boolean => {
-    if (rank(markOf(s, c)) >= rank(m)) return false;
-    marks.set(`${s}:${c}`, m);
-    changed = true;
-    return true;
+  const markOf = (s: number, c: number): Mark => {
+    const key = `${s}:${c}`;
+    worklist.read(key);
+    return marks.get(key) ?? "local";
+  };
+  const raise = (s: number, c: number, m: Mark): void => {
+    const key = `${s}:${c}`;
+    if (rank(marks.get(key) ?? "local") >= rank(m)) return;
+    marks.set(key, m);
+    worklist.grow(key);
   };
 
   // Read-only types, read from the syntax: primitives and literals, `unknown`,
@@ -952,10 +1084,11 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) ||
     ts.isGetAccessorDeclaration(n) ? n.type : undefined;
 
-  // Crossings, collected by the last round.
-  const crossings = new Map<string, CrossingAst & { tokens: Set<number>; node: Node | null; via: "result" | "argument" | "throw" | "store" | null }>();
+  // Crossings grow during solving. The recording pass adds their references.
+  type FlowCrossing = CrossingAst & { tokens: FlowTokens; node: Node | null; via: "result" | "argument" | "throw" | "store" | null };
+  const crossings = new Map<string, FlowCrossing>();
   const cross = (f: File, at: Node, c: number, direction: "in" | "out", position: PositionAst, ro: boolean,
-      tokens: Set<number> | null, valueNode: Node | null, ref: number | null): void => {
+      tokens: FlowValues | null, valueNode: Node | null, ref: number | null): void => {
     const key = `${f.absolute}:${at.getStart(f.source)}:${at.end}:${c}:${direction}:${JSON.stringify(position)}`;
     const via = direction === "in" ? null : typeof position === "object" && "result" in position ? "result"
       : typeof position === "object" && "argument" in position ? "argument" : position === "thrown" ? "throw" : "store";
@@ -965,9 +1098,20 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       if (recording && ref !== null && held.value === null) held.value = ref;
       return;
     }
-    crossings.set(key, { module: f.location, at: span(f, at), component: c, direction, position, readOnly: ro, value: recording ? ref : null,
-      tokens: new Set(tokens ?? []), node: valueNode, via });
-    changed = true;
+    const crossing: FlowCrossing = { module: f.location, at: span(f, at), component: c, direction, position, readOnly: ro,
+      value: recording ? ref : null, tokens: new FlowTokens(tokens ?? []), node: valueNode, via };
+    crossings.set(key, crossing);
+    if (!recording && direction === "out") {
+      let observed = 0;
+      worklist.add(() => {
+        worklist.read(crossing.tokens);
+        for (const t of crossing.tokens.since(observed)) {
+          const s = sites[t];
+          if (s && within(s.component, c)) raise(t, c, ro ? "exposed" : "released");
+        }
+        observed = crossing.tokens.size;
+      });
+    }
   };
 
   /** The values thrown, by a key of its own. */
@@ -1000,39 +1144,56 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     [...tokens].filter((t) => t >= INCOMING && t < INCOMING_RO).map((t) => t - INCOMING);
   const readOnlyIncoming = (tokens: Iterable<number>): number[] => [...tokens].filter((t) => t >= INCOMING_RO).map((t) => t - INCOMING_RO);
   const sitesOf = (tokens: Iterable<number>): number[] => [...tokens].filter((t) => t < INCOMING);
-  /** The tokens reachable from tokens: theirs, and their sites' contents',
-   * transitively. */
-  const reachable = (tokens: Iterable<number>): Set<number> => {
-    const out = new Set<number>();
-    const work = [...tokens];
-    for (let t = work.pop(); t !== undefined; t = work.pop()) {
-      if (out.has(t)) continue;
-      out.add(t);
-      if (t < INCOMING) work.push(...(contentsNow(t) ?? []));
+  /** Read only newly added contents from each of the given sites. */
+  const readInto = (out: FlowTokens, tokens: Iterable<number>): void => {
+    for (const t of tokens) {
+      if (t >= INCOMING) out.add(t);
+      else {
+        const contents = contentsNow(t);
+        if (out !== contents) out.copyFrom(contents);
+      }
     }
-    return out;
   };
-  const reads = (tokens: Set<number>): Set<number> => {
+  // All transfers that read a stored value share its projection through
+  // site contents. Changes to either the value or its contents update it.
+  const readViews = new WeakMap<FlowTokens, FlowTokens>();
+  const reads = (tokens: FlowValues): FlowValues => {
+    if (worklist.active && tokens instanceof FlowTokens) {
+      let view = readViews.get(tokens);
+      if (view === undefined) {
+        const projected = new FlowTokens();
+        view = projected;
+        readViews.set(tokens, projected);
+        worklist.run(() => {
+          worklist.read(tokens);
+          const size = projected.size;
+          readInto(projected, tokens);
+          if (projected.size > size) worklist.grow(projected);
+        });
+      }
+      worklist.read(view);
+      return view;
+    }
     const out = new Set<number>();
     for (const t of tokens) {
       if (t >= INCOMING) out.add(t);
-      else for (const x of contentsNow(t) ?? []) out.add(x);
+      else for (const x of contentsNow(t)) out.add(x);
     }
     return out;
   };
 
   /** The tokens of an expression's value. */
-  // An expression's value is computed once a round.
-  let roundValues = new Map<Node, Set<number>>();
-  const value = (e: Node | undefined, f: File): Set<number> => {
+  // An expression is computed once per rule evaluation.
+  const ruleValues = new Map<Node, FlowValues>();
+  const value = (e: Node | undefined, f: File): FlowValues => {
     if (e === undefined) return new Set();
-    const held = roundValues.get(e);
+    const held = ruleValues.get(e);
     if (held) return held;
     const computed = valueNow(e, f);
-    roundValues.set(e, computed);
+    ruleValues.set(e, computed);
     return computed;
   };
-  const valueNow = (e: Node, f: File): Set<number> => {
+  const valueNow = (e: Node, f: File): FlowValues => {
     const x = unwrap(e);
     if (primitiveNodes.has(x)) return new Set();
     if (ts.isIdentifier(x)) return primitiveParameter(x) ? new Set() : identifierValue(x, f);
@@ -1057,7 +1218,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     if (ts.isAwaitExpression(x) || ts.isYieldExpression(x)) return new Set(outsideTokens());
     return new Set();
   };
-  const identifierValue = (id: Node, f: File): Set<number> => {
+  const identifierValue = (id: Node, f: File): FlowValues => {
     const decl = resolveName(id);
     if (decl === null) return new Set();
     const owner = decl.parent;
@@ -1157,42 +1318,45 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
 
   /** Bind a binding name to tokens: each name the whole value, or what a
    * pattern reads of it. */
-  const bind = (name: Node, tokens: Set<number>, f: File, ref: () => number): void => {
+  const bind = (name: Node, tokens: FlowValues, f: File, ref: () => number): void => {
     if (ts.isIdentifier(name)) {
-      bindingDecls.add(name);
-      addAll(setOf(name), tokens);
+      bindDecl(name);
+      addAll(storageOf(name), tokens);
       if (recording) {
         refNode(name);
         include(name, { value: ref() });
       }
-    } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name))
+    } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      const contents = reads(tokens);
       for (const e of name.elements) if (ts.isBindingElement(e)) {
         const rest = e.dotDotDotToken ? site(e, f, ts.isArrayBindingPattern(name) ? "array" : "object") : null;
-        const read = rest !== null ? new Set([...reads(tokens), rest]) : reads(tokens);
+        const read = rest !== null ? new Set([...contents, rest]) : contents;
         if (rest !== null) {
-          addAll(contentOf(rest), reads(tokens));
+          addAll(contentOf(rest), contents);
           if (recording) events.stores.push({ module: f.location, at: span(f, e), component: componentAt(e, f),
             receiver: synthetic(e, f, [{ site: rest }]), key: null, element: true,
             stored: synthetic(e, f, [{ read: ref() }]), initial: true });
         }
-        if (e.name) bind(e.name, new Set([...read, ...value(e.initializer, f)]), f, () => synthetic(e, f,
+        if (e.name) bind(e.name, e.initializer ? new Set([...read, ...value(e.initializer, f)]) : read, f, () => synthetic(e, f,
           [{ read: ref() }, ...(rest !== null ? [{ site: rest }] : []), ...(e.initializer ? [{ value: exprRef(e.initializer, f) }] : [])]));
       }
+    }
   };
   /** The tokens a call's callee may be: the closures it may run, and the
    * components it may enter from outside. */
-  const calleeTokens = (callee: Node, f: File): { tokens: Set<number>; receiver: Set<number> | null } => {
+  const calleeTokens = (callee: Node, f: File): { tokens: FlowValues; receiver: FlowValues | null } => {
     const x = unwrap(callee);
     if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) {
       const receiver = value(x.expression, f);
-      const tokens = reads(receiver);
+      const contents = reads(receiver);
+      const tokens = contents instanceof FlowTokens ? new Set(contents) : contents;
       const name = ts.isPropertyAccessExpression(x) ? x.name.text : nameText(x.argumentExpression);
       // A method of a class whose instance the receiver may be, or of the
       // class itself where the receiver is a class value.
       for (const t of sitesOf(receiver)) {
         const s = sites[t];
         if (!s) continue;
-        const cls = s.kind === "instance" ? classOfInstance.get(t) : classLike(s.node) ? s.node : undefined;
+        const cls = s.kind === "instance" ? instanceClass(t) : classLike(s.node) ? s.node : undefined;
         const statics = s.kind !== "instance";
         for (let c: Node | undefined = cls; c && (ts.isClassDeclaration(c) || ts.isClassExpression(c)); c = baseOf(c, f))
           for (const m of c.members)
@@ -1204,6 +1368,10 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     return { tokens: value(x, f), receiver: null };
   };
   const classOfInstance = new Map<number, Node>();
+  const instanceClass = (t: number): Node | undefined => {
+    worklist.read(`instance:${t}`);
+    return classOfInstance.get(t);
+  };
   const baseOf = (c: Node, f: File): Node | undefined => {
     if (!(ts.isClassDeclaration(c) || ts.isClassExpression(c))) return undefined;
     for (const h of c.heritageClauses ?? [])
@@ -1219,7 +1387,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   /** A call of a code of the family: its parameters include its arguments,
    * its receiver the call's, and the call's result its result. The code it
    * runs, or null. */
-  const callCode = (target: Node, args: readonly Node[], f: File, call: Node, receiver: Set<number> | null): Code | null => {
+  const callCode = (target: Node, args: readonly Node[], f: File, call: Node, receiver: FlowValues | null): Code | null => {
     const code = codeOf.get(target);
     const ctor = classLike(target) ? constructorOf(target) : target;
     const c = codeOf.get(ctor) ?? code;
@@ -1231,15 +1399,15 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
           if (p) bindParameter(p, value(a, f), c.file);
         }
       });
-      if (receiver) addAll(setOf(c.receiver), receiver);
-      if (!classLike(target)) addAll(setOf(call), setOf(c.result));
+      if (receiver) addAll(storageOf(c.receiver), receiver);
+      if (!classLike(target)) addAll(storageOf(call), setOf(c.result));
     }
     return c ?? null;
   };
-  const bindParameter = (p: Node, tokens: Set<number>, f: File): void => {
+  const bindParameter = (p: Node, tokens: FlowValues, f: File): void => {
     if (!ts.isParameterDeclaration(p)) return;
-    addAll(setOf(p), tokens);
-    bind(p.name, p.dotDotDotToken ? new Set([...tokens]) : tokens, f, () => refNode(p));
+    addAll(storageOf(p), tokens);
+    bind(p.name, tokens, f, () => refNode(p));
   };
   /** The declared parameter types of a callee that is a parameter or a
    * binding of function type. */
@@ -1252,124 +1420,136 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     return fn && ts.isFunctionTypeNode(fn) ? fn.parameters.map((p) => typeOfParameter(p)) : [];
   };
 
-  /** One round over a file's code: every inclusion its statements and
-   * expressions state, the crossings among them. */
-  const walk = (f: File): void => {
-    const visit = (n: Node): void => {
-      if (ts.isVariableDeclaration(n) && n.initializer) bind(n.name, value(n.initializer, f), f, () => exprRef(n.initializer, f));
-      else if (ts.isBinaryExpression(n)) {
-        const op = n.operatorToken.kind;
-        const target = unwrap(n.left);
-        const assigns = op === ts.SyntaxKind.EqualsToken || op === ts.SyntaxKind.QuestionQuestionEqualsToken ||
-          op === ts.SyntaxKind.BarBarEqualsToken || op === ts.SyntaxKind.AmpersandAmpersandEqualsToken;
-        const writes = op >= ts.SyntaxKind.FirstAssignment && op <= ts.SyntaxKind.LastAssignment;
-        if (writes && ts.isIdentifier(target) && assigns) {
-          const decl = resolveName(target);
-          if (decl) {
-            bindingDecls.add(decl);
-            addAll(setOf(decl), value(n.right, f));
-            if (recording) {
-              refNode(decl);
-              include(decl, { value: exprRef(n.right, f) });
-            }
-          }
-        } else if (writes && (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)))
-          store(target.expression, ts.isPropertyAccessExpression(target) ? target.name.text : nameText(target.argumentExpression),
-            assigns ? value(n.right, f) : new Set(), f, n, assigns ? () => exprRef(n.right, f) : null);
-      } else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n) || ts.isDeleteExpression(n))) {
-        const target = unwrap(ts.isDeleteExpression(n) ? n.expression : n.operand);
-        if (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target))
-          store(target.expression, ts.isPropertyAccessExpression(target) ? target.name.text : nameText(target.argumentExpression), new Set(), f, n, null);
-      } else if (ts.isObjectLiteralExpression(n)) {
-        const s = site(n, f, "object");
-        // Each property an initial value of the record allocated here.
-        const initial = (p: Node, key: string | null, stored: () => number): void => {
-          if (recording) events.stores.push({ module: f.location, at: span(f, p), component: componentAt(p, f), receiver: exprRef(n, f),
-            key, element: false, stored: stored(), initial: true });
-        };
-        for (const p of n.properties) {
-          if (ts.isPropertyAssignment(p)) {
-            addKey(s, nameText(p.name));
-            addAll(contentOf(s), value(p.initializer, f));
-            initial(p, nameText(p.name), () => exprRef(p.initializer, f));
-          } else if (ts.isShorthandPropertyAssignment(p)) {
-            addKey(s, nameText(p.name));
-            addAll(contentOf(s), value(p.name, f));
-            initial(p, nameText(p.name), () => exprRef(p.name, f));
-          } else if (ts.isSpreadAssignment(p)) {
-            addKey(s, null);
-            addAll(contentOf(s), reads(value(p.expression, f)));
-            initial(p, null, () => synthetic(p, f, [{ read: exprRef(p.expression, f) }]));
-          } else if (functionLike(p)) {
-            const key = ts.isMethodDeclaration(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p) ? nameText(p.name) : null;
-            addKey(s, key);
-            const closure = site(p, f, "closure");
-            addAll(contentOf(s), [closure]);
-            initial(p, key, () => synthetic(p, f, [{ site: closure }]));
-            const code = codeOf.get(p);
-            if (code) {
-              addAll(setOf(code.receiver), [s]);
-              include(code.receiver, { site: s });
-            }
+  /** The inclusions and crossings of a single statement or expression. */
+  const compileTransfer = (n: Node, f: File): FlowRule | undefined => {
+    if (ts.isVariableDeclaration(n) && n.initializer)
+      return () => bind(n.name, value(n.initializer, f), f, () => exprRef(n.initializer, f));
+    if (ts.isBinaryExpression(n)) return () => {
+      const op = n.operatorToken.kind;
+      const target = unwrap(n.left);
+      const assigns = op === ts.SyntaxKind.EqualsToken || op === ts.SyntaxKind.QuestionQuestionEqualsToken ||
+        op === ts.SyntaxKind.BarBarEqualsToken || op === ts.SyntaxKind.AmpersandAmpersandEqualsToken;
+      const writes = op >= ts.SyntaxKind.FirstAssignment && op <= ts.SyntaxKind.LastAssignment;
+      if (writes && ts.isIdentifier(target) && assigns) {
+        const decl = resolveName(target);
+        if (decl) {
+          bindDecl(decl);
+          addAll(storageOf(decl), value(n.right, f));
+          if (recording) {
+            refNode(decl);
+            include(decl, { value: exprRef(n.right, f) });
           }
         }
-      } else if (ts.isArrayLiteralExpression(n)) {
-        const s = site(n, f, "array");
-        for (const e of n.elements) {
-          addAll(contentOf(s), ts.isSpreadElement(e) ? reads(value(e.expression, f)) : value(e, f));
-          if (recording) events.stores.push({ module: f.location, at: span(f, e), component: componentAt(e, f), receiver: exprRef(n, f),
-            key: null, element: true, initial: true,
-            stored: ts.isSpreadElement(e) ? synthetic(e, f, [{ read: exprRef(e.expression, f) }]) : exprRef(e, f) });
+      } else if (writes && (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)))
+        store(target.expression, ts.isPropertyAccessExpression(target) ? target.name.text : nameText(target.argumentExpression),
+          assigns ? value(n.right, f) : new Set(), f, n, assigns ? () => exprRef(n.right, f) : null);
+    };
+    if (ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n) || ts.isDeleteExpression(n)) return () => {
+      const target = unwrap(ts.isDeleteExpression(n) ? n.expression : n.operand);
+      if (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target))
+        store(target.expression, ts.isPropertyAccessExpression(target) ? target.name.text : nameText(target.argumentExpression), new Set(), f, n, null);
+    };
+    if (ts.isObjectLiteralExpression(n)) return () => {
+      const s = site(n, f, "object");
+      // Each property an initial value of the record allocated here.
+      const initial = (p: Node, key: string | null, stored: () => number): void => {
+        if (recording) events.stores.push({ module: f.location, at: span(f, p), component: componentAt(p, f), receiver: exprRef(n, f),
+          key, element: false, stored: stored(), initial: true });
+      };
+      for (const p of n.properties) {
+        if (ts.isPropertyAssignment(p)) {
+          addKey(s, nameText(p.name));
+          addAll(contentOf(s), value(p.initializer, f));
+          initial(p, nameText(p.name), () => exprRef(p.initializer, f));
+        } else if (ts.isShorthandPropertyAssignment(p)) {
+          addKey(s, nameText(p.name));
+          addAll(contentOf(s), value(p.name, f));
+          initial(p, nameText(p.name), () => exprRef(p.name, f));
+        } else if (ts.isSpreadAssignment(p)) {
+          addKey(s, null);
+          addAll(contentOf(s), reads(value(p.expression, f)));
+          initial(p, null, () => synthetic(p, f, [{ read: exprRef(p.expression, f) }]));
+        } else if (functionLike(p)) {
+          const key = ts.isMethodDeclaration(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p) ? nameText(p.name) : null;
+          addKey(s, key);
+          const closure = site(p, f, "closure");
+          addAll(contentOf(s), [closure]);
+          initial(p, key, () => synthetic(p, f, [{ site: closure }]));
+          const code = codeOf.get(p);
+          if (code) {
+            addAll(storageOf(code.receiver), [s]);
+            include(code.receiver, { site: s });
+          }
         }
-      } else if (ts.isReturnStatement(n) && n.expression) {
-        const c = enclosingCode(n);
-        if (c) {
-          addAll(setOf(c.result), value(n.expression, f));
-          if (recording) include(c.result, { value: exprRef(n.expression, f) });
-        }
-      } else if (ts.isArrowFunction(n) && !ts.isBlock(n.body)) {
-        const c = codeOf.get(n);
-        if (c) {
-          addAll(setOf(c.result), value(n.body, f));
-          if (recording) include(c.result, { value: exprRef(n.body, f) });
-        }
-      } else if (ts.isThrowStatement(n)) {
-        const tokens = value(n.expression, f);
-        addAll(setOf(thrownKey), tokens);
-        const ref = recording ? exprRef(n.expression, f) : -1;
-        if (recording) {
-          include(thrownKey, { value: ref });
-          events.throws.push({ module: f.location, at: span(f, n), component: componentAt(n, f), value: ref });
-        }
-        for (const c of enclosing(componentAt(n, f))) cross(f, n, c, "out", "thrown", false, tokens, n.expression, ref);
-      } else if (ts.isCatchClause(n) && n.variableDeclaration) {
-        const decl = n.variableDeclaration;
+      }
+    };
+    if (ts.isArrayLiteralExpression(n)) return () => {
+      const s = site(n, f, "array");
+      for (const e of n.elements) {
+        addAll(contentOf(s), ts.isSpreadElement(e) ? reads(value(e.expression, f)) : value(e, f));
+        if (recording) events.stores.push({ module: f.location, at: span(f, e), component: componentAt(e, f), receiver: exprRef(n, f),
+          key: null, element: true, initial: true,
+          stored: ts.isSpreadElement(e) ? synthetic(e, f, [{ read: exprRef(e.expression, f) }]) : exprRef(e, f) });
+      }
+    };
+    if (ts.isReturnStatement(n) && n.expression) return () => {
+      const c = enclosingCode(n);
+      if (c) {
+        addAll(storageOf(c.result), value(n.expression, f));
+        if (recording) include(c.result, { value: exprRef(n.expression, f) });
+      }
+    };
+    if (ts.isArrowFunction(n) && !ts.isBlock(n.body)) return () => {
+      const c = codeOf.get(n);
+      if (c) {
+        addAll(storageOf(c.result), value(n.body, f));
+        if (recording) include(c.result, { value: exprRef(n.body, f) });
+      }
+    };
+    if (ts.isThrowStatement(n)) return () => {
+      const tokens = value(n.expression, f);
+      addAll(storageOf(thrownKey), tokens);
+      const ref = recording ? exprRef(n.expression, f) : -1;
+      if (recording) {
+        include(thrownKey, { value: ref });
+        events.throws.push({ module: f.location, at: span(f, n), component: componentAt(n, f), value: ref });
+      }
+      for (const c of enclosing(componentAt(n, f))) cross(f, n, c, "out", "thrown", false, tokens, n.expression, ref);
+    };
+    if (ts.isCatchClause(n) && n.variableDeclaration) {
+      const decl = n.variableDeclaration;
+      return () => {
         const comps = enclosing(componentAt(n, f));
         const tokens = new Set([...setOf(thrownKey), ...comps.map((c) => INCOMING + c)]);
         const ref = recording ? synthetic(decl, f, [{ value: refOf(thrownKey) }, ...comps.map((c) => ({ incoming: c }))]) : -1;
         bind(decl.name, tokens, f, () => ref);
         if (recording) events.catches.push({ module: f.location, at: span(f, decl), component: componentAt(n, f), value: ref });
         for (const c of comps) cross(f, decl, c, "in", "caught", false, tokens, null, ref);
-      } else if (ts.isForOfStatement(n) && ts.isVariableDeclarationList(n.initializer))
-        for (const d of n.initializer.declarations)
+      };
+    }
+    if (ts.isForOfStatement(n) && ts.isVariableDeclarationList(n.initializer)) {
+      const { declarations } = n.initializer;
+      return () => {
+        for (const d of declarations)
           bind(d.name, reads(value(n.expression, f)), f, () => synthetic(n.expression, f, [{ read: exprRef(n.expression, f) }]));
-      else if (ts.isPropertyDeclaration(n) && n.initializer && n.parent && classLike(n.parent)) {
-        // A field's initial value, in the class's instances or, static, in
-        // the class itself.
-        const statics = !!n.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
-        const holder = instancesKey(n.parent);
-        const holders = statics ? new Set([site(n.parent, f, "closure")]) : setOf(holder);
-        for (const t of sitesOf(holders)) {
-          addKey(t, nameText(n.name));
-          addAll(contentOf(t), value(n.initializer, f));
-        }
-        if (recording) events.stores.push({ module: f.location, at: span(f, n), component: componentAt(n, f),
-          receiver: statics ? synthetic(n, f, [{ site: site(n.parent, f, "closure") }]) : refOf(holder),
-          key: nameText(n.name), element: false, stored: exprRef(n.initializer, f), initial: true });
-      } else if (ts.isCallExpression(n) || ts.isNewExpression(n)) call(n, f);
-      n.forEachChild(visit);
+      };
+    }
+    if (ts.isPropertyDeclaration(n) && n.initializer && n.parent && classLike(n.parent)) return () => {
+      // A field's initial value, in the class's instances or, static, in
+      // the class itself.
+      const statics = !!n.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
+      const holder = instancesKey(n.parent);
+      const holders = statics ? new Set([site(n.parent, f, "closure")]) : setOf(holder);
+      for (const t of sitesOf(holders)) {
+        addKey(t, nameText(n.name));
+        addAll(contentOf(t), value(n.initializer, f));
+      }
+      if (recording) events.stores.push({ module: f.location, at: span(f, n), component: componentAt(n, f),
+        receiver: statics ? synthetic(n, f, [{ site: site(n.parent, f, "closure") }]) : refOf(holder),
+        key: nameText(n.name), element: false, stored: exprRef(n.initializer, f), initial: true });
     };
-    visit(f.source);
+    if (ts.isCallExpression(n) || ts.isNewExpression(n)) return () => call(n, f);
+    return undefined;
   };
   /** A class's instances, by a key of its own. */
   const instanceKeys = new Map<Node, Key>();
@@ -1382,7 +1562,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     }
     return k;
   };
-  const store = (receiverExpr: Node, key: string | null, tokens: Set<number>, f: File, at: Node,
+  const store = (receiverExpr: Node, key: string | null, tokens: FlowValues, f: File, at: Node,
       stored: (() => number) | null): void => {
     const receiver = value(receiverExpr, f);
     const ref = recording && stored !== null ? stored() : null;
@@ -1393,7 +1573,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         const c = componentOfToken(t);
         let s = incomingKeys.get(c);
         if (!s) incomingKeys.set(c, s = new Set());
-        if (!s.has(key)) { s.add(key); changed = true; }
+        s.add(key);
         // A field of a value reached read-only from a crossing in at a
         // read-only type is a read-only position.
         const ro = t >= INCOMING_RO && !receiver.has(INCOMING + c);
@@ -1405,6 +1585,10 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       }
     }
   };
+  // Native calls read transitive storage only for a fresh result that can
+  // hold references. Keep those reads and the one-hop reads as growing sets.
+  type NativeFlow = { passed: FlowTokens; given: FlowTokens; all: FlowTokens; reached: FlowTokens; elements: FlowTokens };
+  const nativeFlows = new Map<Node, NativeFlow>();
   const call = (n: Node, f: File): void => {
     if (!(ts.isCallExpression(n) || ts.isNewExpression(n))) return;
     const args = n.arguments ?? [];
@@ -1430,25 +1614,30 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     // are its prototype's, not what it holds.
     const otherMember = libraryMemberCalls.get(n);
     const libraryMember = arrayMemberCalls.has(n) || (otherMember !== undefined && receiver !== null &&
-      incomingOf(receiver).length === 0 && sitesOf(receiver).every((t) => !anyKey.has(t) && !(keys.get(t)?.has(otherMember) ?? false)));
+      incomingOf(receiver).length === 0 && sitesOf(receiver).every((t) => !mayHoldKey(t, otherMember)));
     let codeTargets = 0;
+    let constructed: { index: number; node: Node } | undefined;
     for (const t of libraryMember ? [] : sitesOf(tokens)) {
       const s = sites[t];
       if (!s || !(functionLike(s.node) || classLike(s.node))) continue;
       codeTargets++;
       if (ts.isNewExpression(n) && classLike(s.node)) {
         const i = site(n, f, "instance");
-        classOfInstance.set(i, s.node);
-        addAll(setOf(n), [i]);
+        constructed = { index: i, node: s.node };
+        addAll(storageOf(n), [i]);
         if (event) event.instance = i;
         for (let c: Node | undefined = s.node; c; c = baseOf(c, f)) {
-          addAll(setOf(instancesKey(c)), [i]);
+          addAll(storageOf(instancesKey(c)), [i]);
           include(instancesKey(c), { site: i });
           const ctor = codeOf.get(constructorOf(c));
-          if (ctor) addAll(setOf(ctor.receiver), [i]);
+          if (ctor) addAll(storageOf(ctor.receiver), [i]);
           target(callCode(c, args, f, n, null));
         }
       } else target(callCode(s.node, args, f, n, receiver));
+    }
+    if (constructed && classOfInstance.get(constructed.index) !== constructed.node) {
+      classOfInstance.set(constructed.index, constructed.node);
+      worklist.grow(`instance:${constructed.index}`);
     }
     const outside = libraryMember ? [] : incomingOf(tokens);
     if (outside.length > 0) {
@@ -1457,11 +1646,12 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         args.forEach((a, i) => cross(f, a, c, "out", { argument: { call: span(f, n), index: i } },
           readOnly(types[i], f), ts.isSpreadElement(a) ? reads(value(a.expression, f)) : value(a, f), a,
           event ? (ts.isSpreadElement(a) ? synthetic(a, f, [{ read: argRef(a) }]) : argRef(a)) : null));
-        addAll(setOf(n), [INCOMING + c]);
+        addAll(storageOf(n), [INCOMING + c]);
         cross(f, n, c, "in", { callResult: { call: span(f, n) } }, false, new Set([INCOMING + c]), null, event ? event.result : null);
       }
     }
     if (codeTargets === 0 && outside.length === 0) {
+      if (!libraryMember && worklist.defer()) return;
       // A native: its result a site of its own, or its receiver, an argument
       // or what they hold; its receiver may hold its arguments; a closure it
       // is given may be called with any of these.
@@ -1475,13 +1665,21 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       // Its elements, where TypeScript types it an array of primitives,
       // hold no reference.
       const primitiveElements = fresh && primitiveElementCalls.has(n);
-      const passed = new Set<number>();
-      for (const a of args) for (const t of ts.isSpreadElement(a) ? reads(value(a.expression, f)) : value(a, f)) passed.add(t);
-      const given = new Set<number>([...(receiver ?? []), ...passed]);
-      const contents = reads(given);
-      const all = new Set([result, ...given, ...contents]);
-      // Only a fresh result that can hold references uses transitive reach.
-      const elements = fresh && !primitiveElements ? new Set([...passed, ...reachable(contents)]) : null;
+      let flow = nativeFlows.get(n);
+      if (!flow) nativeFlows.set(n, flow = { passed: new FlowTokens(), given: new FlowTokens(), all: new FlowTokens(),
+        reached: new FlowTokens(), elements: new FlowTokens() });
+      const { passed, given, all, reached, elements } = flow;
+      for (const a of args) {
+        if (ts.isSpreadElement(a)) readInto(passed, value(a.expression, f));
+        else addAll(passed, value(a, f));
+      }
+      if (receiver) addAll(given, receiver);
+      given.copyFrom(passed);
+      all.add(result);
+      all.copyFrom(given);
+      readInto(all, given);
+      const holdsReferences = fresh && !primitiveElements;
+      if (holdsReferences) readInto(reached, given);
       const passedRef = event ? synthetic(n, f, event.args.map((a): SourceAst => a.spread ? { read: a.value } : { value: a.value })) : -1;
       const givenRef = event ? synthetic(n, f, [...(event.receiver !== null ? [{ value: event.receiver }] : []), { value: passedRef }]) : -1;
       const allFrom: SourceAst[] = [{ site: result }, { value: givenRef }, { read: givenRef }];
@@ -1494,8 +1692,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       }));
       for (const code of callbacks) {
         const returned = setOf(code.result);
-        for (const t of returned) all.add(t);
-        if (elements !== null) for (const t of reachable(returned)) elements.add(t);
+        all.copyFrom(returned);
+        if (holdsReferences) reached.copyFrom(returned);
         if (event) allFrom.push({ value: refOf(code.result) });
       }
       for (const code of callbacks) for (const p of code.params) bindParameter(p, all, code.file);
@@ -1508,10 +1706,15 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       }
       // Else its result may be any of these, and its own storage hold them.
       if (fresh) {
-        addAll(setOf(n), [result]);
-        if (elements !== null) addAll(contentOf(result), elements);
+        addAll(storageOf(n), [result]);
+        if (holdsReferences) {
+          readInto(reached, reached);
+          elements.copyFrom(passed);
+          elements.copyFrom(reached);
+          addAll(contentOf(result), elements);
+        }
       } else {
-        addAll(setOf(n), all);
+        addAll(storageOf(n), all);
         addAll(contentOf(result), all);
       }
       if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom), member: libraryMember,
@@ -1543,7 +1746,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     visit(f.source);
   };
 
-  // The rounds: flow, members' seeds, marks, until nothing grows.
+  // Bindings captured by another body can propagate marks and crossings.
   const holdsOf = (decl: Node): number | null => {
     const holder = holderOf(decl);
     const f = fileAt(decl);
@@ -1566,103 +1769,112 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     visit(f.source);
   }
   for (let c = 0; c < components.length; c++) memberOf(c);
-  /** The bindings a module or a closure holds: a module's, and one a code
-   * other than its own reads. */
-  const heldBindings = (): { decl: Node; heldBy: number }[] => [...bindingDecls].flatMap((n) => {
-    const holder = holderOf(n);
-    const heldBy = holdsOf(n);
-    return holder && heldBy !== null && (ts.isSourceFile(holder) || captured.has(n)) ? [{ decl: n, heldBy }] : [];
-  });
-  /** One round of the flow: members' seeds, exported bindings, the code. */
-  const flowRound = (): void => {
-    roundValues = new Map();
-    // Members enter from outside: their parameters and receivers, crossing in.
-    for (const [c, ms] of members) for (const m of ms) {
-      const code = codeOf.get(m);
-      if (!code) continue;
-      code.params.forEach((p, i) => {
-        // A parameter of a read-only type is reached read-only throughout.
-        const ro = readOnly(typeOfParameter(p), code.file);
-        const token = (ro ? INCOMING_RO : INCOMING) + c;
-        bindParameter(p, new Set([token]), code.file);
-        cross(code.file, p, c, "in", { parameter: { code: span(code.file, code.node), index: i } },
-          ro, new Set([token]), null, recording ? refNode(p) : null);
-      });
-      if (!ts.isArrowFunction(m)) addAll(setOf(code.receiver), [INCOMING + c]);
-      cross(code.file, code.node, c, "out", { result: { code: span(code.file, code.node) } },
-        readOnly(resultType(code.node), code.file), setOf(code.result), null, recording ? refOf(code.result) : null);
-    }
-    // Exported bindings cross out of their module, and of the package where
-    // the module is an entry module.
-    for (const f of files) for (const s of f.source.statements) {
-      if (!ts.isVariableStatement(s) || !exported(s)) continue;
-      for (const d of s.declarationList.declarations) for (const id of boundNames(d.name)) {
-        if (!ts.isIdentifier(id)) continue;
-        const outs = [f.module, ...(packageIndex !== null && entryModules.includes(f.absolute) ? [packageIndex] : [])];
+  // Entrypoints and escaped closures can be called from outside.
+  const seedMember = (c: number, m: Node): void => {
+    const code = codeOf.get(m);
+    if (!code) return;
+    code.params.forEach((p, i) => {
+      const ro = readOnly(typeOfParameter(p), code.file);
+      const token = (ro ? INCOMING_RO : INCOMING) + c;
+      bindParameter(p, new Set([token]), code.file);
+      cross(code.file, p, c, "in", { parameter: { code: span(code.file, code.node), index: i } },
+        ro, new Set([token]), null, recording ? refNode(p) : null);
+    });
+    if (!ts.isArrowFunction(m)) addAll(storageOf(code.receiver), [INCOMING + c]);
+    cross(code.file, code.node, c, "out", { result: { code: span(code.file, code.node) } },
+      readOnly(resultType(code.node), code.file), setOf(code.result), null, recording ? refOf(code.result) : null);
+  };
+  for (const [c, ms] of members) for (const m of ms) worklist.add(() => seedMember(c, m));
+
+  // Exported bindings cross out of their module and any package it enters.
+  const exports: FlowRule[] = [];
+  for (const f of files) for (const s of f.source.statements) {
+    if (!ts.isVariableStatement(s) || !exported(s)) continue;
+    for (const d of s.declarationList.declarations) for (const id of boundNames(d.name)) {
+      if (!ts.isIdentifier(id)) continue;
+      const outs = [f.module, ...(packageIndex !== null && entryModules.includes(f.absolute) ? [packageIndex] : [])];
+      const emit = (): void => {
         const ref = recording ? refNode(id) : null;
         if (ref !== null) events.exports.push({ module: f.location, at: span(f, id), name: id.text, components: outs, value: ref,
           type: shapeOf(d.type, f) });
         for (const c of outs) cross(f, id, c, "out", { binding: { name: id.text } }, readOnly(d.type, f), setOf(id), id, ref);
-      }
+      };
+      exports.push(emit);
+      worklist.add(emit);
     }
-    for (const f of files) walk(f);
-    // A binding held outside a component crosses out of it.
-    for (const { decl, heldBy } of heldBindings()) {
-      const f = fileAt(decl);
-      if (!f || !ts.isIdentifier(decl)) continue;
+  }
+
+  // Record the transfer rules in source order, for the final evidence pass.
+  const statements: FlowRule[] = [];
+  for (const f of files) {
+    const compile = (n: Node): void => {
+      const rule = compileTransfer(n, f);
+      if (rule !== undefined) {
+        statements.push(rule);
+        worklist.add(rule);
+      }
+      n.forEachChild(compile);
+    };
+    compile(f.source);
+  }
+
+  // A module or a closure holds its own bindings and the bindings it captures.
+  const holds: FlowRule[] = [];
+  onBinding = (decl) => {
+    const holder = holderOf(decl);
+    const heldBy = holdsOf(decl);
+    const f = fileAt(decl);
+    if (!f || !holder || heldBy === null || !ts.isIdentifier(decl) || !(ts.isSourceFile(holder) || captured.has(decl))) return;
+    let observed = 0;
+    const hold = (): void => {
       const ref = recording ? refNode(decl) : null;
       if (ref !== null) events.holds.push({ module: f.location, at: span(f, decl), component: heldBy, name: decl.text, value: ref });
-      for (const t of sitesOf(setOf(decl))) {
+      const values = setOf(decl);
+      for (const t of values.since(recording ? 0 : observed)) {
         const s = sites[t];
         if (!s) continue;
         for (const c of enclosing(s.component))
           if (!within(heldBy, c)) cross(f, decl, c, "out", { binding: { name: decl.text } }, false, new Set([t]), decl, ref);
+          else if (!recording) raise(t, c, "internal");
       }
-    }
-  };
-  for (let round = 0; changed && round < 10000; round++) {
-    changed = false;
-    flowRound();
-    // Marks: crossings out raise what they reach; holds by bindings and
-    // storage raise what they hold; a site's mark for a component is at
-    // least its mark for every component enclosing it.
-    const reach = (tokens: Iterable<number>, c: number, m: Mark): void => {
-      const work = sitesOf(tokens);
-      for (let t = work.pop(); t !== undefined; t = work.pop()) {
-        const s = sites[t];
-        if (!s || !within(s.component, c)) continue;
-        if (raise(t, c, m)) work.push(...sitesOf(contentsNow(t) ?? []));
-      }
+      observed = values.size;
     };
-    for (const x of crossings.values()) if (x.direction === "out") reach(x.tokens, x.component, x.readOnly ? "exposed" : "released");
-    for (const { decl, heldBy } of heldBindings())
-      for (const t of sitesOf(setOf(decl))) {
-        const s = sites[t];
-        if (s) for (const c of enclosing(s.component)) if (within(heldBy, c)) raise(t, c, "internal");
-      }
-    for (let t = 0; t < sites.length; t++) {
-      const s = sites[t];
-      if (!s) continue;
-      const chain = enclosing(s.component);
-      chain.forEach((c, i) => {
-        for (const d of chain.slice(0, i)) raise(t, d, markOf(t, c));
-        const m = markOf(t, c);
-        if (m === "local") return;
-        for (const u of sitesOf(contentsNow(t) ?? [])) {
+    holds.push(hold);
+    if (!recording) worklist.add(hold);
+  };
+
+  // A mark flows to inner components and to storage the site can reach.
+  // Exposing or releasing a closure also makes its code a component member.
+  onSite = (t, s) => {
+    const chain = enclosing(s.component);
+    for (const [i, c] of chain.entries()) {
+      let propagated: Mark = "local";
+      let observed = 0;
+      worklist.add(() => {
+        const mark = markOf(t, c);
+        if (mark === "local") return;
+        if (mark !== propagated) {
+          for (const d of chain.slice(0, i)) raise(t, d, mark);
+          observed = 0;
+          propagated = mark;
+        }
+        const contents = contentsNow(t);
+        for (const u of contents.since(observed)) {
           const v = sites[u];
-          if (v && within(v.component, c)) raise(u, c, m);
+          if (v && within(v.component, c)) raise(u, c, mark);
+        }
+        observed = contents.size;
+        if (functionLike(s.node) && rank(mark) >= rank("exposed") && !memberOf(c).has(s.node)) {
+          memberOf(c).add(s.node);
+          worklist.add(() => seedMember(c, s.node));
         }
       });
     }
-    // Escapes: a closure of a component's code reached by a crossing out of it.
-    for (const [t, s] of sites.entries()) {
-      if (!functionLike(s.node)) continue;
-      for (const c of enclosing(s.component)) if (rank(markOf(t, c)) >= rank("exposed") && !memberOf(c).has(s.node)) {
-        memberOf(c).add(s.node);
-        changed = true;
-      }
-    }
-  }
+  };
+  sites.forEach((s, t) => onSite?.(t, s));
+
+  worklist.solve(() => ruleValues.clear());
+  onSite = undefined;
   // A record of a site exposed for a component may have every key a write of
   // that component's code adds to an incoming value.
   for (const [c, written] of incomingKeys)
@@ -1671,8 +1883,11 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // The record: one more round, the flow solved, stating each set's
   // inclusions and the events.
   recording = true;
-  changed = false;
-  flowRound();
+  ruleValues.clear();
+  for (const [c, ms] of members) for (const m of ms) seedMember(c, m);
+  for (const emit of exports) emit();
+  for (const rule of statements) rule();
+  for (const hold of holds) hold();
   for (const c of codes) for (const p of c.params) if (ts.isParameterDeclaration(p)) refNode(p);
   for (const f of files) collectSuspensions(f);
 
@@ -1697,7 +1912,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const thrownRef = files.length > 0 ? refOf(thrownKey) : null;
   // Each value's tokens: a set's own; a computed one's, what it includes,
   // which are sets and computed values stated before it.
-  const tokensOf: Set<number>[] = rows.map((r) => r.key !== null ? setOf(r.key) : new Set());
+  const tokensOf: FlowValues[] = rows.map((r) => r.key !== null ? setOf(r.key) : new Set());
   const evaluate = (x: SourceAst): Iterable<number> =>
     "site" in x ? [x.site] : "incoming" in x ? [INCOMING + x.incoming] : "incomingReadOnly" in x ? [INCOMING_RO + x.incomingReadOnly]
       : "value" in x ? tokensOf[x.value] ?? []
@@ -1729,7 +1944,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         escaped.add(key);
         escapes.push({ module: s.file.location, code: span(s.file, s.node), component: x.component, via: x.via, at: x.at });
       }
-      work.push(...sitesOf(contentsNow(t) ?? []));
+      work.push(...sitesOf(contentsNow(t)));
     }
   }
   const clients = files.flatMap((f) => f.source.statements.flatMap((s) => {
