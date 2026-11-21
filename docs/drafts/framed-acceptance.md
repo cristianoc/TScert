@@ -2674,6 +2674,21 @@ contract.
   functions it called allocated; and the values it passes reach no
   storage its own steps allocated. A later call is, in the calculus, a
   call through storage the native kept, which the stores exclude.
+- **(b′) Exits.** A standard native's result, the values it throws, the
+  values it passes to its callbacks and the values it stores into storage
+  it did not allocate reach only what its receiver and arguments reach and
+  what its run allocated; its result and the values it throws may also be
+  the realm's own storage. Approved by the owner on 2026-11-21. In the
+  calculus (`NativeRowB'`, `ReadOnlyLocalReach.lean`) a value is followed
+  through the locations the native's own steps allocated (`ReachesVia`),
+  and `own` is a set holding the realm's own storage, read by the theorems
+  at the locations of outside storage (`NativeRowB'.mono`). A callback's
+  allocation and the realm's storage hold what their own code stored
+  there, so a reach through them holds of no standard native:
+  `[1, 2].reduce(() => ({ p: Object.getPrototypeOf([]) }), 0)` passes the
+  callback's object, which reaches `Array.prototype`, and
+  `Object.getPrototypeOf(xs)` returns `Array.prototype`, which reaches
+  whatever a client stored in a field it added.
 
 **The natives outside (b).** Every native's contract states, clause by
 clause, whether the native meets (b), in fields checked when the contracts
