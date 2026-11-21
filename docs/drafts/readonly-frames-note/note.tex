@@ -683,7 +683,7 @@ with $\mathit{Cap}$ the sites of every code's capture slots. At a call
 node $c$ with callee set $S_f$, receiver set $S_r$ and argument sets
 $\bar S$, the \emph{segment's codes} $\mathrm{seg}(c)$ are the least set of
 codes holding each code whose token $S_f$ holds, closed under the same at
-every call of its codes and at the callbacks of its calls of natives;
+every call of its codes;
 the call's \emph{reach} is
 $L(c)=\overline{S_f\cup S_r\cup\bigcup\bar S\cup\mathit{Cap}(\mathrm{seg}(c))}$;
 its \emph{depth charges} $W_c$ are $\mathrm{Ch}(\mathrm{seg}(c))$ at
@@ -915,10 +915,8 @@ library (by the declaration's origin; a declared import of a module is
 outside code), or through one: a member of such a value, directly or
 through a receiver whose type's prototype is that slot's contract; and
 whose contract states it within row (b) of the natives
-(Section~\ref{sec:accept-trust}); any other native is read as outside
-code. A closure of $\cC$ that a call of a
-native is passed has a code with no framed call and an ordinary
-verdict.
+(Section~\ref{sec:accept-trust}) and has no parameter of a function
+type; any other native is read as outside code.
 Every \code{@clients} row of
 an exported type states a change per class only, and every row keeps
 every part, so $\Theta_\cC$ is $\keep$ at every part. A component that
@@ -995,9 +993,8 @@ naming no signature whose set holds a token, or some
 code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. At
 a call of a native, a fact is kept at the normal exit where the ordinary
 pass keeps it at the native's footprint or the frame's check keeps it,
-and at the exceptional exit the same only where the native is passed no
-function, none otherwise. A native's own steps are those of a frame of
-the realm's code that $\cC$'s frame called at a call of a native; a
+and at the exceptional exit the same, by row (a). A native's own steps
+are those of a frame of the realm's code that $\cC$'s frame called at a call of a native; a
 native at any other call takes the client's steps. A
 call of a module function by its name is checked by that function's
 specification; a framed call of a closure of $\cC$ is bounded by the
@@ -1086,7 +1083,9 @@ through the function arguments it is given, only during its run; and
 (b$'$) its result, the values it throws, the values it passes to its
 callbacks and the values it stores into storage it did not allocate reach
 only what its receiver and arguments reach and what its run allocated; its
-result and the values it throws may also be the realm's own storage. Each
+result and the values it throws may also be the realm's own storage.
+(b$'$) is read of the natives taking no function argument, the natives
+whose steps are the component's (below). Each
 native's contract states, clause by clause, whether the native meets
 (b); one outside a clause is read as outside code, a stated limit: one
 that calls a function argument after its run
@@ -1097,10 +1096,15 @@ its argument) or passes storage it allocates to a function argument
 reviver). The value of a native's slot, and each member read
 through it, is the realm's code.
 A standard native's steps are the component's when the component's code
-calls it at a call of a native (its callee read through a native's slot),
-bounded by its contract (rows (a) and (b)); at any other call they are the
-client's, a native a client passes as a function value included
-\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the two rows on standard natives, (b$'$) and this sentence, approved on 2026-11-21, (b) and (b$'$) stated of a native's run as \lean{NativeRowB} and \lean{NativeRowB'}; the owner of a native's frame, read on the evaluation path (to be proved)}.
+calls it at a call of a native (its callee read through a native's slot)
+and the native takes no function argument (no parameter of its contract
+has a function type), bounded by its contract (rows (a), (b) and (b$'$));
+at any other call they are the client's, a native a client passes as a
+function value included. A native taking a function argument
+(\code{map}, \code{forEach}, \code{sort} with a comparator) is read as
+outside code: its call gives its operands out, and its steps and its
+callbacks' are outside, as at any framed call
+\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the two rows on standard natives, (b$'$) and this sentence, approved on 2026-11-21, the natives taking a function argument read as outside code by the owner on 2026-11-21, (b) and (b$'$) stated of a native's run as \lean{NativeRowB} and \lean{NativeRowB'}; the owner of a native's frame, read on the evaluation path (to be proved)}.
 \item[The scope] A program the claim is about starts from any
 configuration, after the initialization of (A2), that fits the flow, is
 an entry (outside code lowered, closed values, the call discipline) and
