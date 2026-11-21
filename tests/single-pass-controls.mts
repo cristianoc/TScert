@@ -724,10 +724,14 @@ control("read-only frame (O): library calls on values from outside", async (): P
 
 /** A module's frames of a single-file case. */
 const moduleFrames = (p: Pass): readonly string[] => moduleOutcome(p).frames;
-/** The frame of a case's fragment at the call at offset `at`. */
-const frameAt = (ast: Ast, at: number): Ast["components"]["frames"][number] => {
+/** Copy the entries before forging a single call's frame. */
+const frameAt = (ast: Ast, at: number): Ast["components"]["frameEntries"][number] => {
   const call = ast.components.calls.findIndex((c) => c.at[0] === at);
-  return must(ast.components.frames.find((f) => f.call === call), `a frame at ${at}`);
+  const frame = must(ast.components.frames.find((f) => f.call === call), `a frame at ${at}`);
+  const original = must(ast.components.frameEntries[frame.entries], `frame entries at ${at}`);
+  const copy = original.map((entry) => ({ ...entry }));
+  frame.entries = ast.components.frameEntries.push(copy) - 1;
+  return copy;
 };
 
 control("forged fragment: a frame's false protection bit, omitted part, and one bad member's frame", async (): Promise<void> => {
@@ -739,7 +743,7 @@ control("forged fragment: a frame's false protection bit, omitted part, and one 
   assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the fields of the site \\S+ \\d+-\\d+: in the region, within keep$`).test(f)), JSON.stringify(held));
   assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the spines of the value .*: in the region within keep, or outside it within the call's effect$`).test(f)), JSON.stringify(held));
   // The array passed in writable read as protected: refused at the call.
-  for (const e of frameAt(cursor.ast, visit).entries) e.protected = true;
+  for (const e of frameAt(cursor.ast, visit)) e.protected = true;
   const falseBit = moduleFrames(pass(forged(cursor.artifacts, "forged-frame-protected", cursor.ast)));
   assert.ok(falseBit.some((f) => new RegExp(`^refused at \\S+ ${visit}-\\d+: .*the frame reads the spines of the value .* as protected`).test(f)), JSON.stringify(falseBit));
   // A handle passed in read-only: its region may be outside storage; the
@@ -749,15 +753,27 @@ control("forged fragment: a frame's false protection bit, omitted part, and one 
   // The handle's field `widths` is a region of its own, at its field path.
   const walked = moduleFrames(pass(fragmentOf(walker.artifacts)));
   assert.ok(walked.some((f) => new RegExp(`^at \\S+ ${call}-\\d+: the spines of the value at \\S+ \\d+-\\d+, at widths: in the region, within keep$`).test(f)), JSON.stringify(walked));
-  for (const e of frameAt(walker.ast, call).entries) e.parts = e.parts.filter((t) => t !== null);
+  for (const e of frameAt(walker.ast, call)) {
+    const parts = must(walker.ast.components.frameParts[e.parts], "a frame's parts");
+    e.parts = walker.ast.components.frameParts.push(parts.filter((t) => t !== null)) - 1;
+  }
   const omitted = moduleFrames(pass(forged(walker.artifacts, "forged-frame-part", walker.ast)));
   assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: the frame omits the possible part the fields of storage of code outside the component`).test(f)), JSON.stringify(omitted));
   assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: .*the frame omits the possible part [^;]* of the spines of the value at \\S+ \\d+-\\d+, at widths`).test(f)), JSON.stringify(omitted));
+  const badParts = structuredClone(walker.ast);
+  must(frameAt(badParts, call)[0], "a frame entry").parts = badParts.components.frameParts.length;
+  refusedFile(pass(forged(walker.artifacts, "forged-frame-parts-index", badParts)), "a dangling frame part list",
+    /a frame's part list is out of range/);
+  const badEntries = structuredClone(walker.ast);
+  const frame = must(badEntries.components.frames[0], "a frame");
+  frame.entries = badEntries.components.frameEntries.length;
+  refusedFile(pass(forged(walker.artifacts, "forged-frame-entries-index", badEntries)), "a dangling frame entry list",
+    /a frame's entry list is out of range/);
   // Two members: one's frame forged, refused at its call; the other's held.
   const two = familyCase("readonly-frame-two-walkers");
   const inWalk = two.at("visit();\n    sum");
   const inFirst = two.at("visit();\n  return");
-  for (const e of frameAt(two.ast, inFirst).entries) e.protected = true;
+  for (const e of frameAt(two.ast, inFirst)) e.protected = true;
   const mixed = moduleFrames(pass(forged(two.artifacts, "forged-frame-member", two.ast)));
   assert.ok(mixed.some((f) => new RegExp(`^refused at \\S+ ${inFirst}-\\d+: `).test(f)), JSON.stringify(mixed));
   assert.ok(!mixed.some((f) => new RegExp(`^refused at \\S+ ${inWalk}-`).test(f)), JSON.stringify(mixed));

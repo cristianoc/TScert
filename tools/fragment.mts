@@ -660,11 +660,13 @@ export interface CrossingAst {
  *   each part it lists (`keep` at every other): the fields at a key
  *   (`key` null every key), the spines or the cells of a site (`site` null
  *   storage of code outside the component).
- * - `frames`: at a call of code outside a component, the proposed frame:
+ * - `frames`: at a call of code outside a component, the proposed frame's
+ *   index in `frameEntries`. Each template lists the regions of storage:
  *   for each region of storage a value or a site may be (`root`), of kind
  *   `kind` at `key` (null every key), the parts its locations may have by
  *   site (null storage of code outside the component) and whether its
- *   released and outside locations are protected. */
+ *   released and outside locations are protected. Each region names its
+ *   possible parts by index in `frameParts`. */
 export interface ComponentsAst {
   components: ComponentAst[];
   codes: CodeAst[];
@@ -684,7 +686,9 @@ export interface ComponentsAst {
   clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
   guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];
   protocols: { component: number; entries: ProtocolEntryAst[] }[];
-  frames: { call: number; entries: FrameEntryAst[] }[];
+  frameParts: (number | null)[][];
+  frameEntries: FrameEntryAst[][];
+  frames: { call: number; entries: number }[];
 }
 
 /** An entry of a proposed frame at a call: a region and its possible parts.
@@ -695,7 +699,7 @@ export interface FrameEntryAst {
   root: { value: number; fields: string[] } | { site: number };
   kind: "field" | "spine" | "cell";
   key: string | null;
-  parts: (number | null)[];
+  parts: number;
   protected: boolean;
 }
 
