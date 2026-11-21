@@ -2656,9 +2656,10 @@ module function of $`C`$ captures from outside its code (a native, an
 intrinsic object, an import, a module cell or constant) and the program
 state a client starts from. The framed plan reads each outside slot at the
 kind and the contract the ordinary pass reads it at, and adds only the set
-of sites its value may be; it reads a native's call by the native's stated
-footprint, charged to $`\Psi_C`$ at the parts of the call's receiver and
-actuals; and it states its claim over every initial configuration that
+of sites its value may be; it reads a call of a native at the native's
+stated footprint and by the frame's check, the native's own steps charged
+to $`C`$ at the parts its receiver and actuals reach, under two trust rows
+on standard natives the owner approved on 2026-11-21; and it states its claim over every initial configuration that
 fits the flow, is an entry and meets the outside contracts, a premise in
 place of a constructed initialization term. Base: `single-pass` at
 `0f2e13844`. Notation is that of the sections above. Each Lean name is
@@ -2695,7 +2696,8 @@ labelled as above: **proved** at the base, **to be proved**, or **trust**.
    allocated location, and the callee's semantic type gives that the heap
    from the call to its return is an action of $`\Phi`$ (proved:
    `callerFrame_post`). Each native states its footprint
-   ([natives](../FOOTPRINTS.md#natives)), its callback's included.
+   ([natives](../FOOTPRINTS.md#natives)), its callback's included, at its
+   normal return.
 3. **The module's unfoldings** (`PassUnitRealize.lean`). A module's
    functions are realized as their closures unfolded $`n`$ times
    (`approxEnv`, `approx`): a linked slot holds the named function's
@@ -2747,6 +2749,25 @@ A third native model, the read-only handles' family checks
 (`ComponentChecks.lean`, `Call.native` and `nativeParts`), is read by no
 acceptance; it is outside this change, with its row in
 [WORK.md](../../WORK.md#status).
+### Two trust rows on standard natives
+
+Approved by the owner on 2026-11-21, rows of the
+[trust surface](../DESIGN.md#trust-surface) once piece 2 lands, stated of
+every *standard native*: a function the realm defines whose contract is an
+`ArrayProto` member, an intrinsic's signature, a stated library type's
+member or a host contract.
+
+- **(a) Throws.** A standard native's writes before it throws are within
+  its normal-return footprint $`\Phi_c`$: the heap from its call to its
+  throw, as to its return, is an action of $`\Phi_c`$.
+- **(b) Retention.** A standard native stores its arguments only into what
+  its receiver and arguments reach, or into its result, and calls out only
+  through the function arguments it is given. Each store of its run is so,
+  not only its net change.
+
+With (a) a native call's exceptional edge reads $`\Phi_c`$, not
+$`\top`$; with (b) a native's run reaches only its operands, so its call
+gives nothing to $`O`$ but through a function argument of outside code.
 
 ### The algorithm
 
@@ -2757,18 +2778,19 @@ acceptance; it is outside this change, with its row in
    lays them out (`ModuleLayout`'s `code`, the front's `kinds`). The
    framed plan reads them from the plan; no slot is decided by its name.
 2. **The sites of a slot.** The flow gives each capture slot of a module
-   function's code at its entry the set of sites its value may be:
-   - a linked slot naming the function $`g`$, and an import of kind
+   function's code at its entry the set of sites its value may be, by the
+   slot's kind (`OutsideKind`) or link:
+   - a linked slot naming the function $`g`$, and a slot of kind
      `established` whose entry is a module function $`g`$ of $`C`$ (its
      value is $`g`$'s module value, `HoldsModuleValue`): the token of
      $`g`$'s code, the slot naming $`g`$'s signature;
-   - a module cell: the cell's site, the allocation site of its binding in
-     its module's `:init` code, of kind cell and key `value`; a module
-     constant: the set the `:init` code's flow gives its binding's slot at
-     the finish node;
-   - any other slot (a native, an intrinsic object, an import of another
-     component or read at its declaration, a host value): $`\{\circ\}`$,
-     storage of code outside $`C`$, naming no signature.
+   - a slot of kind `moduleCell`, a `const`'s or a `let`'s binding: the
+     cell, captured as that cell, its site the allocation site of the
+     binding in its module's `:init` code, of kind cell and key `value`;
+   - a slot of kind `established` of another component, `declared`,
+     `standIn` or `host` (a native, an intrinsic object, a declared
+     global such as `Infinity`): $`\{\circ\}`$, storage of code outside
+     $`C`$, naming no signature.
 3. **The codes** $`M_C`$: the module functions' codes, the closures they
    create, and each module's `:init` request code, a code of $`C`$ entered
    once at context $`0`$, its import slots at the sets of step 2. No
@@ -2776,117 +2798,147 @@ acceptance; it is outside this change, with its row in
    by no charge: they run before any entry and no closure of them exists,
    so no step of a member's call or of a segment runs them, and
    $`\Psi_C`$ keeps the cell of a `const`.
-4. **The native call nodes.** A call node of a code of $`M_C`$ is a
-   *native call* when the code's ordinary request types its callee at a
-   native contract: a member signature of `ArrayProto`, of another
-   prototype's contract or of a stated library type, an intrinsic's
-   signature, or a host value's contract (`nativeAt`, read from the
-   request as `callEffectAt` reads a callee's effect). Its footprint
-   $`\Phi_c`$ is the native's stated footprint read at the caller's slots,
-   the $`\Phi`$ `callerFrame` reads there. Every node sharing a native
-   call's continuation and handler is a native call (`nativeKeysB`, a
-   check): a frame records its node by its key alone.
-5. **The flow** is solved and checked as [the binding checks](#the-binding-checks) state (`FFlow.check`, `marksB`). A
-   native call's callee set is $`\{\circ\}`$, so the flow reads it by the
-   existing rule for a call of outside code: its receiver and actuals
-   enter $`O`$, its result enters from $`O`$, and a closure of $`C`$ it is
-   passed is given out, its entry open.
+4. **A call of a native.** A call node of a code of $`M_C`$ calls a native
+   where its callee's value is read from an outside slot of kind `host`
+   or `declared`, or through one: a member of such a value, read directly
+   or through a receiver whose type's prototype is that slot's contract
+   (an array's prototype is the value of `[[Array.prototype]]`, the array
+   invariant). The code's request decides it from the callee's expression
+   (`nativeAt`), and `nativeAt_sound` (to be proved) states the property:
+   at a reached state in a frame of the code at the node, under
+   $`\mathrm{SlotsMet}`$ and the array invariant, the callee is a closure
+   of the realm's code. Its footprint $`\Phi_c`$ is the native's stated
+   footprint read at the caller's slots, the $`\Phi`$ `callerFrame` reads
+   there. Every node sharing a native call's continuation and handler calls
+   a native (`nativeKeysB`, a check): a frame records its node by its key
+   alone.
+5. **The flow at a call of a native.** With $`L_n(c)`$ the closure of the
+   receiver's and the actuals' sets, $`\overline{S_r\cup\bigcup\bar S}`$
+   (the callee's set left out, by (b)): its result is in
+   $`L_n(c)`$ or the sites of its node's key; every site of $`L_n(c)`$
+   stores $`L_n(c)`$ and those sites; every code whose token $`L_n(c)`$
+   holds is entered at $`L_n(c)`$ (a callback); and where $`L_n(c)`$ holds
+   $`\circ`$, a function argument of outside code, $`L_n(c)`$ enters
+   $`O`$ (`Fits.native`, a rule of the flow; `FFlow.check` decides it as
+   any rule). A native allocates at its node's key, the sites of $`C`$'s
+   frame that called it (`stepSite` reading that frame, Read-only frames'
+   "Marks": "a native call's included").
 6. **The charges.** $`\mathrm{Ch}(M)`$, for a set $`M`$ of codes of
    $`M_C`$ other than the `:init` codes, is the charges of the writes of the
-   codes of $`M`$ (`writesK`, `codeKinds`), and, at each native call $`c`$
-   of a code of $`M`$, the parts of $`\Phi_c`$ at the call's sites: each
-   part $`(s,\kappa,k)`$ with $`s`$ a site of the set of the slot a
-   region of $`\Phi_c`$ is read at, $`\kappa`$ and $`k`$ the kinds and keys
-   of the region, at the region's change; a region at no slot at every site
-   (`nativeParts`). A field write stays charged at every site of its kind,
-   a native call at its sites alone. $`\Psi_C`$ and $`W_c`$ read
-   $`\mathrm{Ch}`$ as [charges](#charges) states; the protocol from charges
-   (`probeProtocol`) joins the native parts, which are at sites
+   codes of $`M`$ (`writesK`, `codeKinds`), and, at each call of a native
+   $`c`$ of a code of $`M`$, $`\mathsf{any}`$ at every part of a site of
+   $`L_n(c)`$ (`nativeReach`): by (b) a native's own steps change only
+   locations its operands reach. $`\Psi_C`$ and $`W_c`$ read
+   $`\mathrm{Ch}`$ as [charges](#charges) states; the protocol from
+   charges (`probeProtocol`) joins the native reach, which is at sites
    (`chargesProtocol`).
-7. **The other gates** stay as [restrictions](#restrictions) states them
+7. **The codes the charges come from** (Fable S4). $`\Psi_C`$'s native
+   reach, and whether a node calls a native, are read from each code's
+   ordinary request. A code of $`M_C`$ with a call of a native is read so
+   only where the unit holding it is accepted and on the verdict line's
+   `depends`, as a segment's codes are
+   ([a call of the component's own closure](#a-call-of-the-components-own-closure));
+   at any other code each of its calls of a native is charged
+   $`\mathsf{any}`$ at every part (`nativeTop`), a stated precision limit.
+8. **The other gates** stay as [restrictions](#restrictions) states them
    but three: the cycle of names, the audited realm values and the one
-   module (with the package's) are deleted.
+   module (with the package's) are deleted. One is added (Fable S3): a
+   closure of $`C`$ a native is passed, a token of $`C`$ in $`L_n(c)`$,
+   has a code with no framed node and an ordinary verdict (`callbackB`);
+   otherwise the plan is refused, located at the call. Reading a framed
+   closure at an arrow relative to the client obligation is milestone 5,
+   not built.
 
-**Per unit.** (B1) to (B5) of Read-only frames, (B1) reading a
-native call as a known call: a call node is framed when its callee set
-holds $`\circ`$ and it is no native call, or some code of
-$`\mathrm{seg}(c)`$ has such a node. A native call is walked as the
-ordinary pass walks it, at $`\Phi_c`$ (`callKept`, `frameKeeps`). The
-segment's codes $`\mathrm{seg}(c)`$ are closed under the calls of their
-members alone (`segCodes` with no `host`): a closure of $`C`$ a native
-calls back is given out (step 5), so its run is a member's call.
+**Per unit.** (B1) to (B5) of Read-only frames, (B1) reading a call of a
+native as a framed call: its run runs code outside $`C`$, the realm's. At
+a call of a native a fact is kept where the ordinary pass keeps it at
+$`\Phi_c`$ (`callKept`, `frameKeeps`) or where the frame's check keeps it
+at $`\Psi_c`$ and $`\Phi_c`$, on both exits (by (a), $`\Phi_c`$ bounds
+the exceptional one). The segment's codes $`\mathrm{seg}(c)`$ are closed
+under the calls of their members and under the callbacks of their calls
+of natives.
 
 **At P22.** `walk`'s slots are `[[Array.prototype]]` (kind `host`, type
 `ArrayProto`, sites $`\{\circ\}`$) and `%ElementAt%` (kind `host`, its
-intrinsic signature, sites $`\{\circ\}`$). Node 10, `xs[c.i]!`, is a
-native call of `%ElementAt%` with $`\Phi_c=\mathsf{keep}`$, not
-framed, walked at its footprint; its actuals `xs` (already in $`O`$) and
-the number `c.i` enter $`O`$, the cursor's site staying local. Node 13,
-`visit(c.i)`, is framed, and its cursor facts are kept (observed at the base, [runs](#runs)).
+intrinsic signature, sites $`\{\circ\}`$). Node 10, `xs[c.i]!`, calls the
+native `%ElementAt%`, $`\Phi_c=\mathsf{keep}`$, $`L_n(c)`$ the closure of
+`xs`'s set; node 13, `visit(c.i)`, is framed. The cursor's site is in no
+$`L_n`$, so the cursor facts are kept at both, as at the base (observed,
+[runs](#runs)). Pretext's typed-array reads (`%ByteAt%`, `%ByteLength%`,
+read by `line-break.ts`) and writes (`%ByteSet%`) are intrinsics of kind
+`host` at their [byte-read signatures](../SOURCE-CONTRACTS.md), their
+trust the row on the overlay's typed arrays: each a call of a native,
+`%ByteSet%` charged at its view's reach, no name of them read.
 
 ### Natives
 
-**A native run.** At a native call $`c`$ of a frame $`f`$ of $`C`$'s code,
-the *native run* is the execution from the call state to the first state
-at which $`f`$ is innermost again with its term returned (the segment of
-[definitions](#definitions), at a native call). A state is *in a native run
-of $`C`$* when the innermost frame of $`C`$'s code on its path is at a
-native call's key and is not the active frame (`InNativeRun`): every step
-the native takes, and every step of a function of outside code it calls
-back, is in the native run of the frame that called it.
+**A native run.** At a call of a native $`c`$ from a frame $`f`$ of
+$`C`$'s code, the *native run* is the execution from the call state to the
+first state at which $`f`$ is innermost again with its term returned or
+thrown. A native's closure is the realm's code: a closure tagged with the
+realm's component $`R`$, apart from $`C`$ and from the client's code (an
+initial configuration's `Entry` states it, below).
 
-- **Its bound** (`nativeRun_within`, to be proved): the heap from the call
-  state to the resumption is an action of $`\Phi_c`$ at $`\rho_f`$, by
-  `callerFrame_post` at the callee's type. The callee's value meets the
-  type the code's request gives it at the node, which the request's run
-  establishes from its entry contracts: a value of an outside slot by its
-  contract ([the initialization as a premise](#the-initialization-as-a-premise)),
-  a method read through a receiver by the receiver's type (an array's
-  prototype meeting `ArrayProto`, the array invariant); its callbacks meeting the types the contract reads them at (a closure of
-  $`C`$ by the verdict of the unit holding its code, which the verdict
-  line's `depends` names as for a segment's codes; a value of outside code
-  by the callback row of $`\Theta_C`$). The action changes only locations
-  of the native parts of $`c`$ (`nativeParts_sound`, by
-  `regionSites_sound` at the call's sets), within $`\mathrm{Ch}`$.
-- **Whose steps.** The client obligation reads the client's steps: a step
-  whose active frame is outside $`C`$ and which is in no native run of
-  $`C`$ (`ClientStep`; `FrameCore.Keeps` at client steps). A native run's
-  steps are $`C`$'s, bounded as a whole by $`\Phi_c`$: the client keeps
-  $`\Theta_C`$ only at its own steps, so a native $`C`$ calls on storage
-  the client reaches read-only, through an alias of the client's, is
-  charged to $`C`$ (`walker-pops-w` below) and never excluded from the
-  claim. A native the client calls is in no native run of $`C`$: its steps
-  are the client's.
-- **In a segment and in a member's call.** `RunSeq` gains a third inner
-  run beside an outside step and a member's call, a native run at the
-  run's depth (`RunSeq.native`), bounded by its native parts; `seg_run`,
-  `seg_bound`, `ClientFrame.cert_of_charges` and `segWithin_of_run` read
-  it, so a native run at the caller's depth is within $`W_c`$ and one
-  inside a member's call within $`\Psi_C`$.
-- **In the flow.** A native's frames are frames of outside code: the flow
-  gave its receiver and actuals to $`O`$ at the call (step 5), so the
-  existing Theorem "Flow" covers every state of a native run, and (S), (K)
-  and (O) hold at each step of $`C`$'s code inside it. The proof reads no
-  step of the native.
+- **Whose steps** (Fable S2). A step whose active frame is $`R`$'s, and
+  whose innermost frame outside $`R`$ on the path is $`C`$'s, is $`C`$'s:
+  the native's own step (`NativeStep`). A step whose active frame is the
+  client's code is a client step wherever it runs, inside a native's run
+  included, and keeps $`\Theta_C`$ (`ClientStep`; `FrameCore.Keeps` at
+  client steps). A native the client calls takes client steps. So
+  $`C`$'s charges hold the native's own writes and no callback's effect.
+- **The native's own steps** (`nativeStep_within`, to be proved): from a
+  reached state, each changes only locations of sites of $`L_n(c)`$ or of
+  its node's key, by (b) and no-forgery (`valRun_noForge`: what the
+  native's run holds it reached from its operands or its closure, its
+  closure's captures realm storage it does not write by (b)); so each is
+  `StepWithin` the native reach of $`c`$.
+- **In a segment and in a member's call.** `RunSeq` gains a native step
+  as one more kind of step at the run's depth (`RunSeq.native`), bounded
+  by the native reach; a client step inside a native run is an outside
+  step, a call of $`C`$ from it a member's call. `seg_run`, `seg_bound`,
+  `ClientFrame.cert_of_charges` and `segWithin_of_run` read it, so a
+  native's steps at the caller's depth are within $`W_c`$ and those inside
+  a member's call within $`\Psi_C`$.
+- **The frame's check at a call of a native.** `framed_transfer` at
+  $`\Phi_\star=\Phi_c`$ at both exits, by `callerFrame_post` at the
+  callee's type for a normal return and by (a) at a throw; the callee's
+  value meets that type by `nativeAt_sound` and its contract
+  (`SlotsMet`, the trust rows). Every other location changes within
+  $`\Phi_c`$ as for any framed call.
+- **In the flow.** A native's frames fit at $`L_n(c)`$ (`Fits.native`);
+  `fits_step` at a native's step reads (b) and no-forgery. (S), (K) and
+  (O) hold at each step of $`C`$'s code inside a native run, as anywhere.
 
-**Natives that call back** (the audit's first open point). At `xs.map(f)`
-with `f` a closure of $`C`$: the flow gives `f` out (its token in $`O`$,
-its entry open); its run inside the native is a call of $`C`$ entered from
-outside code, with its incoming crossing recorded and its steps within
-$`\Psi_C`$ by its certificate, as any member's; the native run as a whole
-is within $`\Phi_c`$, `map`'s footprint within `f`'s stated effect
-([natives](../FOOTPRINTS.md#natives)), `f` meeting its arrow by its unit's
-verdict, on the verdict line's `depends`. With `f` a function of outside
-code, its steps inside the native are in $`C`$'s native run, and its
-effect is read through $`\Phi_c`$ by the callback row.
+**Natives that call back** (the audit's first open point).
 
-**A stated limit.** A value of $`C`$ passed to a native is given out (step
-5): a local array a walker pushes into is released, and a fact over it
-across a later framed call reads the callee's effect there, as the
-ordinary pass reads it. A native run confined to its operands' reach (its
-receiver kept local) needs each native's steps bounded one by one, a trust
-about each native's steps that no row states; its own row in
-[WORK.md](../../WORK.md#status).
+- *A function of outside code* (`[c.i].forEach(visit)`): $`L_n(c)`$ holds
+  $`\circ`$, so the operands enter $`O`$; `visit`'s steps are client steps
+  keeping $`\Theta_C`$, its effect bounded by its type by the callback
+  row, restated (below) for a function a native $`C`$ calls is passed.
+- *A closure of the component* (`xs.map(f)`): `f`'s code is in $`\mathrm{seg}(c)`$
+  and entered at $`L_n(c)`$; its steps are $`C`$'s code, within $`W_c`$ at
+  the caller's depth, `f` given out only where $`L_n(c)`$ holds
+  $`\circ`$. The native's footprint reads `f` at its arrow type, which
+  `f`'s ordinary verdict establishes: the gate `callbackB` (step 8) admits
+  such an `f` only where its code has no framed node and its unit is
+  accepted by its ordinary plan, on the verdict line's `depends`.
+
+**Precision of the native reach.** A native whose footprint is bounded by
+class (`pop`, `shift`, `splice`, `unshift`, `sort`, and the natives taking
+callbacks; [natives](../FOOTPRINTS.md#natives)) changes every value part at
+every site under the ordinary pass's $`\Phi_c`$, at a receiver that is not
+fresh. Under the framed plan the native's own steps are charged at
+$`L_n(c)`$ alone. The ordinary pass refuses
+`walk(xs) { const c = { i: 0 }, out = [1, 2]; while (c.i < xs.length) { out.pop(); s += xs[c.i]!; c.i++ } }`
+at the read, `0 <= c.i` lost at `out.pop()` (observed: the review's probe
+`ord-pop-local.ts`, "No rule derives this invoke at number"); the frame's
+check at `out.pop()` keeps it, the cursor's site outside
+$`L_n(c)=\overline{\{\mathit{out}\}}`$ and local, so $`W_c`$ keeps its part.
+The same walker with `visit(c.i)` before the pop is kept at both calls. A
+fact over storage $`L_n(c)`$ reaches is lost at `any`, whatever the
+footprint states of the region, a stated limit: reading the footprint's
+kinds at each step needs a per-step form of the footprint, which no row
+states.
 
 ### The initialization as a premise
 
@@ -2903,67 +2955,92 @@ outside contracts:
   configuration): $`x_0`$'s term fits $`O`$ at a position of outside code
   and its heap meets the flow's $`H`$;
 - $`\mathrm{Entry}(x_0)`$ is the frame's `Entry` (what `InitialEntry`
-  states): code provenance, the call discipline, every closure of outside
-  code lowered code, closed values;
+  states): code provenance, the call discipline, closed values, every
+  closure of the client's code lowered source (`LoweredSrc`) and every
+  closure of the realm's code ($`R`$) lowered code of the calculus
+  meeting (a) and (b);
 - $`\mathrm{SlotsMet}(x_0)`$: every closure of a module function in
   $`x_0`$'s term or heap is an unfolding $`\mathrm{approx}\ \mathit{code}\
   i\ u`$ of the plan's layout at a depth $`i`$ at least $`x_0`$'s budget,
   and each of its outside captures meets the capture's type at every
-  budget up to $`i`$ in every world (the slot's contract, as `KindMet`
-  states it at that slot).
+  budget up to $`i`$, at every world admissible for $`x_0`$'s heap and
+  every extension of one (Fable S5). `KindMet` states every world
+  (`PassUnitInterfaces.lean`); for a cell holding a reference, whose
+  meaning depends on the world, every world may hold of no value
+  ([H5b](../SINGLE-PASS-THEOREM.md), the last sentence of its `moduleCell`
+  item), so $`\mathrm{SlotsMet}`$ reads the worlds of $`x_0`$, which every
+  later state's world extends.
 
 So `InitialFits` and `InitialEntry` hold by definition, and
-`FramedSpec.Initial` (`FramedSpec.lean`), the realm's heap, `initE`,
-`initK`, `initL` and `initOrder` leave `FramedSpec`. The claim quantifies
-over a heap the client may have built, holding natives, `Array.prototype`
-and the client's own closures, and over a client holding any values that
-meet $`O`$; the stated limit of [initialization](#initialization) ("a
-client calling a native runs no program the claim is about") is deleted
-with the term.
+`FramedSpec.Initial`'s term, the realm's heap, `initE`, `initK`, `initL`
+and `initOrder` leave `FramedSpec`. The claim quantifies over a heap the
+client may have built, holding natives, `Array.prototype` and the client's
+own closures, and over a client holding any values that meet $`O`$; the
+stated limit of [initialization](#initialization) ("a client calling a
+native runs no program the claim is about") is deleted with the term.
 
-**The instances.** That a program's state after its modules' evaluation
-is an initial configuration is discharged per kind of slot by the
-mechanisms that discharge it for the ordinary pass:
+**The claim is not vacuous** (Fable S5). A premise can be unsatisfiable,
+so the design states its inhabitance: `initial_inhabited` (to be proved),
+$`\exists x_0,\ \mathrm{Initial}(x_0)`$ for P22's plan, with a public call
+of `walk` from it (`PublicCall`). The witness is
+`Tests/FramedLinkedCall.lean`'s configuration, retargeted: its realm
+values replaced by a closure of the realm's code meeting `%ElementAt%`'s
+signature (its step model's code, tagged $`R`$) and an object meeting
+`ArrayProto` at P22's budget, and `walk`'s closure, the client and the
+26 steps to the request's entry kept. That object needs a value of each
+`ArrayProto` member the meaning reads; where the meaning admits no value
+the calculus can build, the inhabitance fails and the design is wrong, so
+piece 2 starts with it.
 
-- *Natives, intrinsic objects, host values and declared imports*: the
-  slot's contract by its trust row (`KindMet` at `host` and `declared`),
-  "`Array.prototype` meets `ArrayProto`" and "The intrinsics meet their
-  signatures" among them; their sites $`\{\circ\}`$ hold of every value
-  outside code may hold.
-- *Imports at an established entry*: `established_met` (proved); the
-  value is the entry's module value, a closure of that module function's
-  code, whose token step 2 gives the slot.
-- *Module cells and constants*: the slot's contract is the conjectured H5b
-  for `moduleCell`, owned by [H5b](../SINGLE-PASS-THEOREM.md), from the
-  `:init` request's acceptance (`init_asserted`); its sites are those
-  the `:init` code's run gives, the code being one of $`M_C`$.
+**The instances.** That a program's state after its modules' evaluation is
+an initial configuration is discharged per kind of slot by the mechanisms
+that discharge it for the ordinary pass:
+
+- *`host`, `declared` and `standIn` slots*: the slot's contract by its
+  trust row or stated footprint (`KindMet` at the kind), "`Array.prototype`
+  meets `ArrayProto`", "The intrinsics meet their signatures" and the
+  overlay's typed arrays among them; their sites $`\{\circ\}`$ hold of
+  every value outside code may hold.
+- *`established` slots*: `established_met` (proved); the value is the
+  entry's module value, a closure of that module function's code, whose
+  token step 2 gives the slot where the module is $`C`$'s.
+- *`moduleCell` slots*: the slot's contract is the conjectured H5b for
+  `moduleCell`, owned by [H5b](../SINGLE-PASS-THEOREM.md), from the
+  `:init` request's acceptance (`init_asserted`), read at the worlds of
+  $`x_0`$; its site is the binding's in the `:init` code, a code of
+  $`M_C`$.
 - *Linked slots*: the unfolding (`approxEnv`); a slot naming a signature
   holds a closure of it at every depth but $`0`$, where it holds `null`
-  (`EnvFn` at an unfolding, below).
+  (`EnvFnAt`, below).
 - *The fit and the entry*: the flow theorem along the initialization.
   Every module's `:init` code is a code of $`M_C`$, so a run of it from a
   configuration that fits ends in one that fits (`fitsAt_reached`).
   `initial_of_inits` (to be proved): from a configuration before any
   module runs (its cells holding the uninitialized value, which meets
   every set; its module functions' closures unfoldings), every execution
-  that runs the `:init` codes one after another, in any order and each at
-  most once, ending at the client's first step, reaches an initial
-  configuration. No order is constructed or read.
+  that runs each `:init` code exactly once, in any order, ending at the
+  client's first step, reaches an initial configuration. No order is
+  constructed or read.
+- *The natives as the realm's code*: the Clients row (Assumption
+  "Clients" of Read-only frames) reads outside code as lowered source; the
+  design extends its scope to the natives, which it reads as the realm's
+  code, lowered calculus code meeting their contracts and (a) and (b).
 
 **Several modules and mutual imports** (the e2 finding,
 `noMutualImportOrder` on `e2-astra`). Read-only frames' (A1) admits
 modules that import each other, and the order its (A2) states, "a module
 after the modules it imports", is met by no order of two such modules.
-The premise reads no order: whatever
-order ECMA-262 runs a cycle's modules in, a completed evaluation reaches an
-initial configuration by `initial_of_inits`. An evaluation that throws, as
-`cell-left.ts` reading `cell-right.ts`'s cell before its initialization
-does (a `ReferenceError` under Node), ends before the client's first step,
-so no program the claim is about starts from it. Whether the `:init`
-postcondition of a module holds after a cycle that read another module's
-cell is H5b's statement, shared with the ordinary pass: its item (a) reads
-the importer's `:init` at the imported cells' contracts, and a read of an
-uninitialized cell throws.
+The premise reads no order: whatever order ECMA-262 runs a cycle's modules
+in, a completed evaluation reaches an initial configuration by
+`initial_of_inits`. An evaluation that throws, as `cell-left.ts` reading
+`cell-right.ts`'s cell during its initialization does (a `ReferenceError`
+under Node), ends before the client's first step, so no program the claim
+is about starts from it; a cycle whose functions read each other's cells
+only when called after the evaluation completes is such a program. Whether
+the `:init` postcondition of a module holds after a cycle that read
+another module's cell is H5b's statement, shared with the ordinary pass:
+its item (a) reads the importer's `:init` at the imported cells'
+contracts, and a read of an uninitialized cell throws.
 
 **Module functions run during the initialization** (the second open
 point). A module's statements may call its module functions
@@ -2979,11 +3056,11 @@ from the invocation's. Restated as `entryHolds_of_slots` (to be proved):
 the parameters' contracts are the invocation's actuals at their declared
 types (the existing row on exported preconditions and handle parameters),
 through `graphEntry`'s slot map; each outside capture's is
-$`\mathrm{SlotsMet}`$'s, read by `captures_envOk`'s outside case; a linked
-capture's is the named function's code's requirement, which the codes'
-clause of `FramedRequestSafe` gives at every call of it
-(`codesAccepted_guarantees`). The closure's captures are values, fixed
-along the execution, and each contract is stated at every later world.
+$`\mathrm{SlotsMet}`$'s, read by `captures_envOk`'s outside case at the
+entry's world, an extension of $`x_0`$'s; a linked capture's is the named
+function's code's requirement, which the codes' clause of
+`FramedRequestSafe` gives at every call of it
+(`codesAccepted_guarantees`).
 
 **`EnvFn` at an unfolding.** At depth $`0`$ a linked capture is `null`, so
 a slot naming a signature holds a closure of that signature or, in an
@@ -3004,30 +3081,33 @@ with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
 
 1. `FramedSpec.Initial` (modified): the three conjuncts above;
    `FramedSpec.SlotsMet` (new), over the plan's layout (`FramedSpec.layout`,
-   the `ModuleCode`s and kinds of the plan's component).
+   the `ModuleCode`s and kinds of the plan's component), at the worlds of
+   $`x_0`$.
 2. `FramedSpec.initialFits`, `FramedSpec.initialEntry` (modified, proved
-   by definition).
-3. `InNativeRun`, `ClientStep` (new), `FrameCore.Keeps` (modified: the
+   by definition); `initial_inhabited` (new, to be proved).
+3. `NativeStep`, `ClientStep` (new), `FrameCore.Keeps` (modified: the
    obligation at client steps), with `project` and `keeps_canonical`
    (to be proved, milestone 1) restated over client steps.
-4. `nativeParts`, `nativeParts_sound` (new, to be proved): the action of
-   $`\Phi_c`$ at $`\rho_f`$ changes only locations of $`c`$'s native parts.
-5. `nativeRun_within` (new, to be proved): a native run from a reached
-   state meeting `SlotsMet` is an action of $`\Phi_c`$, from
-   `callerFrame_post`.
+4. `nativeAt_sound` (new, to be proved): a node `nativeAt` decides calls
+   a closure of the realm's code.
+5. `nativeStep_within` (new, to be proved): a native's own step changes
+   only locations of its call's native reach, from (b) and
+   `valRun_noForge`.
 6. `RunSeq.native` (new constructor), `seg_run`, `seg_bound`,
    `segWithin_of_run`, `ClientFrame.cert_of_charges` (modified, to be
-   proved again over the native runs), `framed_transfer` (statement kept).
-7. `nativeKeysB`, `nativeKeysB_sound` (new): every node of a native
-   call's key is a native call.
-8. `EnvFnAt`, `unfold_budget` (new, to be proved); `fits_step`,
-   `fitsAt_reached` read `EnvFnAt` (proof modified at the known call of a
-   slot holding `null`, which takes no step).
+   proved again with native steps), `framed_transfer` (statement kept) at
+   a call of a native at $`\Phi_c`$, its throw by (a).
+7. `nativeKeysB`, `nativeKeysB_sound`, `callbackB`, `callbackB_sound`
+   (new): every node of a native call's key calls a native; a closure of
+   $`C`$ a native is passed has a code with no framed node.
+8. `Fits.native` (new rule), `fits_step` (proof modified at a native's
+   step); `EnvFnAt`, `unfold_budget` (new, to be proved); `fitsAt_reached`
+   reads `EnvFnAt` (a slot holding `null` is never called).
 9. `entryHolds_of_slots` (new, to be proved), replacing
    `entryHolds_realized`; `publicCall_safe` (to be proved, milestone 1)
    reads it.
 10. `initial_of_inits` (new, to be proved): the instance, over every order
-    of the `:init` runs.
+    of the `:init` runs, each exactly once.
 11. `framedReturns_reached`, `framed_requestSafe`, `member_safe`'s framed
     branch and `mode8Accepted_sound`'s framed case: proofs re-threaded,
     statements as above.
@@ -3056,13 +3136,13 @@ the base.
 | # | Piece | Proves | Added | Deleted | Changes verdicts |
 | --- | --- | --- | --- | --- | --- |
 | 0 | `writesK` exhaustive | none: the proofs over `writesK` unchanged | 5–10 | 1 | no |
-| 1 | Client steps and native runs, read at no native call | chain 3, 6 at a plan with no native call, 7 | 400–600 | — | no |
-| 2 | The initialization as a premise, and natives by their footprints | chain 1, 2, 4, 5, 6 at native calls, 9, 11; (B1) without native calls; `chargesProtocol` | 700–1050 | about 1650 (the [deletion list](#what-the-change-deletes): the initialization, the realm and the natives' models) | yes: P22's node 10 not framed, P22 kept; the probes below accepted |
+| 1 | Client steps and native steps, read at no call of a native | chain 3, 6 at a plan with no call of a native, 7 | 400–600 | — | no |
+| 2 | The initialization as a premise, and natives by their footprints | first `initial_inhabited` (chain 2), then chain 1, 4, 5, 6, 8 at natives, 9, 11; `chargesProtocol`, `nativeTop` | 900–1350 | about 1450 (the [deletion list](#what-the-change-deletes): the initialization, the realm and the natives' models) | yes: P22 kept, the probes below accepted |
 | 3 | Outside slots of every kind and several modules | step 2's sites; the `:init` codes in $`M_C`$; chain 10 | 400–600 | about 120 (the gates) | yes: cells, imports and package components |
-| 4 | Unfoldings at a cycle of names | chain 8 | 150–250 | about 60 (`namingOrder`, `closable`, `StableLayout`, `approx_stable`) | yes: the cycle case |
-| 5 | Read-only frames | the [paper proposal](readonly-frames-note/proposal-shared-slots.diff), applied once the owner approves it, its statuses at the pieces' Lean names | — | — | no |
+| 4 | Unfoldings at a cycle of names | chain 8's `EnvFnAt` | 150–250 | about 60 (`namingOrder`, `closable`, `StableLayout`, `PassUnit.approx_stable`) | yes: the cycle case |
+| 5 | Read-only frames and the trust surface | the [paper proposal](readonly-frames-note/proposal-shared-slots.diff), applied once the owner approves it, its statuses at the pieces' Lean names; rows (a) and (b) in DESIGN.md | — | — | no |
 
-Lean in all: 1655–2510 lines added, about 1830 deleted. The initialization
+Lean in all: 1855–2810 lines added, about 1630 deleted. The initialization
 and the natives are one piece: a native's bound reads the callee's
 contract, which $`\mathrm{SlotsMet}`$ states and the realm's heap, holding
 one value per name, does not.
@@ -3072,28 +3152,43 @@ one value per name, does not.
 Every current framed and read-only-frame case keeps its verdict or gains
 one; the cases are those `node pipeline/run-cases.mts framed`,
 `readonly-frame` and `bounds-pattern` run. Each negative's program is run
-under Node by `tests/node-runs.mts`.
+under Node by `tests/node-runs.mts`. Ten `readonly-frame-*` examples call
+natives (`readonly-frame-walker`, `-two-walkers`, `-install-copy`,
+`-own-map`, `-own-map-get`, `-library-calls`, `-confined-closure`,
+`-released-store`, `-restored`, `-guarantee`) under the family checks
+(`ComponentChecks.lean`), whose outcome no acceptance reads; their
+expected outcomes are the family's and do not move.
 
 | Case | Outcome | Shows |
 | --- | --- | --- |
-| `bounds-pattern-unreachable-field` (P22) | accepted under client trust, kept | `%ElementAt%` by its intrinsic contract; node 10 walked at $`\mathsf{keep}`$, node 13 framed |
-| every other `bounds-pattern-framed-*`, `readonly-frame-*`, `invalid-readonly-frame-*` case | kept | the frame's checks unchanged at a component with no native call but `%ElementAt%` |
-| `readonly-frame-printed-module` (new; Section 1's printed module, `prepare` with `fill`, `walk` with `out.push(w[i]!)` and `visit: () => void`) | accepted under client trust | `push` charged at `out`'s site; `w`'s spine read as protected |
-| `readonly-frame-push-local` (new; `walk` alone, `out.push`) | accepted under client trust | the same without `prepare` |
+| `bounds-pattern-unreachable-field` (P22) | accepted under client trust, kept | `%ElementAt%` by its intrinsic contract, nodes 10 and 13 framed |
+| every other `bounds-pattern-framed-*`, `readonly-frame-*`, `invalid-readonly-frame-*` case | kept | the frame's checks unchanged at a component calling no native but `%ElementAt%` |
+| `readonly-frame-printed-module` (new; Section 1's printed module) | accepted under client trust | `fill` and `push` charged at their operands' reach; `w`'s spine read as protected |
+| `readonly-frame-push-local` (new; `walk` alone, `out.push`, `visit: () => void`) | accepted under client trust | the same without `prepare` |
 | `readonly-frame-push-visitor` (new; the visitor `{ values: "keep"; spines: "any" }`) | accepted under client trust | the same at a stated visitor |
-| `readonly-frame-prepare-fill` (new; `prepare` by `new Array(n).fill(1)`) | accepted under client trust | `new Array(n)` a call of outside code, so `fill` is charged at the elements of $`\circ`$, which the spine fact does not read |
-| `readonly-frame-prepare-loop` (new; `prepare` by a loop of `push`) | accepted under client trust | `push` charged at its array's site, released by the call |
+| `readonly-frame-prepare-fill` (new; `prepare` by `new Array(n).fill(1)`) | accepted under client trust | `fill` charged at its fresh array's sites |
+| `readonly-frame-prepare-loop` (new; `prepare` by a loop of `push`) | accepted under client trust | `push` charged at a local array's sites |
+| `bounds-pattern-framed-pop-local` (new; the review's `ord-pop-local.ts`) | accepted under client trust | `out.pop()` framed, the cursor outside its reach |
+| `bounds-pattern-framed-unrelated-natives` (new; a cursor-field walker calling `pop` and `sort` on an array it allocates, beside `visit`) | accepted under client trust | the cursor outside both natives' reach |
+| `bounds-pattern-framed-native-callback` (new; the review's `native-callback.ts`, `[c.i].forEach(visit)`) | accepted under client trust | the callback's steps client steps, the cursor outside the native's reach |
+| `invalid-bounds-pattern-framed-callback-throws` (new; a callback the native calls after the walker's `pop` of the client's array throws, the walker catching it and reading on) | negative | (a) bounds the pop's writes before the throw by its footprint, which changes the spine; `NaN` under Node |
+| `invalid-readonly-frame-native-protected` (new; a member popping the protected array, called by the visitor, which catches the member's exception) | negative | the member's native reach holds the protected spine, (P) fails; `NaN` under Node |
+| `bounds-pattern-framed-callback-gate` (new; `xs.map(f)` with `f` a closure of $`C`$ holding a framed call) | gap: refused at `callbackB` | the gate of Fable S3 |
+| `bounds-pattern-framed-map-callback` (new; `xs.map(f)` with `f` a closure of $`C`$ with no framed call) | accepted under client trust | `f` entered at the native's reach, on `depends` |
+| `bounds-pattern-framed-refused-member-native` (new; a member refused by its ordinary plan holding `a.pop()` beside P22's walker) | gap: refused at the visit | its native charged at every part (`nativeTop`): the cursor facts kept, `c.i < xs.length` lost at the spine of $`\circ`$ |
 | `invalid-readonly-frame-walker-pops` | negative, kept | `w.flags.pop()` charged at the spine of $`\circ`$: (P) fails at `h.flags` |
 | `invalid-readonly-frame-trim` | negative, kept | `trim`'s `pop` charged at the spine of $`\circ`$ |
-| `invalid-readonly-frame-member-pop`, `-member-push`, `-member-shift`, `-member-splice` (new) | negative | a member's native at its parameter's spine, of $`\circ`$: $`\Psi_C`$ is `any` or `grow` there |
-| `invalid-readonly-frame-pops-no-visit` (new) | negative | no framed call: the ordinary plan's refusal at the loop's back edge |
+| `invalid-readonly-frame-member-pop`, `-member-push`, `-member-shift`, `-member-splice` (new) | negative | a member's native at its parameter's reach, of $`\circ`$ |
+| `invalid-readonly-frame-pops-no-visit` (new) | negative | the frame's check at `w.flags.pop()`: `w`'s reach holds `h.flags`'s sites |
 | `invalid-readonly-frame-alias-export` | negative, kept | the interface gate, unchanged |
 | `bounds-pattern-framed-cycle` (from `bounds-pattern-framed-cycle-refused`) | accepted under client trust | P22 beside `even` and `odd` naming each other, unfoldings |
 | `bounds-pattern-framed-cell` (from `bounds-pattern-framed-cell-refused`) | accepted under client trust | a `let` cell a member writes, at its `:init` site, local, charged at its part |
 | `invalid-bounds-pattern-framed-cell` (new) | negative | a walker over a module cell's array, which a member replaces (`data = []`): the cell's part is charged `any`; a visitor calling the member makes the walker read past the array, `NaN` under Node |
-| `bounds-pattern-framed-import` (new; the walker importing a module function of a second module of its package) | accepted under client trust | an `established` slot at the function's token, a known call |
-| `bounds-pattern-framed-mutual-imports` (new; `cell-left.ts` and `cell-right.ts` with the walker) | accepted under client trust | no order read; the evaluation that throws starts no program |
-| `bounds-pattern-framed-map-callback` (new; `xs.map(f)` with `f` a closure of $`C`$) | accepted under client trust | the callback given out, its run a member's call |
+| `bounds-pattern-framed-cell-init` (new; a cell a module function writes during the initialization, then only read) | accepted under client trust | the `:init` code's write charged nowhere, `Ψ_C` keeping the cell |
+| `invalid-bounds-pattern-framed-cell-init` (new; the same cell written again by a member the visitor calls) | negative | the member's write charged; `NaN` under Node |
+| `bounds-pattern-framed-import` (new; the walker importing from two modules, one of its package at an `established` entry and one at its declaration) | accepted under client trust | the token at the first, $`\circ`$ at the second |
+| `bounds-pattern-framed-mutual-imports` (new; two modules of the package importing each other, each reading the other's cell only when called) | accepted under client trust | no order read |
+| `bounds-pattern-framed-mutual-imports-throw` (new; `cell-left.ts` and `cell-right.ts` with the walker) | the ordinary verdicts of the pair | the evaluation that throws starts no program |
 
 Controls:
 
@@ -3101,13 +3196,16 @@ Controls:
   (`Tests/FramedBindingControls.lean`): `nativeKeysB` refuses a flow whose
   native call shares its continuation and handler with a call of a
   parameter.
-- **Native parts dropped** (a mutation control, `fr-native-parts`): a
-  verifier whose `nativeParts` is empty accepts
-  `invalid-readonly-frame-walker-pops`, so the native charge is what
+- **A native key's footprint forged** (`tests/single-pass-control-inputs.mts`,
+  `framed-native-footprint`): a plan whose call of `pop` states
+  $`\mathsf{keep}`$ at the receiver is refused at the frame's check of its
+  node, which reads the footprint from the code's request.
+- **Native reach dropped** (a mutation control, `fr-native-reach`): a
+  verifier whose `nativeReach` is empty accepts
+  `invalid-readonly-frame-walker-pops`, so the native's charge is what
   refuses it.
-
-The research tests of the first check (`Tests/FramedLinkedCall.lean`) go
-with the initialization they exercise.
+- **The inhabitance** (`Tests/FramedLinkedCall.lean`, retargeted):
+  `initial_inhabited` for P22's plan, built with the library.
 
 ### What the change deletes
 
@@ -3115,17 +3213,21 @@ Each item with what replaces it. Files and line counts at the base.
 
 **The constructed initialization and the realm.**
 
-- `ComponentInit`, `componentInit`, `realmValueAt`, `namingOrder`
-  (`FramedCheck.lean`, about 95 lines): replaced by the plan's layout and
+- `ComponentInit`, `componentInit`, `realmValueAt`, `namingOrder`, and
+  their readers in `FramedCheck.lean` (`initOrder`, the realm's fields in
+  the framed component), about 95 lines: replaced by the plan's layout and
   $`\mathrm{SlotsMet}`$.
 - `FramedSpec.Initial`'s term and the fields `realm`, `initE`, `initK`,
   `initL`, `initOrder` (`FramedSpec.lean`; their readers in
   `PassUnitMember.lean`, `Elaboration.lean`, `FramedRealize.lean`,
-  `FramedReturns.lean`, `FramedStarts.lean`): replaced by
+  `FramedReturns.lean`, `FramedStarts.lean`), with their wire: the framed
+  document's fields and `FramedSpec.decode`'s reading of them, and their
+  names in `tests/json-field-names.mts`'s comparison: replaced by
   [the initial configurations](#the-initialization-as-a-premise).
-- `initB` (`FramedComponentChecks.lean`), `initFlowB`, `realmSlotB` and the
-  realm's checks in `frameFlowB` and `wokB` (`FramedFrameFlow.lean`):
-  replaced by nothing; what they checked of one term is the premise.
+- `initB` (`FramedComponentChecks.lean`, and its name in the docstring of
+  `Json.lean`'s framed run), `initFlowB`, `realmSlotB` and the realm's
+  checks in `frameFlowB` and `wokB` (`FramedFrameFlow.lean`): replaced by
+  nothing; what they checked of one term is the premise.
 - `FramedInitial.lean` (342 lines): `realmSlot_vj`, `realmSlot_scoped`,
   `init_fits`, `FramedSpec.frameFlow_checks`, `FramedSpec.init_checks`,
   `FramedSpec.initialFits`, `FramedSpec.codeOk_ok`,
@@ -3138,8 +3240,7 @@ Each item with what replaces it. Files and line counts at the base.
   `progOk_initial`, `progFrame_starts`, `progFrame_entryFits` are restated
   at the new `Initial`.
 - `FramedRealize.lean`: `initial_starts`, `initial_lowered`,
-  `initial_lay` restated at the new `Initial`
-  (`LoweredSrc` of a client read by its `Entry`); `ReadOnlyLayouts.lean`'s
+  `initial_lay` restated at the new `Initial`; `ReadOnlyLayouts.lean`'s
   `lay_initial` and `ReadOnlyLocalReach.lean`'s `wok_initial` read an
   initial configuration's `Entry` in place of `letE (goto initC …)
   client`.
@@ -3147,9 +3248,10 @@ Each item with what replaces it. Files and line counts at the base.
   initialization's code seeded with the realm's signatures) and `sibSig`
   at a native's slot: replaced by the `:init` request codes and the sites
   of step 2.
-- `Tests/FramedLinkedCall.lean` (518 lines; `linked`, `step?_sound`'s use
-  there) and its import in `Tests/AxiomCheck.lean`: the first check of the
-  constructed initialization, deleted with it.
+- `Tests/FramedLinkedCall.lean`'s initialization (`initC` allocating
+  `walk`'s closure from the realm's heap): replaced by the witness of
+  `initial_inhabited`; the file, its 26 steps and its import in
+  `Tests/AxiomCheck.lean` stay, retargeted.
 - `Tests/FramedBindingControls.lean`'s controls of the initialization and
   the realm (`initCode`, the init nodes running a write or holding a run, a
   realm identity without its layout, a realm value no primitive, the
@@ -3158,31 +3260,34 @@ Each item with what replaces it. Files and line counts at the base.
   (`tests/single-pass-control-inputs.mts`); `framed-doc-component`'s
   comment names the frame's flow.
 
-**The natives' second and third models.**
+**The natives' second model.**
 
-- `hostModel?` (`FlowProbe.lean`) and its reader in `framedRestriction`:
-  replaced by each native's stated footprint (`nativeAt`, $`\Phi_c`$).
+- `hostModel?` (`FlowProbe.lean`) and its readers in `FramedCheck.lean`
+  (`framedRestriction`, `realmValueAt`): replaced by each native's stated
+  footprint and the native reach.
 - `nativeSites`, `nativeProtocol` and their join in `nodeProtocol`
-  (`FramedNodeChecks.lean`), and `protRegionB`'s join with them
-  (`FramedSpec.protAt`): replaced by the native parts in $`\mathrm{Ch}`$.
-- `calleeArgB` as a condition of protection (`FramedSpec.protAt`; the
-  restriction "Callees" of [restrictions of the protected
-  reading](#restrictions-of-the-protected-reading)): its reason, a native
-  read from storage whose steps no charge bounds, is answered by the
-  native parts, and at a part of a site of $`O`$, where protection is read,
-  $`W_c`$ is within $`\Psi_C`$ ($`\mathrm{seg}(c)`$ is a set of codes of
-  $`C`$). `calleeArgB` stays in `clientCallee`,
-  the selection of a framed call's bound.
-- `segCodes`' `host` argument (`ReadOnlyCharges.lean`) and the note's
-  closure of $`\mathrm{seg}(c)`$ under a native step model's arguments.
+  (`FramedNodeChecks.lean`), their readers in `FramedCheck.lean`, and
+  `protRegionB`'s join with them (`FramedSpec.protAt`): replaced by the
+  native reach in $`\mathrm{Ch}`$, which leaves out the callee's set.
+- `calleeArgB` as a condition of protection (`FramedSpec.protAt` and its
+  readers in `FramedCheck.lean`; the restriction "Callees" of
+  [restrictions of the protected reading](#restrictions-of-the-protected-reading)):
+  its reason, a native read from storage whose steps no charge bounds, is
+  answered by the native reach, and at a part of a site of $`O`$, where
+  protection is read, $`W_c`$ is within $`\Psi_C`$
+  ($`\mathrm{seg}(c)`$ is a set of codes of $`C`$). `calleeArgB` stays in
+  `clientCallee`, the selection of a framed call's bound.
+- `segCodes`' `host` argument (`ReadOnlyCharges.lean`), replaced by the
+  callbacks of calls of natives (`Fits.native`'s entries).
 - The restriction "Natives the realm does not model" of [restrictions of
   the protected reading](#restrictions-of-the-protected-reading), with its
   sentence in [SOURCE-FRAGMENT](../SOURCE-FRAGMENT.md) ("a call of C's
   code whose callee may be outside code …, is charged `any`").
 - The trust row "a native's step model performs its model's steps" of
-  [proved, to be proved, trust](#proved-to-be-proved-trust): replaced by
-  the existing rows "`Array.prototype` meets `ArrayProto`" and "The
-  intrinsics meet their signatures".
+  [proved, to be proved, trust](#proved-to-be-proved-trust), and the row
+  "the binding of the plan to the checked file" there naming
+  `componentInit` and the realm: the first replaced by the ordinary pass's
+  rows with (a) and (b), the second restated without them.
 
 **The restrictions that become unnecessary**, each with its row in
 [SOURCE-FRAGMENT](../SOURCE-FRAGMENT.md) and its refusal in
@@ -3198,7 +3303,8 @@ Each item with what replaces it. Files and line counts at the base.
   module of `prepareFramedComponent` (`comp.kind != .module`): replaced by
   the layout of the component's modules.
 - `PassUnit.approx_stable` and `StableLayout` (`PassUnitRealize.lean`,
-  read by no other proof): replaced by the unfoldings at every depth.
+  read by no other proof; `Semantics/Tower.lean`'s `approx_stable` is
+  another lemma and stays): replaced by the unfoldings at every depth.
 - `closable` (`FlowProbe.lean`): the module functions on no cycle of
   names; every module function's closure is a value.
 
@@ -3209,18 +3315,18 @@ as a premise](#the-initialization-as-a-premise); the restrictions "No cycle
 of names" and "Outside slots are audited realm values" leave
 [restrictions](#restrictions); "The realm's intrinsics" and
 "`approx_stable`" leave [findings](#findings-this-design-closes); the
-first check's linked call leaves [milestones](#milestones) and
-[runs](#runs); `entryHolds_realized` leaves "To be proved, milestone 1",
-replaced by `entryHolds_of_slots`. In
+first check's linked call in [milestones](#milestones) and [runs](#runs)
+is restated as the inhabitance; `entryHolds_realized` leaves "To be
+proved, milestone 1", replaced by `entryHolds_of_slots`. In
 [read-only handles](readonly-handles.md#trust), the reading of the rule
 "at its audited effect" by a step model is replaced by the native's stated
-footprint.
+footprint and its reach.
 
 **E2's draft** (`e2-astra`, `26237698b`, unmerged): its section
 "Initialization of an import-closed component" and `noMutualImportOrder`
 are replaced by [several modules and mutual imports](#the-initialization-as-a-premise),
 which reads no order; its fixture's program (`cell-left.ts`,
-`cell-right.ts`) becomes the case `bounds-pattern-framed-mutual-imports`.
+`cell-right.ts`) becomes the case `bounds-pattern-framed-mutual-imports-throw`.
 The branch is not merged.
 
 ### The ordinary side's lists of special cases
@@ -3247,13 +3353,20 @@ Each is separate work, with its row in [WORK.md](../../WORK.md#status):
 
 ### What the change trusts
 
-No trust row is added. The framed plan relies on the rows the ordinary
-pass relies on for the same slots: "`Array.prototype` meets `ArrayProto`",
-"The intrinsics meet their signatures", the declared imports' and host
-values' rows, the stand-ins' footprints, and H5b for module cells (its
-conjecture shared, not restated). The row "a native's step model performs
-its model's steps" is deleted. The client obligation $`\Theta_C`$ reads
-fewer steps: the client's, not a native's that $`C`$ calls.
+- **Added**: rows (a) and (b) on standard natives, owner-approved on
+  2026-11-21.
+- **Restated**: the callback row of $`\Theta_C`$ reads "a function value
+  outside code passes to $`C`$ at a function type meets that type, called
+  by $`C`$ or by a native $`C`$ calls", and Assumption "Clients" reads
+  the natives as the realm's code, lowered calculus code meeting their
+  contracts, (a) and (b). The client obligation reads the client's steps
+  wherever they run, and not a native's own steps.
+- **Kept**: the rows the ordinary pass relies on for the same slots,
+  "`Array.prototype` meets `ArrayProto`", "The intrinsics meet their
+  signatures", the overlay's typed arrays, the declared imports' and host
+  values' rows, the stand-ins' footprints, and H5b for module cells (its
+  conjecture shared, not restated).
+- **Deleted**: "a native's step model performs its model's steps".
 
 ## Milestones
 
