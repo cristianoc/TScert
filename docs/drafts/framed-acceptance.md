@@ -2673,8 +2673,10 @@ assumption about that closure.
 4. **The guarantee route**, with disjoint supports and the remaining
    incoming crossings (callback results, caught values).
 5. **The obligation-relative arrow**: framed callers and importers.
-6. **Keys**: parts at field keys (pretext's `prepared.widths`), `@clients`
-   path keys, and the initialization of imports.
+6. **Keys**: `@clients` path keys. Parts are at field keys, a location's
+   key the one its role in the world records ([the check at a call](#the-check-at-a-call),
+   `keyAt`, `regionKeys_sound`); the initialization of imports is the shared model's (branch
+   `shared-slots`).
 
 **Milestone 1 is specified to build**: each lemma it lists has its
 statement and plan, each definition it reads is given (the canonical
