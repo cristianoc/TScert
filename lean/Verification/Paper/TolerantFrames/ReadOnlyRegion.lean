@@ -27,19 +27,25 @@ natives item; the draft "Framed acceptance", Natives): the tags of the
 realm's code, the code of the standard natives, and the node keys at which
 a frame calls a native, each read with the frame's code and tag. A frame
 of the realm's code is owned by the frame that called it where that frame
-is suspended at a native-call key, and by the client otherwise. -/
+is suspended at a native-call key, and by the client otherwise. Every call
+node of the realm's own code is a native-call key (`native_realm`): a
+native's run, the realm's calls of its own code included, is one run of
+the frame that called it (Read-only frames, the natives item: "A standard
+native's steps are the component's when the component's code calls it at a
+call of a native"). -/
 structure Realm where
   tags : ComponentTag → Bool
   native : (List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)) × ComponentTag →
     ControlFlow.Continuation × Option ControlFlow.Target → Bool
+  native_realm : ∀ m kx, tags m.2 = true → native m kx = true
 
 /-- The realm of a program with no realm code. -/
-def Realm.empty : Realm := ⟨fun _ => false, fun _ _ => false⟩
+def Realm.empty : Realm := ⟨fun _ => false, fun _ _ => false, fun _ _ h => h⟩
 
 /-- The realm at which every frame is the realm's, called at a native-call
 key: every frame takes its caller's owner, so a reading at it is the
 widest (`vals_all`). The values of code are read at it. -/
-def Realm.all : Realm := ⟨fun _ => true, fun _ _ => true⟩
+def Realm.all : Realm := ⟨fun _ => true, fun _ _ => true, fun _ _ _ => rfl⟩
 
 /-- **The owner of a frame** tagged `comp` whose caller is owned by `c`, `nk`
 telling whether the caller is suspended at a native-call key: the caller's
@@ -60,6 +66,23 @@ theorem Realm.flag_own (rl : Realm) (ofC : ComponentTag → Bool) {c : Component
   by_cases h : rl.tags comp = true
   · cases nk <;> simp [h, ho]
   · simp [h]
+
+/-- **A frame of the realm's code called from a frame of the realm's code
+takes that frame's owner** (proved, `Realm.native_realm`): the realm's
+calls of its own code inherit the owner, so a native's run is owned, at
+every depth, by the frame that called the native. -/
+theorem Realm.own_realm (rl : Realm) {c : ComponentTag}
+    {m : List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)} {comp₀ : ComponentTag}
+    (h₀ : rl.tags comp₀ = true) (kx : ControlFlow.Continuation × Option ControlFlow.Target) (comp : ComponentTag) :
+    rl.own c (rl.native (m, comp₀) kx) comp = rl.own c true comp := by
+  rw [rl.native_realm (m, comp₀) kx h₀]
+
+/-- The flag of a frame's positions inherits the same way (proved). -/
+theorem Realm.flag_realm (rl : Realm) (ofC : ComponentTag → Bool) {o : Bool}
+    {m : List Tm × List (ControlFlow.Continuation × Option ControlFlow.Target)} {comp₀ : ComponentTag}
+    (h₀ : rl.tags comp₀ = true) (kx : ControlFlow.Continuation × Option ControlFlow.Target) (comp : ComponentTag) :
+    rl.flag ofC o (rl.native (m, comp₀) kx) comp = rl.flag ofC o true comp := by
+  rw [rl.native_realm (m, comp₀) kx h₀]
 
 @[simp] theorem Realm.flag_empty (ofC : ComponentTag → Bool) (o nk : Bool) (comp : ComponentTag) :
     Realm.empty.flag ofC o nk comp = !ofC comp := rfl
@@ -246,6 +269,11 @@ def Reaches (ofC : ComponentTag → Bool) (h : Heap) (v : Val) (l : Nat) : Prop 
 /-- A location is reachable from one of the values `roots`. -/
 def ReachesFrom (ofC : ComponentTag → Bool) (h : Heap) (roots : List Val) (l : Nat) : Prop :=
   ∃ v ∈ roots, Reaches ofC h v l
+
+/-- **A value reached from a value**: itself, or the contents of a location
+a path from it reaches. -/
+def ValReach (ofC : ComponentTag → Bool) (h : Heap) (v w : Val) : Prop :=
+  w = v ∨ ∃ π l, Follows ofC h v π l ∧ h[l]? = some w
 
 /-- **The types of a crossing's positions** (the draft, Definitions,
 "Read-only types and crossings"): each position below the root has the type

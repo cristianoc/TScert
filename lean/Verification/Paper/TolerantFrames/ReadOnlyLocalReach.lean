@@ -80,6 +80,62 @@ theorem valRun_noForge {h h' : Heap} {t t' : Tm} (hr : ValRun h t h' t') :
     · exact step_noForge (ofC := allC) (rl := Realm.empty) (nk := false) (fun _ h => by cases h) hh hs none rfl l hl₁
     · exact .inr (Nat.le_trans (Footprints.step_length_le hs) hl₁)
 
+/-! ## Row (b) on standard natives, as an invariant of a native's run -/
+
+/-- **A closure of the realm's code**: graph code tagged with a tag of the
+realm. -/
+def RealmFn (rl : Realm) (f : Val) : Prop :=
+  ∃ fs ar E K s caps k rest comp oid, f = .objAt fs (.graph ar E K s caps k rest comp) oid ∧ rl.tags comp = true
+
+/-- **A step of the native's own code** in the run of its call: every frame
+on the evaluation path of the call's term is a frame of the realm's code
+(the call itself, before its entry, included). A step inside a function the
+native called is that function's. -/
+def ownStep (rl : Realm) (t : Tm) : Bool :=
+  (path Realm.empty none false t).dropLast.all fun p => rl.tags p.1
+
+/-- **The run of a call of a native** from `h₀`, with the locations its own
+steps allocated: steps, each from a heap of values, a step of the
+native's own code adding the locations it allocates. -/
+inductive NativeRun (rl : Realm) (h₀ : Heap) (t₀ : Tm) : Heap → Tm → List Nat → Prop where
+  | start : NativeRun rl h₀ t₀ h₀ t₀ []
+  | step {h h' : Heap} {t t' : Tm} {A : List Nat} : NativeRun rl h₀ t₀ h t A →
+      (∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) → Step h t h' t' →
+      NativeRun rl h₀ t₀ h' t' (if ownStep rl t then A ++ List.range' h.length (h'.length - h.length) else A)
+
+/-- **Row (b) of the trust on standard natives** (Read-only frames, the
+natives item, approved by the owner on 2026-11-21), stated of every run of
+a call of a closure of the realm's code, receiver and actuals its operands
+(the callee left out), at each step of the native's own code:
+
+- *stores*: into storage that existed before the call it stores a value
+  reaching no location (a primitive), or, into a location its operands
+  reach, a value reaching only locations its operands reach or locations
+  allocated during the run ("it stores only primitives and values its
+  receiver and arguments reach; it keeps no argument beyond what its
+  receiver and arguments reach or its result");
+- *calls*: a function of code other than the realm's that it calls is one
+  its operands reach, or one reached from storage allocated during the run
+  by the functions it called; and the values it passes reach no storage its
+  own steps allocated ("it calls out only through the function arguments it
+  is given, and only during its run": in the calculus a later call is one
+  through storage the native kept, which the stores exclude). -/
+def NativeRowB (rl : Realm) : Prop :=
+  ∀ (h₀ : Heap) (f r : Val) (args : List Tm) (h h' : Heap) (t t' : Tm) (A : List Nat),
+    RealmFn rl f → isVal r = true → (∀ a ∈ args, isVal a = true) →
+    (∀ (l : Nat) (v : Val), h₀[l]? = some v → isVal v = true) →
+    NativeRun rl h₀ (.invoke f r args) h t A → (∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) →
+    Step h t h' t' → ownStep rl t = true →
+    (∀ l v, l < h₀.length → h'[l]? = some v → h[l]? ≠ some v →
+      (∀ l', ¬ Reaches allC h v l') ∨
+      (ReachesFrom allC h (r :: args) l ∧
+        ∀ l', Reaches allC h v l' → ReachesFrom allC h (r :: args) l' ∨ h₀.length ≤ l')) ∧
+    (∀ g r' args', (activeFrame none t).2 = .invoke g r' args' → isVal g = true → ¬ RealmFn rl g →
+      (∃ u ∈ r :: args, ∃ x, ValReach allC h u x ∧ CodeReach allC x g) ∨
+      (∃ l u x, h₀.length ≤ l ∧ l ∉ A ∧ h[l]? = some u ∧ ValReach allC h u x ∧ CodeReach allC x g)) ∧
+    (∀ g r' args', (activeFrame none t).2 = .invoke g r' args' → isVal g = true → ¬ RealmFn rl g →
+      ∀ x ∈ r' :: args', ∀ l', Reaches allC h x l' → l' ∉ A)
+
 /-- **A changed location is one step from a value of the term** (proved,
 `step_reach` with every tag's code as outside code). -/
 theorem step_changed_reached {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') {l : Nat} {v : Val}

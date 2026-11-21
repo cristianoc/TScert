@@ -78,11 +78,6 @@ def keySteps (f : PropKey) : List Region := [.field 0 f, .field 0 CallArguments.
 /-- The steps of a path of reads. -/
 def pathSteps (π : List PropKey) : List Region := π.flatMap keySteps
 
-/-- **A value reached from a value**: itself, or the contents of a location
-a path from it reaches. -/
-def ValReach (ofC : ComponentTag → Bool) (h : Heap) (v w : Val) : Prop :=
-  w = v ∨ ∃ π l, Follows ofC h v π l ∧ h[l]? = some w
-
 /-! ## Paths from paths -/
 
 /-- **A path continues from the contents of the location it reaches**

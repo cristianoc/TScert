@@ -2662,7 +2662,18 @@ contract.
   arguments reach or its result; and it calls out only through the
   function arguments it is given, and only during its run. Each store of
   its run is so, not only its net change. The owner narrowed the row to
-  this statement on 2026-11-21.
+  this statement on 2026-11-21. In the calculus (`NativeRowB`,
+  `ReadOnlyLocalReach.lean`) it is stated of every run of a call of a
+  closure of the realm's code (`NativeRun`, the locations its own steps
+  allocate recorded), at each step of the native's own code (`ownStep`:
+  every frame on the call's evaluation path the realm's): a store into a
+  location that existed before the call stores a value reaching no
+  location, or stores into a location the operands reach a value reaching
+  only what the operands reach and what the run allocated; a function of
+  other code it calls is reached from its operands or from storage the
+  functions it called allocated; and the values it passes reach no
+  storage its own steps allocated. A later call is, in the calculus, a
+  call through storage the native kept, which the stores exclude.
 
 **The natives outside (b).** Every native's contract states, clause by
 clause, whether the native meets (b), in fields checked when the contracts
@@ -2805,7 +2816,11 @@ $`C`$'s code, the *native run* is the execution from the call state to the
 first state at which $`f`$ is innermost again with its term returned or
 thrown. A native's closure is the realm's code: a closure tagged with the
 realm's component $`R`$, apart from $`C`$ and from the client's code (an
-initial configuration's `Entry` states it, below).
+initial configuration's `Entry` states it, below). Every call node of the
+realm's code is a native-call key (`Realm.native_realm`), so a frame of the
+realm's code called from one takes its owner (`Realm.own_realm`): the
+native run is owned, at every depth of the realm's own calls, by $`f`$'s
+owner.
 
 - **Whose steps** (Fable S2, R5; the owner's rule of 2026-11-21). A
   standard native's steps are the component's when the component's code
