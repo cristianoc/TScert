@@ -98,7 +98,7 @@ import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
-import { checkTrust, withinB, type BuiltinTrust } from "./builtin-trust.mts";
+import { checkTrust, signatureEffects, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -321,10 +321,28 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
   const changesValues = footprintEffect({ value: "any", spine: "keep" });
-  return { name, typeParams, type: spread
+  const type: Signature = spread
     ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
-    : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect } };
+    : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect };
+  // Creating a step allocates it and a spread writes only what it allocates
+  // and the position of an iterator it creates: each kind within row (b),
+  // `onThrow` `"top"` as the stated effects bound no throw.
+  checkTrust(name, withinB(kinds.map(k => iterationSpecs.get(k) ?? "").every(Boolean)
+    ? kinds.map(k => iterationSpecs.get(k)).join("; ") : "", "top"), signatureEffects(type));
+  return { name, typeParams, type };
 }
+
+/** The section of the specification each iteration kind's step follows,
+ * against which its trust fields are checked (`builtin-trust.mts`). */
+const iterationSpecs: ReadonlyMap<string, string> = new Map([
+  [iterateName, "ECMA-262 sec-createarrayiterator, sec-%arrayiteratorprototype%.next"],
+  [iterateStringName, "ECMA-262 sec-string.prototype-%symbol.iterator%, sec-%stringiteratorprototype%.next"],
+  [iterateSetName, "ECMA-262 sec-set.prototype.values, sec-%setiteratorprototype%.next"],
+  [iterateMapName, "ECMA-262 sec-map.prototype.entries, sec-%mapiteratorprototype%.next"],
+  [iterateIteratorName, "ECMA-262 sec-%iteratorprototype%-%symbol.iterator%, sec-%setiteratorprototype%.next, sec-%mapiteratorprototype%.next"],
+  [iterateRegExpStringName, "ECMA-262 sec-%regexpstringiteratorprototype%.next, sec-regexpexec"],
+  [iterateSegmentsName, "ECMA-402 sec-%intlsegmentsprototype%-%symbol.iterator%, sec-%intlsegmentiteratorprototype%.next"],
+]);
 
 /** The iteration of a `for...of` over a union of host kinds no one
  * intrinsic steps (an array beside a `Map`, a `Set` beside its iterator):
@@ -370,10 +388,12 @@ const restFromName = (k: number): string => `%RestFrom:${k}%`;
  * the source (whose read yields undefined). */
 export function restFromIntrinsic(k: number):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
-  return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }],
-    type: { ...fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
+  const type: Signature = { ...fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
       rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }),
-      effect: footprintEffect(emptyFootprint, { fresh: true }) } };
+      effect: footprintEffect(emptyFootprint, { fresh: true }) };
+  checkTrust(restFromName(k), withinB("ECMA-262 sec-runtime-semantics-iteratorbindinginitialization, sec-createarrayiterator", "top"),
+    signatureEffects(type));
+  return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }], type };
 }
 
 /** The string keys `Object.prototype` holds (Lean's `objectProtoKeys`): an
@@ -395,8 +415,9 @@ export function openReadIntrinsic(key: string):
   const typedArrays = (["uint8", "uint16", "int32", "float64"] as const).map((view): TypeTerm =>
     ({ k: "object", fields: [], stringIndex: null, calls: [], view, span }));
   const receiver: TypeTerm = { k: "union", parts: [{ k: "object", fields: [], stringIndex: null, calls: [], span }, ...typedArrays], span };
-  return { name: openReadName(key), typeParams: [],
-    type: { ...fn([receiver], atom("unknown")), effect: emptyEffect } };
+  const type: Signature = { ...fn([receiver], atom("unknown")), effect: emptyEffect };
+  checkTrust(openReadName(key), withinB("ECMA-262 sec-ordinaryget", "top"), signatureEffects(type));
+  return { name: openReadName(key), typeParams: [], type };
 }
 
 export const freezePrefix = "%Freeze:";
@@ -494,8 +515,11 @@ export const enumIntrinsicName = (name: string): string => `%Enum:${name}%`;
  * computes holds the name of the last member with that value, a string. */
 export function enumIntrinsic(name: string, members: readonly EnumMemberValue[]):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
-  return { name: enumIntrinsicName(name), typeParams: [],
-    type: fn([enumMembersTerm(members, span, "none")], enumMembersTerm(members, span, "stated")) };
+  const type: Signature = fn([enumMembersTerm(members, span, "none")], enumMembersTerm(members, span, "stated"));
+  // TypeScript's emit stores member names, strings, into the object it is
+  // passed: within row (b).
+  checkTrust(enumIntrinsicName(name), withinB("TypeScript enum emit; ECMA-262 sec-ordinaryset", "top"), signatureEffects(type));
+  return { name: enumIntrinsicName(name), typeParams: [], type };
 }
 
 /** `%InstanceOf:Map%` and `%InstanceOf:Set%`: OrdinaryHasInstance walks the
@@ -572,10 +596,6 @@ export const intrinsicTrust: ReadonlyMap<string, BuiltinTrust> = new Map<string,
   ...domSetters.map((g): [string, BuiltinTrust] => [g.intrinsic, withinB(`CSSOM and WHATWG DOM ${g.member}`, "top")]),
 ]);
 
-/** The effects a type's call signatures state: a function's, or each part
- * of an intersection's. */
-const signatureEffects = (type: TypeTerm): (CallEffect | undefined)[] =>
-  type.k === "function" ? [type.effect] : type.k === "intersection" ? type.parts.flatMap(signatureEffects) : [undefined];
 
 /** The intrinsics' binders and signatures, given the standard library's
  * `Promise` applied to an argument and a host collection's reading view at

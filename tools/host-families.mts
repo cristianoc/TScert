@@ -14,6 +14,7 @@ import * as ts from "typescript/unstable/ast";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
 import type { TypeTerm } from "./declaration-types.mts";
 import { emptyFootprint, closedFootprints, footprintEffect, type CallEffect } from "./type-graph.mts";
+import { checkTrust, type BuiltinTrust } from "./builtin-trust.mts";
 
 /** A tag value: a number, or a string for a family whose tag is a string. */
 export type TagValue = number | string;
@@ -73,7 +74,18 @@ export type OmittedMember = { owner: string; member: string; text: string; why: 
  * only client code it runs is its function-typed arguments', so it is read
  * at each closed footprint, its callbacks' types and its call at that
  * footprint, on normal return. */
-export type FootprintMember = { owner: string; member: string; text: string; kind: "empty" | "callbacks" };
+export type FootprintMember = { owner: string; member: string; text: string; kind: "empty" | "callbacks";
+  /** The method's trust fields (`builtin-trust.mts`), checked with the
+   * description at the effects its reading states (`footprintTrust`). */
+  trust: BuiltinTrust };
+
+/** **The check of a footprint method's trust fields**, at the effects
+ * `footprintReading` states: the empty footprint with `onThrow`, or each
+ * closed footprint on normal return. */
+export function footprintTrust(x: FootprintMember): BuiltinTrust {
+  return checkTrust(`${x.owner}.${x.member}`, x.trust, x.kind === "empty"
+    ? [footprintEffect(emptyFootprint, { onThrow: true })] : closedFootprints.map(f => footprintEffect(f)));
+}
 
 /** The reading of a method the family states a footprint for, from its
  * declared type: at the empty footprint with `onThrow` (`empty`); or one
@@ -484,6 +496,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     const [only] = members;
     if (!only || members.length !== 1 || graph.text(only) !== x.text)
       graph.fail(`the method ${x.owner}.${x.member} whose footprint the family states is not declared as reviewed: ${x.text}`);
+    footprintTrust(x);
   }
   // The stable-member rule's exclusions, each checked against the
   // declaration it was reviewed at: a property member that declaration

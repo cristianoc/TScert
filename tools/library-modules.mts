@@ -14,8 +14,12 @@ import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "
 import { emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import { pathToFileHrefName } from "./intrinsics.mts";
 import { bigIntStats, buffer, bytes, definitions as stated, dirent, url } from "./library-types.mts";
+import { checkStatedTrust, checkTrust, storesOther, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export type ModuleEntry = {
+  /** The trust fields of the call (`builtin-trust.mts`), checked when the
+   * overlay is loaded. */
+  trust: BuiltinTrust;
   /** The module, as `node:` names it without the prefix: `child_process`. */
   module: string;
   /** The exported function. */
@@ -119,9 +123,9 @@ const block: TypeTerm = { k: "function", effect: ordinaryEffect, receiver: null,
  * ones included, accessors among them; `match` runs the regex's `exec`,
  * reading `lastIndex` by ToLength; `throws` calls its block and converts a
  * thrown value by `String` to test a regex: these state no effect. */
-type AssertFields = Pick<ModuleEntry, "stated" | "effect" | "promise" | "lowering">;
+type AssertFields = Pick<ModuleEntry, "stated" | "effect" | "promise" | "lowering" | "trust">;
 const assertMember = (member: string | undefined, signature: string, entry: AssertFields): ModuleEntry =>
-  ({ module: "assert/strict", name: "default", signature,
+  ({ trust: entry.trust, module: "assert/strict", name: "default", signature,
     ...(member === undefined ? {} : { member }), stated: entry.stated,
     ...(entry.effect === undefined ? {} : { effect: entry.effect }),
     ...(entry.promise === undefined ? {} : { promise: entry.promise }),
@@ -131,7 +135,7 @@ const assertEntry = (members: (string | undefined)[], signature: string, entry: 
   for (const member of members) entries.push(assertMember(member, signature, entry));
   return entries;
 };
-const asserted: AssertFields = { lowering: "test", effect: emptyEffect,
+const asserted: AssertFields = { lowering: "test", effect: emptyEffect, trust: withinB("Node.js assert.ok", "top"),
   stated: { binders: [], params: [atom("unknown"), message], result: atom("void") } };
 const assertEntries: ModuleEntry[] = [
   // The call of the module's function itself, as each pinned installation
@@ -146,42 +150,45 @@ const assertEntries: ModuleEntry[] = [
   // so `equal` narrows nothing.
   ...assertEntry(["equal", "strictEqual"],
     "function strictEqual<T>(actual: unknown, expected: T, message?: string | Error): asserts actual is T;",
-    { effect: emptyEffect,
+    { effect: emptyEffect, trust: withinB("Node.js assert.strictEqual", "top"),
       stated: { binders: ["T"], params: [atom("unknown"), { k: "binder", name: "T", span: at }, message], result: atom("void") } }),
   ...assertEntry(["notEqual", "notStrictEqual"],
     "function notStrictEqual(actual: unknown, expected: unknown, message?: string | Error): void;",
-    { effect: emptyEffect, stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+    { effect: emptyEffect, trust: withinB("Node.js assert.notStrictEqual", "top"), stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
   // A deep comparison narrows nothing: the declaration's `asserts actual is
   // T` is not read.
   ...assertEntry(["deepEqual", "deepStrictEqual"],
     "function deepStrictEqual<T>(actual: unknown, expected: T, message?: string | Error): asserts actual is T;",
-    { stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+    { trust: withinB("Node.js assert.deepStrictEqual", "top"), stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
   ...assertEntry(["notDeepEqual", "notDeepStrictEqual"],
     "function notDeepStrictEqual(actual: unknown, expected: unknown, message?: string | Error): void;",
-    { stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+    { trust: withinB("Node.js assert.notDeepStrictEqual", "top"), stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
   // A non-regex `regExp` throws a TypeError, an outcome.
   ...["match", "doesNotMatch"].flatMap(member => assertEntry([member],
     `function ${member}(value: string, regExp: RegExp, message?: string | Error): void;`,
-    { stated: { binders: [], params: [atom("string"), atom("unknown"), message], result: atom("void") } })),
+    { trust: withinB(`Node.js assert.${member}`, "top"), stated: { binders: [], params: [atom("string"), atom("unknown"), message], result: atom("void") } })),
   ...["throws", "doesNotThrow"].flatMap(member => [
     ...assertEntry([member], `function ${member}(block: () => unknown, message?: string | Error): void;`,
-      { stated: { binders: [], params: [block, message], result: atom("void") } }),
+      { trust: withinB(`Node.js assert.${member}`, "top"), stated: { binders: [], params: [block, message], result: atom("void") } }),
+    // A validation function is called with \`this\` a fresh object
+    // (\`expectedException\`, Node 26.13.0's lib/assert.js): it passes
+    // storage it allocates to a function argument.
     ...assertEntry([member], `function ${member}(block: () => unknown, error: AssertPredicate, message?: string | Error): void;`,
-      { stated: { binders: [], params: [block, atom("unknown"), message], result: atom("void") } })]),
+      { trust: { ...withinB(`Node.js assert.${member}; lib/assert.js expectedException`, "top"), passesOwnAllocations: true }, stated: { binders: [], params: [block, atom("unknown"), message], result: atom("void") } })]),
   // `ifError(v)` returns where `v` is `null` or `undefined`, and throws
   // otherwise.
   ...assertEntry(["ifError"], "function ifError(value: unknown): asserts value is null | undefined;",
-    { effect: emptyEffect, promise: { param: 0, type: union(atom("null"), atom("undefined")) },
+    { effect: emptyEffect, trust: withinB("Node.js assert.ifError", "top"), promise: { param: 0, type: union(atom("null"), atom("undefined")) },
       stated: { binders: [], params: [atom("unknown")], result: atom("void") } }),
   ...assertEntry(["fail"], "function fail(message?: string | Error): never;",
-    { stated: { binders: [], params: [message], result: atom("never") } }),
+    { trust: withinB("Node.js assert.fail", "top"), stated: { binders: [], params: [message], result: atom("never") } }),
 ];
 
 export const modulesOverlay: readonly ModuleEntry[] = [
   ...assertEntries,
   // Node validates the string, strips annotations and returns source text.
   // The warning and error paths may run user code: the effect is unrestricted.
-  { module: "module", name: "stripTypeScriptTypes",
+  { module: "module", name: "stripTypeScriptTypes", trust: storesOther("Node.js module.stripTypeScriptTypes; process.emitWarning", "top"),
     signature: "function stripTypeScriptTypes(code: string, options?: StripTypeScriptTypesOptions): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
   // `execFileSync`'s restricted form, read first: options naming every key the synchronous path
@@ -194,7 +201,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // standard error of its own. Under Node 26.13.0 the host writes nothing it
   // did not allocate before it returns or throws: the empty footprint, on a
   // throw too.
-  { module: "child_process", name: "execFileSync",
+  { module: "child_process", name: "execFileSync", trust: withinB("Node.js child_process.execFileSync", "footprint"),
     signature: "function execFileSync(\n        file: string,\n        args: readonly string[],\n        options: ExecFileSyncOptionsWithStringEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
@@ -234,7 +241,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // under Node 25.2.1 and Node 26.13.0 (2026-11-05), and `env` alone did. A
   // record type states nothing of the keys it does not name, so `env` is
   // stated.
-  { module: "child_process", name: "execFileSync",
+  { module: "child_process", name: "execFileSync", trust: withinB("Node.js child_process.execFileSync", "top"),
     signature: "function execFileSync(\n        file: string,\n        args: readonly string[],\n        options: ExecFileSyncOptionsWithStringEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
@@ -253,7 +260,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // properties, which an object of another type may hold as accessors, and
   // runs no other code of the client's: no effect is stated. The result is a
   // fresh record of what it ran, `error` an `Error` or absent.
-  { module: "child_process", name: "spawnSync",
+  { module: "child_process", name: "spawnSync", trust: withinB("Node.js child_process.spawnSync", "top"),
     signature: "function spawnSync(\n        command: string,\n        args: readonly string[],\n        options: SpawnSyncOptionsWithStringEncoding,\n    ): SpawnSyncReturns<string>;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
@@ -297,7 +304,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // false), so the element states none and a value read at the declared
   // `Dirent` is refused. A path it cannot read throws. The call states no
   // effect.
-  { module: "fs", name: "readdirSync",
+  { module: "fs", name: "readdirSync", trust: withinB("Node.js fs.readdirSync", "top"),
     signature: "export function readdirSync(\n        path: PathLike,\n        options: ObjectEncodingOptions & {\n            withFileTypes: true;\n            recursive?: boolean | undefined;\n        },\n    ): Dirent[];",
     stated: { binders: [], params: [atom("string"),
       { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false),
@@ -312,7 +319,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // array of the entries' names, strings decoded as UTF-8; a path it cannot
   // read throws. It runs no code of the client's on a string path. The call
   // states no effect.
-  { module: "fs", name: "readdirSync",
+  { module: "fs", name: "readdirSync", trust: withinB("Node.js fs.readdirSync", "top"),
     signature: "export function readdirSync(\n        path: PathLike,\n        options?:\n            | {\n                encoding: BufferEncoding | null;\n                withFileTypes?: false | undefined;\n                recursive?: boolean | undefined;\n            }\n            | BufferEncoding\n            | null,\n    ): string[];",
     stated: { binders: [], params: [atom("string")],
       result: { k: "array", presence: "readable", readonly: false, element: atom("string"), span: at } } },
@@ -336,7 +343,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // other code may replace: each is stated at `() => unknown`, its effect
   // unrestricted, as a `Dirent`'s. The date and instant getters are not stated. The
   // call states no effect.
-  { module: "fs", name: "statSync", signature: "(path: PathLike, options?: undefined): Stats;",
+  { module: "fs", name: "statSync", trust: withinB("Node.js fs.statSync", "top"), signature: "(path: PathLike, options?: undefined): Stats;",
     stated: { binders: [], params: [atom("string")], result: { k: "object", stringIndex: null, calls: [], span: at,
       fields: [...["dev", "mode", "nlink", "uid", "gid", "rdev", "blksize", "ino", "size", "blocks", "atimeMs",
         "mtimeMs", "ctimeMs", "birthtimeMs"].map(name => ({ ...field(name, atom("number"), false), readonly: false })),
@@ -350,7 +357,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // options. It returns a fresh `BigIntStats` (`library-types.mts`), whose
   // numbers are bigints. It runs no code of the client's at the stated
   // options. The call states no effect.
-  { module: "fs", name: "statSync",
+  { module: "fs", name: "statSync", trust: withinB("Node.js fs.statSync", "top"),
     signature: "(\n            path: PathLike,\n            options: StatSyncOptions & {\n                bigint: true;\n            },\n        ): BigIntStats;",
     stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
       fields: [field("bigint", yes(), false), field("throwIfNoEntry", union(yes(), atom("undefined")), true)] }],
@@ -359,7 +366,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A
   // path it cannot open or write, or one holding a NUL character, throws.
   // It runs no code of the client's on a string.
-  { module: "fs", name: "writeFileSync",
+  { module: "fs", name: "writeFileSync", trust: withinB("Node.js fs.writeFileSync", "top"),
     signature: "export function writeFileSync(\n        file: PathOrFileDescriptor,\n        data: string | NodeJS.ArrayBufferView,\n        options?: WriteFileOptions,\n    ): void;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("undefined") } },
   // `writeFileSync(file, data, options)` with a path, a string and options
@@ -374,7 +381,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `fs.openSync`, `fs.writeSync` and `fs.closeSync` through the module's
   // object, writable properties other code may replace: the call states no
   // effect.
-  { module: "fs", name: "writeFileSync",
+  { module: "fs", name: "writeFileSync", trust: withinB("Node.js fs.writeFileSync", "top"),
     signature: "export function writeFileSync(\n        file: PathOrFileDescriptor,\n        data: string | NodeJS.ArrayBufferView,\n        options?: WriteFileOptions,\n    ): void;",
     stated: { binders: [], params: [atom("string"), atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
       fields: [field("mode", atom("number"), false), field("encoding", union(text("utf8"), atom("undefined")), true),
@@ -387,7 +394,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `undefined` where the directory exists; a mode that is no 32-bit
   // unsigned integer, or a path it cannot create, throws. It runs no code of
   // the client's at the stated options. The call states no effect.
-  { module: "fs", name: "mkdirSync",
+  { module: "fs", name: "mkdirSync", trust: withinB("Node.js fs.mkdirSync", "top"),
     signature: "export function mkdirSync(\n        path: PathLike,\n        options: MakeDirectoryOptions & {\n            recursive: true;\n        },\n    ): string | undefined;",
     stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
       fields: [field("recursive", yes(), false), field("mode", union(atom("number"), atom("undefined")), true)] }],
@@ -397,14 +404,14 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `undefined`; a mode that is no 32-bit unsigned integer, or a path it
   // cannot change, throws. It runs no code of the client's (Node 26.13.0's
   // `lib/fs.js`). The call states no effect.
-  { module: "fs", name: "chmodSync", signature: "export function chmodSync(path: PathLike, mode: Mode): void;",
+  { module: "fs", name: "chmodSync", trust: withinB("Node.js fs.chmodSync", "top"), signature: "export function chmodSync(path: PathLike, mode: Mode): void;",
     stated: { binders: [], params: [atom("string"), atom("number")], result: atom("undefined") } },
   // `readFileSync(path, "utf8")` with a string path reads the whole file and
   // returns its contents decoded as UTF-8, a string; a path it cannot open
   // or read, or one holding a NUL character, throws. It runs no code of the
   // client's on a string path and a string encoding. Stated at the encoding
   // "utf8", where the declaration's other forms return a `Buffer`.
-  { module: "fs", name: "readFileSync",
+  { module: "fs", name: "readFileSync", trust: withinB("Node.js fs.readFileSync", "top"),
     signature: "export function readFileSync(\n        path: PathOrFileDescriptor,\n        options:\n            | {\n                encoding: BufferEncoding;\n                flag?: string | undefined;\n            }\n            | BufferEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"), text("utf8")], result: atom("string") } },
   // `readFileSync(path)` with a string path and no options opens the file,
@@ -418,18 +425,18 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `Buffer.prototype`'s functions are Node's own (SOURCE-CONTRACTS.md,
   // "Stated library types"). The two texts are the two pinned `@types/node`
   // installations'.
-  { module: "fs", name: "readFileSync", signature: readBytesText("NonSharedBuffer"), alternatives: [readBytesText("Buffer")],
+  { module: "fs", name: "readFileSync", trust: withinB("Node.js fs.readFileSync", "top"), signature: readBytesText("NonSharedBuffer"), alternatives: [readBytesText("Buffer")],
     stated: { binders: [], params: [atom("string")], result: buffer }, definitions: [stated.buffer] },
   // `existsSync(path)` with a string tests whether the path exists on the
   // file system and returns a Boolean; it does not throw. It runs no code of
   // the client's on a string.
-  { module: "fs", name: "existsSync", signature: "export function existsSync(path: PathLike): boolean;",
+  { module: "fs", name: "existsSync", trust: withinB("Node.js fs.existsSync", "top"), signature: "export function existsSync(path: PathLike): boolean;",
     stated: { binders: [], params: [atom("string")], result: atom("boolean") } },
   // `mkdtempSync(prefix)` with a string creates a directory named by the
   // prefix and six random characters and returns its path, a string; a
   // prefix it cannot create a directory at throws. Stated at one argument,
   // where an encoding option may select a `Buffer`.
-  { module: "fs", name: "mkdtempSync",
+  { module: "fs", name: "mkdtempSync", trust: withinB("Node.js fs.mkdtempSync", "top"),
     signature: "export function mkdtempSync(prefix: string, options?: EncodingOption): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
   // `rmSync(path, { recursive: true, force: true })` with a string path
@@ -437,7 +444,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // included, and returns `undefined`; one it cannot remove throws. The host
   // reads and validates the options' properties, which an object of another
   // type may hold as accessors: the call is unrestricted in its effect.
-  { module: "fs", name: "rmSync", signature: "export function rmSync(path: PathLike, options?: RmOptions): void;",
+  { module: "fs", name: "rmSync", trust: withinB("Node.js fs.rmSync", "top"), signature: "export function rmSync(path: PathLike, options?: RmOptions): void;",
     stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at, fields: [
       field("recursive", yes(), false), field("force", yes(), false)] }], result: atom("undefined") } },
   // `realpathSync(path)` with a string resolves it on the file system, its
@@ -445,7 +452,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // path that does not exist throws. A relative path is resolved against
   // `process.cwd()`, a writable property of the global `process`, which
   // other code may replace: the call is unrestricted in its effect.
-  { module: "fs", name: "realpathSync",
+  { module: "fs", name: "realpathSync", trust: withinB("Node.js fs.realpathSync", "top"),
     signature: "export function realpathSync(path: PathLike, options?: EncodingOption): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
   // `createHash("sha256")` constructs a `Hash` (Node 26.13.0's
@@ -467,23 +474,23 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // digits, a string. Either throws on a hash already digested. Each reads
   // the hash's state through a symbol-keyed property, on which other code
   // may install a getter, and writes host state: both state no effect.
-  { module: "crypto", name: "createHash",
+  { module: "crypto", name: "createHash", trust: withinB("Node.js crypto.createHash", "top"),
     signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
     stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition, stated.bytes] },
   // String-only `join` invokes the standard platform normalize function,
   // allocates private arrays and strings, and runs no client callback under
   // the untampered-standard-object contract (SOURCE-CONTRACTS.md, Library modules).
   // `resolve` and `relative` keep their unrestricted contracts.
-  { module: "path", name: "join", signature: "join(...paths: string[]): string;",
+  { module: "path", name: "join", trust: withinB("Node.js path.join", "top"), signature: "join(...paths: string[]): string;",
     stated: { binders: [], params: [], rest: atom("string"), result: atom("string") }, effect: emptyEffect },
-  { module: "path", name: "resolve", signature: "resolve(...paths: string[]): string;",
+  { module: "path", name: "resolve", trust: withinB("Node.js path.resolve", "top"), signature: "resolve(...paths: string[]): string;",
     stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
-  { module: "path", name: "dirname", signature: "dirname(path: string): string;",
+  { module: "path", name: "dirname", trust: withinB("Node.js path.dirname", "footprint"), signature: "dirname(path: string): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") }, effect: pathEffect },
-  { module: "path", name: "basename", signature: "basename(path: string, suffix?: string): string;",
+  { module: "path", name: "basename", trust: withinB("Node.js path.basename", "footprint"), signature: "basename(path: string, suffix?: string): string;",
     stated: { binders: [], params: [atom("string"), union(atom("string"), atom("undefined"))], result: atom("string") },
     effect: pathEffect },
-  { module: "path", name: "relative", signature: "relative(from: string, to: string): string;",
+  { module: "path", name: "relative", trust: withinB("Node.js path.relative", "top"), signature: "relative(from: string, to: string): string;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
   // `node:os`'s `tmpdir()` returns the directory for temporary files: on
   // POSIX the native `getTempDir`, the first of `TMPDIR`, `TMP` and `TEMP`
@@ -494,14 +501,14 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `process.env` is Node's, whose values are strings; a replaced
   // `process.env` holding `TEMP: 7` makes Windows return 7. It states no
   // effect, since the call reads `process.env`.
-  { module: "os", name: "tmpdir", signature: "function tmpdir(): string;",
+  { module: "os", name: "tmpdir", trust: withinB("Node.js os.tmpdir", "top"), signature: "function tmpdir(): string;",
     stated: { binders: [], params: [], result: atom("string") } },
   // `availableParallelism()` is the native `getAvailableParallelism`
   // (Node 26.13.0's lib/os.js and src/node_os.cc): libuv's
   // `uv_available_parallelism`, an unsigned integer, returned as a number.
   // It reads no property, runs no code of the client's, allocates nothing
   // and does not throw: the empty footprint.
-  { module: "os", name: "availableParallelism", signature: "function availableParallelism(): number;",
+  { module: "os", name: "availableParallelism", trust: withinB("Node.js os.availableParallelism", "top"), signature: "function availableParallelism(): number;",
     stated: { binders: [], params: [], result: atom("number") }, effect: emptyEffect },
   // `userInfo()` with no options (Node 26.13.0's lib/os.js and
   // src/node_os.cc) calls the native `getUserInfo` with `null` options, so
@@ -512,7 +519,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `SystemError`, whose construction runs Node's error code: the call
   // states no effect. Stated at no argument, where an encoding option may
   // select `Buffer`s.
-  { module: "os", name: "userInfo",
+  { module: "os", name: "userInfo", trust: withinB("Node.js os.userInfo", "top"),
     signature: "function userInfo(options?: UserInfoOptionsWithStringEncoding): UserInfo<string>;",
     alternatives: ["function userInfo(options?: { encoding: BufferEncoding }): UserInfo<string>;"],
     stated: { binders: [], params: [], result: { k: "object", stringIndex: null, calls: [], span: at, fields: [
@@ -528,13 +535,13 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // the client's, write and allocate nothing and do not throw. The sets are
   // filled while Node starts (`--expose-internals` adds to them): the
   // answer is the running Node's, a Boolean.
-  { module: "module", name: "isBuiltin", signature: "function isBuiltin(moduleName: string): boolean;",
+  { module: "module", name: "isBuiltin", trust: withinB("Node.js module.isBuiltin", "top"), signature: "function isBuiltin(moduleName: string): boolean;",
     stated: { binders: [], params: [atom("string")], result: atom("boolean") }, effect: emptyEffect },
   // Only strings enter fileURLToPath. The URL it parses reaches no other code: it has no own
   // auth/path/hostname/pathname hooks or externally aliased search params.
   // POSIX rejects hosts and encoded slashes; Windows accepts UNC hosts and
   // also rejects encoded backslashes. The default selects the platform.
-  { module: "url", name: "fileURLToPath",
+  { module: "url", name: "fileURLToPath", trust: withinB("Node.js url.fileURLToPath", "top"),
     signature: "function fileURLToPath(url: string | URL, options?: FileUrlToPathOptions): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") }, effect: emptyEffect },
   // `pathToFileURL(path)` (Node 26.13.0's `lib/internal/url.js`) validates
@@ -546,16 +553,28 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // paths. The call states no effect. `pathToFileURL(path).href` reads the
   // fresh URL's serialization: the URL reaches no other code before the
   // read, so `URL.prototype`'s `href` getter serializes its parsed record.
-  { module: "url", name: "pathToFileURL", serialized: pathToFileHrefName,
+  { module: "url", name: "pathToFileURL", trust: withinB("Node.js url.pathToFileURL", "top"), serialized: pathToFileHrefName,
     signature: "function pathToFileURL(path: string, options?: PathToFileUrlOptions): URL;",
     stated: { binders: [], params: [atom("string")], result: url }, definitions: [stated.url] },
   // `node:path`'s `sep`, the separator of the platform's paths: a data
   // property of the object the module exports, set when Node loads it (`"/"`
   // on POSIX, `"\\"` on Windows; Node 26.13.0's lib/path.js). It is writable:
   // no code writes it, an assumption, as of `process.argv`.
-  { module: "path", name: "sep", signature: 'readonly sep: "\\\\" | "/";', constant: true,
+  { module: "path", name: "sep", trust: withinB("Node.js path.sep", "top"), signature: 'readonly sep: "\\\\" | "/";', constant: true,
     stated: { binders: [], params: [], result: union(text("\\"), text("/")) } },
 ];
+
+/** **The overlay's trust fields, checked when it is loaded**
+ * (`checkTrust`): every entry, at the effect it states, and the methods of
+ * the types it states (`checkStatedTrust`). `stripTypeScriptTypes` queues
+ * the warning it allocates on the realm's tick queue, storage that existed
+ * before its call: `stores: "other"`. */
+const modulesTrust: void = modulesOverlay.forEach(entry =>
+  checkTrust(`${entry.module}.${entry.member ?? entry.name}`, entry.trust, [entry.effect]));
+export const hashMemberTrust: ReadonlyMap<string, BuiltinTrust> = new Map<string, BuiltinTrust>([
+  ["Hash.update", withinB("Node.js hash.update", "footprint")],
+  ["Hash.digest", withinB("Node.js hash.digest", "footprint")]]);
+const hashTrust: void = checkStatedTrust([hashDefinition], hashMemberTrust);
 
 /** The texts an entry reviews its overload as: its signature and its
  * alternatives. */

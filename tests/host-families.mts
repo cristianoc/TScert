@@ -14,6 +14,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { syntax as ts } from "../tools/syntax.mts";
 import { familyTable, type FamilyDescription, type FamilyGraph } from "../tools/host-families.mts";
+import { withinB } from "../tools/builtin-trust.mts";
 import { enumObjectMatches } from "../tools/family-activation.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -139,7 +140,8 @@ assert.throws(() => familyTable({ ...description,
 // A method whose footprint the family states is checked against its reviewed
 // declaration like an omitted member.
 assert.throws(() => familyTable({ ...description,
-  footprints: [{ owner: "Base", member: "note", text: "readonly note: string;", kind: "empty" }] }, graph(interfaces)),
+  footprints: [{ owner: "Base", member: "note", text: "readonly note: string;", kind: "empty",
+    trust: withinB("s", "footprint") }] }, graph(interfaces)),
   /the method Base\.note whose footprint the family states is not declared as reviewed/);
 // An audited shape (HOST-FAMILIES.md, "The family description") for a tag
 // no declaration states: its bases' members and its own, each read at its

@@ -14,6 +14,7 @@
 import type { DeclarationIdentity, ExactElementWrite, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import type { CallEffect, ViewFormat } from "./type-graph.mts";
+import { checkStatedTrust, storesOther, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export type TypeEntry = {
   /** The type's name, as a client writes it: `Buffer`. */
@@ -539,6 +540,51 @@ export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
     : definition === htmlElementDefinition ? [elementDefinition, inlineStyleDefinition]
     : definition === elementDefinition ? [rectangleDefinition] : [];
 }
+
+/** **The stated types' trust fields** (`builtin-trust.mts`), by
+ * `Declaration.member`, each checked when the overlay is loaded
+ * (`checkStatedTrust`): every method a definition states has one, at the
+ * effects its signatures state, under the approved assumption that standard
+ * objects are not tampered with (a `Stats`' tests, a decoder's state).
+ * `getContext` stores the context it creates into the canvas's context
+ * slot; `appendChild`, `removeChild` and `setProperty` queue a mutation
+ * record, which they allocate, on each observer of the node: `stores:
+ * "other"`. */
+export const typeMemberTrust: ReadonlyMap<string, BuiltinTrust> = new Map<string, BuiltinTrust>([
+  ...["Uint8Array", "Uint16Array", "Int32Array", "Float64Array", "Buffer"].flatMap((name): [string, BuiltinTrust][] => [
+    [`${name}.fill`, withinB("ECMA-262 sec-%typedarray%.prototype.fill", "top")],
+    [`${name}.copyWithin`, withinB("ECMA-262 sec-%typedarray%.prototype.copywithin", "top")],
+    [`${name}.set`, withinB("ECMA-262 sec-%typedarray%.prototype.set, sec-settypedarrayfromtypedarray", "top")],
+    [`${name}.subarray`, withinB("ECMA-262 sec-%typedarray%.prototype.subarray, sec-typedarrayspeciescreate", "top")]]),
+  ["Buffer.toString", withinB("Node.js buf.toString", "top")],
+  ...["BigIntStats", "Dirent"].flatMap(name => ["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice",
+    "isSymbolicLink", "isFIFO", "isSocket"].map((test): [string, BuiltinTrust] =>
+    [`${name}.${test}`, withinB(`Node.js ${name === "Dirent" ? "dirent" : "stats"}.${test}`, "footprint")])),
+  ["TextDecoder.decode", withinB("WHATWG Encoding dom-textdecoder-decode", "footprint")],
+  ["Segmenter.segment", withinB("ECMA-402 sec-intl.segmenter.prototype.segment, sec-createsegmentsobject", "top")],
+  ["CanvasRenderingContext2D.measureText", withinB("WHATWG HTML dom-context-2d-measuretext", "top")],
+  ["OffscreenCanvas.getContext", storesOther("WHATWG HTML dom-offscreencanvas-getcontext, dom-canvas-getcontext", "top")],
+  ["Element.appendChild", storesOther("WHATWG DOM dom-node-appendchild, concept-node-insert, queueing-a-mutation-record", "top")],
+  ["Element.removeChild", storesOther("WHATWG DOM dom-node-removechild, concept-node-remove, queueing-a-mutation-record", "top")],
+  ["Element.getBoundingClientRect", withinB("CSSOM View dom-element-getboundingclientrect", "top")],
+  ["InlineStyle.setProperty", storesOther("CSSOM dom-cssstyledeclaration-setproperty, update-style-attribute-for; WHATWG DOM queueing-a-mutation-record", "top")],
+  ["DateTimeFormat.resolvedOptions", withinB("ECMA-402 sec-intl.datetimeformat.prototype.resolvedoptions", "top")],
+  ["Document.createElement", withinB("WHATWG DOM dom-document-createelement, concept-create-element", "top")],
+]);
+
+/** Every definition the overlay states: each entry's, the views', and those
+ * they name (`namedDefinitions`). */
+export const statedDefinitions: readonly TypeDefinition[] = (() => {
+  const all = new Set<TypeDefinition>();
+  const add = (d: TypeDefinition): void => {
+    if (all.has(d)) return;
+    all.add(d);
+    namedDefinitions(d).forEach(add);
+  };
+  [...Object.values(definitions), ...viewDefinitions].forEach(add);
+  return [...all];
+})();
+const typesTrust: void = checkStatedTrust(statedDefinitions, typeMemberTrust);
 
 const node = "@types/node";
 const library = "library";
