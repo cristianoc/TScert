@@ -27,7 +27,7 @@ export const forcedProposals: readonly ForcedProposal[] = [
   // nodes, the one the returns read, refuses it after the walk)
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-support",
     at: /framed plan: the request check of its framed call nodes at the frame's flow \(framedNodesAt\) fails \(at its framed call node 10, 1 of the supports it keeps fail the frame's check\)/ },
-  // (at another component, the initialization's codes are not its code)
+  // (at another component, the flow's codes are not its code)
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-component",
     at: /framed plan: the binding check of its flow at the frame's sites \(frameFlowB\) fails/ },
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-entries",
@@ -41,8 +41,6 @@ export const forcedProposals: readonly ForcedProposal[] = [
     at: /framed plan: the binding check of its protocol \(protocolAtLeastB\) fails/ },
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-flow-site",
     at: /framed plan: the binding check of its allocation sites \(allocB\) fails/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-init-exports",
-    at: /framed plan: the binding check of its initialization \(initB\) fails/ },
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-spec-readonly",
     at: /framed plan: the binding check of its read-only types \(readOnlyB\) fails/ },
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-field",

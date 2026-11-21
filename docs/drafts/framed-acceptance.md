@@ -720,153 +720,39 @@ function of smaller height), a function's closure is the same at every
 depth from its height on (proved, `PassUnit.approx_stable`); a function
 with no linked slot has height `0`, one unfolding at every depth.
 
-**The initialization** of $`C`$: `initC`, a code of $`C`$ (tagged
-$`c_C`$) whose node expression allocates, in reverse topological order of
-the name graph, each module function's closure at its stable unfolding
-(`makeAt (.graph …)`, its linked captures the closures already allocated,
-its outside captures the slots holding the realm's identities), and returns the array of the exported
-ones. Its order names each module function once, by name (`initOrder`):
-two module functions of one code are two closures of that code. Its
-allocations are at canonical sites.
-
-**An initial configuration** of a program over $`C`$: the realm's heap
-$`h_R`$, holding the intrinsic objects the outside slots of $`C`$'s module
-functions name (`Array.prototype`), a world at which it is typed, and the
-closed term
-`letE (gotoOf initC 0 Lr .undef c_C) client`, `Lr` the realm's
-identities ([the initialization in the flow](#the-initialization-in-the-flow)), whose `client` is lowered
-source of outside code (`LoweredSrc`, holding no closure,
-`loweredSrc_no_closure`) scoped at one binder (`Scoped 1 client`, its
-variable `0` the exports' array; the whole `letE` is `Scoped 0`).
-
-**The scope of the claim** (a stated limit; proved of the definition,
-`FramedSpec.Initial`, `initial_lowered`): the realm's heap holds one
-location per realm value $`C`$'s module functions read (`componentInit`:
-for P22, `%ElementAt%` and `[[Array.prototype]]`, an object with no
-field), and the client holds no located value (`LoweredSrc`) and reads
-one variable, the exports. So a program the framed claim is about reaches
-the exports, what its client allocates, and the calculus's operations
-(element reads and writes, lengths, arithmetic, literals, calls of the
-exports' and its own closures). A client calling a native (`xs.push`,
-`Math.max`, a `Map`, any method of a realm object) runs no program the
-claim is about: covering it takes an initial heap holding the whole
-audited realm, each native with its step model or contract, bound for the
-client.
+**The initial configurations** are a premise of the claim
+([the initialization as a premise](#the-initialization-as-a-premise),
+`FramedSpec.Initial`): a configuration at the history before any entry
+that fits the flow, is an entry, meets the invariants every step keeps
+and whose module functions' closures are unfoldings of the plan's layout.
 
 **P22's layout** (measured, `layout.py` on P22's `fragment.json`, and the
 module code the flow probe reads): one function, `walk`; no module
 initialization statement (`init: []`); no imported module; two outside
-slots, the intrinsic `%ElementAt%` the read `xs[c.i]!` lowers to, an
-audited native with a step model, and `[[Array.prototype]]`, the realm's
-array prototype every unit that uses arrays sees (`Elaboration.lean`), an
-intrinsic object of $`h_R`$. `walk` names no function of its module. So
-P22 meets the restriction and its `initC` allocates one closure.
+slots, the intrinsic `%ElementAt%` the read `xs[c.i]!` lowers to and
+`[[Array.prototype]]`, the realm's array prototype every unit that uses
+arrays sees (`Elaboration.lean`). `walk` names no function of its module.
 
 ### The initialization in the flow
 
-**Both premises on the initial configurations read the initialization's
-code at the flow** (proved, `FramedStarts.lean`). An initial
-configuration's term runs `initC` at $`c_C`$, a tag of $`C`$
-(`init_ofC`). Code provenance at an entry (`InitialEntry`) holds only
-where `initC` is a code the flow proposes for (`initialEntry_code`), and
-the fit (`InitialFits`) only where the flow has a proposal for it, the
-rule `gotoC` being the only rule fitting a run of $`C`$'s code
-(`initialFits_code`).
-
-**A closure whose code names a signature at a capture** is created by no
-lowered code (proved, `capSig_not_lowered`): `Lowered`'s clause for a
-closure of $`C`$'s code requires `SelfFn` at every context of the created
-code, only the closure's own slot naming a signature at its entry. P22's
-`walk` is such a code (measured): its entry names `%ElementAt%`'s
-signature at its capture slot `4`, the seed `componentCodes` gives a
-module function's sibling slot of a native (`sibSig`), by which its read
-`xs[c.i]!` is a known call (`Fits.invokeC`). So `initC` is no lowered
-code, and the flow's checks read of its codes what their consumers need,
-the two rules below. `Fits.makeGraphC` reads `CapFn` at the instantiated
-captures, which a capture holding a closure of the named signature meets.
-
-**The design.** The initialization is a code of $`C`$ the flow proposes
-for, reading the realm's values from its slots, and two rules read what
-their consumers need:
-
-- **The initial configuration** is
-  `letE (.goto initE initK 0 Lr .undef c_C) client`, `Lr` the realm's
-  identities in `componentInit`'s order (`FramedSpec.initL`, the
-  identity `j` the realm's object at its location `j`, `realmValueAt`).
-  `initE`'s captures of realm values are the variables of the slots
-  holding them (at node `k`, the slot `k + j` of the realm value `j`, past
-  the `k` closures bound before it); `initB` checks them so (a capture
-  naming no module function a slot of an identity, `k ≤ v < k + |Lr|`;
-  `Lr`'s length the realm's, its identity `j` at location `j`).
-- **The flow proposes for `initC`** (`componentCodes`'s `init`: one more
-  code of $`C`$, a unit entered at `entryCx` at its node `0` with no
-  closure of its own, each slot holding a realm value seeded with that
-  value's signature where it is a native's closure, as a module
-  function's sibling slots are; its returns reach $`O`$, as a unit's do).
-  `FFlow.check`, `codesCoverB` and `marksB` then cover it.
-- **The open fit of a closure creation reads the creating node's
-  signatures** (`OFits.makeGraphC`, decided by `graphSites` with
-  `ocapFnB`, proved `ocapFnB_sound`): `CapFn` read on the open term
-  (`OCapFn`): each slot naming a signature at the created code's entry,
-  at every context, is the closure's own slot, or the slot of a capture
-  that is a slot of the node naming the same signature ($`\varphi`$).
-  Instantiation keeps it (`OCapFn.inst`, in `ofits_sound`: the
-  instantiated capture is the environment's value at that slot, a closure
-  of the signature by `EnvFn`), giving `Fits.makeGraphC`'s `CapFn`.
-  `SelfFn` is the case of no capture naming a signature
-  (`SelfFn.ocapFn`).
-- **The flow's codes hold no located value** (`CodesLowered`, as its one
-  consumer reads it, `goodIn_vals_vj`: the values of each node expression
-  of a code the flow proposes for are spines with no cell, as lowered
-  code's are, `lowered_vals_all`), decided by `codesLoweredB` over that
-  property (`codesLoweredB_sound`). `Lowered` is the condition on outside
-  code (`LoweredSrc.lowered`) and on the code of a closure a term creates
-  (`Fits.makeGraphC`), which `walk`'s code meets.
-- **The checks `frameFlowB` adds** (`initFlowB`, `realmSlotB`,
-  controls in `Tests/FramedBindingControls.lean`), the premises of the
-  two rules the initial term fits by: `initC`'s proposal at `entryCx`,
-  its return set within $`O`$ (the exports' array reaches the client); at
-  each slot of the entry the realm identity it holds meeting the slot's
-  set (an identity is an object with no field, which holds no location;
-  for a native's closure, with no capture and its code holding no value,
-  its token in the set, the native's proposal at `entryCx`, open where its
-  token lies in $`O`$, only its own slot naming a signature at its entry,
-  and the slot naming none or its signature, `EnvFn`; no slot past `Lr`
-  naming one); every code `initE` and `Lr` hold at a tag of $`C`$ a code
-  of the flow and every such code carrying a tag of $`C`$ (provenance and
-  outside source); each value of the realm's heap a primitive
-  (`primVal`); and each identity meeting layout provenance, the residual
-  invariant and free of runs.
-- **What they give** (proved, `FramedInitial.lean`). `InitialFits`
-  (`FramedSpec.initialFits`): the `letE` by `Fits.letE` at the set
-  $`O`$, the run by `gotoC` at `initC`'s proposal (its slots by the checks
-  above, the default `undefined` a primitive), the client by
-  `fits_lowered` (`LoweredSrc.lowered`, its variable `0` bound to
-  $`O`$), the realm's heap by `VJ.prim`. `InitialEntry`
-  (`FramedSpec.initialEntry`): provenance
-  (`initC` and the natives' codes are flow codes; the client creates only
-  closures of outside code, `LoweredSrc`), the discipline (`wf` of the
-  term, the realm's heap free of runs, primitives), outside code lowered
-  source (the client; no value of the realm is code) and closed values
-  (`Lr` closed, `Scoped 1 client`, primitives).
+The flow is solved with one more code of $`C`$ beside the module
+functions' (`componentCodes`'s `init`, built by `componentInit`): a unit
+entered at `entryCx` allocating each module function's closure after
+those it names, each slot holding an outside value seeded with that
+value's signature where it is a native with a step model, as a module
+function's sibling slots are (`sibSig`). The claim reads no run of it:
+its initial configurations are the premise. The seed's native signatures
+leave with the natives' step models, a native's slot then holding the
+sites $`\{\circ\}`$ ([the algorithm](#the-algorithm), step 2).
 
 **A linked capture fits at the creation's value** (proved, the rule
 `Fits.frameC`'s value clause at `FnTm`, and `CodeChk`'s): a module
 function's capture slot of another module function names that
-function's signature (`sibSig`, by which its call is a known call), and
-the initialization's slot binding that function's closure names it too,
-as the value of a node creating a closure of $`C`$'s code names the
-signature of the code it creates (`vfnB`, `creationIx`). So `initC`'s
-creation of a closure capturing another module function's closure meets
-its open fit (`OCapFn`). Module functions naming each other in a cycle
-are refused at their gate ([Restrictions](#restrictions)): `initC`
-creates each closure after those it names.
-
-**At P22** (measured): the component's checks pass, `initC` among the
-flow's codes, `initFlowB` among them; `initC`'s proposal returns within
-$`O`$; its slot `0` (`[[Array.prototype]]`) holds outside storage, its
-slot `1` names `%ElementAt%`'s signature and holds the native's token,
-which lies outside $`O`$. The restrictions hold.
+function's signature (`sibSig`, by which its call is a known call). The
+open fit of a closure creation reads the creating node's signatures
+(`OFits.makeGraphC`, decided by `graphSites` with `ocapFnB`, proved
+`ocapFnB_sound`); the flow's codes hold no located value
+(`CodesLowered`, decided by `codesLoweredB`, `codesLoweredB_sound`).
 
 ## The frame of a request
 
@@ -2996,11 +2882,11 @@ states.
 ### The initialization as a premise
 
 **The initial configurations** are every configuration $`x_0`$, at the
-history before any entry, that fits the flow, is an entry, and meets the
-outside contracts:
+history before any entry, that fits the flow, is an entry, meets the
+invariants every step keeps, and meets the outside contracts:
 
 ```math
-\mathrm{Initial}(x_0) \iff \mathrm{Fits}_F(x_0, g_\varnothing) \wedge \mathrm{Entry}(x_0) \wedge \mathrm{SlotsMet}(x_0) \wedge \mathrm{RealmSlots}(x_0)
+\mathrm{Initial}(x_0) \iff \mathrm{Fits}_F(x_0, g_\varnothing) \wedge \mathrm{Entry}(x_0) \wedge \mathrm{States}(x_0) \wedge \mathrm{SlotsMet}(x_0) \wedge \mathrm{RealmSlots}(x_0)
 ```
 
 - $`\mathrm{Fits}_F(x_0,g_\varnothing)`$ is the frame's fit
@@ -3012,6 +2898,14 @@ outside contracts:
   closure of the client's code lowered source (`LoweredSrc`) and every
   closure of the realm's code ($`R`$) lowered code of the calculus
   meeting (a) and (b);
+- $`\mathrm{States}(x_0)`$ (`FramedSpec.States`): the invariants every step
+  keeps, which the frame's theorems read at $`x_0`$: a reached term
+  (`wfS`), layout provenance at the plan's layouts (`layP`, `HeapLay`), no
+  run of $`C`$ waiting as a binding's body (`NoPend`), and the residual
+  invariant of the term and the heap (`WOk`, `HeapW`); the heap free of
+  runs is the entry's call discipline. A constructed initialization term
+  gave them by its shape; as a premise they are stated, and
+  `initial_of_inits` discharges them with the fit;
 - $`\mathrm{SlotsMet}(x_0)`$: every closure of a module function in
   $`x_0`$'s term or heap is an unfolding $`\mathrm{approx}\ \mathit{code}\
   i\ u`$ of the plan's layout at a depth $`i`$ at least $`x_0`$'s budget,
@@ -3024,10 +2918,23 @@ outside contracts:
   meaning depends on the world, every world may hold of no value
   ([H5b](../SINGLE-PASS-THEOREM.md), the last sentence of its `moduleCell`
   item), so $`\mathrm{SlotsMet}`$ reads the worlds of $`x_0`$, which every
-  later state's world extends;
+  later state's world extends. The layout is the plan's
+  (`FramedSpec.layout`, built by the decoder from each module function's
+  request: its realized code and, per slot, the module function it names
+  or none, with the type its request reads it at), the closures those of
+  $`C`$'s tags that $`x_0`$'s term and heap hold (`closuresOf`, by cases on
+  every constructor), and the unfolding `UnfoldsAt`, at depth $`0`$
+  `null`, at depth $`i+1`$ a closure of the code whose linked captures
+  unfold at depth $`i`$ and whose outside captures meet their types at
+  every budget up to $`i`$ in every world above $`x_0`$'s;
 - $`\mathrm{RealmSlots}(x_0)`$ (Fable R5): the value of every native's
   slot of a module function's closure in $`x_0`$, and each member read
   through it in $`x_0`$'s heap, is a closure of the realm's code $`R`$.
+  It reads each slot's kind and declaration's origin and a realm tag in
+  the family, which the plan does not hold while the family is
+  `oneComponent` $`C`$ and the kinds are stated in theorems alone
+  (`OutsideKind`); it is stated with the natives by their footprints, with
+  its reader `nativeAt_sound`.
 
 So `InitialFits` and `InitialEntry` hold by definition, and
 `FramedSpec.Initial`'s term, the realm's heap, `initE`, `initK`, `initL`
@@ -3057,9 +2964,15 @@ A clause of any other constructor answers `false`, a stated precision
 limit. `walk`'s two slots, `[[Array.prototype]]` and `%ElementAt%`, pass
 (observed: P22 keeps its verdict). `initial_inhabited` (to be proved),
 $`\exists x_0,\ \mathrm{Initial}(x_0)`$ with a public call of the
-realized code from it (`PublicCall`), adds the fit, the entry and
-$`\mathrm{RealmSlots}`$ at a configuration holding those values and the
-module functions' unfoldings.
+realized code from it (`PublicCall`), adds the fit, the entry,
+$`\mathrm{States}`$ and $`\mathrm{RealmSlots}`$ at a configuration
+holding those values and the module functions' unfoldings. It reads a
+native's slot at the sites $`\{\circ\}`$ (step 2): where the flow gives
+`walk`'s `%ElementAt%` slot the token of the native's step model, a code
+of $`C`$ (`hostModel?`, `sibSig`), a configuration fitting the flow holds a
+closure of that code there, and $`\mathrm{SlotsMet}`$ asks it to meet the
+intrinsic's signature, which only the deleted row on step models states.
+So `initial_inhabited` follows the natives by their footprints.
 
 **The instances.** That a program's state after its modules' evaluation is
 an initial configuration is discharged per kind of slot by the mechanisms
@@ -3148,11 +3061,12 @@ commit that builds it records `Theorem modified (mode8Accepted_sound)`
 with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
 `MemberSafe`'s framed branch.
 
-1. `FramedSpec.Initial` (modified): the four conjuncts above
-   (`FramedSpec.RealmSlots`, new);
+1. `FramedSpec.Initial` (modified): the conjuncts above
+   (`FramedSpec.States`, `FramedSpec.RealmSlots`, new);
    `FramedSpec.SlotsMet` (new), over the plan's layout (`FramedSpec.layout`,
-   the `ModuleCode`s and kinds of the plan's component), at the worlds of
-   $`x_0`$.
+   each module function's code and slots' links and types; the kinds join
+   it with `RealmSlots`) and `closuresOf`, by `FramedSpec.UnfoldsAt`, at
+   the worlds of $`x_0`$.
 2. `FramedSpec.initialFits`, `FramedSpec.initialEntry` (modified, proved
    by definition); `initial_inhabited` (new, to be proved).
 3. The owner of a frame on the evaluation path (new: `path` reading a
@@ -3210,7 +3124,7 @@ the base.
 | --- | --- | --- | --- | --- | --- |
 | 0 | `writesK` exhaustive | none: the proofs over `writesK` unchanged | 5–10 | 1 | no |
 | 1 | Client steps and native steps, read at no call of a native | chain 3, 6 at a plan with no call of a native, 7 | 400–600 | — | no |
-| 2 | The initialization as a premise, and natives by their footprints | first `initial_inhabited` (chain 2), then chain 1, 4, 5, 6, 8 at natives, 9, 11; `chargesProtocol`, `nativeTop` | 900–1350 | about 1450 (the [deletion list](#what-the-change-deletes): the initialization, the realm and the natives' models) | yes: P22 kept, the probes below accepted |
+| 2 | The initialization as a premise, and natives by their footprints | first chain 1 without `RealmSlots`, 2 by definition and 11, then the natives' slots at $`\{\circ\}`$, `RealmSlots`, `initial_inhabited` (chain 2), 4, 5, 6, 8 at natives, 9; `chargesProtocol`, `nativeTop` | 900–1350 | about 1450 (the [deletion list](#what-the-change-deletes): the initialization, the realm and the natives' models) | yes: P22 kept, the probes below accepted |
 | 3 | Outside slots of every kind and several modules | step 2's sites; the `:init` codes in $`M_C`$; chain 10 | 400–600 | about 120 (the gates) | yes: cells, imports and package components |
 | 4 | Unfoldings at a cycle of names | chain 8's `EnvFnAt` | 150–250 | about 60 (`namingOrder`, `closable`, `StableLayout`, `PassUnit.approx_stable`) | yes: the cycle case |
 | 5 | Read-only frames and the trust surface | the paper's text, approved and applied 2026-11-21 ([Read-only frames](readonly-frames-note/note.tex)), its statuses moved to the pieces' Lean names; rows (a) and (b) in DESIGN.md | — | — | no |

@@ -17,10 +17,7 @@ of the flow at the decided package is the check at the frame's
 The checks of the flow the frame reads, over the component alone
 (`frameFlowB`): the flow's facts (`FFlow.check`), its tokens sites
 (`tokensSomeB`), its codes lowered (`codesLoweredB`), the closure of its
-capture sites and `O` closed (`capClosedB`), its marks (`marksB`), and the initialization's node
-expressions free of runs and, with the realm's values, meeting layout
-provenance at the flow's layouts (`layP`) and the residual invariant
-(`WOk`, decided by `wokB`). -/
+capture sites and `O` closed (`capClosedB`) and its marks (`marksB`). -/
 
 namespace Verification.SourceClaimJson
 open Verification Verification.TolerantFrames.ReadOnly ControlFlow
@@ -34,81 +31,6 @@ instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
 numbers. -/
 instance (N : NumberedFamily) (C : Nat) : Hashable (N.family.at C).Site :=
   ⟨fun s => @hash Nat _ (show {s : Nat // N.family.Runs (N.family.siteOf s) C} from s).1⟩
-
-/-! ## The residual invariant, decided -/
-
-mutual
-/-- **The residual invariant**, decided (`WOk`). -/
-def wokB : Tm → Bool
-  | .frame E _ t L d _ _ _ =>
-    (writesK t).all (fun k => decide (k ∈ E.flatMap writesK)) && wokB t && woksB E && plainArgsB L &&
-      ((writesK d).isEmpty && wokB d)
-  | .goto E _ _ L d _ => woksB E && plainArgsB L && ((writesK d).isEmpty && wokB d)
-  | .objAt _ (.bound t r pre) _ => ((writesK t).isEmpty && wokB t) && ((writesK r).isEmpty && wokB r) && plainArgsB pre
-  | .objAt _ (.graph _ E _ _ caps _ _ _) _ => woksB E && plainArgsB caps
-  | .makeAt (.bound t r pre) _ xs =>
-    (((writesK t).isEmpty && wokB t) && ((writesK r).isEmpty && wokB r) && plainArgsB pre) && woksB xs
-  | .makeAt (.graph _ E _ _ caps _ _ _) _ xs => (woksB E && plainArgsB caps) && woksB xs
-  | .makeAt .absent _ xs => woksB xs
-  | .makeAt (.view _ _ _) _ xs => woksB xs
-  | .arrLit xs => woksB xs
-  | .invoke f r args => wokB f && wokB r && woksB args
-  | .construct f args => wokB f && woksB args
-  | .letE a b => wokB a && wokB b
-  | .indexAt a b => wokB a && wokB b
-  | .writeAt _ a b => wokB a && wokB b
-  | .arith _ a b => wokB a && wokB b
-  | .elemAt a b => wokB a && wokB b
-  | .merge _ a b => wokB a && wokB b
-  | .makeKey a b => wokB a && wokB b
-  | .ite a b c => wokB a && wokB b && wokB c
-  | .setElem a b c => wokB a && wokB b && wokB c
-  | .readAt _ a => wokB a
-  | .test _ a => wokB a
-  | .lenOf a => wokB a
-  | .spread a => wokB a
-  | .throw a => wokB a
-  | _ => true
-termination_by structural t => t
-
-/-- The invariant at each term of a list, decided. -/
-def woksB : List Tm → Bool
-  | [] => true
-  | x :: xs => wokB x && woksB xs
-termination_by structural xs => xs
-
-/-- Each term of a list performs no write and meets the invariant, decided. -/
-def plainArgsB : List Tm → Bool
-  | [] => true
-  | x :: xs => ((writesK x).isEmpty && wokB x) && plainArgsB xs
-termination_by structural xs => xs
-end
-
-@[simp] theorem woksB_iff : ∀ {xs : List Tm}, woksB xs = true ↔ ∀ x ∈ xs, wokB x = true
-  | [] => by simp [woksB]
-  | x :: xs => by simp [woksB, woksB_iff]
-
-@[simp] theorem plainArgsB_iff : ∀ {xs : List Tm},
-    plainArgsB xs = true ↔ ∀ x ∈ xs, writesK x = [] ∧ wokB x = true
-  | [] => by simp [plainArgsB]
-  | x :: xs => by simp [plainArgsB, plainArgsB_iff]
-
-/-- **The decided invariant is the invariant** (proved, by induction on
-the term). -/
-theorem wokB_sound (t : Tm) : wokB t = true → WOk t := by
-  induction t using Tm.induct with
-  | _ =>
-    intro h
-    simp only [wokB, WOk, woksB_iff, plainArgsB_iff, wOks_iff, plainArgs_iff, Plain, Bool.and_eq_true,
-      List.isEmpty_iff, List.all_eq_true, decide_eq_true_eq] at h ⊢
-    try grind
-
-/-- **A plain term**, decided. -/
-def plainB (t : Tm) : Bool := (writesK t).isEmpty && wokB t
-
-theorem plainB_sound {t : Tm} (h : plainB t = true) : Plain t := by
-  simp only [plainB, Bool.and_eq_true, List.isEmpty_iff] at h
-  exact ⟨h.1, wokB_sound t h.2⟩
 
 /-! ## The frame's package, its tags decided -/
 
@@ -162,84 +84,25 @@ theorem frame_transport {ofC : ComponentTag → Bool} {O : List (Option Nat)} (C
 section
 variable {P : Package} [DecidableEq P.Site] [Hashable P.Site]
 
-/-- **A slot of the initialization's entry holding a realm's identity**,
-decided at the initialization's proposal `c`: the identity meets the slot's
-set. An identity is an object with no field, which holds no location: an
-object, the slot naming no signature; a closure of `C`'s code with no
-capture whose code holds no value, its code's token in the set, its code
-open at its entry where the token lies in `O`, only its own slot naming a
-signature at its entry at every context, and the slot naming none or its
-signature. -/
-def realmSlotB (F : FFlow P) (c : FCode P) (i : Nat) : Tm → Bool
-  | .objAt [] .absent _ => (c.flow.fn 0 i).isNone
-  | .objAt [] (.graph ar E K s [] _ rest comp) _ =>
-    P.ofC comp && (valsArgs P.ofC true E).isEmpty &&
-      ((F.at (E, K) entryCx).any fun c' =>
-        decide (c'.tok ∈ c.flow.env 0 i) && (!decide (c'.tok ∈ F.O) || openB F c' ar s rest 0)) &&
-      (F.ctxs (E, K)).all (fun c' => selfFnB c'.2 ar E K s rest 0) &&
-      (c.flow.fn 0 i).all fun σ => decide (σ = ⟨(E, K), ar, s, rest, 0⟩)
-  | _ => false
-
-/-- **A code the flow proposes for, at a tag of `C`**, decided: a code at a
-tag of outside code, or one with a proposal at its entry context. -/
-def codeOkB (F : FFlow P) : Code → ComponentTag → Bool := fun m c => !P.ofC c || (F.at m entryCx).isSome
-
-/-- **The initialization in the flow**, decided (the draft, "The
-initialization in the flow"): the initialization's code `(initE, initK)`
-has a proposal at its entry context whose returns lie within `O`, whose
-entry names a signature only at a slot holding a realm's identity, and at
-each slot of which the identity it holds meets the slot's set
-(`realmSlotB`); every code its node expressions and the identities hold at
-a tag of `C` has a proposal (`codeOkB`), and every such code carries a tag
-of `C`. -/
-def initFlowB (F : FFlow P) (initE : List Tm) (initK : List (Continuation × Option Target)) (initL : List Tm) :
-    Bool :=
-  ((F.at (initE, initK) entryCx).any fun c => decide (Sub c.ret F.O) && decide ((c.node 0).fn.size ≤ initL.length) &&
-    initL.zipIdx.all fun (v, i) => realmSlotB F c i v) &&
-  provs (codeOkB F) initE && provs (codeOkB F) initL && provs (fun _ c => P.ofC c) initE &&
-  provs (fun _ c => P.ofC c) initL
-
 /-- **The checks of the flow the frame reads, over the component alone**:
-its facts (`FFlow.check`), its marks (`marksB`), its tokens sites (`tokensSomeB`), its codes
-holding no located value (`codesLoweredB`), the closure of its capture sites and `O` closed
-(`capClosedB`), and each node expression of the initialization, each
-value of the realm and each realm's identity the initialization's slots
-hold meeting layout provenance at the flow's layouts and the residual
-invariant, each node expression of the initialization and each identity
-free of runs, each value of the realm a primitive, and the initialization
-in the flow (`initFlowB`). -/
-def frameFlowB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (realm : Heap) (initE : List Tm)
-    (initK : List (Continuation × Option Target)) (initL : List Tm) : Bool :=
+its facts (`FFlow.check`), its marks (`marksB`), its tokens sites
+(`tokensSomeB`), its codes holding no located value (`codesLoweredB`), and
+the closure of its capture sites and `O` closed (`capClosedB`). -/
+def frameFlowB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Bool :=
   let S := captureSites F lay ++ F.O
   F.check && F.marksB && tokensSomeB F && codesLoweredB F &&
-    capClosedB F (tokenCaps F lay) S (capClose F (tokenCaps F lay) S) &&
-    initE.all (fun e => layP (layQ F lay) e && wokB e && free false e) &&
-    realm.all (fun v => layP (layQ F lay) v && plainB v && primVal v) &&
-    initL.all (fun v => layP (layQ F lay) v && plainB v && free false v) && initFlowB F initE initK initL
+    capClosedB F (tokenCaps F lay) S (capClose F (tokenCaps F lay) S)
 
 /-- **What the checks of the frame's flow give** (proved): the flow's
-facts and marks, its tokens and the codes holding no located value, the closure of its capture sites and
-`O` closed, layout provenance and the residual invariant of the
-initialization's node expressions and of the realm's heap, the
-initialization's node expressions free of runs, the realm's values
-primitives, layout provenance, the residual invariant and freedom of runs
-of the realm's identities, and the initialization in the flow. -/
-theorem frameFlowB_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat)} {realm : Heap} {initE : List Tm}
-    {initK : List (Continuation × Option Target)} {initL : List Tm}
-    (h : frameFlowB F lay realm initE initK initL = true) :
+facts and marks, its tokens and the codes holding no located value, and
+the closure of its capture sites and `O` closed. -/
+theorem frameFlowB_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat)} (h : frameFlowB F lay = true) :
     F.flow.Facts ∧ F.marksB = true ∧ tokensSomeB F = true ∧ codesLoweredB F = true ∧
       capClosedB F (tokenCaps F lay) (captureSites F lay ++ F.O)
-        (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) = true ∧
-      (∀ e ∈ initE, layP (layQ F lay) e = true) ∧ (∀ e ∈ initE, WOk e) ∧
-      HeapLay (layQ F lay) realm ∧ HeapW realm ∧ (∀ e ∈ initE, free false e = true) ∧
-      (∀ v ∈ realm, primVal v = true) ∧
-      (∀ v ∈ initL, layP (layQ F lay) v = true ∧ Plain v ∧ free false v = true) ∧
-      initFlowB F initE initK initL = true := by
-  simp only [frameFlowB, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hc, hm⟩, ht⟩, hl⟩, hT⟩, hi⟩, hr⟩, hL⟩, hI⟩ := h
-  exact ⟨FFlow.check_sound hc, hm, ht, hl, hT, fun e he => (hi e he).1.1, fun e he => wokB_sound e (hi e he).1.2,
-    fun v hv => (hr v hv).1.1, fun v hv => plainB_sound (hr v hv).1.2, fun e he => (hi e he).2,
-    fun v hv => (hr v hv).2, fun v hv => ⟨(hL v hv).1.1, plainB_sound (hL v hv).1.2, (hL v hv).2⟩, hI⟩
+        (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) = true := by
+  simp only [frameFlowB, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨⟨hc, hm⟩, ht⟩, hl⟩, hT⟩ := h
+  exact ⟨FFlow.check_sound hc, hm, ht, hl, hT⟩
 end
 
 end Verification.SourceClaimJson
