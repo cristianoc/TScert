@@ -1235,16 +1235,25 @@ def Ctx.frameText (cx : Ctx) (C : Nat) (f : ProposedFrame) : List String :=
 
 /-- **Each frame of `C`**: at each call of code outside `C` inside `C`'s
 code that a frame names, its refusal or its entries, at the call's place. -/
-def Ctx.frames (cx : Ctx) (C : Nat) : List String :=
-  cx.F.frames.flatMap fun f => match cx.calls[f.call]? with
-    | some c =>
+def Ctx.frames (cx : Ctx) (C : Nat) : List String := Id.run do
+  -- The template fixes the roots, parts and protection bits. The call only
+  -- supplies the place of the diagnostic once its relation to C is checked.
+  let mut checked : Std.HashMap Nat (Except String (List String)) := {}
+  let mut lines := #[]
+  for f in cx.F.frames do
+    if let some c := cx.calls[f.call]? then
       if (cx.outsideOf c).contains C && (cx.chain c.component).contains C then
         let at_ := s!"{c.module} {c.place.1}-{c.place.2}"
-        match cx.frameFailures C f with
-        | [] => (cx.frameText C f).map (s!"at {at_}: " ++ ·)
-        | rs => [s!"refused at {at_}: {"; ".intercalate rs}"]
-      else []
-    | none => []
+        let result := match checked[f.template]? with
+          | some result => result
+          | none => match cx.frameFailures C f with
+            | [] => .ok (cx.frameText C f)
+            | rs => .error ("; ".intercalate rs)
+        checked := checked.insert f.template result
+        match result with
+        | .ok reports => for report in reports do lines := lines.push (s!"at {at_}: " ++ report)
+        | .error reason => lines := lines.push s!"refused at {at_}: {reason}"
+  return lines.toList
 
 /-- **A frame naming no call of outside code**: refused at the call, for
 the call's innermost component. -/

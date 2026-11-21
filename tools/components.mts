@@ -199,7 +199,7 @@ export function shapeReadOnly(t: TypeShapeAst | null, types: ComponentsAst["type
 /** The empty description: no component. */
 export const noComponents: ComponentsAst = { components: [], codes: [], sites: [], values: [], crossings: [],
   stores: [], calls: [], throws: [], catches: [], holds: [], exports: [], thrown: null, suspensions: [], types: [],
-  escapes: [], clients: [], guarantees: [], protocols: [], frames: [] };
+  escapes: [], clients: [], guarantees: [], protocols: [], frameParts: [], frameEntries: [], frames: [] };
 
 /** A build configuration: where it writes its outputs, the directory of
  * the sources they mirror, and the files it compiles. */
@@ -1749,8 +1749,9 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     keys: [...(keys.get(t) ?? [])].sort(), anyKey: anyKey.has(t), contents: contentRefs[t] ?? 0,
     marks: enclosing(s.component).map((c) => ({ component: c, mark: markOf(t, c) })) }));
   const described: ComponentsAst = { components, codes: codesList, sites: siteList, values, crossings: crossingList, ...events,
-    thrown: thrownRef, suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees(), protocols: [], frames: [] };
-  return { ...described, protocols: proposeProtocols(described), frames: proposeFrames(described) };
+    thrown: thrownRef, suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees(), protocols: [],
+    frameParts: [], frameEntries: [], frames: [] };
+  return { ...described, protocols: proposeProtocols(described), ...proposeFrames(described) };
 }
 
 /** **Each component's proposed protocol** `Ψ_C` (the draft, "The
@@ -1918,7 +1919,7 @@ export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
  * fields at every key, an array's spine and cells), with the parts their locations may have for each such
  * component (`Ctx.frameParts`) and whether they are protected for every one
  * (`Ctx.frameProtected`). */
-export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
+export function proposeFrames(F: ComponentsAst): Pick<ComponentsAst, "frameParts" | "frameEntries" | "frames"> {
   const chain = (c: number): number[] => {
     const out: number[] = [];
     for (let d: number | null | undefined = c; d !== null && d !== undefined && out.length <= F.components.length; d = F.components[d]?.parent)
@@ -1956,8 +1957,11 @@ export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
   };
   // The sites a value may be for `C`: its own, and every exposed and
   // released site of `C` where it may enter from outside (`partsFor`).
-  const lentOf = (C: number): number[] =>
-    F.sites.flatMap((_, t) => { const m = markOf(t, C); return m === "exposed" || m === "released" ? [t] : []; });
+  const lentByComponent = F.components.map((): number[] => []);
+  F.sites.forEach((s, t) => {
+    for (const m of s.marks) if (m.mark === "exposed" || m.mark === "released") lentByComponent[m.component]?.push(t);
+  });
+  const lentOf = (C: number): number[] => lentByComponent[C] ?? [];
   // The fields of the records a value may be for the components `comps`.
   const fieldsOf = (v: number, comps: number[]): string[] => {
     const x = F.values[v];
@@ -1975,6 +1979,53 @@ export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
   };
   const protectedFor = (C: number, T: Tokens): boolean => !T.incoming.includes(C) &&
     T.sites.every((t) => { const m = markOf(t, C); return m === "local" || m === "internal" || m === "exposed"; });
+  const frameParts: ComponentsAst["frameParts"] = [];
+  const partIds = new Map<string, number>();
+  const partId = (parts: (number | null)[]): number => {
+    const key = JSON.stringify(parts);
+    const known = partIds.get(key);
+    if (known !== undefined) return known;
+    const id = frameParts.length;
+    frameParts.push(parts);
+    partIds.set(key, id);
+    return id;
+  };
+  const every: FrameEntryAst["kind"][] = ["field", "spine", "cell"];
+  type Root = { root: FrameEntryAst["root"]; kinds: FrameEntryAst["kind"][] };
+  const sitesByCode = new Map<number, Root[]>();
+  F.sites.forEach((s, t) => {
+    if (s.kind !== "object" && s.kind !== "array" && s.kind !== "instance") return;
+    const k = innermost(s.module, s.pos);
+    if (k === null) return;
+    const roots = sitesByCode.get(k) ?? [];
+    roots.push({ root: { site: t }, kinds: s.kind === "array" ? ["spine", "cell"] : ["field"] });
+    sitesByCode.set(k, roots);
+  });
+  const frameEntries: ComponentsAst["frameEntries"] = [];
+  const templates = new Map<string, number | null>();
+  // Calls in the same code with the same outside components propose the same frame.
+  const templateFor = (k: number, comps: number[]): number | null => {
+    const key = JSON.stringify([k, comps]);
+    const known = templates.get(key);
+    if (known !== undefined) return known;
+    const code = F.codes[k];
+    if (!code) return null;
+    const roots: Root[] = [
+      ...code.params.flatMap((p) => [{ root: { value: p.value, fields: [] }, kinds: every },
+        ...(p.type === "function" || p.type === "primitive" ? [] : fieldsOf(p.value, comps)).map((f) => ({ root: { value: p.value, fields: [f] }, kinds: every }))]),
+      ...(sitesByCode.get(k) ?? []),
+    ];
+    const entries: FrameEntryAst[] = roots.flatMap(({ root, kinds }) => {
+      const T = tokensOf(root);
+      if (T.sites.length === 0 && T.incoming.length === 0 && T.ro.length === 0) return [];
+      const parts = partId([...new Set(comps.flatMap((C) => partsFor(C, T)))]);
+      const prot = comps.every((C) => protectedFor(C, T));
+      return kinds.map((kind) => ({ root, kind, key: null, parts, protected: prot }));
+    });
+    const template = entries.length === 0 ? null : frameEntries.push(entries) - 1;
+    templates.set(key, template);
+    return template;
+  };
   const frames: ComponentsAst["frames"] = [];
   F.calls.forEach((c, call) => {
     if (c.native?.member ?? false) return;
@@ -1983,28 +2034,11 @@ export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
     const comps = chain(c.component).filter((C) => callee.incoming.includes(C) || callee.incomingReadOnly.includes(C));
     if (comps.length === 0) return;
     const k = innermost(c.module, c.at);
-    const code = k === null ? undefined : F.codes[k];
-    if (!code) return;
-    const every: FrameEntryAst["kind"][] = ["field", "spine", "cell"];
-    const array: FrameEntryAst["kind"][] = ["spine", "cell"];
-    const record: FrameEntryAst["kind"][] = ["field"];
-    const roots: { root: FrameEntryAst["root"]; kinds: FrameEntryAst["kind"][] }[] = [
-      ...code.params.flatMap((p) => [{ root: { value: p.value, fields: [] }, kinds: every },
-        ...(p.type === "function" || p.type === "primitive" ? [] : fieldsOf(p.value, comps)).map((f) => ({ root: { value: p.value, fields: [f] }, kinds: every }))]),
-      ...F.sites.flatMap((s, t) => s.module === code.module && innermost(s.module, s.pos) === k &&
-        (s.kind === "object" || s.kind === "array" || s.kind === "instance")
-        ? [{ root: { site: t }, kinds: s.kind === "array" ? array : record }] : []),
-    ];
-    const entries: FrameEntryAst[] = roots.flatMap(({ root, kinds }) => {
-      const T = tokensOf(root);
-      if (T.sites.length === 0 && T.incoming.length === 0 && T.ro.length === 0) return [];
-      const parts = [...new Set(comps.flatMap((C) => partsFor(C, T)))];
-      const prot = comps.every((C) => protectedFor(C, T));
-      return kinds.map((kind) => ({ root, kind, key: null, parts, protected: prot }));
-    });
-    if (entries.length > 0) frames.push({ call, entries });
+    if (k === null) return;
+    const entries = templateFor(k, comps);
+    if (entries !== null) frames.push({ call, entries });
   });
-  return frames;
+  return { frameParts, frameEntries, frames };
 }
 
 const valuesClass: Selector = { value: true, array: false, view: false };

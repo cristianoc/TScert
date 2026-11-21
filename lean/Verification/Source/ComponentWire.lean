@@ -348,6 +348,7 @@ structure FrameEntry where
 component. -/
 structure ProposedFrame where
   call : Nat
+  template : Nat
   entries : List FrameEntry
   deriving Repr
 
@@ -697,17 +698,24 @@ def decodeFrameRoot (j : Json) : Except String FrameRoot := do
   | .error _, .ok t => fieldsExactly j ["site"]; return .site (← t.getNat?)
   | _, _ => throw "a frame's root is a value's field path or a site"
 
-def decodeFrameEntry (j : Json) : Except String FrameEntry := do
+def decodeFrameEntry (parts : Array (List (Option Nat))) (ns nv : Nat) (j : Json) : Except String FrameEntry := do
   fieldsExactly j ["root", "kind", "key", "parts", "protected"]
   let key ← jField j "key"
-  return ⟨← decodeFrameRoot (← jField j "root"), ← partKindOf (← jStr (← jField j "kind")),
+  let root ← decodeFrameRoot (← jField j "root")
+  match root with
+  | .path v _ => if v ≥ nv then throw "a frame's value is out of range"
+  | .site t => if t ≥ ns then throw "a frame's site is out of range"
+  let index ← jNat j "parts"
+  let some row := parts[index]? | throw "a frame's part list is out of range"
+  return ⟨root, ← partKindOf (← jStr (← jField j "kind")),
     ← if key == .null then pure none else some <$> key.getStr?,
-    ← (← jArr j "parts").mapM (fun p => if p == .null then pure none else some <$> p.getNat?),
-    ← jBoolAt j "protected"⟩
+    row, ← jBoolAt j "protected"⟩
 
-def decodeFrame (j : Json) : Except String ProposedFrame := do
+def decodeFrame (templates : Array (List FrameEntry)) (j : Json) : Except String ProposedFrame := do
   fieldsExactly j ["call", "entries"]
-  return ⟨← jNat j "call", ← (← jArr j "entries").mapM decodeFrameEntry⟩
+  let index ← jNat j "entries"
+  let some entries := templates[index]? | throw "a frame's entry list is out of range"
+  return ⟨← jNat j "call", index, entries⟩
 
 /-- **The family well formed**: each parent an earlier component, of the
 kind that nests it (a package none, a module none or a package, a class a
@@ -771,18 +779,27 @@ def Components.wellFormed (F : Components) : Except String Unit := do
     for e in p.entries do for t in e.site do inRange "a protocol's site" t ns
   for f in F.frames do
     inRange "a frame's call" f.call F.calls.length
-    for e in f.entries do
-      match e.root with
-      | .path v _ => inRange "a frame's value" v nv
-      | .site t => inRange "a frame's site" t ns
-      for t in e.parts do for t in t do inRange "a frame's part" t ns
 
 /-- **The fragment's family**, decoded and well formed. -/
 def decode (j : Json) : Except String Components := do
   fieldsExactly j ["components", "codes", "sites", "values", "crossings", "stores", "calls", "throws", "catches", "holds",
-    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees", "protocols", "frames"]
+    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees", "protocols", "frameParts", "frameEntries", "frames"]
+  let sites ← (← jArr j "sites").mapM decodeSite
+  let values ← (← jArr j "values").mapM decodeValue
+  let ns := sites.length
+  let nv := values.length
+  let parts ← (← jArr j "frameParts").mapM fun row => do
+    (← row.getArr?).toList.mapM fun p => do
+      if p == .null then return none
+      let t ← p.getNat?
+      if t ≥ ns then throw "a frame's part is out of range"
+      return some t
+  let partTable := parts.toArray
+  let templates ← (← jArr j "frameEntries").mapM fun row => do
+    (← row.getArr?).toList.mapM (decodeFrameEntry partTable ns nv)
+  let templateTable := templates.toArray
   let F : Components := ⟨← (← jArr j "components").mapM decodeComponent, ← (← jArr j "codes").mapM decodeCode,
-    ← (← jArr j "sites").mapM decodeSite, ← (← jArr j "values").mapM decodeValue,
+    sites, values,
     ← (← jArr j "crossings").mapM decodeCrossing, ← (← jArr j "stores").mapM decodeStore,
     ← (← jArr j "calls").mapM decodeCall, ← (← jArr j "throws").mapM (decodePlace false),
     ← (← jArr j "catches").mapM (decodePlace false), ← (← jArr j "holds").mapM (decodePlace true),
@@ -790,7 +807,7 @@ def decode (j : Json) : Except String Components := do
     ← (← jArr j "types").mapM decodeTypeRow,
     ← (← jArr j "escapes").mapM decodeEscape,
     ← (← jArr j "clients").mapM decodeClients, ← (← jArr j "guarantees").mapM decodeGuarantee,
-    ← (← jArr j "protocols").mapM decodeProtocol, ← (← jArr j "frames").mapM decodeFrame⟩
+    ← (← jArr j "protocols").mapM decodeProtocol, ← (← jArr j "frames").mapM (decodeFrame templateTable)⟩
   F.wellFormed
   return F
 
@@ -798,6 +815,7 @@ def decode (j : Json) : Except String Components := do
 def emptyJson : Json := Json.mkObj [("components", .arr #[]), ("codes", .arr #[]), ("sites", .arr #[]),
   ("values", .arr #[]), ("crossings", .arr #[]), ("stores", .arr #[]), ("calls", .arr #[]), ("throws", .arr #[]),
   ("catches", .arr #[]), ("holds", .arr #[]), ("exports", .arr #[]), ("thrown", .null), ("suspensions", .arr #[]), ("types", .arr #[]),
-  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[]), ("protocols", .arr #[]), ("frames", .arr #[])]
+  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[]), ("protocols", .arr #[]),
+  ("frameParts", .arr #[]), ("frameEntries", .arr #[]), ("frames", .arr #[])]
 
 end Verification.ComponentWire
