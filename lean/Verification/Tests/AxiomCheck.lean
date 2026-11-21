@@ -168,6 +168,7 @@ import Verification.Semantics.CanonicalLists
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.ComponentTags
 import Verification.Semantics.ContractExits
+import Verification.Semantics.LoopingClosures
 import Verification.Semantics.EffectSignatures
 import Verification.Semantics.ElementWrites
 import Verification.Semantics.ExceptionalPosts
