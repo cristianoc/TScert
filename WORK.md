@@ -140,7 +140,7 @@ refused by design). Verification states safety, each function's annotated
 contract at every call, not that the parser reads TypeScript correctly. The
 census checks each module unit by unit over one front per file and records
 each unit's own refusal
-([measuring coverage](AGENTS.md#measuring-coverage-once-on-main),
+([measuring coverage](AGENTS.md#measuring-coverage-on-main-and-single-pass),
 [function coverage](docs/DESIGN.md#function-coverage-and-release-thresholds),
 [statement coverage](docs/DESIGN.md#statement-coverage)); its record groups
 the refused units by the blocker each names

@@ -1,6 +1,6 @@
 # The census of tools/ (docs/DESIGN.md, "Function coverage and release
-# thresholds") on each push to main, compared with the census of the last
-# push that completed one. Its results:
+# thresholds") on pushes to main and single-pass, compared with the last completed
+# push census on the target branch. Main also publishes:
 # - a page per census on the gh-pages branch, census/<commit>/, holding the
 #   movement and the full report, census/ showing the latest, and
 #   census/history.tsv a line per census;
@@ -15,7 +15,7 @@ name: Census
 
 on:
   push:
-    branches: [main]
+    branches: [main, single-pass]
   pull_request:
     paths: [.github/workflows/census.yml]
   workflow_dispatch:
@@ -88,14 +88,14 @@ jobs:
           path: ${{ runner.temp }}/census/record.json
           retention-days: 90
 
-      # The baseline: the record of the last push to main whose census completed.
+      # The baseline: the record of the last successful push census on the branch (the base branch for a pull request).
       - name: Compare with the last census
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           node dev/census.mts report "$CENSUS/record.json" > "$CENSUS/report.txt"
           node dev/census.mts refusals "$CENSUS/record.json" > "$CENSUS/refusals.json"
-          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow census.yml --branch main --event push \
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow census.yml --branch "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}" --event push \
             --status success --limit 1 --json databaseId -q '.[0].databaseId // empty')
           if [ -n "$previous" ] && gh run download "$previous" --repo "$GITHUB_REPOSITORY" -n census-record -D "$CENSUS/base"; then
             base=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).source.commit' "$CENSUS/base/record.json")
@@ -125,7 +125,7 @@ jobs:
           retention-days: 90
 
       - name: Publish the pages
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -167,7 +167,7 @@ jobs:
           exit 1
 
       - name: Comment on the pull request
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           # Posted as the repository's machine user where its token is set:
           # GitHub emails the owner a mention by a user, not by the workflow's
