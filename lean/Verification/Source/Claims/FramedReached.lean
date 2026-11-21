@@ -1,4 +1,4 @@
-import Verification.Source.Claims.FramedInitial
+import Verification.Source.Claims.FramedStarts
 import Verification.Source.Claims.PassUnitMember
 import Verification.Source.Claims.FramedReading
 
@@ -13,9 +13,8 @@ premise that is a check is read from the check the pass makes:
 - **the component's checks at the frame's flow** (`frameFlowB`, run by
   `componentBindingRefusal` at the flow with the frame's sites and decided
   tags, `frameFlowOf`): the flow's facts, its tokens, its lowered codes,
-  the closure of its capture sites and `O`, and layout provenance and the
-  residual invariant of the initialization and the realm
-  (`frameFlow_checks`, by `frame_transport`);
+  the closure of its capture sites and `O` (`frameFlow_checks`, by
+  `frame_transport`);
 - **the request's checks** (`FramedSpec.requestB`): its tag, its source
   terms, its client obligation keeping every part, and at each framed node
   the call's operands read from slots, the node's set closed
@@ -34,7 +33,7 @@ callback row of the client obligation (`FramedSpec.CallbacksWithin`, a
 trust). The invariants of the frame's executions are read along the
 program (`ret_reachedW_public`), from the checks of its starts
 (`FramedSpec.starts_checks`) and the two premises on the initial
-configurations, which the component's checks give
+configurations, which hold by the definition of `FramedSpec.Initial`
 (`FramedSpec.initialFits`, `FramedSpec.initialEntry`).
 `framedReturns_reached` assembles them. -/
 
@@ -205,6 +204,13 @@ theorem protRegionB_mono {P : Package} [DecidableEq P.Site] [Hashable P.Site] {�
 namespace FramedSpec
 variable {ι : Type} (spec : FramedSpec ι)
 
+/-- **The component's checks at the frame's flow** (proved, by
+`frame_transport` from the check `componentBindingRefusal` runs at the
+flow with the frame's sites and decided tags). -/
+theorem frameFlow_checks (h : spec.componentRefusal.val = none) : frameFlowB spec.fflow spec.lay = true :=
+  frame_transport spec.C spec.checked (fun _ Fl => frameFlowB Fl spec.lay = true)
+    (componentBindingRefusal_none (spec.componentRefusal_none h)).2.2.2.2.2.2
+
 /-- **The checks of a plan's framed nodes at the frame's flow** (proved,
 by `frame_transport` from the check at the flow with the frame's sites and
 decided tags). -/
@@ -230,17 +236,15 @@ theorem rets_frame {m : Code} (h : retsInB spec.fflowC m = true) : retsInB spec.
 returns at reached executions from a program's initial configurations
 (`ret_reachedW_public`, track C1) that the pass checks: the frame's flow's
 marks, the request's start a label of its program, the realized code's
-proposals the request's at body labels at the frame's flow, and the
-initialization's node expressions free of runs. -/
+proposals the request's at body labels at the frame's flow. -/
 theorem starts_checks {σ : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
     {eff : Nat → Option Footprints.Footprint} (hcomp₀ : spec.componentRefusal.val = none)
     (hreq : spec.requestB r eff = true) :
-    spec.fflow.marksB = true ∧ r.start < r.program.length ∧ realizedFlowB spec.fflow r = true ∧
-      ∀ e ∈ spec.initE, free false e = true := by
+    spec.fflow.marksB = true ∧ r.start < r.program.length ∧ realizedFlowB spec.fflow r = true := by
   simp only [FramedSpec.requestB, Bool.and_eq_true, decide_eq_true_eq] at hreq
   obtain ⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, hst⟩, hreal⟩, -⟩, -⟩ := hreq
-  obtain ⟨-, hmk, -, -, -, -, -, -, -, hEf, -, -, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
-  exact ⟨hmk, hst, spec.realized_frame hreal, hEf⟩
+  obtain ⟨-, hmk, -, -, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
+  exact ⟨hmk, hst, spec.realized_frame hreal⟩
 end FramedSpec
 
 namespace PassUnit
@@ -263,7 +267,7 @@ framed node's callee's stated effect read by `eff`), and calls meet the
 callback row of the client obligation at `eff` (`CallbacksWithin`), the
 returns of the plan's framed nodes keeping their supports hold at the
 executions the frame's claim is about, read at their worlds; the initial
-configurations fit the flow and are entries by the component's checks
+configurations fit the flow and are entries by definition
 (`FramedSpec.initialFits`, `FramedSpec.initialEntry`). -/
 theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : SourceRequest σ ι}
     {eff : Nat → Option Footprints.Footprint} (hcomp₀ : spec.componentRefusal.val = none)
@@ -271,10 +275,10 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
     FramedReturnsReachedW r (spec.frame r) (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedRet (Verification.TolerantFrames.framedSOf spec.framed))
       (fun _ _ _ _ => True) := by
-  obtain ⟨hmk, hst, hreal, hEf⟩ := spec.starts_checks hcomp₀ hreq
+  obtain ⟨hmk, hst, hreal⟩ := spec.starts_checks hcomp₀ hreq
   simp only [FramedSpec.requestB, Bool.and_eq_true] at hreq
   obtain ⟨⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩, hri⟩ := hreq
-  obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -, -, hLi, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
+  obtain ⟨hFa, -, htok, hlow, hTm⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound
     (spec.framedNodes_frame (eff := fun F => spec.boundAt F r eff) (prot := fun F => spec.protAt F r) hn)
   -- The witnesses of the regions read as protected.
@@ -283,16 +287,16 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
   have hr : noRestB spec.lay = true := hnone.2.2.2.2.2.1
   have hcomp : (spec.F.at spec.C).ofC r.comp = true := compB_sound hc
   have hm := FFlow.marksB_sound hmk
-  have hinitF := spec.initialFits r hcomp₀
-  have hinitE := spec.initialEntry r hcomp₀
-  have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
-    fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
+  have hinitF := spec.initialFits r
+  have hinitE := spec.initialEntry r
+  have hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
+    fun _ hx => spec.progOk_initial r hx
   have hrets : spec.RetsIn r := fun hi c π hc =>
     FramedSpec.retsInB_sound (spec.rets_frame (by simpa [hi] using hri)) c π hc
   have hE := spec.entryFits r hr hFa hst hreal hcomp hinit hrets
   have hcs := spec.chkSound r hFa hm hE
   have hsi := spec.startInv r hFa hm hinitF hinitE hcomp
-  have hwk := spec.wok_start r (fun x hx => (spec.initial_lay hEl hEw hLi hRl hRw x hx).2)
+  have hwk := spec.wok_start r (fun _ hx => hx.2.2.1.2.2.2)
   have hw : (spec.frame r).ProtWitness (r.program.map (·.expression))
       (r.program.map fun n => (n.continuation, n.handler)) r.comp (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedSOf spec.framed) (fun l => spec.protAt spec.fflow r l) := by
@@ -308,7 +312,7 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
       (protRegionB_mono (fun p hp => Footprints.Change.max_keep_left hp)
         ((Bool.and_eq_true _ _).mp hp).2) w hmem hL
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
-    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
+    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hFa hmk hst hreal
     hinitF hinitE htok hlow hcomp hrets hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT

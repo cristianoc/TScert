@@ -292,7 +292,7 @@ theorem prot_witness (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (h
     (hcomp : (spec.F.at spec.C).ofC r.comp = true) (har : spec.arityB r = true)
     (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true) (hinner : spec.inner = false)
     (hm : Lendable spec.flow.O ∧ LocalHeld spec.flow.H) (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     (hrets : spec.RetsIn r) (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv) (hE : (spec.frame r).EntryFits spec.flow)
     (hwk : ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
       (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →

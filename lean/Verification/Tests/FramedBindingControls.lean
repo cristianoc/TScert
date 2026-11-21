@@ -30,16 +30,7 @@ and refuses a forged one:
 - **A forged request tag** (`compB`): a request tagged with another
   component, or with outside code's tag, whose frames would not run `C`'s
   code.
-- **The flow the frame reads** (`frameFlowB`, `wokB`, `plainB`): a code
-  without a token; an initialization node running a write its code does not
-  hold, and one holding a run; a realm's identity of `C`'s code without its
-  code's layout, and one capturing a write; a realm's value no primitive.
-- **The initialization in the flow** (`initFlowB`, `realmSlotB`): its code
-  without a proposal, its returns outside `O`; a slot without the token
-  of the closure it holds, one naming a
-  signature other than its closure's, an object at a slot naming a
-  signature, a slot past the realm's identities naming one; a closure of a
-  code without a proposal, and one of outside code.
+- **The flow the frame reads** (`frameFlowB`): a code without a token.
 - **The request's checks** (`sourceTermsB`, `thetaKeepB`,
   `framedNodesAt`): a node expression holding a run; a client obligation
   changing a kind; a framed node calling a computed operand, one with no
@@ -161,68 +152,17 @@ private def req₀ : SourceElaboration.SourceRequest EquationStore.State Equatio
 
 /-! ## The flow the frame reads -/
 
-/-- The initialization's code in the controls: one node evaluating `null`. -/
-private def mI : Code := ([.nul], [(.ret, none)])
-
-/-- The initialization's proposal: its slot `0` holding outside storage and
-`m₀`'s closures' token, naming `sig`, its returns `ret`. -/
-private def initCode (slot : Sites Pk := [none, some 5]) (sig : FnSig := ⟨m₀, 0, 0, false, 0⟩) (ret : Sites Pk := [])
-    (fn : Array (Option Nat) := #[some 0]) : FCode Pk :=
-  { nodes := #[{ env := #[slot], dflt := [], val := [], fn := fn, vfn := none }], dflt := node [],
-    alloc := ⟨some 6, some 7⟩, sigs := #[sig], ret := ret, tok := some 8 }
-
-/-- A flow passing `FFlow.check`: the code `m₀` and the initialization `mI`,
-`O` outside storage, its row outside storage. -/
-private def frameFlow (tok : Option (Option Nat) := some (some 5)) (init : FCode Pk := initCode) : FFlow Pk :=
-  { O := [none], heap := [(none, [none])],
-    codes := [(m₀, [(entryCx, { code [] with tok := tok.getD none })]), (mI, [(entryCx, init)])] }
-
-/-- A closure of `m₀`'s code at the tag `comp`, capturing `caps`. -/
-private def closure (comp : ComponentTag) (caps : List Tm := []) : Tm :=
-  .objAt [] (.graph 0 m₀.1 m₀.2 0 caps .call false comp) 0
+/-- A flow passing `FFlow.check`: the code `m₀`, `O` outside storage, its
+row outside storage. -/
+private def frameFlow (tok : Option (Option Nat) := some (some 5)) : FFlow Pk :=
+  { O := [none], heap := [(none, [none])], codes := [(m₀, [(entryCx, { code [] with tok := tok.getD none })])] }
 
 /-- A run of `m₀` whose running term writes an element. -/
 private def writing : Tm := .frame m₀.1 m₀.2 (.setElem (.var 0) (.num 0) (.num 1)) [] .undef .ret none (some 0)
 
-/-- The checks of the flow the frame reads at the controls' flow: the
-initialization `mI` at its slots `L`, the realm `realm`. -/
-private def frameB (F : FFlow Pk := frameFlow) (lay : List (Nat × Bool × Nat × Nat) := [(0, false, 0, 0), (0, false, 0, 0)])
-    (realm : Heap := [.nul]) (initE : List Tm := mI.1) (L : List Tm := [closure (some 0)]) : Bool :=
-  frameFlowB F lay realm initE mI.2 L
-
-#guard (frameFlow).check && frameB
+#guard (frameFlow).check && frameFlowB (frameFlow) [(0, false, 0, 0)]
 -- a code without a token
-#guard (frameFlow (tok := some none)).check && !frameB (F := frameFlow (tok := some none))
--- an initialization node running a write its code does not hold
-#guard !wokB writing && !frameB (initE := [writing])
--- an initialization node holding a run
-#guard wokB (.goto m₀.1 m₀.2 0 [] .undef (some 0)) && !frameB (initE := [.goto m₀.1 m₀.2 0 [] .undef (some 0)])
--- a realm's identity of `C`'s code at no layout of its code
-#guard !frameB (lay := [])
--- a realm's identity capturing a write
-#guard !plainB (closure none [writing]) && !frameB (L := [closure none [writing]])
--- a realm's value no primitive
-#guard !frameB (realm := [closure (some 0)])
-
-/-! ## The initialization in the flow -/
-
--- no proposal for the initialization's code
-#guard !initFlowB (frameFlow) [.undef] mI.2 [closure (some 0)]
--- its returns outside `O`
-#guard (frameFlow (init := initCode (ret := [some 6]))).check && !frameB (F := frameFlow (init := initCode (ret := [some 6])))
--- a slot without the closure's token; an identity holds no location, so outside storage is not read
-#guard (frameFlow (init := initCode (slot := [none]))).check && !frameB (F := frameFlow (init := initCode (slot := [none])))
-#guard frameB (F := frameFlow (init := initCode (slot := [some 5])))
--- a slot naming a signature other than its closure's
-#guard (frameFlow (init := initCode (sig := ⟨m₁, 0, 0, false, 0⟩))).check && !frameB (F := frameFlow (init := initCode (sig := ⟨m₁, 0, 0, false, 0⟩)))
--- an object at a slot naming a signature
-#guard !frameB (L := [.objAt [] .absent 0])
-#guard frameB (F := frameFlow (init := initCode (fn := #[]))) (L := [.objAt [] .absent 0])
--- a slot past the realm's identities naming a signature
-#guard !frameB (L := [])
--- a closure of a code without a proposal, and one of outside code
-#guard !provs (codeOkB (frameFlow)) [.makeAt (.graph 0 m₁.1 m₁.2 0 [] .call false (some 0)) [] []]
-#guard !provs (fun (_ : Code) (c : ComponentTag) => Pk.ofC c) [closure none] && provs (fun (_ : Code) (c : ComponentTag) => Pk.ofC c) [closure (some 0)]
+#guard (frameFlow (tok := some none)).check && !frameFlowB (frameFlow (tok := some none)) [(0, false, 0, 0)]
 
 /-! ## The request's checks -/
 

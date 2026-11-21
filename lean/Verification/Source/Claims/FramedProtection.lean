@@ -309,12 +309,12 @@ the heap and the calls of `C` active. -/
 theorem enter_args (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hcomp : (spec.F.at spec.C).ofC r.comp = true)
     (har : spec.arityB r = true) (hi : spec.inner = false)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
     (he : spec.EntryAt r k W h t a₂) :
     ∃ (x₀ : Conf) (n : Nat) (x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)) (L : List Tm) (d : Tm)
       (m : Nat),
-      spec.Initial x₀ ∧ Ex (spec.core r).KStep (fun _ => True) n (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) x ∧
+      spec.Initial r x₀ ∧ Ex (spec.core r).KStep (fun _ => True) n (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) x ∧
       (spec.core r).KStep x a₁ ∧
       depthC (spec.core r).F (spec.core r).C none a₁.1.t = depthC (spec.core r).F (spec.core r).C none x.1.t + 1 ∧
       depthC (spec.core r).F (spec.core r).C none a₂.1.t = depthC (spec.core r).F (spec.core r).C none a₁.1.t ∧
@@ -413,7 +413,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
     (har : spec.arityB r = true) (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true)
     (hi : spec.inner = false)
     (hm : Lendable spec.flow.O ∧ LocalHeld spec.flow.H) (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
     (he : spec.EntryAt r k W h t a₂) (y : Conf) (hyt : y.t = t) (hyh : y.s.h = h) :
     ∃ L d, t = PassUnit.gotoOf r.program r.start L d r.comp ∧
@@ -433,7 +433,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
   · exact absurd (hu ▸ hreach) undef_reaches
   -- The program's frame at the entering step.
   have hreachx : (spec.progFrame r).Reached x :=
-    ⟨(x₀, bareStart (spec.core r).F (spec.core r).C x₀.t), n, ⟨hinitE x₀ hx₀, hx₀⟩, rfl, hex⟩
+    ⟨(x₀, bareStart (spec.core r).F (spec.core r).C x₀.t), n, ⟨hinitE x₀ hx₀, x₀, hx₀, rfl, rfl⟩, rfl, hex⟩
   have hcs := spec.progFrame_chkSound r hF hm hinitF
   have hsi := ClientFrame.startInv_of_entry (spec.progFrame_starts r)
   have hkind : kind (spec.core r).F (spec.core r).C none x.1 a₁.1 ≠ .outside := fun ho => by

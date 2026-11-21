@@ -292,7 +292,6 @@ import Verification.Source.Claims.FramedKept
 import Verification.Source.Claims.FramedCopies
 import Verification.Source.Claims.FramedCopyDefs
 import Verification.Source.Claims.FramedReading
-import Verification.Source.Claims.FramedInitial
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference

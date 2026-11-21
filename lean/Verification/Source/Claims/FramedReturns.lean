@@ -960,8 +960,8 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
       (spec.frame r).Call n W h (gotoOf r.program r.start L d r.comp) → SlotVals L d)
     (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv)
     {Fl : FFlow ((spec.frame r).F.at (spec.frame r).C)} (hFl : Fl.flow = spec.flow) {lay : List Layout}
-    (hinitW : ∀ x, spec.Initial x → WOk x.t ∧ HeapW x.s.h)
-    (hinitL : ∀ x, spec.Initial x → layP (layQ Fl lay) x.t = true ∧ HeapLay (layQ Fl lay) x.s.h)
+    (hinitW : ∀ x, spec.Initial r x → WOk x.t ∧ HeapW x.s.h)
+    (hinitL : ∀ x, spec.Initial r x → layP (layQ Fl lay) x.t = true ∧ HeapLay (layQ Fl lay) x.s.h)
     (hFa : Fl.flow.Facts) (hE : (spec.frame r).EntryFits Fl.flow)
     (htok : tokensSomeB Fl = true) (hlow : codesLoweredB Fl = true)
     (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
@@ -1016,9 +1016,8 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
 /-- **The returns at reached executions of a framed plan, from its
 component's checks** (proved, `ret_reachedW_frame` at the plan's flow and
 layouts): the calls are typed (`call_typed`); the initial configurations
-meet layout provenance and the residual invariant where the
-initialization's node expressions and the realm's heap do
-(`initial_lay`); no code of the component collects a rest where its
+meet layout provenance and the residual invariant by their definition
+(`FramedSpec.States`); no code of the component collects a rest where its
 binding checks refuse nothing (`componentBindingRefusal_none`). -/
 theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι)
     {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
@@ -1027,9 +1026,6 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
       (spec.frame r).Call n W h (gotoOf r.program r.start L d r.comp) → SlotVals L d)
     (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv)
     (hcomp₀ : spec.componentRefusal.val = none)
-    (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
-    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
-    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
     (hFa : spec.fflow.flow.Facts) (hE : (spec.frame r).EntryFits spec.fflow.flow)
     (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
     (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
@@ -1077,9 +1073,8 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) := by
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
-  have hinit := spec.initial_lay hEl hEw hLi hRl hRw
   exact ret_reachedW_frame spec r hsrc (spec.call_typed r) hvals hc hi (Fl := spec.fflow) rfl
-    (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE htok hlow hcomp hatom hT hle hslots
+    (fun _ hx => hx.2.2.1.2.2.2) (fun _ hx => hx.2.2.1.2.1) hFa hE htok hlow hcomp hatom hT hle hslots
     hcheck hw hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ hownc
 
 end Verification.SourceClaimJson.PassUnit

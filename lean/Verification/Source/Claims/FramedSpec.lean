@@ -6,6 +6,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
 import Verification.Source.Claims.FramedFlow
 import Verification.Source.Claims.FramedComponentChecks
 import Verification.Source.ComponentWire
+import Verification.Paper.TolerantFrames.ReadOnlyPending
 
 /-! # A framed plan's proposals and the frame they define
 
@@ -28,9 +29,12 @@ plan is accepted under:
   step: at an entering step of the realized code its arguments crossing in
   at their declared types, and every value reaching outside code crossing
   out (`actualXs`).
-- **An initial configuration** (`FramedSpec.Initial`): the realm's heap and
-  the initialization run in front of a client term of lowered outside
-  source with the exports bound.
+- **An initial configuration** (`FramedSpec.Initial`, the draft's "The
+  initialization as a premise"): a configuration at the history before any
+  entry that fits the flow, is an entry, meets the invariants every step
+  keeps (`States`), and whose module functions' closures are unfoldings of
+  the plan's layout at least as deep as its budget, their outside captures
+  meeting their types at its world and every world above it (`SlotsMet`).
 - **The realization** (`RealizedAt`): from an entering step of the realized
   code, the prologue's steps to the first state whose innermost run is the
   realized code at the request's start.
@@ -42,7 +46,7 @@ plan is accepted under:
   `FramedSpec.start_total`). -/
 
 namespace Verification.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
+open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore PositiveGraphs PositiveRules
 open Verification.TolerantFrames.ReadOnly
 
 namespace PassUnit
@@ -53,11 +57,19 @@ def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentT
 end PassUnit
 open PassUnit (gotoOf)
 
+/-- **A module function of the plan's layout**: its name, its realized
+code, and per capture slot, in its request's order, the module function of
+the component the slot names (`some`) or none for an outside slot, with the
+type its request reads the slot at. -/
+structure FramedLayoutEntry (ι : Type) where
+  name : String
+  code : Code
+  slots : List (Option String × Ty ι)
+
 /-- **A framed plan's proposals** (the draft, "The plan"): the component
 `C`; the types a crossing reads read-only; the type outgoing values cross
-at; the realm's heap; the initialization's code and the order in which it
-allocates the module functions' closures; the number of the function's
-parameters; and what the pass's check reads (the draft, "What
+at; the layout of the component's module functions; the number of the
+function's parameters; and what the pass's check reads (the draft, "What
 the pass checks"): the component's tags and the marks of its flow's sites,
 the flow the solver proposes for the component's codes at those marks
 (`checked`), each code's layout, the natives' codes, the component family
@@ -75,14 +87,9 @@ structure FramedSpec (ι : Type) where
   C : Nat
   readOnly : List (Ty ι)
   outType : Ty ι
-  realm : Heap
-  initE : List Tm
-  initK : List (Continuation × Option Target)
-  /-- The module functions in the order the initialization allocates their
-  closures, by name. -/
-  initOrder : List String
-  /-- The realm's identities the initialization's slots hold at its entry. -/
-  initL : List Tm
+  /-- **The layout** (`FramedSpec.SlotsMet`): the component's module
+  functions, each with its code and its slots' links and types. -/
+  layout : List (FramedLayoutEntry ι)
   arity : Nat
   /-- **The read-only positions** (`roPositionsB`): position `j` is
   read-only where every function of `C` whose code is the request's
@@ -107,8 +114,7 @@ structure FramedSpec (ι : Type) where
   with the evaluation of `componentBindingRefusal` at the plan's fields it
   is: computed once per component and shared by its plans; `none` where
   they pass. -/
-  componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
-    realm initOrder initE initK initL C }
+  componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes C }
   framed : List (Nat × List Footprints.Footprint)
   /-- **Whether the request is checked at the contexts of its known calls**
   (the Read-only frames note, (B1)): its function is no entry and its
@@ -126,8 +132,7 @@ abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
 /-- **The binding checks that read the component alone pass** where the
 plan's refusal of them is none (proved, by the refusal's evaluation). -/
 theorem componentRefusal_none (h : spec.componentRefusal.val = none) :
-    componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
-      spec.initOrder spec.initE spec.initK spec.initL spec.C = none :=
+    componentBindingRefusal spec.checked spec.lay spec.codes spec.C = none :=
   spec.componentRefusal.property ▸ h
 
 /-- **The family of a framed plan**: the one component `C`, each site of its
@@ -143,6 +148,39 @@ the checked flow, its sites renamed into the family's (`FFlow.mapSites`). -/
 noncomputable def fflow : FFlow (spec.fam.family.at spec.C) :=
   spec.checked.mapSites (oneComponent.site spec.C spec.mark) (·.1)
 end FramedSpec
+
+mutual
+/-- **The closures a term holds**: every closure (`CallCode.graph`) of the
+term, of its values' code and captures and of its runs, at any depth. By
+cases on every constructor of `Tm` and `CallCode`. -/
+def closuresOf : Tm → List Tm
+  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .arr _ | .viewSpine .. => []
+  | .invoke f r args => closuresOf f ++ closuresOf r ++ closuresOfs args
+  | .construct f args => closuresOf f ++ closuresOfs args
+  | .letE a b => closuresOf a ++ closuresOf b
+  | .objAt _ .absent _ => []
+  | .objAt _ (.view ..) _ => []
+  | .objAt _ (.bound t r pre) _ => closuresOf t ++ closuresOf r ++ closuresOfs pre
+  | .objAt fs (.graph n E K s caps k r c) i =>
+    .objAt fs (.graph n E K s caps k r c) i :: (closuresOfs E ++ closuresOfs caps)
+  | .makeAt .absent _ xs => closuresOfs xs
+  | .makeAt (.view ..) _ xs => closuresOfs xs
+  | .makeAt (.bound t r pre) _ xs => closuresOf t ++ closuresOf r ++ closuresOfs pre ++ closuresOfs xs
+  | .makeAt (.graph _ E _ _ caps _ _ _) _ xs => closuresOfs E ++ closuresOfs caps ++ closuresOfs xs
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => closuresOf a
+  | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
+    closuresOf a ++ closuresOf b
+  | .ite a b c | .setElem a b c => closuresOf a ++ closuresOf b ++ closuresOf c
+  | .arrLit xs => closuresOfs xs
+  | .goto E _ _ L d _ => closuresOfs E ++ closuresOfs L ++ closuresOf d
+  | .frame E _ t L d _ _ _ => closuresOfs E ++ closuresOf t ++ closuresOfs L ++ closuresOf d
+termination_by structural t => t
+/-- The closures a list of terms holds. -/
+def closuresOfs : List Tm → List Tm
+  | [] => []
+  | x :: xs => closuresOf x ++ closuresOfs xs
+termination_by structural xs => xs
+end
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
@@ -207,12 +245,56 @@ noncomputable def chk (r : SourceRequest σ ι) (h : Heap) (t : Tm) (h' : Heap) 
 noncomputable def core (r : SourceRequest σ ι) : FrameCore (Ty ι) :=
   ⟨spec.fam, spec.C, spec.view, spec.Θ, spec.chk r⟩
 
-/-- **An initial configuration**: the realm's heap, and the initialization
-run in front of a client term of lowered outside source whose one free
-variable is the exports. -/
-def Initial (x₀ : Conf) : Prop :=
-  ∃ client, x₀.s.h = spec.realm ∧ x₀.t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client ∧
-    LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
+/-- **The frame's core and codes, entering nothing**: what an initial
+configuration's fit and entry read, the frame's calls aside. -/
+noncomputable def frame₀ (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
+  toFrameCore := spec.core r
+  codes m := ∃ cx f, spec.flow.code m cx = some f
+  enters _ _ _ _ := False
+  start _ _ _ t g := g = bareStart (spec.core r).F (spec.core r).C t
+  start_total _ _ _ _ := ⟨_, rfl⟩
+
+/-- **The invariants every step keeps** (`ProgOk`'s, `WOk`'s): a reached
+term, layout provenance at the plan's layouts, no run of `C` waiting as a
+binding's body, and the residual invariant of the term and the heap. -/
+def States (x₀ : Conf) : Prop :=
+  wfS x₀.t = true ∧ (layP (layQ spec.fflow spec.lay) x₀.t = true ∧ HeapLay (layQ spec.fflow spec.lay) x₀.s.h) ∧
+    NoPend (spec.F.at spec.C) x₀.t ∧ WOk x₀.t ∧ HeapW x₀.s.h
+
+/-- **The closure `v` is an unfolding of the layout's module function `g`
+at depth `i`** (the draft's `approx code i u`, `approxEnv`): at depth `0`
+`null`; at depth `i + 1` a closure of `g`'s code whose capture slots are
+`g`'s, each linked slot holding the named function unfolded at depth `i`
+and each outside slot a value meeting the slot's type at every budget up
+to `i`, at every world above `W₀` (`Above`). -/
+def UnfoldsAt (G : NormalGraph ι) (lay : List (FramedLayoutEntry ι)) {N : Nat} (W₀ : WorldT N) :
+    Nat → String → Tm → Prop
+  | 0, _, v => v = .nul
+  | i + 1, g, v => ∃ e ∈ lay, e.name = g ∧ ∃ fs ar s caps k rest comp oid,
+      v = .objAt fs (.graph ar e.code.1 e.code.2 s caps k rest comp) oid ∧ caps.length = e.slots.length ∧
+      ∀ (j : Nat) (y : Option String) (A : Ty ι) (c : Tm), e.slots[j]? = some (y, A) → caps[j]? = some c →
+        match y with
+        | some g' => UnfoldsAt G lay W₀ i g' c
+        | none => ∀ b ≤ i, ∀ V : WorldT b, (∃ hb : b ≤ N, WExt (trunc b hb W₀) V) → meaning G A b V c
+
+/-- **The module functions' closures meet the layout** (the draft's
+`SlotsMet`): every closure of `C`'s code that `x₀`'s term or heap holds
+whose code is a module function's of the layout is an unfolding of it at
+a depth at least `x₀`'s budget, its outside captures meeting their types,
+in the request's graph, at `x₀`'s world and every world above it. -/
+def SlotsMet (r : SourceRequest σ ι) (x₀ : Conf) : Prop :=
+  ∀ v ∈ closuresOf x₀.t ++ x₀.s.h.flatMap closuresOf, ∀ e ∈ spec.layout,
+    ∀ fs ar s caps k rest comp oid, v = .objAt fs (.graph ar e.code.1 e.code.2 s caps k rest comp) oid →
+      spec.F.ofC spec.C comp = true →
+      ∃ i, x₀.s.n ≤ i ∧ UnfoldsAt (StoreView.graph r.types) spec.layout x₀.s.W (i + 1) e.name v
+
+/-- **An initial configuration** (the draft, "The initialization as a
+premise"): at the history before any entry, it fits the flow, is an entry,
+meets the invariants every step keeps, and its module functions' closures
+meet the layout. -/
+def Initial (r : SourceRequest σ ι) (x₀ : Conf) : Prop :=
+  (spec.frame₀ r).FitsAt spec.flow (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) ∧
+    (spec.frame₀ r).Entry x₀.s.h x₀.t ∧ spec.States x₀ ∧ spec.SlotsMet r x₀
 
 /-- **The realization of an entering step** (the draft, "Realization",
 `RealizedAt`): `a₁`'s innermost run is the realized code at its prologue's
@@ -234,7 +316,7 @@ is checked at the contexts of its known calls (`inner`), whose calls are
 every call a program makes. -/
 def Called (r : SourceRequest σ ι) (x₀ : Conf) (n : Nat)
     (x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)) : Prop :=
-  spec.Initial x₀ ∧ Ex (spec.core r).KStep (fun _ => True) n (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) x ∧
+  spec.Initial r x₀ ∧ Ex (spec.core r).KStep (fun _ => True) n (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) x ∧
     (spec.core r).KStep x a₁ ∧ (spec.inner = false → (spec.core r).Entering (realizedCode r) x a₁)
 
 /-- **A call the claim is about is one execution** (proved). -/
@@ -246,7 +328,7 @@ theorem Called.ex {r : SourceRequest σ ι} {x₀ : Conf} {n : Nat}
 /-- **A call of a request checked at its entry is a public call** (proved). -/
 theorem Called.public {r : SourceRequest σ ι} {x₀ : Conf} {n : Nat}
     {x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)} (h : spec.Called r x₀ n x a₁)
-    (hi : spec.inner = false) : (spec.core r).PublicCall spec.Initial (realizedCode r) x₀ n x a₁ :=
+    (hi : spec.inner = false) : (spec.core r).PublicCall (spec.Initial r) (realizedCode r) x₀ n x a₁ :=
   ⟨h.1, h.2.1, h.2.2.2 hi⟩
 
 /-- **An entry of the request at a program's state `a₂`**: `a₂` realizes a
@@ -289,16 +371,24 @@ noncomputable def frame (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
       exact ⟨_, .inl ⟨a₂, ha, rfl⟩⟩
     · exact ⟨_, .inr ⟨he, rfl⟩⟩
 
-/-- **An initial configuration fits the flow** (named check premise): its
-term fits `O` at a position of outside code, and the realm meets the flow,
-at the history before any entry. -/
+/-- **An initial configuration fits the flow** (named premise of the
+claim): its term fits `O` at a position of outside code, and its heap
+meets the flow, at the history before any entry. -/
 def InitialFits (r : SourceRequest σ ι) : Prop :=
-  ∀ x, spec.Initial x → (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)
+  ∀ x, spec.Initial r x → (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)
 
-/-- **An initial configuration is an entry** (named check premise): code
-provenance, the call discipline, outside code lowered source and closed
-values hold at the realm's heap and the initialization's term. -/
-def InitialEntry (r : SourceRequest σ ι) : Prop := ∀ x, spec.Initial x → (spec.frame r).Entry x.s.h x.t
+/-- **An initial configuration is an entry** (named premise of the claim):
+code provenance, the call discipline, outside code lowered source and
+closed values. -/
+def InitialEntry (r : SourceRequest σ ι) : Prop := ∀ x, spec.Initial r x → (spec.frame r).Entry x.s.h x.t
+
+/-- **Every initial configuration fits the flow** (proved, by the
+definition of `Initial`). -/
+theorem initialFits (r : SourceRequest σ ι) : spec.InitialFits r := fun _ hx => hx.1
+
+/-- **Every initial configuration is an entry** (proved, by the definition
+of `Initial`). -/
+theorem initialEntry (r : SourceRequest σ ι) : spec.InitialEntry r := fun _ hx => hx.2.1
 
 /-- The frame's sites are the plan's family's at its component: equality
 of them is decided. -/
@@ -308,18 +398,6 @@ instance (r : SourceRequest σ ι) : DecidableEq ((spec.frame r).F.at (spec.fram
 /-- The frame's sites are hashed by their numbers. -/
 instance (r : SourceRequest σ ι) : Hashable ((spec.frame r).F.at (spec.frame r).C).Site :=
   show Hashable (spec.fam.family.at spec.C).Site from inferInstance
-
-omit [Labels ι] in
-/-- **An initial configuration's client is lowered outside source**
-(proved, by definition). -/
-theorem initial_lowered {x₀ : Conf} (hx : spec.Initial x₀) :
-    ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client →
-      LoweredSrc (spec.F.ofC spec.C) client := by
-  obtain ⟨c, -, ht, hc, -⟩ := hx
-  intro client hcl
-  rw [ht] at hcl
-  cases hcl
-  exact hc
 
 /-- **The frame's entries are the realized public calls** (proved, by
 definition). -/
@@ -334,6 +412,8 @@ open EquationGraphs EquationStore in
 relabeled. -/
 def FramedSpec.over (F : Frozen) (spec : FramedSpec Tree) :
     Except String (FramedSpec (CheckedLabel F.equations F.primitive)) := do
-  return { spec with readOnly := ← relabel spec.readOnly, outType := ← relabel spec.outType }
+  let layout ← spec.layout.mapM fun e => do
+    return { e with slots := ← e.slots.mapM fun (y, A) => do return (y, ← relabel A) }
+  return { spec with readOnly := ← relabel spec.readOnly, outType := ← relabel spec.outType, layout }
 
 end Verification.SourceClaimJson

@@ -11,8 +11,8 @@ program's executions from its initial configurations:
 - **The program's states** (`ProgOk`, `progOk_ex`): a reached term, a heap
   free of runs, layout provenance, no run of `C` waiting as a binding's
   body (where no code collects a rest), and the fit of the flow, kept by
-  every step from initial configurations meeting them (`progOk_initial`,
-  the fit there a named check premise, `InitialFits`).
+  every step from initial configurations, which meet them by definition
+  (`progOk_initial`).
 - **The entry's run** (`entry_hole`): the entering step pushes the
   realized code's run at a position of outside code (`enter_hole_out`),
   the realization is the prologue's two steps (`prologue_det`, the closure
@@ -204,26 +204,11 @@ theorem progOk_ex (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF :
   hex.carry (r := spec.ProgOk r) (fun _ _ _ hk h => spec.progOk_step r hr hF hk h) ha
 
 /-- **An initial configuration meets the invariants of a program's states**
-(proved, `initial_lay`, `loweredSrc_free`, `noPend_letGoto`): where the
-initialization's node expressions are free of runs and meet layout
-provenance and the residual invariant, the realm meets both, the initial
-configurations fit the flow and their heap is free of runs. -/
-theorem progOk_initial (r : SourceRequest σ ι) (hEf : ∀ e ∈ spec.initE, TolerantFrames.ReadOnly.free false e = true)
-    (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true)
-    (hEw : ∀ e ∈ spec.initE, WOk e)
-    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
-    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
-    (hinit : spec.InitialFits r) {x₀ : Conf} (hx : spec.Initial x₀) (hRf : HeapFree x₀.s.h) :
-    spec.ProgOk r (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) := by
-  have hl := (spec.initial_lay hEl hEw hLi hRl hRw x₀ hx).1
-  have hfit := hinit x₀ hx
-  obtain ⟨client, hh, ht, hc, -⟩ := hx
-  refine ⟨?_, hRf, hl, ?_, hfit⟩
-  · rw [ht]
-    simp only [wfS, isVal, ↓reduceIte, runParts, frees_eq, List.all_eq_true,
-      Bool.and_eq_true, bodyOk, Bool.or_eq_true]
-    exact ⟨⟨⟨hEf, fun v hv => (hLi v hv).2.2⟩, rfl⟩, .inl (loweredSrc_free hc false)⟩
-  · rw [ht]; exact noPend_letGoto hc
+(proved, by the definition of `Initial`): its fit, its heap free of runs
+(the call discipline of its entry) and the invariants every step keeps. -/
+theorem progOk_initial (r : SourceRequest σ ι) {x₀ : Conf} (hx : spec.Initial r x₀) :
+    spec.ProgOk r (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) :=
+  ⟨hx.2.2.1.1, hx.2.1.2.1.2, hx.2.2.1.2.1, hx.2.2.1.2.2.1, hx.1⟩
 
 /-- **The realization runs the prologue** (proved, `Step_det` at the
 prologue's two steps, `innermostGoto_ctx_goto`): from the realized code's
@@ -288,7 +273,7 @@ calls, by the check of its returns (`RetsIn`). -/
 theorem entry_hole (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     (hrets : spec.RetsIn r)
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
     (he : spec.EntryAt r k W h t a₂) :
@@ -336,7 +321,7 @@ gives, and the heap meets the flow. -/
 theorem entryFits (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     (hrets : spec.RetsIn r) :
     (spec.frame r).EntryFits spec.flow := by
   intro x g hc hs
@@ -354,7 +339,7 @@ theorem entryFits (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF :
 theorem slotVals (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     (hrets : spec.RetsIn r) :
     ∀ n (W : WorldT n) h (L : List Tm) (d : Tm),
       (spec.frame r).Call n W h (PassUnit.gotoOf r.program r.start L d r.comp) → SlotVals L d := by
@@ -390,8 +375,7 @@ noncomputable def progFrame (r : SourceRequest σ ι) : ClientFrame (Ty ι) wher
   codes := (spec.frame r).codes
   start _ _ _ t g := g = bareStart (spec.core r).F (spec.core r).C t
   start_total _ _ _ _ := ⟨_, rfl⟩
-  enters _ _ h t := ∃ client, h = spec.realm ∧ t = .letE (.goto spec.initE spec.initK 0 spec.initL .undef (some spec.C)) client ∧
-    LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
+  enters _ _ h t := ∃ x₀, spec.Initial r x₀ ∧ x₀.s.h = h ∧ x₀.t = t
 
 /-- **The program's frame starts from the entry history with no argument**
 (proved, by definition). -/
@@ -404,7 +388,11 @@ theorem progFrame_entryFits (r : SourceRequest σ ι) (hinit : spec.InitialFits 
     (spec.progFrame r).EntryFits spec.flow := by
   intro x g hc hs
   subst hs
-  exact hinit x hc.2
+  obtain ⟨x₀, hx₀, hh, ht⟩ := hc.2
+  have hf := hinit x₀ hx₀
+  simp only [ClientFrame.FitsAt] at hf ⊢
+  rw [← hh, ← ht]
+  exact hf
 
 /-- **What the checks give at the program's steps** (proved,
 `chkSound_of_sitesIn`; the draft's `chkSound_program`). -/
@@ -433,7 +421,7 @@ theorem startInv (r : SourceRequest σ ι) (hF : spec.flow.Facts)
   rcases hs with ⟨a₂, he, rfl⟩ | ⟨-, rfl⟩
   · obtain ⟨x₀, n, x', a₁, L, d, hp, ⟨-, ⟨j, hj⟩, -⟩, -, -, hh, ht⟩ := he
     have hreach : (spec.progFrame r).Reached a₂ :=
-      ⟨(x₀, bareStart (spec.core r).F (spec.core r).C x₀.t), n + 1 + j, ⟨hinitE x₀ hp.1, hp.1⟩, rfl,
+      ⟨(x₀, bareStart (spec.core r).F (spec.core r).C x₀.t), n + 1 + j, ⟨hinitE x₀ hp.1, x₀, hp.1, rfl, rfl⟩, rfl,
         hp.ex.trans (hj.mono fun _ _ => trivial)⟩
     obtain ⟨-, hI, -⟩ := ClientFrame.reached_ok (spec.progFrame_chkSound r hF hm hinit)
       (ClientFrame.startInv_of_entry (spec.progFrame_starts r)) hreach
@@ -456,73 +444,6 @@ theorem startInv (r : SourceRequest σ ι) (hF : spec.flow.Facts)
       simp [truncate, depthC, PassUnit.gotoOf, path, blocks, hc', hn']
   · exact ⟨entryStart_inv (tv := (spec.frame r).view.view) x [], by simp only [bareStart, List.length_replicate]; rfl⟩
 
-/-! ## The initialization's code and the flow
-
-Both named premises on the initial configurations read the
-initialization's code at the plan's flow: an initial configuration's
-term runs it at a tag of `C`, so code provenance (`InitialEntry`) needs
-it among `C`'s codes, the codes the flow proposes for, and its fit
-(`InitialFits`) needs a proposal of the flow for it (`gotoC`). -/
-
-/-- **The initialization's tag runs `C`'s code** (proved, `framePkg_ofC`). -/
-theorem init_ofC (r : SourceRequest σ ι) : (spec.frame r).F.ofC (spec.frame r).C (some spec.C) = true := by
-  change (oneComponent spec.C spec.mark).family.ofC spec.C (some spec.C) = true
-  rw [← framePkg_ofC spec.C spec.mark]
-  simp
-
-/-- **An initial configuration that is an entry runs a code of the flow**
-(proved, by code provenance at the initialization's run). -/
-theorem initialEntry_code (r : SourceRequest σ ι) {x : Conf} (hx : spec.Initial x)
-    (he : (spec.frame r).Entry x.s.h x.t) : ∃ cx π, spec.flow.code (spec.initE, spec.initK) cx = some π := by
-  obtain ⟨client, -, ht, -, -⟩ := hx
-  have hp := he.1.1
-  rw [ht] at hp
-  simp only [prov, Bool.and_eq_true] at hp
-  have hok := hp.1.1.1.1
-  simp only [ClientFrame.ok, decide_eq_true_eq] at hok
-  have hruns : (spec.frame r).F.Runs (some spec.C) (spec.frame r).C := by
-    have := spec.init_ofC r
-    simpa [Family.ofC] using this
-  exact hok hruns
-
-/-- **An initial configuration that fits the flow runs a code of the flow**
-(proved, by the rules of `Fits` at a `letE` and at a run of `C`'s code). -/
-theorem initialFits_code (r : SourceRequest σ ι) {x : Conf} (hx : spec.Initial x)
-    (hf : (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)) :
-    ∃ cx π, spec.flow.code (spec.initE, spec.initK) cx = some π := by
-  obtain ⟨client, -, ht, -, -⟩ := hx
-  have h := hf.1
-  simp only at h
-  rw [ht] at h
-  cases h with
-  | val hv _ _ => simp [isVal] at hv
-  | letE hx _ _ =>
-    cases hx with
-    | val hv _ _ => simp [isVal] at hv
-    | gotoC c π _ hcode _ _ _ _ => exact ⟨c, π, hcode⟩
-    | gotoOut hc _ _ _ _ =>
-      have h2 : ((spec.frame r).F.at (spec.frame r).C).ofC (some spec.C) = true := spec.init_ofC r
-      rw [hc] at h2; cases h2
-
-/-- **A closure creation whose code names a signature at a capture slot is
-not lowered code** (proved): lowered code's closures of `C`'s code name a
-signature only at their own slot (`SelfFn`). The initialization, which
-creates such closures (P22's `walk`, its slot of `%ElementAt%` naming the
-native's signature), is no lowered code; the flow's codes are checked to
-hold no located value (`CodesLowered`) and their node expressions to fit
-openly (`OFits.makeGraphC`, whose `OCapFn` admits a capture slot naming
-the signature its capture names). -/
-theorem capSig_not_lowered {P : Package} {Fl : Flow P} {ar s j c : Nat} {E : List Tm}
-    {K : List (Continuation × Option Target)} {caps : List Tm} {k} {rest : Bool} {comp : ComponentTag} {ns}
-    {xs : List Tm} {π : CodeFlow P} {σ : FnSig} (hC : P.ofC comp = true) (hπ : Fl.code (E, K) c = some π)
-    (hj : j < caps.length) (hσ : π.fn s (capSlot ar rest j) = some σ) :
-    ¬ Lowered Fl (.makeAt (.graph ar E K s caps k rest comp) ns xs) := by
-  intro h
-  simp only [Lowered] at h
-  have := (((h.1 hC).2 c π hπ).1 _ σ hσ).1
-  simp only [capSlot, Nat.add_left_cancel_iff] at this
-  omega
-
 end FramedSpec
 end
 end Verification.SourceClaimJson
@@ -543,18 +464,13 @@ meets the invariants of states (`FramedSpec.startInv`); the class separation is 
 every state (`classQuery_sound`). What it reads besides
 `ret_reachedW_spec`'s other premises: the request's start a body label,
 the realized code's proposals the request's (`realizedFlowB`) and the
-marks (`marksB`) at the plan's flow, and the initialization's node
-expressions free of runs. -/
+marks (`marksB`) at the plan's flow. -/
 theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι)
     {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
     (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
     (hcomp₀ : spec.componentRefusal.val = none)
-    (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
-    (hLi : ∀ v ∈ spec.initL, layP (layQ spec.fflow spec.lay) v = true ∧ Plain v ∧ free false v = true)
-    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
     (hFa : spec.fflow.flow.Facts) (hmk : spec.fflow.marksB = true)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
-    (hEf : ∀ e ∈ spec.initE, TolerantFrames.ReadOnly.free false e = true)
     (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
     (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
     (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true) (hrets : spec.RetsIn r)
@@ -595,12 +511,12 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       (fun _ _ _ _ => True) := by
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
   have hr : noRestB spec.lay = true := hnone.2.2.2.2.2.1
-  have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
-    fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
+  have hinit : ∀ x, spec.Initial r x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
+    fun _ hx => spec.progOk_initial r hx
   have hE := spec.entryFits r hr hFa hst hreal hcomp hinit hrets
   exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit hrets)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
-    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE htok hlow
+    (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hFa hE htok hlow
     hcomp hatom hT hle hslots hcheck hw (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ hownc
 
 end Verification.SourceClaimJson.PassUnit

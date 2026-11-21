@@ -983,7 +983,7 @@ open Verification.TolerantFrames.ReadOnly in
 /-- **A framed plan's run by the pass** (the draft, "What the pass
 checks"): the binding checks that read the component alone
 (`componentBindingRefusal`: `FFlow.check`, `marksB`, `codesCoverB`,
-`allocB`, `noRestB`, `initB`, `frameFlowB`), evaluated once per
+`allocB`, `noRestB`, `frameFlowB`), evaluated once per
 component and shared by its plans, the plan carrying the evaluation with
 its value (`FramedSpec.componentRefusal`); those that read the request
 before its walk (`framedChecks`); an unqualified request; its main graph
