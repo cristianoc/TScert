@@ -86,7 +86,8 @@ def writesK : Tm → List Charge
   | .indexAt x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y => writesK x ++ writesK y
   | .ite x y z => writesK x ++ writesK y ++ writesK z
   | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => writesK x
-  | _ => []
+  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _
+  | .objAt .. | .arr _ | .viewSpine .. | .goto .. | .frame .. => []
 /-- The charges of the writes of a list of terms. -/
 def writesKs : List Tm → List Charge
   | [] => []
