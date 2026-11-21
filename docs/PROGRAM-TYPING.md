@@ -4684,6 +4684,24 @@ properties only; the fragment admits no accessor in a literal
 (`invalid-sibling-field-accessor`, run under Node), and the caller contract
 states every field of a value at a structural type an own data property.
 
+A write also keeps each index fact whose support its frame respects (the
+note *Tolerant frames*, Frame): the frame of $`x.f:=y`$ is
+$`\{x.f:\mathsf{any}\}`$, and a support entry at the region $`r`$ is
+respected where the knowledge's query separates $`r`$ from $`x.f`$, by a
+separation or because $`r`$ fixes a key other than $`f`$ (`write-sibling`):
+
+```math
+\frac{F\in\Sigma\qquad S\ \text{supports}\ F\qquad \forall(r,\delta)\in S.\ r\mathrel{\#}x.f}
+     {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ F}\ \textsf{write-frame}
+```
+
+So a guarded fact, a spine separation and a linear fact read through paths
+whose keys after the first differ from $`f`$, the first location apart from
+$`x.f`$, survive the write (`writeFrame`, `frameKept`; proved:
+`writeFrame_post`, `IndexFact.keeps_sound`;
+`guarded-fact-sibling-write`, `path-facts-sibling-write`;
+`invalid-guarded-fact-path-write`, run under Node).
+
 ##### A call that keeps the heap
 
 A call (an invocation, a variadic invocation or a construction) whose
