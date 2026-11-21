@@ -1391,6 +1391,32 @@ theorem keptCells_holds {apart : HeapFacts.Fact → Bool} {C : Option ValueSets.
           rw [hC] at hle
           exact ⟨u', by unfold ReadGave; rw [hl]; exact hu', ValueSets.ValueSet.le_sound hle (hR R hC)⟩
 
+/-- **A field write's frame** (the note *Tolerant frames*, Frame): the
+location of the key `fld` of slot `i`'s object, at any change. -/
+def writeFrame (i : Nat) (fld : PropKey) : Footprints.Footprint := [(.field i fld, .any)]
+
+/-- **A field write is within its frame**: it changes the written location
+alone and keeps the heap's length. -/
+theorem writeFrame_post {ρ : Env} {h : Heap} {i : Nat} {fld : PropKey} {flds : List (PropKey × Nat)}
+    {c : CallCode} {oid l : Nat} (b : Val) (hl : ρ i = .objAt flds c oid) (hfd : flds.lookup fld = some l) :
+    Footprints.Post (writeFrame i fld) ρ h (h.set l b) := by
+  refine ⟨by simp, fun l0 v hv => ?_⟩
+  by_cases h0 : l0 = l
+  · subst h0
+    refine ⟨b, ?_, .inr ⟨_, List.mem_singleton_self _, ?_, trivial⟩⟩
+    · rw [List.getElem?_set_self (List.getElem?_eq_some_iff.mp hv).1]
+    · simp [Footprints.Region.mem, hl, Footprints.fieldsOf, hfd]
+  · exact ⟨v, by rw [List.getElem?_set_ne (Ne.symm h0)]; exact hv, .inl rfl⟩
+
+/-- Whether a write keeps an index atom by its frame alone: the change rule
+of `keptIndicesWith` does not keep it, and the write's frame respects a
+support of its fact under the knowledge's query (`IndexFact.keeps`, the
+note's Frame). -/
+def frameKept (k : Knowledge) (i : Nat) (fld : PropKey) (chg : Changes) (first stable : Nat → String → Bool)
+    (a : IndexAtom) : Bool :=
+  !(a.fact.keptWith chg first || a.fact.everyKept chg first) &&
+    a.fact.keeps (Footprints.knowledgeQuery k) (.ofFirst stable) (writeFrame i fld)
+
 /-- A write keeps the cell observations it respects (`keptCells`: about
 locations known distinct from the written one, or whose contents hold every
 value `R` admits for the written one, `weak-update`), establishes its new
@@ -1399,7 +1425,8 @@ written value is a known primitive (`R`), states that reading the field from
 the receiver gives the written slot's value (a read link, `write-link`), and
 retains immutable values already read into slots. An index atom is kept
 where `chg` keeps it, its first locations kept by separation or
-`write-sibling`, or stable (`stable`, `stable-first`). -/
+`write-sibling`, or stable (`stable`, `stable-first`), or where the write's
+frame respects its support (`frameKept`). -/
 def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet)
     (chg : Changes) (stable : Nat → String → Bool) : Knowledge :=
   HeapKnowledge.withReadAtoms ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
@@ -1411,6 +1438,7 @@ def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSet
     HeapKnowledge.shiftIndices
       (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld s (.str g) || stable s g)
           k.indices ++
+        k.indices.filter (frameKept k i fld chg (fun s g => writeKeeps k i fld s (.str g) || stable s g) stable) ++
         k.indices.filter (fieldEvery k.indices chg (fun s g => writeKeeps k i fld s (.str g))
           (pick (HeapLinks.aliases k.links) (intSlot k.indices) v)))⟩
 
@@ -1488,6 +1516,8 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
           (fun s g => writeKeeps k i fld s (.str g) ||
             stableFirst G Γ s g)
           k.indices ++
+          k.indices.filter (frameKept k i fld (fieldChanges G (expand G (Γ.getD i [])) fld)
+            (fun s g => writeKeeps k i fld s (.str g) || stableFirst G Γ s g) (stableFirst G Γ)) ++
           k.indices.filter (fieldEvery k.indices (fieldChanges G (expand G (Γ.getD i [])) fld)
             (fun s g => writeKeeps k i fld s (.str g))
             (pick (HeapLinks.aliases k.links) (intSlot k.indices) j))))
@@ -1501,9 +1531,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
           intro s g fs cd o l0 v hfirst hs0 hl0 hv
           rw [List.getElem?_set_ne (writeKeeps_ne hk hρ hfirst hl hfd hs0 hl0)]
           exact hv
-        refine HeapKnowledge.shiftIndices_holds fun a ha hcond => ?_
-        rcases List.mem_append.mp ha with ha | ha
-        · have hstable : FirstKept (stableFirst G Γ) ρ h (h.set l (ρ j)) := by
+        have hstable : FirstKept (stableFirst G Γ) ρ h (h.set l (ρ j)) := by
             intro s g fs cd o l0 w hsf hs0 hl0 hw0
             unfold stableFirst at hsf
             split at hsf
@@ -1518,8 +1546,16 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
               exact hh'.stable_value (Nat.zero_lt_succ m)
                 (WExt_lookup hx (lookup_trunc (Nat.le_succ (m + 1)) W l0 c0 hlk)) (hcs.restrict (Nat.le_succ (m + 1)))
             · cases hsf
-          exact HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2 hc (HeapKnowledge.firstKept_or hf hstable)
+        refine HeapKnowledge.shiftIndices_holds fun a ha hcond => ?_
+        rcases List.mem_append.mp ha with ha | ha
+        rcases List.mem_append.mp ha with ha | ha
+        · exact HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2 hc (HeapKnowledge.firstKept_or hf hstable)
             a ha hcond
+        · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
+          simp only [frameKept, Bool.and_eq_true] at hkeep
+          exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk hh hρ)
+            (writeFrame_post (ρ j) hl hfd) (Footprints.ReadContext.ofFirst_holds hstable)
+            (hk.2.2.2.2.2 a ha hcond)
         · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
           have hv := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab) (p := intSlot k.indices) j
           have hout := fieldEvery_holds hk.2.2.2.2.2 (by simpa only [hv] using hc)

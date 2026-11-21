@@ -1428,16 +1428,23 @@ lose. So `const hyphenWidths = items === undefined ? null :
 items.hyphenWidths` states `hyphenWidths === null || hyphenWidths.length ===
 widths.length` on each arm.
 
-**Frame conditions.** A change preserves a guarded fact where it preserves
-its guard's read, a slot alone or one field whose location it preserves
-($`\mathrm{first}(x,f)`$), and its body (proved):
+**Frame conditions.** A change $`\chi`$ preserves a guarded fact where it
+preserves its guard's read and its body (proved):
 
 ```math
-\mathrm{kept}_\chi(\mathrm{guarded}(x.p,g,B)) \iff (p=[\,]\lor(p=[f]\land\mathrm{first}(x,f)))\land\mathrm{kept}_\chi(B)
+\mathrm{kept}_\chi(\mathrm{guarded}(x.p,g,B)) \iff \mathrm{read}_\chi(x.p)\land\mathrm{kept}_\chi(B)
 ```
 
-A guard read through a longer path, whose locations may hold any value, is
-preserved by no change. A guarded fact over a slot alone reads the
+where $`\mathrm{read}_\chi(x.p)`$ holds where the path is empty, or is one
+field whose location the change preserves:
+$`\mathrm{read}_\chi(x.p)\iff p=[\,]\lor(p=[f]\land\mathrm{first}(x,f))`$.
+A field write and a call also preserve a guarded fact of any path where
+their frame respects its support, which holds every location the guard's
+path reads ([`write-frame`](PROGRAM-TYPING.md#writing),
+[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)):
+at a write $`z.f:=v`$, a path $`x.g_1\ldots g_n`$ whose first location is
+known apart from $`z.f`$, or of a key other than $`f`$, and whose later keys
+differ from $`f`$ (proved). A guarded fact over a slot alone reads the
 environment where its body does (proved).
 
 **The read bridge through an optional key.** A read link through a key the
@@ -1452,7 +1459,7 @@ binding's name, a path and a tag; the lowering wraps the fact in them.
 read of `items` is the prototype's, which no rule reads: a builder returning
 `{ widths }` does not establish `this.items === undefined`. A guard of two
 fields or more is introduced by a matching guard or its value's cell facts,
-and is preserved by no heap change.
+and preserved by a field write and a call through its support.
 
 **Implementation.** Path resolution is `clauseParameter` and `withoutTags`
 in `fragment-statements.mts`; a guarded fact is `IndexFact.guarded`, the
@@ -1469,7 +1476,8 @@ guard's read `HeapFacts.ReadGave` and `readGuard`, an absent field's term
 `ControlFlow.withTypedCells`. The join is `CertificateProducer.joinGuarded`,
 applied by the pass's merge (`SinglePass.mergeState`), the tag values
 `withTagValues`. Preservation is `guardKept` and
-`IndexFact.keptBy` (proved: `readGuard_kept`, `holdsAt_kept`), the
+`IndexFact.keptBy` (proved: `readGuard_kept`, `holdsAt_kept`), and through
+a support `IndexFact.keeps` (proved: `IndexFact.keeps_sound`), the
 environment-only fact `IndexFact.envOnly` (proved: `holdsAt_envOnly`), the
 optional-key bridge `readBridge`. A loop head's proposed guarded fact is
 `HeadInference.Fact.guarded`, carried as `LinearFactClaim.guards`, which
@@ -1480,8 +1488,14 @@ optional-key bridge `readBridge`. A loop head's proposed guarded fact is
 `returnsFromUnfitHyphen`'s shape, a walker testing the path, two callers) and
 `guarded-invariant-optional` (pretext's `items?.hyphenWidths` in
 `walkPreparedComplexLines`) and `guarded-conditional-arm` (pretext's
-`getItemTabAdvance`, each read in a conditional's arm); negative, each run
-under Node, `invalid-guarded-invariant-short` (a builder returning untested
+`getItemTabAdvance`, each read in a conditional's arm),
+`guarded-fact-sibling-write` (pretext's `normalizePreparedLineStart`: a
+guard of two fields across a write of another object's field, and across a
+loop writing it) and `guarded-fact-twice-sibling-write` (two guards, and a
+typed array's length through two fields); negative, each run under Node,
+`invalid-guarded-fact-path-write` (a write of the guard's last key through
+a parameter that may hold the guarded object, refused at the return),
+`invalid-guarded-invariant-short` (a builder returning untested
 contexts, refused at its return), `invalid-guarded-invariant-other-field`
 (the null test of another field, refused at the read) and
 `invalid-guarded-conditional-other-field` (alike, in a conditional); a
