@@ -1,0 +1,294 @@
+Proposed text for Read-only frames (docs/drafts/readonly-frames-note/note.tex):
+(A1)-(A3), the natives and the scope (Section 5), Section 4's abstract
+values, "Signatures" and "Charges", (B1), what is proved of (A1), (A2) and
+(B5), and the examples of the initialization. Not applied: the owner
+approves paper changes. The design is docs/drafts/framed-acceptance.md,
+"Outside slots and the initialization, shared with verification"; the
+statuses name its Lean, marked to be proved where unproved. Apply with
+git apply from the repository root.
+
+--- a/docs/drafts/readonly-frames-note/note.tex	2026-11-21 02:16:53
++++ b/docs/drafts/readonly-frames-note/note.tex	2026-11-21 02:16:53
+@@ -432,7 +432,7 @@
+ decision procedure, the only trusted part, checks it.
+ 
+ \paragraph{Abstract values.} Each code $m$ of the flow (the graph of a
+-function of $\cC$, or the step model of an audited native) has, for each
++function of $\cC$, or a module's initialization) has, for each
+ \emph{node key} $k$ of its nodes, the pair of a node's continuation and
+ handler, an object site $\alpha_o(m,k)$ and an array site
+ $\alpha_a(m,k)$, and a \emph{token} $\kappa_m$ standing for its closures,
+@@ -490,13 +490,17 @@
+ holding such a closure or at the closure's own slot. The value of a
+ closure creation $\kw{fun}_{m'}[\bar u]$ names the signature of $m'$, and
+ a capture slot it fills names a signature only where the captured value
+-names the same one. Mutually referring closures are created together:
+-every closure of the group is allocated first, then each one's captures,
+-so a capture holding a closure of the group names that closure's
+-signature. In Example~\ref{ex:rohelper} the initialization allocates
+-the closures of \code{next} and \code{walk}, then writes \code{walk}'s
+-capture of \code{next}, which names \code{next}'s signature
+-\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{OCapFn}; at the entry, \lean{EntryShape}; a creation's value naming its code's signature, \lean{FnTm} (kept by a step, \lean{FnTm.step}), decided by \lean{vfnB}. conj.: a group created together}.
++names the same one. A module function's closure captures each module
++function it names as that function's closure, unfolded: at depth $n$ the
++capture holds the closure at depth $n-1$, and at depth $0$ the value
++$\kw{null}$, so mutually referring functions need no order of creation.
++A slot naming a signature holds a closure of it, or, in an unfolding,
++$\kw{null}$; a configuration of budget $n$ whose module closures are
++unfolded at least $n$ times calls through at most $n$ of them and so
++never calls $\kw{null}$. In Example~\ref{ex:rohelper} \code{walk}'s
++closure captures \code{next}'s, and that capture names \code{next}'s
++signature
++\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{OCapFn}; at the entry, \lean{EntryShape}; a creation's value naming its code's signature, \lean{FnTm} (kept by a step, \lean{FnTm.step}), decided by \lean{vfnB}; the unfoldings, \lean{approxEnv}, \lean{captures\_envOk}; a slot of an unfolding, \lean{EnvFnAt}, \lean{unfold\_budget} (to be proved)}.
+ 
+ \paragraph{The rules.} A set $S$ is \emph{supplied} when it holds what
+ outside code may supply: $\circ$ and the token of every code whose token
+@@ -661,8 +665,10 @@
+ the flow. The write \code{c.i++} of Example~\ref{ex:rohelper} is
+ charged at the part (the cursor's site, $\kF$, \code{i}) alone. The charges
+ $\mathrm{Ch}(M)$ of a set $M$ of codes join, at $\any$, every charged
+-write of every node of every code of $M$ at every context, and each native
+-step model's writes at its receivers' parts. The \emph{closure}
++write of every node of every code of $M$ at every context, and, at each
++call of a native, its stated footprint read at the caller's slots, at the
++parts of the sites of the receiver and the actuals it names (at every site
++for a region at no slot). The \emph{closure}
+ $\overline S$ of a set $S$ of sites and tokens is the least superset of
+ $S$ closed under $H$ and under captures: with the token $\kappa_{m'}$ it
+ holds the sites of $m'$'s capture slots at its entry at every context.
+@@ -674,8 +680,7 @@
+ node $c$ with callee set $S_f$, receiver set $S_r$ and argument sets
+ $\bar S$, the \emph{segment's codes} $\mathrm{seg}(c)$ are the least set of
+ codes holding each code whose token $S_f$ holds, closed under the same at
+-every call of its codes and under the tokens of the arguments of a call
+-of a native step model; the call's \emph{reach} is
++every call of its codes; the call's \emph{reach} is
+ $L(c)=\overline{S_f\cup S_r\cup\bigcup\bar S\cup\mathit{Cap}(\mathrm{seg}(c))}$;
+ its \emph{depth charges} $W_c$ are $\mathrm{Ch}(\mathrm{seg}(c))$ at
+ every part but a local part whose site is outside $L(c)$, which is
+@@ -893,60 +898,62 @@
+ every module function of $\cC$ has closure code (it declares no
+ \code{this}) and collects no rest; every export is a module function;
+ every free variable of a module function that names no binding of
+-$\cC$ names a \emph{realm value}: the value that the realm's global
+-binding of that name holds at every state of every program the claim is
+-about, so that the slot holding it is the same at every depth of
+-unfolding. Such a variable is decided by its name.
+-\code{Infinity}, \code{NaN} and \code{undefined} are realm values, since
+-ECMA-262 makes their global bindings not writable; \code{Math},
+-\code{RangeError} and the realm's intrinsic objects
+-(\code{[[Array.prototype]]}) are realm values by the assumption on the
+-natives (Section~\ref{sec:accept-trust}). Every \code{@clients} row of
++$\cC$ is an \emph{outside slot}, read at the kind and the contract the
++ordinary pass gives it: an import read at its module's interface or at
++its declaration, a native, an intrinsic object
++(\code{[[Array.prototype]]} at \code{ArrayProto}), a global the
++declarations state (\code{Infinity}, \code{RangeError}), or a host value;
++no slot is decided by its name.
++Every \code{@clients} row of
+ an exported type states a change per class only, and every row keeps
+ every part, so $\Theta_\cC$ is $\keep$ at every part. A component that
+ fails a gate has no framed plan. A closure a module function creates is
+ lowered code (``The rules''): its token in $O$, its code open, its
+ capture slots holding $O$
+-\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module functions naming each other in a cycle, \lean{namingOrder}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}. These gates are narrower than the item's: one module, no cycle of names, and each realm value an object or a native of the audited names, so \code{Infinity} is refused; the solver proposes each closure a node expression creates lowered (\lean{SolveCode.lowered}). conj.: the gates as the item states them, with (A2)}.
++\status{Lean: the outside slots by kind, \lean{OutsideKind}, \lean{KindMet}, read by the plan's layout (\lean{FramedSpec.layout}); \lean{framedRestriction} (class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}; the solver proposes each closure a node expression creates lowered (\lean{SolveCode.lowered})}.
+ \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
+-of $\cC$'s modules, each module function's code and the closures it creates, and the
+-natives' step models; a code is a term, so module functions of one code
++of $\cC$'s modules, each module function's code and the closures it creates, and each
++module's initialization; a code is a term, so module functions of one code
+ are one code of $M_\cC$, with one pair of sites per allocation and one
+ token. The solver proposes a flow of $M_\cC$
+ (Section~\ref{sec:flow}, step~(1)); the check decides it (step~(2),
+ Theorem~\ref{thm:check}) and its marks (step~(3)). The
+ \emph{initialization} of $\cC$ runs every module of $\cC$ once, in the
+-order ECMA-262 evaluates a module graph: a module after the modules it
+-imports. It allocates each module's bindings as locations its module
+-functions capture. A binding that no code writes and whose value exists
+-before any closure capturing it is created, a function declaration's, is
+-captured as that value, its closure. Every other binding, a
+-\code{const}'s or a \code{let}'s, is a cell location, of kind $\kC$ and
+-key \code{value}, at a site of the initialization, and is captured as
+-that cell. An import's binding is the exporting module's binding. The
+-module functions' closures are created as one group (Section~\ref{sec:flow},
+-``Signatures''): every closure first, then their captures. Then each
+-module's statements run in order, writing the cells of its bindings, and
+-last the array of the entries is allocated. A module function's code is
+-open at its entry with each capture slot holding what the initialization
+-captures there, the cells' sites and the tokens of the closures, each
+-closure's slot naming its signature: outside code supplies no capture.
++order the host chooses; the claim reads no order. A binding that no code
++writes and whose value exists before any closure capturing it is
++created, a function declaration's, is captured as that value, its
++closure, unfolded (Section~\ref{sec:flow}, ``Signatures''). Every other
++binding, a \code{const}'s or a \code{let}'s, is a cell location, of kind
++$\kC$ and key \code{value}, at a site of its module's initialization, and
++is captured as that cell. An import's binding is the exporting module's
++binding. Each module's initialization is a code of $M_\cC$, entered once
++at context $0$, so the flow covers the states it reaches whatever the
++order. A module function's code is open at its entry with each capture
++slot holding what it captures there: a cell's site, a named function's
++token, the slot naming its signature, or $\circ$ for an outside slot:
++outside code supplies no capture. A program whose initialization throws,
++as one module reading another's cell before that module runs does, ends
++before its client runs.
+ The cell of a \code{const} is written by the initialization alone, since
+ no code of $\cC$ assigns a constant, so the value the initialization
+ writes there holds at every later state: no code of $M_\cC$ writes the
+-cell, and outside code reaches no location of a local site (K)
+-\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization and its order, \lean{componentInit}, decided by \lean{initB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). conj.: the initialization of several modules, its cells, the closures created as one group, and the open entry at the captures the initialization writes, which is Theorem~\ref{thm:flow}'s premise on a closure given out with its capture slots holding those captures in place of supplied sets; the code's initialization is that of one module with no binding but its module functions' closures, each created after those it names}.
++cell, and outside code reaches no location of a local site (K).
++A call of a native is a call of outside code for the flow: its receiver
++and actuals enter $O$, and a closure of $\cC$ it is passed is given out
++\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). The initialization's codes in the flow and every order of their runs, \lean{initial\_of\_inits} (to be proved)}.
+ \item[(A3) Charges] The charged writes of each code of $M_\cC$ at each
+ context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
+ closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
+ (Section~\ref{sec:flowro}, ``Charges''); the client row $\Theta_\cC$,
+ the join of the \code{@clients} rows per kind, which (A1) admits at
+-$\keep$ alone. The initialization is no code of $M_\cC$, and it runs
+-before any entry, so its writes are charged nowhere. A member's write to
++$\keep$ alone. The initialization's codes run before any entry and
++have no closure, so their writes are charged nowhere. A call of a native
++is charged at the parts its stated footprint changes at its receiver's
++and actuals' sites (Section~\ref{sec:flowro}, ``Charges''). A member's write to
+ a binding's cell is charged at the cell's part (its site, $\kC$,
+ \code{value}): $\Psi_\cC$ is $\keep$ at the cell of a \code{const}, and
+ the members' charges at the cell of a \code{let} they write
+-\status{conj.\ for the cells of bindings, with (A2). Lean: \lean{codeKinds}, \lean{flowKinds}, \lean{probeProtocol}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}) and runs its check \lean{capClosedB} at the closure of the capture sites and $O$ (\lean{frameFlowB}) and at each framed node's set (\lean{framedNodeOkB})}.
++\status{Lean: the natives' parts, \lean{nativeParts} (to be proved: \lean{nativeParts\_sound}); \lean{codeKinds}, \lean{flowKinds}, \lean{probeProtocol}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}) and runs its check \lean{capClosedB} at the closure of the capture sites and $O$ (\lean{frameFlowB}) and at each framed node's set (\lean{framedNodeOkB})}.
+ \item[(A4) Binding checks that read no unit] The flow holds a proposal at
+ context $0$ for each module function's code, and every allocation site
+ of every code at every context is a site
+@@ -961,9 +968,12 @@
+ checked} are context $0$ where $f$ is an entry or its token is in $O$,
+ and otherwise the contexts the flow gives $m$ at its known calls. A call
+ node $c$ of $m$ is framed when, at some context of $m$ at which $f$ is
+-checked, its callee set $S_f$ holds $\circ$, or its callee is a slot
++checked, its callee set $S_f$ holds $\circ$ and it is no call of a
++native, or its callee is a slot
+ naming no signature whose set holds a token, or some
+-code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. A
++code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$ that
++is no call of a native. A call of a native is checked by its stated
++footprint, as the ordinary pass checks it. A
+ call of a module function by its name is checked by that function's
+ specification; a framed call of a closure of $\cC$ is bounded by the
+ charges of its segment, in $\Psi_c(l)$ of (B2). A unit with no framed
+@@ -1036,21 +1046,23 @@
+ $\keep$ at every part.
+ \item[The callback row] A call at a framed node of $f$'s request code, a call whose callee may be a value of outside code, whose callee's type states an effect, changes the heap within it from its entry to its return with a value, its calls of $\cC$ included \status{assumed, a part of $\Theta_\cC$: \lean{FramedSpec.CallbacksWithin}, a premise of \lean{MemberSafe}'s framed branch}.\par
+ \item[The binding to the file] The plan's realm, initialization, flow, family and request are those of the checked file: the front end and the producer build them from the file's fragment and declaration document, and the theorem reads them from the plan \status{executable, unproved, the front end's trust: \lean{PreparedFile.prepareFramedComponent}, \lean{FramedComponent.of}, \lean{componentInit}, \lean{framedComponentFlow}, \lean{FramedSpec.decode}. Proved from the checks: the frame's $\Theta_\cC$ is the family's \code{@clients} rows' (\lean{FramedSpec.theta\_rows}), its read-only types $f$'s declared read-only parameters (\lean{FramedSpec.readOnly\_declared}), its framed nodes the flow's (\lean{FramedSpec.framed\_nodes}), its entry an entry of the checked flow (\lean{FramedSpec.entry\_checked}), its tag $\cC$ (\lean{compB\_sound})}.\par
+-\item[The natives] Each native's step model describes the native, the
+-realm's intrinsic objects behave as standard, and each global binding of
+-the realm that (A1) reads as a realm value holds its standard value at
+-every state
+-\status{assumed: \lean{hostModel?}}.
+-\item[The scope] A program the claim is about starts from a heap holding
+-one location per realm object or native that $\cC$'s module functions
+-read, a scalar realm value such as \code{Infinity} held in its slot
+-itself, with the initialization of (A2), every module of $\cC$ in
+-evaluation order, run in front of a client of lowered outside source that
+-holds no located value and reads one variable, the exports. Its client
+-reaches the exports, what it allocates and the calculus's operations; a
+-client calling a native (\code{xs.push}, \code{Math}, a \code{Map}, a
+-method of a realm object) runs no program the claim is about
+-\status{a stated limit, proved of the definition: \lean{FramedSpec.Initial}, \lean{componentInit}, \lean{LoweredSrc}, \lean{FramedSpec.initial\_lowered}, for the initialization of one module; conj.\ for several modules and scalar realm values}.
++\item[The natives] Each outside slot's value meets its contract, as the
++ordinary pass assumes it: \code{Array.prototype} meets \code{ArrayProto},
++the intrinsics meet their signatures, a host value its host contract and
++a declared import its declaration; a module cell's value meets its
++contract after the initialization (the initialization's obligation,
++shared with the ordinary pass). The steps of a native that $\cC$ calls,
++and of a function of outside code it calls back, are $\cC$'s, bounded as
++a whole by the native's stated footprint; the client obligation reads the
++client's own steps
++\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the steps, \lean{ClientStep}, \lean{nativeRun\_within} (to be proved)}.
++\item[The scope] A program the claim is about starts from any
++configuration, after the initialization of (A2), that fits the flow, is
++an entry (outside code lowered, closed values, the call discipline) and
++whose module closures are unfoldings, at least as deep as its budget,
++whose outside captures meet their contracts. Its client may hold any
++values outside code may hold and call any native
++\status{a premise: \lean{FramedSpec.Initial} (\lean{FramedSpec.SlotsMet}); \lean{InitialFits} and \lean{InitialEntry} hold by definition; a program's configuration after its initialization is one, in every order, \lean{initial\_of\_inits} (to be proved)}.
+ \end{description}
+ \noindent
+ The proposals (the flow, the framed nodes, the kept supports, the
+@@ -1059,16 +1071,16 @@
+ \subsection{What is proved}\label{sec:accept-proof}
+ 
+ \begin{description}[leftmargin=1.5em,style=nextline]
+-\item[(A1)] The gates are restrictions of the language. Under them a
+-module function's closure is the same at every depth of unfolding from
+-its height on
+-\status{Lean: \lean{PassUnit.approx\_stable}, under the code's gates; conj.\ under the gates of (A1), with the closures of (A2) created as one group}.
++\item[(A1)] The gates are restrictions of the language. A module
++function's closure at depth $n$ meets the contracts of its captures at
++every budget up to $n$, the names of the module calling each other or not
++\status{Lean: \lean{captures\_envOk}, \lean{approx\_captures\_envOk}; the request's entry contracts at its captures, \lean{entryHolds\_of\_slots} (to be proved)}.
+ \item[(A2)] A flow the check accepts is a flow of $\cC$
+ (Theorem~\ref{thm:check}), its marks are those of
+ Definition~\ref{def:marksfit}, and at every state reached from a fitting
+ entry the heap meets $H$ and outside code holds only values meeting $O$
+ (Theorem~\ref{thm:flow})
+-\status{Lean: \lean{FFlow.check\_sound}, \lean{FFlow.marksB\_sound}, \lean{ClientFrame.fitsAt\_reached}; along a program from its initialization, every earlier call of $\cC$ included, \lean{FramedSpec.progOk\_initial}, \lean{FramedSpec.entryFits}, from \lean{FramedSpec.initialFits}}.
++\status{Lean: \lean{FFlow.check\_sound}, \lean{FFlow.marksB\_sound}, \lean{ClientFrame.fitsAt\_reached}; along a program from an initial configuration, every earlier call of $\cC$ included, \lean{FramedSpec.progOk\_initial}, \lean{FramedSpec.entryFits}, from \lean{FramedSpec.initialFits}; the initialization, \lean{initial\_of\_inits} (to be proved)}.
+ \item[(A3)] Each closure, checked, is closed; a step changes an old
+ location only at its active writing redex, at a site its receiver meets
+ \status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} ($\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth, under \lean{noRestB})}.
+@@ -1103,7 +1115,7 @@
+ function of the unit; for a framed plan, a member accepted with its
+ framed obligations is safe at the frame its plan defines, for the
+ executions keeping $\Theta_\cC$
+-\status{Lean: \lean{SourceClaimJson.PassUnit.mode8Accepted\_sound}, its print site of a framed plan \lean{Mode8Accepted.framed} (\lean{framedPlan\_overStore}); the framed branch, \lean{passMember\_sound} by \lean{framedRun\_sound} (\lean{passMemberGraph\_accepted}, \lean{framedSettle\_ok}), \lean{framed\_requestSafe} from \lean{FramedAccepted}, \lean{member\_safe}. the framed returns at the executions the claim is about, read at their worlds, from a plan's checks, \lean{ret\_reachedW\_spec}, the frame's invariants read along the program from its initial configurations, \lean{ret\_reachedW\_public}, its premises that are checks from the checks the pass makes, \lean{framedReturns\_reached} (\lean{frameFlowB\_sound} and \lean{framedNodesAt\_sound} at the frame's flow by \lean{frame\_transport}, \lean{thetaKeepB\_sound}, \lean{classQuery\_sound}, \lean{FramedSpec.starts\_checks}), under the callback row; the premises on the initial configurations, \lean{InitialFits} and \lean{InitialEntry}, from the component's checks of the initialization in the flow (\lean{FramedSpec.initialFits}, \lean{FramedSpec.initialEntry}, by \lean{init\_fits} and \lean{realmSlot\_vj} at \lean{initFlowB})}.
++\status{Lean: \lean{SourceClaimJson.PassUnit.mode8Accepted\_sound}, its print site of a framed plan \lean{Mode8Accepted.framed} (\lean{framedPlan\_overStore}); the framed branch, \lean{passMember\_sound} by \lean{framedRun\_sound} (\lean{passMemberGraph\_accepted}, \lean{framedSettle\_ok}), \lean{framed\_requestSafe} from \lean{FramedAccepted}, \lean{member\_safe}. the framed returns at the executions the claim is about, read at their worlds, from a plan's checks, \lean{ret\_reachedW\_spec}, the frame's invariants read along the program from its initial configurations, \lean{ret\_reachedW\_public}, its premises that are checks from the checks the pass makes, \lean{framedReturns\_reached} (\lean{frameFlowB\_sound} and \lean{framedNodesAt\_sound} at the frame's flow by \lean{frame\_transport}, \lean{thetaKeepB\_sound}, \lean{classQuery\_sound}, \lean{FramedSpec.starts\_checks}), under the callback row; the premises on the initial configurations, \lean{InitialFits} and \lean{InitialEntry}, by the definition of \lean{FramedSpec.Initial}}.
+ \end{description}
+ 
+ \fussy
+@@ -1115,7 +1127,7 @@
+ \code{prepare} allocated it, under the marks of Section~\ref{sec:concepts},
+ and protected by the crossing of \code{h} whoever allocated it, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
+ under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
+-\status{Lean: the slot of \code{w} holds the read of \code{widths} from \code{h}, \lean{copiesB}, \lean{ClientFrame.copies\_along}; its spine is read as protected, \lean{protRegionB}, witnessed by the crossing of \code{h}, \lean{FramedSpec.prot\_witness}; the case \code{readonly-frame-local-alias} is this module without \code{prepare} and with a sum in place of \code{push}. conj.: the module as printed, whose natives \code{fill} and \code{push} the code charges $\any$ at every part their calls reach, where this note charges their stated effects}
++\status{Lean: the slot of \code{w} holds the read of \code{widths} from \code{h}, \lean{copiesB}, \lean{ClientFrame.copies\_along}; its spine is read as protected, \lean{protRegionB}, witnessed by the crossing of \code{h}, \lean{FramedSpec.prot\_witness}; the case \code{readonly-frame-local-alias} is this module without \code{prepare} and with a sum in place of \code{push}. the module as printed, its natives \code{fill} and \code{push} charged at their stated footprints, the case \code{readonly-frame-printed-module}}
+ \end{example}
+ 
+ \begin{example}[A member that shortens]\label{ex:rotrim}\mbox{}
+@@ -1176,9 +1188,8 @@
+ \end{example}
+ 
+ \noindent
+-Five examples show the initialization of (A2) and the contexts of (B1);
+-each turns on a step marked conj.\ in Section~\ref{sec:accept}, and the
+-code's gates (A1) refuse each. Each is the module of
++Five examples show the initialization of (A2) and the contexts of (B1).
++Each is the module of
+ Example~\ref{ex:rocursor} with the lines shown, a line 0 placed before
+ it.
+ 
+@@ -1224,7 +1235,8 @@
+ \code{checked.ts}, then the root. \code{missing} is a function
+ declaration, so \code{walk} captures its closure, whose slot names
+ \code{missing}'s signature, and \code{missing()} is a call of $\cC$'s
+-code by its name. \code{RangeError} is a realm value (A1). In both
++code by its name. \code{RangeError} is a global the declarations
++state, read at its declared type (A1). In both
+ components \code{missing} is no entry and its token is outside $O$, so
+ it is checked at the context of its call in \code{walk} (B1).
+ \end{example}
+@@ -1234,10 +1246,10 @@
+ 4 & \code{~~while (c.i < xs.length) \{ visit(c.i); if (s < Infinity) s += xs[c.i]!; c.i++; \}}\\
+ \end{tabular}
+ \end{center}
+-\emph{Accepted.} The slot of \code{Infinity} holds a realm value, the
+-number $+\infty$, which ECMA-262's global binding \code{Infinity} holds
+-at every state, so the slot is the same at every depth of unfolding
+-(A1). The cursor facts are kept as in Example~\ref{ex:rocursor}.
++\emph{Accepted.} The slot of \code{Infinity} is a global the
++declarations state, read at its declared type, a number, with the sites
++$\circ$ (A1). The cursor facts are
++kept as in Example~\ref{ex:rocursor}.
+ \end{example}
+ \begin{example}[A walker that is no entry]\label{ex:roinner}\mbox{}
+ \begin{center}\small
