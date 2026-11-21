@@ -827,7 +827,7 @@ The hypotheses, by level ([their statements](SINGLE-PASS-THEOREM.md#the-hypothes
 | --- | --- | --- |
 | Graph | `run_sound_single_pass`, `runKeepsSummaries` | none |
 | Unit | `mode8Accepted_sound`, `passUnitVerdict_sound` | none |
-| File | `passFile_safe_kinds` | `ReceiverDropSound`; the layout (`ModuleLayout`); the established slots (`EstablishedSlots`); the four outside kinds met (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`) |
+| File | `passFile_safe_kinds` | `ReceiverDropSound`; the layout (`ModuleLayout`); the established slots (`EstablishedSlots`); the four outside kinds met (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`), all at one base world (`Above`) |
 | Cross-module | `crossModule_safe` | `ReceiverDropSound`; the importer's layout; the publication order (`ReadsEarlier`); each published entry's step (`EstablishedStep`) and layout (`StepLayouts`); the chosen slots (`ChosenSlots`); each established slot reading an entry of the order; the other three outside kinds. With `established_of_provenance` the steps follow from `InterfaceProvenance` and `EstablishProvenance`. |
 
 What stays trusted at every level: the parser's fragment, the

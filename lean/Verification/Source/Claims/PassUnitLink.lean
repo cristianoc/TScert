@@ -170,27 +170,69 @@ theorem closedUnits_linked (vs : Verdicts) (Meets : String → Nat → Prop)
       exact hreal u ds ha n hself (fun d hd => hdeps d (by simp only [deps, ha, Option.getD_some]; exact hd)))
   exact fun u hu n => key n u hu
 
+/-! ## The base world -/
+
+/-- **A world above the base world** (`Above`): a world at a level `j` no
+greater than the base world's level `N`, extending the base world truncated
+to `j`. The base world `W₀` is the one the initialization leaves: it holds
+the locations the module's outside values (an import's objects, a host
+object, a module cell) are allocated at, with their contracts; every run of
+the module's functions starts in a world above it. -/
+def Above {N j : Nat} (W₀ : WorldT N) (V : WorldT j) : Prop :=
+  ∃ h : j ≤ N, WExt (trunc j h W₀) V
+
+/-- The base world is above itself (proved). -/
+theorem Above.refl {N : Nat} (W₀ : WorldT N) : Above W₀ W₀ :=
+  ⟨Nat.le_refl N, by rw [trunc_id]; exact WExt_refl W₀⟩
+
+/-- A world extending one above the base is above it (proved). -/
+theorem Above.ext {N j : Nat} {W₀ : WorldT N} {V V' : WorldT j} (h : Above W₀ V) (hx : WExt V V') :
+    Above W₀ V' :=
+  ⟨h.1, WExt_trans h.2 hx⟩
+
+/-- A world above the base, truncated, is above it (proved). -/
+theorem Above.trunc {N j i : Nat} {W₀ : WorldT N} {V : WorldT j} (h : Above W₀ V) (hi : i ≤ j) :
+    Above W₀ (Verification.trunc i hi V) :=
+  ⟨Nat.le_trans hi h.1, by rw [← trunc_trunc hi h.1]; exact WExt_trunc hi h.2⟩
+
+/-- **The worlds a call below the budget runs in are above the base**
+(proved): a world extending, at a smaller level, a world above the base
+truncated to that level. -/
+theorem Above.below {N j i : Nat} {W₀ : WorldT N} {V : WorldT j} (h : Above W₀ V) (hi : i ≤ j)
+    {U : WorldT i} (hx : WExt (Verification.trunc i hi V) U) : Above W₀ U :=
+  (h.trunc hi).ext hx
+
+/-- **Above is transitive across base worlds** (proved): a world above a
+base world `W₁` that is itself above `W₀` is above `W₀`, as an importer's
+worlds are above its exporters' base worlds. -/
+theorem Above.base_trans {N M j : Nat} {W₀ : WorldT N} {W₁ : WorldT M} (h₁ : Above W₀ W₁) {V : WorldT j}
+    (h : Above W₁ V) : Above W₀ V :=
+  ⟨Nat.le_trans h.1 h₁.1, by
+    rw [← trunc_trunc h.1 h₁.1]; exact WExt_trans (WExt_trunc h.1 h₁.2) h.2⟩
+
 /-! ## A discharged interface at a caller's slot -/
 
 section
 variable {ι : Type}
 
 /-- The interface of a function value: its value meets its type at budget
-`n` in every world. -/
-def MeetsAt (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (v : Tm) (n : Nat) : Prop :=
-  ∀ W : WorldT n, meaning G A n W v
+`n` in every world above the base world `W₀`. -/
+def MeetsAt (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (v : Tm) (n : Nat) {N : Nat} (W₀ : WorldT N) : Prop :=
+  ∀ W : WorldT n, Above W₀ W → meaning G A n W v
 
 /-- **A linked environment meets the inputs** (proved): where each slot `i`
 the link names holds the module value of its callee, at the type its
-callee's interface states, and that interface holds at the budget, and every
-other slot meets its type, the environment meets the inputs (`EnvOk`). So
+callee's interface states, and that interface holds at the budget above a
+base world the world is above, and every other slot meets its type, the
+environment meets the inputs (`EnvOk`). So
 `RequestSafe`'s entry premise holds of a caller run in the module's
 environment once its callees' interfaces are discharged. -/
 theorem envOk_of_linked {G : PositiveGraphs.NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat} {W : WorldT n}
+    {N : Nat} {W₀ : WorldT N} (hW : Above W₀ W)
     {U : Type} (link : Nat → Option U) (value : U → Tm) (iface : U → Ty ι)
     (hscoped : ∀ i, Scoped 0 (ρ i))
     (hlinked : ∀ i u, link i = some u → ρ i = value u ∧ Γ[i]? = some (iface u))
-    (hmeets : ∀ i u, link i = some u → MeetsAt G (iface u) (value u) n)
+    (hmeets : ∀ i u, link i = some u → MeetsAt G (iface u) (value u) n W₀)
     (hrest : ∀ i A, link i = none → Γ[i]? = some A → meaning G A n W (ρ i)) :
     EnvOk G Γ ρ n W := by
   refine ⟨hscoped, fun i A hA => ?_⟩
@@ -202,7 +244,7 @@ theorem envOk_of_linked {G : PositiveGraphs.NormalGraph ι} {Γ : List (Ty ι)} 
     injection hA with hA
     subst hA
     rw [hv]
-    exact hmeets i u hl W
+    exact hmeets i u hl W hW
 
 end
 

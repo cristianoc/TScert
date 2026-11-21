@@ -350,6 +350,7 @@ import Verification.Source.SourceTypes
 import Verification.Source.Synthesis
 import Verification.Source.Synthesis.ExitProposals
 import Verification.Source.WorkerWire
+import Verification.Tests.BaseWorldControls
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests
 import Verification.Tests.FlowProbeControls
