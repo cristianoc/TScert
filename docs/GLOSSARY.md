@@ -88,7 +88,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Stage store, census and measurement
 
 - **attempt**: one execution of a stage invocation; within it, an observed stage's record is being made ([shared work](STAGE-STORE.md#shared-work)).
-- **census**: every named top-level function declaration with a body in a directory (`tools/` by default), each module checked whole, unit by unit, the benchmark of front-end coverage ([function coverage](DESIGN.md#function-coverage-and-release-thresholds), [measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
+- **census**: every named top-level function declaration with a body in a directory (`tools/` by default), each module checked whole, unit by unit, the benchmark of front-end coverage ([function coverage](DESIGN.md#function-coverage-and-release-thresholds), [measuring coverage](../AGENTS.md#measuring-coverage-on-main-and-single-pass)).
 - **census record**: a census's persistent record: per file its rounds, its units' results, its omitted units and its stage invocations with their timings ([census records](STAGE-STORE.md#census-records)).
 - **entry**: a stored stage result, published under its key and replayed when the key matches ([entries and timeouts](STAGE-STORE.md#entries-and-timeouts)).
 - **front-end function coverage**: shallow verified census functions divided by all census functions in `tools/`, the headline and release metric ([counting and release thresholds](DESIGN.md#function-coverage-and-release-thresholds)).
@@ -108,7 +108,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **replay**: serving a stored result whose key matches instead of executing the stage ([replay and trust](STAGE-STORE.md#replay-and-trust)).
 - **retained declaration session**: a worker's compiler of a named project, kept between declaration collections ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions)).
 - **shallow verified** / **deep verified**: a census function whose own unit is accepted / whose unit and every unit of its dependency closure are ([function coverage](DESIGN.md#function-coverage-and-release-thresholds)).
-- **shard** (`SHARD=i/n`): one of n processes splitting a census by files ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
+- **shard** (`SHARD=i/n`): one of n processes splitting a census by files ([measuring coverage](../AGENTS.md#measuring-coverage-on-main-and-single-pass)).
 - **shared work**: front-end work served again within a process at the lifetime its inputs fix: attempt answers, resolutions, query answers ([shared work](STAGE-STORE.md#shared-work)).
 - **snapshot**: a state of a compiler's program that queries are asked of, held until the front end releases it ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions), [shared work](STAGE-STORE.md#shared-work)).
 - **stage**: one step of the pipeline (parse, module, interface plan, module interface, pass) or one operation of a control, run through one invocation mechanism ([the stage store](DESIGN.md#the-stage-store)).

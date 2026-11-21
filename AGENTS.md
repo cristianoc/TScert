@@ -79,20 +79,20 @@ The table is the principle's instance:
 | Cases, examples | `run-cases.mts <pattern>` for the cases touched | — |
 | Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | `make test-pretext PRETEXT=<checkout>`; CI's `pretext` job runs it at its pinned pretext commit |
 
-### Measuring coverage: once, on main
-
-<!-- OWNER: work lands on `single-pass`; do the census and the gap rounds run on `main` or on `single-pass`? -->
+### Measuring coverage on main and single-pass
 
 Work lands on the line `single-pass`
 ([where things are](.claude/skills/parity/SKILL.md#where-things-are)). The
-census runs on `main` once after each merge, by the
-[Census workflow](.github/workflows/census.yml); its commands are
-[`dev/census.mts`'s](dev/census.mts). A branch runs no census, over
-`tools/` or over a file: it shows a change does what it is for by the
-function it targets and one depending on it, before and after
-(`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`). A coverage report
-states the count, denominator and scope, and labels statement coverage and
-aggregates separately
+census of `tools/` runs on each push to `main` or `single-pass`, by the
+[Census workflow](.github/workflows/census.yml), compared with the last
+successful census pushed to the same branch and kept as the run's artifact;
+on `main` it also publishes its page and comments on the pushed commit's
+pull request. Its commands are [`dev/census.mts`'s](dev/census.mts). A
+branch runs no census, over `tools/` or over a file: it shows a change does
+what it is for by the function it targets and one depending on it, before
+and after (`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`). A
+coverage report states the count, denominator and scope, and labels
+statement coverage and aggregates separately
 ([function coverage](docs/DESIGN.md#function-coverage-and-release-thresholds)).
 
 ### Choosing the gap cases to work on
