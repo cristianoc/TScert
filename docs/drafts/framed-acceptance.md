@@ -3516,6 +3516,33 @@ and P22's layout meets them (measured).
 ## Open points for review
 
 1. **Milestone 4's disjoint supports** are a design to review.
+2. **What a native's own allocations hold, and the callbacks' returns**
+   (step 1.3.5). The rule at a call of a native
+   ([the algorithm](#the-algorithm), step 5; Read-only frames, (A2)) states
+   no set for the contents of its node's sites, and $`L_n(c)`$ is not
+   closed under the return sets of the codes it enters. `xs.map(f)` stores
+   `f`'s results into its fresh array, so a read of that array's element
+   meets no set the rule states, and `fits_step` has no case for the store.
+   Under a flow whose node sites hold nothing,
+   `walk(xs, visit) { const ys = xs.map(() => ({ i: 0 })); const c = ys[0]; visit(ys); return xs[c.i] }`
+   keeps $`0\le c.i`$ across `visit`, which sets `ys[0].i = -1` (observed:
+   `map-fresh.mjs`, `undefined`). Proposed: $`L_n(c)`$ the least set
+   holding the receiver's and the actuals' sets, closed under the heap's
+   contents and under the return set of every code whose token it holds,
+   and holding $`O`$ where it holds $`\circ`$; the node's sites store
+   $`L_n(c)`$, the node's sites and $`\circ`$; the result's set holds them
+   too.
+3. **A callee's allocation reached through the realm's storage**
+   (step 1.3.5). (b′) bounds what a native gives out by what its run
+   allocated, its callees' allocations included, and so admits realm code
+   `n(f) { f(); return G.v }`, `G` a realm object, called from $`C`$ as
+   `n(g)` with `g` a closure of $`C`$ that stores a fresh object into
+   `Object.getPrototypeOf([]).v`: the result is that object, at a site of
+   `g`'s code that no set of the rule holds. Proposed reading of "what its
+   run allocated": its own steps' allocations, and what the values the
+   functions it called returned or threw to it reach. Standard natives meet
+   it under the assumption that standard objects are not tampered with;
+   the owner decides it.
 
 ## Runs
 
@@ -3523,6 +3550,7 @@ Node 26.13.0, each printing the value shown; the files are in the reviews'
 scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
 `round3/review/fable/`, `round4/`, `round4/review/fable/`, `round5/`, `verify3/`, `verify4/`), outside the repository:
 
+- `map-fresh.mjs` (step 1.3.5's scratch directory, `b135/`): `undefined`;
 - `throw.mjs`: `{ s: NaN, i: 2 }`; `wrapper.mjs`: `NaN`, `NaN`;
   `redirect.mjs`: `NaN`; `capture.mjs`: `NaN`; `prefix.mjs`: `undefined`;
   `install.mjs`: `true false`; `forged-flow.mjs`, `dependent.mjs`,
