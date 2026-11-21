@@ -127,9 +127,12 @@ Each note changes only with the owner's approval.
   into the line it is fast-forwarded
   (`git -C ~/GitHub/TScert merge --ff-only origin/single-pass` after a
   fetch). Nothing is built, edited or created in it.
-- The plan and its status: the row "Implementation rules and paper rules" of
-  [WORK.md](../../../WORK.md#status). Status is written there and nowhere
-  else; a commit that moves an item updates the row.
+- The plan and its status: the row "Pretext's walkers under the read-only
+  frame" of [WORK.md](../../../WORK.md#status), its steps numbered (1.1 to
+  1.7, 2.1 to 2.5, 3), each with its state and, while in progress, the
+  branch holding it; the row "Implementation rules and paper rules" states
+  how the implementation corresponds to the notes. Status is written there
+  and nowhere else; a commit that moves an item updates the row.
 - The comparison of the notes with the implementation, rule by rule:
   [parity-rule-table.md](../../../docs/drafts/parity-rule-table.md).
 - The designs: [parity-interfaces.md](../../../docs/drafts/parity-interfaces.md)
@@ -302,8 +305,11 @@ asks.
 
 1. `git fetch origin`; make a worktree of `origin/single-pass` outside
    `~/GitHub/`; build it (`cd lean && lake build`, `make setup`).
-2. Read this file, the plan's row in WORK.md, the two design drafts, and
-   the open pull requests against `single-pass` (`gh pr list --base
+2. Read this file, the plan's row in WORK.md, the design drafts it names,
+   and the open pull requests against `single-pass` (`gh pr list --base
    single-pass`).
-3. Continue the first item of the plan that is not done: design by Astra if
-   it has none, then implementers by the brief, review, pull request.
+3. Continue the first step of the plan that is not done. A step in
+   progress names its branch in the row; it is on GitHub, so make the
+   worktree from `origin/<branch>` and read its last commit records, which
+   say what the next run starts from. A step with no design gets one first,
+   then implementers by the brief, review, pull request.
