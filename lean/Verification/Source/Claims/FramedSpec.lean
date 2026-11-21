@@ -7,6 +7,7 @@ import Verification.Source.Claims.FramedFlow
 import Verification.Source.Claims.FramedComponentChecks
 import Verification.Source.ComponentWire
 import Verification.Paper.TolerantFrames.ReadOnlyPending
+import Verification.Paper.TolerantFrames.ReadOnlyLocalReach
 
 /-! # A framed plan's proposals and the frame they define
 
@@ -287,6 +288,33 @@ def SlotsMet (r : SourceRequest σ ι) (x₀ : Conf) : Prop :=
     ∀ fs ar s caps k rest comp oid, v = .objAt fs (.graph ar e.code.1 e.code.2 s caps k rest comp) oid →
       spec.F.ofC spec.C comp = true →
       ∃ i, x₀.s.n ≤ i ∧ UnfoldsAt (StoreView.graph r.types) spec.layout x₀.s.W (i + 1) e.name v
+
+/-- **A value of the realm's code at a heap**: where it is a function, a
+closure of the realm's code, and so is each member read through it that is
+a function. -/
+def RealmVal (rl : TolerantFrames.ReadOnly.Realm) (h : Heap) (c : Tm) : Prop :=
+  (∀ fs cc oid, c = .objAt fs cc oid → cc ≠ .absent → TolerantFrames.ReadOnly.RealmFn rl c) ∧
+    ∀ k l w fs cc oid, TolerantFrames.ReadOnly.next c (.key k) = some l → h[l]? = some w → w = .objAt fs cc oid → cc ≠ .absent →
+      TolerantFrames.ReadOnly.RealmFn rl w
+
+/-- **The natives' slots hold the realm's code** (the draft's
+`RealmSlots`; Read-only frames, the natives item: "The value of a native's
+slot, and each member read through it, is the realm's code"): every outside
+slot of a closure of a module function of the layout that the
+configuration's term or heap holds holds a value of the realm's code at its
+heap. The framed plan's restrictions admit as an outside slot a native or
+an intrinsic object alone (`framedRestriction`). It is read at every
+reached configuration: it is the assumption that standard objects are not
+tampered with (no method of a built-in prototype or object replaced, or
+wrapped in a getter, by any code), approved by the repository's policy
+(AGENTS.md, "Choosing the gap cases to work on"); a client replacing
+`Array.prototype.push` is outside the claim by it. -/
+def RealmSlots (x : Conf) : Prop :=
+  ∀ v ∈ closuresOf x.t ++ x.s.h.flatMap closuresOf, ∀ e ∈ spec.layout,
+    ∀ fs ar s caps k rest comp oid, v = .objAt fs (.graph ar e.code.1 e.code.2 s caps k rest comp) oid →
+      spec.F.ofC spec.C comp = true →
+      ∀ (j : Nat) (A : Ty ι) (c : Tm), e.slots[j]? = some (none, A) → caps[j]? = some c →
+        RealmVal spec.F.realm x.s.h c
 
 /-- **An initial configuration** (the draft, "The initialization as a
 premise"): at the history before any entry, it fits the flow, is an entry,
