@@ -29,6 +29,25 @@ On 21 November 2026, `single-pass` at `d8d4fc55` checked Pretext at `0dafecb3` w
 
 In a separate producer-side check of `line-breaks.ts`, TScert established 32 callable rows. The checked row for `hasProperty` guarantees that array spines stay unchanged on normal return. Pretext's declaration emitter represents the same export as `(cp: number, property: number) => boolean`. The call to `hasProperty` in `prepare.ts`'s `spaceSharesScriptRun` then fails the caller's frame check with that declaration. The producer needs a body-free representation that carries its established effect and the importer's binding identity together. The draft's existing wire includes the entire producer module with those rows.
 
+### Publishing checked frames
+
+The producer uses the module interface check to establish effects. For a stable function with one fixed, ordinary signature, it publishes the normal-return frame under the emitted module path, declaration name, and span. The bundle includes the emitted declarations and their digests. The consumer resolves each import against these declarations, installs the published normal frame in that signature's declaration graph, and checks the consumer's units. A changed declaration bundle fails at load. The graph keeps the declaration's other contracts, including its exceptional exit.
+
+For example, the producer's entry for `readScriptRuns`' dependency `getClass` states that a normal return preserves existing locations. Its declaration supplies the parameter and result types. `prepare.ts` can then establish the part of `readScriptRuns`' frame that crosses the call to `getClass`. `hasProperty` supplies the normal frame used in `spaceSharesScriptRun`, and `findGraphemeEnds` supplies the frame used when checking `getUnspacedGraphemes`.
+
+The experiment imports the published frames as external contracts. The producer obtains them from the existing verified stage and checks binding stability using `ModuleCode`. The prototype relies on TypeScript's declaration emission and a controlled producer bundle for the connection between the checked source signature and the published declaration. The production wire needs to check that connection using the semantic signature identity and the stage store's evidence. Regional frames, returned callables, and annotation-bearing ambient declarations require additional representation and validation.
+
+```sh
+node dev/pretext-interface-frames.mts produce /path/to/pretext /path/to/new-bundle /path/to/producer-work
+node dev/pretext-interface-frames.mts measure /path/to/pretext /path/to/new-bundle /path/to/consumer-work
+```
+
+The measure command checks transitive unit verdicts and fails if a consumer runs an imported-module lowering, planning, or proof stage. Its total counts the functions in the pinned expectation, including those in files refused at the declaration gate.
+
+On 21 November 2026, the producer published 78 normal frames for the pinned Pretext checkout. The isolated consumer run retained 153 of 210 functions, up from 150 with declarations alone. It recovered `readScriptRuns`, `spaceSharesScriptRun`, and `getUnspacedGraphemes` in `prepare.ts`. Its remaining function, `measureAnalysis`, failed to establish the claims at a control-flow edge. The same ambient `Modifies` gate blocked 56 functions across the three files above. The existing single-pass tier verified all 210 functions.
+
+For example, `analysis.ts` imports `isSpaceOrTabOrSegmentBreak`, which declaration emission describes as `(ch: number) => Modifies<{}, boolean>`. The declaration reader encounters this effect before it can use the frame bundle. The interface must carry producer evidence for stated contracts as well as inferred frames, including effects in callback signatures such as `layout.ts`'s `walkLineRanges`.
+
 ## 1. The computation today
 
 | Step | Actual computation and grain |
