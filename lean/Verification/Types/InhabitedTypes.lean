@@ -162,26 +162,54 @@ theorem callSchemeB_sound {G : NormalGraph ι} {l : ι} (h : callSchemeB G l = t
   | none => simp [hs] at h
   | some s => simp only [hs, Bool.and_eq_true, Bool.not_eq_true'] at h; exact ⟨h.1, s, hs, h.2⟩
 
+/-- **A type the looping closure meets**, decided: one of its labels is of
+call schemes, or a clause row with a clause of call signatures. -/
+def loopTypeB (G : NormalGraph ι) (S : List ι) : Bool :=
+  S.any fun l => callSchemeB G l || (G.plain l && (G l).any fun c => match c with
+    | .arrs _ _ => true
+    | _ => false)
+
+/-- **The looping closure meets a type `loopTypeB` passes** (proved), at
+every level and world. -/
+theorem loopType_meaning {G : NormalGraph ι} {S : List ι} (h : loopTypeB G S = true) (n : Nat) (W : WorldT n)
+    (fn : Nat) (tag : ComponentTag) (oid : Nat) : meaning G S n W (loopFn fn tag oid) := by
+  obtain ⟨l, hl, hb⟩ := List.any_eq_true.mp h
+  rcases Bool.or_eq_true_iff.mp hb with hcs | hp
+  · exact loop_meaning ⟨l, hl, callSchemeB_sound hcs⟩ n W fn tag oid
+  · obtain ⟨hpl, hany⟩ := Bool.and_eq_true_iff.mp hp
+    obtain ⟨c, hc, ha⟩ := List.any_eq_true.mp hany
+    cases c with
+    | arrs L Sg =>
+      exact ⟨l, hl, (mixed_unfold_plain G.env hpl n W _).mpr ⟨_, hc,
+        ⟨loop_callsT _ fn tag oid, loop_restsT _ fn tag oid⟩, builtinInvariant_of_withoutInvariant rfl n W _⟩⟩
+    | _ => simp at ha
+
 /-- **A member the looping closure meets**: each of its generic signatures
 a type with a label of call schemes; its fixed and variadic signatures are
 met whatever they state. -/
 def memberB (G : NormalGraph ι) (m : MethodMembers.Sig (List ι)) : Bool :=
   m.schemes.all fun S => S.any (callSchemeB G)
 
-/-- **The keys of a record of methods**: no member key is the array spine
-or the prototype, and no optional field shares a member's key. -/
-def recordKeysB (os : List (OptionalField (List ι))) (ms : List (MethodMembers.Sig (List ι))) : Bool :=
-  (ms.map (·.key)).all (fun k => k != CallArguments.arraySpineField && k != CallArguments.protoField) &&
-    os.all fun o => decide (o.key ∉ ms.map (·.key))
+/-- The keys of a record of readonly views and methods. -/
+def recordKeys (vs : List (PropKey × List ι)) (ms : List (MethodMembers.Sig (List ι))) : List PropKey :=
+  vs.map (·.1) ++ ms.map (·.key)
+
+/-- **The keys of a record of views and methods**: none is the array spine
+or the prototype, and no optional field shares one. -/
+def recordKeysB (os : List (OptionalField (List ι))) (vs : List (PropKey × List ι))
+    (ms : List (MethodMembers.Sig (List ι))) : Bool :=
+  (recordKeys vs ms).all (fun k => k != CallArguments.arraySpineField && k != CallArguments.protoField) &&
+    os.all fun o => decide (o.key ∉ recordKeys vs ms)
 
 /-- **A clause with a witness the check builds**, by cases on the clause: a
-literal or a primitive class; call signatures; a record whose members are
-methods alone. Every other clause has none the check builds. -/
+literal or a primitive class; call signatures; a record of readonly views of
+types the looping closure meets and of methods. Every other clause has none the check builds. -/
 def clauseWitnessB (G : NormalGraph ι) : Clause (List ι) → Bool
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigintLit _ | .symbolLit _ => true
   | .arrs _ _ => true
   | .refs a bs vs os ms ks st =>
-    a.isEmpty && bs.isEmpty && vs.isEmpty && ks.isEmpty && st.isEmpty && recordKeysB os ms && ms.all (memberB G)
+    a.isEmpty && bs.isEmpty && ks.isEmpty && st.isEmpty && recordKeysB os vs ms &&
+      vs.all (fun v => loopTypeB G v.2) && ms.all (memberB G)
   | .dict .. | .callable .. | .top | .source | .list .. | .bigint | .symbol | .ctors .. | .pack .. | .numIn _
   | .strIn _ | .view .. | .int => false
 
@@ -234,11 +262,11 @@ theorem clause_witness {G : NormalGraph ι} {c : Clause (List ι)} (hc : clauseW
         builtinInvariant_of_withoutInvariant rfl n _ _⟩⟩
   | refs a bs vs os ms ks st =>
     simp only [clauseWitnessB, Bool.and_eq_true, List.isEmpty_iff, List.all_eq_true] at hc
-    obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, hkeys⟩, hms⟩ := hc
+    obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hkeys⟩, hvs⟩, hms⟩ := hc
     obtain ⟨hA₁, hh₁, hr₁⟩ := loop_alloc hA hh 0 tag
     have hlen : heap.length = (entries W).length := by simpa using hh.1.1
     let u := loopFn 0 tag heap.length
-    let ns := ms.map (·.key)
+    let ns := recordKeys vs ms
     simp only [recordKeysB, Bool.and_eq_true, List.all_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hkeys
     obtain ⟨hk, hos⟩ := hkeys
     obtain ⟨hA₂, hh₂, hr₂, hl₂⟩ := record_alloc hA₁ hh₁ (u := u) rfl hr₁ (ns := ns)
@@ -256,7 +284,16 @@ theorem clause_witness {G : NormalGraph ι} {c : Clause (List ι)} (hc : clauseW
       · intro f s T hm; simp [ReferenceConjunctions.famsOf, mapStored] at hm
       · intro B hB; simp at hB
       · intro hne; simp [ReferenceConjunctions.famsOf, mapStored] at hne
-      · intro f T hm; simp [ReferenceConjunctions.viewsOf] at hm
+      · intro f T hm
+        obtain ⟨⟨f', S⟩, hfS, he⟩ := List.mem_map.mp hm
+        simp only [Prod.mk.injEq] at he
+        obtain ⟨rfl, rfl⟩ := he
+        obtain ⟨i, hi, hli⟩ := slots_lookup_mem (heap ++ [Tm.nul]).length (key := f')
+          (show f' ∈ recordKeys vs ms from List.mem_append_left _ (List.mem_map_of_mem (f := fun p : PropKey × List ι => p.1) hfS))
+        refine .inl (viewT_single ⟨_, _, oneCtr u, _, rfl, hli, hl₂ i hi, fun j hj U u' hu' => ?_⟩)
+        have hu'' : u' = u := hu'
+        subst hu''
+        exact loopType_meaning (hvs _ hfS) j U 0 tag heap.length
       · refine ⟨_, _, rfl, ?_, ?_, ?_⟩
         · intro o ho _ l hl
           obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
@@ -269,7 +306,8 @@ theorem clause_witness {G : NormalGraph ι} {c : Clause (List ι)} (hc : clauseW
       · intro m hm
         obtain ⟨sig, hsig, rfl⟩ := List.mem_map.mp hm
         obtain ⟨i, hi, hli⟩ := slots_lookup_mem (heap ++ [Tm.nul]).length (key := sig.key)
-          (List.mem_map.mpr ⟨sig, hsig, rfl⟩)
+          (show sig.key ∈ recordKeys vs ms from List.mem_append_right _
+            (List.mem_map_of_mem (f := fun m : MethodMembers.Sig (List ι) => m.key) hsig))
         refine ⟨0, _, _, oneCtr u, _, .absent, rfl, hli, hl₂ i hi, fun j hj U _ u' hu' => ?_⟩
         have hu'' : u' = u := hu'
         subst hu''

@@ -3016,17 +3016,28 @@ stated limit of [initialization](#initialization) ("a client calling a
 native runs no program the claim is about") is deleted with the term.
 
 **The claim is not vacuous** (Fable S5). A premise can be unsatisfiable,
-so the design states its inhabitance: `initial_inhabited` (to be proved),
-$`\exists x_0,\ \mathrm{Initial}(x_0)`$ for P22's plan, with a public call
-of `walk` from it (`PublicCall`). The witness is
-`Tests/FramedLinkedCall.lean`'s configuration, retargeted: its realm
-values replaced by a closure of the realm's code meeting `%ElementAt%`'s
-signature (its step model's code, tagged $`R`$) and an object meeting
-`ArrayProto` at P22's budget, and `walk`'s closure, the client and the
-26 steps to the request's entry kept. That object needs a value of each
-`ArrayProto` member the meaning reads; where the meaning admits no value
-the calculus can build, the inhabitance fails and the design is wrong, so
-piece 2 starts with it.
+so every framed plan is checked for its inhabitance. Its outside slots
+are inhabited (proved, `slotsWitnessed_inhabited`,
+`Source/Claims/FramedInhabited.lean`): a check run on every framed plan
+(`outsideInhabitedRefusal`, in `FilePlans.framedPlan`) decides each
+outside slot's type by the inhabitance check
+(`InhabitedTypes.typeWitnessB`, by cases on every clause constructor), and
+where it passes, an extension of any admissible world whose heap meets it
+holds one closed value per slot meeting its type at every budget up to the
+world's and every world above it (`Above`). A literal or primitive class
+is met by its value; call signatures and call schemes by the looping
+closure, whose graph returns to its one node (`LoopingClosures.loopFn`);
+a record of readonly views of such types and of methods, `ArrayProto`'s
+shape, by an object whose every key holds the looping closure at a
+location admitting it alone, its generic members met by the forwarding
+function `.bind` makes of it and the host (`LoopingSchemes.boundLoop_scheme`).
+A clause of any other constructor answers `false`, a stated precision
+limit. `walk`'s two slots, `[[Array.prototype]]` and `%ElementAt%`, pass
+(observed: P22 keeps its verdict). `initial_inhabited` (to be proved),
+$`\exists x_0,\ \mathrm{Initial}(x_0)`$ with a public call of the
+realized code from it (`PublicCall`), adds the fit, the entry and
+$`\mathrm{RealmSlots}`$ at a configuration holding those values and the
+module functions' unfoldings.
 
 **The instances.** That a program's state after its modules' evaluation is
 an initial configuration is discharged per kind of slot by the mechanisms
@@ -3246,8 +3257,9 @@ Controls:
   verifier whose `nativeReach` is empty accepts
   `invalid-readonly-frame-walker-pops`, so the native's charge is what
   refuses it.
-- **The inhabitance** (`Tests/FramedLinkedCall.lean`, retargeted):
-  `initial_inhabited` for P22's plan, built with the library.
+- **The inhabitance** (`outsideInhabitedRefusal`, run on every framed
+  plan): its soundness `slotsWitnessed_inhabited`, and
+  `initial_inhabited` once `Initial` is the premise.
 
 ### What the change deletes
 
