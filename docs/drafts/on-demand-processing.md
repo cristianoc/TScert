@@ -42,7 +42,7 @@ node dev/pretext-interface-frames.mts produce /path/to/pretext /path/to/new-bund
 node dev/pretext-interface-frames.mts measure /path/to/pretext /path/to/new-bundle /path/to/consumer-work
 ```
 
-The measure command checks transitive unit verdicts and fails if a consumer runs an imported-module lowering, planning, or proof stage. Its total counts the functions in the pinned expectation, including those in files refused at the declaration gate.
+The command file dispatches to separate producer and checker modules. The checker takes one source path and an opened bundle. The bundle carries the compiler options, so the checker can construct the project without the original checkout. The measure command checks transitive unit verdicts and fails if a consumer runs an imported-module lowering, planning, or proof stage. Its total counts the functions in the pinned expectation, including those in files refused at the declaration gate.
 
 On 21 November 2026, the producer published 78 normal frames for the pinned Pretext checkout. The isolated consumer run retained 153 of 210 functions, up from 150 with declarations alone. It recovered `readScriptRuns`, `spaceSharesScriptRun`, and `getUnspacedGraphemes` in `prepare.ts`. Its remaining function, `measureAnalysis`, failed to establish the claims at a control-flow edge. The same ambient `Modifies` gate blocked 56 functions across the three files above. The existing single-pass tier verified all 210 functions.
 
