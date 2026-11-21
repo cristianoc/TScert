@@ -95,4 +95,63 @@ theorem loop_restsT {Ξ : Fam} (L : List CallEffects.RestSignature) {k W} (n c o
     CallEffects.restsT Ξ L k W (loopFn n c oid) :=
   ⟨loop_invocable n c oid, fun _ _ => loop_promise n c oid⟩
 
+/-- The forwarding function `.bind` makes of the looping closure and a host
+`v`, at the identity `oid'`. -/
+def boundLoop (n : Nat) (c : ComponentTag) (oid : Nat) (v : Tm) (oid' : Nat) : Tm :=
+  .objAt [] (.bound (loopFn n c oid) v []) oid'
+
+/-- **The looping closure bound to a host meets every signature** (proved):
+invoked with any receiver, it forwards to the looping closure with the host,
+which loops. -/
+theorem boundLoop_promise {Ξ : Fam} {effect} {Acc : ArgFam} {Rc Rr : Fam} {k : Nat} {W : WorldT k}
+    (n : Nat) (c : ComponentTag) (oid : Nat) {v : Tm} (hv : isVal v = true) (oid' : Nat) :
+    CallEffects.PromiseWith Ξ effect Acc Rc Rr k W (boundLoop n c oid v oid') := by
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hargs har ha hq
+  refine ⟨_, CallArguments.Invoke.bound hrv hargs, ?_⟩
+  have hvals : ∀ a ∈ args, isVal a = true := hargs
+  have hrefs : RefsOk U (Tm.invoke (loopFn n c oid) v ([] ++ args)) := by
+    intro x hx'
+    simp only [List.nil_append] at hx'
+    have hx2 : x ∈ refs (loopFn n c oid) ∨ x ∈ refs v ∨ x ∈ args.flatMap refs := by
+      simpa [refs, refsArgs_eq, or_assoc] using hx'
+    rcases hx2 with h1 | h2 | h3
+    · exact hvr x (by simp [boundLoop, refs, h1])
+    · exact hvr x (by simp [boundLoop, refs, h2])
+    · obtain ⟨a, ha', hxa⟩ := List.mem_flatMap.mp h3
+      exact har a ha' x hxa
+  cases j with
+  | zero => exact hrefs
+  | succ j =>
+    have hA' := WorldAdm_trunc (Nat.le_succ j) hu
+    have hh' := HeapOk_trunc j U heap hh
+    have hst : Step heap (Tm.invoke (loopFn n c oid) v ([] ++ args)) heap
+        (CallArguments.graphEntry n loopE loopK 0 [] (loopFn n c oid) false c v args) := by
+      simp only [List.nil_append]
+      exact Step.callGraph hv hvals rfl
+    refine ⟨hrefs, .inr ⟨_, heap, _, WExt_refl _, hA', hst, hh', ?_⟩⟩
+    · refine (loop_safe (Ξ := Ξ) _ _ _ j _ heap hA' hh' ?_).1
+      intro x hx'
+      have hx2 : x ∈ refs v ∨ x ∈ (CallArguments.parameters n args).flatMap refs ∨ x ∈ refs (loopFn n c oid) := by
+        simpa [gotoL, loopFn, CallArguments.graphEntry, refs, loopE, or_assoc] using hx'
+      have hT := RefsOk_trunc (Nat.le_succ j) hrefs
+      rcases hx2 with h1 | h2 | h3
+      · exact hT x (by simp [refs, refsArgs_eq, h1])
+      · obtain ⟨a, ha', hxa⟩ := List.mem_flatMap.mp (refs_parameters n args x h2)
+        exact hT x (by simp [refs, refsArgs_eq]; exact .inr (.inr ⟨a, ha', hxa⟩))
+      · exact hT x (by simp [refs, refsArgs_eq, h3])
+
+theorem boundLoop_invocable (n : Nat) (c : ComponentTag) (oid : Nat) {v : Tm} (hs : Scoped 0 v) (oid' : Nat) :
+    Invocable (boundLoop n c oid v oid') :=
+  ⟨_, _, _, rfl, rfl, by simp [boundLoop, loopFn, Scoped, loopE, hs]⟩
+
+theorem boundLoop_callsT {Ξ : Fam} (L : List (CallEffects.Arrow Fam)) {k W} (n c oid) {v : Tm}
+    (hv : isVal v = true) (hs : Scoped 0 v) (oid') :
+    CallEffects.callsT Ξ L k W (boundLoop n c oid v oid') :=
+  ⟨boundLoop_invocable n c oid hs oid', fun _ _ => boundLoop_promise n c oid hv oid'⟩
+
+theorem boundLoop_restsT {Ξ : Fam} (L : List CallEffects.RestSignature) {k W} (n c oid) {v : Tm}
+    (hv : isVal v = true) (hs : Scoped 0 v) (oid') :
+    CallEffects.restsT Ξ L k W (boundLoop n c oid v oid') :=
+  ⟨boundLoop_invocable n c oid hs oid', fun _ _ => boundLoop_promise n c oid hv oid'⟩
+
 end Verification.LoopingClosures
