@@ -81,15 +81,23 @@ export type AttemptRecord = {
 export class Recorder {
   readonly records: AttemptRecord[] = [];
   private readonly file: string | null;
-  constructor(file: string | null) {
+  private readonly progress?: (message: string, unitFinished: boolean) => void;
+  constructor(file: string | null, progress?: (message: string, unitFinished: boolean) => void) {
     this.file = file;
+    this.progress = progress;
   }
-  start(record: AttemptRecord, startedAt: number): void {
+  start(record: AttemptRecord, startedAt: number, live: boolean = true): void {
     if (this.file) appendFileSync(this.file, JSON.stringify({ event: "start", record, startedAt }) + "\n");
+    if (live) this.starting(record.stage);
   }
-  finish(record: AttemptRecord): void {
+  starting(stage: StageName, unit: string | null = null): void {
+    this.progress?.(`${stage}${unit === null ? "" : ` ${unit}`} started`, false);
+  }
+  finish(record: AttemptRecord, unit: string | null = null): void {
     this.records.push(record);
     if (this.file) appendFileSync(this.file, JSON.stringify({ event: "end", record }) + "\n");
+    this.progress?.(`${record.stage}${unit === null ? "" : ` ${unit}`} ${record.execution} ` +
+      `(${(record.elapsedMs / 1000).toFixed(2)}s)`, unit !== null);
   }
 }
 
@@ -380,8 +388,9 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
     manifest: { worker: bound.manifest, part }, context: directory === null ? null : { program: bound.program, directory },
     forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs, cpu: replay ? replay.stored.cpu : cpu, replay });
   const finishRecord = (r: AttemptRecord, work: Buffer | null): void => {
-    options.recorder?.start(r, Date.now() - r.elapsedMs);
-    options.recorder?.finish(r);
+    const part = r.manifest !== null && typeof r.manifest === "object" && "part" in r.manifest ? r.manifest.part : null;
+    options.recorder?.start(r, Date.now() - r.elapsedMs, false);
+    options.recorder?.finish(r, typeof part === "string" ? part : null);
     profileAttempt(r, work === null ? [] : [[workRole, work]]);
   };
   const publish = (part: string | null, attempt: string, exitStatus: number, stdout: Buffer, stderr: Buffer,
@@ -483,6 +492,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
     // preparation and every part requested at the limit each.
     const backstop = Math.min(options.limitMs * ((pending?.length ?? 1000) + 2), 2 ** 31 - 1);
     const running = startProcess(bound, directory, backstop, Buffer.from(protocol.request(pending) + "\n"));
+    options.recorder?.starting(call.stage);
     let ended = false;
     try {
       let asked = pending;
@@ -549,6 +559,8 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
           finishRecord(r, work);
         }
         pieceStart = now;
+        const next = current();
+        if (next !== undefined) options.recorder?.starting(call.stage, next);
       };
       // Read lines as they arrive; stop the worker where a piece, or its end
       // after the last line, outlasts its limit, timed from the line before.

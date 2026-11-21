@@ -268,13 +268,14 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
   }
 }
 
+export type CheckProgress = (message: string, unitFinished: boolean) => void;
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
 function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, units: UnitSelection = { omitted: [], select: null }): Outcome {
+    subtypeRounds?: number, units: UnitSelection = { omitted: [], select: null }, progress?: CheckProgress): Outcome {
   using directoryScope = withinRunDirectory(artifacts);
   // Every stage invocation's attempt, in order (`stages.mts`).
-  const recorder = new Recorder(join(artifacts, invocationLog));
+  const recorder = new Recorder(join(artifacts, invocationLog), progress);
   // What the run was asked, beside its stage invocation log.
   writeFileSync(join(artifacts, "request.json"), JSON.stringify({ source: resolve(source), project: tsconfigPath ?? null }));
   let phase: Phase = "source";
@@ -593,7 +594,7 @@ function readUnitResults(value: unknown): UnitResult[] {
 }
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
 type Request = { artifacts: string; source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number;
-  retainArtifacts: boolean; units: UnitSelection };
+  retainArtifacts: boolean; units: UnitSelection; progress: boolean };
 function readRequest(value: unknown): Request {
   if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
       !("artifacts" in value) || typeof value.artifacts !== "string" ||
@@ -612,16 +613,16 @@ function readRequest(value: unknown): Request {
       (reportComponents !== undefined && typeof reportComponents !== "boolean")) throw Error("not a request");
   const units: UnitSelection = { omitted, select: select === null ? null : strings(select), reportComponents };
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
-    retainArtifacts: value.retainArtifacts, units };
+    retainArtifacts: value.retainArtifacts, units, progress: field(value, "progress") === true };
 }
 const checkRequest = (r: Request): Outcome =>
   checkUnowned(r.artifacts, r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds,
-    r.units);
+    r.units, r.progress ? (progress, unitFinished) => { process.send?.({ progress, unitFinished }, () => {}); } : undefined);
 
 /** A whole check is killed after this long: the parser runs inside the worker,
  * so its step has no limit of its own. */
 const checkTimeoutMs = 4 * stepTimeoutMs;
-type Job = { request: Omit<Request, "artifacts">; done: (o: Outcome) => void; fail: (e: Error) => void };
+type Job = { request: Omit<Request, "artifacts">; done: (o: Outcome) => void; fail: (e: Error) => void; progress?: CheckProgress };
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
 /** The workers that answer their current check and exit: their caches may
@@ -696,6 +697,11 @@ function give(worker: ChildProcess, job: Job): void {
       retiring.add(worker);
       return;
     }
+    const progress = field(message, "progress"), unitFinished = field(message, "unitFinished");
+    if (typeof progress === "string" && typeof unitFinished === "boolean") {
+      job.progress?.(progress, unitFinished);
+      return;
+    }
     finished(message);
   };
   const finished = (message: unknown) => settle(() => {
@@ -730,12 +736,14 @@ function give(worker: ChildProcess, job: Job): void {
  * `typescriptErrors`, whether a failed search is named by TypeScript's errors
  * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection = { omitted: [], select: null }):
+    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection = { omitted: [], select: null },
+    progress?: CheckProgress):
     Promise<Outcome & Disposable> {
   runRoot();
   requireDiskSpace();
   return new Promise<Outcome>((done, fail) => {
-    queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts, units }, done, fail });
+    queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts, units, progress: progress !== undefined },
+      done, fail, progress });
     dispatch();
   }).then(result => ownedRun(result, retainArtifacts));
 }
