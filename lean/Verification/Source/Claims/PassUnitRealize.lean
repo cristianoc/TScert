@@ -580,7 +580,9 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 behind the receiver's prologue**: unqualified, collecting no rest, its
 inputs the code's frame past the receiver (the parameters, then the
 captures), its program, start and goal the code's at that frame, its entry
-facts implied by the code's at every frame with a receiver in front, the
+separation scoped to its inputs (every fact's levels below its depth, its
+depth within its inputs, as the layout check checks), its entry facts
+implied by the code's at every frame with a receiver in front, the
 signature's postcondition, which names the receiver in neither state, read
 past the receiver as its own (`IndexFact.pastReceiver`: each current and
 each entry position one lower, the result kept), and its run's bound the
@@ -593,6 +595,9 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   conts : c.conts = r.program.map fun n => (n.continuation, n.handler)
   start : r.start = c.start
   goal : r.goal = receiverlessGoal c
+  separation : ∀ a ∈ r.entrySeparation.facts,
+    r.entrySeparation.depth ≤ r.inputs.length ∧ a.slot < r.entrySeparation.depth ∧
+    ∀ p ∈ a.partners, p.1 < r.entrySeparation.depth
   indices : ∀ (L : List Tm) (recv : Tm) h,
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
@@ -669,29 +674,464 @@ names the same slot with a slot pushed below the parameters. -/
 def receiverSeparation (S : HeapSeparation.Separation) : HeapSeparation.Separation :=
   { S with depth := S.depth + 1 }
 
-/-- **The receiver's prologue keeps a safe request safe** (named hypothesis
-`ReceiverDropSound`, a lemma about the graph machine): where a request with
-no receiver slot is a code's behind the prologue (`UnitIsReceiverless`) and
-the code meets the row conditions, the request's safety makes the code with
-the prologue (`dropReceiver`) meet its signature as a module row at every
-assignment, at the request's entry separation read with the receiver in
-front (`receiverSeparation`). The row's postcondition is the request's read
-with the receiver in front in both states (`UnitIsReceiverless.ensures`):
-by `holdsAt_pastReceiver` the request's post at its entry `⟨envOf L d, h⟩`
-and return `push v (envOf L d)` holds exactly where the row's does at
-`⟨envOf (recv :: L) d, h⟩` and `push v (envOf (recv :: L) d)`. The
-argument: the prologue's two transitions (entering it, then its `effect`
-continuation) lead from the frame `recv :: L ++ [self]` to the request's
-start at `L ++ [self]` with the receiver as the default slot value, and
-every later transition of the code is one of the request's program, its
-labels below the appended node's; the step-indexed safety at budget `n`
-then follows from the request's at `n - 2`, the world downcast along. -/
-def ReceiverDropSound : Prop :=
-  ∀ (σ ι : Type) [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : CodeEntry ι),
-    RequestSafe r → UnitIsReceiverless r c → rowConditions c = true →
+/-- A term running graph code `E, K`, and the same run in `E ++ E₂, K ++ K₂`. -/
+private inductive PrefixTerm (E E₂ : List Tm)
+    (K K₂ : List (ControlFlow.Continuation × Option ControlFlow.Target)) (comp : ComponentTag) : Tm → Tm → Prop where
+  | goto {l : Nat} {L : List Tm} {d : Tm} :
+      PrefixTerm E E₂ K K₂ comp (.goto E K l L d comp) (.goto (E ++ E₂) (K ++ K₂) l L d comp)
+  | frame {t : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} :
+      PrefixTerm E E₂ K K₂ comp (.frame E K t L d k x comp) (.frame (E ++ E₂) (K ++ K₂) t L d k x comp)
+  | same (t : Tm) : PrefixTerm E E₂ K K₂ comp t t
+
+private theorem PrefixTerm.refsOk {E E₂ K K₂ comp n} {W : WorldT n} {t t' : Tm}
+    (hp : PrefixTerm E E₂ K K₂ comp t t') (hE₂ : ∀ e ∈ E₂, RefsOk W e) (ht : RefsOk W t) : RefsOk W t' := by
+  cases hp with
+  | same => exact ht
+  | goto =>
+    intro r hr
+    simp only [refs, refsArgs_eq, List.flatMap_append, List.mem_append, List.mem_flatMap] at hr
+    rcases hr with ((⟨e, he, h⟩ | ⟨e, he, h⟩) | ⟨a, ha, h⟩) | h
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inl ⟨e, he, h⟩))
+    · exact hE₂ e he r h
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inr ⟨a, ha, h⟩))
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inr h)
+  | frame =>
+    intro r hr
+    simp only [refs, refsArgs_eq, List.flatMap_append, List.mem_append, List.mem_flatMap] at hr
+    rcases hr with (((⟨e, he, h⟩ | ⟨e, he, h⟩) | h) | ⟨a, ha, h⟩) | h
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inl (.inl ⟨e, he, h⟩)))
+    · exact hE₂ e he r h
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inl (.inl (.inr h)))
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inr ⟨a, ha, h⟩))
+    · exact ht r (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inr h)
+
+private theorem PrefixTerm.eq_of_val {E E₂ K K₂ comp} {t t' : Tm} (hp : PrefixTerm E E₂ K K₂ comp t t')
+    (hv : isVal t = true) : t = t' := by
+  cases hp with
+  | same => rfl
+  | goto => simp [isVal] at hv
+  | frame => simp [isVal] at hv
+
+private theorem PrefixTerm.raises {E E₂ K K₂ comp} {t t' v : Tm} (hp : PrefixTerm E E₂ K K₂ comp t t')
+    (hr : Raises t v) : Raises t' v := by
+  cases hp with
+  | same => exact hr
+  | goto => cases hr
+  | frame => cases hr
+
+private theorem PrefixTerm.step {E E₂ K K₂ comp h h'} {t t' t₁ : Tm} (hp : PrefixTerm E E₂ K K₂ comp t t')
+    (s : Step h t h' t₁) : ∃ t₁', Step h t' h' t₁' ∧ PrefixTerm E E₂ K K₂ comp t₁ t₁' := by
+  cases hp with
+  | same => exact ⟨t₁, s, .same _⟩
+  | @goto l _ _ =>
+    cases s with
+    | gotoEnter he hk =>
+      exact ⟨_, .gotoEnter
+        (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp he).1]; exact he)
+        (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hk).1]; exact hk), .frame⟩
+  | frame =>
+    cases s with
+    | frameC st => exact ⟨_, .frameC st, .frame⟩
+    | frameRet hv => exact ⟨_, .frameRet hv, .same _⟩
+    | frameBind hv => exact ⟨_, .frameBind hv, .goto⟩
+    | frameEffect hv => exact ⟨_, .frameEffect hv, .goto⟩
+    | frameYes => exact ⟨_, .frameYes, .goto⟩
+    | frameNo => exact ⟨_, .frameNo, .goto⟩
+    | frameYesBind => exact ⟨_, .frameYesBind, .goto⟩
+    | frameNoBind => exact ⟨_, .frameNoBind, .goto⟩
+    | frameTag hv => exact ⟨_, .frameTag hv, .goto⟩
+    | frameHandle hr => exact ⟨_, .frameHandle hr, .goto⟩
+    | frameRaise hr => exact ⟨_, .frameRaise hr, .same _⟩
+
+/-- **Appending unreachable nodes preserves safety and postconditions**
+(proved): any safe run of graph code `E, K` simulates step for step in
+`E ++ E₂, K ++ K₂`, since every node it enters has a label in `E, K`. -/
+private theorem safePostExc_prefix {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop}
+    {E E₂ : List Tm} {K K₂ : List (ControlFlow.Continuation × Option ControlFlow.Target)} {comp : ComponentTag} :
+    ∀ {n W h t t'}, PrefixTerm E E₂ K K₂ comp t t' → (∀ e ∈ E₂, RefsOk W e) →
+      HeapObservations.SafePostExc Ξ T Q R n W h t →
+      HeapObservations.SafePostExc Ξ T Q R n W h t' := by
+  intro n
+  induction n with
+  | zero => intro W h t t' hp hE₂ hs; exact hp.refsOk hE₂ hs
+  | succ n ih =>
+    intro W h t t' hp hE₂ hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hp.refsOk hE₂ hrf, ?_⟩
+    rcases hs with (⟨hv, hT, hQ⟩ | ⟨⟨v, hraise, hsc, hΞ⟩, hR⟩) | ⟨U, h', t₁, hx, hu, st, hh, hs₁⟩
+    · cases hp.eq_of_val hv
+      exact .inl (.inl ⟨hv, hT, hQ⟩)
+    · exact .inl (.inr ⟨⟨v, hp.raises hraise, hsc, hΞ⟩, hR⟩)
+    · obtain ⟨t₁', st', hp'⟩ := hp.step st
+      exact .inr ⟨U, h', t₁', hx, hu, st', hh,
+        ih hp' (fun e he => RefsOk_mono hx (RefsOk_trunc _ (hE₂ e he))) hs₁⟩
+
+private def listMax (xs : List Nat) : Nat := xs.foldl max 0
+
+private theorem le_foldl_max : ∀ (xs : List Nat) (a : Nat), a ≤ xs.foldl max a
+  | [], _ => Nat.le_refl _
+  | x :: xs, a => Nat.le_trans (Nat.le_max_left a x) (le_foldl_max xs (max a x))
+
+private theorem mem_le_foldl_max : ∀ {xs : List Nat} {a x : Nat}, x ∈ xs → x ≤ xs.foldl max a
+  | [], _, _, h => by cases h
+  | y :: ys, a, x, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · exact Nat.le_trans (Nat.le_max_right a x) (le_foldl_max ys (max a x))
+    · exact mem_le_foldl_max (xs := ys) (a := max a y) h
+
+private def atomSlots (a : HeapKnowledge.IndexAtom) : List Nat :=
+  a.cond.toList ++ a.fact.slots ++ a.fact.entrySlots
+
+private theorem mapM_mem_pair {α β : Type} {f : α → Option β} :
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y ∈ l', f x = some y
+  | [], _, _, x, hx => by cases hx
+  | a :: t, l', h, x, hx => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨b, hb, t', ht, rfl⟩ := h
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ⟨b, List.mem_cons_self, hb⟩
+    · obtain ⟨y, hy, hfy⟩ := mapM_mem_pair ht x hx
+      exact ⟨y, List.mem_cons_of_mem _ hy, hfy⟩
+
+/-- The prologue's mapped frame agrees with `recv :: tail` shifted by one on
+every slot below `arity + captures.length + 1`. -/
+private theorem dropReceiver_envOf_lt (k : Nat) (recv : Tm) (tail : List Tm) {i : Nat} (hi : i < k) :
+    envOf (((List.range k).map (· + 1)).map ((recv :: tail).getD · .nul)) recv i =
+      envOf (recv :: tail) .nul (i + 1) := by
+  simp only [envOf, List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hi,
+    Option.map_some, Option.getD_some]
+
+/-- Padding `L'` with `M` copies of `recv` agrees with `envOf L' recv` on
+every slot below `M`. -/
+private theorem pad_envOf_eq (L' : List Tm) (M : Nat) (recv : Tm) {i : Nat} (hi : i < M) :
+    envOf (L' ++ List.replicate M recv) .nul i = envOf L' recv i := by
+  simp only [envOf, List.getD_eq_getElem?_getD]
+  by_cases hlt : i < L'.length
+  · rw [List.getElem?_append_left hlt, List.getElem?_eq_getElem hlt]; rfl
+  · have hge : L'.length ≤ i := Nat.le_of_not_lt hlt
+    have hltM : i - L'.length < M := by omega
+    rw [List.getElem?_append_right hge, List.getElem?_eq_none hge, List.getElem?_replicate]
+    simp [hltM]
+
+/-- **The receiver's prologue keeps a safe request safe** (proved): where a
+request with no receiver slot is a code's behind the prologue
+(`UnitIsReceiverless`) and the code meets the row conditions, the request's
+safety makes the code with the prologue (`dropReceiver`) meet its signature
+as a module row at every assignment, at the request's entry separation read
+with the receiver in front (`receiverSeparation`). The prologue's two
+transitions (`gotoEnter` on `.undef`, then `frameEffect` with the slot map)
+leave the heap unchanged and land at the request's start with the shifted
+frame and the receiver as default slot value, where every later step is
+simulated by the request's program (`safePostExc_prefix`) and the row's
+postcondition transfers via `holdsAt_pastReceiver`. -/
+theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι} {c : CodeEntry ι}
+    (hsafe : RequestSafe r) (hu : UnitIsReceiverless r c) (hcond : rowConditions c = true) :
     ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) (dropReceiver c).arity (dropReceiver c).exprs
       (dropReceiver c).conts (dropReceiver c).start (dropReceiver c).captures (dropReceiver c).row
-      (receiverSeparation r.entrySeparation)
+      (receiverSeparation r.entrySeparation) := by
+  have hadm : ∀ η, r.Admits η := fun η => by simp [SourceRequest.Admits, hu.unqualified]
+  have hprog : r.program = GraphCode.program c.exprs c.conts := by
+    rw [hu.exprs, hu.conts, program_nodes]
+  have hclen : c.conts.length = c.exprs.length := by
+    rw [hu.exprs, hu.conts]; simp
+  have hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp := by
+    intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
+  simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
+  obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
+  have hilen : r.inputs.length = c.arity + c.captures.length := by
+    rw [hu.inputs, List.length_append, List.length_take, Nat.min_eq_left harity]
+  intro η
+  refine ⟨harity, hrow, ?_⟩
+  intro n W heap L comp he hw hh hgo hvalues hpre hsep recv args hframe
+  obtain ⟨pre, vs, hpl, rfl⟩ := hframe
+  have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
+  subst hpre0
+  simp only [List.nil_append] at he hgo hvalues hpre hsep ⊢
+  let tail : List Tm := CallArguments.parameters c.arity args ++ vs
+  let kLen : Nat := c.arity + c.captures.length + 1
+  let slots : List Nat := (List.range kLen).map (· + 1)
+  let kPro : ControlFlow.Continuation × Option ControlFlow.Target := (.effect ⟨c.start, some slots⟩, none)
+  let E' : List Tm := c.exprs ++ [.undef]
+  let K' : List (ControlFlow.Continuation × Option ControlFlow.Target) := c.conts ++ [kPro]
+  let G : NormalGraph ι := reassign (RequestJson.graph r.toRequest) η
+  let T : Fam := c.row.effect.result (meaning G c.row.result)
+    (framePromised c.row.effect (frameOffset (none : Option (Ty ι))) (recv :: tail))
+  have hE' : E' = (dropReceiver c).exprs := rfl
+  have hK' : K' = (dropReceiver c).conts := rfl
+  refine exportsEstablished_sound hx hw hh ?_
+  -- Step through the prologue's two transitions (`gotoEnter`, `frameEffect`).
+  have hstep1 : Step heap (.goto E' K' c.exprs.length (recv :: tail) .nul comp)
+      heap (.frame E' K' .undef (recv :: tail) .nul (.effect ⟨c.start, some slots⟩) none comp) := by
+    have he1 : E'[c.exprs.length]? = some .undef := by
+      simp [E']
+    have hk1 : K'[c.exprs.length]? = some kPro := by
+      simp [K', ← hclen]
+    simpa [instantiate] using Step.gotoEnter (h := heap) (L := recv :: tail) (d := .nul) (comp := comp) he1 hk1
+  have hframeRefs : ∀ {m : Nat} {U : WorldT m}, RefsOk U (.goto E' K' c.exprs.length (recv :: tail) .nul comp) →
+      RefsOk U (.frame E' K' .undef (recv :: tail) .nul (.effect ⟨c.start, some slots⟩) none comp) := by
+    intro m U hr r' hr'
+    simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hr'
+    rcases hr' with ((⟨e, he', h⟩ | h) | ⟨a, ha', h⟩) | h
+    · exact hr r' (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inl ⟨e, he', h⟩))
+    · simp at h
+    · exact hr r' (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inr ⟨a, ha', h⟩))
+    · exact hr r' (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inr h)
+  cases n with
+  | zero => exact hgo
+  | succ n1 =>
+    refine ⟨hgo, .inr ⟨trunc n1 (Nat.le_succ n1) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      hstep1, HeapOk_trunc n1 W heap hh, ?_⟩⟩
+    have hgo1 : RefsOk (trunc n1 (Nat.le_succ n1) W) (.goto E' K' c.exprs.length (recv :: tail) .nul comp) :=
+      RefsOk_trunc (Nat.le_succ n1) hgo
+    have hfr1 := hframeRefs hgo1
+    cases n1 with
+    | zero => exact hfr1
+    | succ k =>
+      let L' : List Tm := slots.map ((recv :: tail).getD · .nul)
+      have hmap : envMap (some slots) (recv :: tail) .nul = (L', recv) := rfl
+      have hstep2 : Step heap (.frame E' K' .undef (recv :: tail) .nul (.effect ⟨c.start, some slots⟩) none comp)
+          heap (.goto E' K' c.start L' recv comp) := by
+        simpa [hmap] using Step.frameEffect (h := heap) (E := E') (K := K') (v := .undef)
+          (L := recv :: tail) (d := .nul) (l := ⟨c.start, some slots⟩) (x := none) (comp := comp) rfl
+      let W₁ : WorldT (k + 1) := trunc (k + 1) (Nat.le_succ (k + 1)) W
+      let W₂ : WorldT k := trunc k (Nat.le_succ k) W₁
+      have hW₂ : W₂ = trunc k (by omega) W := trunc_trunc (Nat.le_succ k) (Nat.le_succ (k + 1)) W
+      have hw₂ : WorldAdm W₂ := WorldAdm_trunc _ (WorldAdm_trunc _ hw)
+      have hh₂ : HeapOk k W₂ heap := HeapOk_trunc k W₁ heap (HeapOk_trunc (k + 1) W heap hh)
+      refine ⟨hfr1, .inr ⟨W₂, heap, .goto E' K' c.start L' recv comp, WExt_refl _, hw₂, hstep2, hh₂, ?_⟩⟩
+      -- Establish the entry premises of the receiverless request `r` at `(k, W₂, heap, envOf L' recv)`.
+      have hgo₂ : RefsOk W₂ (.goto E' K' c.exprs.length (recv :: tail) .nul comp) :=
+        RefsOk_trunc (Nat.le_succ k) hgo1
+      have hrefsE' : ∀ e ∈ E', RefsOk W₂ e := (GraphCode.goto_refs hgo₂).1
+      have hrefsE : ∀ e ∈ c.exprs, RefsOk W₂ e := fun e he => hrefsE' e (List.mem_append_left _ he)
+      have hrefsE₂ : ∀ e ∈ ([.undef] : List Tm), RefsOk W₂ e := fun e he => hrefsE' e (List.mem_append_right _ he)
+      have hrefsL : ∀ a ∈ recv :: tail, RefsOk W₂ a := (GraphCode.envOf_refs (GraphCode.goto_refs hgo₂).2).1
+      have hrefsNul : RefsOk W₂ .nul := (GraphCode.envOf_refs (GraphCode.goto_refs hgo₂).2).2
+      have hmemL' : ∀ x, (x ∈ L' ∨ x = recv) → x ∈ recv :: tail ∨ x = .nul := fun x hx =>
+        envMap_mem (m := some slots) (L := recv :: tail) (d := .nul) hx
+      have hvals' : ∀ v ∈ L', isVal v = true := fun v hv => by
+        rcases hmemL' v (.inl hv) with hm | rfl
+        · exact hvalues v hm
+        · rfl
+      have hvalRecv : isVal recv = true := hvalues recv List.mem_cons_self
+      have hrefsL' : ∀ a ∈ L', RefsOk W₂ a := fun a ha => by
+        rcases hmemL' a (.inl ha) with hm | rfl
+        · exact hrefsL a hm
+        · exact hrefsNul
+      have hrefsRecv : RefsOk W₂ recv := hrefsL recv List.mem_cons_self
+      have hroots' : RootsOk W₂ (envOf L' recv) := GraphCode.envOf_refs_of hrefsL' hrefsRecv
+      have hgoR : RefsOk W₂ (.goto c.exprs c.conts c.start L' recv comp) := by
+        intro r' hr'
+        simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hr'
+        rcases hr' with (⟨e, he', h⟩ | ⟨a, ha', h⟩) | h
+        · exact hrefsE e he' r' h
+        · exact hrefsL' a ha' r' h
+        · exact hrefsRecv r' h
+      have heW₂ : EnvOk G (codeFrame c.arity c.row c.captures none) (envOf (recv :: tail) .nul) k W₂ := by
+        rw [hW₂]
+        exact he.transfer k (by omega) (trunc k (by omega) W) (WExt_refl _)
+      have he' : EnvOk G r.inputs (envOf L' recv) k W₂ := by
+        refine ⟨fun i => ?_, fun i A hA => ?_⟩
+        · have hget : envOf L' recv i ∈ L' ∨ envOf L' recv i = recv := getD_mem_or L' i recv
+          rcases hmemL' _ hget with hm | heq
+          · obtain ⟨idx, hidx⟩ := List.mem_iff_getElem?.mp hm
+            have hsc := he.1 idx
+            have hsc' : Scoped 0 ((recv :: tail)[idx]?.getD .nul) := hsc
+            rw [hidx] at hsc'
+            exact hsc'
+          · rw [heq]; simp [Scoped]
+        · have hi : i < r.inputs.length := (List.getElem?_eq_some_iff.mp hA).1
+          have hik : i < kLen := by omega
+          rw [dropReceiver_envOf_lt kLen recv tail hik]
+          have hcf : (codeFrame c.arity c.row c.captures none)[i + 1]? = some A := by
+            simp only [codeFrame, bodyFrame, List.cons_append, List.getElem?_cons_succ]
+            rw [← hu.inputs]; exact hA
+          exact heW₂.2 (i + 1) A hcf
+      have hsep' : HeapSeparation.Holds r.entrySeparation (envOf L' recv) := by
+        intro a ha
+        obtain ⟨hdle, has, hps⟩ := hu.separation a ha
+        have hsa := hsep a ha
+        refine ⟨has, fun p hp => ?_⟩
+        have hpp := hps p hp
+        refine ⟨hpp, fun g hg => ?_⟩
+        have hap := (hsa.2 p hp).2 g hg
+        have haIdx : r.entrySeparation.depth - 1 - a.slot < kLen := by omega
+        have hpIdx : r.entrySeparation.depth - 1 - p.1 < kLen := by omega
+        have heqA : envOf L' recv (r.entrySeparation.depth - 1 - a.slot) =
+            envOf (recv :: tail) .nul ((receiverSeparation r.entrySeparation).depth - 1 - a.slot) := by
+          rw [dropReceiver_envOf_lt kLen recv tail haIdx]
+          congr 1; simp only [receiverSeparation]; omega
+        have heqP : envOf L' recv (r.entrySeparation.depth - 1 - p.1) =
+            envOf (recv :: tail) .nul ((receiverSeparation r.entrySeparation).depth - 1 - p.1) := by
+          rw [dropReceiver_envOf_lt kLen recv tail hpIdx]
+          congr 1; simp only [receiverSeparation]; omega
+        exact hap.congr heqA heqP
+      have hidx' : HeapKnowledge.IndexHolds ⟨envOf L' recv, heap⟩ r.entryIndices (envOf L' recv) heap := by
+        let M : Nat := listMax (r.entryIndices.flatMap atomSlots) + 1
+        let Lpad : List Tm := L' ++ List.replicate M recv
+        have hprePad : HeapKnowledge.IndexHolds ⟨envOf (recv :: Lpad) .nul, heap⟩ (GraphCode.codeEntryIndices c)
+            (envOf (recv :: Lpad) .nul) heap := by
+          intro a ha _
+          unfold GraphCode.codeEntryIndices at ha
+          simp only [hu.spine, ↓reduceIte] at ha
+          obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+          have hF0 : F.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: tail) .nul) heap :=
+            hpre rfl F hF
+          have hF1 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: tail) .nul) heap :=
+            (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mp hF0
+          have hF2 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: Lpad) .nul) heap := by
+            refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp hF1
+            have hsl : s ≤ c.arity := CallEffects.Effect.entryBelow_pre (CallEffects.Effect.belowRow_entry hrow) F hF s hs
+            cases s with
+            | zero => rfl
+            | succ j =>
+              have hjk : j < kLen := by omega
+              have hjl : j < L'.length := by simp [L', slots]; omega
+              have h1 : envOf (recv :: Lpad) .nul (j + 1) = envOf L' recv j := by
+                simp only [envOf, List.getD_eq_getElem?_getD, List.getElem?_cons_succ, Lpad,
+                  List.getElem?_append_left hjl, List.getElem?_eq_getElem hjl, Option.getD_some]
+              rw [h1, dropReceiver_envOf_lt kLen recv tail hjk]
+          exact (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mpr hF2
+        have hidxPad := hu.indices Lpad recv heap hprePad
+        intro a ha hc
+        have hbound : ∀ x ∈ atomSlots a, x < M := fun x hx =>
+          Nat.lt_succ_of_le (mem_le_foldl_max (List.mem_flatMap.mpr ⟨a, ha, hx⟩))
+        have hcondPad : ∀ b, a.cond = some b → tagHolds .truthy (envOf Lpad .nul b) = !a.negated := by
+          intro b hb
+          have hbm : b < M := hbound b (List.mem_append_left _ (List.mem_append_left _ (by simp [hb])))
+          rw [pad_envOf_eq L' M recv hbm]
+          exact hc b hb
+        have hFa := hidxPad a ha hcondPad
+        have hFe : a.fact.HoldsAt ⟨envOf L' recv, heap⟩ (envOf Lpad .nul) heap :=
+          (HeapKnowledge.IndexFact.holdsAt_congr_entry (ε := ⟨envOf Lpad .nul, heap⟩)
+            (ε' := ⟨envOf L' recv, heap⟩) rfl fun s hs =>
+              pad_envOf_eq L' M recv (hbound s (List.mem_append_right _ hs))).mp hFa
+        exact (HeapKnowledge.IndexFact.holdsAt_congr fun s hs =>
+          pad_envOf_eq L' M recv (hbound s (List.mem_append_left _ (List.mem_append_right _ hs)))).mp hFe
+      have hentry' : EntryHolds G r.inputs r.entrySeparation r.entryIndices (envOf L' recv) k W₂ heap :=
+        ⟨he', hsep', hidx', hw₂, hh₂⟩
+      have hgoal : GoalHolds G r.goal (r.goal.argument (envOf L' recv)) = T := by
+        rw [hu.goal]
+        simp only [receiverlessGoal, T]
+        rcases hpr : c.row.effect.promise with _ | (p | p)
+        · rw [CallEffects.Effect.result_none hpr]; rfl
+        · have hp : p < c.arity := by
+            have := CallEffects.Effect.entryBelow_promise (CallEffects.Effect.belowRow_entry hrow)
+            simp only [CallEffects.Effect.promiseBelow, CallEffects.TypePromise.param, hpr] at this
+            exact of_decide_eq_true this
+          have harg : envOf L' recv p = envOf (recv :: tail) .nul (1 + p) := by
+            rw [dropReceiver_envOf_lt kLen recv tail (by omega), Nat.add_comm]
+          simp only [GoalHolds, ControlFlow.Goal.argument, ControlFlow.Goal.slot, CallEffects.Effect.result,
+            framePromised, frameOffset, hpr, CallEffects.TypePromise.result, CallEffects.TypePromise.param, harg]
+        · have hp : p < c.arity := by
+            have := CallEffects.Effect.entryBelow_promise (CallEffects.Effect.belowRow_entry hrow)
+            simp only [CallEffects.Effect.promiseBelow, CallEffects.TypePromise.param, hpr] at this
+            exact of_decide_eq_true this
+          have harg : envOf L' recv p = envOf (recv :: tail) .nul (1 + p) := by
+            rw [dropReceiver_envOf_lt kLen recv tail (by omega), Nat.add_comm]
+          simp only [GoalHolds, ControlFlow.Goal.argument, ControlFlow.Goal.slot, CallEffects.Effect.result,
+            framePromised, frameOffset, hpr, CallEffects.TypePromise.result, CallEffects.TypePromise.param, harg]
+      -- Run `r` from `(k, W₂, heap, L', recv)` via `SafeClause`, `FootprintClause` and `EnsuresClause`.
+      have hgraph := hsafe.1 η (hadm η) k W₂ heap (envOf L' recv) hentry' hroots'
+      rw [hprog, hu.start, hgoal] at hgraph
+      have hsR : Safe (excOf G) T k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) :=
+        (Safe.goto_comp_iff none comp).mp (GraphCode.safe_of_sim k W₂ heap .goto hrefsE hgraph)
+      have hrunR : HeapObservations.SafePostExc (excOf G) T
+          (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+            (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
+          (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h')
+          k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) := by
+        by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
+            !c.row.effect.schema.normal.freshResult) = true
+        · simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
+          have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
+            (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
+              (Footprints.Closed.top_safe hsR))
+          exact HeapObservations.SafePostExc.weaken
+            (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
+            (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
+        · by_cases hpure : c.row.effect.schema.normal.freshResult = false ∧ c.exprs.all Purity.pureTerm = true
+          · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
+            exact HeapObservations.SafePostExc.weaken
+              (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq,
+                fun hf => by simp [hpure.1] at hf⟩)
+              (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+              (CallEffects.pure_safe_exc (.goto hp hvals' hvalRecv) hsR)
+          · have hreq := hu.bound
+            simp only [RunBound.ofRequest, Prod.mk.injEq] at hreq
+            obtain ⟨hex, hfr⟩ := hreq
+            have hΦ : (exitBounds c.row.effect).normal = r.footprint :=
+              (congrArg CallEffects.Exits.normal hex).symm
+            have hΨ : (exitBounds c.row.effect).exceptional = if r.onThrow then r.footprint else .top :=
+              (congrArg CallEffects.Exits.exceptional hex).symm
+            have hpreR : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
+              by_cases h1 : r.footprint = .top
+              · by_cases h2 : r.onThrow = true
+                · exact .inr (.inl h2)
+                · right; right
+                  rw [hfr]
+                  cases hf : c.row.effect.schema.normal.freshResult
+                  · exfalso; apply htop
+                    simp [hΦ, hΨ, h1, h2, hf]
+                  · rfl
+              · exact .inl h1
+            have hfp := hsafe.2.1 hpreR η k W₂ heap L' recv hentry' hroots' hvals' hvalRecv
+            rw [hgoto, hgoal, hfr] at hfp
+            replace hfp := (HeapObservations.SafePostExcW.goto_comp_iff r.comp comp).mp hfp
+            have hgrow := SafePostExc.grow (b := heap.length) (Nat.le_refl _) hfp
+            refine HeapObservations.SafePostExc.weaken (fun h' v hq => by rw [hΦ]; exact hq.1) (fun h' hq => ?_) hgrow
+            rw [hΨ]
+            cases hot : r.onThrow
+            · simp only [Bool.false_eq_true, ↓reduceIte]
+              exact Footprints.Closed.holds_top.mpr hq.2
+            · simp only [↓reduceIte]
+              exact hq.1 hot
+      have hfullR : HeapObservations.SafePostExc (excOf G) T
+          (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+            (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v) ∧
+            ∀ F ∈ c.row.effect.schema.normal.facts,
+              F.HoldsAt ⟨CallEffects.callEnv recv args, heap⟩ (CallEffects.ensuresEnv v recv args) h')
+          (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h')
+          k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) := by
+        by_cases hne : c.row.effect.schema.normal.facts = []
+        · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩)
+            (fun _ h => h) hrunR
+        · have hneR : r.ensures ≠ [] := by
+            intro he0
+            apply hne
+            cases hfs : c.row.effect.schema.normal.facts with
+            | nil => rfl
+            | cons a t =>
+              have huens := hu.ensures
+              rw [hfs, he0] at huens
+              simp [List.mapM_cons, Option.bind_eq_some_iff] at huens
+          have hens := hsafe.2.2.1 hneR η k W₂ heap L' recv hentry' hroots'
+          rw [hgoto, hgoal] at hens
+          replace hens := (HeapObservations.SafePostW.goto_comp_iff r.comp comp).mp hens
+          refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrunR hens)
+          obtain ⟨⟨h1, h2⟩, hq⟩ := hq
+          refine ⟨h1, h2, fun F hF => ?_⟩
+          obtain ⟨F', hF'mem, hF'eq⟩ := mapM_mem_pair hu.ensures F hF
+          have h1' : F.HoldsAt ⟨envOf (recv :: L') recv, heap⟩ (push v (envOf (recv :: L') recv)) h' :=
+            (HeapKnowledge.IndexFact.holdsAt_pastReceiver hF'eq L' recv recv v heap h').mp (hq F' hF'mem)
+          have h2' : F.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (push v (envOf (recv :: L') recv)) h' := by
+            refine (HeapKnowledge.IndexFact.holdsAt_congr_entry (ε := ⟨envOf (recv :: L') recv, heap⟩)
+              (ε' := ⟨envOf (recv :: tail) .nul, heap⟩) rfl fun s hs => ?_).mp h1'
+            have hsl := (CallEffects.Effect.belowRow_ensures hrow hF).2 s hs
+            cases s with
+            | zero => rfl
+            | succ j => exact dropReceiver_envOf_lt kLen recv tail (by omega)
+          have h3' : F.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (push v (envOf (recv :: tail) .nul)) h' := by
+            refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp h2'
+            have hsl := (CallEffects.Effect.belowRow_ensures hrow hF).1 s hs
+            rcases s with _ | _ | j
+            · rfl
+            · rfl
+            · exact dropReceiver_envOf_lt kLen recv tail (by omega)
+          exact (CallEffects.Effect.ensures_frame (CallEffects.Effect.belowRow_ensures hrow hF).1
+            (CallEffects.Effect.belowRow_ensures hrow hF).2 v recv args vs .nul heap h').mpr h3'
+      exact safePostExc_prefix .goto hrefsE₂ hfullR
 
 /-! ## The module's environment meets every closed unit's interface -/
 

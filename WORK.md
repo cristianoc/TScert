@@ -231,7 +231,6 @@ and name the failing rule.
 | Item | State | Closed when |
 | --- | --- | --- |
 | [The claims-free route](docs/SINGLE-PASS.md#8-the-claims-free-front) | The single pass is the only route. About 13,000 Lean declarations that only the claims route used remain (the claims decoder, the certificate producer's search, RequestJson's requests). Next: delete them. | Every such definition is deleted. |
-| Prove ReceiverDropSound | The hypothesis that the receiver-dropping prologue preserves a module row's specification is assumed (owner, 2026-11-15). Next: prove the prologue simulates the original function, then apply `rowSpec_of_clauses`' argument. | `ReceiverDropSound` is a theorem. |
 | Check a declared contract's scope at its callable's arity | No reader checks a declared, native, library, claimed or interface-row contract's positions against its callable's arity. Next: one validation phase shared by every admission ([design](docs/drafts/effects-of-commands.md#what-the-decoder-establishes-and-what-consumers-check)). | Every stated contract is admitted only within its callable's scope, with forged-document controls. |
 | Prove that decoding the writing of any effect returns that effect | Proved for serializable effects (`EffectCodec.decode_encode`), argued for the others. | The theorem holds for every effect, in the axiom check. |
 | [Module composition](#module-composition) | Certified imports are checked; composing the units is reviewed, not proved. | A Lean theorem composes units certified against each other's signatures. |

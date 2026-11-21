@@ -236,15 +236,15 @@ one-state meaning:
 
 ## The named hypotheses
 
-- `ReceiverDropSound` (of `crossModule_safe`):
+- `receiverDropSound` (proved, `PassUnitRealize.lean`):
   $`\forall\,r\,c,\ \mathrm{RequestSafe}\,r\wedge\mathrm{UnitIsReceiverless}\,r\,c\wedge\mathrm{rowConditions}\,c\Rightarrow\forall\eta,\ \mathrm{RowSpec}\,(\mathrm{reassign}\,G\,\eta)\,(\mathrm{dropReceiver}\,c)\,(\mathrm{receiverSeparation}\,r.\mathrm{entrySeparation})`$,
   with `UnitIsReceiverless.ensures` stating
-  `row.ensures.mapM pastReceiver = some r.ensures`. By
+  `row.ensures.mapM pastReceiver = some r.ensures` and
+  `UnitIsReceiverless.separation` stating each entry separation fact's levels
+  lie below its depth and its depth lies within `r.inputs`. By
   `holdsAt_pastReceiver`, the request's post at its entry
   $`\langle\mathrm{envOf}\,L\,d,h\rangle`$ and return holds exactly where the
-  row's does at $`\langle\mathrm{envOf}\,(\mathit{recv}::L)\,d,h\rangle`$: the
-  hypothesis's postcondition part is the faithful translation; the
-  hypothesis itself (the prologue's two transitions) is unproved.
+  row's does at $`\langle\mathrm{envOf}\,(\mathit{recv}::L)\,d,h\rangle`$.
 - `RunSound` (H1), `RunKeepsSummaries` (H2), `ModuleLayout`,
   `InterfaceProvenance`, `EstablishProvenance`: their statements are the
   same; the specifications they reference read the entry state as above.
