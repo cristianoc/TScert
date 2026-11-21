@@ -154,10 +154,11 @@ store into storage their steps did not allocate, reach through storage its
 own steps allocated only locations its operands reach and locations the
 run allocated; the result and the thrown value may also reach the realm's
 own storage. A value is followed through the native's own allocations
-alone: a callback's allocation, and the realm's storage, hold what their
-own code stored there, which a client may extend (a callback returning
-`Object.getPrototypeOf([])` to `reduce`, a client adding a field to
-`Array.prototype`). -/
+alone: the realm's storage holds what a client stored there
+(`Object.getPrototypeOf(xs)` returns `Array.prototype`, to which a client
+may add a field). It is read of the natives taking no function argument
+(the owner, 2026-11-21), whose runs call no code but the realm's, so its
+clauses on passed values and on a callee's storage are unused. -/
 def NativeRowB' (rl : Realm) (own : Nat → Prop) : Prop :=
   ∀ (h₀ : Heap) (f r : Val) (args : List Tm) (h : Heap) (t : Tm) (A : List Nat),
     RealmFn rl f → isVal r = true → (∀ a ∈ args, isVal a = true) →

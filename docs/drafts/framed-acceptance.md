@@ -2682,13 +2682,14 @@ contract.
   calculus (`NativeRowB'`, `ReadOnlyLocalReach.lean`) a value is followed
   through the locations the native's own steps allocated (`ReachesVia`),
   and `own` is a set holding the realm's own storage, read by the theorems
-  at the locations of outside storage (`NativeRowB'.mono`). A callback's
-  allocation and the realm's storage hold what their own code stored
-  there, so a reach through them holds of no standard native:
-  `[1, 2].reduce(() => ({ p: Object.getPrototypeOf([]) }), 0)` passes the
-  callback's object, which reaches `Array.prototype`, and
-  `Object.getPrototypeOf(xs)` returns `Array.prototype`, which reaches
-  whatever a client stored in a field it added.
+  at the locations of outside storage (`NativeRowB'.mono`). The realm's
+  storage holds what a client stored there, so a reach through it holds
+  of no standard native: `Object.getPrototypeOf(xs)` returns
+  `Array.prototype`, which reaches whatever a client stored in a field it
+  added. (b′) is read of the natives taking no function argument (the
+  owner, 2026-11-21), the natives whose steps are $`C`$'s: their runs call
+  no code but the realm's, so its clauses on the values passed to
+  callbacks and on storage a callee allocated are unused.
 
 **The natives outside (b).** Every native's contract states, clause by
 clause, whether the native meets (b), in fields checked when the contracts
@@ -2746,7 +2747,10 @@ function argument of outside code.
    outside slot, or through one, a member of such a value read directly or
    through a receiver whose type's prototype is that slot's contract (an
    array's prototype is the value of `[[Array.prototype]]`, the array
-   invariant), and its contract does not retain a function argument. The
+   invariant), and no parameter of its contract has a function type (the
+   owner, 2026-11-21: a native taking a function argument, `map`,
+   `forEach`, `sort` with a comparator, is outside code, its call giving
+   its operands out as any framed call does). The
    decision (`nativeAt`) reads the code's request: its lowered callee, its
    slots' kinds and declarations' origins, and the receiver's type, a
    proposed type that the code's ordinary plan checks. So it holds of a
@@ -2760,16 +2764,17 @@ function argument of outside code.
    alone.
 5. **The flow at a call of a native.** With $`L_n(c)`$ the closure of the
    receiver's and the actuals' sets, $`\overline{S_r\cup\bigcup\bar S}`$
-   (the callee's set left out, by (b)): its result's set holds $`\circ`$
-   and what the contract states of the result (the sites of its node's key
-   for a fresh result, an operand's set for an operand, nothing more), so
-   a native returning realm storage (`Object.getPrototypeOf(xs)`) returns
-   a value of $`\circ`$; every site of $`L_n(c)`$
-   stores $`L_n(c)`$ and those sites; every code whose token $`L_n(c)`$
-   holds is entered at $`L_n(c)`$ (a callback); and where $`L_n(c)`$ holds
-   $`\circ`$, a function argument of outside code, $`L_n(c)`$ enters
-   $`O`$ (`Fits.native`, a rule of the flow; `FFlow.check` decides it as
-   any rule). A native allocates at its node's key, the sites of $`C`$'s
+   (the callee's set left out, by (b)), and $`K(c)`$ the sites of its
+   node's key: its result's set holds $`L_n(c)`$, $`K(c)`$ and $`\circ`$,
+   so a native returning realm storage (`Object.getPrototypeOf(xs)`)
+   returns a value of $`\circ`$; every site of $`L_n(c)`$ stores
+   $`L_n(c)`$ and $`K(c)`$; every site of $`K(c)`$ stores $`L_n(c)`$,
+   $`K(c)`$ and $`\circ`$, what (b′) lets the native's own allocations hold
+   (`slice` fills its fresh array with its receiver's elements)
+   (`Fits.native`, a rule of the flow; `FFlow.check` decides it as any
+   rule). The native takes no function argument, so its run calls no code
+   other than the realm's, and nothing it is passed reaches $`O`$ by its
+   call. A native allocates at its node's key, the sites of $`C`$'s
    frame that called it (`stepSite` reading that frame, Read-only frames'
    "Marks": "a native call's included").
 6. **The charges.** $`\mathrm{Ch}(M)`$, for a set $`M`$ of codes of
@@ -2791,10 +2796,7 @@ function argument of outside code.
    $`\mathsf{any}`$ at every part (`nativeTop`), a stated precision limit.
 8. **The other gates** stay as [restrictions](#restrictions) states them
    but three: the cycle of names, the audited realm values and the one
-   module (with the package's) are deleted. One is added (Fable S3): a
-   closure of $`C`$ a native is passed, a token of $`C`$ in $`L_n(c)`$,
-   has a code with no framed node and an ordinary verdict (`callbackB`);
-   otherwise the plan is refused, located at the call. Reading a framed
+   module (with the package's) are deleted. Reading a framed
    closure at an arrow relative to the client obligation is milestone 5,
    not built.
 
@@ -2803,12 +2805,9 @@ native as a framed call: its run runs code outside $`C`$, the realm's. At
 a call of a native a fact is kept at its normal exit where the ordinary
 pass keeps it at $`\Phi_c`$ (`callKept`, `frameKeeps`) or where the
 frame's check keeps it at $`\Psi_c`$ and $`\Phi_c`$. At its exceptional
-exit (Fable R1): where $`L_n(c)`$ holds neither $`\circ`$ nor a token,
-the native runs no callback and (a) bounds the throw by $`\Phi_c`$, so the
-same; otherwise no fact is kept, as at any framed call
-([an exceptional return](#an-exceptional-return)). The segment's codes $`\mathrm{seg}(c)`$ are closed
-under the calls of their members and under the callbacks of their calls
-of natives.
+exit (Fable R1) the same: the native runs no callback, so (a) bounds the
+throw by $`\Phi_c`$. The segment's codes $`\mathrm{seg}(c)`$ are closed
+under the calls of their members.
 
 **At P22.** `walk`'s slots are `[[Array.prototype]]` (kind `host`, type
 `ArrayProto`, sites $`\{\circ\}`$) and `%ElementAt%` (kind `host`, its
@@ -2847,9 +2846,7 @@ owner.
   the client's, and a frame of the realm's code is $`C`$'s where the frame
   that called it is $`C`$'s, suspended at a native-call key, and the
   client's otherwise. A frame $`C`$ owns is suspended at a native-call key
-  only at a call its code makes through the realm's own code; a native
-  $`C`$ owns calling its function argument runs it as the client's where
-  it came from outside code. The kinds of step (outside, enter, body,
+  only at a call its code makes through the realm's own code. The kinds of step (outside, enter, body,
   exit; `stepKind`) are read with the owner in place of the active
   frame's tag (`OutsideAt`, `depthC`), and the values of outside code
   (`vals`) with a frame $`C`$ owns read as $`C`$'s; no kind of step and no
@@ -2858,8 +2855,8 @@ owner.
   steps, `a` stays exposed and (P2) holds, the frames reaching `a` being
   $`C`$'s; `out.push(s)` keeps `out` local; a native passed as the
   visitor runs at a framed call's key and takes client steps under
-  $`\Theta_C`$; and `xs.map(f)` with `f` a closure of $`C`$ runs `f` in
-  the same call of $`C`$, the frames from `xs.map` to `f` all $`C`$'s.
+  $`\Theta_C`$; and `xs.map(f)`, its native taking a function argument,
+  is a call of outside code, `xs` and `f` given out.
   At a step of $`C`$ whose code is a native's, the checks' fields
   (`PkgProps`) are the native's contract's: `gives` and `stores` by the
   actual crossings (`pkgProps_actual`), `crossOk`, `localStores` and
@@ -2884,8 +2881,8 @@ owner.
   step, and a call of $`C`$ from it a member's call.
 - **The frame's check at a call of a native.** `framed_transfer` at
   $`\Phi_\star=\Phi_c`$ at the normal exit, by `callerFrame_post` at the
-  callee's type, and at the exceptional exit where the native runs no
-  callback, by (a) as the contract's `onThrow`; the callee's
+  callee's type, and at the exceptional exit by (a) as the contract's
+  `onThrow`; the callee's
   value meets that type by `nativeAt_sound` and its contract
   (`SlotsMet`, the trust rows). Every other location changes within
   $`\Phi_c`$ as for any framed call.
@@ -2893,20 +2890,11 @@ owner.
   `fits_step` at a native's step reads (b) and no-forgery. (S), (K) and
   (O) hold at each step of $`C`$'s code inside a native run, as anywhere.
 
-**Natives that call back** (the audit's first open point).
-
-- *A function of outside code* (`[c.i].forEach(visit)`): $`L_n(c)`$ holds
-  $`\circ`$, so the operands enter $`O`$; `visit`'s steps are client steps
-  keeping $`\Theta_C`$, its effect bounded by its type by the callback
-  row, restated (below) for a function a native $`C`$ calls is passed.
-- *A closure of the component* (`xs.map(f)`): `f`'s code is in $`\mathrm{seg}(c)`$
-  and entered at $`L_n(c)`$; `map`'s frame is $`C`$'s, so the call of `f`
-  stays inside the same call of $`C`$ (no new call), its steps within
-  $`W_c`$ at the caller's depth, `f` given out only where $`L_n(c)`$ holds
-  $`\circ`$. The native's footprint reads `f` at its arrow type, which
-  `f`'s ordinary verdict establishes: the gate `callbackB` (step 8) admits
-  such an `f` only where its code has no framed node and its unit is
-  accepted by its ordinary plan, on the verdict line's `depends`.
+**Natives taking a function argument** (the audit's first open point;
+the owner, 2026-11-21) are outside code: `[c.i].forEach(visit)` and
+`xs.map(f)` are framed calls of a callee of $`\circ`$, their operands
+given out, their steps and their callbacks' the client's; `f`, a closure
+of $`C`$ given out, has its token in $`O`$ and its code open at its entry.
 
 **Precision of the native reach.** A native whose footprint is bounded by
 class (`pop`, `shift`, `splice`, `unshift`, `sort`, and the natives taking
@@ -3130,9 +3118,8 @@ with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
    `ClientFrame.cert_of_charges` (modified, to be proved again with a
    native's steps as body steps of $`C`$), `framed_transfer` (statement kept) at
    a call of a native at $`\Phi_c`$, its throw by (a).
-7. `nativeKeysB`, `nativeKeysB_sound`, `callbackB`, `callbackB_sound`
-   (new): every node of a native call's key calls a native; a closure of
-   $`C`$ a native is passed has a code with no framed node.
+7. `nativeKeysB`, `nativeKeysB_sound` (new): every node of a native
+   call's key calls a native.
 8. `Fits.native` (new rule), `fits_step` (proof modified at a native's
    step); `EnvFnAt`, `unfold_budget` (new, to be proved); `fitsAt_reached`
    reads `EnvFnAt` (a slot holding `null` is never called).
@@ -3203,11 +3190,10 @@ expected outcomes are the family's and do not move.
 | `readonly-frame-prepare-loop` (new; `prepare` by a loop of `push`) | accepted under client trust | `push` charged at a local array's sites |
 | `bounds-pattern-framed-pop-local` (new; the review's `ord-pop-local.ts`) | accepted under client trust | `out.pop()` framed, the cursor outside its reach |
 | `bounds-pattern-framed-unrelated-natives` (new; a cursor-field walker calling `pop` and `sort` on an array it allocates, beside `visit`) | accepted under client trust | the cursor outside both natives' reach |
-| `bounds-pattern-framed-native-callback` (new; the review's `native-callback.ts`, `[c.i].forEach(visit)`) | accepted under client trust | the callback's steps client steps, the cursor outside the native's reach |
+| `bounds-pattern-framed-native-callback` (new; the review's `native-callback.ts`, `[c.i].forEach(visit)`) | accepted under client trust | `forEach` outside code, `[c.i]` and `visit` given out, the cursor not among them |
 | `invalid-bounds-pattern-framed-callback-throws` (new; a callback the native calls after the walker's `pop` of the client's array throws, the walker catching it and reading on) | negative | (a) bounds the pop's writes before the throw by its footprint, which changes the spine; `NaN` under Node |
 | `invalid-readonly-frame-native-protected` (new; a member popping the protected array, called by the visitor, which catches the member's exception) | negative | the member's native reach holds the protected spine, (P) fails; `NaN` under Node |
-| `bounds-pattern-framed-callback-gate` (new; `xs.map(f)` with `f` a closure of $`C`$ holding a framed call) | gap: refused at `callbackB` | the gate of Fable S3 |
-| `bounds-pattern-framed-map-callback` (new; `xs.map(f)` with `f` a closure of $`C`$ with no framed call) | accepted under client trust | `f` entered at the native's reach, on `depends` |
+| `bounds-pattern-framed-map-callback` (new; `xs.map(f)` with `f` a closure of $`C`$) | accepted under client trust | `map` outside code, `xs` and `f` given out, the cursor not among them |
 | `bounds-pattern-framed-refused-member-native` (new; a member refused by its ordinary plan holding `a.pop()` beside P22's walker) | gap: refused at the visit | its native charged at every part (`nativeTop`): the cursor facts kept, `c.i < xs.length` lost at the spine of $`\circ`$ |
 | `invalid-bounds-pattern-framed-callback-throw-exit` (new; `try { [0].forEach(visit) } catch {}; s += xs[c.i]!`, `visit` stated `spines: "grow"`, popping `xs` and throwing) | negative | no fact kept at the exceptional exit of a native running a callback of outside code; `NaN` under Node |
 | `bounds-pattern-framed-declared-import` (new; a declared import of a module, called beside P22's walker) | accepted under client trust | outside code, its steps the client's, its call framed by its callee set |
@@ -3516,33 +3502,6 @@ and P22's layout meets them (measured).
 ## Open points for review
 
 1. **Milestone 4's disjoint supports** are a design to review.
-2. **What a native's own allocations hold, and the callbacks' returns**
-   (step 1.3.5). The rule at a call of a native
-   ([the algorithm](#the-algorithm), step 5; Read-only frames, (A2)) states
-   no set for the contents of its node's sites, and $`L_n(c)`$ is not
-   closed under the return sets of the codes it enters. `xs.map(f)` stores
-   `f`'s results into its fresh array, so a read of that array's element
-   meets no set the rule states, and `fits_step` has no case for the store.
-   Under a flow whose node sites hold nothing,
-   `walk(xs, visit) { const ys = xs.map(() => ({ i: 0 })); const c = ys[0]; visit(ys); return xs[c.i] }`
-   keeps $`0\le c.i`$ across `visit`, which sets `ys[0].i = -1` (observed:
-   `map-fresh.mjs`, `undefined`). Proposed: $`L_n(c)`$ the least set
-   holding the receiver's and the actuals' sets, closed under the heap's
-   contents and under the return set of every code whose token it holds,
-   and holding $`O`$ where it holds $`\circ`$; the node's sites store
-   $`L_n(c)`$, the node's sites and $`\circ`$; the result's set holds them
-   too.
-3. **A callee's allocation reached through the realm's storage**
-   (step 1.3.5). (b′) bounds what a native gives out by what its run
-   allocated, its callees' allocations included, and so admits realm code
-   `n(f) { f(); return G.v }`, `G` a realm object, called from $`C`$ as
-   `n(g)` with `g` a closure of $`C`$ that stores a fresh object into
-   `Object.getPrototypeOf([]).v`: the result is that object, at a site of
-   `g`'s code that no set of the rule holds. Proposed reading of "what its
-   run allocated": its own steps' allocations, and what the values the
-   functions it called returned or threw to it reach. Standard natives meet
-   it under the assumption that standard objects are not tampered with;
-   the owner decides it.
 
 ## Runs
 
@@ -3550,7 +3509,6 @@ Node 26.13.0, each printing the value shown; the files are in the reviews'
 scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
 `round3/review/fable/`, `round4/`, `round4/review/fable/`, `round5/`, `verify3/`, `verify4/`), outside the repository:
 
-- `map-fresh.mjs` (step 1.3.5's scratch directory, `b135/`): `undefined`;
 - `throw.mjs`: `{ s: NaN, i: 2 }`; `wrapper.mjs`: `NaN`, `NaN`;
   `redirect.mjs`: `NaN`; `capture.mjs`: `NaN`; `prefix.mjs`: `undefined`;
   `install.mjs`: `true false`; `forged-flow.mjs`, `dependent.mjs`,
