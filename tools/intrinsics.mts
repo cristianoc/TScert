@@ -93,11 +93,12 @@
  * `undefined`: neither reads its receiver, and a string or a symbol argument
  * converts without running code. */
 import { join } from "node:path";
-import type { IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
+import { checkTrust, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -517,6 +518,65 @@ function instanceOfCollection(view: TypeTerm): TypeTerm {
     { ...plain, effect: footprintEffect(emptyFootprint, { promise: { guards: { param: 0 } } }), result: view }] };
 }
 
+/** **The intrinsics' trust fields** (`builtin-trust.mts`), by name, each
+ * checked when the intrinsic is loaded (`intrinsics`). A promise's reaction
+ * or job record is storage a run allocates and stores into storage that
+ * existed before it (the promise's reactions, the realm's job queue):
+ * `stores: "other"`. */
+export const intrinsicTrust: ReadonlyMap<string, BuiltinTrust> = new Map<string, BuiltinTrust>([
+  [awaitName, { onThrow: "footprint", stores: "other", callsArgs: "during", passesOwnAllocations: false,
+    spec: "ECMA-262 sec-await, sec-performpromisethen" }],
+  [asyncReturnName, { onThrow: "footprint", stores: "other", callsArgs: "during", passesOwnAllocations: false,
+    spec: "ECMA-262 sec-promise-resolve-functions, sec-newpromiseresolvethenablejob" }],
+  [promiseResolveName, withinB("ECMA-262 sec-promise-resolve", "footprint")],
+  [asyncCompleteName, withinB("ECMA-262 sec-promise.resolve", "footprint")],
+  [iterateName, withinB("ECMA-262 sec-createarrayiterator, sec-%arrayiteratorprototype%.next", "top")],
+  [promiseAllName, { onThrow: "footprint", stores: "other", callsArgs: "during", passesOwnAllocations: false,
+    spec: "ECMA-262 sec-promise.all, sec-performpromiseall, sec-performpromisethen" }],
+  [promiseRejectName, withinB("ECMA-262 sec-promise.reject", "footprint")],
+  [newDateTimeFormatName, withinB("ECMA-402 sec-intl-datetimeformat-constructor", "top")],
+  [newSegmenterName, withinB("ECMA-402 sec-intl-segmenter-constructor", "top")],
+  [newPromiseName, { onThrow: "footprint", stores: "operands", callsArgs: "during", passesOwnAllocations: true,
+    spec: "ECMA-262 sec-promise-executor, sec-createresolvingfunctions" }],
+  [iterateForInName, withinB("ECMA-262 sec-enumerate-object-properties, sec-createlistiteratorrecord", "footprint")],
+  [forInName, withinB("ECMA-262 sec-enumerate-object-properties", "footprint")],
+  [hasPropertyName, withinB("ECMA-262 sec-hasproperty", "top")],
+  [throwUninitializedName, withinB("ECMA-262 sec-getbindingvalue", "footprint")],
+  [symbolForName, withinB("ECMA-262 sec-symbol.for", "footprint")],
+  [importMetaUrlName, withinB("Node.js import.meta.url", "footprint")],
+  [importMetaDirnameName, withinB("Node.js import.meta.dirname", "footprint")],
+  [importMetaFilenameName, withinB("Node.js import.meta.filename", "footprint")],
+  [importMetaResolveName, withinB("Node.js import.meta.resolve", "footprint")],
+  [arrayLengthName, withinB("ECMA-262 sec-array, sec-arraycreate", "top")],
+  [arrayFilledName, withinB("ECMA-262 sec-array, sec-array.prototype.fill", "top")],
+  [urlHrefName, withinB("WHATWG URL href getter", "top")],
+  [pathToFileHrefName, withinB("Node.js url.pathToFileURL", "footprint")],
+  [assertionFailureName, withinB("Node.js assert.AssertionError", "footprint")],
+  [instanceOfErrorName, withinB("ECMA-262 sec-instanceofoperator, sec-ordinaryhasinstance", "top")],
+  [ordinaryHasInstanceName, withinB("ECMA-262 sec-ordinaryhasinstance", "top")],
+  [instanceOfMapName, withinB("ECMA-262 sec-instanceofoperator, sec-ordinaryhasinstance", "top")],
+  [instanceOfSetName, withinB("ECMA-262 sec-instanceofoperator, sec-ordinaryhasinstance", "top")],
+  [ownKeysName, withinB("ECMA-262 sec-object.keys, sec-enumerableownproperties", "top")],
+  [prototypeIsObjectName, withinB("ECMA-262 sec-object.getprototypeof", "top")],
+  [ownStringName, withinB("ECMA-262 sec-object.getownpropertydescriptor", "top")],
+  [symbolKeyForName, withinB("ECMA-262 sec-symbol.keyfor", "footprint")],
+  [byteAtName, withinB("ECMA-262 sec-typedarray-exotic-objects-get-p-receiver, sec-typedarraygetelement", "top")],
+  [byteLengthName, withinB("ECMA-262 sec-get-%typedarray%.prototype.length", "top")],
+  [byteSetName, withinB("ECMA-262 sec-typedarray-exotic-objects-set-p-v-receiver, sec-typedarraysetelement", "top")],
+  [typeOfDocumentName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML document", "top")],
+  [typeOfNavigatorName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML navigator", "top")],
+  [typeOfOffscreenCanvasName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML OffscreenCanvas", "top")],
+  [elementAtName, withinB("ECMA-262 sec-array-exotic-objects, sec-ordinaryget", "top")],
+  ...canvasGetters.map((g): [string, BuiltinTrust] => [g.intrinsic, withinB(`WHATWG HTML CanvasRenderingContext2D ${g.member}`, "top")]),
+  ...canvasSetters.map((g): [string, BuiltinTrust] => [g.intrinsic, withinB(`WHATWG HTML CanvasRenderingContext2D ${g.member}`, "top")]),
+  ...domSetters.map((g): [string, BuiltinTrust] => [g.intrinsic, withinB(`CSSOM and WHATWG DOM ${g.member}`, "top")]),
+]);
+
+/** The effects a type's call signatures state: a function's, or each part
+ * of an intersection's. */
+const signatureEffects = (type: TypeTerm): (CallEffect | undefined)[] =>
+  type.k === "function" ? [type.effect] : type.k === "intersection" ? type.parts.flatMap(signatureEffects) : [undefined];
+
 /** The intrinsics' binders and signatures, given the standard library's
  * `Promise` applied to an argument and a host collection's reading view at
  * arguments. */
@@ -808,6 +868,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     const make = byName.get(name) ?? (name.startsWith(freezePrefix) ? () => freezeIntrinsic(name) : undefined);
     if (!make) throw Error(`no intrinsic ${name}`);
     const { typeParams, type } = make();
+    checkTrust(name, name.startsWith(freezePrefix) ? withinB("ECMA-262 sec-object.freeze", "top") : intrinsicTrust.get(name),
+      signatureEffects(type));
     made.push({ name, typeParams, type });
   }
   return made;

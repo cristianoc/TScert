@@ -91,8 +91,12 @@ push: {
 }
 ```
 
-The fields are checked when the contracts are loaded: a contract missing
-one is refused. A built-in whose contract states `stores: "other"`,
+The fields are each overlay entry's and each global entry's `trust`
+(`tools/array-prototype.mts`, `tools/library-globals.mts`) and the
+intrinsics' table (`intrinsicTrust`, `tools/intrinsics.mts`), of the type
+`BuiltinTrust` (`tools/builtin-trust.mts`), and are checked when the
+contracts are loaded (`checkTrust`): a contract missing one, or stating an
+`onThrow` its effects do not, is refused. A built-in whose contract states `stores: "other"`,
 `callsArgs: "later"` or `passesOwnAllocations: true` is read as outside
 code: `Error.captureStackTrace` (`stores: "other"`), `setTimeout`
 (`callsArgs: "later"`), `JSON.stringify` with a replacer and `JSON.parse`
@@ -100,8 +104,9 @@ with a reviver (`passesOwnAllocations: true`).
 
 The audit rule, approved by the owner: each value is checked against the
 section its `spec` cites; each value that makes a built-in outside code has
-a run under Node showing the behaviour; the owner reviews the values as
-trust.
+a run under Node showing the behaviour (`tests/builtin-trust.mts`, which
+fails on a built-in read as outside code with no such run); the owner
+reviews the values as trust.
 
 ### Review obligations
 

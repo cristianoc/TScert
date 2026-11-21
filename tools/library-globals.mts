@@ -30,6 +30,7 @@ import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSe
   symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, newDateTimeFormatName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
+import { checkTrust, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url, viewDefinitions, viewKinds } from "./library-types.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -47,6 +48,9 @@ type LibraryReference = (name: string, args: TypeTerm[]) => TypeTerm;
 type CollectionViewReference = (kind: "Set" | "Map", args: TypeTerm[]) => TypeTerm;
 
 export type GlobalEntry = {
+  /** The trust fields of the global's call or member (`builtin-trust.mts`),
+   * checked when the overlay is loaded. */
+  trust: BuiltinTrust;
   /** The global variable, `declare var BigInt: BigIntConstructor`. */
   global: string;
   /** The member read, `Symbol.for`; absent for a call of the global itself. */
@@ -291,41 +295,41 @@ const processEntries: GlobalEntry[] = [
   // `process.argv`: an array of strings Node builds at start-up, read as a
   // readonly view; code replacing it or writing a non-string into it is
   // outside the assumption.
-  { host: contract, origin: node, global: "process", member: "argv", signature: "argv: string[];",
+  { host: contract, origin: node, trust: withinB("Node.js process.argv", "top"), global: "process", member: "argv", signature: "argv: string[];",
     stated: { binders: [], params: [], result: readonlyArray(atom("string")) } },
-  { host: contract, origin: node, global: "process", member: "execPath", signature: "execPath: string;",
+  { host: contract, origin: node, trust: withinB("Node.js process.execPath", "top"), global: "process", member: "execPath", signature: "execPath: string;",
     stated: { binders: [], params: [], result: atom("string") } },
-  { host: contract, origin: node, global: "process", member: "pid", signature: "readonly pid: number;",
+  { host: contract, origin: node, trust: withinB("Node.js process.pid", "top"), global: "process", member: "pid", signature: "readonly pid: number;",
     stated: { binders: [], params: [], result: atom("number") } },
   // `process.execArgv`: the array of the Node options the process was
   // started with, built at start-up, read as `argv` is: a readonly view of
   // strings, an assumption that no code replaces it or writes a non-string.
-  { host: contract, origin: node, global: "process", member: "execArgv", signature: "execArgv: string[];",
+  { host: contract, origin: node, trust: withinB("Node.js process.execArgv", "top"), global: "process", member: "execArgv", signature: "execArgv: string[];",
     stated: { binders: [], params: [], result: readonlyArray(atom("string")) } },
   // `process.platform` and `process.arch`: strings naming the operating
   // system and the processor Node was built for, fixed at start-up; the
   // declared unions of names are read as `string`.
-  { host: contract, origin: node, global: "process", member: "platform", signature: "readonly platform: Platform;",
+  { host: contract, origin: node, trust: withinB("Node.js process.platform", "top"), global: "process", member: "platform", signature: "readonly platform: Platform;",
     stated: { binders: [], params: [], result: atom("string") } },
-  { host: contract, origin: node, global: "process", member: "arch", signature: "readonly arch: Architecture;",
+  { host: contract, origin: node, trust: withinB("Node.js process.arch", "top"), global: "process", member: "arch", signature: "readonly arch: Architecture;",
     stated: { binders: [], params: [], result: atom("string") } },
   // `process.env`: an object of the environment whose own entries hold
   // strings, its chain a prototype holding `constructor` and then
   // `Object.prototype`, which no accessor can be defined on: a readonly
   // dictionary of `string | undefined`, read at no key a prototype may
   // provide (the dictionary rule).
-  { host: contract, origin: node, global: "process", member: "env", signature: "env: ProcessEnv;",
+  { host: contract, origin: node, trust: withinB("Node.js process.env", "top"), global: "process", member: "env", signature: "env: ProcessEnv;",
     stated: { binders: [], params: [], result: { k: "object", fields: [], calls: [], span: at,
       stringIndex: { readonly: true, value: optional(atom("string")), span: at } } } },
   // `process.exit(code)` runs the `exit` listeners synchronously, any of
   // which may throw into the caller, and otherwise ends the process: no
   // effect stated, the result `never`.
   ...["exit(code?: number | string | null): never;", "exit(code?: number | string | null | undefined): never;"].map(
-    (signature): GlobalEntry => ({ host: contract, origin: node, global: "process", member: "exit", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, trust: withinB("Node.js process.exit", "top"), global: "process", member: "exit", signature,
       stated: { binders: [], params: [optional(atom("number"))], result: atom("never") } })),
   // `process.kill(pid, signal)` sends the signal: `true`, a throw, or the
   // process ending; neither delivery nor termination is promised.
-  { host: contract, origin: node, global: "process", member: "kill", signature: "kill(pid: number, signal?: string | number): true;",
+  { host: contract, origin: node, trust: withinB("Node.js process.kill", "top"), global: "process", member: "kill", signature: "kill(pid: number, signal?: string | number): true;",
     stated: { binders: [], params: [atom("number"), signal], result: { k: "literal", name: "true", text: "true", span: at } } },
   // Listener registration at a named event: `exit` and `beforeExit` call
   // the listener with the exit code, a signal with the signal's name, each
@@ -334,14 +338,16 @@ const processEntries: GlobalEntry[] = [
   // `newListener` and `once`'s removal `removeListener` synchronously, so the
   // call states no effect. The result is the process.
   ...["on", "once"].flatMap((method): GlobalEntry[] => [
-    ...(["beforeExit", "exit"] as const).map((event): GlobalEntry => ({ host: contract, origin: node, global: "process", member: method,
+    ...(["beforeExit", "exit"] as const).map((event): GlobalEntry => ({ host: contract, origin: node, trust: { onThrow: "top", stores: "operands", callsArgs: "later", passesOwnAllocations: false,
+      spec: `Node.js process, event 'exit', process.${method}` }, global: "process", member: method,
       signature: `${method}(event: "${event}", listener: ${event === "exit" ? "ExitListener" : "BeforeExitListener"}): this;`,
       stated: { binders: [], params: [text(event), listener(atom("number"))], result: { k: "self", span: at } } })),
     // A signal name, or a string the call proves to be one: the listener
     // takes the name.
     ...[`${method}(event: Signals, listener: SignalsListener): this;`,
       `${method}(event: string | symbol, listener: (...args: any[]) => void): this;`].map((signature): GlobalEntry => (
-      { host: contract, origin: node, global: "process", member: method, signature,
+      { host: contract, origin: node, trust: { onThrow: "top", stores: "operands", callsArgs: "later", passesOwnAllocations: false,
+      spec: `Node.js process, event 'exit', process.${method}` }, global: "process", member: method, signature,
         stated: { binders: [], params: [signal, listener(atom("string"))], result: { k: "self", span: at } } }))]),
 ];
 
@@ -359,13 +365,13 @@ const bytesEntries: GlobalEntry[] = [
   // no effect is stated.
   ...["from(string: WithImplicitCoercion<string>, encoding?: BufferEncoding): Buffer<ArrayBuffer>;",
     "from(data: WithImplicitCoercion<Uint8Array | readonly number[] | string>): Buffer<ArrayBuffer>;"].map(
-    (signature): GlobalEntry => ({ host: contract, origin: node, global: "Buffer", member: "from", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, trust: withinB("Node.js buffer Buffer.from", "top"), global: "Buffer", member: "from", signature,
       stated: { binders: [], params: [atom("string")], result: buffer }, definitions: [stated.buffer] })),
   // `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its
   // internal slots, throwing otherwise, and compares their bytes in the
   // native layer: `-1`, `0` or `1`. It runs no code and writes nothing on
   // normal return.
-  { host: contract, origin: node, global: "Buffer", member: "compare",
+  { host: contract, origin: node, trust: withinB("Node.js buffer Buffer.compare", "top"), global: "Buffer", member: "compare",
     signature: "compare(buf1: Uint8Array, buf2: Uint8Array): -1 | 0 | 1;", effect: emptyEffect,
     stated: { binders: [], params: [bytes, bytes], result: { k: "union", span: at, parts: ["-1", "0", "1"].map(
       (n): TypeTerm => ({ k: "literal", name: "number", text: n, span: at })) } }, definitions: [stated.bytes] },
@@ -377,7 +383,7 @@ const bytesEntries: GlobalEntry[] = [
   // of the fresh decoder, which a setter `TextDecoder.prototype` gets from
   // other code would intercept: no effect is stated.
   ...["TextDecoder: typeof globalThis extends {\n            onmessage: any;\n            TextDecoder: infer TextDecoder;\n        } ? TextDecoder\n            : typeof _TextDecoder"].map(
-    (signature): GlobalEntry => ({ host: contract, origin: node, global: "TextDecoder", signature, constructs: true,
+    (signature): GlobalEntry => ({ host: contract, origin: node, trust: withinB("WHATWG Encoding TextDecoder", "top"), global: "TextDecoder", signature, constructs: true,
       stated: { binders: [], params: [optional(atom("string")), optional({ k: "object", stringIndex: null, calls: [], span: at,
         fields: ["fatal", "ignoreBOM"].map(name => ({ name, optional: true, readonly: true, type: optional(atom("boolean")), span: at })) })],
         result: textDecoder }, definitions: [stated.textDecoder, stated.bytes] })),
@@ -414,7 +420,7 @@ const viewOfLength: CallEffect = footprintEffect(emptyFootprint, {
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), 1], [lengthTerm("value", 2), -1]], bound: 0 } } } },
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] });
 const typedArrayEntries: GlobalEntry[] = viewKinds.map(({ name, type }): GlobalEntry => (
-  { host: transparent("a length or an array of numbers, which no node list is"), global: name,
+  { host: transparent("a length or an array of numbers, which no node list is"), trust: withinB("ECMA-262 sec-typedarray-constructors", "top"), global: name,
     signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,
     forms: [{ binders: [], params: [atom("number")], result: type, effect: viewOfLength },
       { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
@@ -428,9 +434,9 @@ const typedArrayEntries: GlobalEntry[] = viewKinds.map(({ name, type }): GlobalE
 const intlEntries: GlobalEntry[] = [
   ...["new (locales?: string | string[], options?: DateTimeFormatOptions): DateTimeFormat;",
     "new (locales?: LocalesArgument, options?: DateTimeFormatOptions): DateTimeFormat;"].map((signature): GlobalEntry => ({
-      host: contract, global: "Intl", member: "DateTimeFormat", signature,
+      host: contract, trust: withinB("ECMA-402 sec-intl-datetimeformat-constructor", "top"), global: "Intl", member: "DateTimeFormat", signature,
       intrinsic: newDateTimeFormatName, definitions: [stated.dateTimeFormat] })),
-  { host: transparent("a locale and a record of string options, which no node list is"), global: "Intl",
+  { host: transparent("a locale and a record of string options, which no node list is"), trust: withinB("ECMA-402 sec-intl-segmenter-constructor", "top"), global: "Intl",
     member: "Segmenter", signature: "new (locales?: LocalesArgument, options?: SegmenterOptions): Segmenter;",
     intrinsic: newSegmenterName, definitions: [stated.segmenter] },
 ];
@@ -446,7 +452,7 @@ const urlEntries: GlobalEntry[] = [
   // other code, and `URL.prototype`'s `href` getter of a URL whose search
   // parameters no code has read serializes its parsed record, running no
   // other code under the untampered-standard-objects policy.
-  { host: contract, origin: node, global: "URL", constructs: true, effect: emptyEffect,
+  { host: contract, origin: node, trust: withinB("WHATWG URL", "top"), global: "URL", constructs: true, effect: emptyEffect,
     signature: "URL: typeof globalThis extends {\n            onmessage: any;\n            URL: infer T;\n        } ? T\n            : typeof _URL",
     serialized: urlHrefName, stated: { binders: [], params: [atom("string"), optional(atom("string"))],
       result: url }, definitions: [stated.url] },
@@ -464,19 +470,19 @@ const urlEntries: GlobalEntry[] = [
  * replaces under the untampered-standard-objects policy: constants of
  * their stated types. */
 const domEntries: GlobalEntry[] = [
-  { host: contract, global: "OffscreenCanvas", constructs: true, typeOf: typeOfOffscreenCanvasName, effect: emptyEffect,
+  { host: contract, trust: withinB("WHATWG HTML OffscreenCanvas", "top"), global: "OffscreenCanvas", constructs: true, typeOf: typeOfOffscreenCanvasName, effect: emptyEffect,
     signature: "OffscreenCanvas: {\n    prototype: OffscreenCanvas;\n    new(width: number, height: number): OffscreenCanvas;\n}",
     stated: { binders: [], params: [atom("number"), atom("number")], result: canvas }, definitions: [stated.canvas] },
-  { host: contract, global: "document", signature: "document: Document", constant: true, typeOf: typeOfDocumentName,
+  { host: contract, trust: withinB("WHATWG HTML document", "top"), global: "document", signature: "document: Document", constant: true, typeOf: typeOfDocumentName,
     stated: { binders: [], params: [], result: documentType }, definitions: [stated.document] },
-  { host: contract, global: "navigator", signature: "navigator: Navigator", constant: true, typeOf: typeOfNavigatorName,
+  { host: contract, trust: withinB("WHATWG HTML navigator", "top"), global: "navigator", signature: "navigator: Navigator", constant: true, typeOf: typeOfNavigatorName,
     stated: { binders: [], params: [], result: navigatorType }, definitions: [stated.navigator] },
   // CSSOM's `getComputedStyle(element)`, of one argument: the element's
   // resolved style, a declaration the host makes or reuses for it, whose
   // readonly flag is set. It updates the document's style, which runs no
   // code of the program's, and writes no location the model holds: the
   // empty footprint.
-  { host: contract, global: "getComputedStyle",
+  { host: contract, trust: withinB("CSSOM getComputedStyle", "top"), global: "getComputedStyle",
     signature: "declare function getComputedStyle(elt: Element, pseudoElt?: string | null): CSSStyleDeclaration;",
     effect: emptyEffect, stated: { binders: [], params: [element], result: computedStyle },
     definitions: [stated.element, stated.computedStyle] },
@@ -502,7 +508,7 @@ export const importMetaName = "import.meta";
  * read makes the function by Node's own `createImportMetaResolve`. */
 const importMetaEntries: GlobalEntry[] = [
   ...["url", "dirname", "filename"].map((member): GlobalEntry => ({ host: contract, origin: node,
-    global: importMetaName, member, signature: `${member}: string;`, intrinsic: `%ImportMeta:${member}%` })),
+    trust: withinB(`Node.js import.meta.${member}`, "top"), global: importMetaName, member, signature: `${member}: string;`, intrinsic: `%ImportMeta:${member}%` })),
   // `import.meta.resolve(specifier)` at one argument: the loader's
   // `resolveSync` converts the specifier by a template, a string's own
   // value, and runs every resolve hook `module.registerHooks` and
@@ -516,7 +522,7 @@ const importMetaEntries: GlobalEntry[] = [
   // worker thread, where the call throws.
   ...["resolve(specifier: string, parent?: string | URL): string;",
     "resolve(specifier: string, parent?: string | URL | undefined): string;"].map((signature): GlobalEntry => (
-    { host: contract, origin: node, global: importMetaName, member: "resolve", signature,
+    { host: contract, origin: node, trust: withinB("Node.js import.meta.resolve", "top"), global: importMetaName, member: "resolve", signature,
       intrinsic: "%ImportMeta:resolve%" })),
 ];
 
@@ -533,7 +539,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["log(message?: any, ...optionalParams: any[]): void;", "error(message?: any, ...optionalParams: any[]): void;",
     "error(...data: any[]): void;"].map((signature): GlobalEntry => ({
     ...(signature.includes("message") ? { origin: node } : {}),
-    host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console",
+    host: obligated("each argument", "the host formats every reachable key of an object argument"), trust: withinB(`WHATWG Console.${signature}`, "top"), global: "console",
     member: signature.startsWith("log") ? "log" : "error", signature,
     stated: signature.includes("message")
       ? { binders: [], params: [optional(primitive)], rest: primitive, result: atom("undefined") }
@@ -544,27 +550,27 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // stream's `write`, a property other code may replace (`console.log`
   // keeping its identity), and a stream may call listeners other code
   // registered: no effect is stated, which covers that code.
-  { host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console", member: "log", signature: "log(...data: any[]): void;",
+  { host: obligated("each argument", "the host formats every reachable key of an object argument"), trust: withinB("WHATWG Console.log", "top"), global: "console", member: "log", signature: "log(...data: any[]): void;",
     stated: { binders: [], params: [], rest: primitive, result: atom("undefined") } },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
   // a SyntaxError for a string that is not an integer's spelling; it runs no
   // code of the client's on a primitive, and returns a bigint otherwise. It
   // writes nothing: heap preservation.
-  { host: contract, global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-bigint-constructor-number-value", "top"), global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
   // A new symbol whose description is the argument converted to a string,
   // which a string or number never fails.
-  { host: contract, global: "Symbol", signature: "(description?: string | number): symbol;" },
+  { host: contract, trust: withinB("ECMA-262 sec-symbol-description", "top"), global: "Symbol", signature: "(description?: string | number): symbol;" },
   // The registry's members, which read no receiver: each call is a call of
   // the intrinsic stating its step, so `Symbol` called and read through them
   // is a callable value of its call signature alone.
-  { host: contract, global: "Symbol", member: "for", signature: "for(key: string): symbol;", intrinsic: symbolForName },
-  { host: contract, global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;",
+  { host: contract, trust: withinB("ECMA-262 sec-symbol.for", "top"), global: "Symbol", member: "for", signature: "for(key: string): symbol;", intrinsic: symbolForName },
+  { host: contract, trust: withinB("ECMA-262 sec-symbol.keyfor", "top"), global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;",
     intrinsic: symbolKeyForName },
   // The well-known symbols, each a symbol: stated at `symbol`, since the
   // reader has no `unique symbol` type of a library property. Which symbol
   // each is, a key the library's types use, is not read.
   ...["iterator", "asyncIterator", "hasInstance", "toPrimitive", "toStringTag"].map(
-    (member): GlobalEntry => ({ host: contract, global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
+    (member): GlobalEntry => ({ host: contract, trust: withinB(`ECMA-262 sec-symbol.${member.toLowerCase()}`, "top"), global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
       stated: { binders: [], params: [], result: atom("symbol") } })),
   // `String(v)` called, with no new target (ECMA-262, "String ( value )"),
   // is `""` of no argument, SymbolDescriptiveString of a symbol, and
@@ -576,7 +582,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // preservation. It reads its first argument alone and no receiver, so the
   // global may be read as a value (`xs.map(String)`): the callable taking a
   // primitive and any further arguments, which it ignores.
-  { host: contract, global: "String", signature: "(value?: any): string;", value: true, effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-string-constructor-string-value", "top"), global: "String", signature: "(value?: any): string;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [primitive], rest: atom("unknown"), result: atom("string") } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
@@ -586,7 +592,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // first argument alone and no receiver, so the global may be read as a
   // value (`texts.map(Number)`): the callable taking a primitive and any
   // further arguments.
-  { host: contract, global: "Number", signature: "(value?: any): number;", value: true, effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-number-constructor-number-value", "top"), global: "Number", signature: "(value?: any): number;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [{ k: "union", span: at, parts: (["null", "undefined", "boolean", "number",
       "string", "bigint", "symbol"] as const).map(atom) }], rest: atom("unknown"), result: atom("number") } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
@@ -596,7 +602,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
   // promises no narrowing, and none is stated: its result is a Boolean, which
   // a guard's promise is not. It writes nothing: heap preservation.
-  { host: contract, global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-boolean-constructor-boolean-value", "top"), global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
   // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
   // ToNumber before comparing: a primitive without running code (`undefined`
@@ -608,17 +614,17 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `-Infinity` (`max`) or `Infinity` (`min`) of no argument. At primitives
   // they run no code and write nothing: the empty footprint, as the
   // `String` conversions below.
-  ...["max", "min"].map((member): GlobalEntry => ({ host: contract, global: "Math", member, effect: emptyEffect,
+  ...["max", "min"].map((member): GlobalEntry => ({ host: contract, trust: withinB(`ECMA-262 sec-math.${member.toLowerCase()}`, "top"), global: "Math", member, effect: emptyEffect,
     signature: `${member}(...values: number[]): number;`,
     stated: { binders: [], params: [], rest: primitive, result: atom("number") } })),
   // `String.fromCodePoint(...cs)` converts every argument with ToNumber, as
   // `Math.max` does, and throws a RangeError where the number is no integer
   // from 0 to 0x10FFFF, an outcome; otherwise its result is a string.
-  { host: contract, global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-string.fromcodepoint", "top"), global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // `String.fromCharCode(...cs)` likewise, each number taken modulo 2^16 to a
   // code unit, which never throws.
-  { host: contract, global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-string.fromcharcode", "top"), global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // `String.raw` as a tag, `String.raw\`h${a}t\``: the tagged template
   // makes the frozen template object, whose own `raw` is the frozen array of
@@ -627,39 +633,39 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // and converts each substitution by ToString between two of them. It runs
   // no code of the client's but the conversions, which the template of the
   // raw strings makes at its own `+` (`templateTag`). Read nowhere else.
-  { host: contract, global: "String", member: "raw", templateTag: "raw", effect: emptyEffect,
+  { host: contract, trust: withinB("ECMA-262 sec-string.raw", "top"), global: "String", member: "raw", templateTag: "raw", effect: emptyEffect,
     signature: "raw(template: { raw: readonly string[] | ArrayLike<string>; }, ...substitutions: any[]): string;" },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They
   // write nothing.
-  { host: contract, global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
-  { host: contract, global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-number.isfinite", "top"), global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-number.isinteger", "top"), global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
   // `Number.isSafeInteger(x)` answers `true` exactly of a number that is an
   // integer `n` with |n| ≤ 2^53 − 1 (ECMA-262, "Number.isSafeInteger"), both
   // zeros included: its argument is a safe integer where it answers other
   // than `false`, the guarded fact `int(2)` at the return's positions (0 the
   // result, 2 the argument), which a branch on the result's truth makes
   // unconditional (ARITHMETIC.md, `guard-eliminate`).
-  { host: contract, global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
+  { host: contract, trust: withinB("ECMA-262 sec-number.issafeinteger", "top"), global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
     effect: footprintEffect(emptyFootprint, { ensures: [
       { guarded: { slot: 0, path: [], tag: "false", body: { int: { slot: 2 } } } }] }) },
-  { host: contract, global: "Number", member: "isNaN", signature: "isNaN(number: unknown): boolean;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-number.isnan", "top"), global: "Number", member: "isNaN", signature: "isNaN(number: unknown): boolean;", effect: emptyEffect },
   // `Number.POSITIVE_INFINITY`, a non-writable, non-configurable data
   // property of `Number` holding the number +∞: its read runs no code.
-  { host: contract, global: "Number", member: "POSITIVE_INFINITY", signature: "readonly POSITIVE_INFINITY: number;" },
+  { host: contract, trust: withinB("ECMA-262 sec-number.positive_infinity", "top"), global: "Number", member: "POSITIVE_INFINITY", signature: "readonly POSITIVE_INFINITY: number;" },
   // The global `Infinity`, a non-writable, non-configurable data property of
   // the global object holding the number +∞: its read runs no code, and no
   // code reassigns it. Read only as a value of its stated type.
-  { host: contract, global: "Infinity", signature: "Infinity: number", constant: true,
+  { host: contract, trust: withinB("ECMA-262 sec-value-properties-of-the-global-object-infinity", "top"), global: "Infinity", signature: "Infinity: number", constant: true,
     stated: { binders: [], params: [], result: atom("number") } },
   // The global `NaN`, a non-writable, non-configurable data property of the
   // global object holding the number NaN: read as `Infinity` is.
-  { host: contract, global: "NaN", signature: "NaN: number", constant: true,
+  { host: contract, trust: withinB("ECMA-262 sec-value-properties-of-the-global-object-nan", "top"), global: "NaN", signature: "NaN: number", constant: true,
     stated: { binders: [], params: [], result: atom("number") } },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
-  { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-object.is", "top"), global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // `Object.isFrozen(o)`: `true` of a primitive; of an object, its
   // [[IsExtensible]] and, where it is not extensible, its [[OwnPropertyKeys]]
   // and each key's [[GetOwnProperty]] (TestIntegrityLevel), which call no
@@ -669,7 +675,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // The result is a Boolean; no value of the object reaches the program,
   // and nothing is written.
   { host: obligated("the operand", "runs its [[IsExtensible]] and [[OwnPropertyKeys]], code of a host exotic object"),
-    global: "Object", member: "isFrozen", signature: "isFrozen(o: any): boolean;", effect: emptyEffect,
+    trust: withinB("ECMA-262 sec-object.isfrozen", "top"), global: "Object", member: "isFrozen", signature: "isFrozen(o: any): boolean;", effect: emptyEffect,
     stated: { binders: [], params: [atom("nonHost")], result: atom("boolean") } },
   // `Object.freeze(o)` of an ordinary object makes every own property
   // non-writable and non-configurable and the object non-extensible, runs no
@@ -681,14 +687,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // the program makes reaches it (SOURCE-FRAGMENT.md).
   ...["freeze<T extends { [idx: string]: U | null | undefined | object; }, U extends string | bigint | number | boolean | symbol>(o: T): Readonly<T>;",
     "freeze<T>(o: T): Readonly<T>;"].map((signature): GlobalEntry => ({ host: transparent("a fresh object literal, no host value"),
-    global: "Object", member: "freeze", signature, freezes: true })),
+    trust: withinB("ECMA-262 sec-object.freeze", "top"), global: "Object", member: "freeze", signature, freezes: true })),
   // `Object.hasOwn(o, k)`: ToObject of `o`, an object here, then the key, which
   // a string, number or symbol converts to without running code, then `o`'s
   // own lookup of it, [[GetOwnProperty]], which runs no code (no object is a
   // proxy, as for `Object.getOwnPropertyDescriptor`). The result is a
   // Boolean; no value of the object reaches the program, and nothing is
   // written.
-  { host: contract, global: "Object", member: "hasOwn", signature: "hasOwn(o: object, v: PropertyKey): boolean;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-object.hasown", "top"), global: "Object", member: "hasOwn", signature: "hasOwn(o: object, v: PropertyKey): boolean;", effect: emptyEffect },
   // `Object.getPrototypeOf(o) === Object.prototype`: ToObject of `o` (a
   // TypeError of `null` or `undefined`), then its [[GetPrototypeOf]], which
   // runs no code on an ordinary object or one of ECMAScript's exotic objects
@@ -699,15 +705,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // prototype itself, `Array.prototype` among the answers, an array outside
   // `Array`'s chain, never reaches the program
   // (`invalid-get-prototype-array-prototype`).
-  { host: obligated("the operand", "runs its [[GetPrototypeOf]], code of a host exotic object"), global: "Object", member: "getPrototypeOf", signature: "getPrototypeOf(o: any): any;",
+  { host: obligated("the operand", "runs its [[GetPrototypeOf]], code of a host exotic object"), trust: withinB("ECMA-262 sec-object.getprototypeof", "top"), global: "Object", member: "getPrototypeOf", signature: "getPrototypeOf(o: any): any;",
     prototypeTest: prototypeIsObjectName },
   // Reflect.apply invokes the target itself, never reading target.apply.
   // CreateListFromArrayLike reads length and indices, then Call supplies the
   // receiver. The existing receiver-application lowering checks the target,
   // receiver and array elements. Reflect requires a non-null argument list.
-  { host: contract, global: "Reflect", member: "apply", receiverApply: true,
+  { host: contract, trust: withinB("ECMA-262 sec-reflect.apply", "top"), global: "Reflect", member: "apply", receiverApply: true,
     signature: "function apply<T, A extends readonly any[], R>(\n        target: (this: T, ...args: A) => R,\n        thisArgument: T,\n        argumentsList: Readonly<A>,\n    ): R;" },
-  { host: contract, global: "Reflect", member: "apply", receiverApply: true,
+  { host: contract, trust: withinB("ECMA-262 sec-reflect.apply", "top"), global: "Reflect", member: "apply", receiverApply: true,
     signature: "function apply(target: Function, thisArgument: any, argumentsList: ArrayLike<any>): any;" },
   // `Reflect.ownKeys(o)` of a value that is no host object: its
   // [[OwnPropertyKeys]], which runs no code on an ordinary object or one of
@@ -717,21 +723,21 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // and symbols; no value of the object is read, and nothing else is
   // written. A primitive, which TypeScript's `object` excludes, is a
   // TypeError.
-  { host: obligated("the operand", "runs its [[OwnPropertyKeys]], code of a host exotic object"), global: "Reflect", member: "ownKeys", signature: "function ownKeys(target: object): (string | symbol)[];",
+  { host: obligated("the operand", "runs its [[OwnPropertyKeys]], code of a host exotic object"), trust: withinB("ECMA-262 sec-reflect.ownkeys", "top"), global: "Reflect", member: "ownKeys", signature: "function ownKeys(target: object): (string | symbol)[];",
     intrinsic: ownKeysName },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called) and writes only the array it allocates: the empty
   // footprint. ES5 declares it at `object`, ES2015 at `{}`.
-  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
-  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
+  { host: transparent("a fresh array of strings, which is all its contract states"), trust: withinB("ECMA-262 sec-object.keys", "top"), global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
+  { host: transparent("a fresh array of strings, which is all its contract states"), trust: withinB("ECMA-262 sec-object.keys", "top"), global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
   // object's is assumed to return.
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "values", signature: "values(o: {}): any[];",
+  { host: obligated("the object", "hands the values of its own fields to the program"), trust: withinB("ECMA-262 sec-object.values", "top"), global: "Object", member: "values", signature: "values(o: {}): any[];",
     stated: { binders: [], params: [atom("nonHost")], result: array(atom("unknown")) } },
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];",
+  { host: obligated("the object", "hands the values of its own fields to the program"), trust: withinB("ECMA-262 sec-object.entries", "top"), global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];",
     stated: { binders: [], params: [atom("nonHost")], result: array({ k: "tuple", presence: "dense", readonly: false,
       required: [atom("string"), atom("unknown")], optional: [], rest: null, span: at }) } },
   // `Object.getOwnPropertyDescriptor(o, k)`: ToObject of `o` (a TypeError of
@@ -744,7 +750,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // descriptor: `configurable` and `enumerable` Booleans, and `value` and
   // `writable`, or `get` and `set`. Nothing is known of `value`, a getter or
   // a setter: each is `unknown`, and the fields are stated readonly.
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptor",
+  { host: obligated("the object", "hands the values of its own fields to the program"), trust: withinB("ECMA-262 sec-object.getownpropertydescriptor", "top"), global: "Object", member: "getOwnPropertyDescriptor",
     signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;", ownString: ownStringName,
     stated: { binders: [], params: [atom("nonHost"),
       { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
@@ -760,7 +766,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // is known of a `value`, a getter or a setter. Its fields are data
   // properties of objects no other reference holds, stated writable, as
   // the dictionary's index.
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptors",
+  { host: obligated("the object", "hands the values of its own fields to the program"), trust: withinB("ECMA-262 sec-object.getownpropertydescriptors", "top"), global: "Object", member: "getOwnPropertyDescriptors",
     signature: "getOwnPropertyDescriptors<T>(o: T): { [P in keyof T]: TypedPropertyDescriptor<T[P]>; } & { [x: string]: PropertyDescriptor; };",
     stated: { binders: [], params: [atom("nonHost")],
       result: { k: "object", fields: [], stringIndex: { readonly: false, value: freshDescriptor, span: at }, calls: [], span: at } } },
@@ -773,10 +779,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // dictionary's keys hold data properties (the caller contract, and the
   // fragment's own objects), so each reads them without running code and
   // writes only what it allocates: the empty footprint.
-  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
+  { host: transparent("the parameter is a dictionary, whose family admits no host object"), trust: withinB("ECMA-262 sec-object.values", "top"), global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
     effect: emptyEffect,
     stated: { binders: ["T"], params: [dictionary(binder("T"))], result: array(binder("T")) } },
-  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "entries", effect: emptyEffect,
+  { host: transparent("the parameter is a dictionary, whose family admits no host object"), trust: withinB("ECMA-262 sec-object.entries", "top"), global: "Object", member: "entries", effect: emptyEffect,
     signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
     stated: { binders: ["T"], params: [dictionary(binder("T"))],
       result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
@@ -785,7 +791,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // (`Tag.isArray`): true of exactly the objects that own an array spine,
   // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
   // is not read: Lean narrows by the clauses of the tested value's type.
-  { host: contract, global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
+  { host: contract, trust: withinB("ECMA-262 sec-array.isarray", "top"), global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   // `e instanceof Array`, entered by the variable's declaration: the same
   // test. `Array` owns no `[Symbol.hasInstance]`, and `Function.prototype`'s
   // cannot be replaced, so the operator walks `e`'s prototype chain for
@@ -794,13 +800,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // object inherits from `Array.prototype` but an array (the fragment makes
   // none: `class extends Array` and `Object.create` are refused, and it
   // cannot name `Array.prototype`).
-  { host: contract, global: "Array", signature: "Array: ArrayConstructor", test: "isArray" },
+  { host: contract, trust: withinB("ECMA-262 sec-array", "top"), global: "Array", signature: "Array: ArrayConstructor", test: "isArray" },
   // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
   // `T[]` at every `T`: the non-generic declaration's `any[]` states less
   // than that. An argument is refused: a single number is a length, and the
   // array it makes has holes, whose element contract would need a separate check.
   ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "Array", signature,
+    (signature): GlobalEntry => ({ host: contract, trust: withinB("ECMA-262 sec-array", "top"), global: "Array", signature,
       stated: { binders: ["T"], params: [], result: { k: "array", presence: "readable", readonly: false, element: binder("T"), span: at } } })),
   // `new Array<T>(n)` makes `n` holes, which a readable `T[]` admits only
   // where `undefined` meets `T`: read only where `fill(v)`, the standard
@@ -813,7 +819,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `fill` returns it. So the expression is `%ArrayFilled%(%ArrayLength%(n),
   // v)`, in JavaScript's order: `n`, the check, `v`, then the array, whose
   // allocation no code observes.
-  { host: contract, global: "Array", signature: "new <T>(arrayLength: number): T[];",
+  { host: contract, trust: withinB("ECMA-262 sec-array", "top"), global: "Array", signature: "new <T>(arrayLength: number): T[];",
     filled: { length: arrayLengthName, fill: arrayFilledName } },
   // `new Error(m)` with a string owns `message`, that string, as a property
   // that is not enumerable, and inherits `name` from `Error.prototype`: the
@@ -840,7 +846,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // freshly allocated (`nonHostObject` and `freshObject`).
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
+    (signature): GlobalEntry => ({ host: contract, trust: withinB("ECMA-262 sec-error-message", "footprint"), global: "Error", signature,
       ...(signature.startsWith("new ") ? {} : { construct: true }), effect: footprintEffect(emptyFootprint, { onThrow: true, freshObject: true }),
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
         result: { k: "intersection", span: at, parts: [errorInstance(at), atom("nonHostObject")] } } })),
@@ -856,14 +862,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // is `"RangeError"` and which inherits from `Error.prototype`.
   ...(["TypeError", "RangeError"] as const).flatMap(global =>
     [`new (message?: string): ${global};`, `new (message?: string, options?: ErrorOptions): ${global};`].map(
-    (signature): GlobalEntry => ({ host: contract, global, signature, effect: footprintEffect(emptyFootprint, { onThrow: true }),
+    (signature): GlobalEntry => ({ host: contract, trust: withinB("ECMA-262 sec-nativeerror", "footprint"), global, signature, effect: footprintEffect(emptyFootprint, { onThrow: true }),
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
         result: errorInstance(at) } }))),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
   // which run no code on a string and a number, the calculus's primitive
   // types its declaration states: a number, `NaN` where `s` spells none.
   // It writes nothing: the empty footprint.
-  { host: contract, global: "parseInt", signature: "declare function parseInt(string: string, radix?: number): number;",
+  { host: contract, trust: withinB("ECMA-262 sec-parseint-string-radix", "top"), global: "parseInt", signature: "declare function parseInt(string: string, radix?: number): number;",
     effect: emptyEffect },
   // The DOM's global `atob(data)`, of the HTML standard's
   // WindowOrWorkerGlobalScope (Node's global `atob` follows the same
@@ -872,12 +878,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // the decoded bytes, one code unit each, or throws an
   // `InvalidCharacterError` DOMException, an outcome. It writes nothing:
   // the empty footprint, on a throw too.
-  { host: contract, global: "atob", signature: "declare function atob(data: string): string;",
+  { host: contract, trust: withinB("WHATWG HTML atob", "footprint"), global: "atob", signature: "declare function atob(data: string): string;",
     effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // `parseFloat(s)` converts `s` by ToString, which runs no code on a string,
   // the primitive its declaration states: a number, `NaN` where no prefix of
   // `s` spells one. It writes nothing: the empty footprint.
-  { host: contract, global: "parseFloat", signature: "declare function parseFloat(string: string): number;",
+  { host: contract, trust: withinB("ECMA-262 sec-parsefloat-string", "top"), global: "parseFloat", signature: "declare function parseFloat(string: string): number;",
     effect: emptyEffect },
   // Node's global `clearTimeout(t)`, declared in `@types/node`: of a
   // number or a string, it cancels the timer of that id; of an object, it
@@ -889,7 +895,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `library-project`'s).
   ...["function clearTimeout(timeout: NodeJS.Timeout | string | number | undefined): void;",
     "function clearTimeout(timeoutId: NodeJS.Timeout | string | number | undefined): void;"].map(
-    (signature): GlobalEntry => ({ host: contract, origin: node, global: "clearTimeout", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, trust: withinB("WHATWG HTML timers clearTimeout", "top"), global: "clearTimeout", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("undefined") } })),
   // Node's global `setTimeout(callback, delay)` schedules the callback, which
   // the host calls with no argument after the delay, between synchronous
@@ -901,7 +907,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     "function setTimeout(callback: (_: void) => void, delay?: number): NodeJS.Timeout;",
     "function setTimeout<TArgs extends any[]>(\n            callback: (...args: TArgs) => void,\n            ms?: number,\n            ...args: TArgs\n        ): NodeJS.Timeout;",
     "function setTimeout(callback: (args: void) => void, ms?: number): NodeJS.Timeout;"].map(
-    (signature): GlobalEntry => ({ host: contract, origin: node, global: "setTimeout", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, trust: { onThrow: "top", stores: "operands", callsArgs: "later", passesOwnAllocations: false,
+      spec: "WHATWG HTML timer initialization steps, setTimeout" }, global: "setTimeout", signature,
       stated: { binders: [], params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [], rest: null,
         result: atom("unknown"), span: at }, optional(atom("number"))], result: atom("unknown") } })),
   // Node's global `structuredClone(value)` serializes its argument, reading
@@ -915,20 +922,20 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["function structuredClone<T>(\n            value: T,\n            options?: { transfer?: Transferable[] },\n        ): T;",
     "function structuredClone<T>(\n        value: T,\n        transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> },\n    ): T;"].map(
     (signature): GlobalEntry => ({ host: contract,
-      origin: node, global: "structuredClone", signature,
+      origin: node, trust: withinB("WHATWG HTML structuredClone", "top"), global: "structuredClone", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
   // `Math.abs(x)`, `Math.ceil(x)`, `Math.floor(x)`, `Math.round(x)`,
   // `Math.fround(x)` and `Math.sign(x)` of a number, a primitive: no
   // conversion code runs.
-  { host: contract, global: "Math", member: "abs", signature: "abs(x: number): number;", effect: emptyEffect },
-  { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
-  { host: contract, global: "Math", member: "floor", signature: "floor(x: number): number;", effect: emptyEffect },
-  { host: contract, global: "Math", member: "sign", signature: "sign(x: number): number;", effect: emptyEffect },
-  { host: contract, global: "Math", member: "round", signature: "round(x: number): number;", effect: emptyEffect },
-  { host: contract, global: "Math", member: "fround", signature: "fround(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.abs", "top"), global: "Math", member: "abs", signature: "abs(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.ceil", "top"), global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.floor", "top"), global: "Math", member: "floor", signature: "floor(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.sign", "top"), global: "Math", member: "sign", signature: "sign(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.round", "top"), global: "Math", member: "round", signature: "round(x: number): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.fround", "top"), global: "Math", member: "fround", signature: "fround(x: number): number;", effect: emptyEffect },
   // `Math.random()`: a number in [0, 1); it reads no argument and writes no
   // location a program can reach.
-  { host: contract, global: "Math", member: "random", signature: "random(): number;", effect: emptyEffect },
+  { host: contract, trust: withinB("ECMA-262 sec-math.random", "top"), global: "Math", member: "random", signature: "random(): number;", effect: emptyEffect },
   // `Object.fromEntries(entries)` iterates `entries` and, for each element,
   // reads its 0 and 1, converts the key by ToPropertyKey and defines it as
   // an own data property of a fresh object (CreateDataPropertyOrThrow, a
@@ -938,7 +945,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // written. A program's iterable would run its iterator, client code, and
   // a key of another type its conversion: stated at an array of string-keyed
   // pairs, its result a dictionary of `T`.
-  { host: transparent("an array of pairs, which no node list is"), global: "Object", member: "fromEntries",
+  { host: transparent("an array of pairs, which no node list is"), trust: withinB("ECMA-262 sec-object.fromentries", "top"), global: "Object", member: "fromEntries",
     signature: "fromEntries<T = any>(entries: Iterable<readonly [PropertyKey, T]>): { [k: string]: T; };", effect: emptyEffect,
     stated: { binders: ["T"], params: [readonlyArray({ k: "tuple", presence: "dense", readonly: true,
       required: [atom("string"), binder("T")], optional: [], rest: null, span: at })],
@@ -956,7 +963,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // forms are stated at either declaration, since the host takes the same
   // steps whichever TypeScript resolves.
   ...["from<T>(arrayLike: ArrayLike<T>): T[];", "from<T>(iterable: Iterable<T> | ArrayLike<T>): T[];"].map(
-    (signature): GlobalEntry => ({ host: transparent("the array's spine: a node list's table"), global: "Array",
+    (signature): GlobalEntry => ({ host: transparent("the array's spine: a node list's table"), trust: withinB("ECMA-262 sec-array.from", "top"), global: "Array",
       member: "from", signature, effect: emptyEffect,
       forms: [{ binders: ["T"], params: [readonlyArray(binder("T"))], result: array(binder("T")) },
         { binders: ["T"], params: [atom("string")], result: array(atom("string")) }] })),
@@ -977,7 +984,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["from<T, U>(arrayLike: ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];",
     "from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];"].map(
     (signature): GlobalEntry => ({ host: transparent("the record's length or its iterator, whose values the callback takes at unknown"),
-      global: "Array", member: "from", signature,
+      trust: withinB("ECMA-262 sec-array.from", "top"), global: "Array", member: "from", signature,
       forms: [{ binders: ["U"], params: [
         { k: "object", stringIndex: null, calls: [], span: at,
           fields: [{ name: "length", optional: false, readonly: true, type: atom("number"), span: at }] },
@@ -997,7 +1004,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `RegExp` annotation states (SOURCE-CONTRACTS.md, "Regular
   // expressions"). It writes nothing it did not allocate, on its throw too.
   ...["new (pattern: RegExp | string, flags?: string): RegExp;", "new (pattern: string, flags?: string): RegExp;",
-    "new (pattern: RegExp | string): RegExp;"].map((signature): GlobalEntry => ({ host: contract, global: "RegExp", signature,
+    "new (pattern: RegExp | string): RegExp;"].map((signature): GlobalEntry => ({ host: contract, trust: withinB("ECMA-262 sec-regexp-pattern-flags", "footprint"), global: "RegExp", signature,
       effect: footprintEffect(emptyFootprint, { onThrow: true }),
       stated: library => ({ binders: [], params: signature.includes("flags")
         ? [atom("string"), optional(atom("string"))] : [atom("string")], result: library("RegExp", []) }) })),
@@ -1010,25 +1017,26 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // (`Object.create`, a class extending `Error`), so the test narrows
   // nothing (SOURCE-FRAGMENT.md), and is read as the intrinsic stating the
   // Boolean alone.
-  { host: contract, global: "Error", signature: "Error: ErrorConstructor", intrinsic: instanceOfErrorName },
+  { host: contract, trust: withinB("ECMA-262 sec-instanceofoperator", "top"), global: "Error", signature: "Error: ErrorConstructor", intrinsic: instanceOfErrorName },
   // `e instanceof Map` and `e instanceof Set`: neither owns a
   // `[Symbol.hasInstance]`, so the operator walks `e`'s prototype chain for
   // `Map.prototype` or `Set.prototype`, as for `Error`. The answer `true`
   // promises `e` the collection's reading view, by the host assumption that
   // a value passing the test is a host collection (`intrinsics.mts`).
-  { host: contract, global: "Map", signature: "Map: MapConstructor", intrinsic: instanceOfMapName },
-  { host: contract, global: "Set", signature: "Set: SetConstructor", intrinsic: instanceOfSetName },
+  { host: contract, trust: withinB("ECMA-262 sec-instanceofoperator", "top"), global: "Map", signature: "Map: MapConstructor", intrinsic: instanceOfMapName },
+  { host: contract, trust: withinB("ECMA-262 sec-instanceofoperator", "top"), global: "Set", signature: "Set: SetConstructor", intrinsic: instanceOfSetName },
   // PromiseResolve retains a native promise with the built-in standard
   // constructor, and freshly resolves stably non-thenable values. Without a
   // value, the promise settles to `undefined`, as an async completion does.
-  { host: contract, global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
+  { host: contract, trust: withinB("ECMA-262 sec-promise.resolve", "top"), global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
     intrinsic: promiseResolveName },
-  { host: contract, global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
+  { host: contract, trust: withinB("ECMA-262 sec-promise.resolve", "top"), global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
   // `%PromiseAll%`: an array of promises, each settling to its type
   // argument as `%Await%` assumes, gives a promise of the array of their
   // values. The declaration's parameter, values of any kind each adopted, is
   // stated as an array of promises.
-  { host: transparent("elements at Promise types: realm promises by the await assumption"), global: "Promise", member: "all",
+  { host: transparent("elements at Promise types: realm promises by the await assumption"), trust: { onThrow: "top", stores: "other", callsArgs: "during", passesOwnAllocations: false,
+      spec: "ECMA-262 sec-promise.all, sec-performpromiseall, sec-performpromisethen" }, global: "Promise", member: "all",
     signature: "all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;",
     intrinsic: promiseAllName },
   // `new Set<T>(xs)` is a fresh set of the array's elements, `new Set<T>()`
@@ -1051,10 +1059,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // is the untampered `Set.prototype`. It reads `s` and allocates.
   // A further form admits an array or the host view at one element type,
   // including a host set with an empty-array fallback.
-  { host: transparent("the array's spine: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's spine: a node list's table"), trust: withinB("ECMA-262 sec-set-iterable", "top"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
-  { host: transparent("the array's spine: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's spine: a node list's table"), trust: withinB("ECMA-262 sec-set-iterable", "top"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
     forms: (library, view) => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) },
@@ -1063,7 +1071,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // Only empty construction: no iterator, entry access or overridden adder runs.
   ...["new <K extends WeakKey = WeakKey, V = any>(entries?: readonly (readonly [K, V])[] | null): WeakMap<K, V>;",
     "new <K extends WeakKey = WeakKey, V = any>(iterable?: Iterable<readonly [K, V]> | null): WeakMap<K, V>;"]
-    .map((signature): GlobalEntry => ({ host: transparent("empty native collection allocation"), global: "WeakMap", signature,
+    .map((signature): GlobalEntry => ({ host: transparent("empty native collection allocation"), trust: withinB("ECMA-262 sec-weakmap-iterable", "top"), global: "WeakMap", signature,
       effect: emptyEffect, stated: library => ({ binders: ["K", "V"], params: [],
         result: library("WeakMap", [binder("K"), binder("V")]) }) })),
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
@@ -1080,7 +1088,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // returns the empty map before looking up `set` or obtaining an iterator.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
-    .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), global: "Map", signature, effect: emptyEffect,
+    .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), trust: withinB("ECMA-262 sec-map-iterable", "top"), global: "Map", signature, effect: emptyEffect,
       forms: (library, view) => {
         const pairs: Stated = { binders: ["K", "V"],
           params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
@@ -1095,21 +1103,22 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // interface is, is converted by its own `valueOf` or `toString`: it is
   // stated at the primitives. With several numbers, each is a component.
   // An invalid date is a `Date` all the same, whose getters give `NaN`.
-  { host: contract, global: "Date", signature: "new (): Date;" },
+  { host: contract, trust: withinB("ECMA-262 sec-date", "top"), global: "Date", signature: "new (): Date;" },
   ...["new (value: number | string): Date;", "new (value: number | string | Date): Date;"]
-    .map((signature): GlobalEntry => ({ host: contract, global: "Date", signature,
+    .map((signature): GlobalEntry => ({ host: contract, trust: withinB("ECMA-262 sec-date", "top"), global: "Date", signature,
       stated: library => ({ binders: [], params: [{ k: "union", parts: [atom("number"), atom("string")], span: at }],
         result: library("Date", []) }) })),
-  { host: contract, global: "Date",
+  { host: contract, trust: withinB("ECMA-262 sec-date", "top"), global: "Date",
     signature: "new (year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): Date;" },
   // The current time, a number.
-  { host: contract, global: "Date", member: "now", signature: "now(): number;" },
+  { host: contract, trust: withinB("ECMA-262 sec-date.now", "top"), global: "Date", member: "now", signature: "now(): number;" },
   // `JSON.parse(text)` is a fresh `ParsedJson` built from the text, or a
   // SyntaxError. It runs no code of the client's and writes only what it
   // allocates, also before it throws: the empty footprint, on a throw too.
   // A reviver is client code the host would call on every member, and whose
   // results replace them: the call is read with the text only.
-  { host: contract, global: "JSON", member: "parse",
+  { host: contract, trust: { onThrow: "footprint", stores: "operands", callsArgs: "during", passesOwnAllocations: true,
+      spec: "ECMA-262 sec-json.parse, sec-internalizejsonproperty" }, global: "JSON", member: "parse",
     signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
     stated: { binders: [], params: [atom("string")], result: parsedJson }, definitions: [parsedJsonDefinition],
     effect: footprintEffect(emptyFootprint, { onThrow: true }) },
@@ -1123,7 +1132,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // and writes nothing: it reads own data properties and allocates the
   // string, also before it throws on a cycle, so the empty footprint holds
   // on a throw too.
-  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), global: "JSON", member: "stringify",
+  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), trust: { onThrow: "footprint", stores: "operands", callsArgs: "during", passesOwnAllocations: true,
+      spec: "ECMA-262 sec-json.stringify, sec-serializejsonproperty" }, global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue, optional(atom("null")),
       optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
@@ -1132,7 +1142,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // The overload whose replacer is a list of keys, which `JSON.stringify`
   // reads by its length and indices, primitive numbers and strings whose
   // conversion runs no code; or `null` or absent, as the other.
-  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), global: "JSON", member: "stringify",
+  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), trust: withinB("ECMA-262 sec-json.stringify", "footprint"), global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (number | string)[] | null, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue, optional({ k: "union", span: at, parts: [atom("null"),
       readonlyArray({ k: "union", parts: [atom("number"), atom("string")], span: at })] }),
@@ -1142,16 +1152,30 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `%PromiseReject%`: a promise rejected with the reason, whose await
   // throws it, an outcome; it settles to no value, so it is a promise of
   // every type. The declared `any` is read as `unknown`: nothing runs on it.
-  { host: contract, global: "Promise", member: "reject", signature: "reject<T = never>(reason?: any): Promise<T>;",
+  { host: contract, trust: withinB("ECMA-262 sec-promise.reject", "top"), global: "Promise", member: "reject", signature: "reject<T = never>(reason?: any): Promise<T>;",
     intrinsic: promiseRejectName },
   // `%NewPromise%`: the executor is called at once with the promise's
   // resolving functions, and a throw out of it rejects the promise. The
   // declared `resolve` adopts a thenable (`T | PromiseLike<T>`); stated, it
   // takes a primitive, on which it settles.
-  { host: contract, global: "Promise",
+  { host: contract, trust: { onThrow: "top", stores: "operands", callsArgs: "during", passesOwnAllocations: true,
+      spec: "ECMA-262 sec-promise-executor, sec-createresolvingfunctions" }, global: "Promise",
     signature: "new <T>(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;",
     intrinsic: newPromiseName },
 ];
+/** **The overlay's trust fields, checked when it is loaded**
+ * (`checkTrust`): every entry, at the effects its signatures state, each
+ * stated form's own or the entry's. A stated form's types do not change its
+ * effect, so a form a library reference states is read at placeholder
+ * types. */
+const globalsTrust: void = globalsOverlay.forEach(entry => {
+  const placeholder = (): TypeTerm => ({ k: "atom", name: "unknown", span: [0, 0] });
+  const stated = typeof entry.stated === "function" ? entry.stated(placeholder, placeholder) : entry.stated;
+  const forms = typeof entry.forms === "function" ? entry.forms(placeholder, placeholder) : entry.forms;
+  const signatures = [...(stated ? [stated] : []), ...(forms ?? [])];
+  checkTrust(`${entry.global}${entry.member === undefined ? "" : `.${entry.member}`}`, entry.trust,
+    signatures.length ? signatures.map(s => s.effect ?? entry.effect) : [entry.effect]);
+});
 
 /** A declaration-text matcher preserves array spines on normal return. */
 export type GlobalSignatureMatcher = (signature: string) =>
