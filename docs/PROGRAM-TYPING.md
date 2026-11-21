@@ -3007,7 +3007,7 @@ A new expression rule touches each layer once:
    (`tests/node-runs.mts`) when it guards a JavaScript behaviour, and a
    control in `tests/single-pass-controls.mts` (a forced proposal or a forged
    fragment) when the rule reads a type whose program point elaboration chooses
-   ([which tests to keep](../AGENTS.md#which-tests-to-keep)).
+   ([which tests to keep](../tests/README.md#which-tests-to-keep)).
 
 ## Control flow
 

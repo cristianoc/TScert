@@ -9,7 +9,9 @@ The pipeline cases are listed in [`pipeline/cases.mts`](../pipeline/cases.mts),
 each a source file under [`pipeline/examples/`](../pipeline/examples/) with its
 expected outcome, run by `pipeline/run-cases.mts` (`make test-cases`, and
 `make cases P=…` for those whose names contain `P`); the controls no case can
-make are `single-pass-controls.mts`'s. Two families in
+make are `single-pass-controls.mts`'s. The cases run in one worker process
+per core, each keeping its TypeScript compiler between cases, with progress
+on standard error. Two families in
 `pipeline/examples/` hold one source per feature, every function checked:
 
 - `stateful-source/`: storage contracts, refinements, loops, generics and the
@@ -95,6 +97,52 @@ pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 | `unchecked-project/gaps.mts` | Unmarked: the documented gaps, programs the check accepts by its stated limit (the relations `any` satisfied in an outside declaration are not re-established) though the written program or the written types refuse them. |
 | [`unchecked-broken/`](unchecked-broken/) | A project the command must refuse: its external declaration names a type that does not exist. |
 | `node-shapes-corpus/` | Sources the compiler-API shape check walks beside the repository's own: TypeScript, JSX, JavaScript with JSDoc, declarations and recovered syntax. |
+
+## Which tests to keep
+
+The pipeline cases (`pipeline/cases.mts`) are the primary signal: they
+exercise the unproved parts together (parser, lowering, the pass's front,
+wire); what Lean proves needs no test.
+
+- **Prefer a pipeline case:** a new feature's test is a source file with its
+  expected outcome, positive and negative, not a unit test of an
+  intermediate step.
+- **Feature gaps follow the census.** A safe feature-gap case with no census
+  association is not kept, unless another test depends on it or it
+  exercises an explicit, enforced fragment or contract restriction; negative
+  cases whose programs are unsafe under the stated assumptions are kept.
+  Removing a feature case changes the test inventory, not the supported
+  fragment or measured coverage; reconcile its documentation and any work
+  item whose sole obligation is that case.
+- **Research tests are temporary:** a test written while working a feature
+  out (a Lean `#guard` on a hand-built graph, a probe of one tool) is
+  retired in the same or the next commit once a case covers the behaviour.
+- **Keep a test only for what the pipeline cannot show:** a refusal no source
+  can reach (a forged fragment, a forced proposal, a tampered declaration),
+  a boundary of a trusted input (the `ArrayProto` overlay), or a
+  speed-critical check.
+- **Remove what adds no signal:** a test a proof already covers, or one that
+  repeats another's inputs through the same path. A forged-fragment control
+  is removed only once it is shown not to test lowering, which is unproved.
+
+## The suite's shape
+
+- **Suites start together:** a suite is a `run_test <seconds> "Name"
+  command…` line of [test-all.sh](../test-all.sh), a failure counted, never
+  fatal, its budget about three times its healthy duration on 12 cores, at
+  least 30 s.
+- **A case is a source with its expected outcome; anything else is a
+  control.** A check of a source through the pipeline is a case of
+  `pipeline/cases.mts`; a check of the verifier or the pipeline on an input
+  no case makes (a forged fragment, a forced proposal, a mutation, an
+  injected failure, a family override) is a control of
+  `tests/single-pass-controls.mts`; a check running no stage is a suite of
+  `test-all.sh`. Mutation controls stay in `make test-checks`: each shows a
+  check of the pass is what refuses a unit.
+- **Controls replay like stages:** each registers with `control(name, …)`,
+  is independent of the others and states its own family overrides
+  ([controls](../docs/STAGE-STORE.md#controls)); a control of the store itself
+  names a fresh store and runs in `make test-infra`.
 
 ## Adding a case
 

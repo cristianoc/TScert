@@ -251,6 +251,23 @@ at every admissible assignment of their type parameters. All elaborated plans
 pass through the checked conversion to `CertifiedPlan`; acceptance cannot
 silently omit an unhandled kind of plan.
 
+The invariant is kept by construction. The acceptance path consumes the
+complete `FunctionPlan` sum through one exhaustive conversion
+(`FunctionPlan.certify`, which `PassUnit.MemberSafe` states), never through
+`filterMap`, an `Option`, or a projection that can discard a plan variant.
+A new plan constructor makes that conversion fail to compile; it becomes
+certified only with a checker and a theorem connecting its successful check
+to the semantic property, and until then it is a located gap, never
+`verified`. The theorem's premise (`Mode8Accepted`) is the exact CLI
+condition for an accepted verdict and its conclusion safety for every
+function of the unit; a theorem about a retained subset, a decoded bundle
+or a Boolean alone is not an acceptance soundness theorem. The axiom check
+checks how a theorem was proved, not what it states, so the premise and
+conclusion are reviewed whenever the accepted plan type or CLI path
+changes. The front's proposals (types, loop-head facts, effects) and
+inference's runs are intermediate artifacts, never labelled verified
+before their plan reaches `CertifiedPlan`.
+
 This is a theorem about the lowered calculus program. Correspondence between
 source JavaScript and that program, the interpretation of annotations, and the
 host's compliance with assumed contracts remain review obligations. The
@@ -669,8 +686,14 @@ One line each; the reason is the one the design keeps.
 - **Generic bodies are graph requests over parameter rows**, certified at
   every assignment admitted by their source signature.
 - **One row per generic application**, lowered from an empty visit.
-- **Wire formats carry no version and have one shape**; writers and
-  readers are typed against one declaration.
+- **Wire formats carry no version, profile or schema tag, and have one
+  shape**; writers and readers are typed against one declaration, and every
+  decoder requires the shape field by field and rejects an unknown field, so
+  a document has exactly the current shape or is refused. A checked `sha256`
+  field states source staleness; the declaration document relies on
+  TypeScript's project and source trees. Every producer and consumer is in
+  this repository, so a change of shape is made in place, with its fixtures
+  regenerated, and no compatibility shim, second decoder or shape field.
 - **Strings' lengths are not tracked**: `s[i]` is `string | undefined`.
 - **Relational comparison admits only operands whose conversion runs no
   code**: two strings, or two numbers, bigints, Booleans, `null` or

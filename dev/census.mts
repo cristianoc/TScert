@@ -12,6 +12,9 @@
 // invocations, the edges the census adds to the units' own dependencies, and
 // the directory's statement inventory. A selection of files or functions
 // checks their dependency closure too, unless `--shallow` or a shard.
+// `--shard i/n` checks every n-th file from the i-th, shallow only, so n
+// processes split a census and share the stage store; a later run replays
+// what an earlier one computed.
 //   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shallow] [--shard i/n]
 //       [--out dir] [--record file]
 //   node dev/census.mts report <record.json[,shard.json…]> [--per-function]
@@ -20,15 +23,16 @@
 //   node dev/census.mts refusals <record.json[,…]>
 // `report` prints the shallow and deep counts, the initializations blocking
 // deep status with how many functions each blocks, statement coverage under
-// both, and each stage's cost, CPU time first; with two records, their
-// movement. `coverage` computes statement coverage for a record from the
+// both, and each stage's cost, CPU time first; with two records (each one
+// record or its shards' records), their movement: functions gained and lost,
+// timeouts, changed outcomes, each stage's time and statement coverage. `coverage` computes statement coverage for a record from the
 // sources of its commit (of the checkout for a census of a dirty tree, or by
 // `--sources`). `refusals` prints, as JSON, the units whose own result is a
 // refusal grouped by the blocker their first refusal names and the source
 // text it refuses, each group weighted by its functions' sizes, the heaviest
 // first, and each function blocked only through its closure with the unit
-// blocking it. The step limit is TSCERT_STEP_LIMIT's, the store
-// TSCERT_STAGE_STORE's.
+// blocking it. The step limit is TSCERT_STEP_LIMIT's (`make census` sets 300 s
+// unless it is set), the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";

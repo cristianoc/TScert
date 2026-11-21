@@ -76,14 +76,14 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 ## Cases, controls and tests
 
-- **case** / **pipeline case**: a source file with its expected outcome, run through the whole pipeline (`pipeline/cases.mts`) ([which tests to keep](../AGENTS.md#which-tests-to-keep), [test index](../tests/README.md)).
+- **case** / **pipeline case**: a source file with its expected outcome, run through the whole pipeline (`pipeline/cases.mts`) ([which tests to keep](../tests/README.md#which-tests-to-keep), [test index](../tests/README.md)).
 - **control**: a check on an input no case can make, such as a forged document, a forced proposal or a mutated verifier (`tests/single-pass-controls.mts`) ([controls](STAGE-STORE.md#controls)).
 - **forged claim** / **forged document**: a claim or document a control writes by hand to show the verifier refuses it ([controls](STAGE-STORE.md#controls)).
 - **mutation verifier**: a test-only verifier build in which a control disables a selected check (`TSCERT_TEST_MUTATIONS`), to show that check is load-bearing ([controls](STAGE-STORE.md#controls)).
 - **negative case**: a case expected to be refused ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Node counterexample**: a negative case run under Node to show the behaviour its refusal excludes (`tests/node-runs.mts`) ([adding a source form](SOURCE-ELABORATION.md#adding-a-source-form)).
 - **positive case**: a case expected to verify ([the record](../.claude/skills/review/SKILL.md#the-record)).
-- **suite** (`make test-checks`, `make test-cases`; `make test` runs both): the fast checks and controls, and the pipeline cases ([the suite's shape](../AGENTS.md#the-suites-shape-and-the-rules-that-keep-it)).
+- **suite** (`make test-checks`, `make test-cases`; `make test` runs both): the fast checks and controls, and the pipeline cases ([the suite's shape](../tests/README.md#the-suites-shape)).
 
 ## Stage store, census and measurement
 
@@ -249,5 +249,5 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **investigation**: a WORK row for a failure whose cause is not known ([conventions](../AGENTS.md#conventions)).
 - **method-effects draft**: the design of stated effects for class methods and fields, whose decisions D1–D8 records cite ([method effects](drafts/method-effects.md)).
 - **owner**: the project's maintainer, who decides the designs kept as drafts ([documentation map](DESIGN.md#documentation-map)).
-- **review** (of a branch): the independent review a branch passes before it merges; a commit titled "Review repairs" fixes its findings ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
+- **review** (of a branch): the independent review a branch passes before it merges; a commit titled "Review repairs" fixes its findings ([how a pull request lands](../AGENTS.md#how-a-pull-request-lands)).
 - **WORK row** / **status table**: the one place progress is recorded, a row per item of work ([status](../WORK.md#status)).

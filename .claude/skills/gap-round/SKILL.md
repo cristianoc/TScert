@@ -5,12 +5,45 @@ description: One round of gap work on TScert's own code, run on main without sto
 
 # A gap round
 
-The policy lives in CLAUDE.md, under
-[choosing the gap cases to work on](../../../CLAUDE.md#choosing-the-gap-cases-to-work-on),
-and in the routes of
-[deciding what a refusal calls for](../../../docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
-This skill is the order in which a round runs them. The owner's request
-starts the round, and the round runs to the end without asking.
+The policy is the section below and the routes of
+[deciding what a refusal calls for](../../../docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
+([choosing the gap cases](../../../AGENTS.md#choosing-the-gap-cases-to-work-on)
+states the rule every agent follows). The rest of this skill is the order
+in which a round runs them. The owner's request starts the round, and the
+round runs to the end without asking.
+
+## The policy
+
+Gap work runs from the census of main and
+`node dev/census.mts refusals <record>`, whose record keeps each refused
+unit's own refusal.
+
+- A reason counts when it names one construct, whatever stage refuses it;
+  one that may stand for several causes (a refused obligation, an
+  expression with no computed type) is first split into its causes by the
+  functions it meets. A reason blocking much code that no pipeline case
+  shows gets a case example: the smallest source with that refusal, its
+  header naming the census functions it stands for.
+- Cases are worked in the order of their reasons' weight: each function a
+  reason blocks counts 10 / (10 + its statements), since a small function
+  has fewer refusals behind its first and verifies sooner when its reason
+  is closed.
+- Before a route is chosen, a reason's sites are split by whether TScert's
+  own code discards what it already knew (a parsed JSON value typed
+  `unknown`): those sites are repaired in the code. Every other site takes
+  the first route that establishes the obligation at acceptable cost.
+- A case blocked by external code no contract describes yet is answered by
+  describing it, in whatever shape it needs; the owner reviews the trust
+  that description states before the merge, and the work does not wait on
+  that review. An assumption that standard objects are not tampered with
+  (no method of a Node or JavaScript built-in prototype or object replaced,
+  or wrapped in a getter, by any code) is approved by this policy; any
+  other kind goes to the owner.
+- The [gap-priorities deep dive](../../../docs/deep-dives/gap-priorities)
+  presents the ranking and each case, closed or open; after the census on
+  main that follows a batch of merged cases, it is rebuilt from that census
+  and reaches the owner marked since the version last approved
+  ([a revised deck](../../../docs/STYLE.md#a-revised-deck)).
 
 - Commits and local merges on main need no approval. A push needs the
   owner's instruction for that push.
