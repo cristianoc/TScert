@@ -5,21 +5,22 @@ with a semantic model and soundness proofs in Lean, a single pass that
 computes and checks each unit's types and facts, and a pipeline that parses a
 TypeScript source and asks the pass whether each unit is safe.
 [README.md](README.md) is the entry point; [DESIGN.md](docs/DESIGN.md) holds the
-decisions. Everything below is what an agent needs to change things here
-without breaking the suite's shape.
+decisions. This guide holds the rules every agent follows here, the
+commands, and links to the documents that own each procedure.
 
 ## Continuing the work on the notes
 
 The work that makes the pass implement the rules of the notes "Tolerant
-frames" and "Read-only frames" is described, with its decisions, its roles and how to resume it
-from nothing, in [the parity skill](.claude/skills/parity/SKILL.md); its
-state is one row of [WORK.md](WORK.md#status).
+frames" and "Read-only frames" is described, with its decisions, its roles
+and how to resume it from nothing, in
+[the parity skill](.claude/skills/parity/SKILL.md); its state is one row of
+[WORK.md](WORK.md#status).
 
 ## Commands
 
 ```sh
 make help        # every target
-make test        # make test-checks, then make test-cases: every test
+make test        # make test-checks, then make test-cases
 make test-checks # build, then the fast checks and the controls, replayed from the store
 make test-infra  # build, then the tests of the test infrastructure (store, runner, replay, observed stages, sessions)
 make test-cases  # build, then the pipeline cases
@@ -30,182 +31,114 @@ make semantic-diff REV=rev          # render the commit records of a commit or r
 make build       # build-lean and build-runner: the Lean verifier and the stage runner
 make setup       # the node dependencies
 make clean-store # remove stage entries, timeout observations and the source snapshots no running process holds
-make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
+make test-pretext PRETEXT=checkout [FILES=…]  # the pretext tier
+make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHALLOW=1] [SHARD=i/n]  # the census of a directory's functions
+make fmt         # Prettier over the .json and .ts files .prettierignore admits; make check-fmt checks
 ```
+
+[tests/README.md](tests/README.md) indexes the cases, the controls and the
+suites.
 
 ### The stage store
 
-Every stage and every operation of a control replays from
+Every stage and every control's operation replays from
 [the stage store](docs/STAGE-STORE.md) by content, through
-[one mechanism](pipeline/stages.mts); the parse and TypeScript's diagnostics
-replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
-
-- The front end reads the file system only through `tools/files.mts`, and
-  opens its compiler only through `openFrontEndCompiler`
-  (`tools/compiler-channel.mts`); `tests/observed-stages.mts --reads`, a fast
-  check, refuses a module of the stages' code that imports a file-system,
-  module or process API itself.
-- A key covers every `.mts` file directly in `pipeline/` (and in `tools/` for
-  an in-process stage) by content, but the files `unkeyed` names
-  (`pipeline/stage-execution.mts`). Editing an unkeyed file replays every
-  entry; editing or adding any other file there misses every entry it keys.
-  A new file that only orchestrates or presents goes on `unkeyed`, with its
-  role stated in [keys](docs/STAGE-STORE.md#keys), in the same commit.
-- `TSCERT_STAGE_STORE=<dir>` selects the store, by default
-  `~/.cache/tscert/stages`, shared by every checkout and worktree; `off`
-  executes every stage. A branch uses the default store; an agent testing
-  the store itself names one under `$TMPDIR`. The store keeps itself within
-  `TSCERT_STORE_BUDGET` (15 GiB by default), the case runner, the census
-  and the controls starting a background pass that evicts the least
-  recently used entries ([location and size](docs/STAGE-STORE.md#location-and-size));
-  `make clean-store` removes every entry and timeout observation.
-- Each process stage is killed after 60 s, and a control's operation after
-  30 s unless the control states another limit;
-  `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
-  again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
-  it again at the same limit. The suites set it: a timeout a suite reports
-  is one of its own run; the census reuses recorded timeouts.
-- Each process stage is also stopped once its program's memory exceeds
-  8 GiB, a tool failure that is never published;
-  `TSCERT_STAGE_MEMORY=<gibibytes>` sets that limit
-  ([the runner](docs/STAGE-STORE.md#entries-and-timeouts)).
-- A run's directory holds `invocations.jsonl`, each stage invocation's
-  attempt: its stage key, limit, outcome and elapsed time.
+[one mechanism](pipeline/stages.mts). The front end reads the file system
+only through `tools/files.mts` and opens its compiler only through
+`openFrontEndCompiler` (`tools/compiler-channel.mts`). A new file of
+`pipeline/` or `tools/` that only orchestrates or presents goes on
+`unkeyed` (`pipeline/stage-execution.mts`), its role stated in
+[keys](docs/STAGE-STORE.md#keys), in the same commit. A branch uses the
+default store, shared by every checkout and worktree; an agent testing the
+store itself names one under `$TMPDIR` (`TSCERT_STAGE_STORE`). A process
+stage is killed after 60 s, a control's operation after 30 s, and a stage
+at 8 GiB of memory, a tool failure never published
+([entries and timeouts](docs/STAGE-STORE.md#entries-and-timeouts)).
 
 ### Iterating: run what the change touches
 
-The full battery is for deep changes. While iterating, run the narrowest tier
-that covers what changed, and the wider tier once before committing:
+Checks fall in rough cost classes: **seconds** (one case, one Lean module,
+`node tests/docs.mts`, `tsc`), **minutes** (the cases of a pattern, the
+controls, an incremental `lake build`), **tens of minutes** (all cases,
+`make test`, the pretext tier, a clean `lake build` in a new worktree,
+which is why a worktree clones `.lake`) and **hours** (the census).
 
-| Changed | While iterating | Before committing |
+Run the cheapest check the change can make fail. Widen only when the
+change can reach what the wider check covers and the narrower ones pass.
+Run each wide check once per change (the full suite in the pull request's
+`test` job, the census once after a merge), never again on an unchanged
+tree. A doc-only change runs `node tests/docs.mts` alone. A case that
+fails on a timeout while the machine is loaded is rerun by its pattern.
+The table is the principle's instance:
+
+| Changed | While iterating | Before merging |
 | --- | --- | --- |
-| One source file | `node pipeline/verify-source.mts <file.ts> [--project dir] [--contracts]` | — |
-| Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases (cases whose file names contain the pattern) | `make test` (the pipeline cases, and the controls: forged fragments and forced proposals no case can make) |
-| Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript and Lean use the same JSON field names), then `run-cases.mts` | `make test` |
-| Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | before merging to `single-pass`, `make test-pretext PRETEXT=<checkout>`; the wide suite and the census run in CI on `single-pass`, and CI's `pretext` job runs the tier at its pinned pretext commit on each pull request |
-
-`run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
-2026-10-16) and is `make test-cases` after its build. Cases run in one worker
-process per core, each keeping its TypeScript compiler between cases;
-progress goes to standard error.
-
-The wider tier runs once for each change of Lean, parser or shared-tool
-code. A later edit of cases, examples or docs alone reruns only
-the cases it touches (`run-cases.mts <pattern>`), and a doc edit runs
-`node tests/docs.mts`. A case that fails on a timeout while the machine is
-loaded is rerun by its pattern, not with the whole suite.
+| One source file | `node pipeline/verify-source.mts <file.ts>` | — |
+| Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases | `make test` (the cases, and the controls: forged fragments and forced proposals no case can make) |
+| Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts`, then `run-cases.mts` | `make test` |
+| Cases, examples | `run-cases.mts <pattern>` for the cases touched | — |
+| Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | `make test-pretext PRETEXT=<checkout>`; CI's `pretext` job runs it at its pinned pretext commit |
 
 ### Measuring coverage: once, on main
 
-Coverage reports follow [function coverage and release thresholds](docs/DESIGN.md#function-coverage-and-release-thresholds): state the count, denominator and scope; label statement coverage and aggregates separately.
+<!-- OWNER: work lands on `single-pass`; do the census and the gap rounds run on `main` or on `single-pass`? -->
 
-The census of the front end's own functions (each module of `tools/`
-checked whole, unit by unit, over one front per file; a function is
-shallow verified when its own unit is accepted) runs once on main, after a
-merge, and its movement is recorded then: the
-[Census workflow](.github/workflows/census.yml) runs it on each push to
-main, comments the movement on the pushed commit's pull request (as the
-machine user `tscert-bot`, mentioning the owner when a function is lost or
-statement coverage falls), publishes
-the report under `census/` on the repository's GitHub Pages and keeps the
-record as the run's artifact. A branch runs no census, over
-`tools/` or over a file. To show a change does what it is for, it runs the
-function the change targets and one function depending on it, before and
-after (`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`).
+Work lands on the line `single-pass`
+([where things are](.claude/skills/parity/SKILL.md#where-things-are)). The
+census runs on `main` once after each merge, by the
+[Census workflow](.github/workflows/census.yml); its commands are
+[`dev/census.mts`'s](dev/census.mts). A branch runs no census, over
+`tools/` or over a file: it shows a change does what it is for by the
+function it targets and one depending on it, before and after
+(`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`). A coverage report
+states the count, denominator and scope, and labels statement coverage and
+aggregates separately
+([function coverage](docs/DESIGN.md#function-coverage-and-release-thresholds)).
 
 ### Choosing the gap cases to work on
 
-A round of this work runs in the order of the
-[gap-round skill](.claude/skills/gap-round/SKILL.md), its agents briefed by
-[its brief](.claude/skills/gap-round/brief.md).
-Work on coverage follows two steps, both from the census of main
-(`make census`), whose record keeps each refused unit's own refusal:
-
-1. **Where proofs fail:** `node dev/census.mts refusals <record>` groups
-   the refused functions by the blocker their unit's refusal names, with
-   the statements each group blocks. Every reason
-   that names one construct counts, whatever stage refuses it; a reason
-   that may stand for several causes (a refused obligation, an expression
-   with no computed type) is first split into
-   its causes by the functions it meets. A reason blocking much code that
-   no pipeline case shows gets a case example: the smallest source with
-   that refusal, its header naming the census functions it stands for.
-2. **Priority:** the gap cases are worked in the order of the reasons they
-   show, by the weight `census.mts refusals` gives them: each function a
-   reason blocks counts 10 / (10 + its statements), since a small function
-   has fewer refusals behind its first and verifies sooner when its reason
-   is closed. Each is answered by the routes of
-   [deciding what a refusal calls for](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
-   Before a route is chosen, a reason's sites are split by whether
-   TScert's own code discards what it already knew (a parsed JSON value
-   typed `unknown`): those sites are repaired in the code. A case blocked
-   by external code no contract describes yet is answered by describing
-   it, in whatever shape it needs; the trust that description states is
-   reviewed by the owner before the merge, not waited on. An assumption
-   that standard objects are not tampered with (no method of a Node or
-   JavaScript built-in prototype or object replaced, or wrapped in a
-   getter, by any code) is approved by this policy; any other kind goes to
-   the owner.
-   The [gap-priorities deep dive](docs/deep-dives/gap-priorities) presents
-   the ranking and each case, closed or open; after the census on main
-   that follows a batch of merged cases, it is rebuilt from that census and
-   reaches the owner marked since the version last approved
-   ([a revised deck](docs/STYLE.md#a-revised-deck)).
-
-`make census` limits each stage to 300 s unless `TSCERT_STEP_LIMIT` is
-set, so a slow search reports the outcome it reaches rather than a
-timeout; the pipeline cases keep the 60 s default.
-
-[`dev/census.mts`](dev/census.mts) writes a census record per run (per
-file its rounds, its units' results, its omitted units and its stage
-invocations with their timings) and prints its path. `SHARD=i/n` checks
-every n-th file from the i-th, shallow only, so n processes split a
-census and share the stage store; a later run replays what an earlier one
-computed. `node dev/census.mts report <before> <after>` compares two
-censuses, each one record or its shards' records separated by commas:
-functions gained and lost, timeouts, changed outcomes, each stage's time
-and the movement of
-[statement coverage](docs/DESIGN.md#statement-coverage). `report <record>`
-prints the shallow and deep counts, the initializations blocking deep
-status, and statement coverage per directory and file under both
-(`--per-function` adds each function), and `coverage <record>
-[--sources checkout|commit]` computes it for a record from the sources of
-the record's commit or of the checkout, running no stage. A census rerun with a longer `TSCERT_STEP_LIMIT`
-executes the stages that timed out again and replays the finished ones.
-
-A branch is ready to merge when `make test` passes in CI, the `test` job
-of its pull request. An implementing subagent runs the build, the static
-checks and the cases its change touches, each under a limit near its
-healthy duration, and never the full suite
-([the parity skill](.claude/skills/parity/SKILL.md#tests)). The trusted model (Claude Opus 5.5 or
-Astra) that authors the change, or merges it when its author is another
-model, merges it when confident the change is correct and sound, a new
-rule's or a change of trust's soundness included, and asks for a review only
-when it is not.
+Gap work follows the [gap-round skill](.claude/skills/gap-round/SKILL.md),
+which states its policy, from the census of main. A refusal of TScert's own
+code takes the first of the seven routes of
+[deciding what a refusal calls for](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
+that establishes the obligation at acceptable cost; a repair, an avoidance
+or a host boundary is recorded there in the same commit, with what its kind
+requires. A case is a negative case only where its program is unsafe, shown
+under Node.
 
 ### How a pull request lands
 
-`main` keeps linear history: a pull request lands by rebase and merge.
-GitHub requires one check before a merge, `render`, the Semantic Diff job
-([semantic-diff.yml](.github/workflows/semantic-diff.yml)): it renders the
-commit records, checks each with the `commit-msg` hook, and builds every
-changed deck. The suites gate nothing on GitHub. The CI workflow's `test`
-job ([ci.yml](.github/workflows/ci.yml)) runs `make test` on each pull
-request and on each push to `main`, its `pretext` job runs
-`make test-pretext` there on a checkout of `cristianoc/pretext` at the
-commit the job pins, and the census runs on each push to
-`main`; a pull request, auto-merged once `render` passes, can land before
-`test` finishes or after it fails. So a merged pull request is not
-evidence that its suites passed: whoever reports a change as tested names
-the `test` run or the local `make test` it read, and a `test` failure on
-`main` is fixed on `main` at once.
+A branch is ready to merge when `make test` passes in CI, the `test` job of
+its pull request. An implementing subagent runs the build, the static
+checks and the cases its change touches, each under a limit near its
+healthy duration, and never the full suite
+([the parity skill](.claude/skills/parity/SKILL.md#tests)).
+
+<!-- OWNER: which models author, merge and review (Claude Opus 5.5, Astra, Fable), here and in "Designs start from an existing mechanism"? -->
+
+The trusted model (Claude Opus 5.5 or Astra) that authors the change, or
+merges it when its author is another model, merges it when confident the
+change is correct and sound, a new rule's or a change of trust's soundness
+included, and asks for a review only when it is not.
+
+<!-- OWNER: which checks gate a merge on GitHub: `render` alone, or `render` and `test`? -->
+
+`single-pass` and `main` keep linear history: a pull request lands by
+rebase and merge, or by a fast-forward of the line to its tip
+([the parity skill](.claude/skills/parity/SKILL.md#worktrees-commits-and-pull-requests)).
+Each pull request runs `render`
+([semantic-diff.yml](.github/workflows/semantic-diff.yml)) and the `test`
+and `pretext` jobs ([ci.yml](.github/workflows/ci.yml)). A merged pull
+request is not evidence that its suites passed: whoever reports a change
+as tested names the `test` run or the local `make test` it read, and a
+`test` failure on the line is fixed on the line at once.
 
 ### Working in a separate git worktree
 
-A new worktree has an empty `lean/.lake`, and its first
-`lake build` compiles every module from scratch: 3.5–5 minutes on 12
-cores. Clone the main checkout's cache into it instead, before the first
-build:
+A new worktree clones the main checkout's Lean cache before its first
+build (copy on write; Lake rebuilds by content), and removes the copied
+executable, whose `verifier.rsp` names the main checkout's objects, so Lake
+relinks it from the worktree's own:
 
 ```sh
 cp -c -R <main checkout>/lean/.lake lean/.lake
@@ -213,161 +146,51 @@ rm lean/.lake/build/bin/verifier
 (cd lean && lake build verifier)
 ```
 
-On APFS `cp -c` copies on write: it takes a fraction of a second and no disk
-until files change. Lake decides what to rebuild from file contents, not
-timestamps or paths, so the clone stays valid in the new directory. A build
-at the same commit then rebuilds nothing, and an edit rebuilds only the
-changed module and its dependents. The link step is the exception: the
-copied `verifier.rsp` names the main checkout's object files by absolute
-path, and `tests/single-pass-mutations.mts` relinks a mutated verifier from
-it, so removing the copied executable makes Lake relink it (about 1 s) from
-the worktree's own objects. The saving is complete when the main
-checkout's cache is built at or near the worktree's commit; otherwise Lake
-rebuilds just the modules that differ. Each worktree keeps its own `.lake`,
-so builds in different worktrees may run in parallel. Each `node_modules` directory is copied from the
-main checkout with `cp -c -R` (never committed): the root's, `tools/`'s and
-every `pipeline/*/` one, `pipeline/library-project/node_modules` included. A
-symbolic link resolves type declarations from the main checkout's path, and
-the cases reading `@types/node` then fail.
-
-
-`make test-cases` includes the pipeline cases, including those importing from
-`pipeline/imports-project/` and `pipeline/library-project/`.
-
-One file end to end, with `$F` a repository-relative path:
-
-```sh
-node pipeline/verify-source.mts $F
-```
-
-It prints the outcome and the directory holding what the run wrote: the
-source snapshot, the parser's `fragment.json` and the pass's log
-`pass.log`.
-
-A refusal of TScert's own code is answered by the first of the seven routes
-[source rewrites](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
-states that establishes the obligation at acceptable cost: support, a runtime
-check, a repair, avoidance, a host boundary, a trusted unit (owner-approved,
-never a fallback) or a proof. A case is a negative case only where its program
-is unsafe, shown under Node. A repair, an avoidance or a
-host boundary is recorded there in the same commit, with what its kind
-requires.
+Each worktree keeps its own `.lake`, so builds in different worktrees may
+run in parallel. Each installed `node_modules` (the root's, `tools/`'s and
+`pipeline/library-project/`'s) is copied the same way, never linked or
+committed: a link resolves type declarations from the main checkout's path
+and the cases reading `@types/node` fail. `make setup` and the case runner
+make the fixture projects' links.
 
 ## Which tests to keep
 
-The end-to-end pipeline cases are the primary signal: a source file through
-the parser and the single pass (`pipeline/cases.mts`, run by
-`run-cases.mts`). They exercise the unproved parts together (parser,
-lowering, the pass's front, wire), and what Lean proves needs no test.
+A new feature's test is a pipeline case, a source with its expected
+outcome, positive and negative. Any other test exists only for what the
+pipeline cannot show (a refusal no source can reach, a trusted input's
+boundary, a speed-critical check): a control of
+`tests/single-pass-controls.mts` for an input no case makes, a suite of
+`test-all.sh` for a check running no stage. A research test is retired once
+a case covers its behaviour, and a test that adds no signal is removed. The
+rules: [which tests to keep](tests/README.md#which-tests-to-keep) and
+[the suite's shape](tests/README.md#the-suites-shape).
 
-- **Prefer a pipeline case.** A new feature's test is a source file with its
-  expected outcome, positive and negative, not a unit test of an
-  intermediate step.
-- **Feature gaps follow the census.** A safe feature-gap case with no
-  census association is not kept, unless another test depends on it or it
-  exercises an explicit, enforced fragment or contract restriction. Keep
-  those dependencies and boundary controls, and preserve negative cases
-  whose programs are unsafe under the project's stated assumptions.
-  Removing a feature case changes the test inventory, not the supported
-  fragment or measured front-end coverage; reconcile its documentation and
-  any work item whose sole obligation is that case.
-- **Research tests are temporary.** Tests written while working a feature out
-  (a Lean `#guard` on a hand-built graph, a probe of one tool) are useful
-  while researching it. Once a pipeline case covers the behaviour, retire
-  them in the same or the next commit.
-- **Keep a test only for what the pipeline cannot show:** a refusal no source
-  can reach (a forged fragment, a forced proposal, a tampered declaration), a boundary of a
-  trusted input (the `ArrayProto` overlay), or a speed-critical check.
-- **Remove what adds no signal.** A test a proof already covers, or one that
-  repeats another's inputs through the same path, goes. Before removing a
-  forged-fragment control, check it does not test lowering: the lowering
-  of the fragment to the graphs the pass checks is unproved.
+## Acceptance/soundness invariant
 
-## The suite's shape, and the rules that keep it
-
-`make test-checks` builds (a no-op when nothing changed), then runs `test-all.sh`:
-the fast checks and the controls (`tests/single-pass-controls.mts`). `make test-cases` builds,
-then runs the pipeline cases (`pipeline/run-cases.mts`). `make test-infra`
-builds, then runs `test-all.sh --infra`: the tests of the test infrastructure,
-the stage store and the runner (`tests/stage-store.mts`), the controls of the
-store, replay and run retention (`single-pass-controls.mts --infra`), the
-observed stages' replay controls (`tests/observed-stages.mts`) and the
-retained declaration sessions' (`tests/session-reuse.mts`); CI runs it when a
-change touches the code they test (the paths its `Infrastructure tests` step
-lists) or the tests themselves. The mutation controls stay in `make
-test-checks`: each shows a check of the pass is what refuses a unit. Three
-rules decide where a check goes.
-
-- **Suites start together.** A suite is `run_test <seconds> "Name" command
-  args…`; its output is buffered and reported in order with its time, and a
-  failure is counted, never fatal. Its budget is about three times its
-  healthy duration on a 12-core machine, at least 30 s, scaled by 12 / cores
-  on a smaller one; a suite over it is stopped and reported as a failure
-  with the last lines it wrote.
-- **A case is a source with its expected outcome; anything else is a
-  control.** A check of a source through the pipeline is a case of
-  `pipeline/cases.mts`. A check of the verifier or the pipeline on an
-  input no case makes (a forged fragment, a forced proposal, a mutation, an
-  injected failure, a family override) is a control of
-  `tests/single-pass-controls.mts`;
-  a check running no stage is a suite of `test-all.sh`.
-- **Controls replay like stages.** Each control block of
-  `tests/single-pass-controls.mts` registers with `control(name, …)`
-  (`mutationControl(name, …)` where it runs the mutation verifier); a pool
-  of control processes, one per core, runs them. Every operation a control
-  runs is a stage invocation (`invokeProcess`, `pipeline/stages.mts`) and
-  replays from the store when its executable, inputs and environment are
-  unchanged ([controls](docs/STAGE-STORE.md#controls)). A control is
-  independent of the others: it reads its cases' artifacts through
-  `run(…)`, the case checked through the pipeline in its own process, and
-  states its own family overrides. The suite reports the controls' wall
-  time and how many of their operations executed and replayed. Controls of
-  the store itself (`tests/observed-stages.mts`, the replay control) name
-  fresh stores, execute every time and run in `make test-infra`.
-
-## What a result means
-
-### Acceptance/soundness invariant
-
-A unit's accepted verdict from the verifier's CLI must imply the modeled
-safety property for every function of that unit. Preserve this by construction:
-
-- The acceptance path consumes the complete `FunctionPlan` sum through one
-  exhaustive conversion to `CertifiedPlan` (`FunctionPlan.certify`, which
-  `PassUnit.MemberSafe` states). It must never use `filterMap`, an
-  `Option`, or a projection that can discard a plan variant.
-- A new plan constructor must make that conversion fail to compile. It may
-  become a certified constructor only with a checker and a theorem connecting
-  its successful check to the semantic property. Until then it is a located
-  gap, never `verified`.
-- Keep one headline theorem, `SourceClaimJson.PassUnit.mode8Accepted_sound`,
-  whose premise (`Mode8Accepted`) is the exact CLI condition for a unit's
-  accepted verdict, at either print site (`--verify-interface-stage 8` and a
-  module's check in `--module-interface`), and whose conclusion
-  (`PassUnitSafe`) gives safety for every function of that unit. A theorem about a retained subset, decoded
-  bundle, or Boolean alone is not an acceptance soundness theorem.
-- The axiom check checks how a theorem was proved, not whether it proves the
-  required statement. Review the theorem's premise and conclusion whenever the
-  accepted plan type or CLI path changes.
-- The front's proposals (types, loop-head facts, effects), inference's runs
-  and compiled ground consequences are intermediate artifacts. The runner and
-  diagnostics must not label them verified before the corresponding plan
-  reaches `CertifiedPlan`.
+A unit's accepted verdict from the verifier's CLI implies the modeled
+safety property for every function of that unit, by construction: one
+headline theorem, `SourceClaimJson.PassUnit.mode8Accepted_sound`, whose
+premise is the exact CLI condition for an accepted verdict at either print
+site, and one exhaustive conversion of every plan to `CertifiedPlan`, which
+a new plan constructor fails to compile until its checker and theorem
+exist. The rules that keep it, and the premise and conclusion to review
+when the plan type or CLI path changes:
+[what "verified" means](docs/DESIGN.md#what-verified-means).
 
 ## Source and host soundness boundaries
 
 ### General statements, no lists of special cases
 
 A definition, a rule or a theorem is stated at the generality of its notion,
-as a type-theory paper states it: over every expression, every command,
-every write, every step, every transition, every effect, every function.
-For a notion the [Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note)
-or the [Read-only frames note](docs/REFERENCES.md#the-read-only-frames-note)
+as a type-theory paper states it: over every expression, command, write,
+step, transition, effect and function. For a notion the
+[Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note) or the
+[Read-only frames note](docs/REFERENCES.md#the-read-only-frames-note)
 defines, the Lean and the note state the same definition, in full. Where
 the model shows the note wrong or incomplete (a counter-model, a notion the
 model has and the note omits), the note is corrected and the Lean follows
-the corrected definition; the Lean is never bent to a wrong sentence, and a
-difference between the two is never left standing.
+it; the Lean is never bent to a wrong sentence, and a difference between
+the two is never left standing.
 
 - **A list of supported cases is a defect.** An enumeration of members of an
   open class (native operations, kinds of write, kinds of fact, eligible
@@ -375,19 +198,19 @@ difference between the two is never left standing.
   replaced by the property. A restricted encoding of a general notion, a
   fallback that gives less without saying so, and a side condition of the
   form "X is not read by Y" are the same defect.
-- **An exhaustive case analysis is a proof.** Cases over an inductive
+- **An exhaustive case analysis is a proof:** cases over an inductive
   definition of the language, which Lean checks exhaustive, prove a general
   statement.
-- **A special case states its reason.** One kept for a property a specific
-  rule relies on says which property, where it is defined.
-- **A restriction of the language is explicit.** It is chosen by the
-  behaviour it excludes, documented in SOURCE-FRAGMENT.md and enforced at the
-  source boundary ([engineering trade-offs](#engineering-trade-offs)).
-- **Touching a special case removes it first.** A change to code that holds
+- **A special case states its reason:** which property a specific rule
+  relies on, and where it is defined.
+- **A restriction of the language is explicit:** chosen by the behaviour it
+  excludes, documented in SOURCE-FRAGMENT.md and enforced at the source
+  boundary ([engineering trade-offs](#engineering-trade-offs)).
+- **Touching a special case removes it first:** a change to code holding
   such a list starts by replacing the list with its general statement, in
-  its own commit; then the change is made. A report or a review that says
-  "covers only", "for these forms", "eligible" or "supported cases" names
-  which of the three above it is.
+  its own commit. A report or a review that says "covers only", "for these
+  forms", "eligible" or "supported cases" names which of the three above it
+  is.
 
 Every review of a design, a rule or a proof asks first: is this the notion
 as its definition states it, and is the statement general. Size and the
@@ -404,238 +227,131 @@ mechanism this extends**, citing the document that owns it (for a fact a
 construct relies on across code, [footprints](docs/FOOTPRINTS.md): the
 fact, its stable operations, the checked contract, the construct's rule).
 [The general mechanisms](docs/DESIGN.md#general-mechanisms) lists each
-concern's mechanism. Where no mechanism fits, that section lists the mechanisms considered and
-why each falls short; no new machinery is proposed before it is written.
-Every review of a design or of a new rule asks first: is this an instance
-of an existing mechanism, and which; what does it duplicate?
-For an external API, follow [modeling a library](docs/SOURCE-CONTRACTS.md#modeling-a-library).
+concern's mechanism. Where no mechanism fits, that section lists the
+mechanisms considered and why each falls short; no new machinery is
+proposed before it is written. Every review of a design or of a new rule
+asks first: is this an instance of an existing mechanism, and which; what
+does it duplicate? For an external API, follow
+[modeling a library](docs/SOURCE-CONTRACTS.md#modeling-a-library).
+
+That section states the existing mechanism as pseudo-code read from the
+code (its definitions named), one small example run through it, the
+proposed change, and the example run through the change, step by step.
+It ends with **What this duplicates**: each thing the design models
+(natives, outside values, module bindings, the initialization, effects,
+kinds of step) beside where the rest of the verifier models the same
+thing, and why the design reads that model or what keeps it apart. A
+model shaped to one example (a list of one native, a value chosen by a
+name) is a special case of the kind
+[General statements](#general-statements-no-lists-of-special-cases)
+excludes, and a later step that meets its limit reopens it rather than
+patching around it. A brief to a reviewer or an implementer states the
+same question first, and a reviewer's verdict answers it before
+soundness. An estimate of a design's size is measured from the code it
+changes (the definitions and the files that read them); one not measured
+says so.
+
+The same holds wherever a mechanism, a decision or a finding is
+communicated (a report, a question to the owner, a brief, a review): it
+is shown on a concrete program, run through the mechanism as it is and
+as it would be, with what each step decides and why, before or beside
+any abstract statement. A decision put to the owner states what each
+choice does to that program.
 
 ### Engineering trade-offs
 
-[Utility justifies complexity](docs/DESIGN.md#principles): an explicit,
-enforced restriction is an acceptable decision, chosen by the behaviour it
-excludes, not by a particular failing example. Document it in
-SOURCE-FRAGMENT.md, enforce it at the source/semantic boundary, state the
-same requirement for external code where relevant, and keep a small control
-showing the excluded behaviour cannot silently enter the admitted fragment.
-A restriction simplifies the language, not the meaning of an accepted
-program: never erase a contract or ignore a possible runtime action. A
-motivating ordinary program that stays blocked is open work in WORK.md.
+An explicit, enforced restriction, chosen by the behaviour it excludes and
+not by a failing example, is an acceptable decision
+([utility justifies complexity](docs/DESIGN.md#principles)): documented in
+SOURCE-FRAGMENT.md, enforced at the source/semantic boundary, required of
+external code where relevant, with a small control showing the excluded
+behaviour cannot silently enter. It simplifies the language, never the
+meaning of an accepted program. A motivating ordinary program that stays
+blocked is open work in WORK.md.
 
-The calculus theorem does not prove that a source annotation was interpreted
-faithfully or that a native library meets its assumed contract. These are
-separate review obligations, even when every Lean proof and suite passes.
+Annotations and native contracts are review obligations no proof
+discharges ([review obligations](docs/SOURCE-CONTRACTS.md#review-obligations)):
 
-- **Never erase an unsupported contract.** Source annotation lowering either
-  represents the whole contract or refuses it. An unsupported method, a failed
-  expansion, or an exhausted search/colour budget must not become `top`, lose
-  a field, or lose a bound. An opaque type is not `unknown`: hiding its
-  representation does not discharge its introduction obligation. The same
-  declaration occurs in inputs, outputs, and invariant storage; an
-  over-approximation safe for reading is not safe for producing a value.
-- **Native declarations are specifications to audit, not evidence.** Review
-  every callback (including implicit conversion, iteration and thenable
-  callbacks, constructor lookup and `Symbol.species`), its actual arguments,
-  alias mutation, and whether lengths or
-  keys are captured before callbacks run. A readonly alias does not prevent
-  mutation through another alias. Establish result invariants after all such
-  effects; density at entry does not imply density of `map`'s result. Callback
-  effects do not constrain other native entry points. Check result construction
-  as well as traversal. The semantics assumes ordinary array
-  construction, also of external code: no own array `constructor`, and stable
-  standard constructor/species behavior. Preserve the formal own-key exclusion
-  through all array/record views and reject source operations violating it.
-  Custom species are outside the admitted language; their full modeling is not
-  a prerequisite for callback-effect work. Never widen this assumption silently.
-  Standard array conversion additionally excludes own `toString`, `join` and
-  `Symbol.toPrimitive` and assumes their standard prototype behavior, also of
-  external code. Keep these key bounds and the prototype's undefined hook view:
-  numeric elements alone do not justify implicit conversion. The recursive
-  conversion contract and the rationale for excluding custom hooks live in
-  [prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts).
-- **Test the unproved boundary independently.** A refusal of the pass's
-  front needs a control forging the fragment when annotation interpretation
-  is involved. For native-contract repairs, execute the actual negative source
-  fixture under Node as well as refusing it in the pipeline. This is a small
-  contract counterexample, not a test of a proved Lean typing rule.
-- **Keep dependencies exact.** Collect only intrinsics a source uses; do not
-  load all trusted contracts because one is needed. Dependency collection may
-  avoid unused declarations, but may not discard members of a collected type.
-- **Coverage losses are results.** Preserve motivating sources; mark a case
-  blocked by an earlier unsupported contract as a gap, not as a passing
-  negative control for the later obligation. Report lost coverage
-  explicitly. Changing an expected result requires inspecting its cause;
-  passing tests after reclassification does not close the corresponding goal.
-
-Array presence is separate from read/write capability
-([density belongs to a contract](docs/DESIGN.md#lasting-decisions)). Never
-special-case `unknown[]` by spelling; never let an existing writable spine
-location change its contract; preserve the presence mode through every
-graph/claim mapping, and distinguish array-spine metadata from argument
-packs, which hold values and have no holes.
-
-For inferred callable effects, follow the
-[elaboration/certification boundary](docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
-Annotation translation must not strengthen an ordinary arrow. The front's
-inference proposes a qualified signature; the definition's check must establish
-both safety and the effect before an application consumes it. Never recognize callback syntax at
-native call sites as a substitute for that proof. Audit every signature mapping,
-substitution, overload and certificate path for the effect field; exhaustive
-constructor matching does not detect a discarded field. Qualified claims need
-located failures and forced-proposal controls, and imported effects require an
-explicit checked contract or documented external assumption.
-An effect without `onThrow` guarantees preservation only on normal return. Do
-not carry it onto a call's exceptional edge or infer preservation for a caller
-that catches the exception without checking its handler against the changed
-heap; an effect with `onThrow` also bounds the heap a throw leaves
-([exceptional footprints](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
-
-The pass's proof does not catch a specification mistake in what it reads,
-such as reading an unsupported generic method
-as `unknown`, or copying a native array contract from TypeScript's signature
-without accounting for reentrancy and coercion. Keep the refusals and controls
-that guard these when extending the fragment; do not gain acceptance by
-increasing trust silently.
+- **Never erase an unsupported contract:** annotation lowering represents
+  the whole contract or refuses it; an opaque type is not `unknown`.
+- **Native declarations are specifications to audit, not evidence**
+  ([modeling a library](docs/SOURCE-CONTRACTS.md#modeling-a-library));
+  collect exactly the intrinsics a source uses.
+- **Array construction is ordinary, also of external code**; never widen
+  that assumption silently.
+- **Array presence is separate from read/write capability.**
+- **Inferred callable effects** follow the
+  [elaboration/certification boundary](docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification):
+  annotation translation never strengthens an ordinary arrow; the
+  definition's check establishes safety and the effect before an
+  application consumes it. An effect without `onThrow` guarantees
+  preservation only on normal return, never on a call's exceptional edge
+  or to a caller catching without checking its handler against the changed
+  heap ([exceptional footprints](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
+- **Test the unproved boundary independently:** a forged-fragment control
+  for annotation interpretation, a Node run of a native-contract repair's
+  negative fixture.
+- **Coverage losses are results**, reported, never reclassified away.
+- **Never gain acceptance by increasing trust silently.**
 
 ## Conventions
 
-- Formatting: `make fmt` at the root formats with Prettier the `.json` and
-  `.ts` files `.prettierignore` admits; `make check-fmt` checks them.
-- Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
-  all of them — the trusted front end, the pipeline driver and the suites — under
-  one fully strict configuration, `noImplicitAny` and `strictNullChecks`
-  included. A new file lands in that project by being
-  where it belongs; nothing is exempt.
+- Node side: every module is `.mts`, in the one fully strict project
+  `tools/tsconfig.json` by its location, nothing exempt; run node, not bun
+  (the compiler's synchronous channel reads node's `_handle`). A member the
+  compiler API renamed reads as `undefined`, so `tsc` over that project
+  catches it: run it, do not reason about it.
+- A unit's boundary is written and what lies inside it is inferred, no
+  value is typed `any`, and every `as` and `!` carries a reason
+  (`// asserted: REASON`), as [`tools/unchecked.mts`](tools/unchecked.mts)
+  states and checks. A decoder is the only place that asserts a shape;
+  everything else narrows.
 - `tools/fragment.mts` and `tools/declaration-types.mts` describe the
-  parser's document. Lean's decoder refuses any document of another shape,
-  and the field-name check (`tests/json-field-names.mts`) compares the field
-  names TypeScript and Lean use.
-- The trusted front end is TypeScript on the compiler's own API
-  (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
-  the tree), type-checked by the `Front-end types` suite. A member that API
-  renamed reads as `undefined` rather than failing, so `tsc` over
-  `tools/tsconfig.json` is the thing that catches it — run the suite, do not
-  reason about it.
-- `pipeline/examples/tsconfig.json` is the strict regime the examples are
-  checked under, and a project a case names has its own. The parser refuses a
-  file no `tsconfig.json` with `"strict": true` claims, rather than reading it
-  under weaker defaults.
-- node, not bun: the compiler's synchronous channel reads the child process's
-  pipe through node's own `_handle`, which bun does not expose
-  (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
-  that opens the compiler is affected, so this is not a per-suite choice.
-- A unit's boundary is written and what lies inside a unit is inferred:
-  every function declaration, class member, function a module binding, a
-  class field or `export default` holds, and method of an object literal no
-  type gives its context states its parameters' and result's types
-  (`isolatedDeclarations` in `tools/tsconfig.json`); locals and functions
-  written as arguments are inferred. No value of the sources is typed `any`,
-  and they type-check over the external declarations with each `any`
-  replaced ([shadow contracts](tools/shadow-contracts.mts)).
-  `node tools/unchecked.mts` checks both and reports every boundary and
-  assertion; [its header](tools/unchecked.mts) states each rule and its
-  stated limit, and `test-all.sh` runs it over `tests/unchecked-project/`
-  and `tests/unchecked-broken/`.
-- A decoder is the only place that asserts a shape. Everything else narrows:
-  a type predicate, a `typeof` before a comparison, a case table keyed by the
-  language's own union. `tools/unchecked.mts` reports every `as` and `!` in
-  the node side, and fails on one without a reason, a comment
-  `// asserted: REASON` at the end of its line or alone on the line above.
-  The assertion that has its reason is an `as` at the last
-  line of a decoder, where the checks it just ran become the type it returns.
-  An assertion anywhere else is standing in for a check that is missing; where
-  that check would cost more than it guards, the reason says so.
-- Wire formats carry no version, profile or schema tag, and none is to be
-  added. What a version would be for is consistency, and consistency here is a
-  typing property: each format is one declared type, every producer and
-  consumer is typed against that type, and every decoder requires the shape
-  field by field and rejects an unknown field. So a document either has exactly
-  the current shape or it is refused, and there is nothing for a tag to
-  disambiguate. A `sha256` field, where present and checked, can state source
-  staleness precisely; the declaration document carries no such hash and
-  instead relies on TypeScript's project and source trees.
-- A format is never frozen and never has two accepted shapes. Fix its shape in
-  place, then regenerate the fixtures that carry it. Do not add a compatibility
-  shim, a second decoder, or a field that records which shape a document is:
-  every producer and consumer of these documents is in this repository, nothing
-  outside reads them, and there is no older document to keep working.
-- Lean: no `sorry`, no project axioms.
-  [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
-  when a safe declaration of the library outside `Verification.Paper`
-  (`PassUnit.mode8Accepted_sound`, each `@[csimp]` lemma whose right-hand
-  side the compiled verifier runs, and every other) depends on an axiom
-  other than `propext`, `Classical.choice` and `Quot.sound`, and
-  [the paper's axiom check](lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean)
-  does the same for the modules under it; the fast check
-  `tests/axiom-check-imports.mts` checks that each imports every module of
-  its part. No warnings: `lakefile.toml` sets
-  `warningAsError`, so a warning fails the build; fix it (a deprecated name's
-  replacement, an unused variable as `_`, an unused simp argument dropped)
-  rather than silencing it. Build only the module you changed while
-  iterating (`lake build Verification.<Layer>.<Module>` from `lean`).
-  Run Lake from that directory so elan selects its pinned `lean-toolchain`;
-  `lake -d` from the repository root can select a different compiler before
-  changing directories. Never run simultaneous builds against the same cache.
-  Complete builds before starting suites: the verifier executable must stay
-  stable for the whole test run.
-- Lean: a definition generic in its labels or store (`ι` and its type-class
-  instances) carries `@[nospecialize]`. Lean's code generator otherwise copies
-  the whole generic call graph into the first module that uses it at a concrete
-  type, which multiplies that module's generated C and its rebuild time.
-- Lean: declare a module's inductive types and structures above the proofs
-  they do not need. Lean checks a theorem in the background, but adds an
-  `inductive`, a `structure` or a `mutual` block only after every earlier
-  proof of the module is checked, so one declared below slow proofs holds up
-  the rest of the module (HeapExpressionRules: 5.1 s → 3.2 s by moving two,
-  measured 2026-10-16).
-- New executable fields on an existing AST constructor need an explicit audit
-  of every lowering and certification path. Exhaustive constructor matching
-  alone cannot detect a discarded field. Each path must check the field's
-  execution or refuse it with a located diagnostic. In particular, a lambda
-  body certificate does not cover parameter-default execution. Lowering tests
-  must exercise source evaluation order and binding scope, including forged
-  fragments and forced proposals against the pass; calculus
+  parser's document, Lean's decoder refuses any other shape, and
+  `tests/json-field-names.mts` compares both sides' field names. Wire
+  formats carry no version, profile or schema tag and have one shape,
+  changed in place with their fixtures
+  ([lasting decisions](docs/DESIGN.md#lasting-decisions)).
+- The parser refuses a file no `tsconfig.json` with `"strict": true`
+  claims; `pipeline/examples/tsconfig.json` is the examples' regime.
+- Lean: no `sorry`, no project axioms (the
+  [axiom check](lean/Verification/Tests/AxiomCheck.lean),
+  [the paper's](lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean),
+  `tests/axiom-check-imports.mts`), and no warnings (`warningAsError`): fix
+  a warning, never silence it. Build the changed module while iterating,
+  from `lean/` so elan selects its toolchain; never run two builds on one
+  cache; finish building before starting suites, so the verifier stays
+  stable for the whole run. A definition generic in
+  its labels or store (`ι` and its instances) carries `@[nospecialize]`;
+  a module declares its inductive types and structures above the proofs
+  that do not need them.
+- A new executable field on an existing AST constructor is audited on every
+  lowering and certification path, each checking its execution or refusing
+  it with a located diagnostic (a lambda body certificate does not cover
+  parameter defaults); lowering tests exercise evaluation order and binding
+  scope, forged fragments and forced proposals included, since calculus
   safety alone does not prove correspondence with JavaScript execution.
-- Annotations: a change adding, removing or changing an annotation TScert
-  reads updates [ANNOTATIONS.md](docs/ANNOTATIONS.md) in the same commit;
-  `node tests/docs.mts` checks that its entries are exactly the readers' list.
-- Docs: `node tests/docs.mts` checks every link and anchor, section
-  numbers in link texts, KaTeX rendering, the math forms GitHub cannot
-  render, and the sections code comments cite by quoted title or by `§n`
-  ([its header](tests/docs.mts) states what it leaves unchecked). A doc-only change runs that check and no suite. Cite papers,
-  specifications and issues by a link to an entry of
-  [REFERENCES.md](docs/REFERENCES.md), adding the entry there.
-- Commits: every commit carries a commit
-  record, the format of the [review skill](.claude/skills/review/SKILL.md):
-  prose sections, then trailers with `Outcome`, `Parts` and `Trust`. The
-  `commit-msg` hook (`make setup-git-hooks`) refuses a message without them.
-  A review of agent work is rendered from records
-  (`node dev/commit-records.mts`), never written by hand. On a pull request,
-  CI renders its records to a page under `semantic-diff/pr-<number>/` of the
-  repository's GitHub Pages, links it from one comment, and checks each
-  commit's record with the same hook
-  ([semantic-diff.yml](.github/workflows/semantic-diff.yml)).
-- Presentations: record pages and deep-dive decks share one style, and a
-  deck is written for a reader with zero context and reaches the owner only
-  after a review against the sources ([STYLE.md](docs/STYLE.md)). On a pull
-  request that changes a deck, CI builds it, fails when its `project/`
-  differs from what `deck.mts` builds or a slide passes its margins, and
-  publishes its page with what changed since its approved version (its
-  header's `SINCE=`) marked, in a comment that mentions the owner; the
-  owner's approval moves `SINCE=` to the approved commit
-  ([semantic-diff.yml](.github/workflows/semantic-diff.yml)).
-- A record uses only the [glossary](docs/GLOSSARY.md)'s terms, plain words
-  and the terms of TypeScript and the code, explaining any other term where
-  it first appears; before a push, any deep dive the range calls for is
+- A change to an annotation TScert reads updates
+  [ANNOTATIONS.md](docs/ANNOTATIONS.md) in the same commit. Cite papers,
+  specifications and issues by an entry of
+  [REFERENCES.md](docs/REFERENCES.md).
+- Every commit carries a commit record in the format of the
+  [review skill](.claude/skills/review/SKILL.md), which the `commit-msg`
+  hook (`make setup-git-hooks`) checks; a review of agent work is rendered
+  from records (`node dev/commit-records.mts`), never written by hand. A
+  record uses only the [glossary](docs/GLOSSARY.md)'s terms, plain words
+  and the terms of TypeScript and the code, explaining any other where it
+  first appears; before a push, any deep dive the range calls for is
   approved by the owner
   ([the words of a record](.claude/skills/review/SKILL.md#the-words-of-a-record)).
-- Status: progress is written once, in the
-  [status table](WORK.md#status) of WORK.md. A commit that moves an item
-  updates its row. A row states the nature of its work: an investigation whose cause is
-  unknown is its own row, named as one, never a leftover of a finished
-  stage; a fix gets a row once its cause is established. Elsewhere only three status-like statements are allowed:
-  a measurement with its date, an executable expectation
-  (`cases.mts` entries) and a spec's proof scope (proved in the model versus
-  accepted at the source), changed in the same commit as the code it
-  describes. Delete any other prose that restates progress
-  ("now", "implemented", "still pending", "restored").
+- A deck is written for a reader with zero context and reaches the owner
+  only after a review against the sources; the owner's approval moves its
+  `SINCE=` ([STYLE.md](docs/STYLE.md)).
+- Progress is written once, in the [status table](WORK.md#status) of
+  WORK.md, which states how a row moves. An investigation whose cause is
+  unknown is its own row, never a leftover of a finished stage; a fix gets
+  a row once its cause is established. Elsewhere only a dated measurement,
+  an executable expectation (`cases.mts` entries) and a spec's proof scope
+  (proved in the model versus accepted at the source) state status, each
+  changed with the code it describes; other prose restating progress
+  ("now", "implemented", "still pending", "restored") is deleted.

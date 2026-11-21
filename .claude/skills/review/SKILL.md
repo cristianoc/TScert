@@ -250,7 +250,7 @@ by the owner.
 
 - After a batch of agent work, before any merge: render each range. Who
   merges, and when a review is asked for, is
-  [AGENTS.md's](../../../AGENTS.md#measuring-coverage-once-on-main); a
+  [AGENTS.md's](../../../AGENTS.md#how-a-pull-request-lands); a
   review asked for is given as these pages.
 - When an agent finishes: its report lists the commits; their records are the
   description of the work.

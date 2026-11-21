@@ -670,6 +670,13 @@ met, is executed again at its limit. The census reuses recorded timeouts. Force 
 finished results and timeout observations. Reuse reports an earlier timeout, not proof that execution
 would time out again.
 
+Each process stage is killed after `TSCERT_STEP_LIMIT` seconds, 60 by
+default; `make census` sets 300 unless the variable is set, so a slow
+search reports the outcome it reaches. A run's directory holds
+`invocations.jsonl`, each stage invocation's attempt: its stage key, limit,
+outcome and elapsed time. A census run again at a longer limit executes the
+stages that timed out and replays the finished ones.
+
 An aggregate worker deadline records interruption of the run. A stage
 timeout requires identification of the attempt and evidence that its own
 enforced limit expired; identifying the active stage alone is insufficient.
@@ -852,7 +859,13 @@ replays from the store like any other: its key binds the executable by
 content, its argument vector, its environment and the bytes of every input
 file, so the operation executes again exactly when one of these changes. A
 control's own code (its forgery and its assertions) runs every time, over
-the operation's result, executed or replayed.
+the operation's result, executed or replayed. A control registers with
+`control(name, …)` (`mutationControl(name, …)` where it runs the mutation
+verifier), and the pool runs one control process per core. A control is
+independent of the others: it reads its cases' artifacts through `run(…)`,
+each case checked through the pipeline in its own process, and states its
+own family overrides. The suite reports the controls' wall time and how
+many of their operations executed and replayed.
 
 - *Executables.* The repository's verifier build, and the mutation
   verifier (`tests/single-pass-mutations.mts`). The mutation verifier is

@@ -3763,6 +3763,12 @@ An imported implementation needs checked evidence
 assumption: its TypeScript declaration supplies neither proof nor an implicit
 effect. Built-in contracts remain separately audited assumptions.
 
+Callback syntax at a native call site never substitutes for the definition's
+check. Every signature mapping, substitution, overload and certificate path
+carries the effect field, and each is audited for it: exhaustive constructor
+matching does not detect a discarded field. A qualified claim has located
+failures and forced-proposal controls.
+
 ### Calls through a location
 
 A call consumes the contract established for

@@ -144,7 +144,7 @@ each unit's own refusal
 [function coverage](docs/DESIGN.md#function-coverage-and-release-thresholds),
 [statement coverage](docs/DESIGN.md#statement-coverage)); its record groups
 the refused units by the blocker each names
-([choosing the gap cases](AGENTS.md#choosing-the-gap-cases-to-work-on)).
+([the gap policy](.claude/skills/gap-round/SKILL.md#the-policy)).
 
 Of `pipeline/*.mts` and `tests/` (2026-10-19, 60 s step limit), the first
 blockers are Node's `Buffer` through `readFileSync` and `spawnSync` without

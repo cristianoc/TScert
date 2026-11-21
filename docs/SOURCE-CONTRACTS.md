@@ -45,6 +45,18 @@ body checked against them. Using a guarantee whose body or dependencies are
 uncertified requires an explicitly approved external contract; without that
 contract the stronger use is refused.
 
+A native declaration is a specification to audit, not evidence. The audit
+covers every callback (implicit conversion, iteration and thenable
+callbacks, constructor lookup and `Symbol.species` included), its actual
+arguments, alias mutation, and whether lengths or keys are captured before
+callbacks run. A readonly alias does not prevent mutation through another
+alias. Result invariants are established after all such effects: density at
+entry does not imply density of `map`'s result. Callback effects do not
+constrain other native entry points. Result construction is checked as well
+as traversal. The dependency collection loads only the intrinsics a source
+uses, never all trusted contracts because one is needed; it may avoid unused
+declarations, never members of a collected type.
+
 A restriction is a boundary of admitted behavior. State it in the source
 fragment and the external contract, enforce it, and retain a control showing
 that excluded behavior cannot enter silently. An excluded behavior requires
@@ -58,6 +70,52 @@ census before and after. Coverage losses are part of the result. A smaller
 example alone does not establish that a simplification preserves project
 support. General mechanisms remain reusable; library-specific work follows
 the project's useful calls rather than hypothetical uses of every export.
+
+### Review obligations
+
+The calculus theorem does not prove that a source annotation was
+interpreted faithfully or that a native library meets its assumed
+contract; these are review obligations, even when every proof and suite
+passes.
+
+- **No unsupported contract is erased.** Annotation lowering represents
+  the whole contract or refuses it: an unsupported method, a failed
+  expansion or an exhausted search budget never becomes `top` or loses a
+  field or a bound. An opaque type is not `unknown`: hiding a
+  representation does not discharge its introduction obligation. One
+  declaration occurs in inputs, outputs and invariant storage; an
+  over-approximation safe for reading is not safe for producing a value.
+- **Array construction is ordinary, also of external code**: no own
+  `constructor`, `toString`, `join` or `Symbol.toPrimitive`, and standard
+  constructor, species and prototype behavior
+  ([prototype contracts](#prototype-contracts)). The own-key exclusion is
+  preserved through every array and record view, and a source operation
+  violating it is refused; the prototype's undefined hook view is kept:
+  numeric elements alone do not justify implicit conversion. Custom species
+  are outside the admitted language, and modeling them is no prerequisite
+  of callback-effect work. The assumption is never widened silently.
+- **Array presence is separate from read/write capability**
+  ([density belongs to a contract](DESIGN.md#lasting-decisions)). No
+  special case for `unknown[]` by spelling; an existing writable spine
+  location never changes its contract; the presence mode is preserved
+  through every graph and claim mapping; array-spine metadata is distinct
+  from argument packs, which hold values and have no holes.
+- **The unproved boundary is tested independently.** A refusal of the
+  pass's front involving annotation interpretation has a control forging
+  the fragment. A native-contract repair runs its negative source fixture
+  under Node as well as refusing it in the pipeline: a small contract
+  counterexample, not a test of a proved Lean typing rule.
+- **Coverage losses are results.** Motivating sources are preserved; a case
+  blocked by an earlier unsupported contract is a gap, not a passing
+  negative control for the later obligation. Lost coverage is reported.
+  Changing an expected result requires inspecting its cause; passing tests
+  after reclassification do not close the goal.
+- **The proof does not catch a specification mistake in what the pass
+  reads** (an unsupported generic method read as `unknown`, a native array
+  contract copied from TypeScript's signature without reentrancy and
+  coercion). The refusals and controls that guard these are kept when the
+  fragment is extended; acceptance is never gained by increasing trust
+  silently.
 
 ## Modules and code units
 
