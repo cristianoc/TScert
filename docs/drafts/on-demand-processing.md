@@ -8,6 +8,27 @@ The processing boundary is one function, including all its offered signatures, o
 
 **Evidence.** Code citations below describe the inspected worktree. `Claims/` abbreviates `lean/Verification/Source/Claims/`; `Lowering/` abbreviates `lean/Verification/Source/Lowering/`. The census counts and CPU totals are supplied measurements, not reproduced here. Statements about the proposed algorithm are design requirements; outstanding mathematical statements are labelled proof obligations.
 
+## Pretext interface boundary
+
+The producer finishes an interface before checking its consumers. An import resolves to the supplied declaration or contract entry. The consumer checks against that entry once. An unresolved import or an unmet call obligation is a result of that check. If testing exposes a missing guarantee, change the producer or correct the consumer's premise, then repeat both stages with the new inputs.
+
+The Pretext experiment uses Pretext's own declaration emit as the first producer. The tier copies the emitted declaration files into a fresh project for each consumer and adds just the implementation being checked. It fails the boundary test if any imported-module lowering, interface planning or interface proving stage runs. The existing Pretext verdicts identify where the declaration producer's output differs from what the current pipeline supplies.
+
+Run the two stages from the TScert checkout, replacing the two paths with the pinned Pretext checkout and a fresh output directory:
+
+```sh
+tools/node_modules/.bin/tsc -p /path/to/pretext/tsconfig.build.json \
+  --emitDeclarationOnly --declarationMap false --outDir /path/to/interfaces
+cp /path/to/pretext/src/resolvable.d.ts /path/to/interfaces/
+node tests/pretext-tier.mts --pretext /path/to/pretext --interfaces /path/to/interfaces
+```
+
+The experimental verdicts are conditional on the supplied declaration contracts. The production interface needs the binding and overload identities, callable contracts, and any facts about initialization or binding stability that the consumer uses. The producer is responsible for supplying those facts under the applicable trust assumptions. The importer resolves imports against that data and has no dependency on how the producer obtained it. In particular, [`decodeInterfaces`](../../lean/Verification/Source/Claims/ModuleInterfaces.lean) currently compares complete module documents, and [`resolveRead`](../../lean/Verification/Source/Claims/Imports.lean) determines stability from imported bodies. Remove those dependencies on bodies when replacing the wire. A source digest can identify a producer input without making the source part of the consumer's contract.
+
+On 21 November 2026, `single-pass` at `d8d4fc55` checked Pretext at `0dafecb3` with this declaration bundle. The tier verified 150 of the 210 recorded functions. Nine files reached unit checks, with 150 of 154 functions verified and four refusals in `prepare.ts`. `analysis.ts`, `layout.ts`, and `rich-inline.ts` hit the ambient `Modifies` gate before unit checks. The importer executed zero module-lowering, interface-plan, and interface-proof stages. The 76 pattern cases and 223 listed cases matched their existing expectations.
+
+In a separate producer-side check of `line-breaks.ts`, TScert established 32 callable rows. The checked row for `hasProperty` guarantees that array spines stay unchanged on normal return. Pretext's declaration emitter represents the same export as `(cp: number, property: number) => boolean`. The call to `hasProperty` in `prepare.ts`'s `spaceSharesScriptRun` then fails the caller's frame check with that declaration. The producer needs a body-free representation that carries its established effect and the importer's binding identity together. The draft's existing wire includes the entire producer module with those rows.
+
 ## 1. The computation today
 
 | Step | Actual computation and grain |
