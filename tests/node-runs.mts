@@ -83,6 +83,9 @@ assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-template
 assert.equal(runExample("bounds-pattern-framed-arrow-exceeds", "countLines()"), 3);
 assert.equal(runExample("bounds-pattern-framed-made-visitor", "total([1, 2, 3])"), 6);
 assert.equal(runExample("bounds-pattern-framed-mixed-local", "total(() => {})"), 6);
+assert.ok(Number.isNaN(Number(runExample("invalid-type-invariant-guarded-loop",
+  "extraAt({ widths: [1, 1, 1], segmentFlags: new Uint8Array([0, 8, 0]), lineStartExtras: [0, 0, 0] }, { segmentIndex: 1, graphemeIndex: 0 })"))),
+  "the loop replaces lineStartExtras by an empty array, and extraAt reads past it");
 assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-mixed",
   "(() => { const xs = [1, 2, 3]; return total(xs, () => { xs.pop(); }); })()"))),
   "the client's function the arrow calls pops the client's array under the walker's read");

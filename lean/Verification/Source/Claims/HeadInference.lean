@@ -491,7 +491,9 @@ def touched (es : List Expr) : List String :=
 /-- Whether a fact survives expressions that may write the heap: a fact of
 bindings' values and strings' lengths always; of an array's or typed
 array's length where no expression may resize it (`touched`); of a field
-path where every expression is quiet. -/
+path always, and a guarded fact where its linear fact does, whatever its
+guards' paths read: each is a proposal the pass checks at the head on
+every edge. -/
 partial def Fact.keptAcross (es : List Expr) : Fact → Bool
   | .int _ => true
   -- A separation of spines: kept unless a field its paths read is written
@@ -500,7 +502,7 @@ partial def Fact.keptAcross (es : List Expr) : Fact → Bool
     | .write _ (.str f) _ _ => pa.contains f || pb.contains f
     | .objectAssign .. => !(pa.isEmpty && pb.isEmpty)
     | _ => false
-  | .guarded gs l => Fact.keptAcross es (.lin l) && (es.all quiet || gs.all (·.2.1.isEmpty))
+  | .guarded _ l => Fact.keptAcross es (.lin l)
   | .lin l =>
     let t := touched es
     l.terms.all fun ((n, p, k), _) =>

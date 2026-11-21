@@ -634,7 +634,10 @@ by name (`push`, `pop`, `shift`, `unshift`, `splice`, an element or
 `length` write); a fact of a field path is kept across any expression, a
 proposal the pass keeps only where the path's fields are stable or the
 expressions write no object (`path-fact-across-calls`: `to <= a.xs.length`
-of a precondition across calls, `xs` stable). A
+of a precondition across calls, `xs` stable), and so is a guarded fact
+whatever its guards' paths read (`type-invariant-guarded-loop`: a type
+invariant's `x.f === null || …` across a cursor write and a call before
+the back edge). A
 `for...of` head is a loop head whose test reads nothing.
 A counter's or a linearly written binding's `2^32 - 1` is proposed only
 below a test's bound by arrays' or typed arrays' lengths (or by a binding
