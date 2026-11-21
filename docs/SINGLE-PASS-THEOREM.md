@@ -479,7 +479,8 @@ unit whose group `passGroup` accepts, so every member of its group is safe.
 
 Let $`M(u, n)`$ be the interface of unit $`u`$ at budget $`n`$: the value
 the module's environment holds for each member meets, in every world of
-budget $`n`$, the type its callers read (`MeetsAt`).
+budget $`n`$ above the base world (`Above`, below), the type its callers
+read (`MeetsAt`).
 
 **Theorem** `link` (proved). For a set $`S`$ closed under $`\mathrm{deps}`$,
 
@@ -495,10 +496,10 @@ $`n + 1`$ reads interfaces at budgets up to $`n`$ only. `closedUnits_linked`
 (proved) instantiates it at `closedUnits`, each unit depending on itself
 (its group's members) and on its printed dependencies.
 
-**Theorem** `envOk_of_linked` (proved). Where each slot a link names holds
-its callee's module value at the type its interface states, that interface
-holds at budget $`n`$, and every other slot meets its type,
-$`\rho \models_{n,W} \Gamma`$. So `RequestSafe`'s entry premise reduces to
+**Theorem** `envOk_of_linked` (proved). Where $`W`$ is above a base world,
+each slot a link names holds its callee's module value at the type its
+interface states, that interface holds at budget $`n`$ above that base
+world, and every other slot meets its type, $`\rho \models_{n,W} \Gamma`$. So `RequestSafe`'s entry premise reduces to
 the unit's own parameters once its callees are linked.
 
 ### H5: the realization
@@ -533,18 +534,43 @@ closure holds its captured values, so a cycle of functions has no finite
 closure; the depth-$`n`$ unfolding is the environment a run of at most
 $`n`$ steps sees, since each call spends a step.
 
-**Realized** (`Realizes`). A unit $`u`$ of a set $`S`$ is realized when its
-interface $`I_u`$ presents one clause of signatures $`L`$ and variadic
-signatures $`S_v`$ which its code offers at its captures' types
-(`CodeOffers`) with its kind (`KindOffers`); it has one slot per capture;
-each linked slot $`\mathrm{linked}(d)`$ has type $`I_d`$ with $`d \in S`$
-(the slot agreement); and each outside slot's value at depth $`i`$ meets
-its type at every budget $`j \le i`$ in every world.
+**The base world** (`Above`). The module's outside values are allocated
+before its functions run: an import's objects by its module, a host object
+by the realm, a module cell by the initialization. A world records each
+location with its contract, and a value of a record type, a cell or any
+located type meets its type only in a world holding its locations; no such
+value meets its type in the empty world (`recT_not_every_world`,
+`Verification.Tests.BaseWorldControls`). So the outside contracts and the
+theorems over them are stated at a base world $`W_0 \in \mathrm{World}_N`$,
+the world the initialization leaves, and every world above it: a world
+$`W \in \mathrm{World}_j`$ is above $`W_0`$ when
+
+```math
+\mathrm{Above}_{W_0}(W) \iff j \le N \wedge W \sqsupseteq W_0|_j
+```
+
+with $`W_0|_j`$ the truncation of $`W_0`$ to level $`j`$ and
+$`\sqsupseteq`$ world extension. A world extending one above $`W_0`$, and
+the truncation of one, are above $`W_0`$ (`Above.ext`, `Above.trunc`), so
+every world a call below the budget runs in is (`Above.below`); a world
+above a base world $`W_1`$ that is above $`W_0`$ is above $`W_0`$
+(`Above.base_trans`). The budgets are bounded by $`N`$: a run from the
+initialization's world of level $`N`$ has at most $`N`$ steps left.
+
+**Realized** (`Realizes`). A unit $`u`$ of a set $`S`$ is realized at the
+base world $`W_0`$ when its interface $`I_u`$ presents one clause of
+signatures $`L`$ and variadic signatures $`S_v`$ which its code offers at
+its captures' types (`CodeOffers`) with its kind (`KindOffers`); it has one
+slot per capture; each linked slot $`\mathrm{linked}(d)`$ has type $`I_d`$
+with $`d \in S`$ (the slot agreement); and each outside slot's value at
+depth $`i`$ meets its type at every budget $`j \le i`$ in every world above
+$`W_0`$.
 
 **Theorem** `closure_meets_below` (proved). Graph code of fixed arity
 offering the signatures of $`F`$, whose captured values meet their types at
-every budget $`j < n`$ in every world, meets $`F`$ at $`n`$ in every world:
-every call of a closure runs its code below the budget of the call. It is
+every budget $`j < n`$ in every world extending $`W|_j`$, meets $`F`$ at
+$`n`$ in $`W`$: every call of a closure runs its code below the budget of
+the call, in a world extending the caller's truncated. It is
 `offers_self`'s induction with the self entry replaced by captures given
 below the budget.
 
@@ -577,18 +603,20 @@ at the call's values is the post's (`Effect.ensures_frame`), and the two
 runs are one (`safePostExc_and`).
 
 **Theorem** `approx_meets` (proved). If every unit of $`S`$ is realized
-against $`S`$ and every outside value is a closed value,
+against $`S`$ at the base world $`W_0`$ and every outside value is a closed
+value,
 
 ```math
 \forall n.\; \forall u \in S.\; \forall m \le n.\; \forall W \in \mathrm{World}_m.\;
-  \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
+  \mathrm{Above}_{W_0}(W) \Rightarrow \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
 ```
 
-by induction on $`n`$ with `closure_meets_below`; recursion and cycles of
-units go through because the captured values are one unfolding below.
-`approx_captures_envOk` (proved): the values the depth-$`n`$ environment
-captures for $`u \in S`$ meet $`u`$'s capture types at $`n`$, the module
-part of $`u`$'s entry premise. `approx_link` (proved) restates
+by induction on $`n`$ with `closure_meets_below`, each call's world above
+$`W_0`$ by `Above.below`; recursion and cycles of units go through because
+the captured values are one unfolding below. `approx_captures_envOk`
+(proved): the values the depth-$`n`$ environment captures for $`u \in S`$
+meet $`u`$'s capture types at $`n`$ in every world above $`W_0`$, the
+module part of $`u`$'s entry premise. `approx_link` (proved) restates
 `approx_meets` as `link`'s interface.
 
 **A function declared without `this`.** Every call of a closure enters
@@ -695,11 +723,21 @@ cases, 2026-11-12, the check as a refusal: 286 of 6,303 units), by class:
 Every class keeps its units' safety: none of them is a premise of
 `passUnitVerdict_safe`.
 
-**H5b, the outside contracts** (`OutsideContracts`). Every value a closed
-unit's outside slot holds at depth $`i`$ meets the slot's type at every
-budget $`j \le i`$. It splits by the kind of the slot (`OutsideKind`, a
+**H5b, the outside contracts** (`OutsideContracts`), at a base world
+$`W_0`$. Every value a closed unit's outside slot holds at depth $`i`$
+meets the slot's type at every budget $`j \le i`$ in every world above
+$`W_0`$:
+
+```math
+\forall u \in D.\; \forall k.\; s_k = \mathrm{outside}(v) \Rightarrow
+  \forall i.\; \forall j \le i.\; \forall V \in \mathrm{World}_j.\;
+  \mathrm{Above}_{W_0}(V) \Rightarrow v_i \in ⟦C_k⟧_{j,V}
+```
+
+It splits by the kind of the slot (`OutsideKind`, a
 table `kinds` the layout states), and `outsideContracts_of_kinds` (proved)
-gives `OutsideContracts` from the five kinds met (`KindMet`):
+gives `OutsideContracts` at $`W_0`$ from the five kinds met at $`W_0`$
+(`KindMet`):
 
 - **An import with a body, read at an established entry** (`established`):
   no hypothesis of its own; `established_met` (proved) discharges it from
@@ -708,7 +746,7 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
   (`declared`): its contract is the declaration as the front reads it (the
   importer's `declarations` entry of that name, lowered by the type reader
   as for any declared value) and states that the value meets that type at
-  every budget. An import from a module with a body, read at no entry, is
+  every budget in every world above the base world. An import from a module with a body, read at no entry, is
   read at its declared type with the ordinary effect, its precondition kept
   (`ordinaryImport`), so its contract states nothing of a call its module's
   check has not established. A trusted boundary
@@ -722,7 +760,8 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
 
 ```math
 \mathrm{passGroup}(\texttt{:init}) \text{ accepts} \;\Longrightarrow\;
-  \forall \text{ cell } c \text{ of type } C_c.\; \forall n\, W.\; h_{\mathrm{after\ init}}(c) \in ⟦C_c⟧_{n,W}
+  \forall \text{ cell } c \text{ of type } C_c.\; \forall n \le N.\; \forall W \in \mathrm{World}_n.\;
+  \mathrm{Above}_{W_0}(W) \Rightarrow h_{\mathrm{after\ init}}(c) \in ⟦C_c⟧_{n,W}
 ```
 
   The `:init` request's assertions at its finish nodes give, by
@@ -746,14 +785,19 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
   annotation, per early cell its storage contract; (b) the slot's value at
   each depth is slot $`s`$'s value at a reached finish state (the
   lowering); (c) a cell's later writes keep it, each unit's write being
-  checked at the contract. A cell holds a reference, whose meaning depends
-  on the world, so (a) gives it at the worlds the run reaches, and
-  `KindMet`'s every world needs the meaning's world independence for the
-  slot's type, or `OutsideContracts` stated at the worlds extending the
-  initialization's.
+  checked at the contract. With $`W_0`$ the world the initialization's run
+  reaches at its finish, (a) gives the value's type at $`W_0`$, and the
+  meaning's monotonicity under extension and truncation gives it at every
+  world above $`W_0`$.
+
+Every kind's value whose type names a location (an import's object, a host
+object, a cell, a namespace) meets its type only where the world holds the
+location, so each kind's contract is stated at the base world: for an
+import, the world its module's initialization leaves, extended by the
+importer's; for a host value, a world holding the realm's objects.
 
 `passFile_safe_kinds` (proved) is `passFile_safe` with H5b replaced by
-these: `EstablishedSlots` and four `KindMet` premises.
+these at one base world: `EstablishedSlots` and four `KindMet` premises.
 
 **What H5a excludes, and what each needs.** A function realized through
 `RowRealized` has fixed arity, no rest, an unqualified request, and
@@ -884,17 +928,18 @@ and $`S = \mathrm{closedUnits}(V)`$. Then
 
 ```math
 \begin{aligned}
-&\mathrm{fragmentPlans}(\ldots) = \mathrm{ok}\ f \;\wedge\; \mathrm{ModuleLayout}(f', S) = (D, \ldots) \;\wedge\; \mathrm{OutsideContracts} \\
+&\mathrm{fragmentPlans}(\ldots) = \mathrm{ok}\ f \;\wedge\; \mathrm{ModuleLayout}(f', S) = (D, \ldots) \;\wedge\; \mathrm{OutsideContracts}(W_0) \\
 &\Longrightarrow\; \big(\forall u \in S.\; \exists i \in f.\mathrm{selected}.\; \mathrm{unitId}(i) = u \wedge \mathrm{PassUnitSafe}(f', i)\big) \\
-&\quad \wedge\; \forall x \in D.\; \big(\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(x) \in ⟦I_x⟧_{m,W}\big) \\
-&\quad \wedge\; \big(\forall n.\; \forall W.\; \text{the values } \mathrm{env} \text{ captures for } x \models_{n,W} C_x\big)
+&\quad \wedge\; \forall x \in D.\; \big(\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{Above}_{W_0}(W) \Rightarrow \mathrm{approx}_n(x) \in ⟦I_x⟧_{m,W}\big) \\
+&\quad \wedge\; \big(\forall n.\; \forall W.\; \mathrm{Above}_{W_0}(W) \Rightarrow \text{the values } \mathrm{env} \text{ captures for } x \models_{n,W} C_x\big)
 \end{aligned}
 ```
 
-Every member of each closed unit's group is safe from every entry meeting
-its inputs; each laid-out function's value in the module's environment meets
-the arrow its callers read, its effect included, at every budget; and its
-module slots are met by that environment.
+for every base world $`W_0`$ (section 4, "The base world"). Every member of
+each closed unit's group is safe from every entry meeting its inputs; each
+laid-out function's value in the module's environment meets the arrow its
+callers read, its effect included, at every budget in every world above
+$`W_0`$; and its module slots are met by that environment there.
 
 ### The hypotheses and who discharges them
 
@@ -980,18 +1025,23 @@ at every argument of the core planner), so `passGroupOver_safe` applies.
 
 **Theorem** `passPlans_safe` (proved). `passFile_safe`'s conclusion for any
 plans over their store and any set $`S`$ of units each a selected unit whose
-group is safe: with a layout of $`S`$ and its outside contracts, every
-$`u \in S`$ has $`\mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}`$ for $`m \le n`$.
+group is safe: with a layout of $`S`$ and its outside contracts at a base
+world $`W_0`$, every $`u \in S`$ has $`\mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}`$
+for $`m \le n`$ and $`W`$ above $`W_0`$.
 A module's step is this at its `ok`.
 
 **Theorem** `entry_met` (proved). Let `EntryRealized`$`(e)`$ be the module
 side of an entry: its plans over their store, a set $`S_m`$ of safe
-selected units containing $`e`$'s unit $`u`$, a layout of $`S_m`$ and its
-outside contracts. If an importer's slot of type $`A`$ holds at depth $`i`$
-the value $`\mathrm{approx}_i(u)`$ of $`u`$'s module (`HoldsModuleValue`)
-and the stores agree on the signature (`SignatureAgrees`:
-$`w \in ⟦I_u⟧^{G_m}_{j,W} \Rightarrow w \in ⟦A⟧^{G}_{j,W}`$), then
-$`\forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}`$.
+selected units containing $`e`$'s unit $`u`$, a layout of $`S_m`$, and its
+outside contracts at the module's base world $`W_m`$. If an importer's slot
+of type $`A`$ holds at depth $`i`$ the value $`\mathrm{approx}_i(u)`$ of
+$`u`$'s module (`HoldsModuleValue`), the stores agree on the signature
+(`SignatureAgrees`: $`w \in ⟦I_u⟧^{G_m}_{j,W} \Rightarrow w \in ⟦A⟧^{G}_{j,W}`$)
+and the importer's base world $`W_0`$ is above the module's
+($`\mathrm{Above}_{W_m}(W_0)`$: the importer's initialization runs after
+its exporters'), then
+$`\forall i.\; \forall j \le i.\; \forall W.\; \mathrm{Above}_{W_0}(W) \Rightarrow v_i \in ⟦A⟧_{j,W}`$,
+since a world above $`W_0`$ is above $`W_m`$ (`Above.base_trans`).
 `established_met` (proved) lifts it to every slot of kind `established`
 (`EstablishedSlots`).
 
@@ -1001,7 +1051,7 @@ mode 8's prepare `mode8Prepare` and check `mode8Check`, its accepted set
 $`\mathit{ok}`$) and a layout of the module at units of $`\mathit{ok}`$
 (`StepLayout`: a set $`S_m`$ of units whose wire identities are in
 $`\mathit{ok}`$, holding the entry's unit, a `ModuleLayout` of $`S_m`$ and
-its `OutsideContracts`) give `EntryRealized`$`(e)`$: the safety of $`S_m`$
+its `OutsideContracts` at a base world of the module) give `EntryRealized`$`(e)`$: the safety of $`S_m`$
 is `step_units_safe`, the wire identity being injective
 (`moduleUnitId_inj`). `realized_of_established` (proved) gives a
 realization of every entry `EstablishedStep` states, under `StepLayouts`
@@ -1028,13 +1078,14 @@ the modules' `StepLayouts`, the publication order, and the per-kind
 contracts of the other outside slots). For plans over their store and a set
 $`S`$ of units each a selected unit whose group is safe, whose established
 slots read entries published along the order and hold, at each depth, the
-value of every chosen realization at a type the stores agree on
-(`ChosenSlots`), every $`u \in S`$ meets its interface:
+value of every chosen realization at a type the stores agree on, the
+importer's base world $`W_0`$ above that realization's (`ChosenSlots`),
+every $`u \in S`$ meets its interface in every world above $`W_0`$:
 
 ```math
-\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
+\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{Above}_{W_0}(W) \Rightarrow \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
 \qquad\text{and}\qquad
-\forall n\, W.\; \text{the values } \mathrm{env} \text{ captures for } u \models_{n,W} C_u
+\forall n\, W.\; \mathrm{Above}_{W_0}(W) \Rightarrow \text{the values } \mathrm{env} \text{ captures for } u \models_{n,W} C_u
 ```
 
 `passUnitCli_safe` gives each importer unit's safety from its verdict line;

@@ -276,11 +276,11 @@ def RowOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
 budget** (proved): code of fixed arity and of any component `comp`
 offering the signatures of `F` as module rows (`RowOffers`) at the
 separation `sep`, whose captured values meet
-their types at every budget below `n`, in every world, and every frame of
-whose calls meets `sep`, meets `F` at `n` in every world. Every call of the
-closure runs its code below the budget at which it is made. The induction of
-`offers_self` with the self entry replaced by captures given at every
-smaller budget. -/
+their types at every budget `j` below `n` in every world extending `W`
+truncated to `j`, and every frame of whose calls meets `sep`, meets `F` at
+`n` in `W`. Every call of the closure runs its code below the budget at
+which it is made, in such a world. The induction of `offers_self` with the
+self entry replaced by captures given at every smaller budget. -/
 theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke} {comp : ComponentTag}
     {F : Ty ι} {L : List (CallEffects.Arrow (Ty ι))} {S : List (CallEffects.RestArrow (Ty ι))} (fs : List (PropKey × Nat)) {oid : Nat}
     {sep : HeapSeparation.Separation}
@@ -288,7 +288,8 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     (ho : RowOffers G arity E K start Cs L S sep)
     (hlen : Cs.length ≤ vs.length) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
     (hsep : ∀ r args more, HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ (vs ++ more)) .nul))
-    {n : Nat} (hcaps : ∀ j < n, ∀ U : WorldT j, EnvOk G Cs (envOf vs .nul) j U) (W : WorldT n) :
+    {n : Nat} (W : WorldT n)
+    (hcaps : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → EnvOk G Cs (envOf vs .nul) j U) :
     meaning G F n W (.objAt fs (.graph arity E K start vs kind false comp) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
   have hbL : ∀ p ∈ L, KindBinds G kind p.receiver :=
@@ -301,7 +302,7 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
   · intro q hq
     intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-    have henv := (hcaps j hj U).withSelf hlen hself
+    have henv := (hcaps j hj U hx).withSelf hlen hself
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
       row_invoke_at (ho p (List.mem_append_left _ hp)) henv
         (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)
@@ -316,7 +317,7 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     have hle : arity ≤ s.arguments.1.length := hspec.1
     have hrow : s.fixed.effect.belowRow arity = true := hspec.2.1
     have hbelow := CallEffects.Effect.belowRow_entry hrow
-    have henv := (hcaps j hj U).withSelf hlen hself
+    have henv := (hcaps j hj U hx).withSelf hlen hself
     have hp : CallArguments.parameters arity (args.take s.arguments.1.length) =
         CallArguments.parameters arity args := by
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
@@ -713,25 +714,27 @@ which its code offers, kind included (`CodeOffers`, `KindOffers`); each of its
 captures is a slot; each linked capture is read at its callee's interface
 and its callee is in the set (`S`): the slot agreement; and each outside
 capture's value at each depth meets its type at every budget up to that
-depth in every world: the
+depth in every world above the base world `W₀` (`Above`): the
 contract of the import, host value, stand-in or module value it holds; and
 its frames meet its separation (`CapturesApart`). -/
-def Realizes (G : NormalGraph ι) (code : U → ModuleCode ι U) (iface : U → Ty ι) (S : U → Prop) (u : U) :
-    Prop :=
+def Realizes (G : NormalGraph ι) (code : U → ModuleCode ι U) (iface : U → Ty ι) (S : U → Prop) {N : Nat}
+    (W₀ : WorldT N) (u : U) : Prop :=
   ∃ (L : List (CallEffects.Arrow (Ty ι))) (Sg : List (CallEffects.RestArrow (Ty ι))),
     Represents G (iface u) (.arrs L Sg) ∧ KindOffers G (code u).kind L Sg ∧
     RowOffers G (code u).arity (code u).exprs (code u).conts (code u).start (code u).captures L Sg (code u).sep ∧
     (code u).captures.length = (code u).slots.length ∧
     (∀ (k : Nat) d, (code u).slots[k]? = some (Slot.linked d) → (code u).captures[k]? = some (iface d) ∧ S d) ∧
     (∀ (k : Nat) v A, (code u).slots[k]? = some (Slot.outside v) → (code u).captures[k]? = some A →
-      ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning G A j V (v i)) ∧
+      ∀ i, ∀ j ≤ i, ∀ V : WorldT j, Above W₀ V → meaning G A j V (v i)) ∧
     CapturesApart code u
 
-/-- The captures of a realized unit meet their types at `j`, where every
-linked function's value, given by `f`, meets its interface there. -/
+/-- The captures of a realized unit meet their types at `j` in a world
+above the base, where every linked function's value, given by `f`, meets
+its interface there. -/
 theorem captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι} {S : U → Prop}
-    {u : U} (hr : Realizes G code iface S u) (ho : OutsideValues code) {f : U → Tm}
-    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) {i j : Nat} (hji : j ≤ i) {V : WorldT j}
+    {N : Nat} {W₀ : WorldT N}
+    {u : U} (hr : Realizes G code iface S W₀ u) (ho : OutsideValues code) {f : U → Tm}
+    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) {i j : Nat} (hji : j ≤ i) {V : WorldT j} (hV : Above W₀ V)
     (hm : ∀ d, S d → meaning G (iface d) j V (f d)) :
     EnvOk G (code u).captures (envOf ((code u).captured f i) .nul) j V := by
   obtain ⟨L, Sg, -, -, -, hlen, hagree, hout, -⟩ := hr
@@ -752,58 +755,61 @@ theorem captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {ifac
     exact hm d hd
   | outside w =>
     rw [hsk] at hs
-    exact hout k w A hs hA i j hji V
+    exact hout k w A hs hA i j hji V hV
 
 /-- **The module's environment meets every closed unit's interface**
-(proved): over a set `S` of units each realized against `S`, the value of
-each unit unfolded `n` times meets its interface at every budget up to `n`
-in every world. By induction on `n`: a call at budget `m ≤ n + 1` runs the
-code below `m`, where the captured values, unfolded `n` times, meet their
+(proved): over a set `S` of units each realized against `S` at the base
+world `W₀`, the value of each unit unfolded `n` times meets its interface
+at every budget up to `n` in every world above `W₀`. By induction on `n`: a
+call at budget `m ≤ n + 1` runs the code below `m`, in a world above `W₀`
+(`Above.below`), where the captured values, unfolded `n` times, meet their
 interfaces. Recursion and cycles go through, the budget decreasing. -/
 theorem approx_meets {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι} {S : U → Prop}
-    (hreal : ∀ u, S u → Realizes G code iface S u) (ho : OutsideValues code) :
-    ∀ n u, S u → ∀ m ≤ n, ∀ W : WorldT m, meaning G (iface u) m W (approx code n u) := by
+    {N : Nat} {W₀ : WorldT N}
+    (hreal : ∀ u, S u → Realizes G code iface S W₀ u) (ho : OutsideValues code) :
+    ∀ n u, S u → ∀ m ≤ n, ∀ W : WorldT m, Above W₀ W → meaning G (iface u) m W (approx code n u) := by
   intro n
   induction n with
   | zero =>
-    intro u hu m hm W
+    intro u hu m hm W _
     obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -, hsep⟩ := hreal u hu
     have hm0 : m = 0 := Nat.le_zero.mp hm
     subst hm0
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
       (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).2)
       (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).1)
-      (hsep _ 0) (fun j hj => absurd hj (Nat.not_lt_zero j)) W
+      (hsep _ 0) W (fun j hj => absurd hj (Nat.not_lt_zero j))
   | succ n ih =>
-    intro u hu m hm W
+    intro u hu m hm W hW
     obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -, hsep⟩ := hreal u hu
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
       (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).2)
       (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).1)
-      (hsep _ (n + 1)) (fun j hj V => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1)) (by omega)
-        (fun d hd => ih d hd j (by omega) V)) W
+      (hsep _ (n + 1)) W (fun j hj V hx => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1)) (by omega)
+        (hW.below _ hx) (fun d hd => ih d hd j (by omega) V (hW.below _ hx)))
 
 /-- **Each closed unit's captures are met by the module's environment**
 (proved): the values the depth-`n` environment captures for a unit of `S`
-meet the unit's capture types at budget `n` in every world. With the
+meet the unit's capture types at budget `n` in every world above the base
+world. With the
 receiver and the arguments meeting the unit's parameters, this is the entry
 premise of the unit's `RequestSafe` (`envOk_of_linked` states the same for
 a caller's input slots). -/
 theorem approx_captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι}
-    {S : U → Prop} (hreal : ∀ u, S u → Realizes G code iface S u) (ho : OutsideValues code)
-    (n : Nat) {u : U} (hu : S u) (W : WorldT n) :
+    {S : U → Prop} {N : Nat} {W₀ : WorldT N} (hreal : ∀ u, S u → Realizes G code iface S W₀ u)
+    (ho : OutsideValues code) (n : Nat) {u : U} (hu : S u) (W : WorldT n) (hW : Above W₀ W) :
     EnvOk G (code u).captures (envOf ((code u).captured (approx code n) n) .nul) n W :=
-  captures_envOk (hreal u hu) ho (fun d => approxEnv_value ho (n + 1) d) (Nat.le_refl n)
-    (fun d hd => approx_meets hreal ho n d hd n (Nat.le_refl n) W)
+  captures_envOk (hreal u hu) ho (fun d => approxEnv_value ho (n + 1) d) (Nat.le_refl n) hW
+    (fun d hd => approx_meets hreal ho n d hd n (Nat.le_refl n) W hW)
 
 /-- **The interfaces as `link` states them** (proved): the realization
 premise of the linking induction (`closedUnits_linked`'s `hreal`) holds of
 the module's environment, with `Meets u n` the unfolding `n` meeting the
 interface at every budget up to `n`. -/
 theorem approx_link {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι} {S : U → Prop}
-    (hreal : ∀ u, S u → Realizes G code iface S u) (ho : OutsideValues code) :
-    ∀ n u, S u → (fun u n => ∀ m ≤ n, MeetsAt G (iface u) (approx code n u) m) u n :=
-  fun n u hu m hm W => approx_meets hreal ho n u hu m hm W
+    {N : Nat} {W₀ : WorldT N} (hreal : ∀ u, S u → Realizes G code iface S W₀ u) (ho : OutsideValues code) :
+    ∀ n u, S u → (fun u n => ∀ m ≤ n, MeetsAt G (iface u) (approx code n u) m W₀) u n :=
+  fun n u hu m hm W hW => approx_meets hreal ho n u hu m hm W hW
 
 end
 

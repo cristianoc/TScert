@@ -39,13 +39,15 @@ inductive OutsideKind where
   | host
   | moduleCell
 
-/-- **The outside slots of a given kind are met**: every value an outside
-slot of a laid-out function holds, the slot's kind satisfying `κ`, meets at each
-depth the slot's type at every budget up to that depth in every world. -/
+/-- **The outside slots of a given kind are met** at the base world `W₀`:
+every value an outside slot of a laid-out function holds, the slot's kind
+satisfying `κ`, meets at each depth the slot's type at every budget up to
+that depth in every world above `W₀`. -/
 def KindMet {f : FilePlans} {selection : Option (List String)} {S : List String}
-    (m : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind) (κ : OutsideKind → Prop) : Prop :=
+    (m : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind) (κ : OutsideKind → Prop)
+    {N : Nat} (W₀ : WorldT N) : Prop :=
   ∀ u ∈ m.D, ∀ (k : Nat) v A, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
-    κ (kinds u k) → ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning (graphOf f) A j V (v i)
+    κ (kinds u k) → ∀ i, ∀ j ≤ i, ∀ V : WorldT j, Above W₀ V → meaning (graphOf f) A j V (v i)
 
 /-- The established-entry slots of the kinds' table. -/
 def IsEstablished : OutsideKind → Prop
@@ -55,10 +57,10 @@ def IsEstablished : OutsideKind → Prop
 /-- **The outside contracts, kind by kind** (proved): the five kinds met
 give `OutsideContracts`. -/
 theorem outsideContracts_of_kinds {f : FilePlans} {selection : Option (List String)} {S : List String}
-    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind}
-    (hest : KindMet m kinds IsEstablished) (hdecl : KindMet m kinds (· = .declared))
-    (hstand : KindMet m kinds (· = .standIn)) (hhost : KindMet m kinds (· = .host))
-    (hcell : KindMet m kinds (· = .moduleCell)) : OutsideContracts m := by
+    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind} {N : Nat} {W₀ : WorldT N}
+    (hest : KindMet m kinds IsEstablished W₀) (hdecl : KindMet m kinds (· = .declared) W₀)
+    (hstand : KindMet m kinds (· = .standIn) W₀) (hhost : KindMet m kinds (· = .host) W₀)
+    (hcell : KindMet m kinds (· = .moduleCell) W₀) : OutsideContracts m W₀ := by
   intro u hu k v A hs hA
   cases hk : kinds u k with
   | established e => exact hest u hu k v A hs hA (by rw [hk]; trivial)
@@ -71,8 +73,8 @@ theorem outsideContracts_of_kinds {f : FilePlans} {selection : Option (List Stri
 slot is a stand-in's, as with no stand-ins supplied, the stand-ins'
 contracts hold vacuously. -/
 theorem standIns_vacuous {f : FilePlans} {selection : Option (List String)} {S : List String}
-    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind}
-    (hnone : ∀ u k, kinds u k ≠ .standIn) : KindMet m kinds (· = .standIn) :=
+    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind} {N : Nat} {W₀ : WorldT N}
+    (hnone : ∀ u k, kinds u k ≠ .standIn) : KindMet m kinds (· = .standIn) W₀ :=
   fun u _ k _ _ _ _ hk => absurd hk (hnone u k)
 
 /-! ## The file-level conclusion for any accepted closed set -/
@@ -80,20 +82,21 @@ theorem standIns_vacuous {f : FilePlans} {selection : Option (List String)} {S :
 /-- **The file-level conclusion for any plans and accepted units** (proved):
 for plans over their store, a set `S` of units each identified with a
 selected unit whose group is safe, a layout of `S` and its outside
-contracts, each unit's value in the module's environment meets its
-interface and its captures meet their types. `passFile_safe` is this at
+contracts at a base world, each unit's value in the module's environment
+meets its interface and its captures meet their types, in every world above
+the base world. `passFile_safe` is this at
 mode 8's closed units; a module's interface check is this at its own. -/
 theorem passPlans_safe (hdrop : ReceiverDropSound) {f : FilePlans} {selection : Option (List String)}
     {S : List String} (hover : OverStore f)
     (hsafe : ∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe f i)
-    (layout : ModuleLayout f selection S) (hout : OutsideContracts layout) :
-    (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
+    (layout : ModuleLayout f selection S) {N : Nat} {W₀ : WorldT N} (hout : OutsideContracts layout W₀) :
+    (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, Above W₀ W →
       meaning (graphOf f) (layout.iface u) m W (approx layout.code n u)) ∧
-    (∀ u ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf f) (layout.code u).captures
+    (∀ u ∈ layout.D, ∀ n (W : WorldT n), Above W₀ W → EnvOk (graphOf f) (layout.code u).captures
       (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) := by
   have hreal := layout_realizes hdrop hover hsafe layout hout
   exact ⟨fun u hu n => approx_meets hreal layout.values n u hu,
-    fun u hu n W => approx_captures_envOk hreal layout.values n hu W⟩
+    fun u hu n W hW => approx_captures_envOk hreal layout.values n hu W hW⟩
 
 /-- **A group the pass accepts, over any plans over their store** (proved,
 under H1 and H2): every member is safe. `passUnit_safe` is this at mode 8's
@@ -112,8 +115,9 @@ theorem passGroupOver_safe
 /-- **An entry realized by its module** (the module's side of an entry):
 the module's plans `fm` over their store, a set `Sm` of its units each a
 selected unit whose group is safe, a layout of `Sm` whose outside contracts
-hold, and the entry's function `u` laid out. `interface_entry_meets` gives the
-function's value in its module's environment meeting its interface. -/
+hold at the module's base world `base`, and the entry's function `u` laid
+out. `interface_entry_meets` gives the function's value in its module's
+environment meeting its interface in every world above `base`. -/
 structure EntryRealized (e : Entry) where
   fm : FilePlans
   selection : Option (List String)
@@ -121,7 +125,9 @@ structure EntryRealized (e : Entry) where
   hover : OverStore fm
   hsafe : ∀ u ∈ Sm, ∃ i ∈ fm.fr.selected selection, fm.fr.unitId i = u ∧ PassUnitSafe fm i
   layout : ModuleLayout fm selection Sm
-  hout : OutsideContracts layout
+  level : Nat
+  base : WorldT level
+  hout : OutsideContracts layout base
   unit : String
   hunit : unit ∈ layout.D
 
@@ -140,43 +146,47 @@ def HoldsModuleValue (src : EntryRealized e) (v : Nat → Tm) : Prop :=
 /-- **An interface entry meets its interface in its module** (proved, under
 H1 and H2 for the module's own check): the function's value in its module's
 environment, unfolded `n` times, meets its interface at every budget up to
-`n`. -/
+`n` in every world above the module's base world. -/
 theorem interface_entry_meets (hdrop : ReceiverDropSound) (src : EntryRealized e) :
-    ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
+    ∀ n, ∀ m ≤ n, ∀ W : WorldT m, Above src.base W →
       meaning (graphOf src.fm) (src.layout.iface src.unit) m W (approx src.layout.code n src.unit) :=
   (passPlans_safe hdrop src.hover src.hsafe src.layout src.hout).1 src.unit src.hunit
 
 /-- **An importer's slot read at an established entry is met** (proved):
 where the entry's module realizes it, the slot holds the module's function
-at each depth and the two stores agree on its signature, the slot's value
-at each depth meets the slot's type at every budget up to that depth. -/
+at each depth, the two stores agree on its signature and the importer's
+base world `W₀` is above the module's, the slot's value at each depth meets
+the slot's type at every budget up to that depth in every world above
+`W₀`. -/
 theorem entry_met (hdrop : ReceiverDropSound) {e : Entry} (src : EntryRealized e) {ι : Type} [Labels ι] {G : NormalGraph ι} {A : Ty ι}
-    {v : Nat → Tm} (hv : HoldsModuleValue src v) (hagree : SignatureAgrees src G A) :
-    ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning G A j V (v i) := by
-  intro i j hj V
+    {v : Nat → Tm} (hv : HoldsModuleValue src v) (hagree : SignatureAgrees src G A)
+    {N : Nat} {W₀ : WorldT N} (hbase : Above src.base W₀) :
+    ∀ i, ∀ j ≤ i, ∀ V : WorldT j, Above W₀ V → meaning G A j V (v i) := by
+  intro i j hj V hV
   rw [hv i]
-  exact hagree j V _ (interface_entry_meets hdrop src i j hj V)
+  exact hagree j V _ (interface_entry_meets hdrop src i j hj V (hbase.base_trans hV))
 
 /-- **What an importer's established-entry slots read** (the part of H5a
-stating the import slots): each slot of kind `established e` holds, at each
-depth, the value of the function `e` names in a module that realizes `e`,
-read at a type the module's interface agrees with. -/
+stating the import slots) at the importer's base world `W₀`: each slot of
+kind `established e` holds, at each depth, the value of the function `e`
+names in a module that realizes `e`, read at a type the module's interface
+agrees with, `W₀` above the module's base world. -/
 def EstablishedSlots {f : FilePlans} {selection : Option (List String)} {S : List String}
-    (m : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind) : Prop :=
+    (m : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind) {N : Nat} (W₀ : WorldT N) : Prop :=
   ∀ u ∈ m.D, ∀ (k : Nat) v A e, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
     kinds u k = .established e →
-    ∃ src : EntryRealized e, HoldsModuleValue src v ∧ SignatureAgrees src (graphOf f) A
+    ∃ src : EntryRealized e, HoldsModuleValue src v ∧ SignatureAgrees src (graphOf f) A ∧ Above src.base W₀
 
 /-- **An importer's established-entry slots are met** (proved): the
 established kind of `OutsideContracts`, discharged by the entries' modules. -/
 theorem established_met (hdrop : ReceiverDropSound) {f : FilePlans} {selection : Option (List String)} {S : List String}
-    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind}
-    (h : EstablishedSlots m kinds) : KindMet m kinds IsEstablished := by
+    {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind} {N : Nat} {W₀ : WorldT N}
+    (h : EstablishedSlots m kinds W₀) : KindMet m kinds IsEstablished W₀ := by
   intro u hu k v A hs hA hκ
   cases hk : kinds u k with
   | established e =>
-    obtain ⟨src, hv, hagree⟩ := h u hu k v A e hs hA hk
-    exact entry_met hdrop src hv hagree
+    obtain ⟨src, hv, hagree, hbase⟩ := h u hu k v A e hs hA hk
+    exact entry_met hdrop src hv hagree hbase
   | _ => rw [hk] at hκ; exact hκ.elim
 
 /-! ## What the interface computation's step establishes -/
@@ -297,10 +307,10 @@ theorem step_units_safe
     exact passGroupMode8_safe hrun hkeep hover (FilePlans.establishVerdict_ok h2)
 
 /-- **The file-level theorem, its outside slots by kind** (proved, under
-H1 and H2, the layout H5a and, per kind of outside slot, its contract): an
-established entry's slots discharged by the entry's module
-(`EstablishedSlots`); a declaration-only import's, a stand-in's, a host
-value's and a module cell's contracts named. With no stand-in slot the
+H1 and H2, the layout H5a and, per kind of outside slot, its contract at a
+base world `W₀`): an established entry's slots discharged by the entry's
+module (`EstablishedSlots`); a declaration-only import's, a stand-in's, a
+host value's and a module cell's contracts named. With no stand-in slot the
 stand-ins' contracts hold (`standIns_vacuous`). -/
 theorem passFile_safe_kinds
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
@@ -313,17 +323,17 @@ theorem passFile_safe_kinds
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)
     (layout : ModuleLayout (f.withHeadFacts givenLines false infer) selection
       (closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)))
-    (kinds : String → Nat → OutsideKind)
-    (hest : EstablishedSlots layout kinds) (hdecl : KindMet layout kinds (· = .declared))
-    (hstand : KindMet layout kinds (· = .standIn)) (hhost : KindMet layout kinds (· = .host))
-    (hcell : KindMet layout kinds (· = .moduleCell)) :
+    (kinds : String → Nat → OutsideKind) {N : Nat} (W₀ : WorldT N)
+    (hest : EstablishedSlots layout kinds W₀) (hdecl : KindMet layout kinds (· = .declared) W₀)
+    (hstand : KindMet layout kinds (· = .standIn) W₀) (hhost : KindMet layout kinds (· = .host) W₀)
+    (hcell : KindMet layout kinds (· = .moduleCell) W₀) :
     let S := closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)
     (∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false infer) i) ∧
-    (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
+    (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, Above W₀ W →
       meaning (graphOf (f.withHeadFacts givenLines false infer)) (layout.iface u) m W (approx layout.code n u)) ∧
-    (∀ u ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false infer)) (layout.code u).captures
+    (∀ u ∈ layout.D, ∀ n (W : WorldT n), Above W₀ W → EnvOk (graphOf (f.withHeadFacts givenLines false infer)) (layout.code u).captures
       (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) :=
-  passFile_safe hrun hkeep hdrop hplans layout
+  passFile_safe hrun hkeep hdrop hplans layout W₀
     (outsideContracts_of_kinds (established_met hdrop hest) hdecl hstand hhost hcell)
 
 /-! ## Mode 8's plans as the command line computes them -/

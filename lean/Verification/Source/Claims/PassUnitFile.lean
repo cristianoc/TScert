@@ -5,11 +5,12 @@ import Verification.Source.Claims.PassUnitRealize
 Mode 8's verdicts of a file, closed (`closedUnits`), with the module's
 layout (`ModuleLayout`: each closed unit's code, interface and slots, and
 each signature of its interface realized by a member of its group) and the
-contracts of the slots no unit of the file fills (`OutsideContracts`),
-give every function of the file safe: each member of each closed unit's
-group is safe (`PassUnitSafe`), and each closed unit's value in the module's
-environment meets its interface at every budget (`approx_meets`), so its
-captures meet their types (docs/SINGLE-PASS-THEOREM.md, section 6). -/
+contracts of the slots no unit of the file fills (`OutsideContracts`) above
+a base world, give every function of the file safe: each member of each
+closed unit's group is safe (`PassUnitSafe`), and each closed unit's value
+in the module's environment meets its interface at every budget in every
+world above the base world (`approx_meets`), so its captures meet their
+types there (docs/SINGLE-PASS-THEOREM.md, section 6). -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
@@ -112,29 +113,30 @@ structure ModuleLayout (f : FilePlans) (selection : Option (List String)) (S : L
   apart : ∀ x ∈ D, CapturesApart code x
 
 /-- **The outside contracts** (H5b, the trusted boundary of the module's
-slots): every value a laid-out function's slot holds from outside the file's
-functions, at each depth, meets the slot's type at every budget up to that
-depth in every world. Such a slot
-holds an import (its declaration's contract, or an import stand-in's
+slots) at the base world `W₀`: every value a laid-out function's slot holds
+from outside the file's functions, at each depth, meets the slot's type at
+every budget up to that depth in every world above `W₀` (`Above`). Such a
+slot holds an import (its declaration's contract, or an import stand-in's
 footprint), a host value (its host contract), or a module constant or cell
-(the initialization's postcondition, `:init`). With no import, no host
+(the initialization's postcondition, `:init`); `W₀` holds the locations
+such a value's objects and cells are allocated at. With no import, no host
 value and no module constant, no slot is outside and this holds vacuously. -/
 def OutsideContracts {f : FilePlans} {selection : Option (List String)} {S : List String}
-    (m : ModuleLayout f selection S) : Prop :=
+    (m : ModuleLayout f selection S) {N : Nat} (W₀ : WorldT N) : Prop :=
   ∀ u ∈ m.D, ∀ (k : Nat) v A, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
-    ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning (graphOf f) A j V (v i)
+    ∀ i, ∀ j ≤ i, ∀ V : WorldT j, Above W₀ V → meaning (graphOf f) A j V (v i)
 
 /-- **Every laid-out function is realized** (proved, under
-`ReceiverDropSound`): where each unit of `S` is a selected unit whose group
-is safe. -/
+`ReceiverDropSound`) at the base world of the outside contracts: where each
+unit of `S` is a selected unit whose group is safe. -/
 theorem layout_realizes (hdrop : ReceiverDropSound) {f : FilePlans} {selection : Option (List String)}
     {S : List String} (hover : OverStore f)
     (hsafe : ∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe f i)
-    (layout : ModuleLayout f selection S) (hout : OutsideContracts layout) :
-    ∀ x, x ∈ layout.D → Realizes (graphOf f) layout.code layout.iface (· ∈ layout.D) x := by
+    (layout : ModuleLayout f selection S) {N : Nat} {W₀ : WorldT N} (hout : OutsideContracts layout W₀) :
+    ∀ x, x ∈ layout.D → Realizes (graphOf f) layout.code layout.iface (· ∈ layout.D) W₀ x := by
   intro x hx
   obtain ⟨L, Sg, hrep, hk, hlen, hagree, hrows⟩ := layout.shape x hx
-  refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA i j hj V => hout x hx k v A hs hA i j hj V,
+  refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA i j hj V hV => hout x hx k v A hs hA i j hj V hV,
     layout.apart x hx⟩
   intro p hp
   obtain ⟨u, hu, hall⟩ := hrows p hp
@@ -173,13 +175,14 @@ theorem closedUnits_selected_safe
 
 /-- **The file-level theorem** (proved, under the graph-level hypotheses
 H1 `RunSound` and H2 `RunKeepsSummaries`, `ReceiverDropSound`,
-the module's layout H5a and the outside contracts H5b): for every unit of
-the closure of mode 8's verdicts of a file, every member of its group is
-safe (`PassUnitSafe`); and for every function the layout lays out (each
-closed unit's members), its value in the module's environment, unfolded `n`
-times, meets its interface at every budget up to `n` in every world, and
-the values the environment captures for it meet its capture types at `n`:
-its `RequestSafe` entry premise holds of the module's own values. -/
+the module's layout H5a and the outside contracts H5b at a base world
+`W₀`): for every unit of the closure of mode 8's verdicts of a file, every
+member of its group is safe (`PassUnitSafe`); and for every function the
+layout lays out (each closed unit's members), its value in the module's
+environment, unfolded `n` times, meets its interface at every budget up to
+`n` in every world above `W₀`, and the values the environment captures for
+it meet its capture types at `n` in every world above `W₀`: its
+`RequestSafe` entry premise holds of the module's own values. -/
 theorem passFile_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     (hdrop : ReceiverDropSound)
@@ -191,12 +194,12 @@ theorem passFile_safe
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)
     (layout : ModuleLayout (f.withHeadFacts givenLines false infer) selection
       (closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)))
-    (hout : OutsideContracts layout) :
+    {N : Nat} (W₀ : WorldT N) (hout : OutsideContracts layout W₀) :
     let S := closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)
     (∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false infer) i) ∧
-    (∀ x ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
+    (∀ x ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, Above W₀ W →
       meaning (graphOf (f.withHeadFacts givenLines false infer)) (layout.iface x) m W (approx layout.code n x)) ∧
-    (∀ x ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false infer)) (layout.code x).captures
+    (∀ x ∈ layout.D, ∀ n (W : WorldT n), Above W₀ W → EnvOk (graphOf (f.withHeadFacts givenLines false infer)) (layout.code x).captures
       (envOf ((layout.code x).captured (approx layout.code n) n) .nul) n W) := by
   intro S
   have hsafe := fun u (hu : u ∈ S) =>
@@ -205,6 +208,6 @@ theorem passFile_safe
   have hreal := layout_realizes hdrop hover hsafe layout hout
   exact ⟨fun u hu => hsafe u hu,
     fun x hx n => approx_meets hreal layout.values n x hx,
-    fun x hx n W => approx_captures_envOk hreal layout.values n hx W⟩
+    fun x hx n W hW => approx_captures_envOk hreal layout.values n hx W hW⟩
 
 end Verification.SourceClaimJson.PassUnit
