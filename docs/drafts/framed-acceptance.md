@@ -2926,7 +2926,7 @@ history before any entry, that fits the flow, is an entry, meets the
 invariants every step keeps, and meets the outside contracts:
 
 ```math
-\mathrm{Initial}(x_0) \iff \mathrm{Fits}_F(x_0, g_\varnothing) \wedge \mathrm{Entry}(x_0) \wedge \mathrm{States}(x_0) \wedge \mathrm{SlotsMet}(x_0) \wedge \mathrm{RealmSlots}(x_0)
+\mathrm{Initial}(x_0) \iff \mathrm{Fits}_F(x_0, g_\varnothing) \wedge \mathrm{Entry}(x_0) \wedge \mathrm{States}(x_0) \wedge \mathrm{SlotsMet}(x_0)
 ```
 
 - $`\mathrm{Fits}_F(x_0,g_\varnothing)`$ is the frame's fit
@@ -2966,15 +2966,21 @@ invariants every step keeps, and meets the outside contracts:
   every constructor), and the unfolding `UnfoldsAt`, at depth $`0`$
   `null`, at depth $`i+1`$ a closure of the code whose linked captures
   unfold at depth $`i`$ and whose outside captures meet their types at
-  every budget up to $`i`$ in every world above $`x_0`$'s;
-- $`\mathrm{RealmSlots}(x_0)`$ (Fable R5): the value of every native's
-  slot of a module function's closure in $`x_0`$, and each member read
-  through it in $`x_0`$'s heap, is a closure of the realm's code $`R`$.
-  It reads each slot's kind and declaration's origin and a realm tag in
-  the family, which the plan does not hold while the family is
-  `oneComponent` $`C`$ and the kinds are stated in theorems alone
-  (`OutsideKind`); it is stated with the natives by their footprints, with
-  its reader `nativeAt_sound`.
+  every budget up to $`i`$ in every world above $`x_0`$'s.
+
+$`\mathrm{RealmSlots}(x)`$ (Fable R5, `FramedSpec.RealmSlots`) is a premise
+of every reached configuration $`x`$ of the claim, beside
+`CallbacksWithin`: every outside slot of a closure of a module function in
+$`x`$, a native or an intrinsic object by the restrictions, holds a value
+of the realm's code $`R`$ where it is a function, and so does each member
+read through it in $`x`$'s heap that is a function. It is the assumption
+that standard objects are not tampered with, which the repository's
+policy approves ([choosing the gap cases](../../CLAUDE.md#choosing-the-gap-cases-to-work-on)):
+outside code writes the realm's storage at any state, so a client running
+`Array.prototype.push = function (v) { leak = v; return 0; }` before a
+walker's `out.push(xs[i])` makes that call run its function with the
+read-only element (`tamper.mjs`: `true`), and the claim is not about such a
+program. Its reader is `nativeAt_sound`.
 
 So `InitialFits` and `InitialEntry` hold by definition, and
 `FramedSpec.Initial`'s term, the realm's heap, `initE`, `initK`, `initL`
@@ -3102,7 +3108,8 @@ with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
 `MemberSafe`'s framed branch.
 
 1. `FramedSpec.Initial` (modified): the conjuncts above
-   (`FramedSpec.States`, `FramedSpec.RealmSlots`, new);
+   (`FramedSpec.States`, new), and `FramedSpec.RealmSlots` (new), a premise
+   of every reached configuration;
    `FramedSpec.SlotsMet` (new), over the plan's layout (`FramedSpec.layout`,
    each module function's code and slots' links and types; the kinds join
    it with `RealmSlots`) and `closuresOf`, by `FramedSpec.UnfoldsAt`, at
@@ -3508,19 +3515,6 @@ and P22's layout meets them (measured).
 ## Open points for review
 
 1. **Milestone 4's disjoint supports** are a design to review.
-2. **`RealmSlots` at the initial configuration alone gives no
-   `nativeAt_sound`.** Outside code may write the realm's storage after
-   the initialization: a client running
-   `Array.prototype.push = function (v) { leak = v; return 0; }` before
-   calling a walker whose `out.push(xs[i])` the decision reads as a call
-   of a native makes that call run the client's function, which keeps the
-   read-only element (`tamper.mjs`: `true`). The natives item of Read-only
-   frames states its sentence "The value of a native's slot, and each
-   member read through it, is the realm's code" at no particular state;
-   read at every reached state it excludes this program, as the trust on
-   standard objects not being tampered with does. Proposed: `RealmSlots`
-   a premise of every reached configuration of the claim, beside
-   `CallbacksWithin`, rather than a conjunct of `Initial`.
 
 ## Runs
 
