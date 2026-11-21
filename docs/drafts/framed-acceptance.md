@@ -2670,6 +2670,15 @@ to $`O`$, its steps the client's. With (b) a standard native's run reaches
 only its operands, so its call gives nothing to $`O`$ but through a
 function argument of outside code.
 
+A native that passes storage it allocates to a function argument
+(`JSON.stringify` with a replacer, which allocates a wrapper object,
+stores its argument there and passes the wrapper to the replacer as
+`this`; `JSON.parse` with a reviver) is read the same way (the owner,
+2026-11-21): row (b) bounds what a native stores, not what storage of its
+own it hands to a callback, so its contract says so (a field beside
+`retains`, audited with it), and its call is a call of outside code, its
+operands given to $`O`$, its steps the client's.
+
 ### The algorithm
 
 **Per component, once.**

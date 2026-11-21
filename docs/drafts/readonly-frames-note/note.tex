@@ -915,7 +915,10 @@ library (by the declaration's origin; a declared import of a module is
 outside code), or through one: a member of such a value, directly or
 through a receiver whose type's prototype is that slot's contract; and
 whose contract retains no function argument past the call. A native
-whose contract retains one (\code{setTimeout}) is read as outside code. A closure of $\cC$ that a call of a
+whose contract retains one (\code{setTimeout}), or passes storage it
+allocates to a function argument (\code{JSON.stringify} with a replacer,
+\code{JSON.parse} with a reviver), is read as outside code, a stated
+limit. A closure of $\cC$ that a call of a
 native is passed has a code with no framed call and an ordinary
 verdict.
 Every \code{@clients} row of
