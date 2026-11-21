@@ -2905,30 +2905,51 @@ thrown. A native's closure is the realm's code: a closure tagged with the
 realm's component $`R`$, apart from $`C`$ and from the client's code (an
 initial configuration's `Entry` states it, below).
 
-- **Whose steps** (Fable S2, R5). A step whose active frame is $`R`$'s, and
-  whose innermost frame outside $`R`$ on the path is $`C`$'s, suspended at
-  a call of a native's key, is $`C`$'s: the native's own step
-  (`NativeStep`). A native's steps at any other key are the client's: a
-  native the component calls through a slot holding outside code (a
-  native passed as the visitor) runs at a framed call's key, and its
-  steps keep $`\Theta_C`$. A step whose active frame is the
-  client's code is a client step wherever it runs, inside a native's run
-  included, and keeps $`\Theta_C`$ (`ClientStep`; `FrameCore.Keeps` at
-  client steps). A native the client calls takes client steps. So
-  $`C`$'s charges hold the native's own writes and no callback's effect.
+- **Whose steps** (Fable S2, R5; the owner's rule of 2026-11-21). A
+  standard native's steps are the component's when the component's code
+  calls it at a call of a native (its callee read through a native's
+  slot, `nativeAt`), bounded by its contract (rows (a) and (b)); at any
+  other call they are the client's, a native a client passes as a
+  function value included. The owner of a frame is read on the evaluation
+  path: a frame of $`C`$'s code is $`C`$'s, a frame of the client's code
+  the client's, and a frame of the realm's code is $`C`$'s where the frame
+  that called it is $`C`$'s, suspended at a native-call key, and the
+  client's otherwise. A frame $`C`$ owns is suspended at a native-call key
+  only at a call its code makes through the realm's own code; a native
+  $`C`$ owns calling its function argument runs it as the client's where
+  it came from outside code. The kinds of step (outside, enter, body,
+  exit; `stepKind`) are read with the owner in place of the active
+  frame's tag (`OutsideAt`, `depthC`), and the values of outside code
+  (`vals`) with a frame $`C`$ owns read as $`C`$'s; no kind of step and no
+  component of the family is added: the realm's code is a set of tags
+  whose owner is inherited. So `a.fill(1)` in `prepare` takes $`C`$'s
+  steps, `a` stays exposed and (P2) holds, the frames reaching `a` being
+  $`C`$'s; `out.push(s)` keeps `out` local; a native passed as the
+  visitor runs at a framed call's key and takes client steps under
+  $`\Theta_C`$; and `xs.map(f)` with `f` a closure of $`C`$ runs `f` in
+  the same call of $`C`$, the frames from `xs.map` to `f` all $`C`$'s.
+  At a step of $`C`$ whose code is a native's, the checks' fields
+  (`PkgProps`) are the native's contract's: `gives` and `stores` by the
+  actual crossings (`pkgProps_actual`), `crossOk`, `localStores` and
+  `localBindings` from row (b) and the flow at the call (`Fits.native`).
+  `readonly-frame-param-protected` with `Array.prototype.pop.bind(flags)`
+  as the visitor shows the key is needed: read by the caller alone, pop
+  would run as $`C`$'s at the visit and change the protected spine within
+  its contract (`NaN` under Node); at the framed call's key it runs as the
+  client's and breaks $`\Theta_C`$, so the program is outside the claim.
 - **The native's own steps** (`nativeStep_within`, to be proved): from a
   reached state, each changes only locations of sites of $`L_n(c)`$ or of
   its node's key, by (b) and no-forgery (`valRun_noForge`: what the
   native's run holds it reached from its operands or its closure, its
   closure's captures realm storage it does not write by (b)); so each is
   `StepWithin` the native reach of $`c`$.
-- **In a segment and in a member's call.** `RunSeq` gains a native step
-  as one more kind of step at the run's depth (`RunSeq.native`), bounded
-  by the native reach; a client step inside a native run is an outside
-  step, a call of $`C`$ from it a member's call. `seg_run`, `seg_bound`,
-  `ClientFrame.cert_of_charges` and `segWithin_of_run` read it, so a
-  native's steps at the caller's depth are within $`W_c`$ and those inside
-  a member's call within $`\Psi_C`$.
+- **In a segment and in a member's call.** A native's step called at a
+  native-call key is a body step of $`C`$ at the run's depth, its writes
+  within the native reach, so a native's steps at the caller's depth are
+  within $`W_c`$ and those inside a member's call within $`\Psi_C`$
+  (`seg_run`, `seg_bound`, `ClientFrame.cert_of_charges`,
+  `segWithin_of_run`); a client step inside a native run is an outside
+  step, and a call of $`C`$ from it a member's call.
 - **The frame's check at a call of a native.** `framed_transfer` at
   $`\Phi_\star=\Phi_c`$ at the normal exit, by `callerFrame_post` at the
   callee's type, and at the exceptional exit where the native runs no
@@ -2947,8 +2968,9 @@ initial configuration's `Entry` states it, below).
   keeping $`\Theta_C`$, its effect bounded by its type by the callback
   row, restated (below) for a function a native $`C`$ calls is passed.
 - *A closure of the component* (`xs.map(f)`): `f`'s code is in $`\mathrm{seg}(c)`$
-  and entered at $`L_n(c)`$; its steps are $`C`$'s code, within $`W_c`$ at
-  the caller's depth, `f` given out only where $`L_n(c)`$ holds
+  and entered at $`L_n(c)`$; `map`'s frame is $`C`$'s, so the call of `f`
+  stays inside the same call of $`C`$ (no new call), its steps within
+  $`W_c`$ at the caller's depth, `f` given out only where $`L_n(c)`$ holds
   $`\circ`$. The native's footprint reads `f` at its arrow type, which
   `f`'s ordinary verdict establishes: the gate `callbackB` (step 8) admits
   such an `f` only where its code has no framed node and its unit is
@@ -3133,17 +3155,20 @@ with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
    $`x_0`$.
 2. `FramedSpec.initialFits`, `FramedSpec.initialEntry` (modified, proved
    by definition); `initial_inhabited` (new, to be proved).
-3. `NativeStep`, `ClientStep` (new), `FrameCore.Keeps` (modified: the
-   obligation at client steps), with `project` and `keeps_canonical`
-   (to be proved, milestone 1) restated over client steps.
+3. The owner of a frame on the evaluation path (new: `path` reading a
+   frame of the realm's code at its caller's tag where the caller is
+   suspended at a native-call key), read by `OutsideAt`, `depthC` and
+   `vals` (modified); `stepKind`, `StepHyp` and `FrameCore.Keeps` keep
+   their statements over it; `project` and `keeps_canonical` (to be
+   proved, milestone 1) read it.
 4. `nativeAt_sound` (new, to be proved): a node `nativeAt` decides calls
    a closure of the realm's code.
 5. `nativeStep_within` (new, to be proved): a native's own step changes
    only locations of its call's native reach, from (b) and
    `valRun_noForge`.
-6. `RunSeq.native` (new constructor), `seg_run`, `seg_bound`,
-   `segWithin_of_run`, `ClientFrame.cert_of_charges` (modified, to be
-   proved again with native steps), `framed_transfer` (statement kept) at
+6. `seg_run`, `seg_bound`, `segWithin_of_run`,
+   `ClientFrame.cert_of_charges` (modified, to be proved again with a
+   native's steps as body steps of $`C`$), `framed_transfer` (statement kept) at
    a call of a native at $`\Phi_c`$, its throw by (a).
 7. `nativeKeysB`, `nativeKeysB_sound`, `callbackB`, `callbackB_sound`
    (new): every node of a native call's key calls a native; a closure of
@@ -3229,6 +3254,7 @@ expected outcomes are the family's and do not move.
 | `bounds-pattern-framed-realm-result` (new; `Object.getPrototypeOf(xs)` read beside the walker) | accepted under client trust | the result a value of $`\circ`$, the cursor outside the native's reach |
 | `bounds-pattern-framed-retained-callback` (new; `setTimeout(f)` with `f` a closure of $`C`$) | accepted under client trust | a native retaining its argument read as a call of outside code, `f` given out |
 | `bounds-pattern-framed-native-visitor` (new; `walk(xs, Math.max)`, a native passed as the visitor) | accepted under client trust | the native's steps at node 13's key the client's |
+| `invalid-readonly-frame-native-visitor` (new; `readonly-frame-param-protected`'s walker, the visitor `Array.prototype.pop.bind(flags)`) | the existing case kept accepted; its program outside the claim | pop runs at the framed call's key as the client's and breaks $`\Theta_C`$ at the protected spine; `NaN` under Node |
 | `invalid-readonly-frame-walker-pops` | negative, kept | `w.flags.pop()` charged at the spine of $`\circ`$: (P) fails at `h.flags` |
 | `invalid-readonly-frame-trim` | negative, kept | `trim`'s `pop` charged at the spine of $`\circ`$ |
 | `invalid-readonly-frame-member-pop`, `-member-push`, `-member-shift`, `-member-splice` (new) | negative | a member's native at its parameter's reach, of $`\circ`$ |

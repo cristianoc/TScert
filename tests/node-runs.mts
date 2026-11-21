@@ -58,6 +58,13 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-shared-code",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-writable",
   "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
   "a client pops the array of the record it passed writable, under the walker");
+// The accepted walker, its visitor a standard native the client binds to the
+// array it passed read-only: pop runs at the framed call's key, so its steps
+// are the client's and break the client obligation at the protected spine;
+// the program is outside the claim, and the walker reads past the array.
+assert.ok(Number.isNaN(Number(runExample("readonly-frame-param-protected",
+  "(() => { const flags = [1, 1, 1]; return walk({ flags }, Array.prototype.pop.bind(flags)); })()"))),
+  "a native the client passes as the visitor runs as the client's and pops the protected spine");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-partly-readonly",
   "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
   "a client pops the writable array behind a read-only field, under the walker");

@@ -1075,16 +1075,18 @@ ordinary pass assumes it: \code{Array.prototype} meets \code{ArrayProto},
 the intrinsics meet their signatures, a host value its host contract and
 a declared import its declaration; a module cell's value meets its
 contract after the initialization (the initialization's obligation,
-shared with the ordinary pass). A standard native's own writes before
+shared with the ordinary pass). (a) A standard native's own writes before
 it throws are within its normal-return footprint, its contract's
-\code{onThrow} where it is passed no function; and it stores its
+\code{onThrow} where it is passed no function; and (b) it stores its
 arguments only into what its receiver and arguments reach, or into its
 result, and calls out only through the function arguments it is given,
 only during its run. The value of a native's slot, and each member read
 through it, is the realm's code.
-A native's own steps that $\cC$ calls are $\cC$'s; a step of the client's
-code is the client's wherever it runs
-\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the two rows on standard natives, approved on 2026-11-21; the steps, \lean{NativeStep}, \lean{ClientStep}, \lean{nativeStep\_within} (to be proved)}.
+A standard native's steps are the component's when the component's code
+calls it at a call of a native (its callee read through a native's slot),
+bounded by its contract (rows (a) and (b)); at any other call they are the
+client's, a native a client passes as a function value included
+\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the two rows on standard natives and this sentence, approved on 2026-11-21; the owner of a native's frame, read on the evaluation path (to be proved)}.
 \item[The scope] A program the claim is about starts from any
 configuration, after the initialization of (A2), that fits the flow, is
 an entry (outside code lowered, closed values, the call discipline) and
