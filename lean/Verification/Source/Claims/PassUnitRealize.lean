@@ -460,18 +460,18 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W := by
     rw [hspine]; exact he
   have hpre' : PreAt c.row.effect c.spine L heap := by rw [hspine]; exact hpre
-  have hrun := codeRun_of_clauses (sep := sep) hsafeG hboundG η n W heap L he' hw hh hgo hvalues hpre' hsep
-  rw [hspine] at hrun
+  have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
+      (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
+    ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
+  have hrun := codeRun_of_clauses hsafeG hboundG η n W heap L .nul hentry hgo hvalues rfl
+  rw [code_goal, hspine] at hrun
   obtain ⟨pre, vs, hpl, rfl⟩ := hframe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
   subst hpre0
   refine exportsEstablished_sound hx hw hh ?_
   by_cases hne : c.row.effect.schema.normal.facts = []
   · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hrun
-  · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
-        (GraphCode.codeEntryIndices c) (envOf ([] ++ r :: CallArguments.parameters c.arity args ++ vs) .nul) n W heap :=
-      ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
-    have hens := hensG hne η n W heap _ .nul hentry hgo
+  · have hens := hensG hne η n W heap _ .nul hentry hgo
     rw [code_goal, hspine] at hens
     refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
     obtain ⟨⟨h1, h2⟩, hq⟩ := hq
@@ -483,6 +483,51 @@ end
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **A request's footprint clause discharges a code's run bound** (proved):
+where the request's bound equals the code's exit bounds and freshness, any
+`codeRunBound c = some (⟨Φ, Ψ⟩, fresh)` activates `FootprintClause r`, at
+any component (`SafePostExcW.goto_comp_iff`). Shared by `rowSpec_of_requestSafe`
+and `receiverDropSound`. -/
+private theorem requestBound_of_footprint {r : SourceRequest σ ι} {c : CodeEntry ι} {comp : ComponentTag}
+    (hfp : FootprintClause r)
+    (hbound : RunBound.ofRequest r.footprint r.onThrow r.fresh =
+      (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult))
+    (hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp) :
+    ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d comp) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
+      HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+        (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d comp) := by
+  intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
+  obtain ⟨hbd, rfl, hne⟩ := codeRunBound_some hb
+  simp only [RunBound.ofRequest, Prod.mk.injEq] at hbound
+  obtain ⟨hex, hfr⟩ := hbound
+  rw [← hex] at hbd hne
+  have hΦ : Φ = r.footprint := congrArg CallEffects.Exits.normal hbd
+  have hΨ : Ψ = if r.onThrow then r.footprint else .top := congrArg CallEffects.Exits.exceptional hbd
+  subst hΦ hΨ
+  have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
+    by_cases h1 : r.footprint = .top
+    · by_cases h2 : r.onThrow = true
+      · exact .inr (.inl h2)
+      · right; right
+        rw [hfr]
+        cases hf : c.row.effect.schema.normal.freshResult
+        · exact absurd ⟨h1, by simp [h2], hf⟩ hne
+        · rfl
+    · exact .inl h1
+  have := hfp hpre η n W h L d he (GraphCode.goto_refs hgo).2 hvals hd
+  rw [hgoto, hfr] at this
+  replace this := (HeapObservations.SafePostExcW.goto_comp_iff r.comp comp).mp this
+  refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
+  cases hot : r.onThrow
+  · simp [hot] at ht
+  · simp only [hot, ite_true] at ht ⊢
+    exact hq hot
 
 /-- **A safe unit request is module code at its signature** (proved): where
 a unit request is a code's (`UnitIsCode`) collecting no rest and the code
@@ -506,34 +551,9 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     rw [hprog, hu.goal, hu.start] at this
     exact this
   · intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
-    -- The run's bound is the request's (`UnitIsCode.bound`).
-    obtain ⟨hbd, rfl, hne⟩ := codeRunBound_some hb
-    have hreq := hu.bound
-    simp only [RunBound.ofRequest, Prod.mk.injEq] at hreq
-    obtain ⟨hex, hfr⟩ := hreq
-    rw [← hex] at hbd hne
-    have hΦ : Φ = r.footprint := congrArg CallEffects.Exits.normal hbd
-    have hΨ : Ψ = if r.onThrow then r.footprint else .top := congrArg CallEffects.Exits.exceptional hbd
-    subst hΦ hΨ
-    have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
-      by_cases h1 : r.footprint = .top
-      · by_cases h2 : r.onThrow = true
-        · exact .inr (.inl h2)
-        · right; right
-          rw [hfr]
-          cases hf : c.row.effect.schema.normal.freshResult
-          · exact absurd ⟨h1, by simp [h2], hf⟩ hne
-          · rfl
-      · exact .inl h1
-    have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
-      (GraphCode.goto_refs hgo).2 hvals hd
-    rw [hgoto, hu.goal, hfr] at this
-    replace this := (HeapObservations.SafePostExcW.goto_comp_iff r.comp none).mp this
-    refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
-    cases hot : r.onThrow
-    · simp [hot] at ht
-    · simp only [hot, ite_true] at ht ⊢
-      exact hq hot
+    rw [← hu.goal]
+    exact requestBound_of_footprint hsafe.2.1 hu.bound hgoto Φ Ψ fresh hb η n W h L d
+      (by rw [hu.inputs, hu.indices]; exact he) hgo hvals hd
   · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2
@@ -598,9 +618,9 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   separation : ∀ a ∈ r.entrySeparation.facts,
     r.entrySeparation.depth ≤ r.inputs.length ∧ a.slot < r.entrySeparation.depth ∧
     ∀ p ∈ a.partners, p.1 < r.entrySeparation.depth
-  indices : ∀ (L : List Tm) (recv : Tm) h,
-    HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
-    HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
+  indices : ∀ (L : List Tm) (recv d : Tm) h,
+    HeapKnowledge.IndexHolds ⟨envOf (recv :: L) d, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) d) h →
+    HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ r.entryIndices (envOf L d) h
   «ensures» : c.row.effect.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
   bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
 
@@ -622,15 +642,16 @@ theorem resultIsOldFirst_pastReceiver :
       some (.linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 0 []), -1)] 0)) := rfl
 
 theorem mapM_some_mem {α β : Type} {f : α → Option β} :
-    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y, f x = some y
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y ∈ l', f x = some y
   | [], _, _, x, hx => by cases hx
   | a :: t, l', h, x, hx => by
     simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at h
-    obtain ⟨b, hb, t', ht, -⟩ := h
+    obtain ⟨b, hb, t', ht, rfl⟩ := h
     rcases List.mem_cons.mp hx with rfl | hx
-    · exact ⟨b, hb⟩
-    · exact mapM_some_mem ht x hx
+    · exact ⟨b, List.mem_cons_self, hb⟩
+    · obtain ⟨y, hy, hfy⟩ := mapM_some_mem ht x hx
+      exact ⟨y, List.mem_cons_of_mem _ hy, hfy⟩
 
 /-- **A row stating `result = old(receiver)` has no receiverless request**
 (proved): the mistranslation that read it as `result = old(first parameter)`
@@ -638,7 +659,7 @@ is not a request of the row. -/
 theorem not_receiverless_of_oldReceiver {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
     {c : CodeEntry ι} (hm : resultIsOldReceiver ∈ c.row.effect.schema.normal.facts) : ¬ UnitIsReceiverless r c := by
   intro hu
-  obtain ⟨y, hy⟩ := mapM_some_mem hu.ensures _ hm
+  obtain ⟨y, -, hy⟩ := mapM_some_mem hu.ensures _ hm
   rw [resultIsOldReceiver_pastReceiver] at hy
   cases hy
 
@@ -649,15 +670,15 @@ def pastReceiver (s : Nat) : Option Nat := if s = 0 then none else some (s - 1)
 /-- **Entry facts of a function declared without `this`** (proved): where
 each entry fact of the request is a fact of the code's precondition with
 each slot one less (`mapIndices pastReceiver`), the code's facts at every
-frame with a receiver in front imply the request's at the frame past it:
-`UnitIsReceiverless.indices`. -/
+frame with a receiver in front (for any default value) imply the request's
+at the frame past it: `UnitIsReceiverless.indices`. -/
 theorem receiverless_indices {ι : Type} {c : CodeEntry ι} {facts : List HeapKnowledge.IndexAtom}
     (hsub : ∀ a ∈ facts, a ∈ HeapKnowledge.mapIndices pastReceiver (GraphCode.codeEntryIndices c)) :
-    ∀ (L : List Tm) (recv : Tm) h,
-      HeapKnowledge.IndexHolds ε (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
-      HeapKnowledge.IndexHolds ε facts (envOf L .nul) h := by
-  intro L recv h he a ha
-  have hf : ∀ s t, pastReceiver s = some t → envOf L .nul t = envOf (recv :: L) .nul s := by
+    ∀ (L : List Tm) (recv d : Tm) h,
+      HeapKnowledge.IndexHolds ε (GraphCode.codeEntryIndices c) (envOf (recv :: L) d) h →
+      HeapKnowledge.IndexHolds ε facts (envOf L d) h := by
+  intro L recv d h he a ha
+  have hf : ∀ s t, pastReceiver s = some t → envOf L d t = envOf (recv :: L) d s := by
     intro s t hs
     unfold pastReceiver at hs
     split at hs
@@ -766,34 +787,6 @@ private theorem safePostExc_prefix {Ξ T : Fam} {Q : HeapObservations.Post} {R :
       exact .inr ⟨U, h', t₁', hx, hu, st', hh,
         ih hp' (fun e he => RefsOk_mono hx (RefsOk_trunc _ (hE₂ e he))) hs₁⟩
 
-private def listMax (xs : List Nat) : Nat := xs.foldl max 0
-
-private theorem le_foldl_max : ∀ (xs : List Nat) (a : Nat), a ≤ xs.foldl max a
-  | [], _ => Nat.le_refl _
-  | x :: xs, a => Nat.le_trans (Nat.le_max_left a x) (le_foldl_max xs (max a x))
-
-private theorem mem_le_foldl_max : ∀ {xs : List Nat} {a x : Nat}, x ∈ xs → x ≤ xs.foldl max a
-  | [], _, _, h => by cases h
-  | y :: ys, a, x, h => by
-    rcases List.mem_cons.mp h with rfl | h
-    · exact Nat.le_trans (Nat.le_max_right a x) (le_foldl_max ys (max a x))
-    · exact mem_le_foldl_max (xs := ys) (a := max a y) h
-
-private def atomSlots (a : HeapKnowledge.IndexAtom) : List Nat :=
-  a.cond.toList ++ a.fact.slots ++ a.fact.entrySlots
-
-private theorem mapM_mem_pair {α β : Type} {f : α → Option β} :
-    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y ∈ l', f x = some y
-  | [], _, _, x, hx => by cases hx
-  | a :: t, l', h, x, hx => by
-    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
-      Option.some.injEq] at h
-    obtain ⟨b, hb, t', ht, rfl⟩ := h
-    rcases List.mem_cons.mp hx with rfl | hx
-    · exact ⟨b, List.mem_cons_self, hb⟩
-    · obtain ⟨y, hy, hfy⟩ := mapM_mem_pair ht x hx
-      exact ⟨y, List.mem_cons_of_mem _ hy, hfy⟩
-
 /-- The prologue's mapped frame agrees with `recv :: tail` shifted by one on
 every slot below `arity + captures.length + 1`. -/
 private theorem dropReceiver_envOf_lt (k : Nat) (recv : Tm) (tail : List Tm) {i : Nat} (hi : i < k) :
@@ -801,18 +794,6 @@ private theorem dropReceiver_envOf_lt (k : Nat) (recv : Tm) (tail : List Tm) {i 
       envOf (recv :: tail) .nul (i + 1) := by
   simp only [envOf, List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hi,
     Option.map_some, Option.getD_some]
-
-/-- Padding `L'` with `M` copies of `recv` agrees with `envOf L' recv` on
-every slot below `M`. -/
-private theorem pad_envOf_eq (L' : List Tm) (M : Nat) (recv : Tm) {i : Nat} (hi : i < M) :
-    envOf (L' ++ List.replicate M recv) .nul i = envOf L' recv i := by
-  simp only [envOf, List.getD_eq_getElem?_getD]
-  by_cases hlt : i < L'.length
-  · rw [List.getElem?_append_left hlt, List.getElem?_eq_getElem hlt]; rfl
-  · have hge : L'.length ≤ i := Nat.le_of_not_lt hlt
-    have hltM : i - L'.length < M := by omega
-    rw [List.getElem?_append_right hge, List.getElem?_eq_none hge, List.getElem?_replicate]
-    simp [hltM]
 
 /-- **The receiver's prologue keeps a safe request safe** (proved): where a
 request with no receiver slot is a code's behind the prologue
@@ -968,47 +949,19 @@ theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : Sour
           congr 1; simp only [receiverSeparation]; omega
         exact hap.congr heqA heqP
       have hidx' : HeapKnowledge.IndexHolds ⟨envOf L' recv, heap⟩ r.entryIndices (envOf L' recv) heap := by
-        let M : Nat := listMax (r.entryIndices.flatMap atomSlots) + 1
-        let Lpad : List Tm := L' ++ List.replicate M recv
-        have hprePad : HeapKnowledge.IndexHolds ⟨envOf (recv :: Lpad) .nul, heap⟩ (GraphCode.codeEntryIndices c)
-            (envOf (recv :: Lpad) .nul) heap := by
-          intro a ha _
-          unfold GraphCode.codeEntryIndices at ha
-          simp only [hu.spine, ↓reduceIte] at ha
-          obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
-          have hF0 : F.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: tail) .nul) heap :=
-            hpre rfl F hF
-          have hF1 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: tail) .nul) heap :=
-            (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mp hF0
-          have hF2 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: Lpad) .nul) heap := by
-            refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp hF1
-            have hsl : s ≤ c.arity := CallEffects.Effect.entryBelow_pre (CallEffects.Effect.belowRow_entry hrow) F hF s hs
-            cases s with
-            | zero => rfl
-            | succ j =>
-              have hjk : j < kLen := by omega
-              have hjl : j < L'.length := by simp [L', slots]; omega
-              have h1 : envOf (recv :: Lpad) .nul (j + 1) = envOf L' recv j := by
-                simp only [envOf, List.getD_eq_getElem?_getD, List.getElem?_cons_succ, Lpad,
-                  List.getElem?_append_left hjl, List.getElem?_eq_getElem hjl, Option.getD_some]
-              rw [h1, dropReceiver_envOf_lt kLen recv tail hjk]
-          exact (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mpr hF2
-        have hidxPad := hu.indices Lpad recv heap hprePad
-        intro a ha hc
-        have hbound : ∀ x ∈ atomSlots a, x < M := fun x hx =>
-          Nat.lt_succ_of_le (mem_le_foldl_max (List.mem_flatMap.mpr ⟨a, ha, hx⟩))
-        have hcondPad : ∀ b, a.cond = some b → tagHolds .truthy (envOf Lpad .nul b) = !a.negated := by
-          intro b hb
-          have hbm : b < M := hbound b (List.mem_append_left _ (List.mem_append_left _ (by simp [hb])))
-          rw [pad_envOf_eq L' M recv hbm]
-          exact hc b hb
-        have hFa := hidxPad a ha hcondPad
-        have hFe : a.fact.HoldsAt ⟨envOf L' recv, heap⟩ (envOf Lpad .nul) heap :=
-          (HeapKnowledge.IndexFact.holdsAt_congr_entry (ε := ⟨envOf Lpad .nul, heap⟩)
-            (ε' := ⟨envOf L' recv, heap⟩) rfl fun s hs =>
-              pad_envOf_eq L' M recv (hbound s (List.mem_append_right _ hs))).mp hFa
-        exact (HeapKnowledge.IndexFact.holdsAt_congr fun s hs =>
-          pad_envOf_eq L' M recv (hbound s (List.mem_append_left _ (List.mem_append_right _ hs)))).mp hFe
+        refine hu.indices L' recv recv heap fun a ha _ => ?_
+        unfold GraphCode.codeEntryIndices at ha
+        simp only [hu.spine, ↓reduceIte] at ha
+        obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+        have hF1 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: tail) .nul) heap :=
+          (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mp (hpre rfl F hF)
+        have hF2 : F.toNow.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (envOf (recv :: L') recv) heap := by
+          refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp hF1
+          have hsl : s ≤ c.arity := CallEffects.Effect.entryBelow_pre (CallEffects.Effect.belowRow_entry hrow) F hF s hs
+          cases s with
+          | zero => rfl
+          | succ j => exact (dropReceiver_envOf_lt kLen recv tail (by omega)).symm
+        exact (CallEffects.Effect.pre_toNow ⟨envOf (recv :: tail) .nul, heap⟩ _ heap).mpr hF2
       have hentry' : EntryHolds G r.inputs r.entrySeparation r.entryIndices (envOf L' recv) k W₂ heap :=
         ⟨he', hsep', hidx', hw₂, hh₂⟩
       have hgoal : GoalHolds G r.goal (r.goal.argument (envOf L' recv)) = T := by
@@ -1032,61 +985,16 @@ theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : Sour
             rw [dropReceiver_envOf_lt kLen recv tail (by omega), Nat.add_comm]
           simp only [GoalHolds, ControlFlow.Goal.argument, ControlFlow.Goal.slot, CallEffects.Effect.result,
             framePromised, frameOffset, hpr, CallEffects.TypePromise.result, CallEffects.TypePromise.param, harg]
-      -- Run `r` from `(k, W₂, heap, L', recv)` via `SafeClause`, `FootprintClause` and `EnsuresClause`.
-      have hgraph := hsafe.1 η (hadm η) k W₂ heap (envOf L' recv) hentry' hroots'
-      rw [hprog, hu.start, hgoal] at hgraph
-      have hsR : Safe (excOf G) T k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) :=
-        (Safe.goto_comp_iff none comp).mp (GraphCode.safe_of_sim k W₂ heap .goto hrefsE hgraph)
-      have hrunR : HeapObservations.SafePostExc (excOf G) T
-          (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
-            (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
-          (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h')
-          k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) := by
-        by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
-            !c.row.effect.schema.normal.freshResult) = true
-        · simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
-          have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
-            (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
-              (Footprints.Closed.top_safe hsR))
-          exact HeapObservations.SafePostExc.weaken
-            (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
-            (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
-        · by_cases hpure : c.row.effect.schema.normal.freshResult = false ∧ c.exprs.all Purity.pureTerm = true
-          · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
-            exact HeapObservations.SafePostExc.weaken
-              (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq,
-                fun hf => by simp [hpure.1] at hf⟩)
-              (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
-              (CallEffects.pure_safe_exc (.goto hp hvals' hvalRecv) hsR)
-          · have hreq := hu.bound
-            simp only [RunBound.ofRequest, Prod.mk.injEq] at hreq
-            obtain ⟨hex, hfr⟩ := hreq
-            have hΦ : (exitBounds c.row.effect).normal = r.footprint :=
-              (congrArg CallEffects.Exits.normal hex).symm
-            have hΨ : (exitBounds c.row.effect).exceptional = if r.onThrow then r.footprint else .top :=
-              (congrArg CallEffects.Exits.exceptional hex).symm
-            have hpreR : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
-              by_cases h1 : r.footprint = .top
-              · by_cases h2 : r.onThrow = true
-                · exact .inr (.inl h2)
-                · right; right
-                  rw [hfr]
-                  cases hf : c.row.effect.schema.normal.freshResult
-                  · exfalso; apply htop
-                    simp [hΦ, hΨ, h1, h2, hf]
-                  · rfl
-              · exact .inl h1
-            have hfp := hsafe.2.1 hpreR η k W₂ heap L' recv hentry' hroots' hvals' hvalRecv
-            rw [hgoto, hgoal, hfr] at hfp
-            replace hfp := (HeapObservations.SafePostExcW.goto_comp_iff r.comp comp).mp hfp
-            have hgrow := SafePostExc.grow (b := heap.length) (Nat.le_refl _) hfp
-            refine HeapObservations.SafePostExc.weaken (fun h' v hq => by rw [hΦ]; exact hq.1) (fun h' hq => ?_) hgrow
-            rw [hΨ]
-            cases hot : r.onThrow
-            · simp only [Bool.false_eq_true, ↓reduceIte]
-              exact Footprints.Closed.holds_top.mpr hq.2
-            · simp only [↓reduceIte]
-              exact hq.1 hot
+      -- Run `r` from `(k, W₂, heap, L', recv)` via `codeRun_of_clauses` and `EnsuresClause`.
+      have hrunR := codeRun_of_clauses (G := RequestJson.graph r.toRequest) (c := c)
+        (inputs := r.inputs) (sep := r.entrySeparation) (indices := r.entryIndices) (goal := r.goal) (comp := comp)
+        (fun η' n' W' h' ρ' he' _ hρ' => by
+          have := hsafe.1 η' (hadm η') n' W' h' ρ' he' hρ'
+          rw [hprog, hu.start] at this
+          exact this)
+        (requestBound_of_footprint hsafe.2.1 hu.bound hgoto)
+        η k W₂ heap L' recv hentry' hgoR hvals' hvalRecv
+      rw [hgoal] at hrunR
       have hfullR : HeapObservations.SafePostExc (excOf G) T
           (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
             (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v) ∧
@@ -1112,7 +1020,7 @@ theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : Sour
           refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrunR hens)
           obtain ⟨⟨h1, h2⟩, hq⟩ := hq
           refine ⟨h1, h2, fun F hF => ?_⟩
-          obtain ⟨F', hF'mem, hF'eq⟩ := mapM_mem_pair hu.ensures F hF
+          obtain ⟨F', hF'mem, hF'eq⟩ := mapM_some_mem hu.ensures F hF
           have h1' : F.HoldsAt ⟨envOf (recv :: L') recv, heap⟩ (push v (envOf (recv :: L') recv)) h' :=
             (HeapKnowledge.IndexFact.holdsAt_pastReceiver hF'eq L' recv recv v heap h').mp (hq F' hF'mem)
           have h2' : F.HoldsAt ⟨envOf (recv :: tail) .nul, heap⟩ (push v (envOf (recv :: L') recv)) h' := by

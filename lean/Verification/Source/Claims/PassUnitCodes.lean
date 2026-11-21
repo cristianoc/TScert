@@ -70,55 +70,49 @@ theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
       CallEffects.TypePromise.param]
     rfl
 
-/-- **A code's run from a frame of its signature** (proved): a code whose
-graph is safe at every
-assignment from its frame (`codeFrame`) and the separation `sep` at its
-goal, and within its bound (`codeRunBound`) where it has one, run as its
-node lists from every frame of its signature meeting `sep`, is safe at the
-signature's result, returning within its normal exit's bound with a fresh
-result where the signature states one and throwing within its exceptional
-exit's bound (`exitBounds`). With no bound, both exits' bounds are `⊤` and
-every run keeps the old locations, or a pure body changes nothing; with
-one, the run checked within both exits' bounds (`RunBound`), an exceptional
-bound of `⊤` met by the heap's growth. The
-step shared by code requests (`codeSpec_of_clauses`) and module rows
-(`rowSpec_of_clauses`). -/
-theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
-    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
-      (GraphCode.codeEntryIndices c) ρ n W h →
+/-- **A code's run from a frame** (proved): a code whose graph is safe at every
+assignment from `inputs`, the separation `sep` and the entry facts `indices`
+at `goal`, and within its bound (`codeRunBound`) where it has one, run as its
+node lists from any frame `(L, d)` meeting those entry conditions, is safe at
+`goal`, returning within its normal exit's bound with a fresh result where the
+signature states one and throwing within its exceptional exit's bound
+(`exitBounds`). With no bound, both exits' bounds are `⊤` and every run keeps
+the old locations, or a pure body changes nothing; with one, the run checked
+within both exits' bounds (`RunBound`), an exceptional bound of `⊤` met by the
+heap's growth. Shared by code requests (`codeSpec_of_clauses`), module rows
+(`rowSpec_of_clauses`) and receiverless module rows (`receiverDropSound`). -/
+theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
+    {inputs : List (Ty ι)} {sep : HeapSeparation.Separation}
+    {indices : List HeapKnowledge.IndexAtom} {goal : ControlFlow.Goal ι}
+    {comp : ComponentTag}
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) inputs sep indices ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
-        (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
+        (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
-      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d comp) →
-        (∀ v ∈ L, isVal v = true) → isVal d = true →
+      EntryHolds (reassign G η) inputs sep indices (envOf L d) n W h →
+      RefsOk W (.goto c.exprs c.conts c.start L d comp) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
-        (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
+        (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d comp)) :
-    ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W →
-      WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul comp) → CallArguments.Values L → PreAt c.row.effect c.spine L heap →
-      HeapSeparation.Holds sep (envOf L .nul) →
+    ∀ η n W heap L d,
+      EntryHolds (reassign G η) inputs sep indices (envOf L d) n W heap →
+      RefsOk W (.goto c.exprs c.conts c.start L d comp) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
-        (c.row.effect.result (meaning (reassign G η) c.row.result)
-          (framePromised c.row.effect (frameOffset c.spine) L))
+        (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
         (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
           (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
         (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
-        (.goto c.exprs c.conts c.start L .nul comp) := by
-  intro η n W heap L he hw hh href hvalues hpre hsep
-  have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
-      (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
-    ⟨he, hsep, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
-  have hgraph := hsafeG η n W heap (envOf L .nul) hentry (GraphCode.program_refs (GraphCode.goto_refs href).1)
+        (.goto c.exprs c.conts c.start L d comp) := by
+  intro η n W heap L d hentry href hvalues hd
+  have hgraph := hsafeG η n W heap (envOf L d) hentry (GraphCode.program_refs (GraphCode.goto_refs href).1)
     (GraphCode.goto_refs href).2
-  have hs : Safe (excOf (reassign G η)) (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)))
-      n W heap (.goto c.exprs c.conts c.start L .nul comp) :=
+  have hsafe : Safe (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
+      n W heap (.goto c.exprs c.conts c.start L d comp) :=
     GraphCode.safe_of_sim n W heap .goto (GraphCode.goto_refs href).1 hgraph
-  have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
-      (framePromised c.row.effect (frameOffset c.spine) L)) n W heap
-      (.goto c.exprs c.conts c.start L .nul comp) := code_goal (reassign G η) c L ▸ hs
   by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
       !c.row.effect.schema.normal.freshResult) = true
   · -- Both exits' bounds `⊤` and no fresh result: the run is given no
@@ -136,7 +130,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
             hq, fun hf => by simp [hpure.1] at hf⟩)
         (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
-        (CallEffects.pure_safe_exc (.goto hp hvalues rfl) hsafe)
+        (CallEffects.pure_safe_exc (.goto hp hvalues hd) hsafe)
     · have hbound : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
           c.row.effect.schema.normal.freshResult) := by
         have h1 := Bool.eq_false_iff.mpr htop
@@ -144,9 +138,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
           cases hfr : c.row.effect.schema.normal.freshResult <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
         simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
         rfl
-      have hb := hboundG _ _ _ hbound η n W heap L .nul hentry href
-        (fun v hv => hvalues v hv) rfl
-      rw [code_goal] at hb
+      have hb := hboundG _ _ _ hbound η n W heap L d hentry href hvalues hd
       refine HeapObservations.SafePostExc.weaken (fun h' v hq => hq.1) (fun h' hq => ?_)
         (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
       -- A throw within the exceptional bound, or, where that is `⊤`, by
@@ -188,9 +180,12 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     rfl
   refine ⟨harity, hbelow, fun hs => allocStable_of_established hx (hfr hs), ?_⟩
   intro n W heap L comp he hw hh href hvalues hpre r args _hframe
-  have hrun := codeRun_of_clauses (sep := {}) hsafeG
+  have hrun := codeRun_of_clauses (c := c) (inputs := codeFrame c.arity c.row c.captures c.spine)
+    (sep := {}) (indices := GraphCode.codeEntryIndices c) (goal := c.goal) (comp := comp) hsafeG
     (fun Φ Ψ fresh hb η n W h L d => hboundG Φ Ψ fresh (by rw [codeBound_eq hcond]; exact hb) η n W h L d comp)
-    η n W heap L he hw hh href hvalues hpre (HeapSeparation.empty_holds _)
+    η n W heap L .nul ⟨he, HeapSeparation.empty_holds _, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
+    href hvalues rfl
+  rw [code_goal] at hrun
   rw [← hof] at hrun
   exact codeObligations_sound ho hw hh hrun
 
