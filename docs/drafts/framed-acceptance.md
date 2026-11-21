@@ -2742,8 +2742,9 @@ and P22's layout meets them (measured).
   handler and failing at another; a region `.all` at a protocol changing a
   part.
 - **Pretext's walkers**: cursor bounds at local sites, measured by the
-  probe at its own protocol (raw 8/8, complex 3/4 contexts); widths facts
-  at milestone 6; the layout functions at milestone 5.
+  probe at its own protocol (raw 8/8, complex 3/4 contexts); widths facts,
+  at keyed parts, once the frame reads the shared model of outside slots
+  ([the plan](../../WORK.md#status)); the layout functions at milestone 5.
 
 ## Open points for review
 

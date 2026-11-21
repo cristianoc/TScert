@@ -2872,7 +2872,9 @@ needs preservation on the exceptional exit as well. Each re-entrant
 entry must establish the preconditions for the body it invokes.
 
 Evaluating the frame predicate independently of that guard gives the
-following results on the merged flow. Each count includes context zero,
+following results on the merged flow, measured at 92d674904
+(2026-11-19), with every part at the key none and no region read as
+protected. Each count includes context zero,
 where the length regions have empty site sets.
 
 | Function | Facts | Contexts passing each fact |
