@@ -9,11 +9,13 @@ export function lookup(): GlobalEntry | undefined {
       global: "X",
       signature: "first",
       host: { k: "transparent", why: "test" },
+      trust: { onThrow: "top", stores: "operands", callsArgs: "during", passesOwnAllocations: false, spec: "test" },
     },
     {
       global: "X",
       signature: "second",
       host: { k: "transparent", why: "test" },
+      trust: { onThrow: "top", stores: "operands", callsArgs: "during", passesOwnAllocations: false, spec: "test" },
     },
   ];
   const context: { matches: GlobalSignatureMatcher } = {

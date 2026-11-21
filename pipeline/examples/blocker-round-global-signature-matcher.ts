@@ -10,6 +10,7 @@ export function lookup(text: string): GlobalEntry | undefined {
       global: "X",
       signature: "call",
       host: { k: "transparent", why: "test" },
+      trust: { onThrow: "top", stores: "operands", callsArgs: "during", passesOwnAllocations: false, spec: "test" },
     },
   ];
   const context: { matches: GlobalSignatureMatcher } = {

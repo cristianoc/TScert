@@ -55,6 +55,13 @@ export const outsideCode = (trust: BuiltinTrust): boolean =>
 const throwWithinFootprint = (effect: CallEffect | undefined): boolean => effect !== undefined &&
   JSON.stringify(effect.exits.exceptional.frame) === JSON.stringify(effect.exits.normal.frame);
 
+/** **The throw bound a built-in's effects state**: `"footprint"` where it
+ * states at least one signature and each bounds a throw by its normal-return
+ * frame, `"top"` otherwise. A built-in whose contract is computed (an
+ * intrinsic built from its arguments) takes its `onThrow` from this. */
+export const throwBound = (effects: readonly (CallEffect | undefined)[]): BuiltinTrust["onThrow"] =>
+  effects.length > 0 && effects.every(throwWithinFootprint) ? "footprint" : "top";
+
 /** **The check of a built-in's trust fields**, run when its contract is
  * loaded: each field present at one of its values, `spec` naming a section,
  * and `onThrow` `"footprint"` exactly where the contract states at least
@@ -72,7 +79,7 @@ export function checkTrust(name: string, trust: unknown, effects: readonly (Call
   if (callsArgs !== "during" && callsArgs !== "later") return fail(`states callsArgs ${String(callsArgs)}`);
   if (typeof passes !== "boolean") return fail(`states passesOwnAllocations ${String(passes)}`);
   if (typeof spec !== "string" || spec.trim() === "") return fail("cites no section of a specification");
-  const stated = effects.length > 0 && effects.every(throwWithinFootprint) ? "footprint" : "top";
+  const stated = throwBound(effects);
   if (onThrow !== stated) return fail(`states onThrow ${onThrow}, its effects ${stated}`);
   return { onThrow, stores, callsArgs, passesOwnAllocations: passes, spec };
 }
