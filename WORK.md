@@ -37,14 +37,14 @@ Branch: `shared-slots`.
 | 1.3.2 | Each frame's owner computed along the evaluation path | structural theorems hold for any realm | done |
 | 1.3.3 | The flow's root theorems read the owner | builds, no verdict changes | done |
 | 1.3.4 | Every built-in's contract states `onThrow`, `stores`, `callsArgs`, `passesOwnAllocations` and `spec`, checked when contracts load; a built-in with `stores: "other"`, `callsArgs: "later"` or `passesOwnAllocations: true` is read as outside code (owner, 2026-11-21) | every default-library built-in TScert uses has the fields, each value checked against its `spec` section; a Node run for each outside-code value; `JSON.stringify(a, replacer)` and `Error.captureStackTrace(o)` read as outside code | done |
-| 1.4.3 | `RealmSlots`: a built-in slot holds the realm's code; `nativeAt_sound`: a native-call key's callee is the realm's code (before 1.3.5: `Fits.native` needs it) | stated in the premise; `nativeAt_sound` proved | in progress: `RealmSlots` stated, read at every reached configuration as the policy's assumption that standard objects are not tampered with; next the realm in the plan's family, `nativeAt`, `nativeAt_sound` |
-| 1.3.5 | Flow rule for a built-in's frame the component owns (`Fits.native`) | proved for built-in steps; the flow check decides it | in progress: rows (b) and (b′) stated over values as run invariants (`NativeRowB`, `NativeRowB'`); the rule read for natives taking no function argument (owner, 2026-11-21); waits on 1.4.3 |
-| 1.3.6 | Properties of the component's built-in steps from trust row (b) | each property proved | |
-| 1.3.7 | The interim premise "the realm has no code" removed | no theorem carries it (22 today) | |
+| 1.4.3 (moved up: 1.3.5 needs it) | `RealmSlots`: a built-in slot holds the realm's code; `nativeAt_sound`: a native-call key's callee is the realm's code, first for a callee read from a native's slot, then read through a receiver's prototype (`out.push(s)`, `w.flags.pop()`) (before 1.3.5: `Fits.native` needs it) | stated in the premise; `nativeAt_sound` proved | in progress: `RealmSlots` stated at every reached configuration (the policy on untampered standard objects); `nativeAt_sound` proved for a callee read from a native's slot (`FramedNativeAt.lean`); next, a callee read through a receiver's prototype |
+| 1.3.5 | Flow rule for a built-in's frame the component owns (`Fits.native`) | proved for built-in steps; the flow check decides it | in progress: rows (b) and (b′) stated over values as run invariants (`NativeRowB`, `NativeRowB'`); the rule read for natives taking no function argument (owner, 2026-11-21); its design next, then a review before it is built |
+| 1.3.6 | Properties of the component's built-in steps from trust row (b) | each property proved |  |
+| 1.4.1 | Built-in slots read at their contracts in the flow (after 1.3.5: `hostModel?` stands for the natives until `Fits.native`) | builds, no verdict changes | |
+| 1.4.2 | `hostModel?`, the coarse native charge and the initialization's seed deleted (after 1.3.5: `hostModel?` stands for the natives until `Fits.native`) | nothing reads them | |
+| 1.3.7 | The interim premise "the realm has no code" removed, with the realm in the plan's family (after 1.4.2) | no theorem carries it (22 today) | |
 | 1.3.8 | Closure-origin invariant and its decided check | proved; the check runs on every plan | |
 | 1.3.9 | Cases and review | `push`/`fill` keep facts; `pop` as visitor refused; review passes | |
-| 1.4.1 | Built-in slots read at their contracts in the flow | builds, no verdict changes | |
-| 1.4.2 | `hostModel?`, the coarse native charge and the initialization's seed deleted | nothing reads them | |
 | 1.4.4 | The premise proved met for layouts with no linked slot (`initial_inhabited`), P22's included | proved | |
 | 1.4.5 | The unfoldings stated through `approx` (`PassUnitRealize.lean`) | no second relation | |
 | 1.4.6 | Review; 1.2, 1.3 and 1.4 land | merged, P22 keeps its verdict | |

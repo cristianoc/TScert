@@ -276,6 +276,7 @@ import Verification.Source.Claims.PassUnitSignatures
 import Verification.Source.Claims.PassUnitVerdict
 import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.FramedSpec
+import Verification.Source.Claims.FramedNativeAt
 import Verification.Source.Claims.FramedHistory
 import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.FramedComponentChecks
