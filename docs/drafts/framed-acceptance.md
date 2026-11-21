@@ -2656,28 +2656,35 @@ contract.
   taking no function argument, absent otherwise, so the ordinary pass and
   the framed plan read one mechanism, the
   [contract per exit](../SOURCE-CONTRACTS.md#the-contract-per-exit).
-- **(b) Retention.** A standard native stores its arguments only into what
-  its receiver and arguments reach, or into its result, and calls out only
-  through the function arguments it is given, and only during its run.
-  Each store of its run is so, not only its net change. The last clause
-  narrows the approved row; it adds no trust.
+- **(b) Retention.** Into storage that existed before its call, a
+  standard native stores only primitives and values its receiver and
+  arguments reach; it keeps no argument beyond what its receiver and
+  arguments reach or its result; and it calls out only through the
+  function arguments it is given, and only during its run. Each store of
+  its run is so, not only its net change. The owner narrowed the row to
+  this statement on 2026-11-21.
 
-A native whose contract retains a function argument past its run
-(`setTimeout`, `%PromiseAll%`'s reactions) is outside (b): its contract
-says so (`retains`, a field of the contract, audited with it), and the
-framed plan reads its call as a call of outside code, its operands given
-to $`O`$, its steps the client's. With (b) a standard native's run reaches
+**The natives outside (b).** Every native's contract states, clause by
+clause, whether the native meets (b), in fields checked when the contracts
+are loaded, a missing field refusing the contract
+([modeling a library](../SOURCE-CONTRACTS.md#modeling-a-library)):
+`stores` (`"operands"`, or `"other"` where some run stores into storage
+that existed before its call a value other than a primitive or one its
+operands reach: `Error.captureStackTrace(o)` installs the realm's accessor
+functions on `o`), `callsArgs` (`"during"`, or `"later"` where some run
+calls a function argument after the run returns: `setTimeout`,
+`%PromiseAll%`'s reactions) and `passesOwnAllocations` (`true` where some
+run passes storage it allocates to a function argument: `JSON.stringify`
+with a replacer allocates a wrapper object, stores its argument there and
+passes the wrapper to the replacer as `this`; `JSON.parse` with a
+reviver), beside `onThrow` (row (a)) and `spec`, the section of the
+specification each value is checked against. The framed plan reads the
+call of a native whose contract states `stores: "other"`,
+`callsArgs: "later"` or `passesOwnAllocations: true` as a call of outside
+code, its operands given to $`O`$, its steps the client's (the owner,
+2026-11-21), a stated limit. With (b) the run of any other native reaches
 only its operands, so its call gives nothing to $`O`$ but through a
 function argument of outside code.
-
-A native that passes storage it allocates to a function argument
-(`JSON.stringify` with a replacer, which allocates a wrapper object,
-stores its argument there and passes the wrapper to the replacer as
-`this`; `JSON.parse` with a reviver) is read the same way (the owner,
-2026-11-21): row (b) bounds what a native stores, not what storage of its
-own it hands to a callback, so its contract says so (a field beside
-`retains`, audited with it), and its call is a call of outside code, its
-operands given to $`O`$, its steps the client's.
 
 ### The algorithm
 

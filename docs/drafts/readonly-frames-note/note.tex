@@ -914,11 +914,9 @@ from an outside slot of a host value, or of a declaration of the default
 library (by the declaration's origin; a declared import of a module is
 outside code), or through one: a member of such a value, directly or
 through a receiver whose type's prototype is that slot's contract; and
-whose contract retains no function argument past the call. A native
-whose contract retains one (\code{setTimeout}), or passes storage it
-allocates to a function argument (\code{JSON.stringify} with a replacer,
-\code{JSON.parse} with a reviver), is read as outside code, a stated
-limit. A closure of $\cC$ that a call of a
+whose contract states it within row (b) of the natives
+(Section~\ref{sec:accept-trust}); any other native is read as outside
+code. A closure of $\cC$ that a call of a
 native is passed has a code with no framed call and an ordinary
 verdict.
 Every \code{@clients} row of
@@ -1080,10 +1078,19 @@ a declared import its declaration; a module cell's value meets its
 contract after the initialization (the initialization's obligation,
 shared with the ordinary pass). (a) A standard native's own writes before
 it throws are within its normal-return footprint, its contract's
-\code{onThrow} where it is passed no function; and (b) it stores its
-arguments only into what its receiver and arguments reach, or into its
-result, and calls out only through the function arguments it is given,
-only during its run. The value of a native's slot, and each member read
+\code{onThrow} where it is passed no function; and (b) into storage
+that existed before its call it stores only primitives and values its
+receiver and arguments reach, it keeps no argument beyond what its
+receiver and arguments reach or its result, and it calls out only
+through the function arguments it is given, only during its run. Each
+native's contract states, clause by clause, whether the native meets
+(b); one outside a clause is read as outside code, a stated limit: one
+that calls a function argument after its run
+(\code{setTimeout}), stores another value into existing storage
+(\code{Error.captureStackTrace}, which installs the realm's functions on
+its argument) or passes storage it allocates to a function argument
+(\code{JSON.stringify} with a replacer, \code{JSON.parse} with a
+reviver). The value of a native's slot, and each member read
 through it, is the realm's code.
 A standard native's steps are the component's when the component's code
 calls it at a call of a native (its callee read through a native's slot),

@@ -71,6 +71,38 @@ example alone does not establish that a simplification preserves project
 support. General mechanisms remain reusable; library-specific work follows
 the project's useful calls rather than hypothetical uses of every export.
 
+### A built-in's trust fields
+
+Every built-in's contract (an `Array.prototype` member, an intrinsic, a
+global's member, a member of a stated library type, a host contract)
+states, beside its footprint, the trust rows on standard natives
+([Read-only frames](drafts/readonly-frames-note/note.tex), the natives
+item; [the rows](drafts/framed-acceptance.md#two-trust-rows-on-standard-natives))
+clause by clause:
+
+```
+push: {
+  footprint: …,
+  onThrow:   "footprint",          // row (a): its writes before a throw are within its footprint; or "top"
+  stores:    "operands",           // row (b): into storage existing before the call, only primitives and values its operands reach; or "other"
+  callsArgs: "during",             // row (b): it calls its function arguments only during its run; or "later"
+  passesOwnAllocations: false,     // true where it passes storage it allocates to a function argument
+  spec: "ECMA-262 §23.1.3.23",     // the section each value is checked against
+}
+```
+
+The fields are checked when the contracts are loaded: a contract missing
+one is refused. A built-in whose contract states `stores: "other"`,
+`callsArgs: "later"` or `passesOwnAllocations: true` is read as outside
+code: `Error.captureStackTrace` (`stores: "other"`), `setTimeout`
+(`callsArgs: "later"`), `JSON.stringify` with a replacer and `JSON.parse`
+with a reviver (`passesOwnAllocations: true`).
+
+The audit rule, approved by the owner: each value is checked against the
+section its `spec` cites; each value that makes a built-in outside code has
+a run under Node showing the behaviour; the owner reviews the values as
+trust.
+
 ### Review obligations
 
 The calculus theorem does not prove that a source annotation was
