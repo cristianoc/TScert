@@ -3175,7 +3175,7 @@ the base.
 | 2 | The initialization as a premise, and natives by their footprints | first `initial_inhabited` (chain 2), then chain 1, 4, 5, 6, 8 at natives, 9, 11; `chargesProtocol`, `nativeTop` | 900–1350 | about 1450 (the [deletion list](#what-the-change-deletes): the initialization, the realm and the natives' models) | yes: P22 kept, the probes below accepted |
 | 3 | Outside slots of every kind and several modules | step 2's sites; the `:init` codes in $`M_C`$; chain 10 | 400–600 | about 120 (the gates) | yes: cells, imports and package components |
 | 4 | Unfoldings at a cycle of names | chain 8's `EnvFnAt` | 150–250 | about 60 (`namingOrder`, `closable`, `StableLayout`, `PassUnit.approx_stable`) | yes: the cycle case |
-| 5 | Read-only frames and the trust surface | the [paper proposal](readonly-frames-note/proposal-shared-slots.diff), applied once the owner approves it, its statuses at the pieces' Lean names; rows (a) and (b) in DESIGN.md | — | — | no |
+| 5 | Read-only frames and the trust surface | the paper's text, approved and applied 2026-11-21 ([Read-only frames](readonly-frames-note/note.tex)), its statuses moved to the pieces' Lean names; rows (a) and (b) in DESIGN.md | — | — | no |
 
 Lean in all: 1855–2810 lines added, about 1630 deleted. The initialization
 and the natives are one piece: a native's bound reads the callee's
