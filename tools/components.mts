@@ -1947,16 +1947,36 @@ export function proposeFrames(F: ComponentsAst): Pick<ComponentsAst, "frameParts
     return x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
   };
   // What storage of `T` holds (`ComponentChecks.Ctx.readTokens`).
-  const readOf = (T: Tokens): Tokens => ({
-    sites: T.sites.flatMap((t) => contentsOf(t).sites),
-    incoming: [...T.incoming, ...T.sites.flatMap((t) => contentsOf(t).incoming)],
-    ro: [...T.ro, ...T.sites.flatMap((t) => contentsOf(t).ro)],
-  });
+  const readOf = (T: Tokens): Tokens => {
+    const sites = new Set<number>();
+    const incoming = new Set(T.incoming);
+    const ro = new Set(T.ro);
+    for (const t of T.sites) {
+      const held = contentsOf(t);
+      for (const s of held.sites) sites.add(s);
+      for (const c of held.incoming) incoming.add(c);
+      for (const c of held.ro) ro.add(c);
+    }
+    return { sites: [...sites], incoming: [...incoming], ro: [...ro] };
+  };
+  // Heap contents are field-insensitive. Named frame roots share each read
+  // of a value at the same path depth.
+  const projections = new Map<number, Tokens[]>();
   const tokensOf = (root: FrameEntryAst["root"]): Tokens => {
     if ("site" in root) return { sites: [root.site], incoming: [], ro: [] };
+    const depth = root.fields.length;
+    const reads = projections.get(root.value) ?? [];
+    const known = reads[depth];
+    if (known) return known;
     const x = F.values[root.value];
-    const start: Tokens = x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
-    return root.fields.reduce((T) => readOf(T), start);
+    let tokens = reads[0] ?? (x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] });
+    reads[0] = tokens;
+    for (let i = 1; i <= depth; i++) {
+      tokens = reads[i] ?? readOf(tokens);
+      reads[i] = tokens;
+    }
+    projections.set(root.value, reads);
+    return tokens;
   };
   // The sites a value may be for `C`: its own, and every exposed and
   // released site of `C` where it may enter from outside (`partsFor`).
