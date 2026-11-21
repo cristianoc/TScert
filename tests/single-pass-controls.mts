@@ -573,6 +573,27 @@ control("component family: a changed manifest", async (): Promise<void> => {
   say("component family: the manifest without `./extra`, its entries gone from the package's interface");
 });
 
+control("component family: a local call before its alias declaration", async (): Promise<void> => {
+  const dir = runDirectory("component-alias-");
+  const path = join(dir, "module.ts");
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, files: ["module.ts"] }));
+  writeFileSync(path, [
+    "export function run(): { answer: number } { return alias(); }",
+    "function target(): { answer: number } { return { answer: 42 }; }",
+    "const alias: () => { answer: number } = target;",
+  ].join("\n"));
+  const outcome = checkSource(path, tsconfigOf(dir), undefined, undefined, true);
+  assert.notEqual(outcome.status, "error", outcome.status === "verified" ? "" : outcome.detail);
+  const family = familyOf(outcome.artifacts);
+  assert.equal(family.calls.length, 1);
+  const call = must(family.calls[0], "the alias call");
+  assert.equal(call.targets.length, 1);
+  assert.equal(call.native, null);
+  const result = must(family.values[call.result], "the call's result");
+  assert.deepEqual(result.sites.map((site) => family.sites[site]?.kind), ["object"]);
+  say("component family: a local alias call carries only its object result");
+});
+
 control("forged fragment: a component family's fields", async (): Promise<void> => {
   const artifacts = run("component-package/src/main");
   const ast = fragmentAst(artifacts);
