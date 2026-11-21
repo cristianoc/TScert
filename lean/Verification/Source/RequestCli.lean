@@ -1026,13 +1026,15 @@ command's refusal, before any line. -/
 def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (start : Nat)
     (force : List String := []) : IO UInt32 := do
-  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath true (force := force) with
+  let reportComponents := (← IO.getEnv "TSCERT_REPORT_COMPONENTS") != some "0"
+  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath true (outcome := reportComponents) (force := force) with
   | .error e => refuse e
   | .ok p =>
     let units := p.units
     let fr := p.fr
     writeWorkNow start
-    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules p.components)
+    let components := if reportComponents then p.components else Json.arr #[]
+    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules components)
     let stdin ← IO.getStdin
     repeat
       let text ← stdin.getLine

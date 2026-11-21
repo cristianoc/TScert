@@ -545,7 +545,7 @@ export async function runFile(root: string, project: string, models: (file: stri
     let outcome: OwnResult & { units: UnitResult[] | null };
     try {
       using o = await checkApart(join(root, m.file), project, false, undefined, true,
-        { omitted: [...omitted.keys()], select });
+        { omitted: [...omitted.keys()], select, reportComponents: false });
       invocations.push(...readInvocationLog(join(o.artifacts, invocationLog)).map(reference));
       outcome = { status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0] ?? "",
         units: o.units ?? null };
