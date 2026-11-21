@@ -2777,18 +2777,22 @@ function argument of outside code.
    alone.
 5. **The flow at a call of a native.** With $`L_n(c)`$ the closure of the
    receiver's and the actuals' sets, $`\overline{S_r\cup\bigcup\bar S}`$
-   (the callee's set left out, by (b)), and $`K(c)`$ the sites of its
-   node's key: its result's set holds $`L_n(c)`$, $`K(c)`$ and $`\circ`$,
-   so a native returning realm storage (`Object.getPrototypeOf(xs)`)
-   returns a value of $`\circ`$; every site of $`L_n(c)`$ stores
-   $`L_n(c)`$ and $`K(c)`$; every site of $`K(c)`$ stores $`L_n(c)`$,
-   $`K(c)`$ and $`\circ`$. These read the sentence of Read-only frames'
-   (A2), approved by the owner on 2026-11-21: "A built-in the component
-   calls allocates at its own sites; its result and those sites hold only
-   what its arguments reach, its own allocations, and outside values"
-   (`slice` fills its fresh array with its receiver's elements)
-   (`Fits.native`, a rule of the flow; `FFlow.check` decides it as any
-   rule). The native takes no function argument, so its run calls no code
+   (the callee's set left out, by (b)), $`K(c)`$ the sites of its node's
+   key where its contract states an allocation and $`\varnothing`$
+   otherwise, and $`\mathrm{Res}(c)`$ the parts of $`L_n(c)`$, $`K(c)`$
+   and $`\circ`$ its contract's `result` names: its result's set holds
+   $`\mathrm{Res}(c)`$, so a native returning realm storage
+   (`Object.getPrototypeOf(xs)`, `result` `["realm"]`) returns a value of
+   $`\circ`$; every site of $`L_n(c)`$ stores $`L_n(c)`$ and $`K(c)`$;
+   every site of $`K(c)`$ stores $`L_n(c)`$, $`K(c)`$ and $`\circ`$.
+   These read the sentence of Read-only frames' (A2), approved by the
+   owner on 2026-11-21: "A built-in the component calls allocates at its
+   own sites; its result and those sites hold only what its arguments
+   reach, its own allocations, and outside values" (`slice` fills its
+   fresh array with its receiver's elements) (`Fits.native`, a rule of
+   the flow; `FFlow.check` decides it as any rule;
+   [the rule at a call of a native](#the-rule-at-a-call-of-a-native)).
+   Where the operands reach no function (FnFree), its run calls no code
    other than the realm's, and nothing it is passed reaches $`O`$ by its
    call. A native allocates at its node's key, the sites of $`C`$'s
    frame that called it (`stepSite` reading that frame, Read-only frames'
@@ -2801,7 +2805,8 @@ function argument of outside code.
    locations its operands reach. $`\Psi_C`$ and $`W_c`$ read
    $`\mathrm{Ch}`$ as [charges](#charges) states; the protocol from
    charges (`probeProtocol`) joins the native reach, which is at sites
-   (`chargesProtocol`).
+   (`chargesProtocol`). These charges are to be built: at this tip a
+   native's call is charged as its step model's (`hostModel?`).
 7. **The codes the charges come from** (Fable S4). $`\Psi_C`$'s native
    reach, and whether a node calls a native, are read from each code's
    ordinary request. A code of $`M_C`$ with a call of a native is read so
@@ -2842,89 +2847,269 @@ trust the row on the overlay's typed arrays: each a call of a native,
 ### The rule at a call of a native
 
 `Fits.native` is the flow's rule at a call node that `nativeAt` decides
-(step 4 of [the algorithm](#the-algorithm)), and its reading of the
-native's run until the call's frame is innermost again. It is to be
-reviewed before it is built.
+(step 4 of [the algorithm](#the-algorithm)); `Fits.nativeRun` and the run
+invariant `RunJ` read the native's run until the call's frame is
+innermost again. None of them is built: four statements the run invariant
+needs are not stated by rows (b) and (b′) as Lean states them
+([what the rows leave open](#what-the-rows-leave-open)), and the rule is
+built once the owner has decided them.
 
 **The existing mechanism this extends.** The flow's term rules, `Fits`
 (`ReadOnlyFits.lean`; Read-only frames, "The flow of sites", steps (1) and
-(2)), each decided by `FFlow.check` and preserved by a step (`fits_step`).
-Two of them are calls: `invoke`, whose callee may be outside code, gives
-its receiver and actuals out ($`\subseteq O`$) and returns a value of
-$`O`$; `invokeC`, whose callee is a closure of $`C`$'s code of a known
-signature, puts its receiver and actuals in its entry's slots and returns
-a value of the code's return set. `Fits.native` is a third call rule
-between them. Its callee is the realm's code (`nativeAt_sound`), so it
-reads no flow of the callee's code. Its operands stay out of $`O`$. Its
-result meets a set the rule states at the node. The native's steps are
-$`C`$'s, owned by the frame that called it (the owner on the evaluation
-path, step 1.3.2), and are bounded by the rows on standard natives: (a)
-for a throw, (b) and (b′) (`NativeRowB`, `NativeRowB'`), and (A2)'s
-sentence on a built-in's own sites. Its charges are $`\mathsf{any}`$ at
-every part of a site of $`L_n(c)`$ (`nativeReach`, step 6), already in
-place.
+(2)), each decided by `FFlow.check` and preserved by a step (`fits_step`),
+and the state invariant they are carried in, `ClientFrame.FitsAt`: the
+term fits at the value judgment `VJ` at the ghost and the heap's length,
+and the heap meets the flow (`HeapInv`). Two of the rules are calls:
+`invoke`, whose callee may be outside code, gives its receiver and actuals
+out ($`\subseteq O`$) and returns a value of $`O`$; `invokeC`, whose
+callee is a closure of $`C`$'s code of a known signature, puts its
+receiver and actuals in its entry's slots and returns a value of the
+code's return set. `Fits.native` is a third call rule between them. Its
+callee is the realm's code (`nativeAt_sound`), so it reads no flow of the
+callee's code. Its operands stay out of $`O`$. Its result meets the set
+its contract's `result` names. The native's steps are $`C`$'s, owned by
+the frame that called it (the owner on the evaluation path, step 1.3.2),
+and are bounded by the rows on standard natives: (a) for a throw, (b) and
+(b′) (`NativeRowB`, `NativeRowB'`), and (A2)'s sentence on a built-in's
+own sites. Its charges are $`\mathsf{any}`$ at every part of a site of
+$`L_n(c)`$ (step 6, `nativeReach`, to be built). At this tip no charge,
+check or reach of a native exists (`nativeReach`, `nativeTop`,
+`chargesProtocol` and `nativeKeysB` are names of the plan): a native's
+call is checked as a call of its step model (`hostModel?`), or by
+`invoke`.
+
+**What the rule reads from the contract.** Two values per native:
+
+- **`result`** (owner, 2026-11-21): a field of every built-in's
+  contract, a subset of (b′)'s sources, `"operands"` (what its receiver
+  and arguments reach), `"allocations"` (what its run allocated) and
+  `"realm"` (the realm's own storage), checked when contracts load against
+  `spec` as step 1.3.4's fields are (`checkTrust`; a missing field
+  refuses the contract). (b′)'s result and throw clause is read at it: a
+  native's result carries only values of the sources its `result` names
+  (`NativeRowB'` at the native's `result`, `Realm.result`: the realm
+  states each native code's contract's `result`). At P22 and pretext:
+  `%ElementAt%` `["operands"]`, `slice` `["allocations"]` (the fresh
+  array; its elements are what $`K`$ stores), `push`, `fill` and the
+  length and byte reads `[]` (a primitive or the receiver),
+  `Object.getPrototypeOf` `["realm"]`. Where `"realm"` is not named a
+  read two natives deep keeps local storage local: `m[i][j]` reads `m[i]`
+  at $`L_n`$ alone, so the second read's operands are again local.
+- **$`K(c)`$, the native's own allocation sites:** the sites of the node's
+  key (`stepSite` at $`C`$'s frame, below) where the contract states an
+  allocation (`result` names `"allocations"`, or its footprint changes a
+  spine's length, a grown cell being a fresh location: `push`), and
+  $`\varnothing`$ otherwise (`%ElementAt%`, the length reads).
+
+The result's set is
+
+```math
+\mathrm{Res}(c) = [\texttt{operands}]\,L_n(c) \cup [\texttt{allocations}]\,K(c) \cup [\texttt{realm}]\,O
+```
+
+each part present where `result` names its source.
 
 **The rule.**
 
 ```
-Fits.native  (node c of code m, key kx;  nativeAtB m c = true)
-  Fits Sf f      Fits Sr r      ∀ i, Fits (Sa i) args[i]
-  Ln := close_H (Sr ∪ ⋃ i, Sa i)            -- the operands' sets, closed under H's contents
-  K  := sites(kx)                           -- the node's allocation sites (stepSite at C's frame)
-  Ln ∪ K ∪ O ⊆ S                            -- the result: (b′), its own allocations, realm storage
-  ∀ s ∈ Ln, Stores s (Ln ∪ K)               -- (b′): existing storage gets operand values or its own
-  ∀ s ∈ K,  Stores s (Ln ∪ K ∪ O)           -- (A2): its own sites
-  o = true → S ⊆ O
+Fits.native  (node l of code m at key kx; π.nat l: the node calls a native, from nativeAtB m l)
+  Fits Sf f      Sf ⊆ O        Fits Sr r      ∀ i, Fits (Sa i) args[i]
+  Ln := close (Sr ∪ ⋃ i, Sa i)      -- under H's contents and the capture slots of its tokens (capClose)
+  none ∉ Ln, no token of a code of C in Ln       -- FnFree: the operands reach no function
+  Res(c) ⊆ S                                     -- the result, at the contract's `result`
+  ∀ s ∈ Ln, Stores s (Ln ∪ K)                    -- (b′): existing storage gets operand values or its own
+  ∀ s ∈ K,  Stores s (Ln ∪ K ∪ O)                -- (A2): its own sites
+  o = false
   ───────────────────────────────────────
   Fits S (.invoke f r args)
 
-Fits.nativeRun  (a frame of the realm's code on the path, called at kx from C's frame)
-  NativeRun rl h₀ (.invoke f r args) h t A, with f r args fitting at h₀ as above
-  every location of A is of a site of K
+Fits.nativeRun
+  R S u                  -- the run judgment at the current state (RunJ below)
+  o = false
   ───────────────────────────────────────
-  the term fits; its value or thrown value meets Ln ∪ K ∪ O
+  Fits S u
 ```
 
-`FFlow.check` decides the first rule as it decides `invokeC`: $`L_n`$ by
-the iteration `capClose` already runs, the two `Stores` premises against
-the flow's site heap. The second rule is no check: `fits_step` reads it
-at each step of the native's run, where row (b) and the stores of (b′)
-keep the site heap's premises at $`L_n`$, (A2) keeps them at $`K`$,
-and the result and throw clauses of (b′) put the value the run ends with
-in $`L_n\cup K\cup O`$. The native takes no function argument, so its run
-calls no code but the realm's, and no step of it is outside code.
+`FFlow.check` decides `Fits.native` as it decides `invokeC`: $`L_n`$ by
+the iteration `capClose` already runs, FnFree against the flow's codes'
+tokens, the `Stores` premises against the flow's site heap. A call whose
+operands reach outside storage or a closure fails FnFree and is checked by
+`invoke`, its operands given out, a stated precision limit:
+`out.push(s)` with `out` holding a client's object gives `out` out.
+`Fits.nativeRun` is no check: the run's terms are the realm's code, which
+the flow does not type.
+
+**Why FnFree.** A native taking no function argument calls a function its
+operands reach: `[o].join(",")` with `o = { toString: g }` calls `g` with
+`this` bound to `o` (observed under Node: `g` receives the local
+`o`). `NativeRowB` admits it (a function it calls
+is one its operands reach); the English row (b), "it calls out only
+through the function arguments it is given", is false of this run. Under
+FnFree no function is reachable from the operands (`FnsIn`: a closure of
+$`C`$ meets a set holding its token, one of outside code a set holding
+$`\circ`$), so by `NativeRowB`'s call clause the run calls no code but the
+realm's, and no step of it is outside code.
+
+**The run invariant.** `Fits` gains a second judgment
+beside `V`, the run judgment `R : Sites P → Tm → Prop`, read by
+`Fits.nativeRun` alone, and `ClientFrame.FitsAt` reads it at the state:
+
+```math
+\mathrm{FitsAt}(x, g) \iff \mathrm{Fits}_{V,R}(x.t) \wedge \mathrm{HeapInv}_g(x.h), \quad V = \mathrm{VJ}_{g,|x.h|},\ R = \mathrm{RunJ}_{g,x.h}
+```
+
+$`\mathrm{RunJ}_{g,h}\,S\,u`$ holds where $`u`$ is a goto or a frame of the
+realm's code, and there are $`h_0`$, $`f, r, \bar a`$, $`A`$, $`S_r,\bar
+S_a`$ with
+
+- `NativeRun rl h₀ (.invoke f r args) h u A` and `RealmFn rl f`;
+- the operands met their sets at the call: $`\mathrm{VJ}_{g,|h_0|}\,S_r\,r`$,
+  $`\mathrm{VJ}_{g,|h_0|}\,S_{a_i}\,a_i`$, and $`\mathrm{HeapInv}_g(h_0)`$
+  below $`|h_0|`$ as the ghost reads it;
+- `Fits.native`'s premises at $`S_r, \bar S_a`$ and $`K`$, and
+  $`\mathrm{Res}(c) \subseteq S`$;
+- every location of $`A`$ is of a site of $`K`$ at $`g`$.
+
+Every premise but `NativeRun` is a property of values at $`|h_0|`$, so
+it holds at every later heap (`VJ.alloc`). A run is entered at the
+`callGraph` step from `Fits.native` (`NativeRun.start`, then one step),
+continued by `NativeRun.step` at each step of the run, and left when $`u`$
+is a value or a throw, where `Fits.val` replaces `nativeRun` by (b′)'s
+result clause at $`\mathrm{Res}(c)`$, and `Fits.throw` by its throw
+clause (item 4 below).
+
+**`.alloc` weakening** (`Fits.alloc`, used at every position a step does
+not reduce). `RunJ` names the heap, so it is no monotone judgment; it is
+read only at the position the step reduces. A position a step does not
+reduce is a value or lowered code, which holds no goto and no frame
+(`Lowered` is false at both), so its fit uses no `Fits.nativeRun`
+(`Fits.noRun`: a fit of a term holding no goto and no frame holds at every
+`R`), and `.alloc` applies to it at `V` as today. At the reduced position
+`fits_step`'s induction carries `R`: a congruence step inside the run is a
+step of the run, so `RunJ` at the next heap follows from `NativeRun.step`.
+At most one run is open in a term: its steps call no code but the realm's
+(FnFree), so no frame of $`C`$ or of the client is inside it, and every
+frame inside it is the realm's (`ownStep`).
+
+**The native's own allocations.** `stepSite` reads the innermost frame of
+$`C`$ or of the client around the active term, the owner's frame (step
+1.3.2), skipping the realm's frames: a native's step allocates at its
+call's key in $`C`$'s frame, $`K`$'s sites (Read-only frames, "Marks": "a
+native call's included"); `next_site` and `stepSite_outside` read it so.
+
+**The native's steps keep the heap** (`nativeStep_within`, `fits_step`
+at a step of the run). At a step from $`(h, u)`$ with `RunJ`:
+
+- a location the step changes that existed before the call is one its
+  operands reach at the call, or the realm's storage receiving a
+  primitive (the location clause of row (b), added to `NativeRowB`); with
+  `valRun_noForge` the step is `StepWithin` the native reach of $`c`$;
+- the value it stores there is a primitive or one its operands reach at
+  the call (`NativeRowB`, item 1 below), which meets $`L_n \cup K`$, the
+  contents its site stores;
+- a value it stores at a location of $`A`$ is one its run holds, which by
+  `valRun_noForge` its operands or its callee reached at $`h_0`$ or its run
+  allocated, so it meets $`L_n \cup K \cup O`$, the contents of $`K`$;
+- the realm's storage stays at $`O`$: a primitive meets every set.
+
+Counter-model kept refused: a realm `keep(o){ realmCell.v = o }` stores
+its operand into the realm's storage that existed before its call, which
+neither its operands reach nor is a primitive; the location clause
+refuses the run.
 
 **Two runs.**
 
 - `s += xs[i]` (P22): the element read calls `%ElementAt%` read from its
   slot, with receiver `xs` and actual `i`. $`S_r = S_{xs}`$, $`S_a =
   \{\mathrm{prim}\}`$; $`L_n`$ is $`S_{xs}`$ closed under contents, so it
-  holds the sites of `xs`'s spine and elements; $`K = \varnothing`$ (an
-  element read allocates nothing); the result's set holds $`L_n \cup O`$.
-  No site stores anything new. The rule keeps the facts at `xs`'s parts,
-  whose charges $`\mathsf{any}`$ at $`L_n`$ the node protocol reads
-  against $`\Psi_C`$.
-- `const t = xs.slice()`: $`S_r = S_{xs}`$, no actual; $`L_n`$ as above;
-  $`K`$ is the node's array and spine sites; `t`'s set holds $`L_n \cup K
-  \cup O`$; the fresh spine's site (in $`K`$) stores the elements of
-  `xs`, which are in $`L_n`$, as (A2) states; no site of $`L_n`$ stores
-  anything new.
+  holds the sites of `xs`'s spine and elements; $`K = \varnothing`$;
+  `result` is `["operands"]`, so the result's set holds $`L_n`$. No site
+  stores anything new. Where `xs` is the client's, $`\circ \in L_n`$,
+  FnFree fails and the call is `invoke`'s, as at the base.
+- `const t = xs.slice()`, `xs` local holding primitives: $`L_n`$ as above;
+  $`K`$ is the node's array and spine sites; `result` is
+  `["allocations"]`, so `t`'s set holds $`K`$; the fresh spine's site
+  stores the elements of `xs`, which are in $`L_n`$; no site of $`L_n`$
+  stores anything new.
 
 `out.push(s)` runs the same way once its callee, read through `out`'s
 prototype, is decided (the next sub-step of step 1.4.3): $`L_n`$ is
-$`S_{out} \cup S_s`$ closed, and `out`'s spine site stores $`S_s \subseteq
-L_n`$.
+$`S_{out} \cup S_s`$ closed, $`K`$ the node's array site (a grown cell),
+and `out`'s spine site stores $`S_s \subseteq L_n`$.
 
 **What this duplicates.** The step model of `%ElementAt%` (`hostModel?`,
 `sibSig`): a code of $`C`$ that stands for the native in the flow, so the
 slot's set holds its token. `Fits.native` replaces it, and step 1.4.2
-deletes it. The set it gives the result is coarser than the step model's
-(the receiver's element sites): $`L_n \cup O`$ also holds the spine's
-site. Whether P22 keeps its verdict with it is the first thing the
-review asks; the note's (A2) states the result's set as "what its
-contract states of the result", which would keep the element sites. The
-`Stores` premises repeat those of `writeAt` and `setElem` at a node that
-writes through no expression of $`C`$'s code.
+deletes it. With `result` at `["operands"]` the result's set is
+$`L_n`$, the spine's site included, coarser than the step model's (the
+receiver's element sites); whether P22 keeps its verdict with it is
+checked when the rule is built. The `Stores` premises repeat those of
+`writeAt` and `setElem` at a node that writes through no expression of
+$`C`$'s code.
+
+#### What the rows leave open
+
+`fits_step` at a step of the run needs three statements that rows (b) and
+(b′), as `NativeRowB` and `NativeRowB'` state them, do not give. Each is
+shown by a run of a realm meeting both definitions; none is a run of a
+standard native this work has found. The first two read the approved
+text at the call's heap; the third and the fourth are clauses no row
+states. Each needs the owner's word before the Lean definitions change.
+
+1. **Reach at the call, for the stores' values.** `NativeRowB` and the
+   stores clause of `NativeRowB'` read "a value its operands reach" at the
+   heap of the store. A realm run allocates `F`, stores
+   `Array.prototype` (realm storage, $`\circ`$) into `F[0]`, stores `F`
+   into `xs[0]` (a value its run allocated), then `F[0]` into `xs[1]`:
+   at that heap `xs` reaches it, so both definitions admit the store,
+   and `xs`'s spine site, which stores $`L_n \cup K`$, holds a value of
+   $`\circ`$. Read at the call's heap $`h_0`$ ("into storage that
+   existed before its call it stores only primitives and values its
+   receiver and arguments reach", the reach at the call), the store is
+   refused, and the values reaching storage that existed before the call
+   meet $`L_n \cup K`$.
+2. **Reach at the call, for the location clause.** The same run then
+   stores `xs` into `F[0].v`, a field of `Array.prototype` its operands
+   reach at that heap through `F`: the location clause read at the
+   heap of the store admits a local value in realm storage. Read at
+   $`h_0`$ it is refused.
+3. **The functions the run creates.** `VJ` asks that the values a
+   closure of code other than $`C`$'s holds in its code reach no local
+   location (`CodeNL`): a client step may call it. A realm run returning
+   a fresh closure of the realm's code that captures its receiver (an
+   iterator stated as a closure) meets (b′) (the captured receiver is a
+   value its operands reach) and gives a local receiver to any later
+   caller. The run invariant needs: a run whose operands reach no
+   function creates no closure and no bound function holding a value its
+   operands reach (stated of the natives `Fits.native` reads; `bind`'s
+   receiver is a function, so FnFree excludes it).
+4. **The values it throws.** A thrown value meets $`O`$ (`Fits.throw`,
+   `raises_fits`): a raise may leave $`C`$'s frames. (b′) lets a native
+   throw a value its operands reach or one its run allocated, at
+   $`L_n \cup K`$; a fresh `TypeError` of `push` is at $`K`$. The rule
+   needs the sources of a thrown value within $`O`$: either $`L_n \cup
+   K \subseteq O`$ at a native whose contract states an exceptional exit
+   (its operands and allocations given out where it may throw, a
+   precision limit), or a contract statement of what a native throws
+   (fresh errors holding primitives, given out at the throw), a field
+   like `result`.
+
+**Size**, measured from the code it changes at this tip: `Fits`'s
+definition and the 18 modules that read it (83 inductions or case
+analyses over it in `ReadOnlyFits*`, `ReadOnlyCallFrame`,
+`ReadOnlyEnterRoots`, `ReadOnlyStepWrites`, `ReadOnlyLocalReach`, the
+`Framed*` readers), about 900–1,200 lines: the two rules and `R` through
+every reader (300), `fits_step`'s native and run cases with
+`nativeStep_within` (500–700), `FFlow.check`'s decision of `Fits.native`
+and its soundness (150), `stepSite` at the owner's frame (100); the rows'
+changes in `ReadOnlyLocalReach.lean` (80); the `result` field, about 350
+lines over the 331 trust entries of seven contract modules
+(`tools/array-prototype.mts`, `tools/intrinsics.mts`,
+`tools/library-globals.mts`, `tools/library-modules.mts`,
+`tools/library-types.mts`, `tools/compiler-api.mts`,
+`tools/builtin-trust.mts`) and `tests/builtin-trust.mts`, and its reading
+in Lean through the realm (100). In all about 1,450–1,800 lines in about
+28 files.
 
 ### Natives
 
