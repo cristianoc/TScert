@@ -127,6 +127,9 @@ Each note changes only with the owner's approval.
   into the line it is fast-forwarded
   (`git -C ~/GitHub/TScert merge --ff-only origin/single-pass` after a
   fetch). Nothing is built, edited or created in it.
+- The owner follows the work in WORK.md of that checkout. A report of the
+  plan's state reads WORK.md on `origin/single-pass` and names its commit;
+  a copy of a file handed to the owner names the commit it shows.
 - The plan and its status: the row "Pretext's walkers under the read-only
   frame" of [WORK.md](../../../WORK.md#status), its steps numbered (1.1 to
   1.7, 2.1 to 2.5, 3), each with its state and, while in progress, the
