@@ -556,6 +556,11 @@ every world a call below the budget runs in is (`Above.below`); a world
 above a base world $`W_1`$ that is above $`W_0`$ is above $`W_0`$
 (`Above.base_trans`). The budgets are bounded by $`N`$: a run from the
 initialization's world of level $`N`$ has at most $`N`$ steps left.
+Every budget is covered by a family of base worlds, one per level, each
+theorem instantiated at each. The worlds of a run before $`W_0`$ are below
+it: a call of the module's functions during its own initialization, or by
+an importer on a cycle of imports before this module's initialization
+ends, is outside these theorems.
 
 **Realized** (`Realizes`). A unit $`u`$ of a set $`S`$ is realized at the
 base world $`W_0`$ when its interface $`I_u`$ presents one clause of
@@ -938,8 +943,9 @@ and $`S = \mathrm{closedUnits}(V)`$. Then
 for every base world $`W_0`$ (section 4, "The base world"). Every member of
 each closed unit's group is safe from every entry meeting its inputs; each
 laid-out function's value in the module's environment meets the arrow its
-callers read, its effect included, at every budget in every world above
-$`W_0`$; and its module slots are met by that environment there.
+callers read, its effect included, at every budget up to $`N`$ in every
+world above $`W_0`$; and its module slots are met by that environment
+there.
 
 ### The hypotheses and who discharges them
 
@@ -1039,7 +1045,9 @@ $`u`$'s module (`HoldsModuleValue`), the stores agree on the signature
 (`SignatureAgrees`: $`w \in ⟦I_u⟧^{G_m}_{j,W} \Rightarrow w \in ⟦A⟧^{G}_{j,W}`$)
 and the importer's base world $`W_0`$ is above the module's
 ($`\mathrm{Above}_{W_m}(W_0)`$: the importer's initialization runs after
-its exporters'), then
+its exporters'; world extension is extension of a prefix, so an importer
+of two modules reads bases that are prefixes of one another, the worlds
+after each module's initialization in one order of evaluation), then
 $`\forall i.\; \forall j \le i.\; \forall W.\; \mathrm{Above}_{W_0}(W) \Rightarrow v_i \in ⟦A⟧_{j,W}`$,
 since a world above $`W_0`$ is above $`W_m`$ (`Above.base_trans`).
 `established_met` (proved) lifts it to every slot of kind `established`
