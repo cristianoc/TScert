@@ -209,7 +209,7 @@ const field = (value: unknown, key: string): unknown => fieldOf(value, key);
  * under `artifacts`: the parse, the source's bytes, the snapshot it parsed and the file its
  * imports resolve as. */
 export function parseSource(source: string, tsconfigPath: string | undefined, artifacts: string, recorder: Recorder,
-    omitted: readonly string[] = []): { parsed: Parsed; bytes: Buffer; snapshot: string; resolution: string } {
+    omitted: readonly string[] = [], publishedEffects?: ReadonlyMap<string, string>): { parsed: Parsed; bytes: Buffer; snapshot: string; resolution: string } {
   // Parse a snapshot, not a path whose contents may change during verification.
   const bytes = readFileSync(resolve(source));
   const configuration = Buffer.from(JSON.stringify({
@@ -231,7 +231,7 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   // reached.
   const resolution = tsconfigPath ? resolve(source) : snapshot;
   // The parse stage, an observed stage.
-  const parsed = invokeInProcess(parseCall(bytes, snapshot, tsconfigPath, resolution, omitted), { force: false, recorder }).value;
+  const parsed = invokeInProcess(parseCall(bytes, snapshot, tsconfigPath, resolution, omitted, publishedEffects), { force: false, recorder }).value;
   // The TypeScript errors the parser's gate read are kept beside its log,
   // accepted or not: they are where a refusal over one of them points.
   writeFileSync(join(artifacts, "typescript-diagnostics.json"), JSON.stringify(parsed.seen, null, 1) + "\n");

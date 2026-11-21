@@ -48,6 +48,20 @@ On 21 November 2026, the producer published 78 normal frames for the pinned Pret
 
 For example, `analysis.ts` imports `isSpaceOrTabOrSegmentBreak`, which declaration emission describes as `(ch: number) => Modifies<{}, boolean>`. The declaration reader encounters this effect before it can use the frame bundle. The interface must carry producer evidence for stated contracts as well as inferred frames, including effects in callback signatures such as `layout.ts`'s `walkLineRanges`.
 
+### Stated effects in emitted declarations
+
+The declaration reader recognizes a reference to the verifier's `Modifies` alias in `statement`. It checks that the reference and the value whose signature it describes belong to the checked program. Plain declaration emission leaves the reference in the signature and supplies no evidence about the program that declared it. For example, a read of `isSpaceOrTabOrSegmentBreak` cannot interpret its `Modifies<{}, boolean>` result.
+
+For the controlled Pretext experiment, the producer checks the source module's full verdict, including initialization, before publishing its emitted declaration for effect reading. The consumer checks the digest of the declaration TypeScript resolved and uses `statement` to read the same contract grammar. Thus an imported `isSpaceOrTabOrSegmentBreak` has the frame stated on its result, and an imported `walkLineRanges` states the callback contract at its parameter. A declaration reached through an unrelated external value remains subject to the checks on external statements. The consumer has the emitted declaration and the publication record.
+
+The producer also publishes the checked signature’s elaborated preconditions and postconditions at the emitted declaration’s identity. For example, every call to `measureAnalysis` must establish the bounds on `from` and `to` against the three analysis arrays. The consumer installs those obligations before planning any unit. The guarantees from `analyzeText` and the line-break scanners likewise travel as their elaborated postconditions.
+
+The published signature can carry a checked frame and conditions together. `getWebKitLineBreaks` preserves the array bounds needed by its caller's loop and guarantees the length of its returned view. Both facts are used by `getWebKitParagraphBreaks`. The producer also carries separate frames for the normal and exceptional exits of the exported and returned callables. `lazyRegExp` returns a function whose checked normal frame preserves array spines. `measureAnalysis` uses that fact when the returned function is called in the measuring loop.
+
+This extends the existing declaration reader and full file verifier. The experiment reuses their existing annotation grammar and check, and relies on the controlled producer and TypeScript’s emission for correspondence between the source check and the declaration. A production interface needs to bind the evidence to the semantic declaration.
+
+On 21 November 2026, the run with published stated and inferred contracts verified all 210 functions across the 12 pinned files. Publishing the stated contracts cleared the source gate for `analysis.ts`, `layout.ts`, and `rich-inline.ts`. The WebKit scanner's combined frame and conditions brought the total to 209. Publishing `lazyRegExp`'s returned callable frame recovered `measureAnalysis`. Consumers ran a single check per file and executed zero dependency-lowering, planning, or proof stages. A call to `measureAnalysis` with `from = -1` was refused using the published precondition.
+
 ## 1. The computation today
 
 | Step | Actual computation and grain |

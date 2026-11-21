@@ -10,13 +10,14 @@ import { join, resolve } from "node:path";
 import { prepareInterfaces, verifyByUnits } from "../pipeline/module-interfaces.mts";
 import { Recorder, readInvocationLog } from "../pipeline/stages.mts";
 import { decodeVerdictLine, type VerdictLine } from "../pipeline/stage-execution.mts";
-import { invocationLog, memberName, parseSource, readFragmentFile, stepTimeoutMs } from "../pipeline/verify-source.mts";
+import { check, invocationLog, memberName, parseSource, readFragmentFile, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { isJsonList, isJsonObject, type JsonRead } from "../tools/calculus.mts";
 import { SymbolFlags } from "../tools/node_modules/typescript/dist/api/sync/api.js";
-import { isFunctionDeclaration } from "../tools/node_modules/typescript/dist/ast/index.js";
+import { isFunctionDeclaration, isIdentifier, isTypeReferenceNode, type Node } from "../tools/node_modules/typescript/dist/ast/index.js";
 import { inDeclarationAttempt, inDeclarationSession } from "../tools/declaration-session.mts";
 import { close, initOmission, lowerModule } from "../tools/fragment-parse.mts";
-import type { Change, DeclarationIdentity, Frame } from "../tools/declaration-types.mts";
+import { withConditions } from "../tools/type-graph.mts";
+import type { CallEffect, Change, DeclarationIdentity, Exits, Frame, IndexFact, TypeTerm } from "../tools/declaration-types.mts";
 
 const repo = resolve(import.meta.dirname, "..");
 const digest = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -58,7 +59,29 @@ function command(binary: string, args: string[], cwd: string = repo): string {
   return result.stdout.trim();
 }
 
-type PublishedFrames = { declarationSha256: string; normalFrames: Record<string, { span: DeclarationIdentity["span"]; frame: Frame }> };
+type PublishedConditions = { span: DeclarationIdentity["span"]; requires: IndexFact[]; ensures: IndexFact[] };
+type PublishedEffect = { span: DeclarationIdentity["span"]; call: Exits<Frame>; returned: Exits<Frame> };
+type PublishedContracts = { declarationSha256: string; effects: Record<string, PublishedEffect>;
+  conditions: Record<string, PublishedConditions> };
+
+function exitFrames(entry: JsonRead): Exits<Frame> {
+  const { normal, exceptional } = object(entry);
+  return { normal: checkedFrame(object(normal).frame), exceptional: checkedFrame(object(exceptional).frame) };
+}
+const hasFrame = (frame: Frame): boolean => frame.some((r) => r.change !== "any");
+const hasExitFrame = (frames: Exits<Frame>): boolean => hasFrame(frames.normal) || hasFrame(frames.exceptional);
+
+function withExitFrames(effect: CallEffect, frames: Exits<Frame>): CallEffect {
+  return { ...effect, exits: {
+    normal: { ...effect.exits.normal, frame: frames.normal },
+    exceptional: { ...effect.exits.exceptional, frame: frames.exceptional },
+  } };
+}
+
+function readExitFrames(entry: JsonRead): Exits<Frame> {
+  const { normal, exceptional } = object(entry);
+  return { normal: checkedFrame(normal), exceptional: checkedFrame(exceptional) };
+}
 const declarationName = (file: string): string => file.replace(/\.ts$/, ".d.ts");
 const configuration = (extra: object): string => JSON.stringify({
   extends: join(pretext, "tsconfig.json"), compilerOptions: { types: [] }, ...extra,
@@ -75,7 +98,9 @@ function declarationDigests(dir: string): Record<string, string> {
   return Object.fromEntries(declarationFiles(dir).map((file) => [file.slice(dir.length + 1), digest(file)]));
 }
 
-function exportedFunctions(path: string, config: string): Map<string, DeclarationIdentity["span"]> {
+function emittedDeclaration(path: string, config: string): {
+  functions: Map<string, DeclarationIdentity["span"]>; statesEffects: boolean;
+} {
   return inDeclarationAttempt(() => inDeclarationSession(path, config, (project) => {
     const source = project?.program.getSourceFile(path);
     if (project === undefined || source === undefined) throw Error(`TypeScript did not load ${path}`);
@@ -90,7 +115,10 @@ function exportedFunctions(path: string, config: string): Map<string, Declaratio
           !isFunctionDeclaration(declaration) || declaration.name === undefined) continue;
       declarations.set(declaration.name.text, [declaration.getStart(source), declaration.end]);
     }
-    return declarations;
+    const statesEffects = (node: Node): boolean =>
+      (isTypeReferenceNode(node) && isIdentifier(node.typeName) && node.typeName.text === "Modifies") ||
+      (node.forEachChild((child) => statesEffects(child) || undefined) ?? false);
+    return { functions: declarations, statesEffects: statesEffects(source) };
   }));
 }
 
@@ -107,7 +135,8 @@ function produce(files: string[]): void {
   }));
   const emitted = join(work, "emitted-project.json");
   writeFileSync(emitted, configuration({ include: [join(packageTypes(), "**/*.d.ts")], exclude: [] }));
-  const manifest: Record<string, PublishedFrames> = {};
+  const manifest: Record<string, PublishedContracts> = {};
+  const stated: Record<string, { declarationSha256: string; sourceSha256: string; units: string[] }> = {};
   for (const file of files) {
     console.log(`produce ${file}`);
     const dir = join(work, file);
@@ -131,26 +160,58 @@ function produce(files: string[]): void {
       .find((r) => object(r.module).location === location);
     if (published === undefined) throw Error(`missing producer result for ${file}`);
     const declaration = declarationName(file);
-    const exports = exportedFunctions(join(packageTypes(), declaration), emitted);
-    const normalFrames: PublishedFrames["normalFrames"] = Object.fromEntries(list(published.entries).map(object).flatMap((entry) => {
+    const declarationFile = join(packageTypes(), declaration);
+    const declarationSha256 = digest(declarationFile);
+    const { functions: exports, statesEffects } = emittedDeclaration(declarationFile, emitted);
+    const hasConditions = own.module.functions.some((fn) =>
+      exports.has(fn.name) && (fn.requires.length > 0 || fn.ensures.length > 0));
+    const conditions: Record<string, PublishedConditions> = {};
+    if (statesEffects || hasConditions) {
+      console.log("  checking the module's stated contracts");
+      using checked = check(absolute, project, false, undefined, true);
+      if (checked.status !== "verified") throw Error(`${file}: stated contracts were not verified: ${checked.detail}`);
+      const checkedFragment = readFragmentFile(join(checked.artifacts, "fragment.json"));
+      if (checkedFragment.sourceSha256 !== own.module.sourceSha256)
+        throw Error(`${file}: stated contracts were checked against different source bytes`);
+      if (checked.units === undefined || checked.units.length === 0 || checked.units.some((unit) => unit.status !== "verified"))
+        throw Error(`${file}: stated contracts require complete unit verdicts`);
+      if (checked.initialization.length && !checked.units.some((unit) => unit.unit === "init"))
+        throw Error(`${file}: stated contracts require an initialization verdict`);
+      const units = checked.units.map((unit) => unit.unit);
+      const checkedMembers = new Set(checked.units.flatMap((unit) => unit.members));
+      for (const fn of checkedFragment.functions) {
+        const span = exports.get(fn.name);
+        if (span === undefined || (fn.requires.length === 0 && fn.ensures.length === 0)) continue;
+        if (!stable.has(fn.name) || !checkedMembers.has(`${fn.name}@${fn.namePos[0]}`) || Object.hasOwn(conditions, fn.name))
+          throw Error(`${file}: no single checked binding for ${fn.name}'s stated conditions`);
+        conditions[fn.name] = { span, requires: fn.requires, ensures: fn.ensures };
+      }
+      copyFileSync(join(checked.artifacts, invocationLog), join(dir, "stated-invocations.jsonl"));
+      if (statesEffects) stated[declaration] = { declarationSha256, sourceSha256: checkedFragment.sourceSha256, units };
+      console.log(`  checked ${units.length} units, published conditions for ${Object.keys(conditions).length} exports`);
+    }
+    const effects: PublishedContracts["effects"] = Object.fromEntries(list(published.entries).map(object).flatMap((entry) => {
       const name = string(entry.name);
       const span = exports.get(name);
       if (span === undefined || entry.established === null || !stable.has(name)) return [];
       const fns = own.module.functions.filter((f) => f.name === name);
       const [fn] = fns;
-      // A projection of one fixed ordinary signature: the consumer substitutes
-      // just the normal frame. The rest of the signature stays at its declaration.
-      if (fn === undefined || fns.length !== 1 || fn.requires.length || fn.ensures.length ||
+      // A projection of one fixed ordinary signature and its returned callable.
+      // Their frames come from the checked row at the declared signature.
+      if (fn === undefined || fns.length !== 1 ||
+          ((fn.requires.length || fn.ensures.length) && !Object.hasOwn(conditions, name)) ||
           fn.guard !== null || fn.stated !== null || fn.typeParams.length || fn.params.some((p) => p.rest) ||
           fn.completion !== "sync") return [];
-      const frame = checkedFrame(object(object(object(entry.established).exits).normal).frame);
-      return frame.every((r) => r.change === "any") ? [] : [[name, { span, frame }]];
+      const checked = object(entry.established);
+      const call = exitFrames(checked.exits);
+      const returned = exitFrames(checked.resultExits);
+      return hasExitFrame(call) || hasExitFrame(returned) ? [[name, { span, call, returned }]] : [];
     }));
-    manifest[`./src/${declaration}`] = { declarationSha256: digest(join(packageTypes(), declaration)), normalFrames };
-    console.log(`  published ${Object.keys(normalFrames).length} checked frames`);
+    manifest[`./src/${declaration}`] = { declarationSha256, effects, conditions };
+    console.log(`  published effects for ${Object.keys(effects).length} exports`);
   }
   writeFileSync(join(bundle, "frames.json"), JSON.stringify({ declarations: declarationDigests(packageTypes()),
-    modules: manifest }, null, 2) + "\n");
+    modules: manifest, stated }, null, 2) + "\n");
   close();
 }
 
@@ -174,10 +235,19 @@ function measure(expected: { readonly [file: string]: JsonRead }): void {
   const supplied = object(read(join(bundle, "frames.json")));
   const frames = object(supplied.modules);
   const digests = object(supplied.declarations);
+  const stated = object(supplied.stated);
   const bundleDigests = declarationDigests(packageTypes());
   if (Object.keys(digests).length !== Object.keys(bundleDigests).length ||
       Object.entries(bundleDigests).some(([name, hash]) => digests[name] !== hash))
     throw Error("declarations differ from the produced interface");
+  const statedDigests = Object.entries(stated).map(([name, entry]): [string, string] => {
+    const { declarationSha256, sourceSha256, units } = object(entry);
+    const hash = string(declarationSha256);
+    if (bundleDigests[name] !== hash || !/^[0-9a-f]{64}$/.test(string(sourceSha256)) ||
+        list(units).length === 0 || !list(units).every((unit) => typeof unit === "string"))
+      throw Error(`invalid publication of stated effects: ${name}`);
+    return [name, hash];
+  });
   let total = 0;
   let accepted = 0;
   for (const [file, record] of Object.entries(expected)) {
@@ -199,7 +269,9 @@ function measure(expected: { readonly [file: string]: JsonRead }): void {
     writeFileSync(project, configuration({ files: [implementation], include: ["src/**/*.d.ts"], exclude: [] }));
     const log = join(artifacts, invocationLog);
     const recorder = new Recorder(log);
-    const { parsed } = parseSource(implementation, project, artifacts, recorder);
+    const publishedEffects = new Map(statedDigests.filter(([name]) => join(packageTypes(), name) !== own)
+      .map(([name, hash]): [string, string] => [join(src, name), hash]));
+    const { parsed } = parseSource(implementation, project, artifacts, recorder, [], publishedEffects);
     const checkBoundary = (): void => {
       if (readInvocationLog(log).some((r) => r.stage === "module" || r.stage === "interface-plan" || r.stage === "module-interface"))
         throw Error(`${file}: consumer ran a dependency stage`);
@@ -216,23 +288,52 @@ function measure(expected: { readonly [file: string]: JsonRead }): void {
     const used = new Set<string>();
     for (const value of ast.declarations.values) {
       const published = frames[value.declaration.module];
-      if (published === undefined || value.type.k !== "function" || value.construct || value.typeParams.length) continue;
-      const { declarationSha256, normalFrames } = object(published);
-      const entries = object(normalFrames);
-      if (!Object.hasOwn(entries, value.declaration.name)) continue;
-      const entry = object(entries[value.declaration.name]);
-      const span = list(entry.span);
-      if (span.length !== 2 || span.some((offset, i) => offset !== value.declaration.span[i]))
-        throw Error(`${file}: frame does not match its resolved declaration span`);
+      if (published === undefined || value.construct) continue;
+      const { declarationSha256, effects, conditions } = object(published);
+      const named = (entries: JsonRead): JsonRead => {
+        const table = object(entries);
+        return Object.hasOwn(table, value.declaration.name) ? table[value.declaration.name] : undefined;
+      };
+      const frame = named(effects);
+      const clauses = named(conditions);
+      if (frame === undefined && clauses === undefined) continue;
       if (!value.declaration.module.startsWith("./src/") || !value.declaration.module.endsWith(".d.ts") ||
           declarationSha256 !== digest(join(dir, value.declaration.module)))
-        throw Error(`${file}: frame does not match its resolved declaration file`);
-      const effect = value.type.effect;
-      if (effect.pre.length || effect.requires !== null || effect.promise !== null || effect.exits.normal.ensures.length ||
-          effect.exits.normal.frame.some((r) => r.change !== "any"))
-        throw Error(`${file}: the declaration already states a contract for ${value.declaration.name}`);
-      value.type.effect = { ...effect, exits: { ...effect.exits,
-        normal: { ...effect.exits.normal, frame: checkedFrame(entry.frame) } } };
+        throw Error(`${file}: contract does not match its resolved declaration file`);
+      for (const entry of [frame, clauses]) {
+        if (entry === undefined) continue;
+        const span = list(object(entry).span);
+        if (span.length !== 2 || span.some((offset, i) => offset !== value.declaration.span[i]))
+          throw Error(`${file}: contract does not match its resolved declaration span`);
+      }
+      if (frame !== undefined) {
+        if (value.type.k !== "function" || value.typeParams.length) throw Error(`${file}: expected one fixed signature`);
+        const entry = object(frame);
+        const call = readExitFrames(entry.call);
+        const returned = readExitFrames(entry.returned);
+        const apply = (type: Extract<TypeTerm, { k: "function" }>, frames: Exits<Frame>): void => {
+          if (hasFrame(type.effect.exits.normal.frame) || hasFrame(type.effect.exits.exceptional.frame))
+            throw Error(`${file}: the declaration already states a frame for ${value.declaration.name}`);
+          type.effect = withExitFrames(type.effect, frames);
+        };
+        apply(value.type, call);
+        if (hasExitFrame(returned)) {
+          if (value.type.result.k !== "function") throw Error(`${file}: expected a fixed returned signature`);
+          apply(value.type.result, returned);
+        }
+      }
+      if (clauses !== undefined) {
+        const entry = object(clauses);
+        const facts = (wire: JsonRead): readonly IndexFact[] =>
+          list(wire) as readonly IndexFact[]; // asserted: the producer writes its checked fragment's facts and Lean decodes them
+        const requires = facts(entry.requires);
+        const ensures = facts(entry.ensures);
+        const attach = (term: TypeTerm): TypeTerm => {
+          if (term.k !== "function") throw Error(`${file}: call conditions require a function signature`);
+          return { ...term, effect: withConditions(term.effect, requires, ensures) };
+        };
+        value.type = value.type.k === "intersection" ? { ...value.type, parts: value.type.parts.map(attach) } : attach(value.type);
+      }
       used.add(value.binding.local);
     }
     writeFileSync(fragment, JSON.stringify(ast));
@@ -250,7 +351,7 @@ function measure(expected: { readonly [file: string]: JsonRead }): void {
     const lost = baseline.filter(([name]) => !passed.has(name)).map(([name]) => name);
     const count = baseline.length - lost.length;
     accepted += count;
-    console.log(`${file}: ${count}/${baseline.length}, frames [${[...used].join(", ")}]`);
+    console.log(`${file}: ${count}/${baseline.length}, contracts [${[...used].join(", ")}]`);
     for (const name of lost) {
       const verdict = [...verdicts.values()].find((v) => v.members.some((m) => memberName(m) === name));
       const cause = verdict === undefined ? "no verdict" : "refusal" in verdict ? verdict.refusal.split("\n")[0]

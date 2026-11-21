@@ -1262,9 +1262,9 @@ export function parseFile(file: string, carriesContext: boolean = false,
  * in document order, as `parseFile` refuses it. */
 export function parseFragment(file: string, tsconfigPath: string | undefined, resolutionFile: string,
   seen: (diagnostic: SeenDiagnostic) => void, lower: (request: ModuleRequest) => LoweredModule<ModuleText>,
-  omitted: ReadonlySet<string> = new Set()): string {
+  omitted: ReadonlySet<string> = new Set(), publishedEffects?: ReadonlyMap<string, string>): string {
   return failingAsTool(file, () => {
-    const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower, omitted);
+    const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower, omitted, publishedEffects);
     const text = JSON.stringify(ast);
     requireWellFormedText(text, "gate");
     for (const m of modules) if (m.illFormed !== null) throw Error(m.illFormed);
@@ -1382,13 +1382,14 @@ export function lowerModuleText(request: ModuleRequest): LoweredModule<ModuleTex
  * it, in the order the run reaches it; a module `lower` refuses left out. */
 function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: string | undefined,
   resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined,
-  lower: (request: ModuleRequest) => LoweredModule<M>, omitted: ReadonlySet<string> = new Set()):
+  lower: (request: ModuleRequest) => LoweredModule<M>, omitted: ReadonlySet<string> = new Set(),
+  publishedEffects?: ReadonlyMap<string, string>):
   { ast: Ast; modules: M[] } {
   // One tag selection of each host family for the run (HOST-FAMILIES.md,
   // "Residuals"): the checked file's, every imported module lowered with it.
   let selection: ReadonlyMap<string, readonly TagValue[]> | undefined;
   const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } },
-    omitted);
+    omitted, noneLeftOut, publishedEffects);
   // The file's parser compiler is released before any module is lowered: a
   // module's lowering uses none of its state, and a stage nested in this one
   // holds the ledger of every compiler it uses (STAGE-STORE.md, "Shared
@@ -1519,7 +1520,8 @@ function lowerFile(file: string, carriesContext: boolean,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
   family: { given?: (marker: string) => readonly TagValue[] | undefined;
     selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void },
-  omitted: ReadonlySet<string> = new Set(), moduleLeftOut: ModuleLeftOut = noneLeftOut): Lowered {
+  omitted: ReadonlySet<string> = new Set(), moduleLeftOut: ModuleLeftOut = noneLeftOut,
+  publishedEffects?: ReadonlyMap<string, string>): Lowered {
   const initRefused = moduleLeftOut.init;
   const absolute = resolve(file);
   const text = readText(absolute);
@@ -2385,7 +2387,7 @@ function lowerFile(file: string, carriesContext: boolean,
     const written: { declaration: DeclarationIdentity; clauses: readonly string[]; parameters: readonly string[] | null;
       invariants: ImportedInvariants }[] = [];
     try {
-      declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+      declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source, publishedEffects,
         ...(family.given ? { familySelection: family.given } : {}),
         ...(family.selected ? { familySelected: family.selected } : {}),
         namespaceMembers: [...members.values()].map(m => ({ local: m.local, imported: m.imported,

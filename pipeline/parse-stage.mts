@@ -18,15 +18,17 @@ import { invokeNested } from "./stages.mts";
  * project `tsconfigPath` (or its own) with imports resolved as `resolution`'s,
  * under the active family descriptions: an observed stage. Each imported
  * module is lowered by a stage of its own (`moduleCall`), nested in the
- * parse. */
+ * parse. Providing an interface's publication map selects declaration-only
+ * parsing, including for a bundle with no stated effects. */
 export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | undefined, resolution: string,
-    omitted: readonly string[] = []): InProcessCall<Parsed> {
+    omitted: readonly string[] = [], publishedEffects?: ReadonlyMap<string, string>): InProcessCall<Parsed> {
   return {
     stage: "parse",
     inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
       { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) },
-      { role: "omitted", bytes: JSON.stringify([...omitted].sort()) }],
-    run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution, omitted)),
+      { role: "omitted", bytes: JSON.stringify([...omitted].sort()) },
+      ...(publishedEffects === undefined ? [] : [{ role: "publishedEffects", bytes: JSON.stringify([...publishedEffects].sort()) }])],
+    run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution, omitted, publishedEffects)),
     codec: parsedCodec,
     observed: { compiler: compilerImplementation },
   };
@@ -76,12 +78,16 @@ export type Parsed = { code: number; out: string; detail: string; seen: SeenDiag
  * released after it, each imported module lowered by its stage, the
  * `omitted` functions read at their declared signatures. */
 function parseStage(file: string, tsconfigPath: string | undefined, resolution: string,
-    omitted: readonly string[]): Parsed {
+    omitted: readonly string[], publishedEffects?: ReadonlyMap<string, string>): Parsed {
   const seen: SeenDiagnostic[] = [];
   closeParser();
   try {
     return { code: 0, out: parseFragment(file, tsconfigPath, resolution, (d) => seen.push(d),
-      (request) => invokeNested(moduleCall(request)).value, new Set(omitted)), detail: "", seen };
+      (request) => {
+        if (publishedEffects !== undefined)
+          throw Error(`interface consumer resolved an implementation: ${request.location}`);
+        return invokeNested(moduleCall(request)).value;
+      }, new Set(omitted), publishedEffects), detail: "", seen };
   } catch (error) {
     // A tool failure is no result: the stage fails, and nothing is stored.
     passToolFailure(error);
