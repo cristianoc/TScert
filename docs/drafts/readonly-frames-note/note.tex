@@ -951,13 +951,14 @@ The cell of a \code{const} is written by the initialization alone, since
 no code of $\cC$ assigns a constant, so the value the initialization
 writes there holds at every later state: no code of $M_\cC$ writes the
 cell, and outside code reaches no location of a local site (K).
+A built-in the component calls allocates at its own sites; its result and those sites hold only what its arguments reach, its own allocations, and outside values.
 At a call of a native, with $L_n$ the closure of its receiver's and
 actuals' sets: its result's set holds $\circ$ and what its contract states
 of the result (its node's sites for a fresh result, an operand's set for
 an operand), every site of
 $L_n$ stores $L_n$, every code whose token $L_n$ holds is entered at
 $L_n$, and where $L_n$ holds $\circ$, $L_n$ enters $O$
-\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). The initialization's codes in the flow and every order of their runs, \lean{initial\_of\_inits} (to be proved)}.
+\status{assumed: the sentence on a built-in's own sites, approved by the owner on 2026-11-21. Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). The initialization's codes in the flow and every order of their runs, \lean{initial\_of\_inits} (to be proved)}.
 \item[(A3) Charges] The charged writes of each code of $M_\cC$ at each
 context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
 closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
