@@ -98,7 +98,7 @@ import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
-import { checkTrust, signatureEffects, withinB, type BuiltinTrust } from "./builtin-trust.mts";
+import { checkTrust, signatureEffects, throwBound, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -326,9 +326,9 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
     : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect };
   // Creating a step allocates it and a spread writes only what it allocates
   // and the position of an iterator it creates: each kind within row (b),
-  // `onThrow` `"top"` as the stated effects bound no throw.
+  // `onThrow` as the stated effects bound a throw (`throwBound`).
   checkTrust(name, withinB(kinds.map(k => iterationSpecs.get(k) ?? "").every(Boolean)
-    ? kinds.map(k => iterationSpecs.get(k)).join("; ") : "", "top"), signatureEffects(type));
+    ? kinds.map(k => iterationSpecs.get(k)).join("; ") : "", throwBound(signatureEffects(type))), signatureEffects(type));
   return { name, typeParams, type };
 }
 
@@ -391,8 +391,8 @@ export function restFromIntrinsic(k: number):
   const type: Signature = { ...fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
       rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }),
       effect: footprintEffect(emptyFootprint, { fresh: true }) };
-  checkTrust(restFromName(k), withinB("ECMA-262 sec-runtime-semantics-iteratorbindinginitialization, sec-createarrayiterator", "top"),
-    signatureEffects(type));
+  checkTrust(restFromName(k), withinB("ECMA-262 sec-runtime-semantics-iteratorbindinginitialization, sec-createarrayiterator",
+    throwBound(signatureEffects(type))), signatureEffects(type));
   return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }], type };
 }
 
@@ -416,7 +416,7 @@ export function openReadIntrinsic(key: string):
     ({ k: "object", fields: [], stringIndex: null, calls: [], view, span }));
   const receiver: TypeTerm = { k: "union", parts: [{ k: "object", fields: [], stringIndex: null, calls: [], span }, ...typedArrays], span };
   const type: Signature = { ...fn([receiver], atom("unknown")), effect: emptyEffect };
-  checkTrust(openReadName(key), withinB("ECMA-262 sec-ordinaryget", "top"), signatureEffects(type));
+  checkTrust(openReadName(key), withinB("ECMA-262 sec-ordinaryget", throwBound(signatureEffects(type))), signatureEffects(type));
   return { name: openReadName(key), typeParams: [], type };
 }
 
@@ -518,7 +518,7 @@ export function enumIntrinsic(name: string, members: readonly EnumMemberValue[])
   const type: Signature = fn([enumMembersTerm(members, span, "none")], enumMembersTerm(members, span, "stated"));
   // TypeScript's emit stores member names, strings, into the object it is
   // passed: within row (b).
-  checkTrust(enumIntrinsicName(name), withinB("TypeScript enum emit; ECMA-262 sec-ordinaryset", "top"), signatureEffects(type));
+  checkTrust(enumIntrinsicName(name), withinB("TypeScript enum emit; ECMA-262 sec-ordinaryset", throwBound(signatureEffects(type))), signatureEffects(type));
   return { name: enumIntrinsicName(name), typeParams: [], type };
 }
 
@@ -888,7 +888,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     const make = byName.get(name) ?? (name.startsWith(freezePrefix) ? () => freezeIntrinsic(name) : undefined);
     if (!make) throw Error(`no intrinsic ${name}`);
     const { typeParams, type } = make();
-    checkTrust(name, name.startsWith(freezePrefix) ? withinB("ECMA-262 sec-object.freeze", "top") : intrinsicTrust.get(name),
+    checkTrust(name, name.startsWith(freezePrefix) ? withinB("ECMA-262 sec-object.freeze", throwBound(signatureEffects(type))) : intrinsicTrust.get(name),
       signatureEffects(type));
     made.push({ name, typeParams, type });
   }

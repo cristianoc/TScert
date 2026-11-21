@@ -268,7 +268,7 @@ export const cases: Case[] = [
   positive("blocker-round-conditional-path-reuse", "A plain record member path keeps its read equality across successive conditional tests."),
   positive("blocker-round-generic-rest-answer", "Callback service views preserve the options receiver and select the destination before argument effects."),
   { ...positive("blocker-round-global-signature-matcher", "An owned global-signature matcher retains its checked normal-return array-spine contract."), project: "pipeline/blocker-project" },
-  { ...negative("invalid-round-global-signature-matcher", "A falsely promised matcher pops the searched array and find reads undefined on its next visit (TypeError under Node).", /source expression obligation at \[538,622\): evidence search failed: no derivation of its binding-annotation claim/), project: "pipeline/blocker-project" },
+  { ...negative("invalid-round-global-signature-matcher", "A falsely promised matcher pops the searched array and find reads undefined on its next visit (TypeError under Node).", /source expression obligation at \[772,856\): evidence search failed: no derivation of its binding-annotation claim/), project: "pipeline/blocker-project" },
   positive("blocker-round-append-definitions", "An ordinary call snapshots readable unbounded spreads before a conditional suffix."),
   positive("blocker-round-owned-promised-definitions", "An owned native set retains its preserving membership operation through the conditional map."),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
