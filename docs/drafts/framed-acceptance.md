@@ -2663,26 +2663,29 @@ contract.
   function arguments it is given, and only during its run. Each store of
   its run is so, not only its net change. The owner narrowed the row to
   this statement on 2026-11-21. In the calculus (`NativeRowB`,
-  `ReadOnlyLocalReach.lean`) it is stated of every run of a call of a
-  closure of the realm's code (`NativeRun`, the locations its own steps
-  allocate recorded), at each step of the native's own code (`ownStep`:
-  every frame on the call's evaluation path the realm's): a store into a
-  location that existed before the call stores a value reaching no
-  location, or stores into a location the operands reach a value reaching
-  only what the operands reach and what the run allocated; a function of
-  other code it calls is reached from its operands or from storage the
-  functions it called allocated; and the values it passes reach no
-  storage its own steps allocated. A later call is, in the calculus, a
-  call through storage the native kept, which the stores exclude.
+  `ReadOnlyLocalReach.lean`) it is stated over values, of every run of a
+  call of a closure of the realm's code (`NativeRun`, the locations its
+  own steps allocate recorded), at each step of the native's own code
+  (`ownStep`: every frame on the call's evaluation path the realm's): a
+  store into a location that existed before the call stores a value
+  reaching no location or a value its operands reach (`OpVal`: a value a
+  path from an operand reaches, or one its code holds); a function of
+  other code it calls is a value its operands reach or one reached from
+  storage the functions it called allocated. A later call is, in the
+  calculus, a call through storage the native kept, which the stores
+  exclude.
 - **(b′) Exits.** A standard native's result, the values it throws, the
   values it passes to its callbacks and the values it stores into storage
   it did not allocate reach only what its receiver and arguments reach and
   what its run allocated; its result and the values it throws may also be
   the realm's own storage. Approved by the owner on 2026-11-21. In the
-  calculus (`NativeRowB'`, `ReadOnlyLocalReach.lean`) a value is followed
-  through the locations the native's own steps allocated (`ReachesVia`),
-  and `own` is a set holding the realm's own storage, read by the theorems
-  at the locations of outside storage (`NativeRowB'.mono`). The realm's
+  calculus (`NativeRowB'`, `ReadOnlyLocalReach.lean`) it is stated over
+  values: each value such a value carries through the locations the
+  native's own steps allocated and through code (`CarriedVia`) is a value
+  its operands reach (`OpVal`) or a value at locations the run allocated
+  (`ValAt`), and for the result and a thrown value also a value at a set
+  `own` holding the realm's own storage, read by the theorems at the
+  locations of outside storage (`NativeRowB'.mono`). The realm's
   storage holds what a client stored there, so a reach through it holds
   of no standard native: `Object.getPrototypeOf(xs)` returns
   `Array.prototype`, which reaches whatever a client stored in a field it
