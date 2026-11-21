@@ -9,7 +9,7 @@ shared with verification"; the statuses name its Lean, marked to be proved
 where unproved. Apply with git apply from the repository root.
 
 --- a/docs/drafts/readonly-frames-note/note.tex	2026-11-21 02:16:53
-+++ b/docs/drafts/readonly-frames-note/note.tex	2026-11-21 03:01:09
++++ b/docs/drafts/readonly-frames-note/note.tex	2026-11-21 03:06:45
 @@ -128,7 +128,7 @@
  and a position of type \code{any}; a value that crosses in there is read
  at no read-only type.
@@ -102,7 +102,7 @@ where unproved. Apply with git apply from the repository root.
  $L(c)=\overline{S_f\cup S_r\cup\bigcup\bar S\cup\mathit{Cap}(\mathrm{seg}(c))}$;
  its \emph{depth charges} $W_c$ are $\mathrm{Ch}(\mathrm{seg}(c))$ at
  every part but a local part whose site is outside $L(c)$, which is
-@@ -893,60 +902,73 @@
+@@ -893,60 +902,78 @@
  every module function of $\cC$ has closure code (it declares no
  \code{this}) and collects no rest; every export is a module function;
  every free variable of a module function that names no binding of
@@ -123,9 +123,12 @@ where unproved. Apply with git apply from the repository root.
 +\code{[[Array.prototype]]} at \code{ArrayProto}), or a module constant or
 +cell at the initialization's obligation; no slot is decided by its name.
 +A \emph{call of a native} is a call node whose callee's value is read
-+from an outside slot of a host value or a declaration, or through one: a
-+member of such a value, directly or through a receiver whose type's
-+prototype is that slot's contract. A closure of $\cC$ that a call of a
++from an outside slot of a host value, or of a declaration of the default
++library (by the declaration's origin; a declared import of a module is
++outside code), or through one: a member of such a value, directly or
++through a receiver whose type's prototype is that slot's contract; and
++whose contract retains no function argument past the call. A native
++whose contract retains one (\code{setTimeout}) is read as outside code. A closure of $\cC$ that a call of a
 +native is passed has a code with no framed call and an ordinary
 +verdict.
 +Every \code{@clients} row of
@@ -183,7 +186,9 @@ where unproved. Apply with git apply from the repository root.
 -\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization and its order, \lean{componentInit}, decided by \lean{initB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). conj.: the initialization of several modules, its cells, the closures created as one group, and the open entry at the captures the initialization writes, which is Theorem~\ref{thm:flow}'s premise on a closure given out with its capture slots holding those captures in place of supplied sets; the code's initialization is that of one module with no binding but its module functions' closures, each created after those it names}.
 +cell, and outside code reaches no location of a local site (K).
 +At a call of a native, with $L_n$ the closure of its receiver's and
-+actuals' sets: its result is in $L_n$ or its node's sites, every site of
++actuals' sets: its result's set holds $\circ$ and what its contract states
++of the result (its node's sites for a fresh result, an operand's set for
++an operand), every site of
 +$L_n$ stores $L_n$, every code whose token $L_n$ holds is entered at
 +$L_n$, and where $L_n$ holds $\circ$, $L_n$ enters $O$
 +\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal}). The initialization's codes in the flow and every order of their runs, \lean{initial\_of\_inits} (to be proved)}.
@@ -208,7 +213,7 @@ where unproved. Apply with git apply from the repository root.
  \item[(A4) Binding checks that read no unit] The flow holds a proposal at
  context $0$ for each module function's code, and every allocation site
  of every code at every context is a site
-@@ -961,9 +983,12 @@
+@@ -961,9 +988,16 @@
  checked} are context $0$ where $f$ is an entry or its token is in $O$,
  and otherwise the contexts the flow gives $m$ at its known calls. A call
  node $c$ of $m$ is framed when, at some context of $m$ at which $f$ is
@@ -218,12 +223,16 @@ where unproved. Apply with git apply from the repository root.
  naming no signature whose set holds a token, or some
 -code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. A
 +code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. At
-+a call of a native, a fact is kept where the ordinary pass keeps it at the
-+native's footprint or the frame's check keeps it. A
++a call of a native, a fact is kept at the normal exit where the ordinary
++pass keeps it at the native's footprint or the frame's check keeps it,
++and at the exceptional exit the same only where the native is passed no
++function, none otherwise. A native's own steps are those of a frame of
++the realm's code that $\cC$'s frame called at a call of a native; a
++native at any other call takes the client's steps. A
  call of a module function by its name is checked by that function's
  specification; a framed call of a closure of $\cC$ is bounded by the
  charges of its segment, in $\Psi_c(l)$ of (B2). A unit with no framed
-@@ -1034,23 +1059,29 @@
+@@ -1034,23 +1068,32 @@
  rows, a change per class; a type with no row is read-only, $\keep$. The
  acceptance admits rows keeping every part (A1), so $\Theta_\cC$ is
  $\keep$ at every part.
@@ -251,10 +260,13 @@ where unproved. Apply with git apply from the repository root.
 +the intrinsics meet their signatures, a host value its host contract and
 +a declared import its declaration; a module cell's value meets its
 +contract after the initialization (the initialization's obligation,
-+shared with the ordinary pass). A standard native's writes before it
-+throws are within its normal-return footprint; and it stores its
++shared with the ordinary pass). A standard native's own writes before
++it throws are within its normal-return footprint, its contract's
++\code{onThrow} where it is passed no function; and it stores its
 +arguments only into what its receiver and arguments reach, or into its
-+result, and calls out only through the function arguments it is given.
++result, and calls out only through the function arguments it is given,
++only during its run. The value of a native's slot, and each member read
++through it, is the realm's code.
 +A native's own steps that $\cC$ calls are $\cC$'s; a step of the client's
 +code is the client's wherever it runs
 +\status{assumed: the trust rows of the ordinary pass's outside slots, \lean{OutsideContracts}; the two rows on standard natives, approved on 2026-11-21; the steps, \lean{NativeStep}, \lean{ClientStep}, \lean{nativeStep\_within} (to be proved)}.
@@ -270,7 +282,7 @@ where unproved. Apply with git apply from the repository root.
  \end{description}
  \noindent
  The proposals (the flow, the framed nodes, the kept supports, the
-@@ -1059,16 +1090,16 @@
+@@ -1059,16 +1102,16 @@
  \subsection{What is proved}\label{sec:accept-proof}
  
  \begin{description}[leftmargin=1.5em,style=nextline]
@@ -292,7 +304,7 @@ where unproved. Apply with git apply from the repository root.
  \item[(A3)] Each closure, checked, is closed; a step changes an old
  location only at its active writing redex, at a site its receiver meets
  \status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} ($\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth, under \lean{noRestB})}.
-@@ -1103,7 +1134,7 @@
+@@ -1103,7 +1146,7 @@
  function of the unit; for a framed plan, a member accepted with its
  framed obligations is safe at the frame its plan defines, for the
  executions keeping $\Theta_\cC$
@@ -301,7 +313,7 @@ where unproved. Apply with git apply from the repository root.
  \end{description}
  
  \fussy
-@@ -1115,7 +1146,7 @@
+@@ -1115,7 +1158,7 @@
  \code{prepare} allocated it, under the marks of Section~\ref{sec:concepts},
  and protected by the crossing of \code{h} whoever allocated it, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
  under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
@@ -310,7 +322,7 @@ where unproved. Apply with git apply from the repository root.
  \end{example}
  
  \begin{example}[A member that shortens]\label{ex:rotrim}\mbox{}
-@@ -1124,7 +1155,7 @@
+@@ -1124,7 +1167,7 @@
  1 & \code{export function trim(h: H): void \{ (h.widths as number[]).pop(); \}}\\
  \end{tabular}
  \end{center}
@@ -319,7 +331,7 @@ where unproved. Apply with git apply from the repository root.
  shortens exposed storage, so a protocol that bounds the members has
  $\any$ at that spine; $\any\not\sqsubseteq\grow$ fails the premise of
  Proposition~\ref{prop:rorely} for $i<\len w$ in \code{walk}. A visitor
-@@ -1176,9 +1207,8 @@
+@@ -1176,9 +1219,8 @@
  \end{example}
  
  \noindent
@@ -331,7 +343,7 @@ where unproved. Apply with git apply from the repository root.
  Example~\ref{ex:rocursor} with the lines shown, a line 0 placed before
  it.
  
-@@ -1224,20 +1254,21 @@
+@@ -1224,20 +1266,21 @@
  \code{checked.ts}, then the root. \code{missing} is a function
  declaration, so \code{walk} captures its closure, whose slot names
  \code{missing}'s signature, and \code{missing()} is a call of $\cC$'s
