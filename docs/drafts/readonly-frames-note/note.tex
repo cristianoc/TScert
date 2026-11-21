@@ -1089,8 +1089,8 @@ code is the client's wherever it runs
 configuration, after the initialization of (A2), that fits the flow, is
 an entry (outside code lowered, closed values, the call discipline) and
 whose module closures are unfoldings, at least as deep as its budget,
-whose outside captures meet their contracts at the worlds admissible for
-its heap and their extensions. Its client may hold any values outside
+whose outside captures meet their contracts at its own world and the
+worlds extending it. Its client may hold any values outside
 code may hold and call any native. Such a configuration exists for the
 module of Example~\ref{ex:rocursor}
 \status{a premise: \lean{FramedSpec.Initial} (\lean{FramedSpec.SlotsMet}); \lean{InitialFits} and \lean{InitialEntry} hold by definition; inhabited, \lean{initial\_inhabited} (to be proved); a program's configuration after its initialization is one, its modules' initializations each run once in any order, \lean{initial\_of\_inits} (to be proved)}.
