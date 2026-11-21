@@ -2757,10 +2757,20 @@ function argument of outside code.
    decision (`nativeAt`) reads the code's request: its lowered callee, its
    slots' kinds and declarations' origins, and the receiver's type, a
    proposed type that the code's ordinary plan checks. So it holds of a
-   code whose unit is accepted (step 7), and `nativeAt_sound` (to be
-   proved) states the property: at a reached state in a frame of an
-   accepted code at the node, under $`\mathrm{SlotsMet}`$ and the array
-   invariant, the callee is a closure of the realm's code. Its footprint $`\Phi_c`$ is the native's stated
+   code whose unit is accepted (step 7), and `nativeAt_sound` states the
+   property: at a reached state in a frame of an accepted code at the
+   node, under $`\mathrm{RealmSlots}`$ and the array invariant, the callee
+   is a closure of the realm's code. For a callee read from a native's
+   slot it is proved (`FramedNativeAt.lean`): which capture each
+   environment position of a run holds at each node is a must analysis
+   over the code's edges (`slotTable`), decided by `slotTableB`; it holds
+   at every goto of a run of a closure of the code (`runGoto_holds`); a
+   node whose expression invokes a position holding an outside capture
+   (`nativeAtB`) invokes that capture, a closure of the realm's code
+   where it is a function by $`\mathrm{RealmSlots}`$. A callee read
+   through a receiver whose type's prototype is a native's slot
+   (`out.push(s)`, `w.flags.pop()`) is the next sub-step of the plan's
+   step 1.4.3. Its footprint $`\Phi_c`$ is the native's stated
    footprint read at the caller's slots, the $`\Phi`$ `callerFrame` reads
    there. Every node sharing a native call's continuation and handler calls
    a native (`nativeKeysB`, a check): a frame records its node by its key
@@ -3122,8 +3132,9 @@ with the readings of `FramedSpec.Initial`, `FrameCore.Keeps` and
    `vals` (modified); `stepKind`, `StepHyp` and `FrameCore.Keeps` keep
    their statements over it; `project` and `keeps_canonical` (to be
    proved, milestone 1) read it.
-4. `nativeAt_sound` (new, to be proved): a node `nativeAt` decides calls
-   a closure of the realm's code.
+4. `nativeAt_sound` (new; proved for a callee read from a native's slot,
+   `FramedNativeAt.lean`): a node `nativeAt` decides calls a closure of
+   the realm's code.
 5. `nativeStep_within` (new, to be proved): a native's own step changes
    only locations of its call's native reach, from (b) and
    `valRun_noForge`.
