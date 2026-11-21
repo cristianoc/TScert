@@ -40,7 +40,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, initOmission, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
-import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type UnitResult } from "../pipeline/verify-source.mts";
+import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type CheckProgress, type UnitResult } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu }
   from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
@@ -532,7 +532,7 @@ function reference(r: AttemptRecord): InvocationReference {
 /** A file checked by units, round by round: a refusal located in a unit
  * omits it, and the file is checked again. */
 export async function runFile(root: string, project: string, models: (file: string) => SourceModel, m: SourceModel,
-    select: string[], omitted: Map<string, OwnResult>): Promise<FileRun> {
+    select: string[], omitted: Map<string, OwnResult>, onProgress?: CheckProgress): Promise<FileRun> {
   const rounds: FileRun["rounds"] = [];
   const invocations: InvocationReference[] = [];
   const model = [...m.functions.keys(), initOmission].map((name) =>
@@ -545,7 +545,7 @@ export async function runFile(root: string, project: string, models: (file: stri
     let outcome: OwnResult & { units: UnitResult[] | null };
     try {
       using o = await checkApart(join(root, m.file), project, false, undefined, true,
-        { omitted: [...omitted.keys()], select, reportComponents: false });
+        { omitted: [...omitted.keys()], select, reportComponents: false }, onProgress);
       invocations.push(...readInvocationLog(join(o.artifacts, invocationLog)).map(reference));
       outcome = { status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0] ?? "",
         units: o.units ?? null };
@@ -672,16 +672,32 @@ async function census(args: string[]): Promise<void> {
       }
     if (due.length === 0) break;
     process.stderr.write(`round ${round}: ${due.length} files, ${due.reduce((n, [, s]) => n + s.size, 0)} units wanted\n`);
+    const active = new Map<string, { message: string; at: number }>();
+    const heartbeat = setInterval(() => {
+      for (const [file, { message, at }] of active) {
+        const seconds = Math.floor((performance.now() - at) / 1000);
+        if (seconds >= 60) process.stderr.write(`    ${file}: last progress ${seconds}s ago · ${message}\n`);
+      }
+    }, 60_000);
     let finished = 0;
-    await Promise.all(due.map(async ([file, names]) => {
-      const select = checked(file, names);
-      ran.set(file, select.join(","));
-      const known = omissions.get(file) ?? new Map<string, OwnResult>();
-      omissions.set(file, known);
-      const run = await runFile(root, project, models, models(file), select, known);
-      runs.set(file, run);
-      process.stderr.write(`  [${++finished}/${due.length}] ${file}: ${progress(run, known)}\n`);
-    }));
+    try {
+      await Promise.all(due.map(async ([file, names]) => {
+        const select = checked(file, names);
+        ran.set(file, select.join(","));
+        const known = omissions.get(file) ?? new Map<string, OwnResult>();
+        omissions.set(file, known);
+        const onProgress: CheckProgress = (message, unitFinished) => {
+          active.set(file, { message, at: performance.now() });
+          if (unitFinished) process.stderr.write(`    ${file}: ${message}\n`);
+        };
+        const run = await runFile(root, project, models, models(file), select, known, onProgress);
+        active.delete(file);
+        runs.set(file, run);
+        process.stderr.write(`  [${++finished}/${due.length}] ${file}: ${progress(run, known)}\n`);
+      }));
+    } finally {
+      clearInterval(heartbeat);
+    }
     writeRecord();
     if (shallowOnly) break;
     for (const [file, names] of [...want])
