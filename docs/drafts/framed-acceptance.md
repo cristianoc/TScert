@@ -2769,7 +2769,10 @@ function argument of outside code.
    so a native returning realm storage (`Object.getPrototypeOf(xs)`)
    returns a value of $`\circ`$; every site of $`L_n(c)`$ stores
    $`L_n(c)`$ and $`K(c)`$; every site of $`K(c)`$ stores $`L_n(c)`$,
-   $`K(c)`$ and $`\circ`$, what (b′) lets the native's own allocations hold
+   $`K(c)`$ and $`\circ`$. These read the sentence of Read-only frames'
+   (A2), approved by the owner on 2026-11-21: "A built-in the component
+   calls allocates at its own sites; its result and those sites hold only
+   what its arguments reach, its own allocations, and outside values"
    (`slice` fills its fresh array with its receiver's elements)
    (`Fits.native`, a rule of the flow; `FFlow.check` decides it as any
    rule). The native takes no function argument, so its run calls no code
