@@ -2994,8 +2994,10 @@ outside contracts:
   $`x_0`$'s term or heap is an unfolding $`\mathrm{approx}\ \mathit{code}\
   i\ u`$ of the plan's layout at a depth $`i`$ at least $`x_0`$'s budget,
   and each of its outside captures meets the capture's type at every
-  budget up to $`i`$, at every world admissible for $`x_0`$'s heap and
-  every extension of one (Fable S5). `KindMet` states every world
+  budget up to $`i`$, at $`x_0`$'s own world and every world extending
+  it, the base world of [the file-level theorems](../SINGLE-PASS-THEOREM.md)
+  (`Above`): a world merely admissible for the heap may give a field's
+  location a weaker contract, at which no value meets a record type. `KindMet` states every world
   (`PassUnitInterfaces.lean`); for a cell holding a reference, whose
   meaning depends on the world, every world may hold of no value
   ([H5b](../SINGLE-PASS-THEOREM.md), the last sentence of its `moduleCell`
