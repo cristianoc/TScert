@@ -3508,18 +3508,33 @@ and P22's layout meets them (measured).
 ## Open points for review
 
 1. **Milestone 4's disjoint supports** are a design to review.
+2. **`RealmSlots` at the initial configuration alone gives no
+   `nativeAt_sound`.** Outside code may write the realm's storage after
+   the initialization: a client running
+   `Array.prototype.push = function (v) { leak = v; return 0; }` before
+   calling a walker whose `out.push(xs[i])` the decision reads as a call
+   of a native makes that call run the client's function, which keeps the
+   read-only element (`tamper.mjs`: `true`). The natives item of Read-only
+   frames states its sentence "The value of a native's slot, and each
+   member read through it, is the realm's code" at no particular state;
+   read at every reached state it excludes this program, as the trust on
+   standard objects not being tampered with does. Proposed: `RealmSlots`
+   a premise of every reached configuration of the claim, beside
+   `CallbacksWithin`, rather than a conjunct of `Initial`.
 
 ## Runs
 
 Node 26.13.0, each printing the value shown; the files are in the reviews'
 scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
-`round3/review/fable/`, `round4/`, `round4/review/fable/`, `round5/`, `verify3/`, `verify4/`), outside the repository:
+`round3/review/fable/`, `round4/`, `round4/review/fable/`, `round5/`, `verify3/`, `verify4/`, `tamper/`), outside the repository:
 
 - `throw.mjs`: `{ s: NaN, i: 2 }`; `wrapper.mjs`: `NaN`, `NaN`;
   `redirect.mjs`: `NaN`; `capture.mjs`: `NaN`; `prefix.mjs`: `undefined`;
   `install.mjs`: `true false`; `forged-flow.mjs`, `dependent.mjs`,
   `apply.mjs`: `NaN`; `returned-closure.mjs`: `NaN` at a later heap;
   `o-callee.mjs`: `walk` at the walker's depth;
+- `tamper.mjs`: `true`, the client's `push` holding the
+  read-only element;
 - P22's layout (`round5/layout.py` on its `fragment.json`, `layout.out`):
   one function, no initialization statement, no import, the declared value
   `%ElementAt%`;
