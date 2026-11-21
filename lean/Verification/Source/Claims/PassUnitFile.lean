@@ -58,11 +58,10 @@ def RowRealized (f : FilePlans) (c : ModuleCode (Lab f) String) (j : Nat) (p : C
     (e'.row = p ∨ ∃ π, e'.row.effect.promise = some π ∧ p = promisePlain e'.row p.result ∧
       promiseAdmits (graphOf f) p.result π = true)
 
-/-- **A realized signature is met by the module function's code** (proved,
-under `ReceiverDropSound` for a function declared without `this`): where
-the realizing member is safe and its plan is over the file's store, as a
-module row at the function's separation. -/
-theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : OverStore f)
+/-- **A realized signature is met by the module function's code** (proved):
+where the realizing member is safe and its plan is over the file's store, as
+a module row at the function's separation. -/
+theorem rowRealized_spec {f : FilePlans} (hover : OverStore f)
     {c : ModuleCode (Lab f) String} {j : Nat} {p : CallEffects.Arrow (Ty (Lab f))}
     (hrow : RowRealized f c j p) (hj : MemberSafe f j) :
     RowSpec (graphOf f) c.arity c.exprs c.conts c.start c.captures p c.sep := by
@@ -75,7 +74,7 @@ theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : Ov
       e'.captures e'.row c.sep := by
     rcases hcode with ⟨hu, rfl, hsep⟩ | ⟨hu, rfl, hsep⟩
     · rw [hsep]; exact rowSpec_of_requestSafe hr hu hcond hsto
-    · rw [hsep]; exact hdrop _ _ r e hr hu hcond
+    · rw [hsep]; exact receiverDropSound hr hu hcond
   rw [hG] at hspec
   have he := hspec (graphOf f).env
   rw [reassign_env] at he
@@ -126,10 +125,10 @@ def OutsideContracts {f : FilePlans} {selection : Option (List String)} {S : Lis
   ∀ u ∈ m.D, ∀ (k : Nat) v A, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
     ∀ i, ∀ j ≤ i, ∀ V : WorldT j, Above W₀ V → meaning (graphOf f) A j V (v i)
 
-/-- **Every laid-out function is realized** (proved, under
-`ReceiverDropSound`) at the base world of the outside contracts: where each
-unit of `S` is a selected unit whose group is safe. -/
-theorem layout_realizes (hdrop : ReceiverDropSound) {f : FilePlans} {selection : Option (List String)}
+/-- **Every laid-out function is realized** (proved) at the base world of the
+outside contracts: where each unit of `S` is a selected unit whose group is
+safe. -/
+theorem layout_realizes {f : FilePlans} {selection : Option (List String)}
     {S : List String} (hover : OverStore f)
     (hsafe : ∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe f i)
     (layout : ModuleLayout f selection S) {N : Nat} {W₀ : WorldT N} (hout : OutsideContracts layout W₀) :
@@ -142,7 +141,7 @@ theorem layout_realizes (hdrop : ReceiverDropSound) {f : FilePlans} {selection :
   obtain ⟨u, hu, hall⟩ := hrows p hp
   obtain ⟨i, hi, hid, hunit⟩ := hsafe u hu
   obtain ⟨j, hj, hrow⟩ := hall i hi hid
-  exact rowRealized_spec hdrop hover hrow (hunit j hj)
+  exact rowRealized_spec hover hrow (hunit j hj)
 
 /-- Every closed unit of mode 8's verdicts is a selected unit whose group
 `passGroup` accepts (proved, under H1–H4, as `closedUnits_safe`), selection
@@ -174,18 +173,17 @@ theorem closedUnits_selected_safe
     | ok d => exact ⟨i, hi, hid, passUnit_safe hrun hkeep hplans hi hp⟩
 
 /-- **The file-level theorem** (proved, under the graph-level hypotheses
-H1 `RunSound` and H2 `RunKeepsSummaries`, `ReceiverDropSound`,
-the module's layout H5a and the outside contracts H5b at a base world
-`W₀`): for every unit of the closure of mode 8's verdicts of a file, every
-member of its group is safe (`PassUnitSafe`); and for every function the
-layout lays out (each closed unit's members), its value in the module's
-environment, unfolded `n` times, meets its interface at every budget up to
-`n` in every world above `W₀`, and the values the environment captures for
-it meet its capture types at `n` in every world above `W₀`: its
-`RequestSafe` entry premise holds of the module's own values. -/
+H1 `RunSound` and H2 `RunKeepsSummaries`, the module's layout H5a and the
+outside contracts H5b at a base world `W₀`): for every unit of the closure
+of mode 8's verdicts of a file, every member of its group is safe
+(`PassUnitSafe`); and for every function the layout lays out (each closed
+unit's members), its value in the module's environment, unfolded `n` times,
+meets its interface at every budget up to `n` in every world above `W₀`,
+and the values the environment captures for it meet its capture types at
+`n` in every world above `W₀`: its `RequestSafe` entry premise holds of the
+module's own values. -/
 theorem passFile_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hdrop : ReceiverDropSound)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
     {givenLines : Std.HashMap String Json} {infer : Bool}
@@ -205,7 +203,7 @@ theorem passFile_safe
   have hsafe := fun u (hu : u ∈ S) =>
     closedUnits_selected_safe hrun hkeep hplans hu
   have hover := withHeadFacts_overStore (given := givenLines) (entries := false) (inferred := infer) (fragmentPlans_overStore hplans)
-  have hreal := layout_realizes hdrop hover hsafe layout hout
+  have hreal := layout_realizes hover hsafe layout hout
   exact ⟨fun u hu => hsafe u hu,
     fun x hx n => approx_meets hreal layout.values n x hx,
     fun x hx n W hW => approx_captures_envOk hreal layout.values n hx W hW⟩

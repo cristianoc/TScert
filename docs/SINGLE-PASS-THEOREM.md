@@ -251,7 +251,7 @@ each level's; their statements follow.
   other front check. Its entry condition assumes every slot's type, imports'
   and host values' included, and its bindings' reference validity.
 - *A laid-out function's value meets its interface* (`passFile_safe_kinds`):
-  adds `ReceiverDropSound`, the layout (the layout check computing $`D`$,
+  adds the layout (the layout check computing $`D`$,
   section 4), the `:init` postcondition for module cells (section 4, H5b),
   and the declared, stand-in and host contracts (trusted boundaries,
   section 5).
@@ -278,10 +278,10 @@ each level's; their statements follow.
   $`\mathrm{GraphGuarantee}_G(A, c.P, c.\mathrm{start}, c.\mathrm{goal}, c.\mathrm{inputs}, c.S, c.X, c.\mathit{assertions}, c.\mathit{bound}, c.E, c.\mathit{regional})`$.
 - **H2 `RunKeepsSummaries`**, proved (`runKeepsSummaries`): for every call $`c`$, every summary of
   $`c.\mathrm{answers}`$ is a summary of the answers $`c`$ returns.
-- **`ReceiverDropSound`** (a hypothesis about the graph machine): for a request
+- **`receiverDropSound`**, proved (`PassUnitRealize.lean`): for a request
   $`r`$ with no receiver slot and a code $`c`$ with
-  $`\mathrm{UnitIsReceiverless}(r, c)`$ and $`\mathrm{codeConditions}(c)`$,
-  $`\mathrm{RequestSafe}(r) \Rightarrow \forall \eta.\; \mathrm{GraphCodeSpec}_{G\eta}(\mathrm{dropReceiver}(c))`$
+  $`\mathrm{UnitIsReceiverless}(r, c)`$ and $`\mathrm{rowConditions}(c)`$,
+  $`\mathrm{RequestSafe}(r) \Rightarrow \forall \eta.\; \mathrm{RowSpec}_{G\eta}(\mathrm{dropReceiver}(c), \mathrm{receiverSeparation}(r.\mathrm{entrySeparation}))`$
   (section 4, "H5: the realization").
 
 **(ii) The wrapper** (lemmas about the actual functions, each a
@@ -636,15 +636,18 @@ frame (the parameters, the captures, the closure). `UnitIsReceiverless`
 $`(r, c)`$ states the request is $`c`$'s behind that prologue: unqualified,
 no rest, $`r.\mathrm{inputs} = c.\mathrm{row.arguments.take}(a) \mathbin{+\!\!+} C`$,
 its program, start and goal $`c`$'s at that frame (a promise's parameter
-unshifted, `receiverlessGoal`), its entry facts implied by $`c`$'s at every
+unshifted, `receiverlessGoal`), its entry separation scoped to its inputs
+(every fact's levels below its depth and its depth within $`r.\mathrm{inputs}`$,
+as the layout check checks), its entry facts implied by $`c`$'s at every
 frame with a receiver in front, $`c`$'s postcondition, naming no receiver,
-as its own with each position past the receiver (`ensuresPast`), and
-$`c`$'s footprint, fresh and throw flags. `ReceiverDropSound` (a named
-hypothesis, section 1) gives $`\mathrm{RowSpec}(\mathrm{dropReceiver}(c))`$
+as its own with each position past the receiver (`pastReceiver`), and
+$`c`$'s footprint, fresh and throw flags. `receiverDropSound` (proved,
+section 1) gives $`\mathrm{RowSpec}(\mathrm{dropReceiver}(c))`$
 at $`r`$'s entry separation one depth deeper (`receiverSeparation`) from
 $`\mathrm{RequestSafe}(r)`$: the prologue's two transitions lead from
-$`\mathit{recv} :: L`$ to the request's start at $`L`$, and every later
-transition is one of the request's program.
+$`\mathit{recv} :: L`$ to the request's start at the shifted frame with the
+receiver as default slot value, and every later transition is simulated by
+the request's program.
 
 **H5a, the module's layout** (`ModuleLayout`, the lowering's frame
 layout). A set $`D`$ of the file's functions laid out (any set, a mutually
@@ -669,9 +672,8 @@ value meets its interface and keeps its members' safety. Linking is per
 function within and across groups: the environment (`approxEnv`) is
 indexed by function, its captured values one unfolding below, so
 `approx_meets` covers every $`x \in D`$; the verdicts' closure
-(`closedUnits`) is per group. `layout_realizes` (proved under
-`ReceiverDropSound`) gives every $`x \in D`$ realized from its members'
-safety (`rowRealized_spec`). H5a is a statement about the elaboration (the
+(`closedUnits`) is per group. `layout_realizes` (proved) gives every
+$`x \in D`$ realized from its members' safety (`rowRealized_spec`). H5a is a statement about the elaboration (the
 slot table `ordinarySlots` builds, `withStandIns`, `withNeverImports`, the
 frame `elaborateMember` lays out), not proved: every function on that path is
 a `do` block over the front with no theorem about its frame; part of it is
@@ -698,7 +700,10 @@ groups:
    or $`\mathrm{UnitIsReceiverless}(r, e)`$ for
    $`e = \langle a, \mathit{exprs}, \mathit{conts}, \ell_0, C, p, \mathrm{none}\rangle`$
    ($`x`$'s node lists, start and captures), the receiverless entry facts
-   by `receiverless_indices`, and $`\mathrm{codeConditions}(e)`$; a plain
+   by `receiverless_indices`, its entry separation facts within their scope
+   (`UnitIsReceiverless.separation`: each level below its depth, the depth
+   at most the inputs; `sepOk` in `FragmentFront.layoutOwn` checks a stricter
+   condition), and $`\mathrm{codeConditions}(e)`$; a plain
    row $`p`$ beside a promise row $`p'`$ of the clause with
    $`p = \mathrm{plain}(p', p.\mathrm{result})`$ and
    $`\mathrm{promiseAdmits}(p.\mathrm{result}, \pi')`$ is asked at $`p'`$;

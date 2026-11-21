@@ -189,7 +189,7 @@ captures meet their types, in every world above `W₀`. Its premises about the p
 lane's lemma about `establishModules`) state. -/
 theorem crossModule_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hdrop : ReceiverDropSound) {budget : PositiveCertificates.SearchBudget}
+    {budget : PositiveCertificates.SearchBudget}
     {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
@@ -211,7 +211,7 @@ theorem crossModule_safe
   have hest : EstablishedSlots layout kinds W₀ := establishedSlots_of_chosen (fun u hu k e hk => by
     obtain ⟨m, hm, he⟩ := hread u hu k e hk
     exact hreal m hm e he) hslots
-  exact passPlans_safe hdrop hover hsafe layout
-    (outsideContracts_of_kinds (established_met hdrop hest) hdecl hstand hhost hcell)
+  exact passPlans_safe hover hsafe layout
+    (outsideContracts_of_kinds (established_met hest) hdecl hstand hhost hcell)
 
 end Verification.SourceClaimJson.PassUnit
