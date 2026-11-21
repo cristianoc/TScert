@@ -73,6 +73,14 @@ theorem Realm.ofC_of_flag {rl : Realm} {ofC : ComponentTag → Bool} (hrl : ∀ 
   · exact hrl _ ht
   · simpa [ht] using h
 
+/-- A frame running code `ofC` names runs no outside code, where no realm
+tag is one `ofC` names (proved). -/
+theorem Realm.flag_C {rl : Realm} {ofC : ComponentTag → Bool} (hrl : ∀ t, rl.tags t = true → ofC t = false)
+    {o nk : Bool} {comp : ComponentTag} (hc : ofC comp = true) : rl.flag ofC o nk comp = false := by
+  cases h : rl.flag ofC o nk comp
+  · rfl
+  · rw [Realm.ofC_of_flag hrl h] at hc; cases hc
+
 @[simp] theorem Realm.flag_all (ofC : ComponentTag → Bool) (o : Bool) (comp : ComponentTag) :
     Realm.all.flag ofC o true comp = o := rfl
 
