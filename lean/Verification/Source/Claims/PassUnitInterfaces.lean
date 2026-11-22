@@ -258,7 +258,7 @@ def InterfaceProvenance (budget : PositiveCertificates.SearchBudget) (force : Li
       (fun f group =>
         let r := f.passGroupMode8 given.isEmpty force (fun _ => []) fuel group
           (given := some (RequestCli.moduleGiven f.fr.ast given))
-        (r.1, f.establishVerdict group r.2.1)) tables
+        (r.1, r.2.1)) tables
       = .ok (est', vs, ns, ts) ∧ e ∈ est' ∧ e ∉ incoming
 
 /-- **A step's units are safe** (proved, under H1 and H2): every unit of the
@@ -280,7 +280,7 @@ theorem step_units_safe
         ∃ lines deps, (fun (f : FilePlans) group =>
             let r := f.passGroupMode8 given.isEmpty force (fun _ => []) fuel group
               (given := some (RequestCli.moduleGiven f.fr.ast given))
-            (r.1, f.establishVerdict group r.2.1))
+            (r.1, r.2.1))
           (stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false given.isEmpty) m.module.location fm₀
           reads incoming tables)
           ((stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false given.isEmpty) m.module.location fm₀
@@ -304,7 +304,7 @@ theorem step_units_safe
   · simp only [Front.selected, List.filter_eq_self.mpr (fun _ _ => rfl)]; exact hl
   · have h2 := congrArg Prod.snd hcheck
     dsimp only at h2
-    exact passGroupMode8_safe hrun hkeep hover (FilePlans.establishVerdict_ok h2)
+    exact passGroupMode8_safe hrun hkeep hover h2
 
 /-- **The file-level theorem, its outside slots by kind** (proved, under
 H1 and H2, the layout H5a and, per kind of outside slot, its contract at a

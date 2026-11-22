@@ -276,9 +276,8 @@ private structure Built extends GraphFrame where
   read by no check. A failure carries none of an attempt's. -/
   memberReads : Std.HashSet ContractRead := {}
   nameReads : Std.HashSet String := {}
-  /-- The component whose code contains each place of the unit's module
-  (`ComponentWire.Components.componentAt`): the ghost tag of the frames of
-  the graph code created there. -/
+  /-- The ghost tag of the frames of the graph code created at each place
+  of the unit's module (`ComponentTag`). -/
   componentAt : Span → ComponentTag := fun _ => none
 
 /-- Source-validation failures that already know their source site use the same

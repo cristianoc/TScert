@@ -10,22 +10,18 @@ namespace Verification.WorkerWire
 open Lean
 
 /-- A unit's verdict line: `{"unit","members","accepted","depends","elaboration","contracts"}`,
-its group accepted with the units its verdict rests on;
-`{"unit","members","acceptedUnderClientTrust","depends","elaboration","contracts"}`, its
-group accepted for the executions in which outside code keeps the client
-obligation of each component `acceptedUnderClientTrust` lists (`trusted`,
-`FilePlans.clientComponents`); or
+its group accepted with the units its verdict rests on; or
 `{"unit","members","refusal","elaboration","contracts"}`; `elaboration` the first
 elaboration refusal among its group's members, or null; `contracts` the
 contracts its group's check read, each once, in their compressed text's
 order (`SourceElaboration.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (elaboration : Option String) (contracts : List Json) (trusted : List Nat) : String :=
+    (elaboration : Option String) (contracts : List Json) : String :=
   let ext := ("elaboration", match elaboration with | some r => toJson r | none => Json.null)
   let read := ("contracts", Json.arr (contracts.eraseDups.toArray.qsort (·.compress < ·.compress)))
   (match verdict with
     | .ok deps => Json.mkObj ([("unit", toJson unit), ("members", toJson members)] ++
-        (if trusted.isEmpty then [("accepted", toJson true)] else [("acceptedUnderClientTrust", toJson trusted)]) ++
+        [("accepted", toJson true)] ++
         [("depends", toJson deps), ext, read])
     | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
         ("refusal", toJson reason), ext, read]).compress
@@ -43,13 +39,6 @@ def valueRead (module name specifier imported localName : String) : Json :=
   Json.mkObj [("value", Json.mkObj [("module", toJson module), ("name", toJson name),
     ("specifier", toJson specifier), ("imported", toJson imported), ("local", toJson localName)])]
 
-/-- Whether a verdict line accepts its unit under client trust
-(`verdictLine`). -/
-def lineTrusted (line : String) : Bool :=
-  match Json.parse line with
-  | .ok j => (j.getObjVal? "acceptedUnderClientTrust").toOption.isSome
-  | .error _ => false
-
 /-- A verdict line's elaboration refusal (`verdictLine`). -/
 def lineElaboration (line : String) : Except String (Option String) := do
   let j ← Json.parse line
@@ -57,29 +46,13 @@ def lineElaboration (line : String) : Except String (Option String) := do
   if e.isNull then return none
   return some (← fromJson? e)
 
-/-- The file worker's preparation line: `{"selected","established","components"}`,
-the units the selection checks in the order their checks run, each
-`{"unit","members"}`; the module units the interfaces establish; and each
-component's outcome of the read-only frame's checks, each
-`{"component","kind","location","protocol","guarantee","frames","refusals"}` (`componentOutcome`). -/
-def preparedLine (selected : List (String × List String)) (established : List String) (components : Json) : String :=
+/-- The file worker's preparation line: `{"selected","established"}`, the
+units the selection checks in the order their checks run, each
+`{"unit","members"}`, and the module units the interfaces establish. -/
+def preparedLine (selected : List (String × List String)) (established : List String) : String :=
   (Json.mkObj [("selected", Json.arr (selected.map fun (u, ms) =>
       Json.mkObj [("unit", toJson u), ("members", toJson ms)]).toArray),
-    ("established", toJson established), ("components", components)]).compress
-
-/-- A component's outcome of the read-only frame's checks
-(`ComponentChecks.familyOutcome`):
-`{"component","kind","location","protocol","guarantee","frames","refusals"}`,
-its certificate held where `refusals` is empty. -/
-def componentOutcome (component : Nat) (kind location : String) (refusals protocol guarantee frames : List String) : Json :=
-  Json.mkObj [("component", toJson component), ("kind", toJson kind), ("location", toJson location),
-    ("protocol", toJson protocol), ("guarantee", toJson guarantee), ("frames", toJson frames),
-    ("refusals", toJson refusals)]
-
-/-- Mode 8's line of the components' outcomes: `{"components"}`, as the
-preparation line states them. -/
-def componentsLine (components : Json) : String :=
-  (Json.mkObj [("components", components)]).compress
+    ("established", toJson established)]).compress
 
 /-- A request line the file worker reads: `{"units"}`, the units to check by
 their identities, or null for every selected unit in order. Any other shape

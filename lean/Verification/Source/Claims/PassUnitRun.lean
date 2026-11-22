@@ -110,24 +110,6 @@ theorem overStore_withPlan {f : FilePlans} (hover : OverStore f) {i : Nat}
     · exact hover j p hj
   exact key
 
-/-- **A framed plan keeps the plans over the store** (proved): it replaces a
-graph plan by the framed plan of the same request. -/
-theorem framedPlan_overStore {f : FilePlans} (hover : OverStore f) {fuel i : Nat} {fc : FramedComponent}
-    {force : List String} {f' : FilePlans} {shown : List String × List String}
-    (h : f.framedPlan fuel i fc force = .ok (some (f', shown))) : OverStore f' := by
-  unfold FilePlans.framedPlan at h
-  simp only [bind, Except.bind, pure, Except.pure] at h
-  split at h
-  · rename_i name pos r hp
-    repeat' (first | (cases h; done) | split at h)
-    all_goals first
-      | (cases h; done)
-      | (simp only [Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
-         obtain ⟨rfl, -⟩ := h
-         exact overStore_withPlan hover hp rfl)
-      | skip
-  · cases h
-
 /-- Acceptance at either mode 8 print site for a group checked in this
 process, indexed by its prepared plans and leader. The main-file branch
 uses either planning route; the fresh-module branch uses the core planner,
@@ -170,27 +152,6 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
         (given := some (RequestCli.moduleGiven f.fr.ast
           (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)).2.1) = .ok deps) :
     Mode8Accepted (preparedModuleMode8 force infer (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
-  /-- A unit the main file's check refuses, accepted at a member's framed
-  plan (`PreparedFile.framedVerdict`): the plans with that member's plan
-  the framed plan (`FilePlans.framedPlan`), their group accepted. -/
-  | framed
-    {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
-    {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
-    {prepare : String → FilePlans → FilePlans}
-    {check : FilePlans → List Nat → List String × Except String (List String)}
-    {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i j fuel fuel' : Nat} {compare : Bool}
-    {debugNode repeats : Nat} {«given» : Option (Std.HashMap String Json)} {observe : Option String}
-    {counting located : Bool} {deps : List String} {fc : FramedComponent} {f' : FilePlans} {shown : List String × List String}
-    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
-        .ok f₀) ∨
-      (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
-        .ok (f₀, ms, notes)))
-    (hselected : i ∈ (preparedMode8 force givenLines infer f₀).fr.selected selection)
-    (hframed : (preparedMode8 force givenLines infer f₀).framedPlan fuel' j fc force = .ok (some (f', shown)))
-    (haccepted : (f'.passGroupMode8 infer force keep fuel (f'.fr.group i) compare debugNode repeats given observe
-      counting located).2.1 = .ok deps) :
-    Mode8Accepted f' i
 
 /-- Every member of a group accepted at a mode 8 in-process check is safe. -/
 theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
@@ -198,9 +159,5 @@ theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
   cases h with
   | main hplanned _ haccepted => exact passUnitVerdict_sound hplanned haccepted
   | freshModule hplanned _ haccepted => exact freshModuleVerdict_sound hplanned haccepted
-  | framed hplanned _ hframed haccepted =>
-    exact passGroupMode8_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
-      (fun _ _ => Verification.TolerantFrames.runKeepsSummaries)
-      (framedPlan_overStore (preparedMode8_overStore hplanned) hframed) haccepted
 
 end Verification.SourceClaimJson.PassUnit

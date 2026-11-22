@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field.ts, but the cursor
+// A walker over its array whose cursor
 // is given to the visitor: the visitor may change `c.i` through its own
 // alias, as its stated effect allows (`values: "any"`), so `c.i < xs.length`
 // is lost at the visit, and the read `xs[c.i]` after it may be past the

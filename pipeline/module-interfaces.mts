@@ -150,12 +150,10 @@ export const fileWorkerProtocol: WorkerProtocol = {
  * stand, with that failure: a unit accepted there is accepted with no
  * stronger module fact. */
 export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions,
-    hasModules: boolean = array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0,
-    reportComponents: boolean = true): CheckedUnits {
+    hasModules: boolean = array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0): CheckedUnits {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  if (!reportComponents) environment.TSCERT_REPORT_COMPONENTS = "0";
   const check = (path: string): WorkerRun => invokeWorker(verifierCall(verifier,
     ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--file-worker", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);

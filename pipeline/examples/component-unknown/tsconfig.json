@@ -1,5 +1,0 @@
-{
-  // The project the component-unknown case is checked in.
-  "compilerOptions": { "strict": true, "noEmit": true, "target": "es2022" },
-  "include": ["./src/*.ts"]
-}

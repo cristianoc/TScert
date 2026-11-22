@@ -75,10 +75,8 @@ the project's useful calls rather than hypothetical uses of every export.
 
 Every built-in's contract (an `Array.prototype` member, an intrinsic, a
 global's member, a member of a stated library type, a host contract)
-states, beside its footprint, the trust rows on standard natives
-([Read-only frames](drafts/readonly-frames-note/note.tex), the natives
-item; [the rows](drafts/framed-acceptance.md#two-trust-rows-on-standard-natives))
-clause by clause:
+states, beside its footprint, two trust rows on standard natives, clause
+by clause:
 
 ```
 push: {

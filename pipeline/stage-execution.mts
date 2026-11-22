@@ -926,17 +926,10 @@ export type WorkerRequest = { units: readonly string[] | null };
 /** A unit the file worker's selection checks: its identity and its group's
  * members. */
 export type WorkerUnit = { unit: string; members: readonly string[] };
-/** A component's outcome of the read-only frame's checks
- * (`WorkerWire.componentOutcome`): its index, kind and location in the
- * fragment's family, its protocol, guarantee and frames at calls of outside
- * code, and the failures refusing its certificate, none where it holds. */
-export type ComponentOutcome = { component: number; kind: string; location: string; protocol: readonly string[];
-  guarantee: readonly string[]; frames: readonly string[]; refusals: readonly string[] };
 /** The file worker's first line (`WorkerWire.preparedLine`): the units its
- * selection checks, in the order their checks run; the module units the
- * interfaces establish; each component's outcome. */
-export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[];
-  components: readonly ComponentOutcome[] };
+ * selection checks, in the order their checks run, and the module units the
+ * interfaces establish. */
+export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[] };
 /** A contract a unit's check read (`WorkerWire.memberRead`,
  * `WorkerWire.valueRead`), recorded where the check reads it: a member `key`
  * of the declaration whose row states it, by the identity the Fragment's
@@ -949,14 +942,10 @@ export type ContractRead =
   | { value: { module: string; name: string; specifier: string; imported: string; local: string } };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
  * with the first elaboration refusal among its group's members, or null, and
- * the contracts its group's check read: its group accepted, accepted under
- * client trust (for the executions in which outside code keeps the client
- * obligation of each component listed), or refused. */
+ * the contracts its group's check read: its group accepted or refused. */
 export type VerdictLine =
   { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; elaboration: string | null;
     contracts: readonly ContractRead[] } |
-  { unit: string; members: readonly string[]; acceptedUnderClientTrust: readonly number[]; depends: readonly string[];
-    elaboration: string | null; contracts: readonly ContractRead[] } |
   { unit: string; members: readonly string[]; refusal: string; elaboration: string | null;
     contracts: readonly ContractRead[] };
 
@@ -975,9 +964,7 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const what = "a unit's verdict line";
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
-  const trusted = typeof value === "object" && value !== null && "acceptedUnderClientTrust" in value;
   const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "elaboration", "contracts"]
-    : trusted ? ["unit", "members", "acceptedUnderClientTrust", "depends", "elaboration", "contracts"]
     : ["unit", "members", "refusal", "elaboration", "contracts"], what);
   const { unit, members, depends, refusal, elaboration } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
@@ -988,13 +975,6 @@ export function decodeVerdictLine(text: string): VerdictLine {
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
     return { unit, members, accepted: true, depends, elaboration, contracts };
-  }
-  if (trusted) {
-    const components = v["acceptedUnderClientTrust"];
-    if (!Array.isArray(components) || !components.every((c): c is number => typeof c === "number") || components.length === 0)
-      throw Error(`${what}: no components`);
-    if (!isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, acceptedUnderClientTrust: components, depends, elaboration, contracts };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
   return { unit, members, refusal, elaboration, contracts };
@@ -1033,25 +1013,13 @@ export function decodeContractRead(value: unknown, what: string): ContractRead {
 export function decodeWorkerPrepared(text: string): WorkerPrepared {
   const what = "the file worker's preparation line";
   const parsed: unknown = JSON.parse(text);
-  const { selected, established, components } = exactFields(parsed, ["selected", "established", "components"], what);
+  const { selected, established } = exactFields(parsed, ["selected", "established"], what);
   if (!Array.isArray(selected) || !isStrings(established)) throw Error(`${what}: malformed`);
   return { selected: selected.map((u: unknown): WorkerUnit => {
     const { unit, members } = exactFields(u, ["unit", "members"], `${what}'s unit`);
     if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: a unit without its members`);
     return { unit, members };
-  }), established, components: decodeComponentOutcomes(components, what) };
-}
-/** Components' outcomes (`ComponentOutcome`), read field by field. */
-export function decodeComponentOutcomes(value: unknown, what: string): ComponentOutcome[] {
-  if (!Array.isArray(value)) throw Error(`${what}: no components' outcomes`);
-  return value.map((c: unknown): ComponentOutcome => {
-    const { component, kind, location, protocol, guarantee, frames, refusals } =
-      exactFields(c, ["component", "kind", "location", "protocol", "guarantee", "frames", "refusals"], `${what}'s component`);
-    if (typeof component !== "number" || typeof kind !== "string" || typeof location !== "string" || !isStrings(protocol) ||
-        !isStrings(guarantee) || !isStrings(frames) || !isStrings(refusals))
-      throw Error(`${what}: a malformed component's outcome`);
-    return { component, kind, location, protocol, guarantee, frames, refusals };
-  });
+  }), established };
 }
 
 /** A process stage started under the runner, read while it runs

@@ -22,7 +22,7 @@ written below as `check <file> <functions>`.
 never handed to the callback, nor made reachable from what the callback
 holds", which "keeps its contents across the call" (cited: *Tolerant frames in practice*, §P22,
 "What an extension must provide"). Its program is the case
-[`bounds-pattern-unreachable-field`](../../pipeline/examples/bounds-pattern-unreachable-field.ts):
+`bounds-pattern-unreachable-field`, at the base commit:
 a walker holds its index in a field `c.i` of a cursor it allocates and calls a
 visitor typed `(w: number) => Modifies<{ values: "any"; spines: "grow" }, void>`,
 which receives only a number.

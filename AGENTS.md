@@ -10,8 +10,8 @@ commands, and links to the documents that own each procedure.
 
 ## Continuing the work on the notes
 
-The work that makes the pass implement the rules of the notes "Tolerant
-frames" and "Read-only frames" is described, with its decisions, its roles
+The work that makes the pass implement the rules of the note "Tolerant
+frames" is described, with its decisions, its roles
 and how to resume it from nothing, in
 [the parity skill](.claude/skills/parity/SKILL.md); its state is one row of
 [WORK.md](WORK.md#status).
@@ -184,8 +184,7 @@ when the plan type or CLI path changes:
 A definition, a rule or a theorem is stated at the generality of its notion,
 as a type-theory paper states it: over every expression, command, write,
 step, transition, effect and function. For a notion the
-[Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note) or the
-[Read-only frames note](docs/REFERENCES.md#the-read-only-frames-note)
+[Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note)
 defines, the Lean and the note state the same definition, in full. Where
 the model shows the note wrong or incomplete (a counter-model, a notion the
 model has and the note omits), the note is corrected and the Lean follows

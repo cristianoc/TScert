@@ -95,9 +95,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- The contracts the unit's walk and lowering read, each once
   (`ContractRead`): reported with its verdict, read by no check. -/
   contractReads : List ContractRead := []
-  /-- The component whose code contains the unit
-  (`ComponentWire.Components.componentAt` at its name): the ghost tag of
-  the frames of its graph's run. -/
+  /-- The ghost tag of the frames of its graph's run (`ComponentTag`). -/
   comp : ComponentTag
   /-- The module values the body names, in the order of the request's last
   inputs, which hold them (`lowerNormalizedFn`'s siblings). -/

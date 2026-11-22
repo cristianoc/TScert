@@ -15,7 +15,7 @@ namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **`f'` is `f` with other candidates**: the same file and store, each
-plan of `f'`, a graph plan or a framed plan, the one of `f` at the same
+plan of `f'` the one of `f` at the same
 index with its request's candidates replaced. -/
 def Recandidated (f f' : FilePlans) : Prop :=
   ∃ P : List (Except String (FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
@@ -54,8 +54,7 @@ theorem Recandidated.overStore {f f' : FilePlans} (h : Recandidated f f') (hover
     exact ⟨x₀, _, h₀, rfl, rfl⟩) hover
 
 /-- A member safe at other candidates is safe (proved): a request's safety
-reads no candidate (`requestSafe_recandidated`,
-`framedRequestSafe_recandidated`). -/
+reads no candidate (`requestSafe_recandidated`). -/
 theorem Recandidated.memberSafe {f f' : FilePlans} (h : Recandidated f f') {j : Nat} (hs : MemberSafe f' j) :
     MemberSafe f j := by
   obtain ⟨P, rfl, hP⟩ := h
@@ -66,11 +65,6 @@ theorem Recandidated.memberSafe {f f' : FilePlans} (h : Recandidated f f') {j : 
     simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
     subst hc
     exact ⟨.graph name pos r, .graph name pos r, h₀, rfl, requestSafe_recandidated r cands hsafe⟩
-  | framed name pos r spec =>
-    simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
-    subst hc
-    exact ⟨.framed name pos r spec, .framed name pos r spec, h₀, rfl,
-      fun hcb => framedRequestSafe_recandidated r spec cands (hsafe hcb)⟩
 
 /-- Plans mapped index by index, each one of the original's with its
 request's candidates replaced, are `Recandidated` (proved). -/
@@ -119,11 +113,6 @@ theorem withFreshApart_recandidated (f : FilePlans) (force : Bool) (group : List
       subst h
       cases q with
       | graph n ps r₀ =>
-        simp only [FunctionPlan.mapRequest]
-        split
-        · exact ⟨_, rfl, r₀.candidates, rfl⟩
-        · exact ⟨_, rfl, _, rfl⟩
-      | framed n ps r₀ sp =>
         simp only [FunctionPlan.mapRequest]
         split
         · exact ⟨_, rfl, r₀.candidates, rfl⟩

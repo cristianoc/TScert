@@ -1,6 +1,0 @@
-{
-  // The package's build: its outputs are what its manifest's exports name.
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": false, "declaration": true, "rootDir": "./src", "outDir": "./dist" },
-  "include": ["./src/*.ts"]
-}

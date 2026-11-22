@@ -1,6 +1,6 @@
 // The paper-reader test (the parity skill, .claude/skills/parity/, whose
-// section of that name states the procedure): readers that have only the two papers of rules, "Tolerant
-// frames" and "Read-only frames", say whether each
+// section of that name states the procedure): readers that have only the paper of rules, "Tolerant
+// frames", say whether each
 // example verifies, and their verdicts are compared with each case's declared
 // outcome. This tool prepares the readers' directory and compares their
 // answers; the readers themselves are run by whoever orchestrates.
@@ -35,7 +35,6 @@ import { cases, type Case } from "../pipeline/cases.mts";
 const repository = resolve(dirname(import.meta.filename), "..");
 const defaultNotes = [
   join(repository, "docs/drafts/tolerant-frames-note/note.tex"),
-  join(repository, "docs/drafts/readonly-frames-note/note.tex"),
 ];
 
 /** The name a reader sees for a note: its directory's name less `-note`. */
@@ -72,7 +71,7 @@ interface Answer {
 
 const task = (papers: string[]): string => `# Task: judge examples from the papers alone
 
-You have ${papers.length === 1 ? "one paper" : `${papers.length} papers`}, ${papers.map((p) => `\`${p}\``).join(" and ")} in this directory (LaTeX sources; \`tolerant-frames.tex\` is "Tolerant frames", \`readonly-frames.tex\` is "Read-only frames", which builds on it), and TypeScript examples under \`examples/\`. For each example assigned to you, answer the question a reader of the papers would answer: **does this example verify?** Below, "the paper" means these papers together.
+You have ${papers.length === 1 ? "one paper" : `${papers.length} papers`}, ${papers.map((p) => `\`${p}\``).join(" and ")} in this directory (LaTeX sources; \`tolerant-frames.tex\` is "Tolerant frames"), and TypeScript examples under \`examples/\`. For each example assigned to you, answer the question a reader of the papers would answer: **does this example verify?** Below, "the paper" means these papers together.
 
 Rules of the exercise:
 - Read every paper in full first. Use ONLY the papers and the example files assigned to you. Do not read any other file on this machine (in particular no \`answers-*.json\`), do not search the web, do not run any tool on the examples. You have no access to the verifier and must not look for it.

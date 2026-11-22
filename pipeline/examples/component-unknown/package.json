@@ -1,7 +1,0 @@
-{
-  "//": "A package whose exports are a subpath pattern, so that its interface is not known: a client obligation stated on one of its types is refused.",
-  "name": "component-unknown",
-  "private": true,
-  "type": "module",
-  "exports": { "./*": "./src/*.ts" }
-}

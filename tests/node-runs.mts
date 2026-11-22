@@ -32,88 +32,9 @@ assert.equal(runExample("stated-field-region-key",
   "(() => { const h = { i: 0, widths: [1, 1], extras: null }; return pairAt(h, h); })()"), 1);
 assert.throws(() => runExample("invalid-native-length-literal", 'past("a")'), /TypeError/);
 
-// The read-only frame's checks (S), (K) and (O): each refused module's
-// walker, or its awaiting member, reads past the array it relies on.
-assert.equal(runNode("invalid-readonly-suspending",
-  "const xs = [1, 2, 3]; const p = total({ widths: xs }); xs.length = 1; console.log(String(await p));").stdout, "NaN",
-  "after the await, the caller's own array is truncated under the member's reads");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-leaked",
-  "(() => { const h = prepare(3); return walk(h, () => { lastWidths().length = 0; }); })()"))),
-  "a visitor truncates the widths lastWidths gives out writable");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-install",
-  "(() => { const h = prepare(3); const xs = [1, 2, 3]; install(0, xs); return walk(h, () => { xs.length = 0; }); })()"))),
-  "a visitor truncates its own array, installed in the handle");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-slice-lookalike",
-  "(() => { const h = prepare(3); const a = [1, 2, 3]; install(0, { slice() { return a; } }); return walk(h, () => { a.length = 0; }); })()"))),
-  "a copy of the caller's own making is the caller's array, which its visitor truncates");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-comes-back",
-  "(() => { let mine = []; return walk(rows(), () => { if (mine.length === 0) mine = fill(3); else mine.length = 0; }); })()"))),
-  "a row filled into the rows that came back, then truncated by the visitor that holds it");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-same-key",
-  "(() => { const h = { widths: [1, 1, 1], flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) reset(h); }); })()"))),
-  "a visitor calls the member that replaces the handle's flags under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-shared-code",
-  "(() => { const xs = [1, 1, 1]; return walkAgain(xs, (i) => { if (i === 0) xs.pop(); }); })()"))),
-  "a client pops the array it passed to the writable twin, under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-writable",
-  "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
-  "a client pops the array of the record it passed writable, under the walker");
-// The accepted walker, its visitor a standard native the client binds to the
-// array it passed read-only: pop runs at the framed call's key, so its steps
-// are the client's and break the client obligation at the protected spine;
-// the program is outside the claim, and the walker reads past the array.
-assert.ok(Number.isNaN(Number(runExample("readonly-frame-param-protected",
-  "(() => { const flags = [1, 1, 1]; return walk({ flags }, Array.prototype.pop.bind(flags)); })()"))),
-  "a native the client passes as the visitor runs as the client's and pops the protected spine");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-partly-readonly",
-  "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
-  "a client pops the writable array behind a read-only field, under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-positions",
-  "(() => { const w = { flags: [1, 1, 1] }; return walk({ flags: [1] }, w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
-  "a client pops the array of the record it passed at the writable position, under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-reassigned",
-  "(() => { const w = { flags: [1, 1, 1] }; return walk({ flags: [1, 1, 1] }, w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
-  "a client pops the writable array the reassigned parameter copies, under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-depth-two",
-  "(() => { const h = { inner: { flags: [1, 1, 1] } }; return walk(h, (i) => { if (i === 0) swap(h); }); })()"))),
-  "a visitor calls the member that replaces the handle's inner record under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-known-calls", "total([1, 2])"))),
-  "the arrow moves the cursor its caller gave the walker past the array, under the walker's read");
-assert.equal(runExample("bounds-pattern-framed-known-calls", "total([1, 2])"), 3);
-assert.equal(runExample("bounds-pattern-framed-inner-walker", "countLines([1, 2, 3])"), 3);
-assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-construct",
-  "(() => { const xs = [1, 2, 3]; return total(xs, function () { xs.pop(); }); })()"))),
-  "the constructor of the class the arrow constructs pops the client's array under the walker's read");
-assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-template",
-  "(() => { const xs = [1, 2, 3]; return total(xs, { v: 1, toString() { xs.pop(); return \"x\"; } }); })()"))),
-  "the object the arrow converts pops the client's array in its toString under the walker's read");
-assert.equal(runExample("bounds-pattern-framed-arrow-exceeds", "countLines()"), 3);
-assert.equal(runExample("bounds-pattern-framed-made-visitor", "total([1, 2, 3])"), 6);
-assert.equal(runExample("bounds-pattern-framed-mixed-local", "total(() => {})"), 6);
 assert.ok(Number.isNaN(Number(runExample("invalid-type-invariant-guarded-loop",
   "extraAt({ widths: [1, 1, 1], segmentFlags: new Uint8Array([0, 8, 0]), lineStartExtras: [0, 0, 0] }, { segmentIndex: 1, graphemeIndex: 0 })"))),
   "the loop replaces lineStartExtras by an empty array, and extraAt reads past it");
-assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-mixed",
-  "(() => { const xs = [1, 2, 3]; return total(xs, () => { xs.pop(); }); })()"))),
-  "the client's function the arrow calls pops the client's array under the walker's read");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-walker-pops",
-  "(() => { const o = { flags: [1, 1, 1] }; return walk(o, o, () => {}); })()"))),
-  "the walker pops the array of the record it was given twice, under its own reads");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-trim",
-  "(() => { const h = { widths: [1, 1, 1] }; return walk(h, () => trim(h)); })()"))),
-  "a visitor calls the member that pops the record's widths under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-alias-export",
-  "(() => { const w = { flags: [1, 1, 1] }; return walkW(w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
-  "a client pops the array it passed to the walker exported at a writable type");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-trim",
-  "(() => { const h = prepare(3); return walk(h, () => trim(0)); })()"))),
-  "a visitor calls the member that pops the handle's widths under the walker");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-void-callback",
-  "(() => { const h = prepare(3); const a = [2, 2, 2]; let k = 0; return walk(h, () => { k++; if (k === 1) return a; a.length = 0; }); })()"))),
-  "a visitor typed `() => void` returns an array it then truncates, installed in the handle");
-assert.ok(Number.isNaN(Number(runExample("invalid-readonly-map-escape",
-  "(() => { const m = new Map(); const h = prepare(3, m); return walk(h, () => { m.get(3).length = 0; }); })()"))),
-  "the caller's map gives back the widths, which its visitor truncates");
 
 assert.throws(() => runExample("invalid-native-length-map", 'changed(["a"])'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeError/);

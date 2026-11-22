@@ -2,8 +2,7 @@ import Verification.Semantics.SafeUnder
 
 /-! # Safety at framed returns
 
-The draft "Accepting a unit through the read-only frame" (`docs/drafts/framed-acceptance.md`,
-"The graph at framed returns"). A run of graph code (`goto` and `frame`
+A run of graph code (`goto` and `frame`
 terms over one code's node lists) whose framed nodes `F` are trusted to
 return within `Ret` (normal exit) and `RetE` (throw): at each evaluation of
 a node `l` with `F l`, from the step entering it (`goto … l …` to `frame …`

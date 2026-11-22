@@ -1,6 +1,6 @@
 ---
 name: parity
-description: Continue the work that makes TScert's pass implement the rules of the notes "Tolerant frames" and "Read-only frames", on the line `single-pass` - the goal, the standing decisions, where the plan and its status live, and how the work is run with implementers and a designer. Use when the owner asks to resume or continue the parity work, the plan, or the work on the notes, from a chat with no context.
+description: Continue the work that makes TScert's pass implement the rules of the note "Tolerant frames", on the line `single-pass` - the goal, the standing decisions, where the plan and its status live, and how the work is run with implementers and a designer. Use when the owner asks to resume or continue the parity work, the plan, or the work on the notes, from a chat with no context.
 ---
 
 # Making the pass implement the notes' rules
@@ -12,13 +12,11 @@ the work is run. Read it in full, then the plan's row of
 
 ## The goal
 
-The rules live in two notes,
-[Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex) and
-[Read-only frames](../../../docs/drafts/readonly-frames-note/note.tex),
-which builds on the first; together they are the theory and the source of
-truth, and "the note" below means either of them. A third note,
+The rules live in the note
+[Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex), the
+theory and the source of truth, "the note" below. A second note,
 [Tolerant frames in practice](../../../docs/drafts/tolerant-frames-patterns-note/note.tex),
-applies their rules to pretext's patterns and states none of its own. The
+applies its rules to pretext's patterns and states none of its own. The
 goal is the owner's, in his words:
 
 - "Implementation being in sync with the paper means implementing the same
@@ -44,8 +42,8 @@ does not run, and a count of agreeing examples, are neither of them
 evidence of it. A report on this work says, for each rule it mentions,
 what acceptance runs.
 
-**The test.** Each example is given to an agent that has only the two
-notes of rules, which answers whether it verifies; the answer is compared with the
+**The test.** Each example is given to an agent that has only the note
+of rules, which answers whether it verifies; the answer is compared with the
 verifier's outcome on the example's pipeline case. A disagreement is closed
 on either side: the pass changes, or a note changes with the owner's
 approval. The test is run as
@@ -69,8 +67,8 @@ The order of the work:
    correspondence (C) are made clear, B first, as
    [the basis](../../../docs/drafts/implementation-and-paper-rules.md)
    states;
-2. the checking round: every example of the notes of rules is run through
-   the verifier and through the paper-only agent, and the three notes are
+2. the checking round: every example of the note of rules is run through
+   the verifier and through the paper-only agent, and the two notes are
    read again against the result;
 3. then the next pattern of Tolerant frames in practice is taken as a
    change of the note of rules it calls for and realised in the code.
@@ -88,9 +86,8 @@ answers; it launches no reader. The procedure:
 1. **Prepare** a directory outside the repository:
    `node dev/paper-readers.mts prepare --out <dir> [--cases <file> |
    --pattern <s> …] [--sample <n> --seed <k>] [--batch <size>]
-   [--note <file> …]`. It writes each note of rules (both by default, or
-   each `--note`) as `<name>.tex`, `tolerant-frames.tex` and
-   `readonly-frames.tex`, the readers'
+   [--note <file> …]`. It writes the note of rules (or each `--note`) as
+   `<name>.tex`, `tolerant-frames.tex` by default, the readers'
    instructions as `TASK.md`, each selected case's source as
    `examples/<id>.ts` under a neutral id in a seeded order, with its comments
    removed but for a JSDoc comment carrying an annotation tag, and one
@@ -130,10 +127,8 @@ Each note changes only with the owner's approval.
 - The owner follows the work in WORK.md of that checkout. A report of the
   plan's state reads WORK.md on `origin/single-pass` and names its commit;
   a copy of a file handed to the owner names the commit it shows.
-- The plan and its status: the row "Pretext's walkers under the read-only
-  frame" of [WORK.md](../../../WORK.md#status), its steps numbered (1.1 to
-  1.7, 2.1 to 2.5, 3), each with its state and, while in progress, the
-  branch holding it; the row "Implementation rules and paper rules" states
+- The plan and its status: the row "Pretext's walkers across their
+  visitors" of [WORK.md](../../../WORK.md#status); the row "Implementation rules and paper rules" states
   how the implementation corresponds to the notes. Status is written there
   and nowhere else; a commit that moves an item updates the row.
 - The comparison of the notes with the implementation, rule by rule:
@@ -146,8 +141,7 @@ Each note changes only with the owner's approval.
   (composition used by acceptance, checked transfer, rule Loop with its
   frame, the checking round).
 - Each note's page and PDF are built in its directory
-  (`tolerant-frames-note`, `readonly-frames-note`,
-  `tolerant-frames-patterns-note`): `python3 build.py` (page, through
+  (`tolerant-frames-note`, `tolerant-frames-patterns-note`): `python3 build.py` (page, through
   pandoc), `python3 color.py && latexmk -pdf note-color.tex` (PDF, copied
   to the tracked PDF of that directory). Build products other than the
   tracked PDF are removed after a build.

@@ -55,12 +55,7 @@ verifier --lower-control-flow       <ast.json>
   interfaces document checks the units under the entries that document
   states. It prints each module unit the interfaces establish, and
   then each selected unit's verdict, one line each,
-  `{"unit","members","accepted","depends"}`,
-  `{"unit","members","acceptedUnderClientTrust","depends"}` (a group with a
-  member accepted under its client frame's obligation,
-  [the framed claim](drafts/readonly-handles.md#the-framed-claim);
-  `acceptedUnderClientTrust` the numbers of the components whose client
-  obligations it is accepted under) or
+  `{"unit","members","accepted","depends"}` or
   `{"unit","members","refusal"}`,
   whose acceptance `SourceClaimJson.PassUnit.mode8Accepted_sound` states.
   With every unit accepted it exits 0; otherwise the first refusal is the
@@ -116,24 +111,12 @@ of its input. The lines (`lean/Verification/Source/WorkerWire.lean`; the
 same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
 `VerdictLine`, `WorkerRequest`):
 
-- the preparation line `{"selected","established","components"}`: the
-  units the selection checks in the order their checks run, each
-  `{"unit","members"}`; the module units the interfaces establish; and each
-  component's outcome of the read-only frame's checks
-  (`ComponentChecks.familyOutcome`),
-  `{"component","kind","location","protocol","guarantee","frames","refusals"}`: its
-  checked protocol, one change at a part per line; each guarantee
-  candidate, kept or with the first write that changes its support; at each
-  call of outside code a proposed frame names, each region's place, in the
-  protected region with the change `Ψ ⊔ Θ` allows there, outside it, or
-  either, or the frame's refusal at the call; and its
-  certificate, held where `refusals` is empty, which no verdict reads;
-  `--verify-interface-stage 8` prints the same outcomes first, on the line
-  `{"components"}`;
+- the preparation line `{"selected","established"}`: the units the
+  selection checks in the order their checks run, each `{"unit","members"}`,
+  and the module units the interfaces establish;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
-- a verdict line, `{"unit","members","accepted","depends","elaboration","contracts"}`,
-  `{"unit","members","acceptedUnderClientTrust","depends","elaboration","contracts"}` or
+- a verdict line, `{"unit","members","accepted","depends","elaboration","contracts"}` or
   `{"unit","members","refusal","elaboration","contracts"}`, as `--verify-interface-stage 8`
   prints it; `elaboration` the first elaboration refusal among the unit's
   group, or `null`. The first non-null one in the order the checks run is

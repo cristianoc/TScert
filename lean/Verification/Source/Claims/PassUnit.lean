@@ -1,6 +1,5 @@
 import Verification.Source.Claims.FragmentFront
 import Verification.Programs.TolerantFramesGuaranteeTarget
-import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Semantics.SafeRet
 
 /-! # The single pass's unit theorem: definitions
@@ -27,6 +26,11 @@ guarantees and the two run-level statements (`RunSound`,
 export Verification.TolerantFrames.Target (ReachesIn EntryHolds GraphGuarantee CheckerScope RunCall
   RunCall.result RunCall.Accepts regionOf RunSound RunKeepsSummaries)
 
+
+/-- The term that runs a program graph from `start`, frame `L`, receiver `d`,
+its frames tagged `comp`, the component whose code it is. -/
+def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentTag) : Tm :=
+  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d comp
 
 /-! ## Certificate-independent safety of a request and of a unit -/
 
@@ -114,81 +118,10 @@ def RequestSafe (r : SourceRequest σ ι) : Prop :=
     CodeAssertionsClause r
 end
 
-/-! ## Safety of a request under a client obligation
-
-A unit verified through the read-only frame rule is accepted for the
-executions in which code outside its component keeps the client obligation
-`Θ` of a client frame (`ReadOnly.ClientFrame`, the note's Assumption
-"Clients"). Each clause below is a clause of `RequestSafe` read at each call
-of the request's code (`gotoOf` at the call's arguments `L` and receiver
-`d`, from outside code) the claim is about (`Call`: the frame's
-well-formed entries, and its entry premises, `Entry`, code provenance and
-the call discipline among them, which every step keeps) and from each
-history the frame lets the call start from, along the executions whose every step keeps the obligation
-(`SafeUnder`): progress at every state as in `RequestSafe`, nothing claimed
-after a step of outside code that breaks it. -/
+/-! ## Assertions at reached states -/
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
-open Verification.TolerantFrames.ReadOnly (ClientFrame)
-
-/-- Safety along the executions keeping the frame's obligation, from the
-history `g`, with `J` at every state reached. -/
-abbrev SafeFramed (fr : ClientFrame (Ty ι)) (J : Heap → Tm → Prop) (Ξ T : Fam) (Q : HeapObservations.WPost)
-    (R : HeapObservations.WExc) (n : Nat) (W : WorldT n) (g : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C)) (h : Heap) (t : Tm) : Prop :=
-  HeapObservations.SafeUnder fr.Keeps fr.next J Ξ T Q R n W g h t
-
-/-- Safety at every admitted assignment, from every call. -/
-def FramedSafeClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-    ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-    SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h (gotoOf r.program r.start L d r.comp)
-
-/-- Within the claimed footprint, and returning fresh where promised. -/
-def FramedFootprintClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
-    ∀ η n W h (L : List Tm) (d : Tm),
-      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h → RootsOk W (envOf L d) →
-      (∀ v ∈ L, isVal v = true) → isVal d = true →
-      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-      SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-        (HeapObservations.WPost.lift fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
-        (HeapObservations.WExc.lift fun h' => r.onThrow = true → r.footprint.Holds h h') n W g h
-        (gotoOf r.program r.start L d r.comp)
-
-/-- Meeting the stated postcondition. -/
-def FramedEnsuresClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-    ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-    SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (HeapObservations.WPost.lift fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d)))
-      (fun _ _ _ => True) n W g h (gotoOf r.program r.start L d r.comp)
-
-/-- Within the stated regional bound. -/
-def FramedRegionalClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  ∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-    ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-    SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (HeapObservations.WPost.lift fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      (HeapObservations.WExc.lift fun h' => r.stated.any (·.onThrow) = true →
-        Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      n W g h (gotoOf r.program r.start L d r.comp)
 
 /-- **A stated assertion at a state**: the state runs the code `P` at the
 label `l` with the frame `envOf L' d'`, and `k` holds there, read from the
@@ -198,132 +131,17 @@ def AssertedAt (P : Program) (assertions : List (Nat × HeapKnowledge.Knowledge)
   ∀ l k, (l, k) ∈ assertions → ∀ (L' : List Tm) (d' : Tm) (c' : ComponentTag),
     t' = gotoOf P l L' d' c' → HeapKnowledge.Holds k ⟨ρ, h⟩ (envOf L' d') h'
 
-/-- Each stated assertion of the graph true at every state reached at its
-label within the budget. -/
-def FramedAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-    ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-    SafeFramed fr (AssertedAt r.program r.assertions (envOf L d) h) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h (gotoOf r.program r.start L d r.comp)
-
-/-- Each stated assertion of each code's graph true at every state reached
-at its label within the budget, from every call meeting its signature, the
-code's frames tagged `comp`, whatever the code's results and throws. -/
-def FramedCodeAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  ∀ ci q, r.codes[ci]? = some q → ∀ η n W h (L : List Tm) (d : Tm) (comp : ComponentTag),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
-      (codeRequest r q).entryIndices (envOf L d) n W h →
-    RootsOk W (envOf L d) →
-    fr.Call n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) →
-    ∀ g, fr.start n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) g →
-    SafeFramed fr (AssertedAt (codeRequest r q).program (codeHintsAt r ci).requirements (envOf L d) h)
-      (fun _ _ _ => True) (fun _ _ _ => True) (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h
-      (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp)
-
-/-- **A request is safe under a client frame**: each clause of
-`RequestSafe`, at each call, along the executions in which code outside the
-frame's component keeps its client obligation. -/
-def FramedRequestSafe (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
-  FramedSafeClause r fr ∧ FramedFootprintClause r fr ∧ FramedEnsuresClause r fr ∧ FramedRegionalClause r fr ∧
-    FramedAssertionsClause r fr ∧ FramedCodeAssertionsClause r fr
-
-/-! ### The main graph at framed returns
-
-The draft's route to the five main-graph clauses of `FramedRequestSafe`
-("The theorems"): the graph theorem at framed returns (`RunSoundFramed`)
-gives each clause as safety at framed returns (`SafeRet`) of the term that
-runs the request's graph, from every entry meeting its contracts, for the
-framed nodes `F` and the returns `Ret`, `RetE` the check reads at them; the
-returns at reached executions (`ret_reached`) give an invariant on which
-every step keeping the frame's obligation meets those returns. -/
-
-/-- **The main graph's clauses at framed returns** (`RunSoundFramed`'s
-conclusion for the request): safety, the footprint, the postcondition, the
-regional bound and the assertions, each as `SafeRet` of the term that runs
-the request's graph from its entry, no evaluation pending. -/
-def FramedReturnsGuarantee (r : SourceRequest σ ι) (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop) :
-    Prop :=
-  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun _ _ _ _ => True) (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
-  (r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
-    ∀ η n W h (L : List Tm) (d : Tm),
-      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h → RootsOk W (envOf L d) →
-      (∀ v ∈ L, isVal v = true) → isVal d = true →
-      HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-        (HeapObservations.WPost.lift fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
-        (HeapObservations.WExc.lift fun h' => r.onThrow = true → r.footprint.Holds h h') F Ret RetE n W none h
-        (gotoOf r.program r.start L d r.comp)) ∧
-  (r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (HeapObservations.WPost.lift fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d)))
-      (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
-  (∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (HeapObservations.WPost.lift fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      (HeapObservations.WExc.lift fun h' => r.stated.any (·.onThrow) = true →
-        Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
-  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
-    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) →
-    HeapObservations.SafeRet (AssertedAt r.program r.assertions (envOf L d) h)
-      (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun _ _ _ _ => True) (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp))
-
-/-- **The returns at reached executions, at their worlds**: an invariant
-of the frame's history, the pending framed evaluation, the world and the
-state, holding at every call of the request the frame's claim is about,
-on which every step keeping the frame's obligation at the state's world,
-to a world `U` the step's safety admits and a heap it types, meets the
-returns `Ret`, `RetE` at the framed nodes `F`, and leaves a state meeting
-it at `U` where the term after the step is valid at `U`. -/
-def FramedReturnsReachedW (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
-    (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop :=
-  ∃ I : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C) → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop,
-    (∀ η n W h (L : List Tm) (d : Tm),
-      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h → RootsOk W (envOf L d) →
-      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-        I g none n W h (gotoOf r.program r.start L d r.comp)) ∧
-    (∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
-      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → fr.Keeps g (k + 1) W h t h' t' →
-      HeapObservations.RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (fr.next g h t h' t') (HeapObservations.framedPend F p h t t') k U h' t'))
-
 end
 
 /-! ## A unit's members -/
 
 /-- **A member is safe**: its plan crosses the exhaustive certification
 boundary (`FunctionPlan.certify`), and the request of the certified plan is
-safe: a graph plan's for every execution (`RequestSafe`), a framed plan's
-under its frame's client obligation (`FramedRequestSafe`), the obligation's
-callback row included (`FramedSpec.CallbacksWithin`: a call of an
-argument's own value at an entry whose type states an effect,
-`callEffects`, changes the heap within it). -/
+safe for every execution (`RequestSafe`). -/
 def MemberSafe (f : FilePlans) (i : Nat) : Prop :=
   ∃ p c, f.plans[i]? = some (.ok p) ∧ p.certify = .ok c ∧
     match c with
     | .graph _ _ r => RequestSafe r
-    | .framed _ _ r spec =>
-      spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r) → FramedRequestSafe r (spec.frame r)
 
 /-- **A unit is safe**: every member of its group is. -/
 def PassUnitSafe (f : FilePlans) (i : Nat) : Prop :=

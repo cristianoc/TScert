@@ -1,99 +1,12 @@
 # Verification work
 
-The work ledger of the independent verifier: the active plan, then every
-other open item in one line, then the designs behind the items.
+The work ledger of the independent verifier: every open item in one line,
+then the designs behind the items.
 [DESIGN](docs/DESIGN.md) states the architecture and decisions;
 [the source boundary](docs/SOURCE-FRAGMENT.md) owns the supported-fragment
 restrictions.
 
 <a id="next-steps"></a>
-
-## Pretext's walkers under the read-only frame
-
-**Goal.** Pretext's `walkPreparedLinesRaw` and `walkPreparedComplexLines`
-(`src/line-break.ts`) verify with all 51 bound sites in upstream form,
-assuming only Θ_C of code outside pretext.
-
-**In place.** The read-only frame of P22's example; parts at field keys and
-field regions in stated effects; a field write keeping facts at other keys
-and through its frame; protection
-([milestone 2](docs/drafts/framed-acceptance.md#milestone-2-the-protected-reading));
-known calls and created closures
-([milestone 3](docs/drafts/framed-acceptance.md#milestone-3-the-contexts-of-known-calls)).
-
-Each step lands on `single-pass` when done and reviewed. A step in progress
-names its branch; the branch is on GitHub.
-
-### Phase 1: the frame reads the shared model of outside slots
-
-Design: [outside slots and the initialization, shared with verification](docs/drafts/framed-acceptance.md#outside-slots-and-the-initialization-shared-with-verification).
-Branch: `shared-slots`.
-
-| Step | What | Done when | State |
-| --- | --- | --- | --- |
-| 1.1 | Inhabitance check of a plan's outside slots | runs on every framed plan, proved sound | done |
-| 1.2 | Initial configurations stated as a premise, the hand-built initialization deleted | builds, no verdict changes | done; until 1.4.4 nothing shows the premise met for P22's plan |
-| 1.3.1 | The realm in the family: which code is a built-in's, which call sites call a built-in; empty for existing plans | builds, no verdict changes | done |
-| 1.3.2 | Each frame's owner computed along the evaluation path | structural theorems hold for any realm | done |
-| 1.3.3 | The flow's root theorems read the owner | builds, no verdict changes | done |
-| 1.3.4 | Every built-in's contract states `onThrow`, `stores`, `callsArgs`, `passesOwnAllocations` and `spec`, checked when contracts load; a built-in with `stores: "other"`, `callsArgs: "later"` or `passesOwnAllocations: true` is read as outside code (owner, 2026-11-21) | every default-library built-in TScert uses has the fields, each value checked against its `spec` section; a Node run for each outside-code value; `JSON.stringify(a, replacer)` and `Error.captureStackTrace(o)` read as outside code | done |
-| 1.4.3 (moved up: 1.3.5 needs it) | `RealmSlots`: a built-in slot holds the realm's code; `nativeAt_sound`: a native-call key's callee is the realm's code, first for a callee read from a native's slot, then read through a receiver's prototype (`out.push(s)`, `w.flags.pop()`) (before 1.3.5: `Fits.native` needs it) | stated in the premise; `nativeAt_sound` proved | in progress: `RealmSlots` stated at every reached configuration (the policy on untampered standard objects); `nativeAt_sound` proved for a callee read from a native's slot (`FramedNativeAt.lean`); next, a callee read through a receiver's prototype |
-| 1.3.5.1 | Built-ins modelled as code (owner, 2026-11-21, replacing trust rows on built-in behaviour): check the existing step models (`FootprintNatives.lean`: `push`, `pop`, `shift`, `unshift`, `reverse`, `sort`; `%ElementAt%`'s), what each proves against its contract, and what they duplicate | a written finding; review passes | done: ordinary verification accepts `push` (`xs[xs.length] = v` behind the RangeError), `fill` as a loop, a dense `slice` as a copy loop and element read at their TypeScript types, with no effect or result statement |
-| 1.3.5.2 | Step models of the built-ins the walkers use (element read, `push`, `fill`, `slice`), each proved to meet its contract (footprint, result) | each proved | in progress (branch `step-1.3.5.2`): the models of `push`, `fill` and dense `slice` at their contracts are gap cases (`builtin-model-*`); refused: `push`'s receiver spine at `extend` has no written form and `@ensures` refuses its rest parameter; `fill` and `slice` at `Modifies<{}, Fresh<T[]>>` fail at the return (element writes to a local array count against the frame; an array literal is not certified fresh), and at a generic `T` an element write keeps only `k + 1 <= out.length` and an element read `items[k]` written is claimed `never` |
-| 1.3.5.3 | A built-in the component calls at a call of a native runs its step model as the component's code, its steps checked as the component's | `push`/`fill` keep facts; `pop` as visitor refused; every case keeps its verdict | |
-| 1.3.5.4 | The note's natives rows (b), (b′) and the contract fields standing for them replaced by "the step model matches the specification" | the note's text approved by the owner | |
-| 1.4.1 (moved up: before 1.3.7) | Built-in slots read through the step models, one table read by the ordinary pass and the frame | builds, no verdict changes | |
-| 1.4.2 (moved up: before 1.3.7) | `hostModel?` replaced by that table; the coarse native charge and the initialization's seed deleted | nothing reads them | |
-| 1.3.7 | The interim premise "the realm has no code" removed, with the realm in the plan's family (after 1.4.2) | no theorem carries it (22 today) | |
-| 1.3.8 | Closure-origin invariant and its decided check | proved; the check runs on every plan | |
-| 1.3.9 | Cases and review | `push`/`fill` keep facts; `pop` as visitor refused; review passes | |
-| 1.4.4 | The premise proved met for layouts with no linked slot (`initial_inhabited`), P22's included | proved | |
-| 1.4.5 | The unfoldings stated through `approx` (`PassUnitRealize.lean`) | no second relation | |
-| 1.4.6 | Review; 1.2, 1.3 and 1.4 land | merged, P22 keeps its verdict | |
-| 1.5.1 | Inhabitance for `int`, `list`, `dict`, stored fields and the other clauses answered no today | each answered or stated | |
-| 1.5.2 | Module cells and constants as outside slots, met through the `:init` units | a cell case and its negative | |
-| 1.5.3 | Imports, declared and established | a two-module case | |
-| 1.5.4 | A component of several modules closed under imports | pretext's package forms one component | |
-| 1.6.1 | Cycles of names as unfoldings (`unfold_budget`), the premise met with linked slots | a mutual-call case | |
-| 1.7.1 | The design's tests table | every row at its expected outcome, unsafe ones under Node | |
-| 1.7.2 | The deletion list | every item deleted or replaced | |
-| 1.7.3 | `retains` audit | every built-in keeping a function marked; a control | |
-| 1.7.4 | The note's statuses and the natives' trust rows in DESIGN.md | statuses at Lean names | |
-| 1.7.5 | Review and land | merged | |
-| 1.8 | Checkpoint | a framed plan forms for pretext's package | |
-
-### Phase 2: the walkers' verdicts
-
-| Step | What | Done when | State |
-| --- | --- | --- | --- |
-| 2.1 | A guarded fact kept across a field write | merged (#306) | done |
-| 2.2.1 | Cause of the stepper's refusal by the frame's region check at `cursor.graphemeIndex = g` | cause established | |
-| 2.2.2 | Its fix | the stepper verifies | |
-| 2.2.3 | `walkPreparedLinesRaw` with its site restored | accepted | |
-| 2.3.1 | `prepareInternal` establishes the handle invariant (bounds chain 2) | verifies | |
-| 2.3.2 | The rich-inline builders establish it | verify | |
-| 2.3.3 | `layout.ts` and `rich-inline.ts` verify again | 210 of 210 pretext functions | |
-| 2.4 | The complex walker's 19 handle-array sites | accepted | |
-| 2.5.1 | The 20 sites reading locals taken from `items` | accepted, or a stated blocker | |
-| 2.5.2 | The 3 sites without a lower bound (`i - 1`, `hangEndSegmentIndex`), run first under Node at `i = 0` | accepted, or a pretext bug recorded | |
-| 2.5.3 | The per-grapheme sites (quantified facts, the clause-elements work) | accepted | |
-
-A step of 2.5 that needs a new rule follows the process: a small example,
-the note's text approved by the owner, then the Lean.
-
-### Phase 3: land in pretext
-
-| Step | What | Done when | State |
-| --- | --- | --- | --- |
-| 3.1 | All 51 sites restored on `tscert-bounds` | every site in upstream form | |
-| 3.2 | Pretext verified | 210 of 210 functions | |
-| 3.3 | Chain 2 merged into the fork | merged | |
-
-### Future (not scheduled)
-
-| Step | What | Done when |
-| --- | --- | --- |
-| F.1 | The effect and type language states where stored values come from, a scoped function parameter, and a callback receiving only the caller's values | a built-in's contract is a type it must meet, and a module's type summarizes its flow, so the read-only frame works across files by type |
 
 ## Status
 
@@ -105,24 +18,21 @@ describes an item's design and evidence, not its progress.
 
 | Item | State | Closed when |
 | --- | --- | --- |
-| [Pretext's walkers under the read-only frame](#pretexts-walkers-under-the-read-only-frame) | The active plan, above; each step carries its state. | The walkers verify with all 51 sites restored (step 3.2). |
+| Pretext's walkers across their visitors | `walkPreparedLinesRaw` and `walkPreparedComplexLines` (`src/line-break.ts`) need facts over their handle kept across a visitor pretext does not analyze. An annotated producer (`InferPreserves`) and one caller in the same file verify under its published callback interface; an adapter forwarding a visitor through its own closure, a caller passing a parameter path, several producers or calls per caller, and an unannotated parameter are refused. Next: the route. | The walkers verify with all 51 bound sites in upstream form. |
 
 ### Frames and facts across calls
 
 | Item | State | Closed when |
 | --- | --- | --- |
-| Where the read-only frame applies | Undecided for TScert's own code ([read-only handles](docs/drafts/readonly-handles.md)): which census units form a component, whether a verdict under client trust is counted apart from shallow and deep, and whether Θ is checked on clients the census also checks. Next: decide the three. | [DESIGN.md](docs/DESIGN.md) states all three. |
-| Read-only frame across a suspension | The check (S) of [Read-only frames](docs/drafts/readonly-frames-note/note.tex) refuses a component whose code awaits, yields or is a generator. Next: state in the note which facts survive a suspension. | The suspension's frame rule is stated and proved, (L3) holding from a suspension to its resumption. |
 | Shrinking owned arrays | The [private representation](docs/drafts/private-representation.md) draft refuses a class whose member pops an owned array or overwrites a reference in it. Next: prove the protocol rigid for an owned array holding no storage. | Such a class is admitted, with the rigidity proved. |
 | Cross-field null implications in clauses | A clause states a null test only as a leading guard, so `a !== null \|\| (b === null && c === null)`, a clause of the paragraph handle's invariant, is refused. Next: admit `P === null` and `P !== null` as atoms. | Such a clause elaborates and is used at boundaries, with a case. |
 | [Keeping contract facts across calls](docs/drafts/keeping-contract-facts-across-calls.md) | A `??=` cache, a `Set`'s and a `Map`'s mutators and calls keeping objects keep their facts. Next: frame measurement helpers' writes, callbacks (pretext's `onLine`) and defaulted parameters' preconditions. | Each frame the draft names is certified, and pretext's walkers keep their handle's facts across their calls. |
 | [Stated effects](docs/drafts/stated-effects.md) | `Modifies<P, T>` is read and certified for parameter spine regions, fresh spines and slots. Open: its other location keys are parsed and refused, and an array literal is no `Fresh<T>` source. | The draft's §10 cases verify, location keys included. |
 | [Tolerant frames](docs/drafts/tolerant-frames.md) | The draft's three conjectures name Lean statements not proved as one. Next: state transformer soundness as one theorem. | That theorem has the footprint and index-fact mechanisms as instances. |
-| [Implementation rules and paper rules](docs/drafts/implementation-and-paper-rules.md) | The paper rules in Lean (B) are `lean/Verification/Paper/TolerantFrames`, matched to the paper item by item in [B against the paper](docs/drafts/b-against-the-paper.md). Open: the pass's frame check reads a [protected reading narrower than the note's](docs/drafts/framed-acceptance.md#restrictions-of-the-protected-reading). | Each rule acceptance applies is matched to its paper rule, or their difference is stated. |
+| [Implementation rules and paper rules](docs/drafts/implementation-and-paper-rules.md) | The paper rules in Lean (B) are `lean/Verification/Paper/TolerantFrames`, matched to the paper item by item in [B against the paper](docs/drafts/b-against-the-paper.md). | Each rule acceptance applies is matched to its paper rule, or their difference is stated. |
 | Native footprints read by name in proposals | The front's proposals recognise natives by method name (`HeadInference.lean`'s `resized`, `touched` and `Ctx.pushed`; `Synthesis.lean`'s freshness, `generalArrayUse` and evolving writes). Next: read each from the callee's contract. | No list of method names remains. |
 | Library rules keyed by method names | `ArithmeticRules.lean` matches a call by method names and states its trust as lists of contract names. Next: match the callee's contract. | A rule matches the contract and its trust names the contract's row. |
 | Built-in prototype keys as one table | The built-ins' keys are listed in `Fragment.lean` (`functionKeys`, `typedArrayKeys`, `inKeyRefusal`) and `SourceTypes.prototypeNames`. Next: state one table. | The contracts and the refusals read that table. |
-| The family outcome's native model | The family checks of `ComponentChecks.lean`, which no acceptance reads, model a native's call apart from its contract. Next: read the stated footprint, or delete them with their cases. | The family outcome reads the stated footprint, or is deleted. |
 | Native footprints from their specification steps | The [draft](docs/drafts/native-footprints-from-steps.md) awaits the owner's decision. | Each modelled array mutator's footprint is derived from its step sequence. |
 | [Footprints](#footprints) | A variadic construction, a call of a callable object and a packed call consume no footprint, so a bounded body refuses them. Next: give each a checked bound. | Every application form has a checked bound. |
 | [Exceptional footprints](#exceptional-footprints) | A handler receives no fact across a throw, and a node with a handler is outside the node-by-node bound (`map-fresh-handler-refused`). | A call's footprint on a throw is carried through a handler, with `mode8Accepted_sound` concluding it. |
@@ -181,7 +91,6 @@ and name the failing rule.
 | A concrete subclass of an identity generic subclass | `class Mid<T> extends Box<T> {}; class Leaf extends Mid<number> {}` is refused at the middle class's base call, for every kind of type argument. | The cause is established, or the shape verifies with a case. |
 | A dictionary completed by writes in branches | A local `{ [field: string]: string \| boolean }` completed by index writes in both arms of an `if` and returned in a record is refused at the join's edge; `compiler-channel.mts#identify` [avoids the form](docs/SOURCE-REWRITES.md#a-dictionary-completed-by-writes-in-branches-before-its-return). | The failing rule is named, and the form supported or its refusal stated. |
 | A loop update reading a field of a field after a nested discriminant test | Over records `H1 \| H2`, a loop updating `h.n.up` with `h.n.k === "r"` tested inside an `h.k === "one"` branch is refused at the update (2026-10-30). Next: write the reproducer as a case. | The cause, and a case showing it. |
-| A caller of a walker whose arrow writes a captured object | A walker that is no entry rests on its callers, which are refused at their call of it where the arrow they pass writes a captured object; a caller whose arrow writes nothing is accepted ([a call of the component's own closure](docs/drafts/framed-acceptance.md#a-call-of-the-components-own-closure)). | The cause is established. |
 | [Does the model's error lacking `stack` matter](docs/SOURCE-ELABORATION.md#in) | `"stack" in e` answers `false` in the model and `true` in JavaScript; no program is known whose result differs. | A proof that no checked outcome changes, or a program it changes. |
 | The fast checks and controls | `make test-checks` takes about 5 minutes in CI and has hung twice (81 minutes in CI, 40 minutes locally, a file worker's verifier gone and its controller waiting). Next: find the hang's cause. | The hang is fixed, each check's cost and purpose are recorded, and the scripts fail within a budget near their healthy duration. |
 | `Examples run under Node` fails within `make test-checks` | Under a load average of about 14 the suite failed in three runs and passed alone (2026-10-30). | The cause, and the suite passing under load. |

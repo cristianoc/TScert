@@ -19,13 +19,7 @@ abbrev Req (f : FilePlans) : Type :=
 def PlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f) : Prop :=
   f.plans[i]? = some (Except.ok (FunctionPlan.graph name pos r))
 
-/-- The plan of unit `i` of `f` is the framed plan of the request `r` with
-the proposals `spec`. -/
-def FramedPlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f)
-    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop :=
-  f.plans[i]? = some (Except.ok (FunctionPlan.framed name pos r spec))
-
-/-- Every plan of `f`, a graph plan or a framed plan, is over `f`'s frozen
+/-- Every plan of `f` is over `f`'s frozen
 store: its request's store is the file's. -/
 def OverStore (f : FilePlans) : Prop :=
   ∀ (i : Nat) (p : FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
@@ -37,11 +31,6 @@ theorem OverStore.graph {f : FilePlans} (h : OverStore f) {i name pos} {r : Req 
     r.types = f.F.store :=
   h i _ hp
 
-/-- A framed plan of a file over its store has the file's store. -/
-theorem OverStore.framed {f : FilePlans} (h : OverStore f) {i name pos} {r : Req f} {spec}
-    (hp : FramedPlanAt f i name pos r spec) : r.types = f.F.store :=
-  h i _ hp
-
 /-- A request over the frozen equations has their store. -/
 theorem over_types {F : EquationStore.Frozen} {r : SourceRequest EquationStore.State EquationGraphs.Tree} {r'}
     (h : SourceRequest.over F r = .ok r') : r'.types = F.store := by
@@ -50,8 +39,7 @@ theorem over_types {F : EquationStore.Frozen} {r : SourceRequest EquationStore.S
   repeat' split at h
   all_goals first | (cases h; done) | (injection h with h; subst h; rfl)
 
-/-- A plan over the frozen equations, a graph plan or a framed plan, has
-their store. -/
+/-- A plan over the frozen equations has their store. -/
 theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)}
     {p} (h : e.bind (FunctionPlan.over F) = .ok p) : p.parts.2.2.types = F.store := by
   cases e with
@@ -67,19 +55,6 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
         injection h with h
         subst h
         exact over_types hr
-    | framed n ps r₀ spec =>
-      simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
-      cases hr : SourceRequest.over F r₀ with
-      | error _ => rw [hr] at h; cases h
-      | ok r₁ =>
-        rw [hr] at h
-        cases hs : spec.over F with
-        | error _ => rw [hs] at h; cases h
-        | ok _ =>
-          rw [hs] at h
-          injection h with h
-          subst h
-          exact over_types hr
 
 theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {b : β}
     (h : (x >>= k) = .ok b) : ∃ a, x = .ok a ∧ k a = .ok b := by

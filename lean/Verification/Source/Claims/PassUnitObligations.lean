@@ -60,17 +60,6 @@ theorem planAt_unique {f : FilePlans} {j : Nat} {n n' : String} {p p' : Span} {r
   injection h' with h'
   injection h'
 
-/-- A member's plan is a graph plan or a framed plan, not both (proved). -/
-theorem planAt_not_framed {f : FilePlans} {j : Nat} {n n' : String} {p p' : Span} {r r' : Req f}
-    {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
-    (h : PlanAt f j n p r) (h' : FramedPlanAt f j n' p' r' spec) : False := by
-  unfold PlanAt at h
-  unfold FramedPlanAt at h'
-  rw [h] at h'
-  injection h' with h'
-  injection h' with h'
-  cases h'
-
 /-- **An accepted async member claims no footprint** (proved): the declared
 effect's conditions `passGroup` checks make an async member's footprint the
 one letting every location change, the property `checkRequests_async`
@@ -81,7 +70,6 @@ theorem member_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r :
     cases hm with
     | ordinary name' pos' r' _ _ hplan _ hdecl _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
     | qualified name' pos' r' _ _ _ _ hplan _ hdecl _ _ _ _ _ _ _ _ _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
-    | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
   simp only [declaredEffect, RequestJson.asyncEffects, Bool.and_eq_true, ha,
     Bool.not_true, Bool.false_or, beq_iff_eq] at hd
   exact hd.1.1
@@ -118,6 +106,5 @@ theorem codes_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r : 
   | qualified name' pos' r' _ _ _ _ hplan _ _ _ _ _ _ _ hcodes _ _ _ _ _ =>
     rw [← planAt_unique hp hplan] at hcodes
     rw [hcodes] at hq; cases hq
-  | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
 
 end Verification.SourceClaimJson.PassUnit

@@ -162,8 +162,8 @@ structure Front where
   /-- The declaration document's values, each at its declaration and binding
   (`documentValueReads`): those a unit reads are reported with its verdict. -/
   values : List SourceElaboration.ContractRead
-  /-- The component whose code contains each place of the file
-  (`ComponentWire.Components.componentAt`). -/
+  /-- The ghost tag of the frames of the code at each place of the file
+  (`ComponentTag`): none at every place. -/
   componentAt : Span → ComponentTag
 
 /-- A unit's identity on the wire: a function's name and its name's start,
@@ -450,7 +450,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceElaboration.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
-    #[], #[], imported, values, (← Fragment.decodeComponents ast).componentAt (← jStr (← jField ast "file"))⟩
+    #[], #[], imported, values, fun _ => none⟩
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
 front it gave with none (`lenient`, mode 8): each imported value the reads
@@ -691,7 +691,7 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
       throw (if RequestJson.hasDiagnostic e then e
         else sourceRefusal d.types f.namePos .genericValidation e)
   match plan with
-  | .graph _ _ r | .framed _ _ r _ => return (r.types, plan)
+  | .graph _ _ r => return (r.types, plan)
 
 /-- Whether a group's code mentions a qualified read. -/
 def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=

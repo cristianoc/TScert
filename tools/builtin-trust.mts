@@ -1,8 +1,7 @@
 /**
  * **A built-in's trust fields** (SOURCE-CONTRACTS.md, "A built-in's trust
- * fields"): the trust rows on standard natives (the Read-only frames note,
- * the natives item; framed-acceptance.md, "Two trust rows on standard
- * natives"), stated clause by clause on every built-in's contract, each
+ * fields"): the trust rows on standard natives, stated clause by clause
+ * on every built-in's contract, each
  * value checked against the section of the specification `spec` cites.
  *
  * - `onThrow`, row (a): `"footprint"` where the built-in's own writes

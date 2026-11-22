@@ -19,34 +19,6 @@ export type ForcedProposal = { file: string; unit: string; force: string; positi
 /** Forced proposals: unsafe programs remain refused; the positive declaration,
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 export const forcedProposals: readonly ForcedProposal[] = [
-  // (a framed plan's document forged: its decoder refuses it, the walker
-  // refused at its ordinary plan; docs/drafts/framed-acceptance.md, "The plan")
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-node",
-    at: /a framed plan's document is refused: the document's framed call nodes \[10, 13, 0\] are not the flow's \[10, 13\]/ },
-  // (a support the frame's check fails: the pass's check of the framed
-  // nodes, the one the returns read, refuses it after the walk)
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-support",
-    at: /framed plan: the request check of its framed call nodes at the frame's flow \(framedNodesAt\) fails \(at its framed call node 10, 1 of the supports it keeps fail the frame's check\)/ },
-  // (at another component, the flow's codes are not its code)
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-component",
-    at: /framed plan: the binding check of its flow at the frame's sites \(frameFlowB\) fails/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-entries",
-    at: /a framed plan's document is refused: the document's entries \[%forged%\] are not the component's \[walk\]/ },
-  // (a framed plan's document, component or plan forged past its decoder:
-  // the pass's binding check refuses it; docs/drafts/framed-acceptance.md,
-  // "The binding checks")
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-theta",
-    at: /framed plan: the binding check of its client obligation \(clientsB\) fails/ },
-  { file: "bounds-pattern-framed-protocol-refused", unit: "walk@711", force: "framed-doc-protocol",
-    at: /framed plan: the binding check of its protocol \(protocolAtLeastB\) fails/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-flow-site",
-    at: /framed plan: the binding check of its allocation sites \(allocB\) fails/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-spec-readonly",
-    at: /framed plan: the binding check of its read-only types \(readOnlyB\) fails/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-field",
-    at: /a framed plan's document is refused: a framed plan's document: an unknown field forged/ },
-  { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-missing",
-    at: /a framed plan's document is refused: a framed plan's document: no field entries/ },
   { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
   { file: "invalid-native-promise-invariant-result", unit: "widen@89", force: "instances", positive: true },
   { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },

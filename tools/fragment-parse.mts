@@ -30,13 +30,12 @@ import type { StatedFrame } from "./type-graph.mts";
 import { withConditions } from "./type-graph.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
-import type { Ast, ComponentsAst, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
+import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
 import { clauseRoots, loopBindings, loopInvariantTags, type ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { fieldOf, messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
-import { describeFamily, noComponents } from "./components.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isImport, isStatic, nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
@@ -149,21 +148,6 @@ function openFile(absolute: string, text: string, rootedIn?: string): { file: So
 function compilerOf(): API {
   if (!compiler) throw Error("tool failure: no compiler is open");
   return compiler;
-}
-
-/** The guarantee candidates of a family (docs/drafts/readonly-handles.md,
- * "(L4)"): each type invariant the lowering's declarations state
- * (`Gate.invariants`), read as a result's type names it
- * (`statements.typeInvariants`), its facts of `this` at position 0; one a
- * clause of which is refused is no candidate. */
-function guaranteeCandidates(gate: Gate): ComponentsAst["guarantees"] {
-  return [...gate.invariants.values()].flatMap(({ declaration }) => {
-    const reference: TypeTerm = { k: "reference", reference: { name: declaration.name, span: declaration.span, arguments: [],
-      target: declaration }, args: [], span: declaration.span };
-    const read = statements.typeInvariants(gate, [], false, reference);
-    return typeof read === "string" || read.ensures.length === 0 ? []
-      : [{ module: declaration.module, name: declaration.name, pos: declaration.span, facts: read.ensures }];
-  });
 }
 
 /** Release the compiler. A long-lived caller may parse again afterwards. */
@@ -2727,96 +2711,8 @@ function lowerFile(file: string, carriesContext: boolean,
   const root = tsconfigPath ? (tsconfigPath.endsWith(".json") ? dirname(resolve(tsconfigPath)) : resolve(tsconfigPath))
     : null;
   const importedFrom = importedModules(importNodes, checker, declarations.values, root);
-  // The family of components the checked file lies in, described in its
-  // own run; an imported module's code is its importer's to describe.
-  // `void` is not among them: TypeScript admits a function returning any
-  // value where one returning `void` is expected, so a value typed `void`
-  // may hold any reference.
-  const primitiveMask = TypeFlags.String | TypeFlags.Number | TypeFlags.BigInt | TypeFlags.Boolean | TypeFlags.ESSymbol |
-    TypeFlags.StringLiteral | TypeFlags.NumberLiteral | TypeFlags.BigIntLiteral | TypeFlags.BooleanLiteral |
-    TypeFlags.UniqueESSymbol | TypeFlags.EnumLiteral | TypeFlags.Undefined | TypeFlags.Null |
-    TypeFlags.Never | TypeFlags.TemplateLiteral | TypeFlags.StringMapping;
-  const primitiveFlags = (all: number): boolean => {
-    // `boolean` is the union of its two literals.
-    const flags = all & ~(all & TypeFlags.Boolean ? TypeFlags.Union : 0);
-    return (flags & primitiveMask) !== 0 && (flags & ~primitiveMask) === 0;
-  };
-  // A type of primitive flags, or a union of such types.
-  const primitiveType = (type: Type | undefined, depth: number = 0): boolean => {
-    if (!type) return false;
-    if (primitiveFlags(type.flags)) return true;
-    return depth < 4 && type.isUnionType() && type.getTypes().every((t) => primitiveType(t, depth + 1));
-  };
-  const primitiveOf = (asking: Checker) => (nodes: readonly Node[]): boolean[] => {
-    const types = nodes.length === 0 ? [] : asking.getTypeAtLocation(nodes);
-    return nodes.map((_, i) => primitiveType(types[i]));
-  };
-  // Whether each node's type has a number index whose values are primitive:
-  // an array or a tuple of primitives.
-  const primitiveElementsOf = (asking: Checker) => (nodes: readonly Node[]): boolean[] => {
-    const types = nodes.length === 0 ? [] : asking.getTypeAtLocation(nodes);
-    return nodes.map((_, i) => {
-      const type = types[i];
-      if (!type) return false;
-      const infos = asking.getIndexInfosOfType(type).filter((info) => (info.keyType.flags & TypeFlags.Number) !== 0);
-      return infos.length > 0 && infos.every((info) => primitiveType(info.valueType));
-    });
-  };
-  // A callee's method of an interface of the standard library: its
-  // declaration in a file the compiler's library resolution gives the
-  // program (`isSourceFileDefaultLibrary`), its name, whether the interface
-  // is `Array` or `ReadonlyArray`, read at the overlay's entry, and the
-  // interface's name.
-  const libraryMembersOf = (asking: Checker, program: Project["program"]) =>
-      (nodes: readonly Node[]): ({ name: string; array: boolean; owner: string } | null)[] => {
-    const symbols = nodes.length === 0 ? [] : asking.getSymbolAtLocation(nodes);
-    return nodes.map((_, i) => {
-      const declaration = symbols[i]?.declarations[0]?.resolve();
-      const owner = declaration?.parent;
-      if (!declaration || !owner || !ts.isInterfaceDeclaration(owner)) return null;
-      if (!program.isSourceFileDefaultLibrary(declaration.getSourceFile())) return null;
-      return ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name)
-        ? { name: declaration.name.text, array: owner.name.text === "Array" || owner.name.text === "ReadonlyArray",
-          owner: owner.name.text } : null;
-    });
-  };
-  // The checked file's project: the one named, else the file's own; its
-  // module identities are its declaration document's, the checked file's
-  // its snapshot's path, any other its path from the project's directory.
-  const named = tsconfigPath === undefined ? null
-    : tsconfigPath.endsWith(".json") ? resolve(tsconfigPath) : resolve(tsconfigPath, "tsconfig.json");
-  const projectRoot = realPath(named === null ? dirname(project.configFileName) : dirname(named));
-  const original = resolve(resolutionFile);
-  const components = location !== null ? noComponents : describeFamily({ absolute: original, source,
-    alone: { files: [original], sourceOf: (path) => path === original ? source : null, primitive: primitiveOf(checker),
-      libraryMembers: libraryMembersOf(checker, project.program), primitiveElements: primitiveElementsOf(checker) },
-    project: () => {
-      const opened = named === null ? project
-        : compilerOf().updateSnapshot({ openProjects: [named] }).getProject(named) ?? project;
-      return { files: opened.program.getSourceFileNames(), sourceOf: (path) => opened.program.getSourceFile(path) ?? null,
-        primitive: primitiveOf(opened.checker), libraryMembers: libraryMembersOf(opened.checker, opened.program),
-        primitiveElements: primitiveElementsOf(opened.checker) };
-    },
-    locationOf: (path) => {
-      if (path === original) return absolute;
-      const inside = relative(projectRoot, realPath(path)).split(sep).join("/");
-      return inside.startsWith("../") ? inside : `./${inside}`;
-    },
-    buildConfig: (path) => {
-      const parsed = compilerOf().parseConfigFile(path);
-      const options = fieldOf(parsed, "options");
-      const names = fieldOf(parsed, "fileNames");
-      const option = (key: string): string | null => {
-        const v = fieldOf(options, key);
-        return typeof v === "string" ? resolve(dirname(path), v) : null;
-      };
-      return { outDir: option("outDir"), rootDir: option("rootDir"),
-        fileNames: Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [] };
-    },
-    guarantees: () => guaranteeCandidates(gate),
-    fail: (node, message) => gate.fail(node, message) });
   const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init,
-    omittedMentions: [...omittedMentions].sort(), components, modules: [] };
+    omittedMentions: [...omittedMentions].sort(), modules: [] };
   const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
     declarations, init, functions: parsed, absent }, absolute, location);
   // A mapped type over a named type read before the document was complete,

@@ -121,10 +121,8 @@ a run reaches.
 **A safe member and unit.**
 
 ```math
-\mathrm{MemberSafe}(f, i) \iff \exists\, p\, c.\; f.\mathrm{plans}[i] = \mathrm{ok}\ p \;\wedge\;
-  \mathrm{certify}(p) = \mathrm{ok}\ c \;\wedge\;
-  \begin{cases} \mathrm{RequestSafe}(r) & c = \mathrm{graph}(\_, \_, r) \\
-    \mathrm{FramedRequestSafe}(r, \mathit{fr}) & c = \mathrm{framed}(\_, \_, r, \mathit{fr}) \end{cases}
+\mathrm{MemberSafe}(f, i) \iff \exists\, p\, r.\; f.\mathrm{plans}[i] = \mathrm{ok}\ p \;\wedge\;
+  \mathrm{certify}(p) = \mathrm{ok}\ \mathrm{graph}(\_, \_, r) \;\wedge\; \mathrm{RequestSafe}(r)
 ```
 
 ```math
@@ -132,13 +130,7 @@ a run reaches.
 ```
 
 The match is over every constructor of `CertifiedPlan`: a new constructor is
-a compile error there, and no plan variant is filtered out. A framed plan
-is safe for the executions in which code outside its client frame's
-component keeps the frame's client obligation: `RequestSafe`'s clauses read
-at each call the frame's claim is about (its well-formed entries, code
-provenance and the call discipline) along those executions (`FramedRequestSafe`,
-[the framed claim](drafts/readonly-handles.md#the-framed-claim)). No plan
-certifies to one (`FunctionPlan.certify`).
+a compile error there, and no plan variant is filtered out.
 
 ### The headline
 

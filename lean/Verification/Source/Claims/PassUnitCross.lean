@@ -34,7 +34,7 @@ def mode8Check (fuel : Nat) (force : List String) («given» : Std.HashMap Strin
   fun f group =>
     let r := f.passGroupMode8 given.isEmpty force (fun _ => []) fuel group
       (given := some (RequestCli.moduleGiven f.fr.ast given))
-    (r.1, f.establishVerdict group r.2.1)
+    (r.1, r.2.1)
 
 /-- **A module's layout at its established units** (H5a at the module): a
 set `Sm` of the module's units, each with its wire identity in the step's

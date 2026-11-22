@@ -155,8 +155,6 @@ fragment.
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
 | An empty module (no function, no initialization code) | Accepting it would check nothing | [modules and code units](SOURCE-CONTRACTS.md#modules-and-code-units) | — |
-| An `await`, a `yield`, an async function or a generator in a component's code, nested and unused bodies included (*No suspension*) | A suspension returns the component's call to its caller while its frame lives on, so no call of the component stays active through the run that follows, and Read-only frame bounds that run by an active call's history; the check (S) refuses the component's certificate at each suspension, the units' verdicts unchanged | [read-only handles](drafts/readonly-handles.md#the-checks-the-rule-requires) | `invalid-readonly-suspending` (Node) |
-| A client obligation (`@clients`) on a type of a package whose interface is not known: a subpath pattern, a target no source of the project gives | The obligation bounds code outside a component, which only a known interface delimits | [`@clients P`](ANNOTATIONS.md#clients-p) | `component-unknown/src/handles-refused` |
 | An enum member initializer reading a member not yet initialized, or the enum itself, a closure's read included; a call in one that can read the enum | JavaScript reads it before the emit writes it | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-forward`, `invalid-enum-computed-call-order` |
 | An enum member named `__proto__` | The emit's assignment runs the prototype's setter and creates no property | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-proto-member` |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping may be written at the name | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-nan-name` |
@@ -281,7 +279,6 @@ representation does not state it; the paths are in
 
 | Construct | Obstacle | Owner | Cases |
 | --- | --- | --- | --- |
-| A key of a client obligation (`@clients`) other than `values`, `spines` and a path from `this`: `integrity` among them | The model's objects carry no integrity state (frozen, sealed, non-extensible), so no obligation on it is stated | [`@clients P`](ANNOTATIONS.md#clients-p) | — |
 | `keyof T`, `T[K]` over a function's own type parameter | They are functions of an instance's key set, which a parameter row does not determine | [computed types](SOURCE-CONTRACTS.md#computed-types) | — |
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not a record of literals and primitives, or of a class with a static method or private static | No term of the fragment states it exactly | [computed types](SOURCE-CONTRACTS.md#computed-types) | — |
 | A mapped type the reader reads as written (an annotation of the file, or a declaration it imports) with an `as` clause or with members; one over `keyof` an indexed type whose value is not `X[P]`, or optional over an index signature's keys | No term states the remapped or index-modified result. A member of such a type reached through `typeof` at a union of literals and primitive families is the type TypeScript computes ([computed types](SOURCE-CONTRACTS.md#computed-types), under the trust surface's computed-types row): the mapped type is not read | [computed types](SOURCE-CONTRACTS.md#computed-types) | `invalid-mapped-type-as-clause`; through `typeof`, `invalid-written-remapped-member-value-import`, refused at a written application inside the member |
@@ -313,44 +310,6 @@ representation does not state it; the paths are in
 | A replacement callback of a regex other than a literal of known shape written at the call; `new RegExp` of a regex pattern; a write to a match result | Not stated: the callback's arguments follow the shape, which code holding the regex may change through `lastIndex` and `compile`; a regex pattern is read through accessors; match results are readonly views | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-object-pattern`, `invalid-regexp-replace-shared` (Node) |
 | `catch` or `finally` after a void async completion through a `Promise<void>` annotation | `void` denotes `unknown`, and its payload may hide a callable `then` | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
 | A NaN or infinite enum member; a reverse key naming a member; an empty enum | A NaN or infinite value has no literal type; the reverse entry would replace the member; an empty object leaves no record | [enums](SOURCE-CONTRACTS.md#enums) | — |
-
-**Framed plans**
-
-A refused unit whose code may call outside code is checked again by a
-framed plan ([framed acceptance](drafts/framed-acceptance.md#restrictions)),
-which reads its component's code whole. A framed plan's claim is about
-programs whose client is lowered outside source reaching the component's
-exports, what the client allocates and the calculus's operations, from a
-heap holding the realm values the component reads; a client calling a
-native (`xs.push`, `Math`, a `Map`, a method of a realm object) is outside
-it ([the scope of the claim](drafts/framed-acceptance.md#initialization)).
-Each row below refuses the framed plan, located at the unit; the unit's
-verdict is its ordinary plan's.
-
-| Construct | Obstacle | Owner | Cases |
-| --- | --- | --- | --- |
-| A framed unit that is not a module function of its module (a method, a class's code, the initialization) | Its entering step relates to no realized code of its request | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-method-refused` |
-| Module functions of a framed unit's component naming each other in a cycle | The initialization creates each module function's closure after those it names | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cycle-refused` |
-| A framed unit that is no entry, its token outside `O`, whose code returns at some context a value outside `O` | The claim at its known calls isolates its run at a position of outside code | [milestone 3](drafts/framed-acceptance.md#milestone-3-the-contexts-of-known-calls) | `bounds-pattern-framed-returns-local-refused` |
-| A module function of a framed unit's component reading a module cell or constant, a native with no step model, or another module's value | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
-| A framed unit whose outermost component is a package | Its component's code is beyond the checked file's | [restrictions](drafts/framed-acceptance.md#restrictions) | — |
-| A `@clients` row changing storage, at any key, in a framed unit's component | The returns at reached executions read the client obligation within the component's protocol at every part, which a change of outside code's breaks | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-change-refused` |
-| A `@clients` row with a path key in a framed unit's component | Its part needs the declaration's sites | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-path-refused` |
-| A function collecting a rest parameter in a framed unit's component | It enters the component at its rest's binding, whose state's fit bounds the run's slots from below alone | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-rest-refused` |
-| An export of a framed unit's component other than a module function, or a module function declaring `this` | The initialization's last node is the array of the exports' closures, each a module function's | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-export-class-refused` |
-| An exported value binding of a framed unit's module naming one of the module's functions or classes (`export const g = f`, `export const api = { f }`) | It gives that code out at the binding's type, which no entry states, so the read-only positions would read the code's own declaration alone; the front end makes the module's interface unknown and no framed plan reads it | [the protected reading's restrictions](drafts/framed-acceptance.md#restrictions-of-the-protected-reading) | `invalid-readonly-frame-alias-export` |
-
-Where the protected reading of Read-only frames §4.1 is wider than the
-code's, the framed plan keeps the frame's check and reads the region
-unprotected ([restrictions of the protected reading](drafts/framed-acceptance.md#restrictions-of-the-protected-reading)):
-a parameter is a read-only position only where its declared type is
-read-only throughout; a slot holds a copy only along own and prototype
-key reads, at most `copyBound` long, an element read giving none; (P) is
-decided at every site but a local one; only an entry's arguments witness
-protection; a node's regions are read as protected only where its callee
-is an argument's own value; and a call of C's code whose callee may be
-outside code and is no argument's own value, such as a method of a
-standard object, is charged `any` at every part its call may reach.
 
 ### Opaque Node URLs
 

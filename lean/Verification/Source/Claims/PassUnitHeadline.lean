@@ -1,6 +1,4 @@
 import Verification.Source.Claims.PassUnitSafe
-import Verification.Source.Claims.PassUnitFramed
-import Verification.Source.Claims.FramedReached
 import Verification.Programs.TolerantFramesSinglePassSound
 
 /-! # The single pass's unit theorem: the headline
@@ -177,57 +175,6 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
   · intro Φ regions h; rw [hreg] at h; cases h
   · intro ci q' hci; rw [hcodes] at hci; cases hci
 
-/-- **The framed claim from the check** (proved, under `RunSound` and
-`RunKeepsSummaries`, its request over the file's store; the draft,
-`framed_requestSafe`): the codes accepted in order by the ordinary pass
-from the empty table, with the read summaries their runs leave checked,
-make a sound table (`codesAccepted_sound`); the main graph's framed run
-over it, accepted in the framed mode at its framed nodes
-(`acceptsFramed_of_acceptedWalk`), gives the main graph's clauses at framed
-returns (`framedReturns_of_main` under the graph theorem at framed returns,
-`run_sound_framed`), and with the returns at the executions the claim is
-about (`framedReturns_reached`), the five main-graph clauses
-(`framedRun_of_returnsW`); the codes'
-clause by `codesAccepted_guarantees`, each code's guarantee read on the
-term that runs it along every set of executions
-(`framedCode_of_guarantee`). -/
-theorem framed_requestSafe {f : FilePlans} {name : String} {r : Req f}
-    {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
-    (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (htypes : r.types = f.F.store) (hacc : FramedAccepted f name r spec)
-    (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
-    FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hbind, hreq⟩ := hacc
-  have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hbind hreq hcb
-  rw [← hfr] at hret
-  let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
-  have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
-    intro c hc; simp [GraphCode.admits] at hc
-  have hentries : r.codes.zipIdx.map (·.1.entry) = r.codes.map (·.entry) := by
-    calc r.codes.zipIdx.map (·.1.entry) = (r.codes.zipIdx.map (·.1)).map (·.entry) := by
-          rw [List.map_map]; rfl
-      _ = r.codes.map (·.entry) := by rw [List.zipIdx_map_fst]
-  have hsums := summaries_of_checked htypes hs'
-  have hsub : ∀ s ∈ a₁.summaries.toList, s ∈ after.summaries.toList := by
-    intro s hs''
-    obtain ⟨-, -, -, -, -, -, -, -, -, hans, -, -⟩ := hm
-    obtain ⟨counts, trace, hres⟩ := hwalk
-    have := hkeep _ _ c s (hans ▸ hs'')
-    rwa [hres] at this
-  have htable : ProgramCertificates.CodesSound (StoreView.graph f.F.store)
-      (GraphCode.admits (r.codes.map (·.entry))) := by
-    have := codesAccepted_sound hrun hkeep hsums hcodes hsub hnone
-    rwa [List.nil_append, hentries] at this
-  have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
-    (Verification.TolerantFrames.acceptsFramed_of_acceptedWalk hwalk) (summaries_of_checked htypes hs')
-  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returnsW hguar hret
-  have hcodeG := codesAccepted_guarantees hrun hkeep hsums hcodes hsub hnone
-  refine ⟨hsafe, hf, he, hg, ha, ?_⟩
-  intro ci q hci η n W h L d comp hE hR _ g _
-  have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci
-  exact framedCode_of_guarantee (hcodeG (q, ci) hmem) η comp hE hR g
-
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
@@ -245,16 +192,6 @@ theorem requestSafe_recandidated (r : SourceRequest σ ι) c :
     fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
 end
 
-/-- A framed request safe at other candidates is safe (proved): the frame
-and the framed claim read no candidate. -/
-theorem framedRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι)
-    (spec : FramedSpec ι) c :
-    FramedRequestSafe { r with candidates := c } (spec.frame { r with candidates := c }) →
-      FramedRequestSafe r (spec.frame r) := by
-  intro ⟨h1, h2, h3, h4, h5, h6⟩
-  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
-    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
-
 /-- **A member `passGroup` accepts is safe** (proved, under `RunSound` and
 `RunKeepsSummaries`, its plans over the file's store): its plan crosses the exhaustive certification boundary and its
 request is safe. -/
@@ -268,8 +205,5 @@ theorem member_safe {f : FilePlans} {j : Nat}
       hcodes hmain⟩
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
-  | framed name pos r spec cands hplan hacc =>
-    exact ⟨_, _, hplan, rfl, fun hcb => framedRequestSafe_recandidated r spec cands
-      (framed_requestSafe (r := { r with candidates := cands }) hrun hkeep (hover.framed hplan :) hacc hcb)⟩
 
 end Verification.SourceClaimJson.PassUnit

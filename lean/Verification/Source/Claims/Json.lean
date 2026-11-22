@@ -10,9 +10,6 @@ import Verification.Source.Claims.Sites
 import Verification.Source.Claims.Preparation
 -- Claims/Plans.lean owns the exhaustive certification boundary and frozen plans.
 import Verification.Source.Claims.Plans
-import Verification.Source.Claims.FramedBinding
-import Verification.Source.Claims.FramedPassChecks
-import Verification.Source.Claims.FramedNodeChecks
 -- Claims/Elaboration.lean coordinates source units and reconstructs graph requests.
 import Verification.Source.Claims.Elaboration
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
@@ -521,11 +518,9 @@ expression obligations' checks; with the diagnostics asked for (`observe`,
 `counting`) as its line; with `grading`, the main graph's runs report each
 visit's record of its step's local effect in their counts (`SinglePass.Walk.visits`);
 with `framed`, the main graph's walks frame those nodes, keeping those
-supports at their returns (`SinglePass.framedAt`), which only a framed
-plan's check reads (`FilePlans.framedRun`, `FilePlans.framedCheck`):
-the verdict's graph plans' runs frame none; without `fallback`, a walk
-leaving its footprint's bound is refused, as a framed plan's run reads
-the direct walk alone. -/
+supports at their returns (`SinglePass.framedAt`), as the framed probe
+(`TSCERT_OBSERVE=framed=L`) reads them: the verdict's runs frame none;
+without `fallback`, a walk leaving its footprint's bound is refused. -/
 def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
@@ -537,12 +532,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
   let answers : CertificateProducer.Answered G := {}
   let plan ← (f.plans[i]?).getD (.error s!"no unit {i}")
   let cert ← plan.certify
-  -- A framed plan: no check of the pass certifies the read-only frame's
-  -- obligations, so it is refused at its name.
   let .graph name _ r := cert
-    | match cert with
-      | .framed name .. => return .before name (.refused "a framed plan, which no check certifies")
-      | .graph name .. => return .before name (.refused "a framed plan, which no check certifies")
   -- The request's own checks over its whole certificate the pass does
   -- not make: the graph is passed, and its verdict is not handled.
   -- A footprint (`effectResult`): its request-level conditions here, its
@@ -866,184 +856,13 @@ def FilePlans.withPlan (f : FilePlans) (i : Nat)
     FilePlans :=
   { f with plans := f.plans.set i (.ok p) }
 
-/-- A text's first line: a framed plan's refusal is one line, the
-diagnostic records of the run it read left to that run. -/
-def firstLine (t : String) : String := (t.splitOn "\n").headD t
-
-open Verification.TolerantFrames.ReadOnly in
-/-- **A function checked at the contexts of its known calls** (the Read-only
-frames note, (B1)): it is no entry of its component, and its realized
-code's token lies outside `O`. -/
-def innerB {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (entries : List String) (name : String)
-    (m : Code) : Bool :=
-  !entries.contains name && !((F.at m entryCx).any fun c => F.O.contains c.tok)
-
-open Verification.TolerantFrames.ReadOnly in
-/-- **The binding checks of a framed plan that read its request**, with
-their names and the details of a failure (the draft, "What the pass
-checks"), in order: the entry's start `entryB` (at a function checked at
-its entry), the request's code
-covered `codesCoverB`, the entry's signatures `entryFnB` at the sibling
-slots and the closure's own, the wire's $`\Theta_C`$ the `@clients` rows'
-by kind `clientsB`, the wire's $`\Psi_C`$ at least the component's
-protocol as defined `protocolAtLeastB` at the flow's sites, the read-only
-positions those every function sharing the realized code declares
-(`roPositionsB`), the read-only types the inputs at them `readOnlyB`, the
-realized code's layout at the plan's arity (`arityB`), and its framed
-call nodes those of the realized code the flow frames
-(`framedCallNodes`), and its function checked at the contexts of its known
-calls exactly where it is no entry and its token lies outside `O`
-(`innerB`). -/
-def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
-    {σ : Type} [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) : List (String × (Unit → Bool) × (Unit → String)) :=
-  let F := spec.checked
-  let m := realizedCode r
-  let entry := m.1.length - 1
-  let c0 := capSlot spec.arity false 0
-  -- (the sibling slots, then the closure's own slot)
-  let sib := (List.range (r.siblings.length + 1)).map (c0 + ·)
-  let U := flowSites F
-  let ΨC : Protocol (markedPackage spec.ofC spec.marks) := protocolOfParts id (partsIndex spec.psi)
-  [("its entry's start (entryB)", fun _ => spec.inner || F.entryB m entry, fun _ => ""),
-    ("its request's code covered (codesCoverB)", fun _ => codesCoverB F [requestCode r], fun _ => ""),
-    ("its entry's signatures (entryFnB)", fun _ => entryFnB F m entry sib, fun _ =>
-      -- (the entry's slots naming a signature, at each context)
-      let named := ((F.at m entryCx).map fun c =>
-        (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
-      s!" (the entry's slots naming a signature {named}, its sibling slots {sib})"),
-    ("its client obligation (clientsB)", fun _ => clientsB spec.theta (componentRows spec.family spec.C), fun _ => ""),
-    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef)) ΨC,
-      fun _ => ""),
-    ("its read-only positions (roPositionsB)", fun _ => spec.roPositionsB name r, fun _ => ""),
-    ("its read-only types (readOnlyB)", fun _ => readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType, fun _ => ""),
-    ("its arity (arityB)", fun _ => spec.arityB r, fun _ => ""),
-    ("its framed call nodes (framedCallNodes)", fun _ => spec.framed.map (·.1) == framedCallNodes F spec.host m,
-      fun _ => s!" ({spec.framed.map (·.1)} are not the flow's {framedCallNodes F spec.host m})"),
-    ("its contexts (innerB)", fun _ => spec.inner == innerB F spec.entries name m, fun _ => "")]
-
-/-- **The binding checks of a framed plan that read its request pass**
-(`FramedSpec.bindingChecks`), decided. -/
-def FramedSpec.bindingB {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
-    {σ : Type} [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) : Bool :=
-  (spec.bindingChecks name r).all fun c => c.2.1 ()
-
-/-- **The checks of a framed plan that read its request, before its walk**
-(`FramedSpec.bindingChecks`): the text of the first that fails; none
-where all pass. -/
-def FilePlans.framedChecks (_f : FilePlans) (name : String)
-    (r : SourceRequest (EquationStore.Checked _f.F.equations _f.F.primitive) (EquationStore.CheckedLabel _f.F.equations _f.F.primitive))
-    (spec : FramedSpec (EquationStore.CheckedLabel _f.F.equations _f.F.primitive)) : Option String :=
-  match (spec.bindingChecks name r).find? (!·.2.1 ()) with
-  | some (w, _, detail) => some s!"framed plan: the binding check of {w} fails{detail ()}"
-  | none => none
-
-/-- **No refusal before the walk is the binding checks passing**
-(proved). -/
-theorem FilePlans.framedChecks_none {f : FilePlans} {name : String}
-    {r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
-    {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
-    (h : f.framedChecks name r spec = none) : spec.bindingB name r = true := by
-  unfold FilePlans.framedChecks at h
-  split at h
-  · cases h
-  · rename_i hf
-    exact List.all_eq_true.mpr fun c hc => by simpa using List.find?_eq_none.mp hf c hc
-
-/-- The candidates `cands` with the atoms `drop` left out at the head `t`
-(`FilePlans.dropCandidates` at one request). -/
-def dropAt (cands : List (Nat × List HeapKnowledge.IndexAtom)) (t : Nat) (drop : List HeapKnowledge.IndexAtom) :
-    List (Nat × List HeapKnowledge.IndexAtom) :=
-  cands.map fun (l', as) => if l' == t then (l', as.filter (!drop.contains ·)) else (l', as)
-
-/-- **A framed plan's walk, settled** as a member's run is: its main graph
-walked at the candidates `cands` (`passMemberGraph` at the request's graph
-plan with those candidates), its framed nodes `framed` framed and no
-fallback; refused at a head, the candidates the edge lacks left out and
-walked again, at most `n` times. The candidates at which the walk is
-accepted, or the refusal. -/
-def FilePlans.framedSettle (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
-    (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (framed : List (Nat × List Footprints.Footprint)) :
-    Nat → List (Nat × List HeapKnowledge.IndexAtom) → Except String (List (Nat × List HeapKnowledge.IndexAtom))
-  | 0, _ => .error "framed plan: its framed walk is not settled in 12 runs"
-  | n + 1, cands =>
-    match (f.withPlan i (.graph name pos { r with candidates := cands })).passMemberGraph fuel i
-        (framed := framed) (fallback := false) with
-    | .error e => .error s!"framed plan: {firstLine e}"
-    | .ok run => match run.outcome with
-      | .accepted => .ok cands
-      | .refused w (some (t, xs)) _ =>
-        let held := (cands.filter fun (q : Nat × List HeapKnowledge.IndexAtom) => q.1 == t).flatMap fun q => q.2
-        let drop := held.filter xs.contains
-        if drop.isEmpty then .error s!"framed plan: its framed walk is refused: {firstLine w}"
-        else f.framedSettle fuel i name pos r framed n (dropAt cands t drop)
-      | o => .error s!"framed plan: its framed walk is refused: {firstLine (toString o)}"
-
-open Verification.TolerantFrames.ReadOnly in
-/-- **A framed plan's run by the pass** (the draft, "What the pass
-checks"): the binding checks that read the component alone
-(`componentBindingRefusal`: `FFlow.check`, `marksB`, `codesCoverB`,
-`allocB`, `noRestB`, `frameFlowB`), evaluated once per
-component and shared by its plans, the plan carrying the evaluation with
-its value (`FramedSpec.componentRefusal`); those that read the request
-before its walk (`framedChecks`); an unqualified request; its main graph
-walked with its framed nodes framed, settled (`framedSettle`); and the
-checks of the returns at reached executions at the settled request
-(`FramedSpec.requestB`: `compB`, `sourceTermsB`, `thetaKeepB`, the start a
-label, `realizedFlowB` and `framedNodesAt` at the frame's flow, each framed
-node's callee's stated effect read by `callEffects`). Accepted where every
-one passes, its line naming the component whose client obligation it is
-accepted under; otherwise refused at the first that fails. -/
-def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
-    (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :
-    MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
-      (CertificateProducer.Answered (StoreView.graph f.F.store)) :=
-  match spec.componentRefusal.val with
-  | some w => .before name (.refused w)
-  | none => match f.framedChecks name r spec with
-    | some w => .before name (.refused w)
-    | none =>
-      if r.qualification.isSome then .before name (.refused "framed plan: a qualified body") else
-      match f.framedSettle fuel i name pos r spec.framed 12 r.candidates with
-      | .error w => .before name (.refused w)
-      | .ok cands =>
-        let r' : SourceRequest _ _ := { r with candidates := cands }
-        let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
-        let eff := callEffects G r'
-        if spec.requestB r' eff then
-          { name, outcome := .accepted, line := s!"accepted under client trust Θ_C (component {spec.C})" }
-        else
-          -- (the first of the request's checks that fails)
-          let reqChecks : List (String × (Unit → Bool)) := [
-            ("its component (compB)", fun _ => compB spec.C r'),
-            ("its request's node expressions source terms (sourceTermsB)", fun _ => sourceTermsB r'),
-            ("its client obligation keeping every part (thetaKeepB)", fun _ => thetaKeepB spec.theta),
-            ("its start a label of its program", fun _ => decide (r'.start < r'.program.length)),
-            ("its realized code's proposals at the frame's flow (realizedFlowB)", fun _ => realizedFlowB spec.fflowC r'),
-            ("its framed call nodes at the frame's flow (framedNodesAt)", fun _ =>
-              framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') (spec.boundAt spec.fflowC r' eff)
-                (spec.protAt spec.fflowC r')),
-            ("its realized code's returns within O at every context (retsInB)", fun _ =>
-              !spec.inner || FramedSpec.retsInB spec.fflowC (realizedCode r'))]
-          let w := ((reqChecks.find? (!·.2 ())).map (·.1)).getD "requestB"
-          let why := if w.endsWith "(framedNodesAt)" then
-            framedNodesWhy spec.fflowC spec.lay spec.theta spec.framed (requestCode r') (spec.boundAt spec.fflowC r' eff)
-              (spec.protAt spec.fflowC r')
-          else ""
-          .before name (.refused s!"framed plan: the request check of {w} fails{why}")
-
-/-- **One member's single pass**: a graph plan's (`passMemberGraph`); a
-framed plan's (`framedRun`). -/
+/-- **One member's single pass**: its graph plan's (`passMemberGraph`). -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := []) :
+    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
       (CertificateProducer.Answered (StoreView.graph f.F.store))) :=
-  match f.plans[i]? with
-  | some (.ok (.framed name pos r spec)) => .ok (f.framedRun fuel i name pos r spec)
-  | _ => f.passMemberGraph fuel i compare debugNode repeats given observe counting grading framed
+  f.passMemberGraph fuel i compare debugNode repeats given observe counting grading
 
 /-- The node label a pass refusal's text names after `key` (`expression at
 node 8: …` names `8`). -/

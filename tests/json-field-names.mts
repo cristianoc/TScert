@@ -77,12 +77,13 @@ const equationReaders = [
 {
   const ts = declared(["tools/fragment.mts", "tools/declaration-types.mts", "tools/claim.mts"]);
   const leanNames = new Set([...lean(["lean/Verification/Source/Fragment.lean",
-    "lean/Verification/Source/FragmentTypes.lean", "lean/Verification/Source/ComponentWire.lean",
+    "lean/Verification/Source/FragmentTypes.lean",
     ...equationReaders]), ...lean(["lean/Verification/Source/ResolutionWire.lean"], false, "inductive Certificate")]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
     binder: "a type label, read by equation lowering",
     decl: "a type label, read by equation lowering",
     meet: "a type label, read by equation lowering",
+    types: "the type table of the source-claims document the verifier builds, read by equation lowering",
   });
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",

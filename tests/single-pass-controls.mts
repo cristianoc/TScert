@@ -22,7 +22,7 @@ import { controlOperations, invokeProcess, invokeWorker, ran as ranStage, readIn
   from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { runExample } from "../pipeline/run-example.mts";
-import { decodeComponentOutcomes, decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall, type ComponentOutcome }
+import { decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall }
   from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
@@ -66,7 +66,7 @@ function counted(invoked: Invoked): Invoked {
 /** A unit's verdict from the pass: accepted, and closed when it and every
  * unit it depends on are accepted (a module unit only where its line is
  * printed), as the route reads it. */
-type Verdict = { accepted: boolean; closed: boolean; refusal: string; trusted: boolean };
+type Verdict = { accepted: boolean; closed: boolean; refusal: string };
 /** The pass over `fragment` under `force` (none for an unforced run). */
 type Pass = { status: number | null; stdout: string; stderr: string; verdicts: Map<string, Verdict> };
 function pass(fragment: string, force: readonly string[] = [], names: string = ""): Pass {
@@ -88,10 +88,7 @@ function passOf(run: Invoked): Pass {
     const value: unknown = JSON.parse(line);
     if (!isObject(value) || typeof value.unit !== "string") continue;
     const accepted = value.accepted === true;
-    const trusted = Array.isArray(value.acceptedUnderClientTrust) && value.acceptedUnderClientTrust.length > 0 &&
-      typeof value.refusal !== "string";
-    verdicts.set(value.unit, { accepted, closed: accepted, refusal: typeof value.refusal === "string" ? value.refusal : "",
-      trusted });
+    verdicts.set(value.unit, { accepted, closed: accepted, refusal: typeof value.refusal === "string" ? value.refusal : "" });
     depends.set(value.unit, Array.isArray(value.depends) ? value.depends.filter((d) => typeof d === "string") : []);
   }
   for (let changed = true; changed; ) {
@@ -111,11 +108,6 @@ const words = (p: Pass): string => p.stderr + p.stdout;
 /** Require `unit` accepted with every unit it depends on. */
 function accepted(p: Pass, unit: string, what: string): void {
   assert.equal(p.verdicts.get(unit)?.closed, true, `${what}: ${unit} not accepted: ${words(p).slice(0, 2000)}`);
-}
-/** Require `unit` accepted under the client obligation of its component
- * (a framed plan's, `acceptedUnderClientTrust`), refused by nothing. */
-function trustAccepted(p: Pass, unit: string, what: string): void {
-  assert.equal(p.verdicts.get(unit)?.trusted, true, `${what}: ${unit} not accepted under client trust: ${words(p).slice(0, 2000)}`);
 }
 /** Require `unit` refused: its own refusal, or a unit it depends on
  * refused; or the file refused before any unit's verdict (the front).
@@ -271,7 +263,7 @@ control("probe settings leave the production verdict intact", async (): Promise<
   const plain = spawnSync(verifierBuild, args, { encoding: "utf8", env: {} });
   assert.equal(plain.status, 0, plain.stderr);
   const observed = spawnSync(verifierBuild, args, { encoding: "utf8", env: {
-    TSCERT_FORCE: "start-facts", TSCERT_FLOW_PROBE: "only", TSCERT_OBSERVE: "node:999999999",
+    TSCERT_FORCE: "start-facts", TSCERT_OBSERVE: "node:999999999",
   } });
   assert.equal(observed.status, plain.status, observed.stderr);
   assert.equal(observed.stdout, plain.stdout);
@@ -513,390 +505,6 @@ function visitAll(value: unknown, at: (node: Record<string, unknown>) => void): 
 function honest(file: string, unit: string, p: Pass = pass(fragmentOf(run(file)))): void {
   accepted(p, unit, `${file} honest`);
 }
-
-// The component family (docs/drafts/readonly-handles.md): what the parser's
-// document states of a package of two exports, of the same package under a
-// changed manifest, and a family forged, refused by the verifier's decoder.
-
-/** The family a case's fragment states. */
-const familyOf = (artifacts: string): Ast["components"] => fragmentAst(artifacts).components;
-/** The names of a family's component of `kind` at the location ending `at`. */
-function entryNames(family: Ast["components"], kind: string, at: string): string[] {
-  const c = must(family.components.find((x) => x.kind === kind && x.location.endsWith(at)), `${kind} ${at}`);
-  return "known" in c.interface ? c.interface.known.entries.map((e) => e.name).sort() : [];
-}
-
-control("component family: a package of two exports", async (): Promise<void> => {
-  const artifacts = run("component-package/src/main");
-  const family = familyOf(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const at = (text: string): number => {
-    const i = source.indexOf(text);
-    assert.ok(i >= 0, `the fixture holds ${text}`);
-    return i;
-  };
-  // Its interface: both exports' targets mapped back to their sources, the
-  // re-export followed; a module no export names is entered only as itself.
-  assert.deepEqual(entryNames(family, "package", "package.json"),
-    ["boxed", "counter", "doubled", "later", "make", "prepare"]);
-  assert.deepEqual(entryNames(family, "module", "internal.ts"), ["twice"]);
-  for (const c of family.components.filter((x) => x.kind === "module")) assert.equal(c.parent, 0);
-  // The handle's record crosses at a read-only type, its fields the type
-  // does not show among its keys; the box crosses at a writable one.
-  const siteAt = (text: string): (typeof family.sites)[number] =>
-    must(family.sites.find((s) => s.pos[0] === at(text)), `the site ${text}`);
-  const handle = siteAt("{ size: n, widths: [n], cache: [] }");
-  assert.deepEqual(handle.keys, ["cache", "size", "widths"]);
-  assert.ok(handle.marks.every((m) => m.mark === "exposed"), JSON.stringify(handle.marks));
-  const inner = siteAt("[n] } }");
-  assert.ok(inner.marks.every((m) => m.mark === "released"), JSON.stringify(inner.marks));
-  // Two closures escape the package: through a result and an argument.
-  const vias = family.escapes.filter((e) => e.component === 0).map((e) => e.via).sort();
-  assert.deepEqual(vias, ["argument", "result"]);
-  // Each code's innermost component is its module's.
-  const main = must(family.components.findIndex((x) => x.kind === "module" && x.location.endsWith("main.ts")), "main.ts");
-  assert.ok(family.codes.filter((c) => c.module === family.components[main]?.location).every((c) => c.component === main));
-  say("component family: a package's interface through both exports and a re-export, a hidden field, a writable descendant and two escapes");
-});
-
-control("component family: a changed manifest", async (): Promise<void> => {
-  const work = runDirectory("component-manifest-");
-  const copy = join(work, "component-package");
-  cpSync(join(root, "pipeline/examples/component-package"), copy, { recursive: true });
-  const manifest: unknown = JSON.parse(readFileSync(join(copy, "package.json"), "utf8"));
-  assert.ok(isObject(manifest) && isObject(manifest.exports));
-  const { "./extra": _dropped, ...kept } = manifest.exports;
-  writeFileSync(join(copy, "package.json"), JSON.stringify({ ...manifest, exports: kept }));
-  const outcome = checkSource(join(copy, "src/main.ts"), tsconfigOf(copy), undefined, undefined, true);
-  assert.notEqual(outcome.status, "error", outcome.status === "verified" ? "" : outcome.detail);
-  assert.deepEqual(entryNames(familyOf(outcome.artifacts), "package", "package.json"), ["boxed", "counter", "later", "prepare"]);
-  say("component family: the manifest without `./extra`, its entries gone from the package's interface");
-});
-
-control("component family: a local call before its alias declaration", async (): Promise<void> => {
-  const dir = runDirectory("component-alias-");
-  const path = join(dir, "module.ts");
-  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, files: ["module.ts"] }));
-  writeFileSync(path, [
-    "export function run(): { answer: number } { return alias(); }",
-    "function target(): { answer: number } { return { answer: 42 }; }",
-    "const alias: () => { answer: number } = target;",
-  ].join("\n"));
-  const outcome = checkSource(path, tsconfigOf(dir), undefined, undefined, true);
-  assert.notEqual(outcome.status, "error", outcome.status === "verified" ? "" : outcome.detail);
-  const family = familyOf(outcome.artifacts);
-  assert.equal(family.calls.length, 1);
-  const call = must(family.calls[0], "the alias call");
-  assert.equal(call.targets.length, 1);
-  assert.equal(call.native, null);
-  const result = must(family.values[call.result], "the call's result");
-  assert.deepEqual(result.sites.map((site) => family.sites[site]?.kind), ["object"]);
-  say("component family: a local alias call carries only its object result");
-});
-
-control("forged fragment: a component family's fields", async (): Promise<void> => {
-  const artifacts = run("component-package/src/main");
-  const ast = fragmentAst(artifacts);
-  const family: unknown = structuredClone(ast.components);
-  assert.ok(isObject(family) && Array.isArray(family.sites) && Array.isArray(family.codes));
-  const { sites: _missing, ...withoutSites } = family;
-  const site: unknown = family.sites[0], code: unknown = family.codes[0];
-  assert.ok(isObject(site) && isObject(code));
-  const { anyKey, ...withoutKey } = site;
-  const forgeries: [string, unknown][] = [
-    ["missing", withoutSites],
-    ["extra", { ...family, members: [] }],
-    ["misplaced", { ...family, sites: [withoutKey, ...family.sites.slice(1)], codes: [{ ...code, anyKey }, ...family.codes.slice(1)] }],
-  ];
-  for (const [name, components] of forgeries)
-    refusedFile(pass(forged(artifacts, `forged-family-${name}`, { ...ast, components })), `a family's ${name} field`,
-      /components: unexpected fields/);
-  say("forged family: a missing, an extra and a misplaced field, each refused by the decoder");
-});
-
-// The read-only frame's checks (S), (K) and (O) (ComponentChecks.lean):
-// each module's outcome as the pass prints it, honest and forged. Each
-// unsafe module's offending code is a member other than its walker; each
-// runs under Node in tests/node-runs.mts.
-
-/** The components' outcomes a pass prints (`WorkerWire.componentsLine`). */
-function componentOutcomes(p: Pass): ComponentOutcome[] {
-  const line = must(p.stdout.split("\n").find((l) => l.startsWith('{"components"')), `the components' line: ${words(p).slice(0, 1500)}`);
-  const value: unknown = JSON.parse(line);
-  return decodeComponentOutcomes(isObject(value) ? value.components : undefined, "the components' line");
-}
-/** The refusals of a single-file case's module. */
-const moduleRefusals = (p: Pass): readonly string[] =>
-  must(componentOutcomes(p).find((c) => c.kind === "module"), "the module's outcome").refusals;
-/** Require a module's certificate refused by a failure matching `at`. */
-function certificateRefused(p: Pass, what: string, at: RegExp): void {
-  const refusals = moduleRefusals(p);
-  assert.ok(refusals.some((r) => at.test(r)), `${what}: refused otherwise: ${JSON.stringify(refusals)}`);
-}
-/** A case's fragment with its source, and the span of a text of it. */
-function familyCase(file: string): { artifacts: string; ast: Ast; at: (text: string) => number } {
-  const artifacts = run(file);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  return { artifacts, ast: fragmentAst(artifacts), at: (text: string): number => {
-    const i = source.indexOf(text);
-    assert.ok(i >= 0, `${file} holds ${text}`);
-    return i;
-  } };
-}
-/** The site a case's fragment states at the offset `at`. */
-const siteIndex = (ast: Ast, at: number): number => {
-  const i = ast.components.sites.findIndex((s) => s.pos[0] === at);
-  assert.ok(i >= 0, `a site at ${at}`);
-  return i;
-};
-
-control("read-only frame checks: each module's certificate, held and refused", async (): Promise<void> => {
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-walker")))), [], "the walker's module");
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-suspending"))), "a suspending member", /^\(S\) .* an async function in the component's code/);
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-suspending"))), "a suspending member", /^\(S\) .* an `await` in the component's code/);
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-leaked"))), "an array given out writable",
-    /^\(O\) .* installs the released site/);
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-install"))), "a caller's array installed", /^\(O\) .* installs a value entering from outside/);
-  // The refinements of (O): a copy of numbers, a store into released rows
-  // that cannot come back; and what each must still refuse.
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-install-copy")))), [], "a copy by slice()");
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-released-store")))), [], "released rows of a module of number entries");
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-slice-lookalike"))), "a lookalike slice", /^\(O\) .* installs a value entering from outside/);
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-comes-back"))), "rows that may come back", /^\(O\) .* installs the released site/);
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-void-callback"))), "a void visitor's result", /^\(O\) .* installs a value entering from outside/);
-  // A library method of the module's own storage passes nothing out; of a
-  // caller's map, its argument crosses out writable.
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-own-map")))), [], "the module's own WeakMap");
-  certificateRefused(pass(fragmentOf(run("invalid-readonly-map-escape"))), "a caller's map", /^\(O\) .* installs the released site/);
-  say("read-only frame checks: the walker's, a slice copy's and a number-entry module's certified; a suspension, released and caller's installs, a lookalike slice, rows that come back and a void visitor's result refused, each at its code");
-});
-
-/** The module's outcome of a single-file case. */
-const moduleOutcome = (p: Pass): ComponentOutcome => must(componentOutcomes(p).find((c) => c.kind === "module"), "the module's outcome");
-
-control("read-only frame protocol: the members' writes and the guarantee", async (): Promise<void> => {
-  // The walker's members write only what they allocate: `keep` everywhere.
-  assert.deepEqual(moduleOutcome(pass(fragmentOf(run("readonly-frame-walker")))).protocol, [], "the walker's protocol");
-  // A member that pops a handle's widths: `any` at their spine.
-  const trim = familyCase("invalid-readonly-trim");
-  const widths = trim.at("[];\n  for");
-  const trimmed = moduleOutcome(pass(fragmentOf(trim.artifacts)));
-  assert.ok(trimmed.protocol.some((e) => new RegExp(`^any at the spines of the site \\S+ ${widths}-`).test(e)), JSON.stringify(trimmed.protocol));
-  assert.deepEqual(trimmed.refusals, [], "trim's module");
-  // The guarantee example: `any` at the replaced field.
-  const guarantee = moduleOutcome(pass(fragmentOf(run("readonly-frame-guarantee"))));
-  assert.ok(guarantee.protocol.some((e) => /^any at the fields of the site \S+ \d+-\d+ at widths$/.test(e)), JSON.stringify(guarantee.protocol));
-  // A member that empties the widths and restores them: the invariant is
-  // not kept, at the first write.
-  const restored = familyCase("readonly-frame-restored");
-  const write = restored.at("r.widths = [];");
-  const swap = moduleOutcome(pass(fragmentOf(restored.artifacts)));
-  assert.ok(swap.guarantee.some((g) => new RegExp(`^not kept: H: a write at \\S+ ${write}-`).test(g)), JSON.stringify(swap.guarantee));
-  say("read-only frame protocol: the walker's keep, a popping member's any at the spine, the guarantee example's any at the replaced field; an invariant broken and restored before return not kept");
-});
-
-control("read-only frame (O): local storage, confined closures and the module's own map", async (): Promise<void> => {
-  // A store into local storage an invariant may read stays refused when it
-  // installs a caller's writable array; one no invariant reads is admitted.
-  const local = familyCase("readonly-frame-local-store");
-  const refusals = moduleRefusals(pass(fragmentOf(local.artifacts)));
-  assert.ok(refusals.some((r) => new RegExp(`^\\(O\\) \\S+ ${local.at("items: xs")}-\\d+: .* installs a value entering from outside`).test(r)),
-    JSON.stringify(refusals));
-  assert.ok(!refusals.some((r) => r.includes(` ${local.at("{ xs }")}-`)), JSON.stringify(refusals));
-  // A closure confined to its frame pushes into the frame's fresh row; held
-  // by a binding, it is not confined, and the push is refused.
-  const closure = familyCase("readonly-frame-confined-closure");
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(closure.artifacts))), [], "the confined closure's push");
-  const site = siteIndex(closure.ast, closure.at("(i) => {"));
-  const value = closure.ast.components.values.findIndex((v) => v.sites.includes(site));
-  assert.ok(value >= 0, "a value holding the closure");
-  closure.ast.components.holds.push({ module: closure.ast.components.sites[site]?.module ?? "", at: [0, 0], component: 0, value, name: "kept" });
-  certificateRefused(pass(forged(closure.artifacts, "forged-closure-held", closure.ast)), "the closure held",
-    new RegExp(`^\\(O\\) \\S+ ${closure.at("row.push({ at: i })")}-\\d+: a store into storage that may be protected installs`));
-  // The module's own map's `get` at a key from outside calls nothing; read
-  // as one that may call it, the frame may run outside code and the push is
-  // refused.
-  const map = familyCase("readonly-frame-own-map-get");
-  assert.deepEqual(moduleRefusals(pass(fragmentOf(map.artifacts))), [], "the push after the map's get");
-  const get = must(map.ast.components.calls.find((c) => c.at[0] === map.at("cache.get(h)")), "the map's get");
-  assert.deepEqual(get.library, [false], "get calls no argument");
-  get.library = [true];
-  certificateRefused(pass(forged(map.artifacts, "forged-map-get-calls", map.ast)), "get read as calling its key",
-    new RegExp(`^\\(O\\) \\S+ ${map.at("out.push({ at: known ?? i })")}-\\d+: a store into storage that may be protected installs`));
-  say("read-only frame (O): a local store an invariant reads refused, one it does not admitted; a confined closure's push admitted, held refused; a push after the own map's get admitted, the get read as calling refused");
-});
-
-control("read-only frame (O): library calls on values from outside", async (): Promise<void> => {
-  // `Map.prototype.get` on a map read from a caller's handle, and
-  // `Object.isFrozen` of a caller's record, call no argument: the push after them
-  // is admitted. `Array.prototype.map` calls its callback, here one from
-  // outside: the push after it is refused.
-  const lib = familyCase("readonly-frame-library-calls");
-  const refusals = moduleRefusals(pass(fragmentOf(lib.artifacts)));
-  assert.ok(!refusals.some((r) => r.includes(` ${lib.at("out.push({ at: k ?? 0 })")}-`)), JSON.stringify(refusals));
-  assert.ok(refusals.some((r) => new RegExp(`^\\(O\\) \\S+ ${lib.at("res.push({ at: ys.length })")}-\\d+: a store into storage that may be protected installs`).test(r)),
-    JSON.stringify(refusals));
-  const frozen = must(lib.ast.components.calls.find((c) => c.at[0] === lib.at("Object.isFrozen(o)")), "isFrozen");
-  assert.deepEqual(frozen.library, [false], "isFrozen calls no argument");
-  const mapped = must(lib.ast.components.calls.find((c) => c.at[0] === lib.at("xs.map((x) => f(x))")), "map");
-  assert.deepEqual(mapped.library?.[0], true, "map calls its callback");
-  say("read-only frame (O): a push after a handle's map's get and isFrozen admitted; after map of an outside callback refused");
-});
-
-/** A module's frames of a single-file case. */
-const moduleFrames = (p: Pass): readonly string[] => moduleOutcome(p).frames;
-/** Copy the entries before forging a single call's frame. */
-const frameAt = (ast: Ast, at: number): Ast["components"]["frameEntries"][number] => {
-  const call = ast.components.calls.findIndex((c) => c.at[0] === at);
-  const frame = must(ast.components.frames.find((f) => f.call === call), `a frame at ${at}`);
-  const original = must(ast.components.frameEntries[frame.entries], `frame entries at ${at}`);
-  const copy = original.map((entry) => ({ ...entry }));
-  frame.entries = ast.components.frameEntries.push(copy) - 1;
-  return copy;
-};
-
-control("forged fragment: a frame's false protection bit, omitted part, and one bad member's frame", async (): Promise<void> => {
-  // A cursor the walker allocates lies in the region; the array passed in
-  // writable lies in it or outside it.
-  const cursor = familyCase("bounds-pattern-unreachable-field");
-  const visit = cursor.at("visit(c.i); //");
-  const held = moduleFrames(pass(fragmentOf(cursor.artifacts)));
-  assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the fields of the site \\S+ \\d+-\\d+: in the region, within keep$`).test(f)), JSON.stringify(held));
-  assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the spines of the value .*: in the region within keep, or outside it within the call's effect$`).test(f)), JSON.stringify(held));
-  // The array passed in writable read as protected: refused at the call.
-  for (const e of frameAt(cursor.ast, visit)) e.protected = true;
-  const falseBit = moduleFrames(pass(forged(cursor.artifacts, "forged-frame-protected", cursor.ast)));
-  assert.ok(falseBit.some((f) => new RegExp(`^refused at \\S+ ${visit}-\\d+: .*the frame reads the spines of the value .* as protected`).test(f)), JSON.stringify(falseBit));
-  // A handle passed in read-only: its region may be outside storage; the
-  // frame omitting that part is refused at the call.
-  const walker = familyCase("readonly-frame-walker");
-  const call = walker.at("visit();");
-  // The handle's field `widths` is a region of its own, at its field path.
-  const walked = moduleFrames(pass(fragmentOf(walker.artifacts)));
-  assert.ok(walked.some((f) => new RegExp(`^at \\S+ ${call}-\\d+: the spines of the value at \\S+ \\d+-\\d+, at widths: in the region, within keep$`).test(f)), JSON.stringify(walked));
-  for (const e of frameAt(walker.ast, call)) {
-    const parts = must(walker.ast.components.frameParts[e.parts], "a frame's parts");
-    e.parts = walker.ast.components.frameParts.push(parts.filter((t) => t !== null)) - 1;
-  }
-  const omitted = moduleFrames(pass(forged(walker.artifacts, "forged-frame-part", walker.ast)));
-  assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: the frame omits the possible part the fields of storage of code outside the component`).test(f)), JSON.stringify(omitted));
-  assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: .*the frame omits the possible part [^;]* of the spines of the value at \\S+ \\d+-\\d+, at widths`).test(f)), JSON.stringify(omitted));
-  const badParts = structuredClone(walker.ast);
-  must(frameAt(badParts, call)[0], "a frame entry").parts = badParts.components.frameParts.length;
-  refusedFile(pass(forged(walker.artifacts, "forged-frame-parts-index", badParts)), "a dangling frame part list",
-    /a frame's part list is out of range/);
-  const badEntries = structuredClone(walker.ast);
-  const frame = must(badEntries.components.frames[0], "a frame");
-  frame.entries = badEntries.components.frameEntries.length;
-  refusedFile(pass(forged(walker.artifacts, "forged-frame-entries-index", badEntries)), "a dangling frame entry list",
-    /a frame's entry list is out of range/);
-  // Two members: one's frame forged, refused at its call; the other's held.
-  const two = familyCase("readonly-frame-two-walkers");
-  const inWalk = two.at("visit();\n    sum");
-  const inFirst = two.at("visit();\n  return");
-  for (const e of frameAt(two.ast, inFirst)) e.protected = true;
-  const mixed = moduleFrames(pass(forged(two.artifacts, "forged-frame-member", two.ast)));
-  assert.ok(mixed.some((f) => new RegExp(`^refused at \\S+ ${inFirst}-\\d+: `).test(f)), JSON.stringify(mixed));
-  assert.ok(!mixed.some((f) => new RegExp(`^refused at \\S+ ${inWalk}-`).test(f)), JSON.stringify(mixed));
-  assert.ok(mixed.some((f) => new RegExp(`^at \\S+ ${inWalk}-\\d+: the fields of the value .*: in the region, within keep$`).test(f)), JSON.stringify(mixed));
-  say("forged frames: an array passed in writable read as protected, refused at its visit; a read-only handle's outside part omitted, at the handle and at its field path, refused at its visit; one member's frame forged, refused at its call, the other member's held");
-});
-
-control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {
-  const { artifacts, ast, at } = familyCase("invalid-readonly-trim");
-  const widths = siteIndex(ast, at("[];\n  for"));
-  ast.components.protocols = ast.components.protocols.map((p) => ({ ...p, entries: p.entries.filter((e) => e.site !== widths) }));
-  certificateRefused(pass(forged(artifacts, "forged-protocol-member", ast)), "trim's writes omitted",
-    new RegExp(`^\\(Ψ\\) \\S+ ${at("r.widths.pop()")}-\\d+: the protocol omits the change any of the spines of the site`));
-  say("forged protocol: the popping member's writes omitted, refused at its pop");
-});
-
-control("forged fragment: a protocol omitting an exceptional effect", async (): Promise<void> => {
-  // `xs.slice()` writes nothing when it returns; its reviewed contract states
-  // no effect at a throw, where its receiver, which enters from outside, may
-  // change: the protocol at the normal exit alone is too small.
-  const { artifacts, ast, at } = familyCase("readonly-frame-guarantee");
-  ast.components.protocols = ast.components.protocols.map((p) => ({ ...p, entries: p.entries.filter((e) => e.site !== null) }));
-  certificateRefused(pass(forged(artifacts, "forged-protocol-exceptional", ast)), "slice's exceptional effect omitted",
-    new RegExp(`^\\(Ψ\\) \\S+ ${at("xs.slice()")}-\\d+: the protocol omits the change any of the spines of storage of code outside the component`));
-  say("forged protocol: the outside storage a native may change at a throw omitted, refused at the native's call");
-});
-
-control("forged fragment: a suspension erased", async (): Promise<void> => {
-  const { artifacts, ast } = familyCase("invalid-readonly-suspending");
-  ast.components.suspensions = [];
-  certificateRefused(pass(forged(artifacts, "forged-suspension-erased", ast)), "the suspensions erased",
-    /^\(S\) .* the async function total states no suspension/);
-  say("forged suspension: the family's suspensions erased, the async member the lowering reads refused");
-});
-
-control("forged fragment: a false local mark", async (): Promise<void> => {
-  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
-  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
-  site.marks = site.marks.map((m) => ({ ...m, mark: "local" }));
-  const p = pass(forged(artifacts, "forged-local-mark", ast));
-  certificateRefused(p, "the widths marked local", /^\(K\) .* a value crossing out reaches the local site/);
-  certificateRefused(p, "the widths marked local", /^\(K\) .* the binding last holds the local site/);
-  say("forged mark: the array a member gives out marked local, refused at its crossing and at the binding holding it");
-});
-
-control("forged fragment: an omitted crossing", async (): Promise<void> => {
-  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
-  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
-  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
-  const result = at("export function lastWidths");
-  const before = ast.components.crossings.length;
-  ast.components.crossings = ast.components.crossings.filter((x) => !(x.direction === "out" && x.at[0] === result));
-  assert.equal(ast.components.crossings.length, before - 1, "lastWidths' result crossed");
-  certificateRefused(pass(forged(artifacts, "forged-crossing-omitted", ast)), "lastWidths' crossing omitted",
-    new RegExp(`^\\(K\\) \\S+ ${result}-\\d+: a crossing of the component's code is not stated`));
-  say("forged crossing: the result lastWidths gives out omitted, its array marked exposed, refused at the crossing the events make");
-});
-
-control("forged fragment: a read-only bit", async (): Promise<void> => {
-  // The array lastWidths returns at `number[]` marked exposed, and its
-  // crossing stated read-only: the bit differs from the type the result
-  // declares, from which the verifier derives it.
-  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
-  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
-  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
-  const result = at("export function lastWidths");
-  const crossing = must(ast.components.crossings.find((x) => x.direction === "out" && x.at[0] === result), "lastWidths' result");
-  assert.equal(crossing.readOnly, false, "lastWidths' result is writable");
-  crossing.readOnly = true;
-  const p = pass(forged(artifacts, "forged-read-only-bit", ast));
-  certificateRefused(p, "lastWidths' result stated read-only",
-    new RegExp(`^\\(K\\) \\S+ ${result}-\\d+: the crossing states its position read-only, its declared type is writable`));
-  certificateRefused(p, "lastWidths' result stated read-only", /^\(K\) .* a value crossing out at a writable position reaches the exposed site/);
-  say("forged read-only bit: a writable result stated read-only, refused against its declared type");
-});
-
-control("forged fragment: a released and a caller-owned install", async (): Promise<void> => {
-  // The released array marked exposed, which (O) admits: its writable
-  // crossing out refuses it.
-  const leaked = familyCase("invalid-readonly-leaked");
-  const site = must(leaked.ast.components.sites[siteIndex(leaked.ast, leaked.at("[];\n  for"))], "the widths' site");
-  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
-  const p = pass(forged(leaked.artifacts, "forged-released-install", leaked.ast));
-  assert.ok(!moduleRefusals(p).some((r) => r.startsWith("(O)")), JSON.stringify(moduleRefusals(p)));
-  certificateRefused(p, "the released install", /^\(K\) .* a value crossing out at a writable position reaches the exposed site/);
-  // The caller's array claimed to enter from nowhere, which (O) admits: the
-  // member's parameter refuses it.
-  const install = familyCase("invalid-readonly-install");
-  install.ast.components.values = install.ast.components.values.map((v) => ({ ...v, incoming: [] }));
-  const q = pass(forged(install.artifacts, "forged-caller-install", install.ast));
-  assert.ok(!moduleRefusals(q).some((r) => r.startsWith("(O)")), JSON.stringify(moduleRefusals(q)));
-  certificateRefused(q, "the caller's install", /^\(flow\) .* a member's parameter omits a value entering from outside/);
-  // The caller's writable array claimed read-only, which (O) admits as
-  // already protected: its parameter's declared type is writable.
-  const claimed = familyCase("invalid-readonly-install");
-  claimed.ast.components.values = claimed.ast.components.values.map((v) =>
-    ({ ...v, incoming: [], incomingReadOnly: [...new Set([...v.incomingReadOnly, ...v.incoming])].sort((a, b) => a - b) }));
-  const r = pass(forged(claimed.artifacts, "forged-read-only-caller", claimed.ast));
-  assert.ok(!moduleRefusals(r).some((x) => x.startsWith("(O)")), JSON.stringify(moduleRefusals(r)));
-  certificateRefused(r, "the caller's array claimed read-only", /^\(flow\) .* a member's parameter omits a value entering from outside/);
-  say("forged install: a released array marked exposed, a caller's array entering from nowhere and one claimed read-only, each refused where the forgery shows");
-});
 
 control("forged fragment: an incompatible heritage type argument on super", async (): Promise<void> => {
   const file = "class-generic-inheritance";
@@ -2753,27 +2361,6 @@ control("units: each listed with its dependencies, a names list selecting", asyn
   say("units: module-cells' units listed with their dependencies, the initialization among them; a names list checks bump alone");
 });
 
-control("units: component reporting does not change worker verdicts", async (): Promise<void> => {
-  const artifacts = run("readonly-frame-walker");
-  const fragment = fragmentOf(artifacts);
-  const interfaces = join(runDirectory("quiet-worker-"), "interfaces.json");
-  writeFileSync(interfaces, '{"modules":[]}');
-  const worker = (environment: Record<string, string>) => invokeWorker(verifierCall(verifierBuild,
-    ["--file-worker", "8", fragment, interfaces, sourceKey(artifacts), "12", ""], environment), fileWorkerProtocol,
-    { limitMs: 60_000, force: false, recorder: null });
-  const full = worker({});
-  const quiet = worker({ TSCERT_REPORT_COMPONENTS: "0" });
-  assert.equal(full.preparation.status, 0, full.preparation.stderr);
-  assert.equal(quiet.preparation.status, 0, quiet.preparation.stderr);
-  const fullPreparation = decodeWorkerPrepared(full.preparation.stdout.trim());
-  const quietPreparation = decodeWorkerPrepared(quiet.preparation.stdout.trim());
-  assert.ok(fullPreparation.components.length > 0);
-  assert.deepEqual(quietPreparation, { ...fullPreparation, components: [] });
-  assert.ok(full.parts.length > 0);
-  assert.deepEqual(quiet.parts.map((p) => p.stdout), full.parts.map((p) => p.stdout));
-  say("units: omitting the component report preserves preparation and unit verdicts");
-});
-
 control("forged fragment: a guard's undefined behaviour", async (): Promise<void> => {
   // A node guard on a `parent` that may be absent throws there, so both its edges
   // hold a present `parent`. Its behaviour on undefined forged unadmitted,
@@ -2941,20 +2528,6 @@ mutationControl("sp-footprint: the footprint check, caught by three negative cas
     accepted(mutatedPass(fragment, "sp-footprint"), unit, `${file} sp-footprint`);
   }
   say("mutation sp-footprint: a declaration's, a comparator's and a caught normal return's footprints exceeded, each accepted only without the footprint check");
-});
-
-mutationControl("fr-protected: the protected reading, caught by a reassigned read-only parameter", async (): Promise<void> => {
-  const fragment = fragmentOf(run("invalid-readonly-frame-param-reassigned"));
-  refused(pass(fragment), "walk@599", "invalid-readonly-frame-param-reassigned production");
-  trustAccepted(mutatedPass(fragment, "fr-protected"), "walk@599", "invalid-readonly-frame-param-reassigned fr-protected");
-  say("mutation fr-protected: the spine of a copy of a writable argument accepted only without the decision of a region read as protected");
-});
-
-mutationControl("fr-ro-sharing: the read-only positions, caught by two walkers of one body", async (): Promise<void> => {
-  const fragment = fragmentOf(run("invalid-readonly-frame-shared-code"));
-  refused(pass(fragment), "walk@692", "invalid-readonly-frame-shared-code production");
-  trustAccepted(mutatedPass(fragment, "fr-ro-sharing"), "walk@692", "invalid-readonly-frame-shared-code fr-ro-sharing");
-  say("mutation fr-ro-sharing: the read-only twin of a writable walker accepted only where its position reads its own shape alone");
 });
 
 // ---------------------------------------------------------------------------

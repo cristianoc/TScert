@@ -90,23 +90,12 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
   extract_lets G I answers reference line tracing at h
   obtain ⟨plan, hplan, h⟩ := except_bind_ok h
   obtain ⟨cp, hcert, h⟩ := except_bind_ok h
-  -- A framed plan is refused at its name: no run accepts it.
   have hgraph : ∃ name pos r, plan = .graph name pos r ∧ cp = .graph name pos r := by
     cases plan with
     | graph n' p' r' =>
       simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hcert
       exact ⟨n', p', r', rfl, hcert.symm⟩
-    | framed n' p' r' spec =>
-      simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hcert
-      subst hcert
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      subst h; simp [MemberRun.accepted, MemberRun.before] at hacc
   obtain ⟨name, pos, r, rfl, rfl⟩ := hgraph
-  split at h
-  rotate_left
-  · rename_i hne; exact absurd rfl (hne _ _ _)
-  rename_i name' pos' r' heq
-  cases heq
   have hplanAt : PlanAt f j name pos r := by
     unfold PlanAt
     cases hp : f.plans[j]? with
@@ -114,6 +103,9 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
     | some x =>
       rw [hp] at hplan; simp only [Option.getD_some] at hplan; subst hplan
       rfl
+  split at h
+  rename_i name' pos' r' heq
+  cases heq
   extract_lets bounded bound labels pool main givenImplies givenArgs givenInputs G' I' pool' observed regionalOf regional fallback claimAt place at h
   split at h
   · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; simp [MemberRun.accepted, MemberRun.before] at hacc
@@ -382,100 +374,12 @@ theorem passMemberGraph_sound (f : FilePlans) (fuel : Nat) (compare : Bool) (deb
   | qualified name pos r q c a₀ after hp hq hd hf ho hfr he hr hc hm hb hrg hacc hs =>
     exact .qualified name pos r q c a₀ after hp hq hd hf ho hfr he hr hc hm hb hrg hacc hs
 
-/-- **A settled framed walk is an accepted run** (proved, by induction on
-the runs left): at the candidates `framedSettle` returns, the main graph's
-walk framing `fr`, with no fallback, at the request's graph plan with those
-candidates, is accepted. -/
-theorem framedSettle_ok (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span) (r : Req f)
-    (fr : List (Nat × List Footprints.Footprint)) :
-    ∀ (n : Nat) (cands cands' : List (Nat × List HeapKnowledge.IndexAtom)),
-      f.framedSettle fuel i name pos r fr n cands = .ok cands' →
-      ∃ m, (f.withPlan i (.graph name pos { r with candidates := cands' })).passMemberGraph fuel i
-        (framed := fr) (fallback := false) = .ok m ∧ m.accepted = true := by
-  intro n
-  induction n with
-  | zero => intro cands cands' h; simp [FilePlans.framedSettle] at h
-  | succ n ih =>
-    intro cands cands' h
-    unfold FilePlans.framedSettle at h
-    split at h
-    · cases h
-    · rename_i run hrun
-      split at h
-      · rename_i ho
-        cases h
-        exact ⟨run, hrun, by simp [MemberRun.accepted, ho]⟩
-      · dsimp only at h
-        split at h
-        · cases h
-        · exact ih _ _ h
-      · cases h
-
-/-- **An accepted framed run is a framed member accepted** (proved): where
-`framedRun` accepts, its component's checks refuse nothing, its request is
-unqualified, its walk settled at some candidates is an accepted run with no
-fallback (`framedSettle_ok`), hence direct (`passMemberGraph_accepted`), and
-the request's checks pass at those candidates: `FramedAccepted` at the
-request with them. -/
-theorem framedRun_sound (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span) (r : Req f)
-    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (hp : FramedPlanAt f i name pos r spec) (hacc : (f.framedRun fuel i name pos r spec).accepted = true) :
-    MemberAccepted f i := by
-  unfold FilePlans.framedRun at hacc
-  split at hacc
-  · simp [MemberRun.accepted, MemberRun.before] at hacc
-  rename_i hcomp
-  split at hacc
-  · simp [MemberRun.accepted, MemberRun.before] at hacc
-  rename_i hchk
-  split at hacc
-  · simp [MemberRun.accepted, MemberRun.before] at hacc
-  rename_i hq
-  split at hacc
-  · simp [MemberRun.accepted, MemberRun.before] at hacc
-  rename_i cands hset
-  dsimp only at hacc
-  split at hacc
-  rotate_left
-  · simp [MemberRun.accepted, MemberRun.before] at hacc
-  rename_i hreq
-  obtain ⟨m, hrun, hmacc⟩ := framedSettle_ok f fuel i name pos r spec.framed 12 r.candidates cands hset
-  have hi : i < f.plans.length := (List.getElem?_eq_some_iff.mp hp).1
-  have hplan : (f.withPlan i (.graph name pos { r with candidates := cands })).plans[i]? =
-      some (.ok (.graph name pos { r with candidates := cands })) := by
-    simp only [FilePlans.withPlan]
-    exact List.getElem?_set_self hi
-  have hq' : r.qualification = none := by simpa using hq
-  cases passMemberGraph_accepted _ fuel false 1000000000 1 none none false i spec.framed false m hrun hmacc with
-  | qualified name' pos' r'' q c a₀ after hp' hq'' =>
-    unfold PlanAt at hp'
-    rw [hplan] at hp'
-    simp only [Option.some.injEq, Except.ok.injEq, FunctionPlan.graph.injEq] at hp'
-    obtain ⟨-, -, rfl⟩ := hp'
-    rw [hq'] at hq''; cases hq''
-  | ordinary name' pos' r'' a₀ a₁ hp' _ _ hregs hcodes hmain =>
-    unfold PlanAt at hp'
-    rw [hplan] at hp'
-    simp only [Option.some.injEq, Except.ok.injEq, FunctionPlan.graph.injEq] at hp'
-    obtain ⟨-, -, rfl⟩ := hp'
-    cases hmain with
-    | fallback _ _ hfb => cases hfb
-    | direct c after hm hb hreg hw hs =>
-      refine .framed name pos r spec cands hp ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hw.1, hs, hw.2⟩,
-        fun Φ regions hr => (hregs Φ regions hr).2.2, ?_, FilePlans.framedChecks_none hchk, hreq⟩
-      rw [← spec.componentRefusal.property]; exact hcomp
-
-/-- **What an accepted member run establishes** (proved): a framed plan's
-run is `framedRun`'s (`framedRun_sound`); a graph plan's run is
-`passMemberGraph`'s. -/
+/-- **What an accepted member run establishes** (proved): a member's run
+is `passMemberGraph`'s. -/
 theorem passMember_sound : PassMemberSound := by
   intro f fuel compare debugNode repeats given observe counting j m h hacc
   unfold FilePlans.passMember at h
-  split at h
-  · rename_i name pos r spec hp
-    cases h
-    exact framedRun_sound f fuel j name pos r spec hp hacc
-  · exact passMemberGraph_sound f fuel compare debugNode repeats given observe counting j m h hacc
+  exact passMemberGraph_sound f fuel compare debugNode repeats given observe counting j m h hacc
 
 /-- **H3** (proved): `passGroup` accepting a group makes every member
 `MemberAccepted`, at every value of every argument. -/

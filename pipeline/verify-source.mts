@@ -101,7 +101,7 @@ export type UnitContracts = { unit: string; reads: ContractRead[] };
  * caller reads, by a member's function name (`initOmission` for the
  * initialization), or all: a selection lifts the check's overall time
  * limit, each stage keeping its own. */
-export type UnitSelection = { omitted: string[]; select: string[] | null; reportComponents?: boolean };
+export type UnitSelection = { omitted: string[]; select: string[] | null };
 /** A unit member's name as a selection names it. */
 export const memberName = (member: string): string => member === "init" ? initOmission : member.replace(/@\d+$/, "");
 /** A unit's own result in a check of each unit: its identity and members as
@@ -372,7 +372,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
-    }, hasModules, units.reportComponents);
+    }, hasModules);
   } catch (error) {
     const message = messageOf(error);
     return { status: "error", artifacts, phase: "check", units: null,
@@ -404,13 +404,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
   const lines: string[] = prepared.established.map((u) =>
     JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], elaboration: null, contracts: [] }));
-  // Each component's outcome of the read-only frame's checks, which no
-  // verdict reads.
-  const log: string[] = prepared.components.flatMap((c) => [`component ${c.component} (${c.kind} ${c.location}): ${
-    c.refusals.length === 0 ? "certificate held" : `refused: ${c.refusals.join("; ")}`}`,
-    ...c.protocol.map((e) => `component ${c.component} protocol: ${e}`),
-    ...c.guarantee.map((g) => `component ${c.component} guarantee: ${g}`),
-    ...c.frames.map((f) => `component ${c.component} frame ${f}`)]);
+  const log: string[] = [];
   for (const part of checked.run.parts) {
     const unit = prepared.selected.find((u) => u.unit === part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
@@ -458,51 +452,39 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     const unit = field(value, "unit"), reason = field(value, "refusal");
     if (typeof unit !== "string") throw Error("tool failure: the single pass printed a verdict without its unit");
     const accepted = field(value, "accepted") === true;
-    // A unit accepted under client trust is accepted for the executions in
-    // which outside code keeps the client obligation of each component
-    // listed: not verified.
-    const components: unknown = field(value, "acceptedUnderClientTrust");
-    const trusted = Array.isArray(components);
-    const listed = Array.isArray(components) ? components.map((c: unknown) => String(c)).join(", ") : "";
-    if (!accepted && !trusted && typeof reason !== "string")
+    if (!accepted && typeof reason !== "string")
       throw Error("tool failure: the single pass printed a verdict without its refusal");
-    return { unit, members: strings(field(value, "members")), accepted, trusted,
-      components: Array.isArray(components) ? components.map((c: unknown) => String(c)) : [],
-      depends: accepted || trusted ? strings(field(value, "depends")) : [],
-      refusal: trusted ? `accepted only under client trust Θ_C (component ${listed})`
-        : typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
+    return { unit, members: strings(field(value, "members")), accepted,
+      depends: accepted ? strings(field(value, "depends")) : [],
+      refusal: typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
         : "" };
   }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
   // A unit's dependencies are decided by what it reaches through them, so a
-  // cycle of units is decided together: a unit refused of its own (neither
-  // accepted nor accepted under client trust), or one with no verdict, the
-  // file's or a module's, refuses every unit reaching it, by the first
-  // dependency on a shortest path to it; otherwise a unit reaching one
-  // accepted under client trust is accepted under the client obligations of
-  // the components every such unit lists, and one reaching none is verified.
+  // cycle of units is decided together: a unit refused of its own, or one
+  // with no verdict, the file's or a module's, refuses every unit reaching
+  // it, by the first dependency on a shortest path to it; otherwise it is
+  // verified.
   const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
   const ownRefused = (u: string): boolean => {
     const w = byUnit.get(u);
-    return w === undefined || (!w.accepted && !w.trusted);
+    return w === undefined || !w.accepted;
   };
-  type Reach = { root: string; via: string } | { components: string[] };
+  type Reach = { root: string; via: string } | { verified: true };
   const reach = (unit: string): Reach => {
     const via = new Map<string, string>([[unit, unit]]);
     const queue = [unit];
-    const components = new Set<string>();
     for (let k = 0; k < queue.length; k++) {
       const u = queue[k] ?? "";
       const w = byUnit.get(u);
       if (u !== unit && ownRefused(u)) return { root: u, via: via.get(u) ?? u };
       if (w === undefined) continue;
-      for (const c of w.components) components.add(c);
       for (const d of w.depends) {
         if (via.has(d)) continue;
         via.set(d, u === unit ? d : (via.get(u) ?? d));
         queue.push(d);
       }
     }
-    return { components: [...components] };
+    return { verified: true };
   };
   // A refusal whose record has a source-named summary (`presentObligation`):
   // that summary as an `obligation:` line, after the refusal's first line
@@ -525,13 +507,13 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
         return { unit: v.unit, members: v.members, status: refusalStatus(`reject: ${described(v.refusal)}`),
           phase: "search", detail: `reject: ${described(v.refusal)}`, depends: [] };
       const r = reach(v.unit);
-      if ("components" in r && r.components.length === 0)
-        return { unit: v.unit, members: v.members, status: "verified", phase: "check", detail: "", depends: v.depends };
+      if ("verified" in r)
+        return { unit: v.unit, members: v.members, status: "verified", phase: "check",
+          detail: "",
+          depends: v.depends };
       // A unit open by a dependency: the dependency on its path, then the
       // refusal of the unit refused of its own that the path reaches.
-      const detail = "root" in r
-        ? `reject: a unit it depends on is refused: ${r.via}\n${byUnit.has(r.root) ? described(byUnit.get(r.root)?.refusal ?? "") : `${r.root}: no verdict`}`
-        : `reject: accepted only under client trust Θ_C (component ${r.components.join(", ")})`;
+      const detail = `reject: a unit it depends on is refused: ${r.via}\n${byUnit.has(r.root) ? described(byUnit.get(r.root)?.refusal ?? "") : `${r.root}: no verdict`}`;
       return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });
   const first = results.find((u) => u.status !== "verified");
@@ -608,10 +590,8 @@ function readRequest(value: unknown): Request {
   const strings = (x: unknown): string[] | null =>
     Array.isArray(x) && x.every((u): u is string => typeof u === "string") ? x : null;
   const omitted = strings(field(given, "omitted")), select = field(given, "select");
-  const reportComponents = field(given, "reportComponents");
-  if (!omitted || !(select === null || strings(select)) ||
-      (reportComponents !== undefined && typeof reportComponents !== "boolean")) throw Error("not a request");
-  const units: UnitSelection = { omitted, select: select === null ? null : strings(select), reportComponents };
+  if (!omitted || !(select === null || strings(select))) throw Error("not a request");
+  const units: UnitSelection = { omitted, select: select === null ? null : strings(select) };
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
     retainArtifacts: value.retainArtifacts, units, progress: field(value, "progress") === true };
 }

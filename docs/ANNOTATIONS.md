@@ -66,10 +66,7 @@ function pair(a: number, b: number): number[] {
 
 On a type alias or an interface. A type invariant over `this`: it holds of
 the parameters and results of module functions whose types name the type.
-[Type invariants](ARITHMETIC.md#type-invariants). Each such invariant of a
-type the checked file's declarations reach is also a candidate of its
-component's guarantee, an invariant every member of the component keeps
-([read-only handles](drafts/readonly-handles.md#what-must-be-proved), (L4)).
+[Type invariants](ARITHMETIC.md#type-invariants).
 
 ```ts
 /** @invariant this.starts.length === this.flags.length */
@@ -100,24 +97,6 @@ establishes it, and the body assumes it.
 let j = 0;
 /** @invariant safeInteger(i) && safeInteger(j) && 0 <= j && j <= 2 * i */
 for (let i = 0; i < xs.length; i++) { s += xs[i]! * ys[j]!; j += 2; }
-```
-
-### `@clients P`
-
-On a type alias or an interface a component exports. The client
-obligation: code outside the component that TScert does not analyze changes
-storage reached read-only from a value crossing at this type at most as `P`
-says. `P` is a protocol of [`Modifies`](#types-the-verifier-declares), a type literal of
-`values` and `spines` at a change and quoted path keys from `this`, the
-value at the type (`"this.f"`, `"this.f.*"`, `"this.f[*]"`), an omitted
-class key `keep`; without the tag, the obligation is read-only, `{}`.
-Refused: any other key, and the tag on a type of a package whose interface
-is not known.
-[Other encapsulations](drafts/readonly-handles.md#other-encapsulations).
-
-```ts
-/** @clients { "this.items[*]": "extend" } */
-export type Log = { readonly items: number[] };
 ```
 
 ## Facts about fields

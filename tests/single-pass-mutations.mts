@@ -1,5 +1,4 @@
-// A verifier whose single pass (`Programs/SinglePass.lean`) and framed
-// plans' checks have opt-in mutations, for the controls showing each check is what
+// A verifier whose single pass (`Programs/SinglePass.lean`) has opt-in mutations, for the controls showing each check is what
 // refuses some unit (tests/single-pass-controls.mts). Built from the current
 // build's generated C of the pass's module and of the module its generic
 // code is specialized into (`Source/Claims/Json`, the file plans), a
@@ -12,8 +11,6 @@
 //   sp-entry       `SinglePass.entryRefusal`: the start's entry refuses nothing
 //   sp-footprint   `SinglePass.footprintCheck`: every unit's footprint holds
 //   sp-edge-evidence  `SinglePass.edgeEvidenceChecked`: every edge's slot evidence is accepted
-//   fr-protected   `SourceClaimJson.protRegionB`: every region of a framed node is read as protected
-//   fr-ro-sharing  `SourceClaimJson.sharingReadOnlyB`: a position is read-only where the member declares it
 import assert from "node:assert/strict";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -63,15 +60,11 @@ export const passMutations: readonly { name: string; check: string; returns: str
   { name: "sp-entry", check: "SinglePass_entryRefusal", returns: "lean_box(0)" },
   { name: "sp-footprint", check: "SinglePass_footprintCheck", returns: "1" },
   { name: "sp-edge-evidence", check: "SinglePass_edgeEvidenceChecked", returns: "1" },
-  { name: "fr-protected", check: "SourceClaimJson_protRegionB", returns: "1" },
-  { name: "fr-ro-sharing", check: "SourceClaimJson_sharingReadOnlyB", returns: "1" },
 ];
 
 /** The modules whose generated C holds the mutated checks' definitions:
- * the pass's, the file plans' its generic code is specialized into, and
- * the framed plans' checks. */
-const mutatedModules = ["Programs/SinglePass", "Source/Claims/Json", "Source/Claims/FramedNodeChecks",
-  "Source/Claims/FramedPassChecks"];
+ * the pass's, and the file plans' its generic code is specialized into. */
+const mutatedModules = ["Programs/SinglePass", "Source/Claims/Json"];
 
 /** Build the mutation verifier of the pass in `dir` (a run directory of
  * this process's by default); its path. */
