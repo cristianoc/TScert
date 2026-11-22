@@ -5179,4 +5179,7 @@ export const cases: Case[] = [
   negative("invalid-callback-demand-adapter", "Caller pushing to `prepared.widths` through the adapting wrapper `walkLines` violates the forwarded nested-path demand (NaN under Node).",
     /callback demand check of appendAdapted at \[\d+,\d+\): callback call modifies param 0\.widths\.\[\] \(extend\), violating demanded param 0\.widths\.\[\] \(keep\)/),
   negative("invalid-callback-demand-exported", "An exported walker with an unannotated callback parameter cannot silently impose an unstated demand on external callers (NaN under Node)."),
+  positive("callback-demand-fresh-captured", "A caller allocation captured by the visitor and by a second closure stored into a parameter stays confined (each closure only pushes to it), so the visitor's push respects the walker's spine demand: verified with zero client trust."),
+  negative("invalid-callback-demand-fresh-escaped", "A caller allocation passed to `store(h, v)` before the walker call is the walked array `h.xs`, so the closure popping it violates the walker's spine demand (NaN under Node).",
+    /callback demand check of bad at \[\d+,\d+\): callback call modifies callerFresh@\d+\.\[\] \(any\), violating demanded param 0\.xs\.\[\] \(keep\)/),
 ];

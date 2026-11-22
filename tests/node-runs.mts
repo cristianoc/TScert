@@ -3455,4 +3455,9 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-callback-demand-exported"),
     "(() => { const xs = [1]; return Number.isNaN(walk(xs, () => { xs.pop(); })); })()"), true,
     "invalid-callback-demand-exported: an external caller popping xs makes xs[c.i] undefined (NaN)");
+  assert.equal(runExample(ofKind("callback-demand-fresh-captured", ["positive"]),
+    "sumAndKeep([10, 20, 30], { onVisit: () => {} })"), 60,
+    "callback-demand-fresh-captured: sumAndKeep sums the array while tracing indices into a confined fresh array");
+  assert.equal(runExample(negative("invalid-callback-demand-fresh-escaped"), "Number.isNaN(bad({ xs: [] }))"), true,
+    "invalid-callback-demand-fresh-escaped: store(h, v) makes h.xs === v, so popping v makes xs[c.i] undefined (NaN)");
 }
