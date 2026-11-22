@@ -172,6 +172,37 @@ def applyTargetMap (env : List SlotOrigin) (pushed : Option SlotOrigin) (tgt : T
   | none => src
   | some m => m.map fun i => originAt src i
 
+mutual
+/-- An origin as it stands after a step that may change existing storage:
+an origin read from the heap (`.path`) is `.unknown`, and a closure keeps
+its code with each capture's origin degraded the same way. Every other
+origin names a value independently of the heap. -/
+def SlotOrigin.dropHeap : SlotOrigin → SlotOrigin
+  | .path _ _ => .unknown
+  | .closure ci caps => .closure ci (SlotOrigin.dropHeapList caps)
+  | .param p => .param p
+  | .fresh a => .fresh a
+  | .callerFresh a => .callerFresh a
+  | .sibling nm => .sibling nm
+  | .prim => .prim
+  | .unknown => .unknown
+/-- `SlotOrigin.dropHeap` on each origin of a list. -/
+def SlotOrigin.dropHeapList : List SlotOrigin → List SlotOrigin
+  | [] => []
+  | o :: os => SlotOrigin.dropHeap o :: SlotOrigin.dropHeapList os
+end
+
+/-- The origins a node's step leaves: the result's origin and the slots'.
+A node whose expression changes no existing storage (`isReadOnlyOrAlloc`,
+whose steps extend the heap as a prefix by
+`CallbackDemands.isReadOnlyOrAlloc_steps`) keeps every origin; any other
+expression, a call or a write among them, degrades every origin read from
+the heap (`SlotOrigin.dropHeap`), in the slots and in its result. -/
+@[nospecialize] def nodeOrigins {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (l : Nat)
+    (env : List SlotOrigin) (e : Tm) : SlotOrigin × List SlotOrigin :=
+  if CallbackDemands.isReadOnlyOrAlloc e then (exprOrigin codes l env e, env)
+  else ((exprOrigin codes l env e).dropHeap, env.map SlotOrigin.dropHeap)
+
 /-- Successor transitions `(targetLabel, targetEnv)` of node `l`. -/
 def nodeSuccessors (n : Node) (env : List SlotOrigin) (res : SlotOrigin) : List (Nat × List SlotOrigin) :=
   let main := match n.continuation with
@@ -185,6 +216,13 @@ def nodeSuccessors (n : Node) (env : List SlotOrigin) (res : SlotOrigin) : List 
     | none => []
     | some ht => [(ht.label, applyTargetMap env (some .unknown) ht)]
   main ++ h
+
+/-- The successor transitions of node `l` at slot origins `env`: those of
+`nodeSuccessors` at the origins its step leaves (`nodeOrigins`). -/
+@[nospecialize] def nodeEdges {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (l : Nat) (n : Node)
+    (env : List SlotOrigin) : List (Nat × List SlotOrigin) :=
+  let r := nodeOrigins codes l env n.expression
+  nodeSuccessors n r.2 r.1
 
 /-- Forward fixpoint origin analysis over a program graph `P` starting from
 `start` with initial slot origins `initEnv`. -/
@@ -200,8 +238,7 @@ def computeOrigins {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : 
     for l in List.range n do
       let some env := table[l]! | continue
       let some node := P[l]? | continue
-      let res := exprOrigin codes l env node.expression
-      for (tgt, nextEnv) in nodeSuccessors node env res do
+      for (tgt, nextEnv) in nodeEdges codes l node env do
         if tgt < n then
           match table[tgt]! with
           | none =>
@@ -228,7 +265,7 @@ def originsLe (stored next : List SlotOrigin) : Bool :=
 /-- Pure decidable witness check that `table` is a valid forward origin
 assignment for `P` from `(start, initEnv)`:
 1. `table[start]` refines `initEnv`;
-2. Every reachable node `l` in `table` has all of its `nodeSuccessors` in
+2. Every reachable node `l` in `table` has all of its `nodeEdges` in
    `table` refined by `originsLe`. -/
 def originsValid {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : Program)
     (start : Nat) (initEnv : List SlotOrigin) (table : Array (Option (List SlotOrigin))) : Bool :=
@@ -238,8 +275,7 @@ def originsValid {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : Pr
   let edgesOk := (List.range P.length).all fun l =>
     match P[l]?, table[l]?.join with
     | some node, some env =>
-      let res := exprOrigin codes l env node.expression
-      (nodeSuccessors node env res).all fun (tgt, nextEnv) =>
+      (nodeEdges codes l node env).all fun (tgt, nextEnv) =>
         match table[tgt]?.join with
         | some tgtEnv => originsLe tgtEnv nextEnv
         | none => false
@@ -365,7 +401,7 @@ def originsKeep {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : Pro
   (List.range P.length).all fun l =>
     match P[l]?, origins[l]?.join with
     | some node, some env =>
-      (nodeSuccessors node env (exprOrigin codes l env node.expression)).all fun (tgt, next) =>
+      (nodeEdges codes l node env).all fun (tgt, next) =>
         match origins[tgt]?.join with
         | some tgtEnv => (List.range next.length).all fun i => next[i]? != some o || tgtEnv[i]? == some o
         | none => false

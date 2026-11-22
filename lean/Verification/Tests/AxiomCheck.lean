@@ -240,6 +240,7 @@ import Verification.Semantics.ViewFormats
 import Verification.Semantics.ViewSpines
 import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
+import Verification.Source.Claims.CallbackDemandOriginRun
 import Verification.Source.Claims.CallbackDemandOriginSound
 import Verification.Source.Claims.CallbackDemandSpec
 import Verification.Source.Claims.Diagnostics

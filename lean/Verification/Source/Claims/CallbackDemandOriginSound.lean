@@ -185,17 +185,32 @@ termination_by t => sizeOf t
 
 /-! ## Forward slot-origin soundness -/
 
+/-- **A path of named data fields misses in `h` from `v`**: following its
+fields, an object owns no field of the next name, so a read of it goes to the
+object's prototype or gives `undefined` (`Step.readProto`, `Step.readMissing`)
+and `readPath` gives none. -/
+def PathMiss (h : Heap) : Val → List String → Prop
+  | _, [] => False
+  | .objAt fs _ _, f :: p => match fs.lookup (.str f) with
+    | none => True
+    | some l => match h[l]? with
+      | some v => PathMiss h v p
+      | none => False
+  | _, _ :: _ => False
+
 /-- Semantic meaning of a `SlotOrigin` for a runtime value `v` in heap `h`,
 relative to outer `callEnv` `ρ₀` (so parameter `p` is `ρ₀ (p + 1)`), sibling
 map `sibVal`, own-entry allocation floor `bOwn`, and caller allocation floor
-`bCaller`. -/
+`bCaller`. A path holds the value its own data fields lead to in `h`, or
+misses there (`PathMiss`): a field read past a missing own field reads the
+prototype's, which no own path names. -/
 def OriginValueHolds {ι : Type} (codes : List (RequestJson.CodeRequest ι))
     (ρ₀ : Env) (sibVal : String → Tm) (bOwn bCaller : Nat) (h : Heap) : SlotOrigin → Tm → Prop
   | .param p, v => v = ρ₀ (p + 1)
   | .fresh _, v => FreshValueAt bOwn v
   | .callerFresh _, v => FreshValueAt bCaller v
   | .sibling nm, v => v = sibVal nm
-  | .path p fs, v => HeapKnowledge.readPath h (ρ₀ (p + 1)) fs = some v
+  | .path p fs, v => HeapKnowledge.readPath h (ρ₀ (p + 1)) fs = some v ∨ PathMiss h (ρ₀ (p + 1)) fs
   | .closure ci caps, v =>
       ∃ q fs ar E K s capVals kind rest comp oid,
         codes[ci]? = some q ∧ q.entry.arity = ar ∧ q.entry.exprs = E ∧ q.entry.conts = K ∧
@@ -225,7 +240,7 @@ private theorem originValueHolds_fresh {ι : Type} {codes : List (RequestJson.Co
 private theorem originValueHolds_path {ι : Type} {codes : List (RequestJson.CodeRequest ι)}
     {ρ₀ : Env} {sibVal : String → Tm} {bOwn bCaller : Nat} {h : Heap} {p : Nat} {fs : List String} {v : Tm} :
     OriginValueHolds codes ρ₀ sibVal bOwn bCaller h (.path p fs) v ↔
-      HeapKnowledge.readPath h (ρ₀ (p + 1)) fs = some v := by
+      HeapKnowledge.readPath h (ρ₀ (p + 1)) fs = some v ∨ PathMiss h (ρ₀ (p + 1)) fs := by
   rw [OriginValueHolds]
 
 private theorem originValueHolds_unknown {ι : Type} {codes : List (RequestJson.CodeRequest ι)}
@@ -321,13 +336,16 @@ private theorem readPath_append (h : Heap) :
     | _ => rfl
 
 /-- **Demand projection soundness** (proved): if `projectEntry env confined (r, δ) = .demand (r', δ')`,
-`EnvOriginHolds` holds at `(ρ, h₁)`, and every path read from outer `ρ₀` in `h₁`
-agrees with `h₀`, then `δ' = δ` and every location selected by `r` at `(ρ, h₁)`
-is selected by `r'` at `(ρ₀, h₀)`. -/
+`EnvOriginHolds` holds at `(ρ, h₁)`, every slot of a path origin holds the
+value its own data fields lead to in `h₁` (`hown`: no read of it went to a
+prototype or missed, which `EnvOriginHolds` admits), and every path read from
+outer `ρ₀` in `h₁` agrees with `h₀`, then `δ' = δ` and every location selected
+by `r` at `(ρ, h₁)` is selected by `r'` at `(ρ₀, h₀)`. -/
 theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeRequest ι)}
     {ρ₀ ρ : Env} {sibVal : String → Tm} {bOwn bCaller : Nat} {h₀ h₁ : Heap}
     {env : List SlotOrigin} {confined : List Nat}
     (henv : EnvOriginHolds codes ρ₀ sibVal bOwn bCaller h₁ env ρ)
+    (hown : ∀ x p fs, originAt env x = .path p fs → HeapKnowledge.readPath h₁ (ρ₀ (p + 1)) fs = some (ρ x))
     (hagree : ∀ p fs, HeapKnowledge.readPath h₁ (ρ₀ (p + 1)) fs = HeapKnowledge.readPath h₀ (ρ₀ (p + 1)) fs)
     (hcells_agree : ∀ p fs l,
       (((HeapKnowledge.readPath h₁ (ρ₀ (p + 1)) fs).map (Footprints.spineCells h₁)).getD []).contains (some l) = true →
@@ -337,7 +355,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
       δ' = δ ∧ ∀ l, r.mem ρ h₁ l = true → r'.mem ρ₀ h₀ l = true
   | .inCls r _, r', δ, δ', hp => by
     simp only [projectEntry] at hp
-    obtain ⟨rfl, hmem⟩ := projectEntry_demand_mem henv hagree hcells_agree hp
+    obtain ⟨rfl, hmem⟩ := projectEntry_demand_mem henv hown hagree hcells_agree hp
     exact ⟨rfl, fun l hl => by
       simp only [Footprints.Region.mem, Bool.and_eq_true] at hl
       exact hmem l hl.1⟩
@@ -353,7 +371,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path p fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path, hagree p fs] at hx
+      replace hx := hown x _ _ ho; rw [hagree p fs] at hx
       simpa [Footprints.Region.mem, hx] using hl
     | fresh a => simp only [ho] at hp; split at hp <;> simp at hp
     | _ => rw [ho] at hp; cases hp
@@ -369,7 +387,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path p fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path, hagree p fs] at hx
+      replace hx := hown x _ _ ho; rw [hagree p fs] at hx
       simpa [Footprints.Region.mem, hx] using hl
     | fresh a => simp only [ho] at hp; split at hp <;> simp at hp
     | _ => rw [ho] at hp; cases hp
@@ -387,7 +405,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path p fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path] at hx
+      replace hx := hown x _ _ ho
       have h0 : (((HeapKnowledge.readPath h₁ (ρ₀ (p + 1)) fs).map (Footprints.spineCells h₁)).getD []).contains (some l) = true := by
         simpa [hx, Footprints.Region.mem] using hl
       have h1 := hcells_agree p fs l h0
@@ -414,7 +432,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path q fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path] at hx
+      replace hx := hown x _ _ ho
       simp only [Footprints.Region.mem] at hl ⊢
       rw [← hagree q (fs ++ p), readPath_append h₁ fs p (ρ₀ (q + 1)), hx]
       exact hl
@@ -438,7 +456,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path q fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path] at hx
+      replace hx := hown x _ _ ho
       simp only [Footprints.Region.mem] at hl ⊢
       rw [← hagree q (fs ++ p), readPath_append h₁ fs p (ρ₀ (q + 1)), hx]
       exact hl
@@ -469,7 +487,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path q fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path] at hx
+      replace hx := hown x _ _ ho
       have h0 : (((HeapKnowledge.readPath h₁ (ρ₀ (q + 1)) (fs ++ p)).map (Footprints.spineCells h₁)).getD []).contains (some l) = true := by
         rw [readPath_append h₁ fs p (ρ₀ (q + 1)), hx, Option.bind_some]
         cases hrp : HeapKnowledge.readPath h₁ (ρ x) p with
@@ -493,7 +511,7 @@ theorem projectEntry_demand_mem {ι : Type} {codes : List (RequestJson.CodeReque
     | path q fs =>
       rw [ho] at hp hx; cases hp
       refine ⟨rfl, fun l hl => ?_⟩
-      rw [originValueHolds_path] at hx
+      replace hx := hown x _ _ ho
       simp only [Footprints.Region.mem] at hl ⊢
       rw [← hagree q (fs ++ p), readPath_append h₁ fs p (ρ₀ (q + 1)), hx]
       exact hl
