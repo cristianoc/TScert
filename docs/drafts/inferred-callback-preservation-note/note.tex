@@ -721,11 +721,17 @@ producer's ordinary allocation and escape checks.
 fragment. It supplies each demand by the literal's checked code rows,
 capture origins, types and separation evidence. Its statement concerns
 the application and does not require a direct return. The whole-caller
-verdict uses \lean{PublicTail.safe} for a checked prefix and a direct
+verdict uses \lean{PublicApplication.safe} to check the prefix, resume
+the graph with the call result, and check its straight-line path to a
 return. \lean{certifyOpaqueAssertions} separately checks every source
 assertion in the caller. Its ordinary auxiliary run types the producer
 binding as \code{unknown} and verifies a backwards projection of the
-caller graph that preserves every path to an asserted label.
+caller graph that preserves every path to an asserted label used by the
+ordinary replay. A separation-only assertion may instead follow from an
+earlier checked assertion. Along each checked edge with a unique
+predecessor, the slot mapping must carry the separation facts without
+using the newly bound result. Separation describes distinct field
+locations and survives changes to the heap.
 
 \paragraph{Executable verdicts.}
 The source worker freezes the type labels for the selected declarations
@@ -807,8 +813,9 @@ third source declaration or an unresolved binding.
 
 \item[Fixed literal application.] \scopecheck{fixedDirectApplication}
 requires a receiverless invocation that resolves to the selected
-declaration. \scopecheck{directCallbackReturn} requires the caller to
-return the result directly, with no call handler. \scopecheck{readFixedArguments}
+declaration. \scopecheck{callerContinuation} requires a bind or effect
+continuation with a checked straight-line path to a return. The call and
+this path have no handlers. \scopecheck{readFixedArguments}
 requires the fixed number of actuals in saved slots, including positions
 whose type permits an omitted argument. The verifier checks each actual
 against its declared type. Spreads at the application are outside this
@@ -823,11 +830,12 @@ preconditions occur in the declared row. Each capture must have a
 matching origin and type visible in the caller frame at the application
 (\lean{checkCaptureSlots}).
 \scopecheck{plainCallerResult} requires an ordinary caller result
-type. The verifier must prove that the producer's result type is a
-subtype of it.
+type. The verifier must prove that the type of the caller's return
+expression is a subtype of it.
 \scopecheck{readPrefixPlan} requires a checked straight-line prefix. Its
 \lean{prefixReads} check covers variables, literals, let-expressions,
-and array and object allocations. It refuses reads of the opaque
+arithmetic, and array and object allocations. The same expression
+checker is used after the call. It refuses reads of the opaque
 producer slot. The expression certificates use no read summaries and
 require a type admitting undefined as the masked-slot filler.
 
