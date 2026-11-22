@@ -71,7 +71,6 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$CENSUS_CORPUS"
           git worktree add --detach "$RUNNER_TEMP/census-corpus" "$CENSUS_CORPUS"
-          npm ci --prefix "$RUNNER_TEMP/census-corpus/tools"
 
       - name: Census
         run: |
