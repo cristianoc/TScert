@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-341"><code>dae894796cba3c94ea329ed8b81f37c2ab29676a..pr-341</code></a><ul><li>4 commits</li><li>changes: 4 Tooling</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-341"><code>dae894796cba3c94ea329ed8b81f37c2ab29676a..pr-341</code></a><ul><li>5 commits</li><li>changes: 5 Tooling</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span></li></ul></li></ul></section>
 <h2 id="g-pr-341"><code>dae894796cba3c94ea329ed8b81f37c2ab29676a..pr-341</code></h2><article class="card" id="c-c0001d530"><header><div><div class="sha">c0001d530 · Cristiano Calcagno · Nov 22, 16:28</div><h3>Pin the CI census to the v0.94 release corpus</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>A census of each revision's tools directory changes the input along with the verifier. Runs with different stage limits also do not give a like-for-like measurement.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">CI census input and comparison</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Run the census on the verifier checkout's tools directory with 900</span><span class="ln">seconds and 6 GiB per stage. Compare with the previous branch record.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Run the current verifier on the v0.94 tools directory and its project</span><span class="ln">dependencies with 1800 seconds and 4 GiB per stage. Record both</span><span class="ln">commits and compare only on the same corpus and limits.</span></pre></figure></div>
@@ -123,5 +123,11 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <details><summary>3 files changed, 90 insertions(+), 3 deletions(-)</summary><pre class="code"> .github/workflows/census.yml |  5 +--
  dev/prepare-v094-census.mts  | 83 ++++++++++++++++++++++++++++++++++++++++++++
  docs/DESIGN.md               |  5 ++-</pre></details>
+</article>
+<article class="card" id="c-f5cc4b41e"><header><div><div class="sha">f5cc4b41e · Cristiano Calcagno · Nov 22, 17:02</div><h3>Type the census migration counter</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The declaration boundary check requires a type on the mutable counter for translated annotations.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">annotation translation count</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Infer the type of the count from its initial value.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Declare the count as a number.</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span></dd></dl>
+<details><summary>1 file changed, 1 insertion(+), 1 deletion(-)</summary><pre class="code"> dev/prepare-v094-census.mts | 2 +-</pre></details>
 </article>
 </main></body></html>
