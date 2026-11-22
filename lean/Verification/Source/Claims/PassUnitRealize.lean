@@ -787,6 +787,15 @@ private theorem safePostExc_prefix {Ξ T : Fam} {Q : HeapObservations.Post} {R :
       exact .inr ⟨U, h', t₁', hx, hu, st', hh,
         ih hp' (fun e he => RefsOk_mono hx (RefsOk_trunc _ (hE₂ e he))) hs₁⟩
 
+/-- Appending an unreachable prologue to a graph keeps the graph safe
+when entry is at an original label. -/
+theorem safePostExc_goto_append {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop}
+    {E E₂ : List Tm} {K K₂ : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {n W h label L d comp} (added : ∀ e ∈ E₂, RefsOk W e)
+    (safe : HeapObservations.SafePostExc Ξ T Q R n W h (.goto E K label L d comp)) :
+    HeapObservations.SafePostExc Ξ T Q R n W h (.goto (E ++ E₂) (K ++ K₂) label L d comp) :=
+  safePostExc_prefix .goto added safe
+
 /-- The prologue's mapped frame agrees with `recv :: tail` shifted by one on
 every slot below `arity + captures.length + 1`. -/
 private theorem dropReceiver_envOf_lt (k : Nat) (recv : Tm) (tail : List Tm) {i : Nat} (hi : i < k) :

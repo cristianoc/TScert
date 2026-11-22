@@ -1,3 +1,5 @@
+import Verification.Source.Claims.CallbackNameHistory
+import Verification.Source.Claims.CallbackCodeRowsSound
 import Verification.Source.Claims.CallbackInferencePlan
 
 /-! Consumers of the experimental callback interface. The interface here
@@ -265,5 +267,539 @@ def writeInterface (f : FilePlans) (i fuel : Nat) (dependencies : List Published
   Published.validate ⟨fn.name, some fn.namePos, fn.params.head?.any (·.name == "this"),
     (fn.params.takeWhile (!·.rest)).length,
     ⟨(own.demands ++ forwarded).eraseDups⟩⟩
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck
+open CallbackPreservation CallbackOrigins Footprints CallEffects
+
+/-- Interpret synthetic operand names by the values bound at producer entry.
+Those values remain available even if the caller's heap paths have changed. -/
+def operandEnv (cutoff : Nat) (named actual : Env) : Env := fun i =>
+  if i < cutoff then named i else actual (i - cutoff)
+
+theorem operandEnv_rootsOk {n} {W : WorldT n} {named actual : Env} (cutoff : Nat)
+    (hn : RootsOk W named) (ha : RootsOk W actual) :
+    RootsOk W (operandEnv cutoff named actual) := by
+  intro i
+  unfold operandEnv
+  split
+  · exact hn _
+  · exact ha _
+
+/-- The existing input and allocation names are below the synthetic range
+and denote the evaluated operands to which the origin analysis assigns them.
+Field reads require no hypothesis about the value now stored in the heap. -/
+def NamedOperands (inputs nodes : Nat) (slots : Slots) (frame : List Tm) (named actual : Env) : Prop :=
+  ∀ i t o j, frame[i]? = some t → originOf slots t = some o → identity inputs o = some j →
+    j < inputs + nodes ∧ named j = actual i
+
+theorem argumentRoots_realizes {inputs nodes slots frame named actual}
+    (origins : NamedOperands inputs nodes slots frame named actual) (h : Heap) :
+    RealizesRoots (argumentRoots inputs nodes slots frame) actual
+      (operandEnv (inputs + nodes) named actual) h := by
+  intro i j p binding
+  obtain ⟨t,ht,operand⟩ := Option.bind_eq_some_iff.mp binding
+  unfold operandRoot at operand
+  cases ho : originOf slots t with
+  | none => simp [ho] at operand
+  | some o =>
+    cases o with
+    | read l =>
+      simp [ho] at operand
+      obtain ⟨rfl,rfl⟩ := operand
+      simp [HeapKnowledge.readPath, operandEnv, show ¬ inputs + nodes + i < inputs + nodes by omega]
+    | input l | allocated l =>
+      all_goals
+        simp [ho, identity] at operand
+        obtain ⟨rfl,rfl⟩ := operand
+        obtain ⟨below, eqv⟩ := origins i t _ _ ht ho rfl
+        simp [HeapKnowledge.readPath, operandEnv, below, eqv]
+    | other => simp [ho, identity] at operand
+
+/-- Apply the executable demand check at callback entry even if heap fields
+used to obtain producer arguments have since been reassigned. -/
+theorem check_arguments_supported {inputs nodes slots frame named actual}
+    {d : Demand} {callbacks : Nat → Option Callback} {cb : Callback} {ev : SepEvidence}
+    {closure : Env} {before after : Heap} {n : Nat} {W : WorldT n} {μ} (exit : Completion)
+    (accepted : d.check (argumentRoots inputs nodes slots frame) callbacks ev = true)
+    (lookup : callbacks d.parameter = some cb)
+    (origins : NamedOperands inputs nodes slots frame named actual)
+    (actualsOK : ∀ i j, cb.actuals i = some j → operandEnv (inputs + nodes) named actual j = closure i)
+    (evidenceOK : ev.Holds μ (operandEnv (inputs + nodes) named actual) before)
+    (heapOK : HeapOk n W before) (namedOK : RootsOk W named) (argsOK : RootsOk W actual)
+    (effect : Post (cb.effects.get exit) closure before after) :
+    Supported (d.support.get exit) actual before after :=
+  d.check_supported exit accepted lookup (argumentRoots_realizes origins before) actualsOK
+    evidenceOK heapOK (operandEnv_rootsOk _ namedOK argsOK) effect
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck
+open CallbackPreservation CallbackOrigins CallbackEffectInference Footprints CallEffects ControlFlow ProgramTyping
+
+private theorem rowFold_mem {ι : Type} (rows : List (CheckedCode ι)) (acc : Exits Footprint)
+    (exit : Completion) (e : Region × Change)
+    (h : e ∈ acc.get exit ∨ ∃ row ∈ rows, e ∈ (row.summary.get exit).getD []) :
+    e ∈ (rows.foldl (fun (a : Exits Footprint) code =>
+      ⟨(a.normal ++ code.summary.normal.getD []).eraseDups,
+       (a.exceptional ++ code.summary.exceptional.getD []).eraseDups⟩) acc).get exit := by
+  induction rows generalizing acc with
+  | nil => simpa using h
+  | cons head tail ih =>
+    apply ih
+    rcases h with prev | ⟨row, member, included⟩
+    · left
+      cases exit <;> simpa [Exits.get] using Or.inl (b := e ∈ _) prev
+    · rcases List.mem_cons.mp member with rfl | rest
+      · left
+        cases exit <;> simpa [Exits.get] using Or.inr (a := e ∈ _) included
+      · exact .inr ⟨row, rest, included⟩
+
+private def literalActuals (inputs arity : Nat) (rest : Bool) (caps : List Tm) (slots : Slots)
+    (roots : List (Option (Nat × List String))) (slot : Nat) : Option Nat := do
+  let restSlots := if rest then 1 else 0
+  if slot < restSlots then none
+  else if slot < arity + (if rest then 2 else 1) then
+    let some (root, []) := roots[slot - restSlots]?.join | none
+    some root
+  else
+    let cap ← caps[slot - (arity + (if rest then 2 else 1))]?
+    originOf slots cap >>= identity inputs
+
+/-- The effect of every checked row matching this literal is included in
+the exact callback returned by the source checker, independently on each exit. -/
+private theorem closure_row_spec {ι : Type} [DecidableEq ι] {codes : Array (CheckedCode ι)}
+    {nodes : Array Node} {origins inputs slots callRoots argument label}
+    {node : Node} {row : CheckedCode ι} {captures kind component fields values}
+    {cb : Callback} (picked : closure codes nodes origins inputs slots callRoots argument = some cb)
+    (site : originOf slots argument = some (.allocated label)) (atSite : nodes[label]? = some node)
+    (literal : node.expression = .makeAt (.graph row.entry.arity row.entry.exprs row.entry.conts
+      row.entry.start captures kind row.entry.spine.isSome component) fields values)
+    (width : captures.length = row.entry.captures.length) (checked : row ∈ codes)
+    (exit : Completion) :
+    (∀ e ∈ (row.summary.get exit).getD [], e ∈ cb.effects.get exit) ∧
+    cb.actuals = literalActuals inputs row.entry.arity row.entry.spine.isSome captures (origins.at label) callRoots := by
+  unfold closure at picked
+  simp only [site, atSite, literal, bind, Option.bind] at picked
+  generalize hr : Array.filter _ codes = rows at picked
+  have inRows : row ∈ rows := by
+    subst rows
+    exact Array.mem_filter.mpr ⟨checked, by simp [width]⟩
+  cases head : rows[0]? with
+  | none => simp [head] at picked
+  | some first =>
+    simp only [head, pure, Option.some.injEq] at picked
+    subst cb
+    constructor
+    · intro e he
+      rw [← Array.foldl_toList]
+      exact rowFold_mem _ _ exit e (.inr ⟨row,by simpa using inRows,he⟩)
+    · have hm : first ∈ rows := Array.mem_of_getElem? head
+      rw [← hr] at hm
+      have rest := (Bool.and_eq_true_iff.mp (Array.mem_filter.mp hm).2).2
+      have same : first.entry.spine.isSome = row.entry.spine.isSome := by simpa using rest
+      funext i
+      cases hf : first.entry.spine <;> simp [literalActuals, ← same, hf, frameOffset, Option.bind]
+
+private theorem envOf_tail {pre tail : List Tm} {i} (h : pre.length ≤ i) :
+    envOf (pre ++ tail) .nul i = envOf tail .nul (i-pre.length) := by
+  simp only [envOf,List.getD_eq_getElem?_getD,List.getElem?_append_right h]
+
+private theorem literalActuals_sound {inputs arity : Nat} {rest : Bool} {caps : List Tm} {slots : Slots}
+    {roots : List (Option (Nat × List String))} {dst : Env} {recv self : Tm} {args : List Tm}
+    {pre : List Tm} {allocation : Env}
+    (layout : pre.length = (if rest then 1 else 0))
+    (ordinary : ∀ p j, roots[p]?.join = some (j, []) → dst j = callEnv recv args p)
+    (capture : ∀ (k : Nat) t o j, caps[k]? = some t → originOf slots t = some o →
+      identity inputs o = some j → dst j = instantiate 0 allocation t) :
+    ∀ i j, literalActuals inputs arity rest caps slots roots i = some j →
+      dst j = envOf (pre ++ (recv :: CallArguments.parameters arity args ++
+        (caps.map (instantiate 0 allocation) ++ [self]))) .nul i := by
+  intro i j h
+  unfold literalActuals at h
+  dsimp only at h
+  by_cases above : i < (if rest then 1 else 0)
+  · simp [above] at h
+  · rw [ite_eq_right above] at h
+    have past : pre.length ≤ i := by omega
+    by_cases fixed : i < arity + (if rest then 2 else 1)
+    · rw [ite_eq_left fixed] at h
+      split at h <;> try contradiction
+      rename_i p atRoot
+      cases h
+      have range : i - pre.length ≤ arity := by cases rest <;> simp_all <;> omega
+      rw [envOf_tail past, ← callEnv_frame range, layout]
+      exact ordinary _ _ atRoot
+    · rw [ite_eq_right fixed] at h
+      obtain ⟨t,atCap,more⟩ := Option.bind_eq_some_iff.mp h
+      obtain ⟨o,origin,name⟩ := Option.bind_eq_some_iff.mp more
+      have n := capture _ t o j atCap origin name
+      rw [n]
+      let prefixValues := pre ++ (recv :: CallArguments.parameters arity args)
+      have len : prefixValues.length = arity + (if rest then 2 else 1) := by
+        cases rest <;> simp_all [prefixValues,Effect.parameters_length] <;> omega
+      have pastCaps : prefixValues.length ≤ i := by omega
+      change _ = envOf (pre ++ ((recv :: CallArguments.parameters arity args) ++ _)) .nul i
+      rw [← List.append_assoc]
+      change _ = envOf (prefixValues ++ _) .nul i
+      rw [envOf_tail pastCaps,len]
+      have hi := (List.getElem?_eq_some_iff.mp atCap).1
+      rw [envOf,List.getD_eq_getElem?_getD,List.getElem?_append_left (by simpa using hi),
+        List.getElem?_map,atCap]
+      rfl
+
+/-- Entry slots for the literal's graph run. The optional collected rest
+value precedes the receiver. Captures are instantiated at allocation. -/
+def literalEntry (pre : List Tm) (recv : Tm) (arity : Nat) (args caps : List Tm)
+    (allocation : Env) (self : Tm) : Env :=
+  envOf (pre ++ (recv :: CallArguments.parameters arity args ++
+    (caps.map (instantiate 0 allocation) ++ [self]))) .nul
+
+/-- The invocation argument map used by the caller's source check. -/
+def invocationArguments (d : Demand) (toCaller : RootMap) : List (Option (Nat × List String)) :=
+  d.actualRoots.map fun source => do
+    let (slot, path) ← source
+    let (root, outerPath) ← toCaller slot
+    return (root, outerPath ++ path)
+
+private theorem invocationArguments_sound {d : Demand} {toCaller : RootMap} {actual dst : Env}
+    {before : Heap} {recv : Tm} {args : List Tm}
+    (rootsOK : RealizesRoots toCaller actual dst before)
+    (invocation : ∀ p x, d.actualRoots[p]? = some (some (x, [])) → actual x = callEnv recv args p)
+    {p j} (maps : (invocationArguments d toCaller)[p]?.join = some (j, [])) :
+    dst j = callEnv recv args p := by
+  cases hs : d.actualRoots[p]? with
+  | none => simp [invocationArguments,List.getElem?_map,hs] at maps
+  | some source =>
+    cases source with
+    | none => simp [invocationArguments,List.getElem?_map,hs] at maps
+    | some src =>
+      obtain ⟨x,path⟩ := src
+      cases ht : toCaller x with
+      | none => simp [invocationArguments,List.getElem?_map,hs,ht] at maps
+      | some out =>
+        obtain ⟨y,outer⟩ := out
+        simp [invocationArguments,List.getElem?_map,hs,ht] at maps
+        obtain ⟨rfl,rfl,rfl⟩ := maps
+        exact (Option.some.inj (rootsOK x _ [] ht)).trans (invocation _ _ hs)
+
+/-- For a literal callback with a matching inferred row, the completed graph
+run itself supplies the effect required by the demand checker. The executable
+row join covers both exits and the formal slot substitution agrees with the
+actual closure frame, including the captures from its allocation environment. -/
+theorem checked_literal_execution_supported {ι : Type} [DecidableEq ι]
+    {G : PositiveGraphs.NormalGraph ι} {q : RequestJson.CodeRequest ι}
+    {records : Array SinglePass.VisitRecord} {summary : Summary} {codes : Array (CheckedCode ι)}
+    {nodes : Array Node} {origins : Table} {inputs : Nat} {slots : Slots} {frame : List Tm}
+    {d : Demand} {ev : SepEvidence}
+    {argument : Tm} {label : Nat} {node : Node} {caps : List Tm} {kind component fields values}
+    {named actual allocation : Env} {pre : List Tm} {recv self : Tm} {args : List Tm}
+    {before after : Heap} {n : Nat} {W : WorldT n} {μ} {steps state}
+    (exit : Completion) (v : Val)
+    (accept : d.check (argumentRoots inputs nodes.size slots frame)
+      (fun p => frame[p]?.bind (closure codes nodes origins inputs slots
+        (invocationArguments d (argumentRoots inputs nodes.size slots frame)))) ev = true)
+    (atArg : frame[d.parameter]? = some argument)
+    (site : originOf slots argument = some (.allocated label)) (atSite : nodes[label]? = some node)
+    (literal : node.expression = .makeAt (.graph q.entry.arity q.entry.exprs q.entry.conts
+      q.entry.start caps kind q.entry.spine.isSome component) fields values)
+    (width : caps.length = q.entry.captures.length)
+    (member : (⟨q.entry,summary⟩ : CheckedCode ι) ∈ codes)
+    (checked : inferChecked G q records = .ok summary)
+    (layout : pre.length = (if q.entry.spine.isSome then 1 else 0))
+    (arguments : NamedOperands inputs nodes.size slots frame named actual)
+    (captures : NamedOperands inputs nodes.size (origins.at label) caps named
+      (fun k => instantiate 0 allocation (caps.getD k .undef)))
+    (invocation : ∀ p x, d.actualRoots[p]? = some (some (x, [])) → actual x = callEnv recv args p)
+    (evidenceOK : ev.Holds μ (operandEnv (inputs + nodes.size) named actual) before)
+    (heapOK : HeapOk n W before) (namedOK : RootsOk W named) (argsOK : RootsOk W actual)
+    (visits : RecordedExitSound G q records (literalEntry pre recv q.entry.arity args caps allocation self) before)
+    (run : Execution (GraphCode.program q.entry.exprs q.entry.conts) steps before
+      (.at q.entry.start (literalEntry pre recv q.entry.arity args caps allocation self)) after state)
+    (done : state = (match exit with | .normal => .done v | .exceptional => .raised v)) :
+    Supported (d.support.get exit) actual before after := by
+  let roots := invocationArguments d (argumentRoots inputs nodes.size slots frame)
+  change d.check _ (fun p => frame[p]?.bind (closure codes nodes origins inputs slots roots)) ev = true at accept
+  cases picked : closure codes nodes origins inputs slots roots argument with
+  | none => simp [Demand.check,atArg,picked] at accept
+  | some cb =>
+    have lookup : frame[d.parameter]?.bind (closure codes nodes origins inputs slots roots) = some cb := by
+      simp [atArg,picked]
+    obtain ⟨includes,substitution⟩ := closure_row_spec (row := ⟨q.entry,summary⟩)
+      picked site atSite literal width member exit
+    obtain ⟨bound,found,post⟩ := inferChecked_execution checked visits run exit v done
+    apply check_arguments_supported exit accept lookup arguments _ evidenceOK heapOK namedOK argsOK
+      (post.mono (cl := fun _ _ => none) (Footprint.le_of_subset ?_) (by intro _ _ _ _ miss; contradiction))
+    · rw [substitution]
+      apply literalActuals_sound layout (fun _ _ => invocationArguments_sound (argumentRoots_realizes arguments before) invocation)
+      intro k t o j ht ho hj
+      obtain ⟨below, denotation⟩ := captures k t o j ht ho hj
+      simpa [operandEnv,below,List.getD_eq_getElem?_getD,ht] using denotation
+    · intro e he
+      exact includes e (by simpa [found] using he)
+
+/-- The caller's checked separation demand holds for the actual closure row
+returned by the source inference loop at the completed invocation. -/
+theorem inferCodes_literal_execution_supported {τ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView τ ι]
+    {request : SourceElaboration.SourceRequest τ ι} {fuel known final} {q : RequestJson.CodeRequest ι}
+    {summary : Summary} {codes : Array (CheckedCode ι)}
+    {nodes : Array Node} {origins : Table} {inputs : Nat} {slots : Slots} {frame : List Tm}
+    {d : Demand} {ev : SepEvidence}
+    {argument : Tm} {label : Nat} {node : Node} {caps : List Tm} {kind component fields values}
+    {named actual allocation : Env} {pre : List Tm} {recv self : Tm} {args : List Tm}
+    {before after : Heap} {n : Nat} {W : WorldT n} {μ} {steps state}
+    (exit : Completion) (v : Val)
+    (accept : d.check (argumentRoots inputs nodes.size slots frame)
+      (fun p => frame[p]?.bind (closure codes nodes origins inputs slots
+        (invocationArguments d (argumentRoots inputs nodes.size slots frame)))) ev = true)
+    (atArg : frame[d.parameter]? = some argument)
+    (site : originOf slots argument = some (.allocated label)) (atSite : nodes[label]? = some node)
+    (literal : node.expression = .makeAt (.graph q.entry.arity q.entry.exprs q.entry.conts
+      q.entry.start caps kind q.entry.spine.isSome component) fields values)
+    (width : caps.length = q.entry.captures.length)
+    (member : (⟨q.entry,summary⟩ : CheckedCode ι) ∈ codes)
+    (checked : inferCodes request fuel = .ok (codes,known,final))
+    (layout : pre.length = (if q.entry.spine.isSome then 1 else 0))
+    (arguments : NamedOperands inputs nodes.size slots frame named actual)
+    (captures : NamedOperands inputs nodes.size (origins.at label) caps named
+      (fun k => instantiate 0 allocation (caps.getD k .undef)))
+    (invocation : ∀ p x, d.actualRoots[p]? = some (some (x, [])) → actual x = callEnv recv args p)
+    (evidenceOK : ev.Holds μ (operandEnv (inputs + nodes.size) named actual) before)
+    (heapOK : HeapOk n W before) (namedOK : RootsOk W named) (argsOK : RootsOk W actual)
+    (world : WorldAdm W) (room : steps ≤ n) (positive : 0 < n)
+    (entryTyped : EnvOk (RequestJson.graph request.toRequest)
+      (codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.spine)
+      (literalEntry pre recv q.entry.arity args caps allocation self) n W)
+    (entryRefs : RootsOk W (literalEntry pre recv q.entry.arity args caps allocation self))
+    (entryIndices : HeapKnowledge.IndexHolds ⟨literalEntry pre recv q.entry.arity args caps allocation self,before⟩
+      (GraphCode.codeEntryIndices q.entry) (literalEntry pre recv q.entry.arity args caps allocation self) before)
+    (run : Execution (GraphCode.program q.entry.exprs q.entry.conts) steps before
+      (.at q.entry.start (literalEntry pre recv q.entry.arity args caps allocation self)) after state)
+    (done : state = (match exit with | .normal => .done v | .exceptional => .raised v)) :
+    Supported (d.support.get exit) actual before after := by
+  let roots := invocationArguments d (argumentRoots inputs nodes.size slots frame)
+  change d.check _ (fun p => frame[p]?.bind (closure codes nodes origins inputs slots roots)) ev = true at accept
+  cases picked : closure codes nodes origins inputs slots roots argument with
+  | none => simp [Demand.check,atArg,picked] at accept
+  | some cb =>
+    have lookup : frame[d.parameter]?.bind (closure codes nodes origins inputs slots roots) = some cb := by
+      simp [atArg,picked]
+    obtain ⟨includes,substitution⟩ := closure_row_spec (row := ⟨q.entry,summary⟩)
+      picked site atSite literal width member exit
+    obtain ⟨bound,found,post⟩ := inferCodes_rows_sound checked _ member
+      ⟨n,W,before,positive,world,heapOK⟩ _ entryTyped entryRefs entryIndices room run exit v done
+    apply check_arguments_supported exit accept lookup arguments _ evidenceOK heapOK namedOK argsOK
+      (post.mono (cl := fun _ _ => none) (Footprint.le_of_subset ?_) (by intro _ _ _ _ miss; contradiction))
+    · rw [substitution]
+      apply literalActuals_sound layout (fun _ _ => invocationArguments_sound (argumentRoots_realizes arguments before) invocation)
+      intro k t o j ht ho hj
+      obtain ⟨below, denotation⟩ := captures k t o j ht ho hj
+      simpa [operandEnv,below,List.getD_eq_getElem?_getD,ht] using denotation
+    · intro e he
+      exact includes e (by simpa [found] using he)
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck
+open CallbackOrigins ControlFlow
+
+theorem namedOrigin_slot {slots : Slots} {t o} (found : originOf slots t = some o) :
+    ∃ i, t = .var i ∧ slots[i]? = some [o] := by
+  cases t <;> try contradiction
+  rename_i i
+  change (match slots[i]? with | some [v] => some v | _ => none) = some o at found
+  split at found <;> try contradiction
+  cases found
+  exact ⟨i,rfl,by assumption⟩
+
+private theorem historyNamedOperands {P table entry inputs history slots ρ}
+    (valid : historyHolds P table entry inputs history) (holds : slotsHold history entry inputs slots ρ)
+    (frame : List Tm) :
+    NamedOperands inputs P.length slots frame (historyEnv entry inputs history)
+      (fun i => instantiate 0 ρ (frame.getD i .undef)) := by
+  intro i t o j atI hO hJ
+  obtain ⟨slot,rfl,atSlot⟩ := namedOrigin_slot hO
+  cases o with
+  | input p =>
+    cases hJ
+    obtain ⟨⟨bound,eq⟩,_⟩ := holds slot (.input j) (by simp [namedAt,atSlot])
+    exact ⟨by omega,by simpa [historyEnv,bound,List.getD_eq_getElem?_getD,atI,instantiate] using eq⟩
+  | allocated p =>
+    cases hJ
+    obtain ⟨⟨b,hb,eq⟩,_⟩ := holds slot (.allocated p) (by simp [namedAt,atSlot])
+    obtain ⟨same,born,_⟩ := valid p b hb
+    have below := (List.getElem?_eq_some_iff.mp born.1).1
+    rw [same] at below
+    refine ⟨by omega,?_⟩
+    simpa [historyEnv,List.getD_eq_getElem?_getD,atI,instantiate,hb,show ¬ inputs+p < inputs by omega] using eq
+  | other | read => contradiction
+
+/-- A reached caller's named arguments and the literal's captures use the
+same valuation, including captures no direct operand currently holds. -/
+theorem namedArguments_and_captureFrame {P table entry inputs l ρ h}
+    (reached : atHistory P table entry inputs mark l ρ h) {frame : List Tm} {arg site}
+    (origin : originOf (table.at l) arg = some (.allocated site)) :
+    ∃ history b, historyHolds P table entry inputs history ∧ history site = some b ∧ b.Valid P ∧
+      instantiate 0 ρ arg = b.value ∧
+      NamedOperands inputs P.length (table.at l) frame (historyEnv entry inputs history)
+        (fun i => instantiate 0 ρ (frame.getD i .undef)) ∧
+      ∀ caps, NamedOperands inputs P.length (table.at site) caps (historyEnv entry inputs history)
+        (fun i => instantiate 0 b.allocation (caps.getD i .undef)) := by
+  obtain ⟨hist,valid,_,_,_,held⟩ := reached
+  obtain ⟨i,rfl,hs⟩ := namedOrigin_slot origin
+  obtain ⟨⟨b,hb,val⟩,_⟩ := held i (.allocated site) (by simp [namedAt,hs])
+  exact ⟨hist,b,valid,hb,(valid site b hb).2.1,by simpa [instantiate] using val.symm,
+    historyNamedOperands valid held frame,historyNamedOperands valid (valid site b hb).2.2⟩
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck
+open CallbackOrigins Footprints
+
+private def usedName (inputs : Nat) (slots : Slots) (frame : List Tm) (j : Nat) : Prop :=
+  ∃ (i : Nat) (t : Tm) (o : Origin), frame[i]? = some t ∧ originOf slots t = some o ∧ identity inputs o = some j
+
+private theorem sparseNames {inputs nodes slots frame named actual kept}
+    [DecidablePred kept] (names : NamedOperands inputs nodes slots frame named actual)
+    (live : ∀ j, usedName inputs slots frame j → kept j) :
+    NamedOperands inputs nodes slots frame (fun j => if kept j then named j else .undef) actual := by
+  intro i t o j ht ho hj
+  obtain ⟨lo,eq⟩ := names i t o j ht ho hj
+  exact ⟨lo,by simp [live j ⟨i,t,o,ht,ho,hj⟩,eq]⟩
+
+private theorem sparseRoots {inputs nodes slots capsSlots frame caps named actual captured n} {W : WorldT n}
+    (args : NamedOperands inputs nodes slots frame named actual) (cap : NamedOperands inputs nodes capsSlots caps named captured)
+    (argsOK : RootsOk W actual) (capOK : RootsOk W captured) :
+    let kept := fun j => usedName inputs slots frame j ∨ usedName inputs capsSlots caps j
+    let sparse := fun j => @ite _ (kept j) (Classical.propDecidable _) (named j) .undef
+    RootsOk W sparse := by
+  intro kept sparse j
+  classical
+  by_cases alive : kept j
+  · have eq : sparse j = named j := ite_eq_left alive
+    rw [eq]
+    rcases alive with ⟨i,t,o,ht,ho,hj⟩ | ⟨i,t,o,ht,ho,hj⟩
+    · rw [(args i t o j ht ho hj).2]; exact argsOK i
+    · rw [(cap i t o j ht ho hj).2]; exact capOK i
+  · have eq : sparse j = .undef := ite_eq_right alive
+    rw [eq]
+    intro r hr; contradiction
+
+private theorem callerSeparation {P table entry inputs history mark current}
+    (valid : historyHolds P table entry inputs history) (time : Chronology history mark current)
+    (initial : ∀ i < inputs, ∀ l, spineOf (entry i) = some l → l < mark)
+    (kept : Nat → Prop) [DecidablePred kept] (slots : Slots) (actual : Env) (h : Heap) :
+    (separation inputs P.length slots).Holds (fun _ => 0)
+      (operandEnv (inputs+P.length) (fun j => if kept j then historyEnv entry inputs history j else .undef) actual) h := by
+  refine ⟨by intro _ _ _ _ impossible; contradiction,
+    ⟨by intros; contradiction,by intros; contradiction⟩,fun _ _ _ => Nat.le_refl _,
+    by intro _ impossible; contradiction,?_⟩
+  intro fact included
+  simp only [separation,List.mem_flatMap,List.mem_filterMap,List.mem_eraseDups,List.mem_filter,
+    decide_eq_true_eq] at included
+  obtain ⟨a,⟨_,smallA⟩,b,⟨_,smallB⟩,select⟩ := included
+  split at select <;> try contradiction
+  rename_i apart
+  cases select
+  intro u w l hu hw ua wb
+  simp only [HeapKnowledge.readPath,Option.some.injEq,operandEnv,smallA,smallB,ite_true] at hu hw
+  subst u
+  subst w
+  split at ua <;> try contradiction
+  split at wb <;> try contradiction
+  simp only [Bool.and_eq_true,bne_iff_ne,Bool.or_eq_true,decide_eq_true_eq] at apart
+  exact historyNamesApart valid time initial apart.1 apart.2 ua wb
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck
+open CallbackOrigins CallbackPreservation CallbackEffectInference ControlFlow Footprints CallEffects ProgramTyping
+
+private theorem captureRoots {pre recv arity args caps allocation self n} {W : WorldT n}
+    (refs : RootsOk W (literalEntry pre recv arity args caps allocation self)) :
+    RootsOk W (fun i => instantiate 0 allocation (caps.getD i .undef)) := by
+  intro i
+  cases ht : caps[i]? with
+  | none =>
+    simp only [List.getD_eq_getElem?_getD,ht,Option.getD_none,instantiate]
+    intro _ hx; contradiction
+  | some t =>
+    simp only [List.getD_eq_getElem?_getD,ht,Option.getD_some]
+    let prefixValues := pre ++ (recv :: CallArguments.parameters arity args)
+    have look := refs (prefixValues.length+i)
+    have index : i < caps.length := (List.getElem?_eq_some_iff.mp ht).1
+    change RefsOk W (envOf (pre ++ ((recv :: CallArguments.parameters arity args) ++ _)) .nul _) at look
+    rw [← List.append_assoc] at look
+    change RefsOk W (envOf (prefixValues ++ _) .nul _) at look
+    rw [envOf_tail (by omega : prefixValues.length ≤ prefixValues.length+i)] at look
+    simpa [envOf,List.getD_eq_getElem?_getD,List.getElem?_append_left (by simpa using index :
+      i < (caps.map (instantiate 0 allocation)).length),List.getElem?_map,ht] using look
+
+/-- At a caller node reached from a checked entry, the executable separation
+and names of a supplied literal, including its captures, come from one
+allocation history. A completed invocation of the matching code row then
+preserves the support demanded by the producer on the actual exit. -/
+theorem checkedCaller_literal_supported {τ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView τ ι]
+    {request : SourceElaboration.SourceRequest τ ι} {fuel codes known final}
+    {q : RequestJson.CodeRequest ι} {summary : Summary} {P : Program} {table : Table}
+    {inputs start entry l ρ h₀ h k n₀} {W₀ : WorldT n₀}
+    (checkNames : CallbackOrigins.checkNames P.toArray (namedSites P.toArray) start inputs table = true)
+    (callerValues : ∀ i < inputs, isVal (entry i) = true) (callerRoots : RootsOk W₀ entry) (callerHeap : HeapOk n₀ W₀ h₀)
+    (reached : Execution P k h₀ (.at start entry) h (.at l ρ))
+    {frame : List Tm} {d : Demand} {argument : Tm} {site : Nat} {node : Node}
+    {caps kind component fields vals} {actual : Env} {pre : List Tm} {recv self : Tm} {args : List Tm}
+    {before after : Heap} {n : Nat} {W : WorldT n} {steps state} (exit : Completion) (v : Val)
+    (accept : d.check (argumentRoots inputs P.length (table.at l) frame)
+      (fun p => frame[p]?.bind (closure codes P.toArray table inputs (table.at l)
+        (invocationArguments d (argumentRoots inputs P.length (table.at l) frame))))
+      (separation inputs P.length (table.at l)) = true)
+    (atArg : frame[d.parameter]? = some argument)
+    (atSite : originOf (table.at l) argument = some (.allocated site)) (lookup : P[site]? = some node)
+    (literal : node.expression = .makeAt (.graph q.entry.arity q.entry.exprs q.entry.conts q.entry.start caps kind
+      q.entry.spine.isSome component) fields vals)
+    (width : caps.length = q.entry.captures.length)
+    (member : (⟨q.entry,summary⟩ : CheckedCode ι) ∈ codes)
+    (inferred : inferCodes request fuel = .ok (codes,known,final))
+    (layout : pre.length = (if q.entry.spine.isSome then 1 else 0))
+    (passed : ∀ i t o j, frame[i]? = some t → originOf (table.at l) t = some o →
+      identity inputs o = some j → actual i = instantiate 0 ρ t)
+    (invocation : ∀ p x, d.actualRoots[p]? = some (some (x, [])) → actual x = callEnv recv args p)
+    (heapOK : HeapOk n W before) (argsOK : RootsOk W actual) (world : WorldAdm W) (room : steps ≤ n) (pos : 0 < n)
+    (evaluated : ∀ allocation,
+      (∃ fs oid, instantiate 0 ρ argument = .objAt fs (.graph q.entry.arity q.entry.exprs q.entry.conts
+        q.entry.start (instantiateArgs 0 allocation caps) kind q.entry.spine.isSome component) oid) →
+      let closureEnv := literalEntry pre recv q.entry.arity args caps allocation self
+      EnvOk (RequestJson.graph request.toRequest) (codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.spine)
+        closureEnv n W ∧ RootsOk W closureEnv ∧
+      HeapKnowledge.IndexHolds ⟨closureEnv,before⟩ (GraphCode.codeEntryIndices q.entry) closureEnv before ∧
+      Execution (GraphCode.program q.entry.exprs q.entry.conts) steps before (.at q.entry.start closureEnv) after state)
+    (done : state = (match exit with | .normal => .done v | .exceptional => .raised v)) :
+    Supported (d.support.get exit) actual before after := by
+  classical
+  obtain ⟨hist,valid,time,_,_,held⟩ := checkedNames_reached checkNames callerValues reached
+  obtain ⟨i,rfl,slot⟩ := namedOrigin_slot atSite
+  obtain ⟨⟨b,hb,same⟩,_⟩ := held i (.allocated site) (by simp [namedAt,slot])
+  obtain ⟨siteEq,birth,capHeld⟩ := valid site b hb
+  have hnode := birth.1
+  rw [siteEq,lookup] at hnode
+  have lit := literalBirth birth ((Option.some.inj hnode).symm ▸ literal)
+  obtain ⟨fs,oid,obj⟩ := lit
+  obtain ⟨typed,entryRefs,indices,run⟩ := evaluated b.allocation ⟨fs,oid,by simpa [instantiate] using same.symm.trans obj⟩
+  have namedArg : NamedOperands inputs P.length (table.at l) frame (historyEnv entry inputs hist) actual := by
+    intro j t o x hj ho hx
+    obtain ⟨bd,agree⟩ := historyNamedOperands valid held frame j t o x hj ho hx
+    exact ⟨bd,by simpa [passed _ _ _ _ hj ho hx,List.getD_eq_getElem?_getD,hj] using agree⟩
+  have namedCap := historyNamedOperands valid capHeld caps
+  let kept := fun j => usedName inputs (table.at l) frame j ∨ usedName inputs (table.at site) caps j
+  have sep := callerSeparation valid time (fun _ _ _ => inputSpinesBelow callerRoots callerHeap) kept (table.at l) actual before
+  have namedOK := sparseRoots namedArg namedCap argsOK (captureRoots entryRefs)
+  exact inferCodes_literal_execution_supported exit v (by simpa using accept) atArg atSite (by simpa using lookup) literal width
+    member inferred layout (sparseNames namedArg (fun _ h => Or.inl h)) (sparseNames namedCap (fun _ h => Or.inr h))
+    invocation sep heapOK (by
+      intro j
+      by_cases hj : usedName inputs (table.at l) frame j ∨ usedName inputs (table.at site) caps j
+      · simpa only [ite_eq_left hj] using namedOK j
+      · simpa only [ite_eq_right hj] using namedOK j) argsOK world room pos typed entryRefs indices run done
 
 end Verification.SourceClaimJson.CallbackInterfaceCheck

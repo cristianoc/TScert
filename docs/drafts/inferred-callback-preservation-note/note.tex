@@ -505,8 +505,7 @@ checkUses(member, publishedInterfaces, markedForwardingSlots):
 
 \lean{closure} identifies a graph closure by allocation origin
 and matches code rows on arity, start, expressions, continuations,
-capture count, and presence of a rest slot. It joins their summaries
-before substitution,
+capture count, and presence of a rest slot. It joins their summaries before substitution,
 reading an absent component as the empty footprint. Ordinary
 actuals map to caller slots when their composed paths are empty.
 Capture origins are taken at the allocation label. The collected
@@ -672,24 +671,224 @@ the stepper and statistics updates. \status{source run}
 
 \section{Soundness and scope}\label{sec:soundness}
 
-\begin{conjecture}[Soundness target]
-For an admissible entry state of a producer, assume each marked
-callback invocation meets every applicable demand of its
-published interface at the relevant exit. If the producer
-check succeeds, the retained refinements hold on the
-continuation where they are used. If a caller supplies callbacks
-whose code and effects satisfy the premises of the caller
-check, the caller establishes those interface assumptions.
+\subsection{Statements to prove}
+
+\begin{conjecture}[Producer soundness]
+Suppose the producer check succeeds and the producer enters in a state
+that satisfies its ordinary entry contract. If every reached marked
+invocation satisfies the applicable published demands on its normal
+return, the producer has the ordinary safety judgment. In particular,
+each retained refinement holds where its continuation uses it.
 \end{conjecture}
 
-The proof requires connecting allocation provenance and the
-escape scan to local discharge, exact projection to location
-identity, and closure summary inference and substitution to
-actual heap transitions. It then needs a replay lemma connecting
-the retained atoms to facts in the normal continuation, and an
-interface composition lemma for forwarding and publication. The
-existing respect and support theorems apply once those premises
-have been established.
+\begin{conjecture}[Soundness for direct fixed-arity applications]
+Consider a same-file application that names a marked producer directly
+and supplies a literal callback. The producer and the callback each
+declare a single fixed signature with no explicit receiver, and the call
+sites on this path have no spread. Captures used to establish separation
+have checked origins at the allocation. Under the ordinary source safety
+premises, success of the producer and caller checks entails the
+published demands at the producer's actual invocations and gives the
+ordinary safety judgment for this application.
+\end{conjecture}
+
+The first application theorem targets the walker in
+Section~\ref{sec:problem} and its collector \code{sumAndTrace} in
+Section~\ref{sec:examples}. The collector attaches a callback with a
+write to a separate array, so the application proof must use the inferred
+effect and separation. It must derive the callback's effect bound, the
+slot correspondence, and the separation facts from the executable
+checks. The private cursor and fresh array illustrate obligations of
+the proof, and the statement ranges over applications with or without
+these allocations. The narrower base case uses an empty callback,
+whose lowered body returns \code{undefined} with the same heap.
+\status{conjecture}
+
+\subsection{Scope of the first application theorem}
+
+The source checker described in Sections~\ref{sec:rules}--\ref{sec:effects}
+has its own acceptance conditions. A narrower theorem can leave some
+experimental cases without a source safety result. The following
+comparison states which restrictions narrow the proposed theorem and
+which already belong to the checker.
+
+\begin{description}
+\item[Same file.] Narrows the theorem. The checker can consume a
+separately published interface from an imported declaration. A proof
+for that case must identify the corresponding runtime binding and
+transport the producer's signature between the two stores.
+\item[Application names the producer directly.] Narrows the theorem.
+The checker can also recognize a copy of the producer when the callee
+has the same singleton input origin. A use that escapes the checker's
+resolved applications is already refused.
+\item[Literal callback rather than a forwarded parameter.] Narrows
+the theorem. The checker has a separate \ruleName{Forward} rule for a
+marked input passed on directly. The literal check can use a closure
+held in a slot when its allocation is recovered. A closure that wraps
+and invokes a marked input requires an effect bound for that wrapper.
+The Pretext adapting closure in Section~\ref{sec:examples} remains a
+source refusal.
+\item[Single fixed declaration signature and no explicit receiver.] Narrows the
+theorem. The checker records the producer's receiver convention and
+joins the summaries of all matching closure code rows. The first
+theorem concerns the fixed application at each boundary. The lowering
+can also represent ignored extra arguments by a synthetic variadic
+offer. The checker uses a row only when its code and frame layout match.
+Widening, overloads, generic instantiation, and receiver and rest binding
+can require additional evidence to connect an actual call to such a row.
+\item[No spreads.] Narrows the theorem. The checker recognizes fixed
+positions before the first spread and refuses a demand if a spread
+can obscure the required callback position. The theorem's smaller
+scope also excludes calls whose required positions survive a spread.
+\item[Recoverable roots and captures.] Already a condition on the
+origins used by the literal check. The checker needs an identifiable
+closure and enough root and separation evidence to discharge the
+demand. It treats any other capture whose origin is unknown
+conservatively. Requiring a name for every capture would narrow the
+scope further.
+\item[Typed capture slots at the application.] Narrows the current
+collector proof. To recover the captured values' types, it uses slots
+at the application whose checked origins match the captured operands
+at closure creation. The experimental checker obtains capture origins
+at closure creation and uses those origins in its effect and separation
+checks.
+\item[Empty callback body.] Narrows the base case only. A literal that
+appends to a separate array, as in \code{sumAndTrace}, is within the
+experimental checker and the proposed application theorem.
+\item[One numeric argument in the collector proof.] Narrows the
+checked collector case to the walker's written visitor signature.
+It reads the number type of the argument slot from the accepted point
+claim. The application conjecture concerns the declared argument types
+in general.
+\item[Empty callback precondition in the collector proof.] Narrows
+the checked case. Its fixed code row has no precondition to establish
+before applying the inferred effect. Ordinary closure checking can
+include a precondition, which a proof of that case must derive at the
+call.
+\item[Normal return.] Already the scope of source inference. The
+producer publishes a requirement for normal return and retains no
+additional facts on the exceptional edge. The effect language and the
+literal consumer still represent both exits.
+\item[No simultaneous recursive interfaces.] Already the scope of
+the checker. It refuses self-reference and groups with multiple
+members for interface production. A loop inside a checked producer
+or callback is a control-flow cycle, which the ordinary graph checks
+cover.
+\end{description}
+
+The whole-caller proof takes a joint same-file plan, with the caller
+and producer checked in one type store. The CLI worker builds plans
+for the two units independently, and relating those stores is a
+separate obligation even in the same file.
+
+The proof uses an additional certificate for the ordinary preparation
+before the direct application. The certificate checks each expression
+against the types of the slots it reads and follows the actual edge
+mappings. The prefix can carry the marked producer's closure as a value
+and establish the contract for invoking it at the call. The proof also
+checks the two fixed operand types against the producer's entry types.
+These certificates are premises of the first proof, beyond the
+experimental verdict.
+
+The checked collector statement further assumes that the producer has
+no additional entry separation or index facts to establish and that the
+caller returns a saved typed value through the checked slot mappings.
+These are restrictions of this proof. The source checker uses the ordinary
+entry and continuation rules for other cases.
+
+The joint-plan theorems establish safety from caller entry through
+return for the empty visitor and for a collector that extends a fresh
+captured array. The lowered examples satisfy the prefix, operand,
+origin, and return checks. The collector proof uses the inferred
+normal effect on the captured spine and the checked separation from
+the input array. It applies that result at the producer's actual
+invocations. \status{Lean, joint plan}
+
+\subsection{Checks that delimit experimental acceptance}
+
+The executable checks below apply independently of the scope of the
+first application theorem.
+
+\begin{description}
+\item[Operand preparation.] Narrows the calls at which the producer
+retains facts. A framed invocation must have heap-read-only preparation
+of the callee, receiver, arguments, and spread operands. The callback's
+effect applies after dispatch. The ordinary transfer handles calls
+that fail this syntactic check and supplies no inferred frame there.
+\item[Public parameter positions.] Narrows publication. A demand can
+name the receiver or a fixed formal parameter of the producer. Its
+support roots and named callback actuals must also be within that
+layout. An extra argument supplied through a widened function value
+cannot stand for a captured binding in the producer's entry frame.
+This check can refuse publication when a needed fact depends on such
+a binding.
+\item[Allocation identity in the caller.] Narrows the evidence
+available to the separation check. When a caller uses an allocation
+site as a stable name, it must check that the site executes at most
+once per activation. The producer's privacy argument can track
+distinct objects from repeated executions of the same allocation site.
+\item[Callback-dependent imports.] Narrows use of an ordinary import
+contract. A caller that uses a callback-dependent declaration needs its
+published outcome. A missing or refused outcome blocks the callback
+check through unmarked wrappers as well as directly marked declarations.
+The consumer reads the outcome from the published interface.
+\end{description}
+
+\subsection{Checked lemmas}
+
+\lean{project\_supported\_iff} proves that exact projection preserves
+the meaning of a support under a root correspondence.
+\lean{Demand.check\_supported} proves that a successful demand check
+establishes the original support, given a semantic bound for the closure,
+valid separation evidence, and realized substitutions.
+The corresponding equivalence for direct forwarding is
+\lean{Demand.forward\_supported\_iff}. \status{Lean}
+
+\lean{argumentRoots\_realizes} interprets the evaluated-argument slots
+using the values bound at producer entry. Their interpretation is
+independent of the callback heap. Given the identity of the other
+roots and the usual closure and separation premises,
+\lean{check\_arguments\_supported} proves that a successful executable
+demand check preserves the required support. \status{Lean}
+
+\lean{positionalPrefix\_splice} proves that expanding a spread into
+any number of operands preserves the index and value of every operand
+in the recorded prefix. \status{Lean}
+
+\lean{rebaseStep\_post} proves the composition of a checked step effect
+with the accumulated effect at closure entry, given the argument-path
+facts and slot correspondence. \status{Lean}
+
+\lean{stepCertificate\_extends} establishes this composition for the
+effect inferred from the ordinary pass's generated step certificate.
+The theorem covers both completions of a concrete expression evaluation
+under the typing and knowledge hypotheses at the visit, sound code and
+read summaries, and valid argument-path facts. \status{Lean}
+
+\lean{composeChecked\_execution} extends composition to a graph
+execution. Given sound local expression summaries, a successfully
+checked table bounds the heap changes on every returning or throwing
+execution, including loops and handlers. \status{Lean}
+
+\lean{inferChecked\_execution} connects that theorem to the closure
+summary returned by the executable checker. Every recorded step effect
+is included in the table passed to the graph check, including effects
+from repeated visits to a label. The premise associates every completed
+evaluation at a reached node with a sound visit record. \status{Lean}
+
+\lean{replay\_preserves} states the support argument for the
+normal continuation. The published supports,
+realized roots and private-field preservation give the supports selected
+at the invocation. The existing frame theorem then proves the index
+facts that the pass retains. \status{Lean}
+
+The source soundness theorem still requires a proof that allocation
+provenance, the escape scan and the call-site analysis establish
+those semantic premises. It also requires relating reached evaluations
+to the pass's recorded visits, proving their argument-path facts and
+connecting the interface checks and body walk to the verifier's
+acceptance theorem.
+\status{conjecture}
 
 The normal source producer instantiates only the normal demand.
 Closure inference and the consumer carry both exit components.
