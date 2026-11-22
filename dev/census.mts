@@ -15,7 +15,7 @@
 // `--shard i/n` checks every n-th file from the i-th, shallow only, so n
 // processes split a census and share the stage store; a later run replays
 // what an earlier one computed.
-//   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shallow] [--shard i/n]
+//   node dev/census.mts [--source-root checkout] [--dir tools] [--files a.mts,…] [--functions f,…] [--shallow] [--shard i/n]
 //       [--out dir] [--record file]
 //   node dev/census.mts report <record.json[,shard.json…]> [--per-function]
 //   node dev/census.mts report <before.json[,…]> <after.json[,…]>
@@ -35,7 +35,7 @@
 // unless it is set), the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, initOmission, openText } from "../tools/fragment-parse.mts";
@@ -43,7 +43,7 @@ import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
 import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type CheckProgress, type UnitResult } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu }
   from "../pipeline/stages.mts";
-import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
+import { memoryLimitBytes, stageNames, type StageName } from "../pipeline/stage-execution.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Outcomes, type Unit,
   type UnitScope } from "./statement-coverage.mts";
 
@@ -344,8 +344,9 @@ export type FileRun = {
   model: { name: string; group: string[]; edges: NodeKey[] | "unresolved" }[];
 };
 type CensusRecord = {
+  verifierCommit: string;
   source: { commit: string; dirty: boolean; directory: string; files: string[] | null; functions: string[] | null };
-  policy: { store: string; stepLimitMs: number; shard: [number, number] | null };
+  policy: { store: string; stepLimitMs: number; memoryLimitBytes: number; shard: [number, number] | null };
   started: string;
   elapsedMs: number;
   files: FileRun[];
@@ -456,11 +457,9 @@ function writeStable(path: string, text: string): void {
   renameSync(temporary, path);
 }
 
-/** The census's copy of tools/, `directory` and their local import closure,
- * with tools/'s installation linked, at a path the same for every process and run of
- * this checkout, so module paths, and the stage keys embedding them,
- * repeat. */
-export function prepare(out: string, directory: string): void {
+/** Copy the source checkout's tools, selected directory and local imports.
+ * Link the source checkout's tools dependencies into the census project. */
+export function prepare(out: string, directory: string, sourceRoot = repository): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
     const names = new Set(readdirSync(from).filter(select).sort());
@@ -469,26 +468,29 @@ export function prepare(out: string, directory: string): void {
     for (const name of names)
       writeStable(join(to, name), readFileSync(join(from, name), "utf8"));
   };
-  copy(join(repository, "tools"), join(out, "tools"),
+  copy(join(sourceRoot, "tools"), join(out, "tools"),
     (n) => n.endsWith(".mts") || n.endsWith(".d.ts") || n === "tsconfig.json");
   const installation = join(out, "tools", "node_modules");
+  const sourceInstallation = join(sourceRoot, "tools", "node_modules");
   if (!existsSync(installation)) {
     try {
-      symlinkSync(join(repository, "tools", "node_modules"), installation);
+      symlinkSync(sourceInstallation, installation);
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
     }
   }
-  if (directory !== "tools") copy(join(repository, directory), join(out, directory), (n) => n.endsWith(".mts"));
+  if (sourceRoot !== repository && readlinkSync(installation) !== sourceInstallation)
+    throw new Error(`Choose a census output directory that uses the dependencies at ${sourceInstallation}`);
+  if (directory !== "tools") copy(join(sourceRoot, directory), join(out, directory), (n) => n.endsWith(".mts"));
   const seen = new Set<string>();
   const work = [...new Set(["tools", directory])].flatMap((dir) =>
-    readdirSync(join(repository, dir)).filter((n) => n.endsWith(".mts") || n.endsWith(".d.ts"))
-      .map((n) => join(repository, dir, n)));
+    readdirSync(join(sourceRoot, dir)).filter((n) => n.endsWith(".mts") || n.endsWith(".d.ts"))
+      .map((n) => join(sourceRoot, dir, n)));
   for (let path = work.pop(); path !== undefined; path = work.pop()) {
     if (seen.has(path)) continue;
     seen.add(path);
     const text = readFileSync(path, "utf8");
-    const target = join(out, relative(repository, path));
+    const target = join(out, relative(sourceRoot, path));
     mkdirSync(dirname(target), { recursive: true });
     writeStable(target, text);
     const from = dirname(path);
@@ -588,6 +590,7 @@ export async function runFile(root: string, project: string, models: (file: stri
 
 async function census(args: string[]): Promise<void> {
   startEviction();
+  const sourceRoot = resolve(option(args, "--source-root") ?? repository);
   const directory = option(args, "--dir") ?? "tools";
   const files = option(args, "--files")?.split(",") ?? null;
   const functions = option(args, "--functions")?.split(",") ?? null;
@@ -597,17 +600,20 @@ async function census(args: string[]): Promise<void> {
     throw Error(`--shard takes i/n with 1 ≤ i ≤ n: ${shardText}`);
   const shardPart: [number, number] | null = shard ? [Number(shard[1]), Number(shard[2])] : null;
   const shallowOnly = args.includes("--shallow") || shardPart !== null;
-  const out = resolve(option(args, "--out") ?? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), directory));
-  const commit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const dirty = execFileSync("git", ["-C", repository, "status", "--porcelain", "--", "tools", directory, "pipeline"],
+  const outKey = sourceRoot === repository ? repository : JSON.stringify([repository, sourceRoot]);
+  const out = resolve(option(args, "--out") ?? join(tmpdir(), "tscert-census", sha256(outKey).slice(0, 12), directory));
+  const verifierCommit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const commit = sourceRoot === repository ? verifierCommit :
+    execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const dirty = execFileSync("git", ["-C", sourceRoot, "status", "--porcelain", "--", "tools", directory, "pipeline"],
     { encoding: "utf8" }).trim() !== "";
   const recordPath = resolve(option(args, "--record") ??
-    join(out, "..", `census-${directory}-${commit.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, "-")}${
+    join(out, "..", `census-${directory}-${verifierCommit.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, "-")}${
       shardPart ? `-${shardPart[0]}-of-${shardPart[1]}` : ""}.json`));
   const rest = args.filter((a) => a !== "--shallow");
   if (rest.length) throw Error(`unknown arguments: ${rest.join(" ")}`);
   const started = performance.now();
-  prepare(out, directory);
+  prepare(out, directory, sourceRoot);
   const root = join(out, directory);
   const project = join(out, "tools");
   const cache = new Map<string, SourceModel>();
@@ -648,8 +654,9 @@ async function census(args: string[]): Promise<void> {
   const setting = storeSetting();
   const writeRecord = (): void => {
     const record: CensusRecord = {
+      verifierCommit,
       source: { commit, dirty, directory, files, functions },
-      policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
+      policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, memoryLimitBytes, shard: shardPart },
       started: new Date(Date.now() - (performance.now() - started)).toISOString(),
       elapsedMs: performance.now() - started,
       files: [...runs.values()],
@@ -900,6 +907,7 @@ type Census = {
 };
 function readCensus(paths: string): Census {
   let source: Census["source"] | null = null;
+  let verifierCommit: string | null = null;
   const runs = new Map<string, FileRun>();
   const inventory: Census["inventory"] = { files: new Map(), units: [] };
   let elapsedMs = 0;
@@ -907,13 +915,17 @@ function readCensus(paths: string): Census {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     const s = field(parsed, "source"), inv = field(parsed, "inventory"), elapsed = field(parsed, "elapsedMs");
     const commit = field(s, "commit"), dirty = field(s, "dirty"), directory = field(s, "directory");
+    const verifier = field(parsed, "verifierCommit") ?? commit;
     const files = field(s, "files"), functions = field(s, "functions");
     const runList = field(parsed, "files"), fileList = field(inv, "files"), unitList = field(inv, "units");
-    if (typeof commit !== "string" || typeof dirty !== "boolean" || typeof directory !== "string" ||
+    if (typeof commit !== "string" || typeof verifier !== "string" || typeof dirty !== "boolean" || typeof directory !== "string" ||
         typeof elapsed !== "number" || !Array.isArray(runList) || !Array.isArray(fileList) || !Array.isArray(unitList))
       throw Error(`${path} is no census record`);
     if (source && (source.commit !== commit || source.directory !== directory))
       throw Error(`${path} is a census of ${directory} at ${commit}, the others of ${source.directory} at ${source.commit}`);
+    if (verifierCommit !== null && verifierCommit !== verifier)
+      throw Error(`${path} used verifier ${verifier}, the other records used ${verifierCommit}`);
+    verifierCommit = verifier;
     source = { commit, dirty, directory, files: files === null ? null : strings(files, "the census's files"),
       functions: functions === null ? null : strings(functions, "the census's functions") };
     elapsedMs = Math.max(elapsedMs, elapsed);

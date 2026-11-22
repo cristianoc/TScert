@@ -352,6 +352,13 @@ and their dependency closure (`SHALLOW=1` without it); a shard checks its
 files without it, and deep status is computed over the shards' records
 together.
 
+CI checks the `tools/` corpus from v0.94 with the verifier built from the
+revision under test. It installs the corpus checkout's project dependencies
+and applies the release census's per-stage limits of 30 minutes and 4 GiB.
+CI compares results when the corpus and stage limits match. Local census
+runs use the current checkout by default. Pass `--source-root <checkout>`
+to `node dev/census.mts` to select another checkout of TScert.
+
 Censuses of `dev/`, `tests/` and `pipeline/` are reported under their own
 directory names; an aggregate of directories is labelled with its scope.
 [Statement coverage](#statement-coverage) is a separate measure, weighted
@@ -416,9 +423,10 @@ that enter or leave the counted set also move that denominator.
 **Records.** A census record holds each file's source hash and its
 inventory, every unit with its file, span, position, kind, owner and class
 ([`dev/statement-coverage.mts`](../dev/statement-coverage.mts)). The measure
-of an existing record is computed from the sources of the record's commit,
+of an existing record is computed from the record's source commit,
 or of the checkout for a census of a dirty tree, compared with the record's
-hashes per file.
+hashes per file. The record also identifies the verifier commit and records
+the stage limits.
 
 ### Modules and code units
 
