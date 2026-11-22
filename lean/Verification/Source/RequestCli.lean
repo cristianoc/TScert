@@ -8,7 +8,7 @@ import Verification.Source.WorkerWire
 import Verification.Source.ComponentChecks
 import Verification.Source.Claims.FlowProbe
 import Verification.Source.Claims.FramedCheck
-import Verification.Source.Claims.CallbackInterfaceCheck
+import Verification.Source.Claims.CallbackLinkedEntry
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -562,6 +562,19 @@ def componentOutcome (a : Json) : Json :=
   | .ok j => j
   | .error _ => .arr #[]
 
+private def PreparedFile.callbackDependencies (p : PreparedFile) (i : Nat) : List Nat :=
+  (p.fr.edges i).filter p.callbackUnits.contains
+
+/-- Only a directly named, same-file producer can be discharged in the
+caller's own source execution. Other dependency shapes keep their refusal. -/
+def PreparedFile.linkedProducer? (p : PreparedFile) (i : Nat) : Option Nat := do
+  if !(markedCallbackParams p.fr i).isEmpty || !p.force.isEmpty then none else
+    let [j] := p.callbackDependencies i | none
+    if !(p.fr.units[j]?).any (fun (fn,_,_) => fn.params.length == 2) || (markedCallbackParams p.fr j).isEmpty ||
+        !(p.callbackDependencies j).isEmpty ||
+        !((p.fr.mentions i ++ p.fr.mentions j).all fun name => !p.callbackBindings.any (·.1 == name))
+      then none else some j
+
 /-- Mode 8's preparation of a file's fragment and the module interfaces its
 imports read: the fragment and interfaces decoded, the file's claims and
 front lowered (`fragmentClaims`, `fileFront`, no import read at an interface:
@@ -632,9 +645,15 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
       (!callbackBindings.isEmpty && (fr.mentions i).any fun name => callbackBindings.any (·.1 == name))
     let callbackUnits : Std.HashSet Nat := if direct.isEmpty then {} else .ofList <|
       (List.range fr.units.length).filter fun i => direct.contains i || (fr.reach i).any direct.contains
-    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
-      interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans, memo, framed, callbackInterfaces, callbackBindings, callbackUnits }
+    let file : PreparedFile :=
+      { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+        interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
+        givenLines, fuel, quiet, t0, proposals, plans, memo, framed, callbackInterfaces, callbackBindings, callbackUnits }
+    let roots := selection names
+    let requested := fr.selected roots
+    if roots.isSome && !requested.isEmpty && requested.all (fun i => (file.linkedProducer? i).isSome) then
+      { file with selected := roots }
+    else file
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -957,7 +976,7 @@ producer's document); and that plan's check by the pass (`passGroupMode8`
 over the plans with the member's plan the framed plan). Where that check
 accepts, the group's verdict is acceptance under the client obligation of
 the framed members' components (`FilePlans.clientComponents`,
-`Mode8Accepted.framed`); otherwise the group's refusal, its text gaining the
+`OrdinaryMode8Accepted.framed`); otherwise the group's refusal, its text gaining the
 framed plan's line: the component's, a restriction's or the decoder's
 refusal, or the framed plan's check's, followed by why each framed node
 that drops a support drops the first. With `TSCERT_FRAMED`, the
@@ -1011,9 +1030,6 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
           | .error w => (.error s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}", [])
   return (.error reason, [])
 
-private def PreparedFile.callbackDependencies (p : PreparedFile) (i : Nat) : List Nat :=
-  (p.fr.edges i).filter p.callbackUnits.contains
-
 private def PreparedFile.callbackInterface (p : PreparedFile) (i : Nat)
     (plan : Option (Except String SourceClaimJson.FilePlans) := none) :
     IO (Except String SourceClaimJson.CallbackInterfaceCheck.Published) :=
@@ -1037,6 +1053,36 @@ where
     p.callbackInterfaces.modify (·.insert member result)
     return result
 
+/-- Freeze the two declarations together at the only print site that uses
+their joint proof. Neither declaration supplies a previously cached row. -/
+def PreparedFile.linkedPlans (p : PreparedFile) (i j : Nat) : Except String SourceClaimJson.FilePlans := do
+  let names := [i,j].map fun member => SourceClaimJson.memberName (p.fr.unitId member)
+  let f ← SourceClaimJson.fragmentPlansFromInterfaces p.ast p.fileKey p.budget (some names) {} p.force
+    p.est p.tables (some p.front) [] {}
+  return f.withHeadFacts p.givenLines false (inferred := true)
+
+/-- Both the statements checked in the common store and the host contracts
+read by them travel with the joint verdict. The proof field is erased. -/
+structure LinkedReport (p : PreparedFile) (i j : Nat) where
+  contracts : List Json
+  checked : ∃ f, p.linkedPlans i j = .ok f ∧
+    (SourceClaimJson.PassUnit.OverStore f → SourceClaimJson.CallbackInterfaceCheck.LinkedMemberSafe f i j)
+
+def PreparedFile.checkLinked (p : PreparedFile) (i j : Nat) : Except String (LinkedReport p i j) :=
+  match hp : p.linkedPlans i j with
+  | .error why => .error why
+  | .ok f => do
+    if p.fr.group i != [i] || p.fr.unitId i != f.fr.unitId i || p.fr.unitId j != f.fr.unitId j then
+      throw "joint plan does not match the selected declarations"
+    let ⟨sound⟩ ← SourceClaimJson.CallbackInterfaceCheck.certifyLinked f i j p.fuel
+    return ⟨f.contractReads [i,j],⟨f,hp,sound⟩⟩
+
+/-- The exact verdict consumed by the worker's ordinary verified print site. -/
+def PreparedFile.linkedVerdict (p : PreparedFile) (i j : Nat) : Except String (List String) × List Json :=
+  match p.checkLinked i j with
+  | .ok report => (.ok [],report.contracts)
+  | .error why => (.error ("inferred callback preservation: " ++ why),[])
+
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
 earlier unit's proposals planned it at, where kept, then released), then
@@ -1058,6 +1104,9 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+  if let some producer := p.linkedProducer? i then
+    let (verdict,contracts) := p.linkedVerdict i producer
+    return (WorkerWire.verdictLine unit members verdict none contracts [],match verdict with | .ok _ => none | .error why => some why)
   let known ← p.known i
   -- (a group's plans kept from a later unit's proposals read once, here:
   -- no unit checked after this one reads them, only their proposals)

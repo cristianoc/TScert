@@ -212,31 +212,44 @@ by `runKeepsSummaries` (both proved, [the graph proof](SINGLE-PASS-PROOF.md)):
 its only premises are the file's plans and the accepted verdict.
 
 **Theorem** `mode8Accepted_sound` (proved, PassUnitRun, the
-acceptance theorem). `Mode8Accepted f i` holds at
-either of mode 8's print sites: the file's own check
-(`--verify-interface-stage 8` and `--file-worker 8`, one preparation and one
-unit check, the case `main`, whose premises are `passUnitVerdict_sound`'s) and a module's group checked in the interface
-stage (`--module-interface`, the case `freshModule`: the module planned by
-`fragmentPlansCore`, prepared by `preparedModuleMode8`, its group accepted
-by `passGroupMode8`). Then $`\mathrm{PassUnitSafe}(f, i)`$:
+acceptance theorem). Its premise is `Mode8Accepted unit` and its
+conclusion is `Mode8Unit.Safe unit`.
 
-```math
-\mathrm{Mode8Accepted}(f, i) \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
-```
+* For `.ordinary f i`, the main file, fresh module and framed print paths
+  establish `PassUnitSafe f i`. Each member's request has its existing
+  graph or framed judgment. A graph's entry satisfies its input contracts,
+  separation and index facts in an admissible world and well-typed heap.
+* For `.linked p i j`, the selected caller's `linkedProducer?` chooses
+  the marked declaration and `linkedVerdict` returns success. The theorem
+  produces the exact joint plans computed by `p.linkedPlans i j`, their
+  two source requests and their checked sibling slot. Its conclusion is
+  `LinkedEntrySafe` and the caller's footprint, ensures, regional,
+  assertion and nested-code assertion clauses. The checker restricts those
+  additional obligations to empty or unrestricted declarations.
+  `linkedVerdict_sound` also establishes that the returned list of
+  outstanding unit dependencies is empty.
 
-**What an accepted verdict guarantees.** An accepted unit certifies every
-member's request, and each request is safe from every entry satisfying its
-input contracts, entry separation and index facts, an admissible kinded
-world and a heap that world types (`EntryHolds`), and whose bindings have
-valid references (`RootsOk`). The entry conditions sit inside the
-conclusion: acceptance proves no entry exists, and the guarantee is
-relative to the accuracy of the host model, which is what supplies such
-entries ([native contracts over kinded worlds](SOURCE-CONTRACTS.md#native-contracts-over-kinded-worlds)).
+In the linked case the caller executes from its ordinary lowered entry
+in the module environment constructed by `sourceModules`. The worker reads
+the receiverless code, arity and component from `FilePlans.moduleCodes`,
+and the ordered names and types from `FilePlans.captures`. It compares
+these with the requests used by the call proof. Each local capture must
+resolve to a unique declaration in the file. Outside captures must be
+known built-in prototypes or modeled host functions. `sourceLayout`
+derives the correspondence with the two declarations. The caller's
+lowered fixed-arity parameter frame and outside captures have their
+ordinary types, worlds, values and references. The closure in its linked slot is the value read by
+`ModuleCode.captured` and `approxEnv` at that declaration. The certificate establishes the
+caller prefix, fixed call arguments, concrete closure dispatch, callback
+preservation and returned value. The resulting `SafePostExc` includes
+ordinary exceptional execution and is relative to the host contracts.
 
-With the file-level part (`passFile_safe_kinds`, section 6) every closed
-unit's value meets its interface, and with `crossModule_safe` (section 7)
-an importer's units meet theirs, their imports discharged by their modules'
-checks.
+For ordinary units, the file theorem (`passFile_safe_kinds`, section 6)
+establishes their interfaces, and `crossModule_safe` (section 7) discharges
+imports with the exporting modules' checks. A linked certificate applies
+to the source caller at this checked call. Standalone ordinary arrows for
+marked declarations and callback-dependent imports remain outside this
+composition.
 
 ### The hypotheses, by level and class
 

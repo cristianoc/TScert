@@ -260,6 +260,7 @@ import Verification.Source.Claims.CallbackMarkedCopies
 import Verification.Source.Claims.CallbackNameHistory
 import Verification.Source.Claims.CallbackOrigins
 import Verification.Source.Claims.CallbackPrefixGraph
+import Verification.Source.Claims.CallbackLinkedEntry
 import Verification.Source.Claims.CallbackPrefixWitness
 import Verification.Source.Claims.CallbackPreservation
 import Verification.Source.Claims.CallbackPreservationSound

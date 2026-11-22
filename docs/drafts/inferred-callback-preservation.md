@@ -3,6 +3,39 @@
 [Read the paper (PDF)](inferred-callback-preservation-note/inferred-callback-preservation.pdf) ·
 [LaTeX source](inferred-callback-preservation-note/note.tex)
 
+## The existing mechanism this extends
+
+`writeInterface` replays the marked declaration using supports found by
+its annotation-driven walk. `check` resolves the supplied literal and
+checks its effect against those demands. For a cursor walk that calls its
+visitor just before reading `xs[c.i]`, the demand includes the length of
+`xs`. A literal that pops from `xs` fails that check. An empty literal
+passes it, but the walk's declaration alone cannot be used with an
+arbitrary callback of the same TypeScript arrow type.
+
+The direct caller now plans both declarations in one frozen store.
+`certifyLinked` reads the successful publication and caller scan, checks
+the source identity and the actual module slot, and builds the ordinary
+expression certificates up to the direct call with that slot masked.
+`TailSite.safe` applies the empty literal's operational preservation
+proof through the producer's dispatch and the caller's direct return.
+The worker may mark this caller verified without a separate unconditional
+verdict for the producer. Selecting the entire file still reports the
+producer independently.
+
+### What this duplicates
+
+The caller reads the same code inference and origin computation used by
+the interface scan to construct its dependent prefix certificate. It has
+no second implementation of effect inference, origin transfer, subtype
+checking or program execution. The source linkage uses the ordinary
+receiverless code from `FilePlans.moduleCodes` and the ordered capture
+rows from `FilePlans.captures`. It resolves local names to the file
+front's declaration indices. The model's ordinary module closure and
+capture operations evaluate that checked layout. The
+executable restriction and its proof are in
+[CallbackLinkedEntry](../../lean/Verification/Source/Claims/CallbackLinkedEntry.lean).
+
 The paper specifies how the experimental source checker infers effect
 requirements for preserving heap-dependent refinements across callback
 invocations. It gives rules for selecting and retaining facts, replaying

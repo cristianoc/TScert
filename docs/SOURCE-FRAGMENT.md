@@ -161,6 +161,25 @@ fragment.
 | An enum member named `__proto__` | The emit's assignment runs the prototype's setter and creates no property | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-proto-member` |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping may be written at the name | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-nan-name` |
 
+### Linked calls with inferred callback preservation
+
+A caller can discharge its single same-file dependency when it returns a
+direct call of a marked declaration with two fixed formals. Its second
+actual must be a literal with the checked empty callback body. The caller
+prefix must verify without reading the marked function as a typed value.
+The two declarations must have separate singleton units, the producer
+must have no further unit dependency, and the source binding, argument
+types, receiverless ABI and return edge must all pass the joint check.
+Both source declarations must use strict receiver handling. The
+module code and ordered typed captures must agree with the checked
+requests. The source layout admits only the linked declaration and
+modeled host functions or built-in prototypes as captures. The caller
+must be synchronous, have a plain matching result, and have
+no additional exit or assertion obligations. A write through a captured
+array that violates the published demand is refused at the actual
+argument. The marked declaration is checked independently when selected
+as its own unit. [Annotation and example](ANNOTATIONS.md#inferpreserves)
+
 ### Model limits
 
 Sound JavaScript that TypeScript accepts, refused because the model or its

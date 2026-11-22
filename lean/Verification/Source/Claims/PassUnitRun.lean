@@ -134,7 +134,7 @@ uses either planning route; the fresh-module branch uses the core planner,
 module preparation and row refusal. Cached module projections have no
 constructor. Planning inputs are universally quantified, as in
 `passUnitVerdict_sound`. -/
-inductive Mode8Accepted : FilePlans → Nat → Prop where
+inductive OrdinaryMode8Accepted : FilePlans → Nat → Prop where
   | main
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
@@ -152,7 +152,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel
       ((preparedMode8 force givenLines infer f₀).fr.group i) compare debugNode repeats given observe counting
       located).2.1 = .ok deps) :
-    Mode8Accepted (preparedMode8 force givenLines infer f₀) i
+    OrdinaryMode8Accepted (preparedMode8 force givenLines infer f₀) i
   | freshModule
     {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
     {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
@@ -169,7 +169,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
       (f.passGroupMode8 infer force keep fuel (f.fr.group i)
         (given := some (RequestCli.moduleGiven f.fr.ast
           (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)).2.1) = .ok deps) :
-    Mode8Accepted (preparedModuleMode8 force infer (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
+    OrdinaryMode8Accepted (preparedModuleMode8 force infer (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
   /-- A unit the main file's check refuses, accepted at a member's framed
   plan (`PreparedFile.framedVerdict`): the plans with that member's plan
   the framed plan (`FilePlans.framedPlan`), their group accepted. -/
@@ -190,11 +190,11 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     (hframed : (preparedMode8 force givenLines infer f₀).framedPlan fuel' j fc force = .ok (some (f', shown)))
     (haccepted : (f'.passGroupMode8 infer force keep fuel (f'.fr.group i) compare debugNode repeats given observe
       counting located).2.1 = .ok deps) :
-    Mode8Accepted f' i
+    OrdinaryMode8Accepted f' i
 
 /-- Every member of a group accepted at a mode 8 in-process check is safe. -/
-theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
-    (h : Mode8Accepted f i) : PassUnitSafe f i := by
+theorem ordinaryMode8Accepted_sound {f : FilePlans} {i : Nat}
+    (h : OrdinaryMode8Accepted f i) : PassUnitSafe f i := by
   cases h with
   | main hplanned _ haccepted => exact passUnitVerdict_sound hplanned haccepted
   | freshModule hplanned _ haccepted => exact freshModuleVerdict_sound hplanned haccepted
@@ -202,5 +202,46 @@ theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
     exact passGroupMode8_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
       (fun _ _ => Verification.TolerantFrames.runKeepsSummaries)
       (framedPlan_overStore (preparedMode8_overStore hplanned) hframed) haccepted
+
+/-- Both kinds of source judgment printed as verified. The ordinary unit
+ranges over arbitrary typed entries. A jointly checked call ranges over
+the caller's entries in the source module which binds its sibling. -/
+inductive Mode8Unit where
+  | ordinary (f : FilePlans) (leader : Nat)
+  | linked (p : RequestCli.PreparedFile) (caller producer : Nat)
+
+inductive Mode8Accepted : Mode8Unit → Prop where
+  | ordinary {f i} : OrdinaryMode8Accepted f i → Mode8Accepted (.ordinary f i)
+  | linked {p : RequestCli.PreparedFile} {i j deps} :
+      i ∈ p.units → p.linkedProducer? i = some j → (p.linkedVerdict i j).1 = .ok deps →
+      Mode8Accepted (.linked p i j)
+
+/-- The common store is the exact store produced by the worker. -/
+def Mode8Unit.Safe : Mode8Unit → Prop
+  | .ordinary f i => PassUnitSafe f i
+  | .linked p i j => ∃ f, p.linkedPlans i j = .ok f ∧ CallbackInterfaceCheck.LinkedMemberSafe f i j
+
+/-- A successful joint check discharges the complete wire dependency list.
+The linked producer is safe at this call in the source module environment.
+The CLI consequently publishes an empty dependency list for the caller. -/
+theorem linkedVerdict_sound {p : RequestCli.PreparedFile} {i j deps}
+    (verdict : (p.linkedVerdict i j).1 = .ok deps) : deps = [] ∧ (Mode8Unit.linked p i j).Safe := by
+  cases hr : p.checkLinked i j with
+  | error why => simp [RequestCli.PreparedFile.linkedVerdict,hr] at verdict
+  | ok report =>
+    obtain ⟨f,planned,cert⟩ := report.checked
+    refine ⟨by simpa [RequestCli.PreparedFile.linkedVerdict,hr] using verdict.symm, f,planned,cert ?_⟩
+    unfold RequestCli.PreparedFile.linkedPlans at planned
+    obtain ⟨base,hbase,hf⟩ := except_bind_ok planned
+    cases hf
+    exact withHeadFacts_overStore (fragmentPlansFromInterfaces_overStore hbase)
+
+/-- Every accepted print-site judgment establishes its modeled source
+safety. For a linked caller, acceptance itself supplies the declarations,
+source binding, joint plan, and checked call and prefix. -/
+theorem mode8Accepted_sound {unit : Mode8Unit} (accepted : Mode8Accepted unit) : unit.Safe := by
+  cases accepted with
+  | ordinary h => exact ordinaryMode8Accepted_sound h
+  | linked _ _ verdict => exact (linkedVerdict_sound verdict).2
 
 end Verification.SourceClaimJson.PassUnit

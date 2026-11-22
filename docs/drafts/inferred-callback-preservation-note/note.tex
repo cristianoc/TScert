@@ -42,12 +42,14 @@
 }
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
 \newtheorem{conjecture}{Conjecture}
 \newcommand{\paperbox}[2]{\tcolorboxenvironment{#1}{enhanced,breakable,
   colback=#2,colframe=#2,boxrule=0pt,frame hidden,sharp corners,
   borderline west={2.5pt}{0pt}{accent},left=9pt,right=6pt,top=4pt,bottom=4pt,
   before skip=10pt,after skip=10pt}}
 \paperbox{definition}{defbg}
+\paperbox{theorem}{defbg}
 \paperbox{conjecture}{exbg}
 \newcommand{\change}[1]{\textcolor{chgc}{\mathsf{#1}}}
 \newcommand{\keep}{\ensuremath{\change{keep}}}
@@ -95,8 +97,9 @@ and across module boundaries. A guarded Pretext walker infers a
 requirement to preserve a length equality. A reduced example shows
 where applications succeed and where fresh-array separation and
 closure adaptation exceed the implemented rules. The source feature
-is experimental and its composition with the verifier's soundness
-theorem remains open.
+is experimental in general. The normal verifier has a proved
+acceptance case for a direct same-file caller that supplies an empty
+literal visitor under the restrictions stated below.
 \end{abstract}
 
 \section{The problem}\label{sec:problem}
@@ -523,8 +526,10 @@ respectively. A caller allocation identity requires a checked
 single-execution site. The concrete Boolean check is \lean{Demand.check}.
 
 For a consumer unit, the source driver checks the uses of the
-completed interfaces and then runs the ordinary group check.
-Success on this path is reported as an experimental result.
+completed interfaces. The linked case in Section~\ref{sec:soundness}
+adds the certificates required for a verified verdict. The broader
+experimental path also runs the ordinary group check and reports its
+callback result as experimental.
 The ordinary verified judgment remains governed by the existing
 soundness theorem.
 
@@ -671,7 +676,34 @@ the stepper and statistics updates. \status{source run}
 
 \section{Soundness and scope}\label{sec:soundness}
 
-\subsection{Statements to prove}
+\subsection{Worker acceptance}
+
+\begin{theorem}[Safety of a verified linked caller]
+When the normal worker selects a caller and its linked producer and
+its \lean{linkedVerdict} returns success, the caller is safe from its
+lowered entry to return in the checked source module environment, under
+the ordinary hypotheses on argument and host values and the initial
+heap. Its outstanding unit dependencies are empty.
+\end{theorem}
+
+The acceptance case of \lean{mode8Accepted\_sound} uses the same result
+that the worker converts to the verified verdict. The worker plans the
+two units together and checks the source module's code, ordered capture
+slots and declaration identities. It checks the producer publication,
+the caller's use of it, and certificates for the caller prefix, fixed
+arguments and return. The checked source layout determines the linked
+closure. The proof uses the modeled host contracts and establishes no
+unconditional promise for the producer as a standalone unit.
+
+This acceptance case covers a direct same-file, receiverless fixed
+call with an empty literal callback and a direct result return. The
+checker refuses a candidate at the first failed certificate check.
+The mutable collector remains outside the accepted case. In the walker
+example the verified caller supplies a no-op visitor. The caller
+whose visitor pops from the protected array is refused.
+\status{Lean and worker regression}
+
+\subsection{General soundness targets}
 
 \begin{conjecture}[Producer soundness]
 Suppose the producer check succeeds and the producer enters in a state
@@ -704,7 +736,7 @@ these allocations. The narrower base case uses an empty callback,
 whose lowered body returns \code{undefined} with the same heap.
 \status{conjecture}
 
-\subsection{Scope of the first application theorem}
+\subsection{Scope of the joint-plan proofs}
 
 The source checker described in Sections~\ref{sec:rules}--\ref{sec:effects}
 has its own acceptance conditions. A narrower theorem can leave some
@@ -777,9 +809,9 @@ cover.
 \end{description}
 
 The whole-caller proof takes a joint same-file plan, with the caller
-and producer checked in one type store. The CLI worker builds plans
-for the two units independently, and relating those stores is a
-separate obligation even in the same file.
+and producer checked in one type store. The worker constructs that plan
+for its proved linked case. The broader experimental path can still
+check units in separately frozen stores.
 
 The proof uses an additional certificate for the ordinary preparation
 before the direct application. The certificate checks each expression
@@ -787,8 +819,7 @@ against the types of the slots it reads and follows the actual edge
 mappings. The prefix can carry the marked producer's closure as a value
 and establish the contract for invoking it at the call. The proof also
 checks the two fixed operand types against the producer's entry types.
-These certificates are premises of the first proof, beyond the
-experimental verdict.
+The worker checks these certificates before accepting the linked case.
 
 The checked collector statement further assumes that the producer has
 no additional entry separation or index facts to establish and that the
@@ -882,12 +913,9 @@ realized roots and private-field preservation give the supports selected
 at the invocation. The existing frame theorem then proves the index
 facts that the pass retains. \status{Lean}
 
-The source soundness theorem still requires a proof that allocation
-provenance, the escape scan and the call-site analysis establish
-those semantic premises. It also requires relating reached evaluations
-to the pass's recorded visits, proving their argument-path facts and
-connecting the interface checks and body walk to the verifier's
-acceptance theorem.
+The general source conjectures require these semantic premises to be
+derived across the broader experimental path, including checked uses
+with call layouts beyond the linked case.
 \status{conjecture}
 
 The normal source producer instantiates only the normal demand.

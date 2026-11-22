@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { check } from "../pipeline/verify-source.mts";
@@ -17,6 +19,25 @@ export function walk(xs: number[], visit: InferPreserves<Visitor>): number {
     c.i++;
   }
   return sum;
+}
+`;
+const directCallers = `
+export function preserves(xs: number[]): number {
+  return walk(xs, () => {});
+}
+export function shrinks(xs: number[]): number {
+  return walk(xs, () => { xs.pop(); });
+}
+export function head(xs: number[], visit: InferPreserves<() => void>): number {
+  if (xs.length === 0) return 0;
+  visit();
+  return xs[0]!;
+}
+export function preservesHead(xs: number[]): number {
+  return head(xs, () => {});
+}
+export function dropsHead(xs: number[]): number {
+  return head(xs, () => { xs.pop(); });
 }
 `;
 const clients = `
@@ -101,6 +122,17 @@ const shrinkingWrapper = `
 export function shrink(xs: number[]): number {
   return walk(xs, () => { xs.pop(); });
 }
+export function head(xs: number[], visit: InferPreserves<() => void>): number {
+  if (xs.length === 0) return 0;
+  visit();
+  return xs[0]!;
+}
+export function preservesHead(xs: number[]): number {
+  return head(xs, () => {});
+}
+export function dropsHead(xs: number[]): number {
+  return head(xs, () => { xs.pop(); });
+}
 `;
 const capturedRoot = `
 const shared: number[] = [1];
@@ -124,13 +156,19 @@ writeFileSync(project, JSON.stringify({
   compilerOptions: { strict: true, target: "ES2022", module: "NodeNext" },
   files: [annotations, combined, producer, consumer],
 }));
-writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients + spreadProducer + spreadClients + capturedRoot);
+writeFileSync(combined, walker + directCallers + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients + spreadProducer + spreadClients + capturedRoot);
 writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer + spreadProducer + shrinkingWrapper);
 writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter, walkSpread, shrink } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients + spreadClients + `
 export function callShrinkingWrapper(xs: number[]): number {
   return shrink(xs);
 }
 `);
+
+// The callback invalidates the indexed read, so the declared number result
+// becomes undefined on a one-element array.
+execFileSync(process.execPath, ["--input-type=module", "-e",
+  `import { preservesHead, dropsHead } from ${JSON.stringify(pathToFileURL(combined).href)};
+   if (preservesHead([7]) !== 7 || dropsHead([7]) !== undefined) process.exit(1);`]);
 
 for (const source of [combined, consumer]) {
   const outcome = check(source, project, false, undefined, false,
@@ -143,12 +181,20 @@ for (const source of [combined, consumer]) {
     return member.detail;
   };
   if (source === combined) {
+    const proved = outcome.units.find(u => u.unit.startsWith("preserves@"));
+    assert.equal(proved?.status, "verified");
+    assert.deepEqual(proved?.depends, []);
+    assert.equal(outcome.units.find(u => u.unit.startsWith("preservesHead@"))?.status, "verified");
+    assert.match(detail("dropsHead"), /fails its inferred preservation requirement/);
+    assert.match(detail("shrinks"), /fails its inferred preservation requirement/);
+    assert.match(detail("sumAndTrace"), /caller has an exit or assertion obligation outside its linked certificate/);
     assert.match(detail("walk"), /inferred callback interface checked experimentally/);
     assert.match(detail("through"), /inferred callback interface checked experimentally/);
     assert.match(detail("walkSpread"), /actualRoots := \[none\]/);
     assert.match(detail("spreadCallback"), /a spread obscures callback argument 2 at call of walk/);
     assert.match(detail("callWithExtraArgument"), /callback requirement for readShared refers outside its fixed parameters/);
   } else {
+    assert.match(detail("sumAndTrace"), /inferred callback preservation checked experimentally/);
     assert.match(detail("spreadCallback"), /callback argument 2 at call of walk .* fails its inferred preservation requirement/);
     assert.match(detail("callShrinkingWrapper"), /shrink has no checked inferred callback interface/);
   }
@@ -160,7 +206,13 @@ for (const source of [combined, consumer]) {
   assert.match(detail("throughAlias"), /callback argument 2 at call of through .* fails its inferred preservation requirement/);
   assert.match(detail("appendToTarget"), /inferred callback preservation checked experimentally/);
   assert.match(detail("appendToAliasedTarget"), /callback argument 3 at call of walkWithTarget .* fails its inferred preservation requirement/);
-  assert.match(detail("sumAndTrace"), /inferred callback preservation checked experimentally/);
   assert.match(detail("sumAndAlias"), /callback argument 2 at call of walk .* fails its inferred preservation requirement/);
 }
-console.log("The annotation alone checks the fresh trace and refuses the alias locally and across a module interface.");
+for (const [root, status] of [["preserves", "verified"], ["shrinks", "unverified"]] as const) {
+  const selected = check(combined, project, false, undefined, false,
+    { omitted: [], select: [root], reportComponents: false });
+  assert.equal(selected.status, status);
+  assert.ok("units" in selected && selected.units);
+  assert.deepEqual(selected.units.map(u => u.unit.split("@")[0]), [root]);
+}
+console.log("Verified the linked direct call and checked callback refusals for local and imported declarations.");
