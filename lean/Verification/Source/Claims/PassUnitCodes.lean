@@ -70,16 +70,77 @@ theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
       CallEffects.TypePromise.param]
     rfl
 
-/-- **A code's run from a frame** (proved): a code whose graph is safe at every
-assignment from `inputs`, the separation `sep` and the entry facts `indices`
-at `goal`, and within its bound (`codeRunBound`) where it has one, run as its
-node lists from any frame `(L, d)` meeting those entry conditions, is safe at
-`goal`, returning within its normal exit's bound with a fresh result where the
+/-- **A code's run from one frame** (proved): a code whose graph is safe
+from the frame `(L, d)` at `goal`, and within its bound (`codeRunBound`)
+where it has one, run as its node lists from that frame, is safe at `goal`,
+returning within its normal exit's bound with a fresh result where the
 signature states one and throwing within its exceptional exit's bound
-(`exitBounds`). With no bound, both exits' bounds are `⊤` and every run keeps
-the old locations, or a pure body changes nothing; with one, the run checked
-within both exits' bounds (`RunBound`), an exceptional bound of `⊤` met by the
-heap's growth. Shared by code requests (`codeSpec_of_clauses`), module rows
+(`exitBounds`). With no bound, both exits' bounds are `⊤` and every run
+keeps the old locations, or a pure body changes nothing; with one, the run
+checked within both exits' bounds (`RunBound`), an exceptional bound of `⊤`
+met by the heap's growth. -/
+theorem codeRun_at {G : NormalGraph ι} {c : CodeEntry ι} {goal : ControlFlow.Goal ι}
+    {comp : ComponentTag} {n : Nat} {W : WorldT n} {heap : Heap} {L : List Tm} {d : Tm}
+    (hsafe : (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (envOf L d i)) →
+      SafeGraph (excOf G) (GraphCode.program c.exprs c.conts)
+        (GoalHolds G goal (goal.argument (envOf L d))) n W heap (.at c.start (envOf L d)))
+    (hbound : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) →
+      HeapObservations.SafePostExc (excOf G)
+        (GoalHolds G goal (goal.argument (envOf L d)))
+        (fun h' v => Φ.Holds heap h' ∧ (fresh = true → Footprints.FreshAt heap.length v))
+        (fun h' => Ψ ≠ .top → Ψ.Holds heap h') n W heap (.goto c.exprs c.conts c.start L d comp))
+    (href : RefsOk W (.goto c.exprs c.conts c.start L d comp))
+    (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
+    HeapObservations.SafePostExc (excOf G)
+      (GoalHolds G goal (goal.argument (envOf L d)))
+      (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+        (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
+      (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
+      (.goto c.exprs c.conts c.start L d comp) := by
+  have hgraph := hsafe (GraphCode.program_refs (GraphCode.goto_refs href).1) (GraphCode.goto_refs href).2
+  have hsafe : Safe (excOf G) (GoalHolds G goal (goal.argument (envOf L d)))
+      n W heap (.goto c.exprs c.conts c.start L d comp) :=
+    GraphCode.safe_of_sim n W heap .goto (GraphCode.goto_refs href).1 hgraph
+  by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
+      !c.row.effect.schema.normal.freshResult) = true
+  · -- Both exits' bounds `⊤` and no fresh result: the run is given no
+    -- bound, and every run keeps the old locations on either exit.
+    simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
+    have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
+      (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (Footprints.Closed.top_safe hsafe))
+    exact HeapObservations.SafePostExc.weaken
+      (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
+      (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
+  · by_cases hpure : c.row.effect.schema.normal.freshResult = false ∧ c.exprs.all Purity.pureTerm = true
+    · -- A pure body changes nothing: within every bound.
+      have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
+      exact HeapObservations.SafePostExc.weaken
+        (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+            hq, fun hf => by simp [hpure.1] at hf⟩)
+        (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+        (CallEffects.pure_safe_exc (.goto hp hvalues hd) hsafe)
+    · have hbound' : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
+          c.row.effect.schema.normal.freshResult) := by
+        have h1 := Bool.eq_false_iff.mpr htop
+        have h2 : (!c.row.effect.schema.normal.freshResult && c.exprs.all Purity.pureTerm) = false := by
+          cases hfr : c.row.effect.schema.normal.freshResult <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
+        simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
+        rfl
+      have hb := hbound _ _ _ hbound'
+      refine HeapObservations.SafePostExc.weaken (fun h' v hq => hq.1) (fun h' hq => ?_)
+        (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
+      -- A throw within the exceptional bound, or, where that is `⊤`, by
+      -- the heap's growth.
+      by_cases hex : (exitBounds c.row.effect).exceptional = .top
+      · rw [hex]; exact Footprints.Closed.holds_top.mpr hq.2
+      · exact hq.1 hex
+
+/-- **A code's run from a frame** (proved, `codeRun_at` at each frame): a
+code whose graph is safe at every assignment from `inputs`, the separation
+`sep` and the entry facts `indices` at `goal`, and within its bound
+(`codeRunBound`) where it has one, run as its node lists from any frame
+`(L, d)` meeting those entry conditions, is safe at `goal` within its exits'
+bounds. Shared by code requests (`codeSpec_of_clauses`), module rows
 (`rowSpec_of_clauses`) and receiverless module rows (`receiverDropSound`). -/
 theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     {inputs : List (Ty ι)} {sep : HeapSeparation.Separation}
@@ -106,46 +167,10 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
         (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
           (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
         (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
-        (.goto c.exprs c.conts c.start L d comp) := by
-  intro η n W heap L d hentry href hvalues hd
-  have hgraph := hsafeG η n W heap (envOf L d) hentry (GraphCode.program_refs (GraphCode.goto_refs href).1)
-    (GraphCode.goto_refs href).2
-  have hsafe : Safe (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      n W heap (.goto c.exprs c.conts c.start L d comp) :=
-    GraphCode.safe_of_sim n W heap .goto (GraphCode.goto_refs href).1 hgraph
-  by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
-      !c.row.effect.schema.normal.freshResult) = true
-  · -- Both exits' bounds `⊤` and no fresh result: the run is given no
-    -- bound, and every run keeps the old locations on either exit.
-    simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
-    have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
-      (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (Footprints.Closed.top_safe hsafe))
-    exact HeapObservations.SafePostExc.weaken
-      (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
-      (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
-  · by_cases hpure : c.row.effect.schema.normal.freshResult = false ∧ c.exprs.all Purity.pureTerm = true
-    · -- A pure body changes nothing: within every bound.
-      have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
-      exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-            hq, fun hf => by simp [hpure.1] at hf⟩)
-        (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
-        (CallEffects.pure_safe_exc (.goto hp hvalues hd) hsafe)
-    · have hbound : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
-          c.row.effect.schema.normal.freshResult) := by
-        have h1 := Bool.eq_false_iff.mpr htop
-        have h2 : (!c.row.effect.schema.normal.freshResult && c.exprs.all Purity.pureTerm) = false := by
-          cases hfr : c.row.effect.schema.normal.freshResult <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
-        simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
-        rfl
-      have hb := hboundG _ _ _ hbound η n W heap L d hentry href hvalues hd
-      refine HeapObservations.SafePostExc.weaken (fun h' v hq => hq.1) (fun h' hq => ?_)
-        (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
-      -- A throw within the exceptional bound, or, where that is `⊤`, by
-      -- the heap's growth.
-      by_cases hex : (exitBounds c.row.effect).exceptional = .top
-      · rw [hex]; exact Footprints.Closed.holds_top.mpr hq.2
-      · exact hq.1 hex
+        (.goto c.exprs c.conts c.start L d comp) :=
+  fun η n W heap L d hentry href hvalues hd =>
+    codeRun_at (hsafeG η n W heap (envOf L d) hentry)
+      (fun Φ Ψ fresh hb => hboundG Φ Ψ fresh hb η n W heap L d hentry href hvalues hd) href hvalues hd
 
 /-- **A code safe from its frame, within its bound, meets its signature**
 (proved): a code meeting its conditions, whose graph is safe at every

@@ -415,16 +415,71 @@ theorem safePostExc_and {Ξ T : Fam} {Q Q' : HeapObservations.Post} {R : Heap �
 section
 variable {ι : Type}
 
-/-- **A code safe from its frame, within its bound and meeting its
-postcondition, is module code at its signature** (proved): a code meeting
+/-- **A code's run from one frame of its signature** (proved): a code meeting
 the row conditions (`rowConditions`) and collecting no rest, whose graph is
-safe at every assignment from its frame and the separation `sep`, within its
-bound where it has one, and, where its signature states a postcondition,
-returns with the postcondition's facts true of the result and its entry
-frame, meets its signature as a module row (`RowSpec`) at `sep`: the run
-(`codeRun_of_clauses`) with the facts at the call's values
+safe from the frame `L` (receiver slot `.nul`), within its bound where it has
+one, and, where its signature states a postcondition, returns with the
+postcondition's facts true of the result and that frame, is safe at its
+signature's result and its specification on both exits from that frame:
+the run (`codeRun_at`) with the facts at the call's values
 (`Effect.ensures_frame`) establishes every postcondition the signature
 exports on both exits (`exportsEstablished_sound`). -/
+theorem rowRun_at {G : NormalGraph ι} {c : CodeEntry ι}
+    (hcond : rowConditions c = true) (hspine : c.spine = none)
+    {n : Nat} {W : WorldT n} {heap : Heap} {L : List Tm} {comp : ComponentTag}
+    (hsafe : (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) →
+      (∀ i, RefsOk W (envOf L .nul i)) →
+      SafeGraph (excOf G) (GraphCode.program c.exprs c.conts)
+        (GoalHolds G c.goal (c.goal.argument (envOf L .nul))) n W heap (.at c.start (envOf L .nul)))
+    (hbound : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) →
+      RefsOk W (.goto c.exprs c.conts c.start L .nul none) →
+      HeapObservations.SafePostExc (excOf G)
+        (GoalHolds G c.goal (c.goal.argument (envOf L .nul)))
+        (fun h' v => Φ.Holds heap h' ∧ (fresh = true → Footprints.FreshAt heap.length v))
+        (fun h' => Ψ ≠ .top → Ψ.Holds heap h') n W heap (.goto c.exprs c.conts c.start L .nul none))
+    (hens : c.row.effect.schema.normal.facts ≠ [] → RefsOk W (.goto c.exprs c.conts c.start L .nul none) →
+      HeapObservations.SafePost (excOf G)
+        (GoalHolds G c.goal (c.goal.argument (envOf L .nul)))
+        (fun h' v => GraphCode.EnsuresAt c.row.effect.schema.normal.facts ⟨envOf L .nul, heap⟩ h'
+          (push v (envOf L .nul))) n W heap
+        (.goto c.exprs c.conts c.start L .nul none))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hgo : RefsOk W (.goto c.exprs c.conts c.start L .nul comp))
+    (hvalues : CallArguments.Values L) {r : Tm} {args : List Tm}
+    (hframe : FrameValues c.arity (none : Option (Ty ι)) L r args) :
+    HeapObservations.SafePostExcV (excOf G)
+      (c.row.effect.result (meaning G c.row.result) (framePromised c.row.effect (frameOffset (none : Option (Ty ι))) L))
+      (c.row.effect.schema.exitPostW .normal r args W heap) (c.row.effect.schema.exitPostW .exceptional r args W heap)
+      n W heap (.goto c.exprs c.conts c.start L .nul comp) := by
+  simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
+  obtain ⟨⟨⟨_harity, hrow⟩, _hreq⟩, hx⟩ := hcond
+  -- The premises state the run outside every component (`none`), and a
+  -- run's component is ghost (`SafePostExcV.goto_comp_iff`).
+  replace hgo := (goto_refsOk_comp_iff comp none).mp hgo
+  apply (HeapObservations.SafePostExcV.goto_comp_iff none comp).mp
+  have hrun := codeRun_at hsafe (fun Φ Ψ fresh hb => hbound Φ Ψ fresh hb hgo) hgo hvalues rfl
+  rw [code_goal, hspine] at hrun
+  obtain ⟨pre, vs, hpl, rfl⟩ := hframe
+  have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
+  subst hpre0
+  refine exportsEstablished_sound hx hw hh ?_
+  by_cases hne : c.row.effect.schema.normal.facts = []
+  · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hrun
+  · have hens' := hens hne hgo
+    rw [code_goal, hspine] at hens'
+    refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens')
+    obtain ⟨⟨h1, h2⟩, hq⟩ := hq
+    exact ⟨h1, h2, fun F hF =>
+      (CallEffects.Effect.ensures_frame (CallEffects.Effect.belowRow_ensures hrow hF).1
+        (CallEffects.Effect.belowRow_ensures hrow hF).2 v r args vs .nul heap h').mpr (by simpa using hq F hF)⟩
+
+/-- **A code safe from its frame, within its bound and meeting its
+postcondition, is module code at its signature** (proved, `rowRun_at` at
+each frame): a code meeting the row conditions (`rowConditions`) and
+collecting no rest, whose graph is safe at every assignment from its frame
+and the separation `sep`, within its bound where it has one, and, where its
+signature states a postcondition, returns with the postcondition's facts
+true of the result and its entry frame, meets its signature as a module row
+(`RowSpec`) at `sep`. -/
 theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
     (hcond : rowConditions c = true) (hspine : c.spine = none)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
@@ -449,60 +504,45 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (.goto c.exprs c.conts c.start L d none)) :
     ∀ η, RowSpec (reassign G η) c.arity c.exprs c.conts c.start c.captures c.row sep := by
   intro η
-  simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
-  obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
+  have hcond' := hcond
+  simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond'
+  obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, _hx⟩ := hcond'
   refine ⟨harity, hrow, ?_⟩
   intro n W heap L comp he hw hh hgo hvalues hpre hsep r args hframe
-  -- The premises state the run outside every component (`none`), and a
-  -- run's component is ghost (`SafePostExcV.goto_comp_iff`).
-  replace hgo := (goto_refsOk_comp_iff comp none).mp hgo
-  apply (HeapObservations.SafePostExcV.goto_comp_iff none comp).mp
   have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W := by
     rw [hspine]; exact he
   have hpre' : PreAt c.row.effect c.spine L heap := by rw [hspine]; exact hpre
   have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
       (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
     ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
-  have hrun := codeRun_of_clauses hsafeG hboundG η n W heap L .nul hentry hgo hvalues rfl
-  rw [code_goal, hspine] at hrun
-  obtain ⟨pre, vs, hpl, rfl⟩ := hframe
-  have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
-  subst hpre0
-  refine exportsEstablished_sound hx hw hh ?_
-  by_cases hne : c.row.effect.schema.normal.facts = []
-  · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hrun
-  · have hens := hensG hne η n W heap _ .nul hentry hgo
-    rw [code_goal, hspine] at hens
-    refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
-    obtain ⟨⟨h1, h2⟩, hq⟩ := hq
-    exact ⟨h1, h2, fun F hF =>
-      (CallEffects.Effect.ensures_frame (CallEffects.Effect.belowRow_ensures hrow hF).1
-        (CallEffects.Effect.belowRow_ensures hrow hF).2 v r args vs .nul heap h').mpr (by simpa using hq F hF)⟩
+  exact rowRun_at hcond hspine (hsafeG η n W heap _ hentry)
+    (fun Φ Ψ fresh hb hgo' => hboundG Φ Ψ fresh hb η n W heap L .nul hentry hgo' hvalues rfl)
+    (fun hne hgo' => hensG hne η n W heap L .nul hentry hgo') hw hh hgo hvalues hframe
 
 end
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-/-- **A request's footprint clause discharges a code's run bound** (proved):
-where the request's bound equals the code's exit bounds and freshness, any
-`codeRunBound c = some (⟨Φ, Ψ⟩, fresh)` activates `FootprintClause r`, at
-any component (`SafePostExcW.goto_comp_iff`). Shared by `rowSpec_of_requestSafe`
-and `receiverDropSound`. -/
-private theorem requestBound_of_footprint {r : SourceRequest σ ι} {c : CodeEntry ι} {comp : ComponentTag}
-    (hfp : FootprintClause r)
+/-- **A request's footprint clause at one frame discharges a code's run
+bound there** (proved): where the request's bound equals the code's exit
+bounds and freshness, the footprint clause's conclusion at the frame `(L, d)`
+gives every `codeRunBound c = some (⟨Φ, Ψ⟩, fresh)` at that frame, at any
+component (`SafePostExcW.goto_comp_iff`). -/
+theorem requestBound_at {r : SourceRequest σ ι} {c : CodeEntry ι} {comp : ComponentTag}
     (hbound : RunBound.ofRequest r.footprint r.onThrow r.fresh =
       (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult))
-    (hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp) :
-    ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
-      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d comp) →
-      (∀ v ∈ L, isVal v = true) → isVal d = true →
-      HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
-        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+    (hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp)
+    {G : NormalGraph ι} {n : Nat} {W : WorldT n} {h : Heap} {L : List Tm} {d : Tm}
+    (hfp : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
+      HeapObservations.SafePostExc (excOf G) (GoalHolds G r.goal (r.goal.argument (envOf L d)))
+        (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp)) :
+    ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) →
+      HeapObservations.SafePostExc (excOf G) (GoalHolds G r.goal (r.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d comp) := by
-  intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
+  intro Φ Ψ fresh hb
   obtain ⟨hbd, rfl, hne⟩ := codeRunBound_some hb
   simp only [RunBound.ofRequest, Prod.mk.injEq] at hbound
   obtain ⟨hex, hfr⟩ := hbound
@@ -520,7 +560,7 @@ private theorem requestBound_of_footprint {r : SourceRequest σ ι} {c : CodeEnt
         · exact absurd ⟨h1, by simp [h2], hf⟩ hne
         · rfl
     · exact .inl h1
-  have := hfp hpre η n W h L d he (GraphCode.goto_refs hgo).2 hvals hd
+  have := hfp hpre
   rw [hgoto, hfr] at this
   replace this := (HeapObservations.SafePostExcW.goto_comp_iff r.comp comp).mp this
   refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
@@ -528,6 +568,26 @@ private theorem requestBound_of_footprint {r : SourceRequest σ ι} {c : CodeEnt
   · simp [hot] at ht
   · simp only [hot, ite_true] at ht ⊢
     exact hq hot
+
+/-- **A request's footprint clause discharges a code's run bound** (proved,
+`requestBound_at` at each frame). Shared by `rowSpec_of_requestSafe` and
+`receiverDropSound`. -/
+private theorem requestBound_of_footprint {r : SourceRequest σ ι} {c : CodeEntry ι} {comp : ComponentTag}
+    (hfp : FootprintClause r)
+    (hbound : RunBound.ofRequest r.footprint r.onThrow r.fresh =
+      (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult))
+    (hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp) :
+    ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d comp) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
+      HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+        (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d comp) :=
+  fun Φ Ψ fresh hb η n W h L d he hgo hvals hd =>
+    requestBound_at hbound hgoto (fun hpre => hfp hpre η n W h L d he (GraphCode.goto_refs hgo).2 hvals hd)
+      Φ Ψ fresh hb
 
 /-- **A safe unit request is module code at its signature** (proved): where
 a unit request is a code's (`UnitIsCode`) collecting no rest and the code
