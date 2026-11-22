@@ -540,6 +540,9 @@ def Front.proposes (fr : Front) (n : String) : Bool :=
     fr.statesMore n
 
 
+private def Front.proposeInterface (fr : Front) (name : String) : Bool :=
+  fr.proposes name || fr.units.any fun (fn, _, _) => fn.name == name && fn.params.any (·.inferPreserves)
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type, at its stand-in's footprint, or at the footprint `qualified` gives it
@@ -616,9 +619,9 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf [] memo
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr
-  -- With `proposed`, the selected functions whose footprint is more than
-  -- the ordinary effect alone, and what they reach.
-  let names := if !proposed then names else names.map (·.filter fr.proposes)
+  -- With `proposed`, select declarations that offer an effect or request
+  -- a callback interface, along with their dependencies.
+  let names := if !proposed then names else names.map (·.filter fr.proposeInterface)
   let wanted := wantedOf fr names
   let (T, plans) := SinglePass.timedKind "lower: elaborateSome" fun _ =>
     fr.elaborateSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
@@ -741,11 +744,11 @@ def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (establishe
     | some (n, _) => .error s!"signature rows differ: the import '{n}', its module's interface rows refused by the store-map check"
     | none => .ok plan }
 
-/-- The groups of a module's prepared plans its step checks: every group the
-selected functions whose claims propose more than the ordinary effect reach,
-by leader. -/
+/-- The groups of a module's prepared plans its step checks: every group
+reachable from a selected declaration offering an effect or requesting a
+callback interface, by leader. -/
 def establishChecked (m : ModuleNeed) (fm : FilePlans) : List Nat :=
-  let wanted := fm.fr.selected (some (m.names.filter fm.fr.proposes))
+  let wanted := fm.fr.selected (some (m.names.filter fm.fr.proposeInterface))
   let reach := (wanted ++ wanted.flatMap fm.fr.reach).eraseDups.filterMap fun j => (fm.fr.group j).head?
   fm.fr.leaders.filter reach.contains
 

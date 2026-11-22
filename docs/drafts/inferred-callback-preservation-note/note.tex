@@ -1,0 +1,600 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=2.6cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,amsthm,microtype,booktabs,tabularx,listings,xcolor}
+\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+\lstset{basicstyle=\small\ttfamily,columns=fullflexible,keepspaces=true,
+  breaklines=true,showstringspaces=false,frame=single,rulecolor=\color{black!20}}
+\newtheorem{definition}{Definition}
+\newtheorem{conjecture}{Conjecture}
+\newcommand{\keep}{\ensuremath{\mathsf{keep}}}
+\newcommand{\any}{\mathsf{any}}
+\newcommand{\norm}{\mathsf{normal}}
+\newcommand{\exc}{\mathsf{exceptional}}
+\newcommand{\absent}{\mathsf{none}}
+\newcommand{\some}{\ensuremath{\mathsf{some}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\lean}[1]{\texttt{\small #1}}
+\newcommand{\status}[1]{\textsf{\small[#1]}}
+\newcommand{\ruleof}[3]{\frac{\begin{gathered}#2\end{gathered}}{#3}\;\textsc{#1}}
+\newcommand{\respects}{\mathrel{\triangleleft}}
+\newcommand{\supp}{\operatorname{supp}}
+\newcommand{\proj}{\operatorname{project}}
+\newcommand{\priv}{\operatorname{private}}
+\newcommand{\slots}{\operatorname{slots}}
+\newcommand{\du}{\operatorname{dedup}}
+\newcommand{\incl}{\operatorname{covers}}
+\newcommand{\ren}{\operatorname{rename}}
+\newcommand{\at}{\operatorname{at}}
+\newcommand{\argroots}{\operatorname{actuals}}
+\newcommand{\spine}{\operatorname{spine}}
+\newcommand{\termsame}{\mathrel{\#}}
+\title{Inferred callback preservation\\[2pt]\large Effect requirements for heap-dependent refinements in TScert}
+\author{TScert working paper}
+\date{22 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}\noindent
+A function can depend on a heap refinement across an invocation of a
+callback supplied by its caller. This paper describes the TScert
+experiment that infers a preservation requirement from the function's
+ordinary checking state and publishes it in the function's interface.
+At an application, the checker compares that requirement with the
+callback's inferred effect after substituting invocation arguments and
+closure captures. The rules reuse the supports and separation queries
+of \emph{Tolerant frames}. We give executable judgments and pseudocode
+for the annotated source path, including its two body walks and direct
+forwarding. Source tests exercise nonempty requirements in one file
+and across module boundaries. The guarded Pretext walker produced an
+empty requirement. A separate Lean control uses a length equality as
+a premise. The source feature is experimental and its composition
+with the verifier's soundness theorem remains open.
+\end{abstract}
+
+\section{The problem}\label{sec:problem}
+
+\begin{lstlisting}
+type Visitor = (i: number) => void;
+export function walk(xs: number[], visit: InferPreserves<Visitor>): number {
+  const c = { i: 0 };
+  let sum = 0;
+  /** @invariant safeInteger(c.i) && 0 <= c.i */
+  while (c.i < xs.length) {
+    visit(c.i);
+    sum += xs[c.i]!;
+    c.i++;
+  }
+  return sum;
+}
+\end{lstlisting}
+
+The loop guard relates the cursor field to the length of the array.
+The indexed read uses that relationship after the callback. The
+callable type alone permits updates to the array. The local cursor is
+allocated in the walker. In this example it is copied or accessed
+through its own fields, and the callback receives a number. The
+remaining requirement concerns the array supplied by the caller.
+
+\code{InferPreserves<T>} has the TypeScript meaning \code{T}. TScert's
+parser recognizes the declaration and records the position of the
+marked parameter. The annotation requests inference. The interface
+depends on the annotated function body, so functions sharing the
+same TypeScript callback type may publish different requirements.
+
+\emph{Tolerant frames}~\cite{tf} provides the ordinary rule for
+retaining a fact across a step with a known effect. \emph{Read-only
+frames}~\cite{ro} uses a component protocol and read-only reachability
+to bound outside code. The judgment here uses a callback requirement
+exported by the function that invokes it and checked where a caller
+supplies it.
+
+\section{Effects, supports, and requirements}\label{sec:metalanguage}
+
+\begin{definition}[Footprint and support]
+A footprint is a list of pairs $(r,\delta)$, where $r$ denotes a heap
+region and $\delta$ is a bound on change. Write $\sqsubseteq$ for
+\lean{Change.le}, the order
+\[
+\keep\sqsubseteq \mathsf{init}\sqsubseteq \mathsf{scalar}
+\sqsubseteq \mathsf{extend}\sqsubseteq \mathsf{grow}\sqsubseteq \any.
+\]
+An effect footprint bounds writes. A support footprint bounds the
+changes a fact tolerates. The partial function $\supp(a)$ used in
+the source algorithm is \lean{IndexFact.support?} with the empty
+read context. It is applied to the fact of an index atom.
+\end{definition}
+
+Regions include a field at a root and path, own fields, element
+cells, array spines, class regions, restriction to a class, and
+all locations. A root map $\pi$ assigns a root a destination
+root and a path to the same value. $\proj_\pi$ is the exact partial
+projection of a footprint. For a rooted region it prepends the
+destination path, for a class restriction it projects the underlying
+region, and for a rootless region it leaves it as written. It
+normalizes empty paths for fields, own fields, and cells. A missing
+root makes the projection undefined. Write $\ren_\sigma(\Phi)$ for
+effect instantiation by \lean{Footprint.renameM}, whose map assigns
+slots to slots. A missing slot widens the rooted region to all
+locations, subject to any surrounding class restriction. These are
+different operations because a demand identifies the locations a
+fact depends on and an effect overapproximates writes.
+
+\begin{definition}[Demand]
+One inferred demand is a tuple
+\[
+ d=(p,S^{\norm},S^{\exc},A)
+\]
+where $p$ is a marked parameter's entry slot, $S^e$ is the support
+required of that callback at exit $e$, and $A$ is a list of optional
+entry-root paths for the receiver and ordinary arguments of the
+callback invocation, in that order. An interface is a list of
+demands. Its demands are conjunctive. An entry in the list names
+an invocation through its parameter and actual-root list, so
+different invocations of the same parameter can impose different
+requirements.
+\end{definition}
+
+Given a separation query $K$, the existing stability check is
+\[
+ S \respects_K \Phi
+ \quad\text{iff}\quad
+ \forall(r,\delta)\in S.\ \forall(s,\gamma)\in\Phi.\quad
+     \gamma\sqsubseteq\delta\ \lor\ K(r,s).
+\]
+Here $K(r,s)$ means the query reports the regions disjoint. This
+is the executable \lean{respects} test, exposed by \lean{stable}.
+The existing theorem \lean{respect\_sound} gives the support
+condition from a sound separation query and a transition satisfying
+the effect. Existing support lemmas then justify retaining the fact
+under their premises. \status{Lean}
+
+\section{Proof rules for the source checker}\label{sec:rules}
+
+The new rules in this section specify experimental checking
+judgments. They are implemented as decisions in Lean. The theorem
+connecting the judgments to source-program safety is
+stated separately in Section~\ref{sec:soundness}.
+
+\subsection{Provenance and local discharge}
+
+At each lowered label $\ell$, the table $O_\ell$ maps slots to
+sets of possible origins. An origin is an input slot, an allocation
+label, a field-read label, or an unknown origin. For the producer,
+$\pi_\ell(x)=(j,\epsilon)$ precisely when
+$O_\ell(x)=\{\mathsf{input}(j)\}$. A call is marked when the
+instruction invokes a slot with a singleton input origin and that
+input is marked. The private-allocation scan in
+Section~\ref{sec:producer} produces a set $U$ of allocation labels.
+Write $\priv_{O_\ell,U}(r)$ when $r$ selects an own field of a slot
+with a singleton allocation origin in $U$, including the equivalent
+empty-path field and class restrictions of either region. This
+predicate captures the local discharge used by the source algorithm.
+
+\subsection{Selecting and replaying facts}
+
+Let $K_\ell$ be the knowledge materialized from the ordinary entry
+state at a marked call. For an unconditional index atom $a$, write
+$R_\ell(S)=\{(r,\delta)\in S\mid \neg\priv_{O_\ell,U}(r)\}$
+for the residual support. Let $\mathsf{freeze}(P)$ replace every
+change bound of $P$ by $\keep$.
+\[
+\ruleof{Candidate}
+ {a\in K_\ell.\mathsf{indices}\qquad a.\mathsf{cond}=\absent
+      \qquad \supp(a.\mathsf{fact})=S\ne[]\\
+  \proj_{\pi_\ell}(R_\ell(S))=P}
+ {K_\ell;O_\ell;U\vdash a\leadsto (S,\mathsf{freeze}(P))}
+\]
+Take all results of this rule. Their original supports form a
+list $B$ and their projected requirements form $P_\ell$, with
+duplicates removed from both lists. The demand is
+$(p,P_\ell,[],A)$, where $A$ applies $\pi_\ell$ to each slot operand
+of the invocation and records absence for other operands. An
+atom with undefined support or undefined projection contributes
+neither a retained support nor a requirement. This is a
+conservative selection of available facts, with $\keep$ imposed
+on every residual region. A separate backwards liveness or
+minimality analysis is outside this judgment.
+
+A walk checks the body using an ordinary step and the additional
+supports $B$ at the marked invocation. On normal continuation,
+\lean{framedKept} can retain an index atom from the step's input
+knowledge if its computed support lies inside one of the supplied
+supports. The test is inclusion of exact region--change entries.
+The checker shifts the retained indices across the result slot and
+inserts them into the post-step store.
+\[
+\ruleof{Retain}
+ {a\in K_{\rm step}.\mathsf{indices}\qquad
+  \supp(a.\mathsf{fact})=S\qquad \exists T\in B.\ S\subseteq T}
+ {\mathsf{shift}(a)\in\mathsf{normalContinuation}(K_{\rm step},B)}
+\]
+This rule describes the additional facts inserted by
+\lean{keptStep}. It leaves the observation and the ordinary
+instruction and edge checks to the single pass. The source path
+uses the ordinary exceptional transfer, which drops heap-dependent
+facts at a handler.
+
+In the replay, an inferred candidate must be covered by the
+completed list $I$ from the proposing walk. Let $I[p,A]$ be the
+concatenated normal footprints of all entries of $I$ with that
+parameter and exactly that actual-root list.
+\[
+\ruleof{Replay}
+ {d=(p,S^{\norm},[],A)\qquad
+  \forall(r,\delta)\in S^{\norm}.      \exists(s,\gamma)\in I[p,A].\ s=r\land\gamma\sqsubseteq\delta}
+ {I\vdash d\;\mathsf{covered}}
+\]
+This test compares regions syntactically. It does not invoke the
+separation query. An empty requirement is covered vacuously.
+The publication rule below uses the ordinary success test of each
+walk. The second walk recomputes the candidates from its own states.
+
+\[
+\ruleof{Publish}
+ {\mathsf{walk}(G,\absent)=I\qquad
+  \mathsf{walk}(G,\some(I))\mathbin{\downarrow}\\
+  \mathsf{checkUses}(G,I_{\rm deps},\mathsf{marked})=F}
+ {I_{\rm deps}\vdash G\;\mathsf{publishes}\;\du(I\mathbin{+\!+}F)}
+\]
+The graph $G$ carries the initial checking state and the marked
+inputs. A down arrow denotes successful completion.
+Section~\ref{sec:producer} gives the walks and dependency order.
+
+\subsection{Application and forwarding}
+
+At a direct application of a declaration with a published
+interface, let $\pi_C$ map the declaration's input positions
+to caller roots and paths. The checker obtains the callback's own
+effect $E$ from matching code entries (Section~\ref{sec:effects})
+and constructs a slot substitution $\sigma$ for that code.
+The substitution composes $A$ with $\pi_C$ for the receiver and
+ordinary arguments, uses origins at closure creation for captures,
+and leaves a slot unknown if it cannot be mapped to a caller
+slot. Let $K_C$ be the caller's separation evidence.
+\[
+\ruleof{Use}
+ {d=(p,S^{\norm},S^{\exc},A)\\
+  \forall e\in\{\norm,\exc\}.\quad
+     \proj_{\pi_C}(S^e)=T^e\ \land\ T^e\respects_{K_C}\ren_\sigma(E^e)}
+ {\pi_C;K_C\vdash (d,E,\sigma)\;\mathsf{checks}}
+\]
+For an instantiated demand, failure to project the support or
+to find a matching callback effect refuses the check. The source
+driver skips this rule for an empty demand or an absent or
+statically undefined callback actual. The ordinary typing check
+still applies to the call.
+
+When that actual is itself a marked input $q$ of a forwarding
+declaration, let $\pi_F$ be the restriction of $\pi_C$ to paths
+rooted at inputs of the forwarding declaration.
+\[
+\ruleof{Forward}
+ {d=(p,S^{\norm},S^{\exc},A)\qquad \mathsf{actual}_C(p)=q
+      \qquad q\;\mathsf{marked}\\
+  \forall e\in\{\norm,\exc\}.\ \proj_{\pi_F}(S^e)=T^e}
+ {\pi_F\vdash d\leadsto(q,T^{\norm},T^{\exc},\pi_F\circ A)}
+\]
+Composition on the list $A$ concatenates paths and leaves
+an unknown or unmappable argument absent. Missing support roots
+refuse forwarding. The forwarding declaration appends these demands
+to the demands inferred from its own invocations.
+
+\section{The producer algorithm}\label{sec:producer}
+
+The producer starts from the lowered graph, point claims,
+obligations, and marked parameter slots for an ordinary synchronous
+member. Its prerequisites include the ordinary expression
+obligations, closure code checks, and callback parameter types
+whose expanded alternatives are callable or undefined and include
+a callable alternative. The implementation declines a stated
+regional bound. It sets up the single pass with the written
+assertions and entry indices, an empty list of candidate
+head facts, and the ordinary bound when the member has a
+stated effect or a freshness promise.
+
+\begin{lstlisting}
+origins(graph, widths, start, inputCount):
+    entry = all absent
+    entry[start] = [{Input(j)} for j in 0 .. inputCount-1]
+    transfer(label):
+        if entry[label] is absent: return
+        slots = entry[label]
+        result = origin of a copied slot, Read(label) for a field read
+                 of a slot, Allocated(label) for an allocation, Other otherwise
+        out = prepend result to slots if the continuation binds it
+        for target in normal successors(label):
+            merge slotwise union of remap(out, target) into entry[target]
+        if label has a handler:
+            merge slotwise union of remap([Other] ++ slots, handler)
+    return graphWorklist(transfer, entry)
+
+privateAllocations(graph, entry):
+    collect allocation labels at reached nodes
+    for each reached node:
+        copies expose no slots, except returns expose the copied slot
+        field reads of a slot expose no slots
+        field writes through a slot expose the operand slots of the value
+        other operations expose every operand slot
+        if operand enumeration fails, expose every current slot
+        mark each allocation origin among those slots exposed
+    return allocation labels with no exposure
+\end{lstlisting}
+
+The allocation classifier recognizes the lowered allocation
+constructors and follows the body of a lowered let. Edge remapping
+uses the target's slot map and destination width. The shared
+\lean{graphWorklist} starts with all labels queued in reverse
+order, snapshots a node and its outgoing labels, and requeues
+changed labels that are absent from the queue. The provenance
+analysis supplies the limit
+$(n_{\rm inputs}+n_{\rm nodes}+2)(1+\max_\ell\mathsf{width}_\ell)$.
+The worklist allows $1+n_{\rm nodes}\cdot\mathsf{limit}$ transfers.
+Exhaustion returns failure.
+
+\begin{lstlisting}
+walk(initial, origins, privateLabels, marked, interface?):
+    state = initial
+    demands = []
+    while the single-pass queue has a label:
+        remove the first label
+        supports = []
+        if the node invokes a marked input by singleton provenance:
+            entry = ordinary visitEntry(state, label)
+            K = materialize all slots at entry
+            supports, demand = Candidate selections at K
+            if interface is present: require Replay coverage for demand
+            append demand
+        state = ordinary visit(state, label, framed = supports at this label)
+    require queue empty and all reachable labels visited
+    return dedup(demands)
+
+produce(member, dependencyInterfaces):
+    check code requests and prepare ordinary walk
+    O = origins(member.graph)
+    U = privateAllocations(member.graph, O)
+    I = walk(initial, O, U, markedParameters, absent)
+    walk(initial, O, U, markedParameters, some I)
+    F = check uses of dependencyInterfaces, forwarding marked inputs
+    return dedup(I ++ F)
+\end{lstlisting}
+
+The actual walk visits at most $n_{\rm nodes}+1$ queue entries.
+Both walks start from the same initial state. The second
+recomputes candidates and checks coverage against the first
+walk's interface before calling \lean{SinglePass.visit}.
+\lean{writeInterface} handles the final dependency check and
+adds forwarded demands. It refuses direct self-reference and
+groups with multiple members. The source driver resolves
+dependencies before the interface is used, retains local results
+in the prepared-file cache, and reads imported results from the
+module interface. The publication entry contains the declaration
+name and position, receiver flag, and demands, including the
+per-exit supports and optional argument paths.
+
+\section{Inferring and consuming closure effects}\label{sec:effects}
+
+\lean{inferCodes} checks code requests in order, admitting the
+previously accepted code entries. It runs the ordinary single pass
+with grading enabled, checks the code entry conditions, and requires
+an accepted code walk. For a synchronous closure, the inference
+reads each recorded visit's step certificate. An asynchronous
+closure receives the unrestricted footprint on both exits. A
+summary component is either absent, meaning the analysis has no
+contribution, or a footprint, including the empty footprint.
+
+\begin{lstlisting}
+inferEffect(codeRequest, visitRecords):
+    links = regionTable of the code graph, starting with each input slot
+            rooted at itself (receiver, ordinary arguments, captures)
+    local = all absent
+    for record in visitRecords:
+        step = record.stepCertificate
+        if step.scope is false: summary = (some top, some top)
+        else:
+            N, X = first recorded frame on each exit, defaulting to top
+            normal = absent if result type is empty, else some rebase(N)
+            exceptional = some rebase(X)
+            if instruction is a typed own-field write:
+                normal = its rebased field-write frame, if normal is present
+                exceptional = some empty
+            summary = (normal, exceptional)
+        join summary into local[record.label], componentwise
+    return compose(codeGraph, local)
+\end{lstlisting}
+
+Ordinary rebasing uses the call's position-to-slot map and the
+closure entry links. The field-write case uses the slot of the
+field receiver and the identity slot map. In either case it removes
+\keep{} entries from the local effect before rebasing and supplies
+no evidence of stable path agreement to \lean{rebaseAll}.
+That operation performs the existing conservative widening
+for regions without entry witnesses.
+
+A join of two present summaries deduplicates the concatenation
+of their entries. An absent operand contributes nothing at a join.
+Sequencing has the same operation when both operands are present
+and is absent otherwise. Distinct entries for the same region
+and different changes are retained. The composition worklist
+initializes the entry label to \some([]) and both exits to absent.
+A node with a present incoming footprint and local summary
+sequences the incoming footprint with each local exit footprint.
+It joins the normal result into all normal successors, and into
+the normal summary at a return. It joins the exceptional result
+into the handler entry when one exists, or into the exceptional
+summary otherwise. The worklist limit is two plus the sum of
+lengths of all present local exit footprints.
+
+\begin{lstlisting}
+checkUses(member, publishedInterfaces, markedForwardingSlots):
+    codes = inferCodes(member)
+    O = origins(member.graph)
+    bind each published declaration to a singleton input origin
+        using source-map descriptors and the resolved import identity
+    for node in member.graph:
+        reject a use of a known declaration escaping direct application
+        if node is an invocation of a known singleton input:
+            resolve callee actual operands to caller roots or paths
+            for each published demand:
+                skip an empty demand or an absent or undefined callback
+                if the callback actual is a marked forwarding input:
+                    apply Forward and collect its result
+                else:
+                    identify the actual's graph closure allocation
+                    join the summaries of all matching checked code rows
+                    substitute invocation arguments and captures
+                    apply Use with caller spine-separation evidence
+    require a resolved direct call for every supplied interface
+    return deduplicated forwarded demands
+\end{lstlisting}
+
+\lean{closure} identifies a graph closure by allocation origin
+and matches code rows on arity, start, expressions, continuations,
+and capture count. It joins their summaries before substitution,
+reading an absent component as the empty footprint. Ordinary
+actuals map to caller slots when their composed paths are empty.
+Capture origins are taken at the allocation label. The collected
+rest slot and unresolved actuals map to unknown. For support
+projection, \lean{operandAt} can recover a field path from a
+field-read origin if the backwards predecessor walk to the read
+encounters only observation steps. Its \lean{unchanged} predicate
+uses side-effect-free terms, reads through a slot, and allocations
+with pure initializers. The caller constructs spine-separation
+facts for distinct root identities when at least one is an
+allocation identity. An input identity and an allocation identity
+at label $\ell$ are encoded by $i$ and $n_{\rm inputs}+\ell$
+respectively. The concrete Boolean check is \lean{Demand.check}.
+
+For a consumer unit, the source driver checks the uses of the
+completed interfaces and then runs the ordinary group check.
+Success on this path is reported as an experimental result.
+The ordinary verified judgment remains governed by the existing
+soundness theorem.
+
+\section{Examples and evidence}\label{sec:examples}
+
+\begin{lstlisting}
+export function sumAndTrace(xs: number[]): number {
+  const visited: number[] = [];
+  return walk(xs, i => { visited.push(i); });
+}
+export function sumAndAlias(xs: number[]): number {
+  const visited = xs;
+  return walk(xs, i => { visited.push(i); });
+}
+\end{lstlisting}
+
+In \code{walk}, the cursor field can be discharged locally. The
+observed nonempty demand includes \keep{} on the input array's
+spine. The native call in each closure contributes an extension
+of the array spine. In \code{sumAndTrace}, the capture maps to the
+fresh allocation; separation satisfies \textsc{Use}. In
+\code{sumAndAlias}, the capture maps to the same input as the
+demand. Extension exceeds \keep{} and separation fails.
+The source regression also exercises the corresponding
+ordinary callback argument, and forwarding through another
+marked declaration. It checks both layouts of the test program,
+with the declarations in one file and with imports across a
+module boundary. \status{source regression}
+
+The guarded Pretext walker \code{walkPreparedLinesRaw} takes the
+annotated parameter below. Its caller \code{findWholeLine} passes
+\code{flow.data} and the callback.
+\begin{lstlisting}
+onLine?: InferPreserves<InternalLineVisitor>
+\end{lstlisting}
+The source run
+published an empty requirement and the experimental client check
+passed under that interface. This observation measures interface
+production and use for that pair. A Lean control models the
+heap-dependent refinement
+\[
+ \code{prepared.widths.length}
+   = \code{prepared.segmentFlags.length}.
+\]
+Given the equality as a premise, the control checks its frame
+condition against writes to the cache fields \code{wholeWidth},
+\code{wholeStart}, and \code{wholeEnd}. That is a lowered-rule
+control with supplied facts and effects. The source experiment
+has yet to demonstrate a nonempty inferred preservation requirement
+on a Pretext use. \status{source run and Lean control}
+
+\section{Soundness and scope}\label{sec:soundness}
+
+\begin{conjecture}[Soundness target]
+For an admissible entry state of a producer, assume each marked
+callback invocation meets every applicable demand of its
+published interface at the relevant exit. If the producer
+check succeeds, the retained refinements hold on the
+continuation where they are used. If a caller supplies callbacks
+whose code and effects satisfy the premises of the caller
+check, the caller establishes those interface assumptions.
+\end{conjecture}
+
+The proof requires connecting allocation provenance and the
+escape scan to local discharge, exact projection to location
+identity, and closure summary inference and substitution to
+actual heap transitions. It then needs a replay lemma connecting
+the retained atoms to facts in the normal continuation, and an
+interface composition lemma for forwarding and publication. The
+existing respect and support theorems apply once those premises
+have been established.
+
+The normal source producer instantiates only the normal demand.
+Closure inference and the consumer carry both exit components.
+The Lean \lean{Site.infer} and \lean{Site.checkPublished} controls
+also model both exits and accept a premise bounding possible
+writes. They exercise the rule boundary with supplied facts and
+evidence. They are separate from \lean{CallbackInferencePlan.atCall},
+which selects index atoms from the single pass and performs the
+local discharge above. Source inference for exceptional
+continuations and simultaneous recursive interfaces remains open.
+
+\section{Correspondence with Lean}\label{sec:correspondence}
+
+The following definitions locate the judgments and pseudocode in
+\code{lean/Verification/Source/Claims/}, except where indicated.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Construction & Module and definitions \\
+\midrule
+Provenance and local discharge &
+  \lean{CallbackOrigins.infer}, \lean{privateAllocations}, \lean{entryRoot};
+  \lean{CallbackInferencePlan.ownPrivate} \\
+\textsc{Candidate} and two walks &
+  \lean{CallbackInferencePlan.atCall}, \lean{covers}, \lean{visit},
+  \lean{walk}, \lean{infer} \\
+\textsc{Retain} &
+  \code{Programs/SinglePass.lean}:
+  \lean{supportedIn}, \lean{framedKept}, \lean{keptStep} \\
+Closure effects &
+  \lean{CallbackEffectInference.inferCodes}, \lean{infer},
+  \lean{step}, \lean{rebaseStep}, \lean{compose} \\
+\textsc{Use} and \textsc{Forward} &
+  \lean{CallbackPreservation.project}, \lean{Demand.check},
+  \lean{Demand.forward}; \lean{CallbackInterfaceCheck.check},
+  \lean{closure}, \lean{operandAt}, \lean{separation}, \lean{writeInterface} \\
+Publication and source verdict &
+  \code{Source/RequestCli.lean}: \lean{produceModuleCallback},
+  \lean{PreparedFile.callbackInterface}, \lean{PreparedFile.check} \\
+Controls &
+  \code{tests/callback-preservation.mts}; \code{lean/Verification/Tests/}
+  \code{CallbackPreservationControls.lean} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{thebibliography}{9}
+\bibitem{tf} TScert working note.
+\emph{Tolerant frames: a modal account of fact preservation without ownership}.
+11 November 2026.
+\bibitem{ro} TScert working note.
+\emph{Read-only frames: facts of a component across calls of code outside it}.
+18 November 2026.
+\end{thebibliography}
+
+\end{document}

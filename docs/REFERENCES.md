@@ -141,6 +141,18 @@ note](#the-tolerant-frames-note). Its model rules are the theorems of
 modules beside it, checked by
 `lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean`.
 
+### The Inferred callback preservation paper
+
+*Inferred callback preservation: effect requirements for heap-dependent
+refinements in TScert.* TScert working paper, 22 November 2026.
+[PDF](drafts/inferred-callback-preservation-note/inferred-callback-preservation.pdf) ·
+[LaTeX source](drafts/inferred-callback-preservation-note/note.tex).
+
+The paper specifies the experimental producer and consumer judgments for
+`InferPreserves<T>`. The executable rules and algorithms are indexed by
+Lean definition. The paper states the source soundness target as a
+conjecture.
+
 ## Objects and self types
 
 ### Abadi and Cardelli 1996
