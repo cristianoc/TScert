@@ -1,4 +1,4 @@
-import Verification.Source.Claims.CallbackEffectInference
+import Verification.Source.Claims.CallbackInterfaceCheck
 
 /-! Controls at the lowered proof-rule boundary. The examples supply their
 live facts, possible write bounds, and location evidence explicitly. -/
@@ -148,9 +148,45 @@ private def writes (field : String) : Footprint := [(.field 2 (.str field), .any
   let locals : Array (Option Summary) := #[some ⟨some (writes "normal"), some (writes "raised")⟩,
     some ⟨some [], none⟩, some ⟨some [], none⟩, some ⟨some (writes "caught"), none⟩,
     some ⟨some (writes "unreachable"), none⟩]
-  match compose nodes 0 locals with
-  | some ⟨some normal, none⟩ =>
+  match composeChecked nodes 0 locals with
+  | .ok ⟨some normal, none⟩ =>
     normal.length == 3 && (["normal", "raised", "caught"].flatMap writes).all normal.contains
   | _ => false
 
+-- An absent record at a reached return cannot certify an absent normal exit.
+#guard
+  let nodes : Program := [⟨.undef, .effect 1, none⟩, ⟨.undef, .ret, none⟩]
+  match composeChecked nodes 0 #[some ⟨some [], none⟩, none] with
+  | .error msg => msg == "closure effect flow certificate does not cover every reached node and exit"
+  | .ok _ => false
+
 end Verification.SourceClaimJson.CallbackEffectInference.Controls
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck.Controls
+open ControlFlow ProgramTyping CallbackOrigins CallbackEffectInference CallbackPreservation Footprints
+
+/-- The rest row and non-rest row have the same body. Slot 1 is the receiver
+for the rest row and a capture of input 0 for the non-rest row. -/
+private def collision (row : CallEffects.Arrow (Ty Nat)) : Option Callback := Id.run do
+  let key := arraySpineKey
+  let body : List Tm := [.writeAt key (.var 1) (.setElem (.readAt key (.var 1)) (.num 0) (.num 0))]
+  let conts : List (Continuation × Option Target) := [(.ret, none)]
+  let entry : CodeEntry Nat := ⟨0, body, conts, 0, [[]], row, none⟩
+  let effect : Summary := ⟨some [(.field 1 arraySpineKey, .any)], some []⟩
+  let rows : Array (CheckedCode Nat) := #[⟨{entry with spine := some []}, effect⟩, ⟨entry, effect⟩]
+  let term := Tm.makeAt (.graph 0 body conts 0 [.var 0] .call false none) [] []
+  let allocations : Array Node := #[⟨.arrLit [], .bind 1, none⟩, ⟨term, .ret, none⟩]
+  let atAllocation : Table := #[some #[[.input 0]], some #[[.input 0], [.allocated 0]]]
+  return ← closure rows allocations atAllocation 1 #[[.allocated 1], [.input 0], [.allocated 0]] [some (1, [])] (.var 0)
+
+example (row : CallEffects.Arrow (Ty Nat)) :
+    (collision row >>= fun cb => cb.actuals 1) = some 0 := by rfl
+
+private def verdict (row : CallEffects.Arrow (Ty Nat)) : Bool :=
+  let demand : Demand := ⟨0, ⟨[(.field 0 arraySpineKey, .keep)], []⟩, []⟩
+  demand.check (fun x => some (x, [])) (fun _ => collision row)
+    { facts := [.spines (0, []) (1, [])] }
+
+example (row : CallEffects.Arrow (Ty Nat)) : verdict row = false := by rfl
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck.Controls

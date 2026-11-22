@@ -239,6 +239,12 @@ import Verification.Semantics.ViewFormats
 import Verification.Semantics.ViewSpines
 import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
+import Verification.Source.Claims.CallbackEffectFlow
+import Verification.Source.Claims.CallbackEffectInference
+import Verification.Source.Claims.CallbackInferencePlan
+import Verification.Source.Claims.CallbackInterfaceCheck
+import Verification.Source.Claims.CallbackOrigins
+import Verification.Source.Claims.CallbackPreservation
 import Verification.Source.Claims.Diagnostics
 import Verification.Source.Claims.Elaboration
 import Verification.Source.Claims.FlowProbe
@@ -352,6 +358,7 @@ import Verification.Source.SourceTypes
 import Verification.Source.Synthesis
 import Verification.Source.Synthesis.ExitProposals
 import Verification.Source.WorkerWire
+import Verification.Tests.CallbackPreservationControls
 import Verification.Tests.BaseWorldControls
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests

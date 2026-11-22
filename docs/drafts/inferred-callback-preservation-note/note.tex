@@ -447,7 +447,9 @@ inferEffect(codeRequest, visitRecords):
                 exceptional = some empty
             summary = (normal, exceptional)
         join summary into local[record.label], componentwise
-    return compose(codeGraph, local)
+    entry, exits = proposeFlow(codeGraph, local)
+    require checkFlow(codeGraph, local, entry, exits)
+    return exits
 \end{lstlisting}
 
 Ordinary rebasing uses the call's position-to-slot map and the
@@ -471,6 +473,12 @@ the normal summary at a return. It joins the exceptional result
 into the handler entry when one exists, or into the exceptional
 summary otherwise. The worklist limit is two plus the sum of
 lengths of all present local exit footprints.
+The checker validates the proposed entry and exit tables in one graph
+scan. The start must have an entry. For every label with a proposed
+entry, the checker requires a local summary. On each exit with a
+local summary, each destination's proposed footprint must contain
+the incoming and local footprints. A graph return or an uncaught
+exception uses its corresponding exit footprint as the destination.
 
 \begin{lstlisting}[language=Pseudocode]
 checkUses(member, publishedInterfaces, markedForwardingSlots):
@@ -497,7 +505,8 @@ checkUses(member, publishedInterfaces, markedForwardingSlots):
 
 \lean{closure} identifies a graph closure by allocation origin
 and matches code rows on arity, start, expressions, continuations,
-and capture count. It joins their summaries before substitution,
+capture count, and presence of a rest slot. It joins their summaries
+before substitution,
 reading an absent component as the empty footprint. Ordinary
 actuals map to caller slots when their composed paths are empty.
 Capture origins are taken at the allocation label. The collected
@@ -711,8 +720,9 @@ Provenance and local discharge &
   \code{Programs/SinglePass.lean}:
   \lean{supportedIn}, \lean{framedKept}, \lean{keptStep} \\
 Closure effects &
-  \lean{CallbackEffectInference.inferCodes}, \lean{infer},
-  \lean{step}, \lean{rebaseStep}, \lean{compose} \\
+  \lean{CallbackEffectInference.inferCodes}, \lean{inferChecked},
+  \lean{step}, \lean{rebaseStep}, \lean{composeChecked};
+  \lean{CallbackEffectFlow.lean}: \lean{checkFlow} \\
 \ruleName{Use} and \ruleName{Forward} &
   \lean{CallbackPreservation.project}, \lean{Demand.check},
   \lean{Demand.forward}; \lean{CallbackInterfaceCheck.check},

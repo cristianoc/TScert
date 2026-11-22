@@ -1,5 +1,6 @@
 import Verification.Source.Claims.PassProposals
 import Verification.Source.Claims.CallbackPreservation
+import Verification.Source.Claims.CallbackEffectFlow
 
 /-! Experimental location-sensitive closure effect proposals. The ordinary
 pass checks the code first. This analysis reads its step certificates and
@@ -7,8 +8,6 @@ rebases their effects into the closure entry frame, including its captures. -/
 namespace Verification.SourceClaimJson.CallbackEffectInference
 open Footprints CallEffects ControlFlow ProgramTyping RequestJson SourceElaboration
 open PositiveGraphs PositiveCertificates LabelStore CertificateProducer
-
-abbrev Summary := Exits (Option Footprint)
 
 private def join (old new : Option Footprint) : Option Footprint :=
   match old, new with
@@ -22,7 +21,8 @@ private def sequence (before after : Option Footprint) : Option Footprint :=
 
 /-- Join per-exit effects over the same normal and exceptional edges that the
 single pass walks. An absent local summary identifies an unvisited node. -/
-def compose (nodes : List Node) (start : Nat) (locals : Array (Option Summary)) : Option Summary := do
+private def proposeFlow (nodes : List Node) (start : Nat) (locals : Array (Option Summary)) :
+    Option (Entries × Summary) :=
   let graph := (nodes.map (·, ())).zipIdx
   let entry := (Array.replicate nodes.length none).setIfInBounds start (some [])
   let limit := locals.foldl (init := 2) fun n s =>
@@ -42,9 +42,16 @@ def compose (nodes : List Node) (start : Nat) (locals : Array (Option Summary)) 
     | some target => entry := entry.modify target.label (join · raised)
     | none => out := { out with exceptional := join out.exceptional raised }
     return (entry, out)
-  let (_, result) ← graphWorklist graph transfer (fun state l => state.1.getD l none)
+  graphWorklist graph transfer (fun state l => state.1.getD l none)
     limit (entry, ⟨none, none⟩)
-  return result
+
+/-- Check the proposed node entries and both graph exits. A failed worklist
+and a proposed table missing an effect have different diagnostics. -/
+def composeChecked (nodes : List Node) (start : Nat) (locals : Array (Option Summary)) : Except String Summary := do
+  let some (entries, result) := proposeFlow nodes start locals
+    | throw "closure effect inference did not settle"
+  if checkFlow nodes start locals entries result then return result
+  throw "closure effect flow certificate does not cover every reached node and exit"
 
 private def rebaseStep (facts : List GraphCode.ArgumentPathTracking.Fact)
     (slots : Nat → Option Nat) (frame : Footprint) : Footprint :=
@@ -77,7 +84,7 @@ def step (G : NormalGraph ι) (node : Node) (claim : PointClaim ι)
 /-- Infer effects in closure entry slots. The code frame places the receiver
 and ordinary arguments before the captures. Two different captures retain
 two positions, even if a caller passes aliases for them. -/
-def infer (G : NormalGraph ι) (q : CodeRequest ι) (records : Array SinglePass.VisitRecord) : Option Summary := do
+def inferChecked (G : NormalGraph ι) (q : CodeRequest ι) (records : Array SinglePass.VisitRecord) : Except String Summary := do
   let nodes := GraphCode.program q.entry.exprs q.entry.conts
   let inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.spine
   let origins := (List.range inputs.length).map fun slot =>
@@ -87,14 +94,14 @@ def infer (G : NormalGraph ι) (q : CodeRequest ι) (records : Array SinglePass.
   let ns := nodes.toArray
   let claims := q.claims.toArray
   let locals ← records.foldlM (init := Array.replicate ns.size none) fun acc record => do
-    let node ← ns[record.label]?
-    let claim ← claims[record.label]?
+    let some node := ns[record.label]? | throw "closure effect record has no graph node"
+    let some claim := claims[record.label]? | throw "closure effect record has no point claim"
     let frame := step G node claim (facts.getD record.label []) record.certificate
     let combined := match acc.getD record.label none with
       | none => frame
       | some old => ⟨join old.normal frame.normal, join old.exceptional frame.exceptional⟩
     return acc.setIfInBounds record.label (some combined)
-  compose nodes q.entry.start locals
+  composeChecked nodes q.entry.start locals
 
 end
 
@@ -145,9 +152,7 @@ def inferCodes {σ ι : Type} [Labels ι] [StoreView σ ι]
     accepted := accepted ++ [q.entry]
     let summary : Summary ← if q.async then
       pure ⟨some Footprints.Closed.top.fp, some Footprints.Closed.top.fp⟩
-      else match infer G q counts.grades with
-        | some summary => pure summary
-        | none => throw s!"closure {code}: effect inference did not settle"
+      else (inferChecked G q counts.grades).mapError fun msg => s!"closure {code}: {msg}"
     table := table.push ⟨q.entry, summary⟩
   return (table, known, answers)
 

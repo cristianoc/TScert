@@ -33,26 +33,31 @@ private def invocation (slots : Slots) (params : List Nat) : Tm → Option Nat
     | _ => none
   | _ => none
 
-private def atCall (slots : Slots) (privateRoots : List Nat) (parameter : Nat)
-    (entry : SinglePass.State) (expression : Tm) : Candidate := Id.run do
+private def supportAt (slots : Slots) (privateRoots : List Nat) (atom : IndexAtom) :
+    Option (Footprint × Footprint) := do
+  if atom.cond.isSome then none else do
+    let support ← atom.fact.support? {}
+    if support.isEmpty then none else do
+      let residual := support.filter fun (r, _) => !ownPrivate slots privateRoots r
+      return (support, ← project (entryRoot slots) residual)
+
+private def supportsAt (slots : Slots) (privateRoots : List Nat) (entry : SinglePass.State) :
+    List (Footprint × Footprint) :=
   let width := slots.size
   let k := (SinglePass.materialize entry width (List.range width) true).1
-  let mut supports := []
-  let mut demand : Footprint := []
-  for atom in k.indices do
-    if atom.cond.isSome then continue
-    let some support := atom.fact.support? {} | continue
-    if support.isEmpty then continue
-    let residual := support.filter fun (r, _) => !ownPrivate slots privateRoots r
-    let some projected := project (entryRoot slots) residual | continue
-    supports := support :: supports
-    demand := demand ++ projected.map fun (region, _) => (region, .keep)
+  k.indices.filterMap (supportAt slots privateRoots)
+
+private def atCall (slots : Slots) (privateRoots : List Nat) (parameter : Nat)
+    (entry : SinglePass.State) (expression : Tm) : Candidate :=
+  let candidates := supportsAt slots privateRoots entry
+  let supports := (candidates.map Prod.fst).reverse.eraseDups
+  let demand := (candidates.flatMap fun c => c.2.map fun (r, _) => (r, .keep)).eraseDups
   let roots := match expression with
     | .invoke _ receiver args => (receiver :: args).map fun
         | .var slot => entryRoot slots slot
         | _ => none
     | _ => []
-  return ⟨supports.eraseDups, ⟨parameter, ⟨demand.eraseDups, []⟩, roots⟩⟩
+  ⟨supports, ⟨parameter, ⟨demand, []⟩, roots⟩⟩
 
 private def covers (published : Interface) (required : Demand) : Bool :=
   let entries := (published.demands.filter fun d => d.parameter == required.parameter &&

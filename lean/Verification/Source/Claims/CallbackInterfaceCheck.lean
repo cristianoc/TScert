@@ -89,15 +89,16 @@ private def operandAt (inputs : Nat) (nodes : Array Node) (origins : Table)
         return (root, path ++ [key])
     | root => (identity inputs root).map (·, [])
 
-private def closure {ι : Type} [DecidableEq ι] (codes : Array (CheckedCode ι))
+/-- Instantiate the checked rows for a literal closure using its allocation frame. -/
+def closure {ι : Type} [DecidableEq ι] (codes : Array (CheckedCode ι))
     (nodes : Array Node) (origins : Table) (inputs : Nat) (slots : Slots)
     (callRoots : List (Option (Nat × List String))) (argument : Tm) : Option Callback := do
   let .allocated label ← originOf slots argument | none
   let node ← nodes[label]?
-  let .makeAt (.graph arity exprs conts start captures _ _ _) _ _ := node.expression | none
+  let .makeAt (.graph arity exprs conts start captures _ rest _) _ _ := node.expression | none
   let rows := codes.filter fun c =>
     c.entry.arity == arity && c.entry.start == start && c.entry.exprs == exprs && c.entry.conts == conts &&
-      captures.length == c.entry.captures.length
+      captures.length == c.entry.captures.length && c.entry.spine.isSome == rest
   let first ← rows[0]?
   let restSlots := if first.entry.spine.isSome then 1 else 0
   let firstCapture := arity + frameOffset first.entry.spine
