@@ -1,6 +1,7 @@
-# The census of tools/ (docs/DESIGN.md, "Function coverage and release
-# thresholds") on pushes to main and single-pass, compared with the last completed
-# push census on the target branch. Main also publishes:
+# The census of the pinned tools/ corpus (docs/DESIGN.md, "Function coverage and release
+# thresholds") on pushes to main and single-pass. It compares with the previous
+# successful push census on the target branch when the corpus and stage limits match.
+# Main also publishes:
 # - a page per census on the gh-pages branch, census/<commit>/, holding the
 #   movement and the full report, census/ showing the latest, and
 #   census/history.tsv a line per census;
@@ -33,10 +34,10 @@ jobs:
       pull-requests: write
       actions: read
     env:
-      # A runner has 4 CPUs: a stage's limit three times the census's 300 s,
-      # so a slow search reports the outcome it reaches.
-      TSCERT_STEP_LIMIT: "900"
-      TSCERT_STAGE_MEMORY: "6"
+      # Corpus and per-stage limits used for the v0.94 release measurement.
+      CENSUS_CORPUS: "ae20a6c6b62705b42d9e049c6fc90f0bad10b8ed"
+      TSCERT_STEP_LIMIT: "1800"
+      TSCERT_STAGE_MEMORY: "4"
       TSCERT_STORE_BUDGET: "3G"
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +67,12 @@ jobs:
       - name: Build the stage runner
         run: make build-runner
 
+      - name: Prepare the release corpus
+        run: |
+          git fetch --no-tags --depth=1 origin "$CENSUS_CORPUS"
+          git worktree add --detach "$RUNNER_TEMP/census-corpus" "$CENSUS_CORPUS"
+          npm ci --prefix "$RUNNER_TEMP/census-corpus/tools"
+
       - name: Census
         run: |
           CENSUS="$RUNNER_TEMP/census"
@@ -73,7 +80,8 @@ jobs:
           mkdir -p "$CENSUS"
           # Progress shows in the step's log as the census runs.
           set -o pipefail
-          node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
+          node dev/census.mts --source-root "$RUNNER_TEMP/census-corpus" --dir tools \
+            --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
             | tee "$CENSUS/run.log"
 
       - uses: actions/upload-artifact@v4
@@ -82,7 +90,7 @@ jobs:
           path: ${{ runner.temp }}/census/record.json
           retention-days: 90
 
-      # The baseline: the record of the last successful push census on the branch (the base branch for a pull request).
+      # Compare with the previous branch run when both used the same benchmark.
       - name: Compare with the last census
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,12 +99,23 @@ jobs:
           node dev/census.mts refusals "$CENSUS/record.json" > "$CENSUS/refusals.json"
           previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow census.yml --branch "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}" --event push \
             --status success --limit 1 --json databaseId -q '.[0].databaseId // empty')
-          if [ -n "$previous" ] && gh run download "$previous" --repo "$GITHUB_REPOSITORY" -n census-record -D "$CENSUS/base"; then
-            base=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).source.commit' "$CENSUS/base/record.json")
-            echo "BASE=${base:0:9}" >> "$GITHUB_ENV"
+          if [ -n "$previous" ] &&
+             gh run download "$previous" --repo "$GITHUB_REPOSITORY" -n census-record -D "$CENSUS/base" &&
+             node -e '
+               const [before, after] = process.argv.slice(1).map(path => JSON.parse(require("node:fs").readFileSync(path, "utf8")));
+               const comparable = typeof before.verifierCommit === "string" &&
+                 !before.source.dirty && !after.source.dirty &&
+                 before.source.commit === after.source.commit && before.source.directory === after.source.directory &&
+                 before.policy.stepLimitMs === after.policy.stepLimitMs &&
+                 before.policy.memoryLimitBytes === after.policy.memoryLimitBytes;
+               process.exitCode = comparable ? 0 : 1;
+             ' "$CENSUS/base/record.json" "$CENSUS/record.json"; then
+            base=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).verifierCommit' "$CENSUS/base/record.json")
+            BASE=${base:0:9}
+            echo "BASE=$BASE" >> "$GITHUB_ENV"
             node dev/census.mts report "$CENSUS/base/record.json" "$CENSUS/record.json" > "$CENSUS/movement.txt"
           else
-            echo "no earlier census to compare with" > "$CENSUS/movement.txt"
+            echo "new baseline for this corpus and these stage limits" > "$CENSUS/movement.txt"
           fi
           # The headline: the counts, their movement and the functions gained and lost.
           {
@@ -107,6 +126,9 @@ jobs:
           } > "$CENSUS/headline.txt"
           {
             echo "### Census of \`${GITHUB_SHA:0:9}\`${BASE:+ since \`$BASE\`}"
+            echo
+            echo "Corpus \`${CENSUS_CORPUS:0:9}\` with ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage."
+            echo
             echo '```'
             cat "$CENSUS/headline.txt"
             echo '```'
@@ -134,6 +156,7 @@ jobs:
             echo "<title>Census $short</title>"
             echo '<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1100px;padding:0 16px}pre{overflow-x:auto;background:#f6f8fa;padding:12px}</style>'
             echo "<h1>Census of tools/ at <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\">$short</a></h1>"
+            echo "<p>Corpus <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${CENSUS_CORPUS}\">${CENSUS_CORPUS:0:9}</a> with ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage.</p>"
             echo "<p><a href=\"../history.tsv\">every census</a> · <a href=\"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\">the run</a>, with the record and the refusals ranked as artifacts</p>"
             echo "<h2>Movement${BASE:+ since $BASE}</h2><pre>"; escape "$CENSUS/movement.txt"; echo '</pre>'
             echo '<h2>Report</h2><pre>'; escape "$CENSUS/report.txt"; echo '</pre>'
