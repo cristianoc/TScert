@@ -504,7 +504,7 @@ other type is itself. -/
 @[nospecialize] def boundOf (A : Ty Tree) : Compiler (Ty Tree) := do
   let T ← table
   let [l] := A | return A
-  let .meet _ cs _ := StoreView.row T l | return A
+  let some cs := EquationStore.meetClauses? T l | return A
   let m ← lower (SourceTypes.useRow cs)
   recordHints [m]
   return [m]

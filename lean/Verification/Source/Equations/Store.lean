@@ -106,6 +106,41 @@ def rowForm (s : State) (t : Tree) : RowForm :=
   | .meet ps => if ps.toList.all (baseForm s · == .clauses) then .clauses else .meet
   | t => baseForm s t
 
+private theorem baseForm_eq (s : State) (t : Tree) : baseForm s t = (baseRow s t).form := by
+  cases t with
+  | app head args =>
+    simp only [baseForm, baseRow]
+    cases s.heads[head]?.bind (·.body)
+    · rfl
+    · simp only [instantiateRow, GraphRow.form_map]
+  | bound head args slot =>
+    simp only [baseForm, baseRow]
+    cases s.heads[head]?.bind (·.binders[slot]?) <;> rfl
+  | _ => rfl
+
+theorem rowForm_eq (s : State) (t : Tree) : rowForm s t = (rowOf s t).form := by
+  cases t <;> simp only [rowForm, rowOf]
+  all_goals first
+    | exact baseForm_eq ..
+    | simp only [meetRowOf_form, List.all_map, Function.comp_def, baseForm_eq]
+
+/-- The clauses of a bounded parameter's meet row. -/
+def meetClauses? (s : State) (t : Tree) : Option (List (Clause (List Tree))) :=
+  match rowOf s t with
+  | .meet _ cs _ => some cs
+  | _ => none
+
+/-- Check the row's form before instantiating its clauses. -/
+private def meetClausesFast? (s : State) (t : Tree) : Option (List (Clause (List Tree))) :=
+  if rowForm s t == .meet then meetClauses? s t else none
+
+@[csimp] theorem meetClauses_eq_fast : @meetClauses? = @meetClausesFast? := by
+  funext s t
+  unfold meetClausesFast?
+  rw [rowForm_eq]
+  unfold meetClauses?
+  cases rowOf s t <;> rfl
+
 /-- A label's row, a nullary head's read from the state's (`State.nullary`). -/
 def cachedRow (s : State) (t : Tree) : GraphRow Tree :=
   match t with
