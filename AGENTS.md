@@ -74,7 +74,7 @@ The table is the principle's instance:
 | Changed | While iterating | Before merging |
 | --- | --- | --- |
 | One source file | `node pipeline/verify-source.mts <file.ts>` | — |
-| Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases | `make test` (the cases, and the controls: forged fragments and forced proposals no case can make) |
+| Lean | `(cd lean && lake build <changed module>)`, e.g. `lake build Verification.Types.PositiveRules`, then `node pipeline/run-cases.mts <pattern>` for the affected cases | `make test` (the cases, and the controls: forged fragments and forced proposals no case can make) |
 | Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts`, then `run-cases.mts` | `make test` |
 | Cases, examples | `run-cases.mts <pattern>` for the cases touched | — |
 | Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | `make test-pretext PRETEXT=<checkout>`; CI's `pretext` job runs it at its pinned pretext commit |
