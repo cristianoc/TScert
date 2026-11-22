@@ -92,22 +92,19 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-337"><code>957aef0aa2f9203d5fec4c8a9d726de837148cb5..pr-337</code></a><ul><li>2 commits</li><li>changes: 1 Theorem, 2 Check, 1 Docs</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: An accepted producer reports its callbackInterface.</li></ul></li></ul></section>
-<h2 id="g-pr-337"><code>957aef0aa2f9203d5fec4c8a9d726de837148cb5..pr-337</code></h2><article class="card" id="c-13d5064df"><header><div><div class="sha">13d5064df · Cristiano Calcagno · Nov 22, 10:36</div><h3>Prove callback preservation and certify worker verdicts</h3></div><span class="pill ok">verified</span></header>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-337"><code>5eebc078140e50006429078aa79783aadf0a7761..pr-337</code></a><ul><li>1 commit</li><li>changes: 1 Theorem, 1 Check</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: An accepted producer reports its callbackInterface.</li></ul></li></ul></section>
+<h2 id="g-pr-337"><code>5eebc078140e50006429078aa79783aadf0a7761..pr-337</code></h2><article class="card" id="c-600c0c126"><header><div><div class="sha">600c0c126 · Cristiano Calcagno · Nov 22, 11:01</div><h3>Prove callback preservation and certify worker verdicts</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The paper's walker inferred a requirement and the fresh collector satisfied it. Both needed a sound worker verdict for those results.</p></div>
 <h4 class="change"><span class="act added">added</span>Theorem <span class="target">verified callback producer and caller</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A producer is safe under the published callback requirements</span>.</span></div><div class="row"><span><span class="m-text">A certified caller establishes those requirements at its actual</span></span></div><div class="row"><span><span class="m-text">call using the checked callback effect and separation evidence</span>.</span></div></div></div>
-<h4 class="change"><span class="act modified">modified</span>Check <span class="target">callback verification</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Successful preservation checks were reported as experimental.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>The worker certifies the producer once and applies its published requirements at a checked same-file call.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">callback verification</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Successful preservation checks were reported as experimental.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>The worker certifies the producer once and applies its published requirements at a checked same-file call. Refusals name the corresponding scope check in the paper and the source regression exercises each named check.</p></div></figure></div>
 <h4 class="change">Effect</h4><ul class="effect"><li><code>walk</code> <span class="why">producer refused → verified under its published requirement</span></li><li><code>sumAndTrace</code> <span class="why">caller refused → verified the callback appends to a separate array</span></li><li><code>sumAndAlias</code> <span class="why">caller refused → refused the callback extends the protected spine</span></li></ul>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>certifyProducer · certifyModuleCaller · publicInvoke_safe · mode8Accepted_sound</dd><dt>Wire</dt><dd>An accepted producer reports its callbackInterface.</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>77 files changed, 9516 insertions(+), 189 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   2 +-
+<details><summary>75 files changed, 9390 insertions(+), 158 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   2 +-
  docs/DESIGN.md                                     |   5 +-
  docs/REQUEST-PROTOCOL.md                           |   6 +-
  docs/SINGLE-PASS-THEOREM.md                        |  55 +-
  docs/SOURCE-FRAGMENT.md                            |  15 +
- .../inferred-callback-preservation.pdf             | Bin 144518 -&gt; 157048 bytes
- .../inferred-callback-preservation-note/note.tex   | 233 ++++++++-
- docs/drafts/inferred-callback-preservation.md      |  50 +-
  lean/Verification/Programs/AssertionSlice.lean     |  71 +++
  .../Source/Claims/CallbackAcceptedWalk.lean        | 176 +++++++
  .../Source/Claims/CallbackAllocationSites.lean     |  62 +++
@@ -126,15 +123,16 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackFixedOperands.lean       | 240 +++++++++
  .../Source/Claims/CallbackFramedPrefixes.lean      | 263 ++++++++++
  .../Source/Claims/CallbackGraphDispatch.lean       |  79 +++
- .../Source/Claims/CallbackInferencePlan.lean       | 205 +++++++-
- .../Source/Claims/CallbackInterfaceCheck.lean      | 575 ++++++++++++++++++++-
+ .../Source/Claims/CallbackInferencePlan.lean       | 211 +++++++-
+ .../Source/Claims/CallbackInterfaceCheck.lean      | 581 ++++++++++++++++++++-
  .../Source/Claims/CallbackLinkedEntry.lean         |  73 +++
  .../Source/Claims/CallbackLiteralInvocation.lean   |  62 +++
  .../Source/Claims/CallbackMarkedCopies.lean        |  89 ++++
- .../Source/Claims/CallbackModularEntry.lean        | 167 ++++++
+ .../Source/Claims/CallbackModularEntry.lean        | 169 ++++++
  .../Source/Claims/CallbackNameHistory.lean         | 393 ++++++++++++++
  .../Source/Claims/CallbackPrefixGraph.lean         | 162 ++++++
  .../Source/Claims/CallbackPrefixWitness.lean       |  76 +++
+ .../Source/Claims/CallbackPreservation.lean        |   4 +
  .../Source/Claims/CallbackPreservationSound.lean   | 176 +++++++
  .../Source/Claims/CallbackPrivateBirth.lean        |  78 +++
  .../Source/Claims/CallbackPrivateFlow.lean         | 221 ++++++++
@@ -147,7 +145,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackProducerReplay.lean      |  94 ++++
  .../Source/Claims/CallbackProducerReturns.lean     | 166 ++++++
  .../Source/Claims/CallbackProducerVerdict.lean     | 105 ++++
- .../Source/Claims/CallbackPublicApplication.lean   | 317 ++++++++++++
+ .../Source/Claims/CallbackPublicApplication.lean   | 319 +++++++++++
  .../Source/Claims/CallbackPublicContract.lean      |  45 ++
  .../Source/Claims/CallbackPublicLiteral.lean       | 185 +++++++
  .../Source/Claims/CallbackPublishedAcceptance.lean |  59 +++
@@ -170,30 +168,12 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  lean/Verification/Source/Claims/PassUnitPlans.lean |  46 ++
  .../Source/Claims/PassUnitRealize.lean             |   9 +
  lean/Verification/Source/Claims/PassUnitRun.lean   |  41 +-
- lean/Verification/Source/RequestCli.lean           | 180 ++++++-
+ lean/Verification/Source/RequestCli.lean           | 189 +++++--
  lean/Verification/Source/WorkerWire.lean           |   8 +-
  lean/Verification/Tests/AxiomCheck.lean            |  52 ++
  .../Tests/CallbackPreservationControls.lean        |  20 +
  pipeline/stage-execution.mts                       |   9 +-
  pipeline/verify-source.mts                         |   7 +-
- tests/callback-preservation.mts                    | 108 ++--</pre></details>
-</article>
-<article class="card" id="c-356f164f0"><header><div><div class="sha">356f164f0 · Cristiano Calcagno · Nov 22, 10:56</div><h3>Match callback scope refusals to the paper</h3></div><span class="pill neutral">no-behaviour-change</span></header>
-<h4 class="change">Why</h4><div class="prose"><p>A literal visitor passed to the spread walker is refused because its declared callback type lacks a single fixed signature. A caller declared as a type predicate is also refused. The paper did not state either restriction.</p></div>
-<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">verified callback scope</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>The restrictions listed fixed literals and a plain producer result.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>State the fixed callback signature and ordinary caller result requirements, and use the names printed by scope refusals.</p></div></figure></div>
-<h4 class="change"><span class="act modified">modified</span>Check <span class="target">callback scope correspondence</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>The worker reported scope failures without stable check names.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>At callback producer and caller selection and certification: identify the failed scope check. The source regression compares the names in Lean and the paper and requires a refusal for each.</p></div></figure></div>
-<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>callbackProducerScope · callbackCallerScope · scopeRefusal</dd></dl>
-<details><summary>12 files changed, 192 insertions(+), 66 deletions(-)</summary><pre class="code"> docs/SOURCE-FRAGMENT.md                            |   4 +-
- .../inferred-callback-preservation.pdf             | Bin 157048 -&gt; 157783 bytes
- .../inferred-callback-preservation-note/note.tex   |  60 +++++++-----
- .../Source/Claims/CallbackInferencePlan.lean       |   6 +-
- .../Source/Claims/CallbackInterfaceCheck.lean      |   8 +-
- .../Source/Claims/CallbackLinkedEntry.lean         |  10 +-
- .../Source/Claims/CallbackModularEntry.lean        |   8 +-
- .../Source/Claims/CallbackPreservation.lean        |   4 +
- .../Source/Claims/CallbackPublicApplication.lean   |  28 +++---
- .../Source/Claims/CallbackPublicLiteral.lean       |   6 +-
- lean/Verification/Source/RequestCli.lean           |  19 ++--
- tests/callback-preservation.mts                    | 105 ++++++++++++++++++++-</pre></details>
+ tests/callback-preservation.mts                    | 205 +++++++-</pre></details>
 </article>
 </main></body></html>
