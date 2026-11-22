@@ -57,20 +57,14 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      # CI's workflow saves the Lean build; the census only reads it.
-      - name: Restore the Lean build
-        uses: actions/cache/restore@v4
-        with:
-          path: lean/.lake
-          key: lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-
+      # CI publishes the cache on the development branches.
+      - uses: ./.github/actions/build-lean
 
       - name: Install the node dependencies
         run: make setup
 
-      - name: Build
-        run: make build
+      - name: Build the stage runner
+        run: make build-runner
 
       - name: Census
         run: |

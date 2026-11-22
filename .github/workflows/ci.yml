@@ -1,14 +1,14 @@
 # Build, then the fast checks and controls (`make test-checks`), the tests of
 # the test infrastructure where their code changed (`make test-infra`) and the
-# pipeline cases (`make test-cases`), on every pull request and every push to
-# main, on Linux; beside them, the pretext tier (`make test-pretext`) at a
-# pinned pretext commit.
+# pipeline cases (`make test-cases`), on pull requests and pushes to main.
+# The pretext tier checks a pinned pretext commit. Pushes to single-pass
+# seed the Lean cache for PRs and the census.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, single-pass]
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +16,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lean-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: ./.github/actions/build-lean
+        with:
+          save-cache: "true"
+
+      # Keep executable bits and the link response file for the mutation tests.
+      - name: Pack the Lean build
+        if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
+        run: tar -cf "$RUNNER_TEMP/lean-build.tar" lean/.lake
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
+        with:
+          name: lean-build
+          path: ${{ runner.temp }}/lean-build.tar
+          retention-days: 7
+          compression-level: 3
+          overwrite: true
+
   test:
+    needs: lean-build
+    if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -42,27 +74,16 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Restore the Lean build
-        id: lake
-        uses: actions/cache/restore@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: lean/.lake
-          key: lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-
+          name: lean-build
+          path: ${{ runner.temp }}
+
+      - name: Unpack the Lean build
+        run: tar -xf "$RUNNER_TEMP/lean-build.tar"
 
       - name: Install the node dependencies
         run: make setup
-
-      - name: Build
-        run: make build
-
-      - name: Save the Lean build
-        if: steps.lake.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: lean/.lake
-          key: ${{ steps.lake.outputs.cache-primary-key }}
 
       - name: Fast checks and controls
         run: make test-checks
@@ -74,7 +95,7 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          paths='^(pipeline/(stages|stage-store|stage-execution|run-directory|in-process-execution|parse-stage|verify-source|module-interfaces)\.mts|pipeline/runner/|tools/(files|compiler-channel|compiler-processes|declaration-session|declaration-graph)\.mts|tests/(stage-store|observed-stages|session-reuse|single-pass-controls)\.mts|test-all\.sh|Makefile|\.github/workflows/ci\.yml)'
+          paths='^(pipeline/(stages|stage-store|stage-execution|run-directory|in-process-execution|parse-stage|verify-source|module-interfaces)\.mts|pipeline/runner/|tools/(files|compiler-channel|compiler-processes|declaration-session|declaration-graph)\.mts|tests/(stage-store|observed-stages|session-reuse|single-pass-controls)\.mts|test-all\.sh|Makefile|\.github/(workflows/ci\.yml|actions/build-lean/))'
           if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null &&
               ! git diff --name-only "$BASE" HEAD | grep -qE "$paths"; then
             echo "no infrastructure code changed since $BASE"
@@ -102,6 +123,8 @@ jobs:
   # pretext's functions while the work on the rules of the note "Tolerant
   # frames" is in progress, and is removed when that work is finished.
   pretext:
+    needs: lean-build
+    if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -134,19 +157,16 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Restore the Lean build
-        uses: actions/cache/restore@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: lean/.lake
-          key: lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-
+          name: lean-build
+          path: ${{ runner.temp }}
+
+      - name: Unpack the Lean build
+        run: tar -xf "$RUNNER_TEMP/lean-build.tar"
 
       - name: Install the node dependencies
         run: make setup
-
-      - name: Build
-        run: make build
 
       # A runner has 4 CPUs: a stage's limit three times the 60 s a
       # 12-core machine's stages are calibrated to, as the pipeline cases'.
