@@ -1,0 +1,56 @@
+name: Build Lean with Lake cache
+description: Restore a compatible Lake build and check it against this checkout.
+inputs:
+  save-cache:
+    description: Save a new cache entry after a successful build.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Restore the Lean build
+      id: lake
+      uses: actions/cache/restore@v4
+      with:
+        path: lean/.lake
+        key: lake-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
+        restore-keys: |
+          lake-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean/lean-toolchain') }}-
+
+    - name: Build and report Lake work
+      shell: bash
+      working-directory: lean
+      env:
+        EXACT_HIT: ${{ steps.lake.outputs.cache-hit }}
+        MATCHED_KEY: ${{ steps.lake.outputs.cache-matched-key }}
+      run: |
+        log=$(mktemp)
+        trap 'rm -f "$log"' EXIT
+        status=0
+        lake --no-ansi -v build 2>&1 | tee "$log" || status=$?
+        {
+          printf '### Lean build\n\n'
+          printf 'Exact cache hit: %s\n\n' "${EXACT_HIT:-false}"
+          printf 'Restored key: `%s`\n\n' "${MATCHED_KEY:-none}"
+          awk '
+            /\] Built / {
+              built++
+              if ($0 ~ /:c\.o/) objects++
+              else if ($0 ~ /:exe /) links++
+              else if ($0 !~ /:.* \(/) modules++
+            }
+            /\] Replayed / { replayed++ }
+            /\] Reused / { reused++ }
+            END {
+              printf "Built: %d (%d Lean modules, %d C objects, %d executable links)\n\n", built, modules, objects, links
+              printf "Replayed: %d\n\nReused: %d\n", replayed, reused
+            }
+          ' "$log"
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"
+
+    - name: Save the Lean build
+      if: inputs.save-cache == 'true' && steps.lake.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: lean/.lake
+        key: ${{ steps.lake.outputs.cache-primary-key }}
