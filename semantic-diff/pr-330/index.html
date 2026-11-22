@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-330"><code>9734c3794b6924fe606a2e2261463b3c0b920d14..pr-330</code></a><ul><li>5 commits</li><li>changes: 1 Proposal, 2 Check, 1 Wire, 3 Docs, 2 Rule</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: InferPreserves parameter marker and optional module preservation interfaces</li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-330"><code>9734c3794b6924fe606a2e2261463b3c0b920d14..pr-330</code></a><ul><li>6 commits</li><li>changes: 1 Proposal, 3 Check, 1 Wire, 4 Docs, 2 Rule</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: InferPreserves parameter marker and optional module preservation interfaces</li><li>wire: declaration-indexed callback outcomes</li></ul></li></ul></section>
 <h2 id="g-pr-330"><code>9734c3794b6924fe606a2e2261463b3c0b920d14..pr-330</code></h2><article class="card" id="c-8929d9422"><header><div><div class="sha">8929d9422 · Cristiano Calcagno · Nov 22, 01:39</div><h3>Infer and check callback preservation requirements experimentally</h3></div><span class="pill gap">gap</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>In walk(xs, visit), the indexed read after visit needs a heap-dependent bound. The ordinary callback type permits changes to xs. A call with a callback that appends to a separate array should preserve that bound.</p></div>
 <h4 class="change"><span class="act added">added</span>Proposal <span class="target">callback preservation requirement</span></h4><div class="lowering"><div class="map"><code class="src">visit: <span class="tk-t">InferPreserves</span>&lt;<span class="tk-t">Visitor</span>&gt;</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">required supports on the callback at the interface</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">The producer retains available index facts whose residual supports can</span></span></div><div class="cond"><span class="tgt"><span class="m-text">name input locations</span>. <span class="m-text">It discharges supports for own fields of private</span></span></div><div class="cond"><span class="tgt"><span class="m-text">allocations and checks the proposed interface by replaying the body</span>.</span></div></div>
@@ -171,5 +171,27 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackInferencePlan.lean       |  11 ++++++-
  .../Source/Claims/CallbackInterfaceCheck.lean      |   5 ++-
  tests/callback-preservation.mts                    |  36 +++++++++++++++++++--</pre></details>
+</article>
+<article class="card" id="c-4c586108a"><header><div><div class="sha">4c586108a · Cristiano Calcagno · Nov 22, 08:54</div><h3>Validate inferred callback interfaces at their boundaries</h3></div><span class="pill principled">refused</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A widened alias could make an extra argument stand in for a captured array. A cross-module wrapper could lose an experimental refusal.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">callback inference and publication</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Replay recomputes candidates and consumers read named requirements.</p></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> producer replay</span><span class="tgt"><span class="m-text">validate the fixed frame table and read summaries</span>.</span></div><div class="obligation"><span class="where"><span class="at">at</span> interface publication</span><span class="tgt"><span class="m-text">map public positions to fixed parameters and publish a callback outcome for each declaration</span>.</span></div><div class="obligation"><span class="where"><span class="at">at</span> application</span><span class="tgt"><span class="m-text">preserve checked origin and allocation identity</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">callback algorithm</span></h4><div class="prose"><p>The paper describes fixed replay and declaration outcomes.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>CallbackInferencePlan.replay · CallbackInterfaceCheck.Published.validate</dd><dt>Wire</dt><dd>declaration-indexed callback outcomes</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>16 files changed, 748 insertions(+), 256 deletions(-)</summary><pre class="code"> .../inferred-callback-preservation.pdf             | Bin 144378 -&gt; 144518 bytes
+ .../inferred-callback-preservation-note/note.tex   |  94 +++++----
+ .../Source/Claims/CallbackAllocationSites.lean     |  35 ++++
+ .../Source/Claims/CallbackEffectInference.lean     |  53 +++--
+ .../Source/Claims/CallbackInferencePlan.lean       |  99 +++++++---
+ .../Source/Claims/CallbackInterfaceCheck.lean      | 218 ++++++++++++++-------
+ .../Source/Claims/CallbackOrigins.lean             |  51 ++++-
+ .../Source/Claims/CallbackPrivateOrigins.lean      |  54 +++++
+ .../Source/Claims/CallbackPublication.lean         |  94 +++++++++
+ .../Source/Claims/CallbackRootPaths.lean           |  19 ++
+ lean/Verification/Source/Claims/FragmentFront.lean |  75 +++++--
+ .../Source/Claims/ModuleInterfaces.lean            |   2 +-
+ lean/Verification/Source/Claims/PassUnitPlans.lean |   2 +-
+ lean/Verification/Source/RequestCli.lean           | 174 +++++++++-------
+ lean/Verification/Tests/AxiomCheck.lean            |   4 +
+ tests/callback-preservation.mts                    |  30 ++-</pre></details>
 </article>
 </main></body></html>
