@@ -311,6 +311,18 @@ the same (`factFilter_hint`). -/
 @[nospecialize] def factFilter [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Ty ι :=
   B.filter fun b => (A.contains b && G.overlapping b) || !labelExcluded G A b
 
+/-- Share the slot type's clause rows across the labels of the fact's
+type. Delay computing the rows until a label needs an exclusion check. -/
+private def factFilterFast [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Ty ι :=
+  let plain := Thunk.mk fun _ => G.plainTy A
+  let cs := Thunk.mk fun _ => expand G A
+  B.filter fun b => (A.contains b && G.overlapping b) ||
+    !(plain.get && G.plain b && let ds := expand G [b]; cs.get.all fun c => ds.all (clausesDisjoint G c))
+
+@[csimp] theorem factFilter_eq_fast : @factFilter = @factFilterFast := by
+  funext ι _ G A B
+  rfl
+
 /-- A record clause's member, with a heap meeting the world, owns each field
 the clause fixes at a location the heap holds. -/
 theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K : Ty ι} {n W h v}
@@ -837,6 +849,91 @@ def factSlice (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (R : List HeapFacts
   A.filter fun a => !(G.plain a && !R.isEmpty && R.all fun atom => match atomTag atom with
     | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
     | none => false)
+
+/-- The matching plain field rows of a clause, expanded once for all
+the atom tests. -/
+private def factFieldRows (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) : List (List (Clause (Ty ι))) :=
+  (fixedFields c).filterMap fun (key, F) =>
+    if key = f ∧ G.plainTy F then some (expand G F) else none
+
+private theorem fieldAnswers_rows (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) (tag : Tag) (q : Bool) :
+    fieldAnswers G c f tag q = (factFieldRows G c f).any fun cs => cs.all fun p => tagClause tag p == some q := by
+  cases c <;> simp only [fieldAnswers, factFieldRows, fixedFields, List.any_filterMap, List.any_nil]
+  rename_i first _ views _ _ _ _
+  apply congrArg (fun p => (Stored.views first ++ views.filter (·.1 != lengthKey)).any p)
+  funext ⟨key, F⟩
+  by_cases hk : key = f <;> cases G.plainTy F <;> simp [hk]
+
+/-- Test each clause against all the atom tags while its field rows are
+available. A fact with no atoms or with an atom lacking a tag excludes
+no label. -/
+private def factSliceRows (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (R : List HeapFacts.Atom) : Ty ι :=
+  if R.isEmpty then A else
+  match R.mapM atomTag with
+  | none => A
+  | some tags => A.filter fun a => !(G.plain a && (expand G [a]).all fun c =>
+      let rows := factFieldRows G c f
+      tags.all fun t => rows.any fun cs => cs.all fun k => tagClause t k == some false)
+
+private theorem all_atoms (R : List HeapFacts.Atom) (p : Tag → Bool) :
+    (R.all fun atom => match atomTag atom with | some t => p t | none => false) =
+    ((R.mapM atomTag).any fun ts => ts.all p) := by
+  induction R with
+  | nil => rfl
+  | cons a as ih =>
+    cases ha : atomTag a <;> cases hs : as.mapM atomTag <;> simp_all [List.mapM_cons]
+
+private theorem factSlice_eq_rows (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (R : List HeapFacts.Atom) :
+    factSlice G A f R = factSliceRows G A f R := by
+  unfold factSlice factSliceRows
+  cases he : R.isEmpty
+  · simp only [Bool.not_false, Bool.and_true, Bool.false_eq_true, ↓reduceIte]
+    cases ht : R.mapM atomTag with
+    | none =>
+      apply List.filter_eq_self.mpr
+      intro a _
+      have all := all_atoms R (fun t => (expand G [a]).all fun c => fieldAnswers G c f t false)
+      rw [ht] at all
+      change (R.all fun atom => match atomTag atom with
+        | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+        | none => false) = false at all
+      change (!(G.plain a && (R.all fun atom => match atomTag atom with
+        | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+        | none => false))) = true
+      simp [all]
+    | some tags =>
+      apply congrArg (fun p => A.filter p)
+      funext a
+      have all := all_atoms R (fun t => (expand G [a]).all fun c => fieldAnswers G c f t false)
+      rw [ht] at all
+      congr 2
+      calc
+        _ = tags.all (fun t => (expand G [a]).all fun c => fieldAnswers G c f t false) := all
+        _ = _ := by
+          apply Bool.eq_iff_iff.mpr
+          simp only [List.all_eq_true, fieldAnswers_rows]
+          exact ⟨fun h c hc t htag => h t htag c hc, fun h t htag c hc => h c hc t htag⟩
+  · simp
+
+/-- Reuse the one-tag slice for a single atom. Prepare shared rows only
+when there are several atom tags to test. -/
+private def factSliceFast (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (R : List HeapFacts.Atom) : Ty ι :=
+  if A.isEmpty then A else
+  match R with
+  | [a] => ((atomTag a).map fun t => fieldSlice G A f t true).getD A
+  | _ => factSliceRows G A f R
+
+@[csimp] theorem factSlice_eq_fast : @factSlice = @factSliceFast := by
+  funext ι G A f R
+  cases A with
+  | nil => rfl
+  | cons a as =>
+    cases R with
+    | nil => exact factSlice_eq_rows G (a :: as) f []
+    | cons r rs =>
+      cases rs with
+      | nil => cases h : atomTag r <;> simp [factSliceFast, factSlice, fieldSlice, h]
+      | cons s ss => exact factSlice_eq_rows G (a :: as) f (r :: s :: ss)
 
 private theorem factSlice_keeps {G : NormalGraph ι} {A : Ty ι} {f : PropKey} {R : List HeapFacts.Atom}
     {atom : HeapFacts.Atom} {t : Tag} (hm : atom ∈ R) (ht : atomTag atom = some t) {a : ι}
