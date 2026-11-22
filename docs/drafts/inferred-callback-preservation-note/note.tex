@@ -235,8 +235,9 @@ change bound of $P$ by $\keep$.
 Take all results of this rule. Their original supports form a
 list $B$ and their projected requirements form $P_\ell$, with
 duplicates removed from both lists. The demand is
-$(p,P_\ell,[],A)$, where $A$ applies $\pi_\ell$ to each slot operand
-of the invocation and records absence for other operands. An
+$(p,P_\ell,[],A)$, where $A$ applies $\pi_\ell$ to the receiver and
+the slot operands before the first spread. The spread can supply
+any number of arguments, so subsequent positions are unknown. An
 atom with undefined support or undefined projection contributes
 neither a retained support nor a requirement. This is a
 conservative selection of available facts, with $\keep$ imposed
@@ -309,7 +310,9 @@ slot. Let $K_C$ be the caller's separation evidence.
 For an instantiated demand, failure to project the support or
 to find a matching callback effect refuses the check. The source
 driver skips this rule for an empty demand or an absent or
-statically undefined callback actual. The ordinary typing check
+statically undefined callback actual. If a spread can supply or
+shift a required callback position, the check refuses that demand.
+The ordinary typing check
 still applies to the call.
 
 When that actual is itself a marked input $q$ of a forwarding
@@ -489,9 +492,11 @@ checkUses(member, publishedInterfaces, markedForwardingSlots):
     for node in member.graph:
         reject a use of a known declaration escaping direct application
         if node is an invocation of a known singleton input:
-            resolve callee actual operands to caller roots or paths
+            resolve operands before the first spread to caller roots
             for each published demand:
-                skip an empty demand or an absent or undefined callback
+                skip an empty demand
+                reject a callback position obscured by a spread
+                skip an absent or undefined callback
                 if the callback actual is a marked forwarding input:
                     apply Forward and collect its result
                 else:

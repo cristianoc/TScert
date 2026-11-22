@@ -138,10 +138,13 @@ def check (f : FilePlans) (i fuel : Nat) (interfaces : List Published)
     let .invoke callee receiver args := node.expression | continue
     let some (.input root) := originOf slots callee | continue
     let some (_, producer) := known.find? (·.1 == root) | continue
-    let frame := if producer.receiver then receiver :: args else args
+    let fixedArgs := CallbackInferencePlan.positionalPrefix args
+    let frame := if producer.receiver then receiver :: fixedArgs else fixedArgs
     let toCaller := argumentRoots inputs nodes.size slots frame
     for demand in producer.interface.demands do
       if demand.support.normal.isEmpty && demand.support.exceptional.isEmpty then continue
+      if frame[demand.parameter]?.isNone && fixedArgs.length < args.length then
+        throw s!"a spread obscures callback argument {demand.parameter + 1} at call of {producer.name} (node {label})"
       let absent : Bool := match frame[demand.parameter]? with
         | none | some .undef => true
         | some (.var slot) => ((r.claims[label]?).bind (·.context[slot]?)).any fun ty =>

@@ -47,13 +47,22 @@ private def supportsAt (slots : Slots) (privateRoots : List Nat) (entry : Single
   let k := (SinglePass.materialize entry width (List.range width) true).1
   k.indices.filterMap (supportAt slots privateRoots)
 
+private def ordinaryActual : Tm → Bool
+  | .spread _ => false
+  | _ => true
+
+/-- Actuals before the first spread keep their positions in the runtime call.
+The spread may supply any number of arguments, including zero. -/
+def positionalPrefix (args : List Tm) : List Tm :=
+  args.takeWhile ordinaryActual
+
 private def atCall (slots : Slots) (privateRoots : List Nat) (parameter : Nat)
     (entry : SinglePass.State) (expression : Tm) : Candidate :=
   let candidates := supportsAt slots privateRoots entry
   let supports := (candidates.map Prod.fst).reverse.eraseDups
   let demand := (candidates.flatMap fun c => c.2.map fun (r, _) => (r, .keep)).eraseDups
   let roots := match expression with
-    | .invoke _ receiver args => (receiver :: args).map fun
+    | .invoke _ receiver args => (receiver :: positionalPrefix args).map fun
         | .var slot => entryRoot slots slot
         | _ => none
     | _ => []

@@ -73,6 +73,30 @@ export function forwardFieldRead(box: {data: number[]}, visit: InferPreserves<()
   return headAfter(box.data, box, visit);
 }
 `;
+const spreadProducer = `
+type SpreadVisitor = (...args: (number[] | undefined)[]) => void;
+export function walkSpread(xs: number[], target: number[], visit: InferPreserves<SpreadVisitor>): number {
+  const parts: number[][] = [xs, xs];
+  if (xs.length === 0) return 0;
+  visit(...parts, target);
+  return xs[0]!;
+}
+`;
+const spreadClients = `
+export function ignoreSpread(xs: number[]): number {
+  return walkSpread(xs, [], () => {});
+}
+export function popSpread(xs: number[]): number {
+  const target: number[] = [];
+  return walkSpread(xs, target, (_?: number[], second?: number[], ...rest: (number[] | undefined)[]) => {
+    if (second !== undefined) second.pop();
+  });
+}
+export function spreadCallback(xs: number[]): number {
+  const args: [number[], (i: number) => void] = [xs, () => { xs.pop(); }];
+  return walk(...args);
+}
+`;
 const annotations = resolve(import.meta.dirname, "../tools/resolvable.d.ts");
 const project = join(dir, "tsconfig.json");
 const combined = join(dir, "combined.ts");
@@ -82,9 +106,9 @@ writeFileSync(project, JSON.stringify({
   compilerOptions: { strict: true, target: "ES2022", module: "NodeNext" },
   files: [annotations, combined, producer, consumer],
 }));
-writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients);
-writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer);
-writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients);
+writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients + spreadProducer + spreadClients);
+writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer + spreadProducer);
+writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter, walkSpread } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients + spreadClients);
 
 for (const source of [combined, consumer]) {
   const outcome = check(source, project, false, undefined, false,
@@ -99,7 +123,13 @@ for (const source of [combined, consumer]) {
   if (source === combined) {
     assert.match(detail("walk"), /inferred callback interface checked experimentally/);
     assert.match(detail("through"), /inferred callback interface checked experimentally/);
+    assert.match(detail("walkSpread"), /actualRoots := \[none\]/);
+    assert.match(detail("spreadCallback"), /a spread obscures callback argument 2 at call of walk/);
+  } else {
+    assert.match(detail("spreadCallback"), /callback argument 2 at call of walk .* fails its inferred preservation requirement/);
   }
+  assert.match(detail("ignoreSpread"), /inferred callback preservation checked experimentally/);
+  assert.match(detail("popSpread"), /fails its inferred preservation requirement/);
   assert.match(detail("observeReplacement"), /inferred callback preservation checked experimentally/);
   assert.match(detail("popOriginal"), /fails its inferred preservation requirement/);
   assert.match(detail("forwardFieldRead"), /the forwarded requirement .* cannot name a caller input/);
