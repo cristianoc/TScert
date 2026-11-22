@@ -353,7 +353,10 @@ files without it, and deep status is computed over the shards' records
 together.
 
 CI checks the `tools/` corpus from v0.94 with the verifier built from the
-revision under test. The census project shares the verifier's dependency
+revision under test. Corpus preparation translates `Within` annotations to
+`Modifies`, mapping `value` to `values` and `store` to `spines`. The record
+identifies the reproducible commit containing that translation. The census
+project shares the verifier's dependency
 installation so the verifier recognizes the compiler API's reviewed host
 contracts. CI applies the release census's per-stage limits of 30 minutes
 and 4 GiB.

@@ -71,6 +71,7 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$CENSUS_CORPUS"
           git worktree add --detach "$RUNNER_TEMP/census-corpus" "$CENSUS_CORPUS"
+          node dev/prepare-v094-census.mts "$RUNNER_TEMP/census-corpus"
 
       - name: Census
         run: |
@@ -126,7 +127,7 @@ jobs:
           {
             echo "### Census of \`${GITHUB_SHA:0:9}\`${BASE:+ since \`$BASE\`}"
             echo
-            echo "Corpus \`${CENSUS_CORPUS:0:9}\` with ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage."
+            echo "v0.94 corpus \`${CENSUS_CORPUS:0:9}\` with translated effect annotations and limits of ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage."
             echo
             echo '```'
             cat "$CENSUS/headline.txt"
@@ -155,7 +156,7 @@ jobs:
             echo "<title>Census $short</title>"
             echo '<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1100px;padding:0 16px}pre{overflow-x:auto;background:#f6f8fa;padding:12px}</style>'
             echo "<h1>Census of tools/ at <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\">$short</a></h1>"
-            echo "<p>Corpus <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${CENSUS_CORPUS}\">${CENSUS_CORPUS:0:9}</a> with ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage.</p>"
+            echo "<p>Corpus <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${CENSUS_CORPUS}\">${CENSUS_CORPUS:0:9}</a> with translated effect annotations and limits of ${TSCERT_STEP_LIMIT}s and ${TSCERT_STAGE_MEMORY} GiB per stage.</p>"
             echo "<p><a href=\"../history.tsv\">every census</a> · <a href=\"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\">the run</a>, with the record and the refusals ranked as artifacts</p>"
             echo "<h2>Movement${BASE:+ since $BASE}</h2><pre>"; escape "$CENSUS/movement.txt"; echo '</pre>'
             echo '<h2>Report</h2><pre>'; escape "$CENSUS/report.txt"; echo '</pre>'
