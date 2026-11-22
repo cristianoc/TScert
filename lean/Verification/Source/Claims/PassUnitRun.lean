@@ -116,7 +116,7 @@ uses either planning route; the fresh-module branch uses the core planner,
 module preparation and row refusal. Cached module projections have no
 constructor. Planning inputs are universally quantified, as in
 `passUnitVerdict_sound`. -/
-inductive Mode8Accepted : FilePlans → Nat → Prop where
+inductive OrdinaryMode8Accepted : FilePlans → Nat → Prop where
   | main
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
@@ -134,7 +134,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel
       ((preparedMode8 force givenLines infer f₀).fr.group i) compare debugNode repeats given observe counting
       located).2.1 = .ok deps) :
-    Mode8Accepted (preparedMode8 force givenLines infer f₀) i
+    OrdinaryMode8Accepted (preparedMode8 force givenLines infer f₀) i
   | freshModule
     {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
     {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
@@ -151,13 +151,42 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
       (f.passGroupMode8 infer force keep fuel (f.fr.group i)
         (given := some (RequestCli.moduleGiven f.fr.ast
           (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)).2.1) = .ok deps) :
-    Mode8Accepted (preparedModuleMode8 force infer (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
+    OrdinaryMode8Accepted (preparedModuleMode8 force infer (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
 
 /-- Every member of a group accepted at a mode 8 in-process check is safe. -/
-theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
-    (h : Mode8Accepted f i) : PassUnitSafe f i := by
+theorem ordinaryMode8Accepted_sound {f : FilePlans} {i : Nat}
+    (h : OrdinaryMode8Accepted f i) : PassUnitSafe f i := by
   cases h with
   | main hplanned _ haccepted => exact passUnitVerdict_sound hplanned haccepted
   | freshModule hplanned _ haccepted => exact freshModuleVerdict_sound hplanned haccepted
+
+/-- The verdicts printed as verified by mode 8. A published producer is
+safe under its interface, and a verified caller supplies that interface
+at the published source binding. -/
+inductive Mode8Unit where
+  | ordinary (f : FilePlans) (leader : Nat)
+  | producer (report : RequestCli.VerifiedProducer)
+  | callbackCaller (report : RequestCli.VerifiedModuleCaller)
+
+inductive Mode8Accepted : Mode8Unit → Prop where
+  | ordinary {f i} : OrdinaryMode8Accepted f i → Mode8Accepted (.ordinary f i)
+  | producer {p : RequestCli.CheckedUnitPlan} {i fuel report} :
+      p.producerVerdict i fuel = .ok report → Mode8Accepted (.producer report)
+  | callbackCaller {p : RequestCli.VerifiedProducer} {i fuel report} :
+      p.callerVerdict i fuel = .ok report → Mode8Accepted (.callbackCaller report)
+
+def Mode8Unit.Safe : Mode8Unit → Prop
+  | .ordinary f i => PassUnitSafe f i
+  | .producer report => CallbackInterfaceCheck.ProducerMemberSafe report.plan.file report.member report.interface
+  | .callbackCaller report =>
+    CallbackInterfaceCheck.PublicModuleMemberSafe report.member report.producer.interface report.binding
+
+/-- Each successful worker decision supplies the checked evidence for
+the semantic judgment printed at that decision. -/
+theorem mode8Accepted_sound {unit : Mode8Unit} (accepted : Mode8Accepted unit) : unit.Safe := by
+  cases accepted with
+  | ordinary h => exact ordinaryMode8Accepted_sound h
+  | @producer _ _ _ report _ => exact report.safe
+  | @callbackCaller _ _ _ report _ => exact report.safe
 
 end Verification.SourceClaimJson.PassUnit

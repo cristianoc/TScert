@@ -8,6 +8,10 @@ controls supply these premises at the lowered rule boundary. -/
 namespace Verification.SourceClaimJson.CallbackPreservation
 open Footprints HeapKnowledge CallEffects
 
+/-- Label a source scope refusal with the name used in the paper. -/
+def scopeRefusal (check reason : String) : String :=
+  s!"callback scope [{check}]: {reason}"
+
 /-- Facts the continuation needs at this invocation. Both languages give
 their supports to the existing call stability rule. -/
 structure LiveFacts where

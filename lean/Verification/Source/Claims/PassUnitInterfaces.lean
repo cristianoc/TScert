@@ -337,32 +337,6 @@ theorem passFile_safe_kinds
 
 /-! ## Mode 8's plans as the command line computes them -/
 
-/-- **Importer plans from interfaces are over their store** (proved): both
-branches of `fragmentPlansOfInterfaces` return the core planner's plans, the
-rows check (`refuseRows`) and the unbound-import check (`refuseUnbound`)
-refusing plans and keeping the rest. -/
-theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
-    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
-    {force : List String} {est : Established} {tables : List (String × RowTable)}
-    {front : Option (Json × Front)} {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
-    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known memo = .ok f) :
-    OverStore f := by
-  unfold fragmentPlansFromInterfaces fragmentPlansWithImports at h
-  obtain ⟨_, -, h⟩ := except_bind_ok h
-  obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
-  cases h
-  apply refuseUnbound_overStore
-  unfold fragmentPlansOfInterfaces at h₁
-  by_cases he : est.isEmpty = true
-  · rw [ite_eq_left he] at h₁
-    exact fragmentPlansCore_overStore h₁
-  · rw [ite_eq_right he] at h₁
-    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
-    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
-    obtain ⟨_, h₂, h₁⟩ := except_bind_ok h₁
-    cases h₁
-    exact refuseRows_overStore (fragmentPlansCore_overStore h₂)
-
 /-- **Plans with modules checked in the invocation are over their store**
 (proved): `fragmentPlansWithModules` returns importer plans from the
 entries its components establish. -/
@@ -379,17 +353,6 @@ theorem fragmentPlansWithModules_overStore {ast : Json} {fileKey : String}
   obtain ⟨f', hf', h⟩ := except_bind_ok h
   cases h
   exact fragmentPlansFromInterfaces_overStore hf'
-
-/-- The false start fact keeps the store every plan is over (proved). -/
-theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverStore f.withFalseStartFact := by
-  refine overStore_of_mapRequest (fun i x hx => ?_) h
-  simp only [List.getElem?_map, Option.map_eq_some_iff] at hx
-  obtain ⟨p, hp, he⟩ := hx
-  cases p with
-  | error _ => cases he
-  | ok q =>
-    simp only [Except.map, Except.ok.injEq] at he
-    exact ⟨q, _, hp, he.symm, rfl⟩
 
 /-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
 head facts, with `infer` beside the proposals inference recorded, then the

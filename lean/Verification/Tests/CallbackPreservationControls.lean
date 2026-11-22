@@ -202,3 +202,23 @@ example :
       publicOperand 1 roots 0 = none ∧ publicOperand 1 roots 1 = some (0, []) := by decide
 
 end Verification.SourceClaimJson.CallbackInterfaceCheck.Controls
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck.Controls
+open CallbackPreservation Footprints
+
+-- The caller read box.data into producer argument 0, then the producer
+-- replaced that field. Projecting its checked demand still covers the
+-- original array's spine at 1 and excludes the replacement spine at 5.
+example :
+    let old : Tm := .objAt [(arraySpineKey, 1)] .absent 2
+    let box : Tm := .objAt [(.str "data", 3)] .absent 4
+    let fresh : Tm := .objAt [(arraySpineKey, 5)] .absent 6
+    let h : Heap := [.num 0, .arr [some 0], .nul, fresh, .nul, .arr [], .nul]
+    let roots := argumentRoots 1 3 #[[.read 0]] [.var 0]
+    let dst := operandEnv 4 (fun _ => box) (fun _ => old)
+    project roots [(.field 0 arraySpineKey, .keep)] = some [(.field 4 arraySpineKey, .keep)] ∧
+      (Region.field 4 arraySpineKey).mem dst h 1 = true ∧
+      (Region.field 4 arraySpineKey).mem dst h 5 = false ∧
+      HeapKnowledge.readPath h box ["data"] = some fresh := by decide
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck.Controls

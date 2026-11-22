@@ -1,11 +1,11 @@
 import Verification.Source.Claims.CallbackPublication
-import Verification.Source.Claims.CallbackInterfaceCheck
 import Verification.Source.FlowJson
 -- FlowJson.lean supplies the execution graphs `--lower-control-flow` prints.
 import Verification.Source.Claims.Json
 -- Claims/ModuleInterfaces.lean computes and reads the module interfaces of mode 8.
 import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.WorkerWire
+import Verification.Source.Claims.CallbackModularEntry
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -476,6 +476,36 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     | .ok j => IO.println j.compress; return 0
     | .error e => refuse e
 
+/-- The unit planner preserves its type store, including when reused from
+the plan cache. The proof field is erased. -/
+structure CheckedUnitPlan where
+  file : SourceClaimJson.FilePlans
+  over : SourceClaimJson.PassUnit.OverStore file
+
+structure VerifiedProducer where
+  plan : CheckedUnitPlan
+  member : Nat
+  interface : SourceClaimJson.CallbackInterfaceCheck.Published
+  safe : SourceClaimJson.CallbackInterfaceCheck.ProducerMemberSafe plan.file member interface
+  binding : Except String (SourceClaimJson.CallbackInterfaceCheck.SourceProducer plan.file member interface)
+
+def CheckedUnitPlan.producerVerdict (p : CheckedUnitPlan) (i fuel : Nat) :
+    Except String VerifiedProducer := do
+  let ⟨published, sound⟩ ← SourceClaimJson.CallbackInterfaceCheck.certifyProducer p.file i fuel []
+  let safe := sound p.over
+  return ⟨p, i, published, safe, SourceClaimJson.CallbackInterfaceCheck.certifySourceProducer p.over safe⟩
+
+structure VerifiedModuleCaller where
+  producer : VerifiedProducer
+  member : Nat
+  binding : SourceClaimJson.CallbackInterfaceCheck.SourceProducer producer.plan.file producer.member producer.interface
+  safe : SourceClaimJson.CallbackInterfaceCheck.PublicModuleMemberSafe member producer.interface binding
+
+def VerifiedProducer.callerVerdict (p : VerifiedProducer) (caller fuel : Nat) : Except String VerifiedModuleCaller := do
+  let binding ← p.binding
+  let ⟨sound⟩ ← SourceClaimJson.CallbackInterfaceCheck.certifyModuleCaller caller p.member fuel binding p.plan.over
+  return ⟨p,caller,binding,sound⟩
+
 /-- A file prepared for mode 8 (`prepareUnitsFile`): what is a function of
 the file and its inputs alone and every unit's check reads: the fragment,
 the module interfaces decoded (their entries and row tables, the module
@@ -503,15 +533,16 @@ structure PreparedFile where
   quiet : Bool
   t0 : Nat
   proposals : IO.Ref (Std.HashMap Nat (List (String × Option SourceClaimJson.StandIn)))
-  plans : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.FilePlans))
+  plans : IO.Ref (Std.HashMap Nat (Except String CheckedUnitPlan))
   /-- What the proposals of the groups planned so far established, by
   their inputs (`FilePlans.proposed`): a later planning reads an entry only
   for the same inputs. -/
   memo : IO.Ref SourceClaimJson.ProposalMemo
   callbackInterfaces : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.CallbackInterfaceCheck.Published))
+  callbackPlans : IO.Ref (Option (Except String CheckedUnitPlan))
+  verifiedProducers : IO.Ref (Std.HashMap Nat (Except String VerifiedProducer))
   callbackBindings : List (String × Option SourceClaimJson.CallbackInterfaceCheck.Published)
   callbackUnits : Std.HashSet Nat
-
 
 /-- The prepared file's front: its units, their identities and groups. -/
 def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
@@ -533,6 +564,19 @@ def demandedInterfaces (fr : SourceClaimJson.Front) (wanted : List Nat) : Std.Ha
         pending := h :: pending
   if pending.isEmpty then return demand
   return fr.leaders.foldl (·.insert ·) demand
+
+private def PreparedFile.callbackDependencies (p : PreparedFile) (i : Nat) : List Nat :=
+  (p.fr.edges i).filter p.callbackUnits.contains
+
+/-- Only a directly named, same-file producer can be discharged in the
+caller's own source execution. Other dependency shapes keep their refusal. -/
+def PreparedFile.callbackCallerScope (p : PreparedFile) (i : Nat) : Option Nat := do
+  if p.fr.group i != [i] || !(markedCallbackParams p.fr i).isEmpty || !p.force.isEmpty then none else
+    let [j] := p.callbackDependencies i | none
+    if (markedCallbackParams p.fr j).isEmpty ||
+        !(p.callbackDependencies j).isEmpty ||
+        !((p.fr.mentions i ++ p.fr.mentions j).all fun name => !p.callbackBindings.any (·.1 == name))
+      then none else some j
 
 /-- Mode 8's preparation of a file's fragment and the module interfaces its
 imports read: the fragment and interfaces decoded, the file's claims and
@@ -595,6 +639,8 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
   let callbackInterfaces ← IO.mkRef {}
+  let callbackPlans ← IO.mkRef none
+  let verifiedProducers ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a, callbackImports) =>
     let locations := ((jArr a "modules").toOption.getD []).filterMap fun m => (m.getObjValAs? String "location").toOption
     let callbackBindings := importedOutcomes a locations callbackImports
@@ -603,9 +649,16 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
       (!callbackBindings.isEmpty && (fr.mentions i).any fun name => callbackBindings.any (·.1 == name))
     let callbackUnits : Std.HashSet Nat := if direct.isEmpty then {} else .ofList <|
       (List.range fr.units.length).filter fun i => direct.contains i || (fr.reach i).any direct.contains
-    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
-      interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans, memo, callbackInterfaces, callbackBindings, callbackUnits }
+    let file : PreparedFile :=
+      { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+        interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
+        givenLines, fuel, quiet, t0, proposals, plans, memo, callbackInterfaces, callbackPlans,
+        verifiedProducers, callbackBindings, callbackUnits }
+    let roots := selection names
+    let requested := fr.selected roots
+    if roots.isSome && !requested.isEmpty && requested.all (fun i => (file.callbackCallerScope i).isSome) then
+      { file with selected := roots }
+    else file
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -616,14 +669,29 @@ names of `i`'s group, over the prepared front), each function its group
 reaches outside it read at the proposal `known` gives, what proposals
 established read from `memo` for the same inputs, and prepared
 (`preparedMode8`). -/
-def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
-    (memo : SourceClaimJson.ProposalMemo) : Except String SourceClaimJson.FilePlans := do
-  let f ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
+private def PreparedFile.checkedPlanFor (p : PreparedFile) (workItem : String) (names : List String)
+    (known : List (String × Option SourceClaimJson.StandIn))
+    (memo : SourceClaimJson.ProposalMemo) : Except String CheckedUnitPlan :=
+  match h : SinglePass.work "prepare: unit plans" workItem (fun _ =>
     SourceClaimJson.fragmentPlansWithImports p.imports.get p.ast p.fileKey p.budget
-      (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known memo
-  let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
-    f.withHeadFacts p.givenLines false (inferred := true)
-  return if p.force.contains "start-facts" then f.withFalseStartFact else f
+      (some names) {} p.force p.est p.tables (some p.front) known memo) with
+  | .error reason => .error reason
+  | .ok base =>
+    let f := SinglePass.work "prepare: head facts" workItem fun _ =>
+      base.withHeadFacts p.givenLines false (inferred := true)
+    have over : SourceClaimJson.PassUnit.OverStore f :=
+      SourceClaimJson.PassUnit.withHeadFacts_overStore (SourceClaimJson.PassUnit.fragmentPlansWithImports_overStore h)
+    if p.force.contains "start-facts" then
+      .ok ⟨f.withFalseStartFact, SourceClaimJson.PassUnit.withFalseStartFact_overStore over⟩
+    else .ok ⟨f,over⟩
+
+def PreparedFile.checkedPlan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
+    (memo : SourceClaimJson.ProposalMemo) : Except String CheckedUnitPlan :=
+  p.checkedPlanFor (p.fr.workItem i) [SourceClaimJson.memberName (p.fr.unitId i)] known memo
+
+def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
+    (memo : SourceClaimJson.ProposalMemo) : Except String SourceClaimJson.FilePlans :=
+  (p.checkedPlan i known memo).map CheckedUnitPlan.file
 
 /-- The groups a group reaches outside itself, by their first members,
 each after those it reaches (`Front.edges` over the groups). -/
@@ -643,6 +711,36 @@ def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat := Id.run do
         stack := ((fr.group g).flatMap fr.edges).map (leader ·, false) |>.filter (!seen.contains ·.1)
           |>.append ((g, true) :: rest)
   return order
+
+/-- Same-file callback interfaces and their consumers use the same type
+labels. A plan supplies the labels once, before either check runs. -/
+def PreparedFile.callbackPlan (p : PreparedFile) : IO (Except String CheckedUnitPlan) := do
+  if let some planned := ← p.callbackPlans.get then return planned
+  let roots := p.units.filter p.callbackUnits.contains
+  let units := (roots ++ roots.flatMap (groupsBelow p.fr)).eraseDups
+  let names := units.map fun i => SourceClaimJson.memberName (p.fr.unitId i)
+  let planned ← IO.lazyPure fun _ => p.checkedPlanFor p.fileKey names [] {}
+  p.callbackPlans.set (some planned)
+  return planned
+
+/-- A producer's successful verdict and interface are produced together.
+The caller gets the already checked publication from this cache. -/
+def PreparedFile.verifiedProducer (p : PreparedFile) (i : Nat) : IO (Except String VerifiedProducer) := do
+  if let some cached := (← p.verifiedProducers.get).get? i then return cached
+  let plan ← p.callbackPlan
+  let result := do
+    let checked ← plan
+    if checked.file.fr.unitId i != p.fr.unitId i then
+      throw "producer plan does not identify the selected declaration"
+    checked.producerVerdict i p.fuel
+  p.verifiedProducers.modify (·.insert i result)
+  if let .ok report := result then
+    p.callbackInterfaces.modify (·.insert i (.ok report.interface))
+  return result
+
+def PreparedFile.callbackProducerScope (p : PreparedFile) (i : Nat) : Bool :=
+  p.fr.group i == [i] && !(markedCallbackParams p.fr i).isEmpty && (p.callbackDependencies i).isEmpty &&
+    !(p.fr.mentions i).any (fun name => p.callbackBindings.any (·.1 == name))
 
 /-- Whether this worker may consume a group's inferred interface: from
 another selected group, recursive members, or an explicit effect contract.
@@ -671,13 +769,13 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
     let memo ← p.proposals.get
     let known := (groupsBelow fr g).flatMap fun h => (memo.get? h).getD []
     let memo ← p.memo.get
-    let planned ← IO.lazyPure fun _ => p.plan g known memo
-    if let .ok f := planned then p.memo.set f.proposed
+    let planned ← IO.lazyPure fun _ => p.checkedPlan g known memo
+    if let .ok f := planned then p.memo.set f.file.proposed
     -- (kept for the group's own check where the selection checks it; its
     -- proposals alone otherwise)
     if p.units.contains g then p.plans.modify (·.insert g planned)
     let got : List (String × Option SourceClaimJson.StandIn) := match planned with
-      | .ok f => f.groupProposals g
+      | .ok f => f.file.groupProposals g
       | .error _ => (fr.group g).filterMap fun j => match fr.units[j]? with
         | some (u, _, none) => some (u.name, none)
         | _ => none
@@ -685,17 +783,15 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   let memo ← p.proposals.get
   return below.flatMap fun h => (memo.get? h).getD []
 
-private def PreparedFile.callbackDependencies (p : PreparedFile) (i : Nat) : List Nat :=
-  (p.fr.edges i).filter p.callbackUnits.contains
-
 private def PreparedFile.callbackInterface (p : PreparedFile) (i : Nat)
-    (plan : Option (Except String SourceClaimJson.FilePlans) := none) :
+    (plan : Option (Except String CheckedUnitPlan) := none) :
     IO (Except String SourceClaimJson.CallbackInterfaceCheck.Published) :=
   produce (p.fr.units.length + 1) i plan
 where
-  produce : Nat → Nat → Option (Except String SourceClaimJson.FilePlans) →
+  produce : Nat → Nat → Option (Except String CheckedUnitPlan) →
       IO (Except String SourceClaimJson.CallbackInterfaceCheck.Published)
-  | 0, _, _ => pure (.error "recursive callback interface checking is unavailable")
+  | 0, _, _ => pure (.error (SourceClaimJson.CallbackPreservation.scopeRefusal "nonrecursiveDeclaration"
+      "recursive callback interface checking is unavailable"))
   | remaining + 1, member, supplied => do
     if let some cached := (← p.callbackInterfaces.get).get? member then return cached
     let imports := demandedImports p.callbackBindings (p.fr.mentions member)
@@ -704,10 +800,11 @@ where
       | some planned => pure planned
       | none =>
         let known ← p.known member
-        pure (p.plan member known (← p.memo.get))
+        if let some cached := (← p.plans.get).get? member then pure cached
+        else pure (p.checkedPlan member known (← p.memo.get))
     let result := do
       let dependencies := (← local_.mapM id) ++ (← imports)
-      checkedSupply (← planned) member p.fuel dependencies
+      checkedSupply (← planned).file member p.fuel dependencies
     p.callbackInterfaces.modify (·.insert member result)
     return result
 
@@ -732,10 +829,36 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+  if p.callbackProducerScope i then
+    match ← p.verifiedProducer i with
+    | .ok report =>
+      let file := report.plan.file
+      return (WorkerWire.verdictLine unit members (.ok (file.dependencies [i])) none
+        (file.contractReads [i]) (some report.interface.toJson), none)
+    | .error reason =>
+      let detail := s!"inferred callback interface: {reason}"
+      return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+  if let some producer := p.callbackCallerScope i then
+    let published ← p.verifiedProducer producer
+    let verdict := do
+      let source ← published
+      if source.plan.file.fr.unitId i != unit then
+        throw "caller plan does not identify the selected declaration"
+      source.callerVerdict i p.fuel
+    match verdict with
+    | .ok report =>
+      let file := report.producer.plan.file
+      let dependencies := (file.dependencies [i]).filter (· != file.fr.unitId producer)
+      let dependencies := (dependencies ++ file.dependencies [producer]).eraseDups
+      return (WorkerWire.verdictLine unit members (.ok dependencies) none
+        (file.contractReads [i,producer]), none)
+    | .error reason =>
+      let detail := s!"inferred callback preservation: {reason}"
+      return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
   let known ← p.known i
   -- (a group's plans kept from a later unit's proposals read once, here:
   -- no unit checked after this one reads them, only their proposals)
-  let planned ← match (← p.plans.get).get? i with
+  let checked ← match (← p.plans.get).get? i with
     | some planned => do p.plans.modify (·.erase i); pure planned
     | none => do
       let memo ← p.memo.get
@@ -746,15 +869,17 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
         known ++ (fr.group i).filterMap fun j => match fr.units[j]? with
           | some (f, _, none) => some (f.name, none)
           | _ => none
-      let planned ← IO.lazyPure fun _ => p.plan i known memo
-      if let .ok f := planned then p.memo.set f.proposed
+      let planned ← IO.lazyPure fun _ => p.checkedPlan i known memo
+      if let .ok f := planned then p.memo.set f.file.proposed
       pure planned
   if !(markedCallbackParams fr i).isEmpty then
-    let result ← p.callbackInterface i (some planned)
+    let result ← p.callbackInterface i (some checked)
     let detail := match result with
-      | .ok iface => s!"inferred callback interface checked experimentally: {reprStr iface.interface}"
+      | .ok iface => SourceClaimJson.CallbackPreservation.scopeRefusal "callbackProducerScope"
+        s!"inferred callback interface checked experimentally: {reprStr iface.interface}"
       | .error reason => s!"inferred callback interface: {reason}"
     return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+  let planned := checked.map CheckedUnitPlan.file
   let producers := p.callbackDependencies i
   if p.callbackUnits.contains i then
     let published ← producers.mapM (p.callbackInterface ·)
@@ -765,7 +890,8 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let (_, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
       verdict
     let detail := match result with
-      | .ok _ => "inferred callback preservation checked experimentally"
+      | .ok _ => SourceClaimJson.CallbackPreservation.scopeRefusal "callbackCallerScope"
+        "inferred callback preservation checked experimentally"
       | .error reason => s!"inferred callback preservation: {reason}"
     return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
   let (lines, verdict, elaboration, contracts) ← match planned with

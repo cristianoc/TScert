@@ -10,19 +10,23 @@ namespace Verification.WorkerWire
 open Lean
 
 /-- A unit's verdict line: `{"unit","members","accepted","depends","elaboration","contracts"}`,
-its group accepted with the units its verdict rests on; or
+its group accepted with the units its verdict rests on;
+the accepted line may also carry `callbackInterface`, the conditions
+under which an annotated producer is verified; or
 `{"unit","members","refusal","elaboration","contracts"}`; `elaboration` the first
 elaboration refusal among its group's members, or null; `contracts` the
 contracts its group's check read, each once, in their compressed text's
 order (`SourceElaboration.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (elaboration : Option String) (contracts : List Json) : String :=
+    (elaboration : Option String) (contracts : List Json)
+    (callbackInterface : Option Json := none) : String :=
   let ext := ("elaboration", match elaboration with | some r => toJson r | none => Json.null)
   let read := ("contracts", Json.arr (contracts.eraseDups.toArray.qsort (·.compress < ·.compress)))
   (match verdict with
     | .ok deps => Json.mkObj ([("unit", toJson unit), ("members", toJson members)] ++
         [("accepted", toJson true)] ++
-        [("depends", toJson deps), ext, read])
+        [("depends", toJson deps), ext, read] ++
+        callbackInterface.toList.map (fun iface => ("callbackInterface", iface)))
     | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
         ("refusal", toJson reason), ext, read]).compress
 

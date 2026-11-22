@@ -157,7 +157,7 @@ function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void>
 
 ### `InferPreserves<T>`
 
-On a named callback parameter, this annotation asks the verifier to infer which locations the function needs that callback to preserve. TypeScript reads it as `T`. For example, `visit: InferPreserves<Visitor>` lets the walker publish the preservation requirements it infers from its own continuation. A caller checks its closure’s effect against those requirements. The normal source command reports these checks as experimental pending the soundness proof. [Inferred callback preservation](drafts/inferred-callback-preservation.md)
+On a named callback parameter, this annotation asks the verifier to infer which locations the function needs that callback to preserve. TypeScript reads it as `T`. The normal verifier can verify a producer under its published requirements. A same-file caller in the paper's fixed-call fragment is checked against the published interface and its own closure's effects. The cursor walker verifies under its inferred array-spine requirement. A visitor that appends to a separate fresh array can satisfy it. A visitor that changes the input's spine is refused. [Paper and executable scope](drafts/inferred-callback-preservation.md)
 
 ### `Fresh<T>`
 

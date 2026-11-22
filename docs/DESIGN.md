@@ -237,7 +237,10 @@ surface's rows state what each replay assumes.
 `SourceClaimJson.PassUnit.mode8Accepted_sound` connects a unit the
 single pass prints accepted, at either of its print sites
 (`--verify-interface-stage 8` and a module's check in `--module-interface`),
-to safety of its certified calculus requests (`PassUnitSafe`). Each **code unit** is a function
+to its modeled source judgment (`Mode8Unit.Safe`). Ordinary units establish `PassUnitSafe`.
+An annotated producer establishes `ProducerMemberSafe` under its
+published callback requirements. A verified caller establishes
+`PublicModuleMemberSafe` for its execution at the certified source binding. Each **code unit** is a function
 or module-initialization body, checked with the units that reach it and that
 it reaches as one unit ([modules and code units](#modules-and-code-units)).
 Its inputs include parameters and the module, imported and host values it

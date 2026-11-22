@@ -119,7 +119,11 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
 - a verdict line, `{"unit","members","accepted","depends","elaboration","contracts"}` or
   `{"unit","members","refusal","elaboration","contracts"}`, as `--verify-interface-stage 8`
   prints it; `elaboration` the first elaboration refusal among the unit's
-  group, or `null`. The first non-null one in the order the checks run is
+  group. An accepted line for a marked producer includes
+  `callbackInterface`, the published requirements for its verified verdict.
+  The requirements use the same encoding as the module interface.
+  The elaboration field is
+  `null` when the group has no elaboration refusal. The first non-null one in the order the checks run is
   the file's refusal, which `--verify-interface-stage 8` reports as its
   refusal. `contracts` lists the contracts the group's check read, each
   once (`SourceElaboration.ContractRead`), which no verdict reads: a member,

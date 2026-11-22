@@ -224,4 +224,50 @@ theorem refuseUnbound_overStore {f : FilePlans} {unbound : List (String × List 
   obtain ⟨P, hP, hk⟩ := refuseUnbound_plans f unbound
   rw [hP]; exact overStore_of_plans hk h
 
+/-- **Importer plans from interfaces are over their store** (proved): both
+branches of `fragmentPlansOfInterfaces` return the core planner's plans, the
+rows check (`refuseRows`) and the unbound-import check (`refuseUnbound`)
+refusing plans and keeping the rest. -/
+theorem fragmentPlansWithImports_overStore {imports : Except String PlanImports}
+    {ast : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front : Option (Json × Front)} {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
+    (h : fragmentPlansWithImports imports ast fileKey budget names standIns force est tables front known memo = .ok f) :
+    OverStore f := by
+  unfold fragmentPlansWithImports at h
+  obtain ⟨_, -, h⟩ := except_bind_ok h
+  obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
+  cases h
+  apply refuseUnbound_overStore
+  unfold fragmentPlansOfInterfaces at h₁
+  by_cases he : est.isEmpty = true
+  · rw [ite_eq_left he] at h₁
+    exact fragmentPlansCore_overStore h₁
+  · rw [ite_eq_right he] at h₁
+    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
+    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
+    obtain ⟨_, h₂, h₁⟩ := except_bind_ok h₁
+    cases h₁
+    exact refuseRows_overStore (fragmentPlansCore_overStore h₂)
+
+theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front : Option (Json × Front)} {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
+    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known memo = .ok f) :
+    OverStore f :=
+  fragmentPlansWithImports_overStore h
+
+/-- The false start fact keeps the store every plan is over (proved). -/
+theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverStore f.withFalseStartFact := by
+  refine overStore_of_mapRequest (fun i x hx => ?_) h
+  simp only [List.getElem?_map, Option.map_eq_some_iff] at hx
+  obtain ⟨p, hp, he⟩ := hx
+  cases p with
+  | error _ => cases he
+  | ok q =>
+    simp only [Except.map, Except.ok.injEq] at he
+    exact ⟨q, _, hp, he.symm, rfl⟩
+
 end Verification.SourceClaimJson.PassUnit

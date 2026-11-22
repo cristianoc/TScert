@@ -204,31 +204,36 @@ by `runKeepsSummaries` (both proved, [the graph proof](SINGLE-PASS-PROOF.md)):
 its only premises are the file's plans and the accepted verdict.
 
 **Theorem** `mode8Accepted_sound` (proved, PassUnitRun, the
-acceptance theorem). `Mode8Accepted f i` holds at
-either of mode 8's print sites: the file's own check
-(`--verify-interface-stage 8` and `--file-worker 8`, one preparation and one
-unit check, the case `main`, whose premises are `passUnitVerdict_sound`'s) and a module's group checked in the interface
-stage (`--module-interface`, the case `freshModule`: the module planned by
-`fragmentPlansCore`, prepared by `preparedModuleMode8`, its group accepted
-by `passGroupMode8`). Then $`\mathrm{PassUnitSafe}(f, i)`$:
+acceptance theorem). Its premise is `Mode8Accepted unit` and its
+conclusion is `Mode8Unit.Safe unit`.
 
-```math
-\mathrm{Mode8Accepted}(f, i) \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
-```
+* For `.ordinary f i`, the main file and fresh module print paths
+  establish `PassUnitSafe f i`. Each member's request has its graph
+  judgment. A graph's entry satisfies its input contracts,
+  separation and index facts in an admissible world and well-typed heap.
+* For `.producer report`, `certifyProducer` establishes
+  `ProducerMemberSafe`. The published callback requirements are the
+  conditions of its body safety theorem. The result covers its source
+  assertions and assertions of nested code.
+* For `.callbackCaller report`, `certifyModuleCaller` establishes
+  `PublicModuleMemberSafe`. The caller uses the producer's published
+  requirements and fixed signature. The source binding and ordinary
+  capture contracts identify the actual closure it invokes. The result
+  gives `SafePostExc` from caller entry through return, together with
+  its source and nested-code assertions.
 
-**What an accepted verdict guarantees.** An accepted unit certifies every
-member's request, and each request is safe from every entry satisfying its
-input contracts, entry separation and index facts, an admissible kinded
-world and a heap that world types (`EntryHolds`), and whose bindings have
-valid references (`RootsOk`). The entry conditions sit inside the
-conclusion: acceptance proves no entry exists, and the guarantee is
-relative to the accuracy of the host model, which is what supplies such
-entries ([native contracts over kinded worlds](SOURCE-CONTRACTS.md#native-contracts-over-kinded-worlds)).
+The producer and caller are checked separately over the same frozen
+type labels. At publication, `certifySourceProducer` relates the public
+signature and proof to the producer's installed module value. At use,
+the caller checks its own module slots, prefix, fixed arguments,
+callback capture effects and return. `certifyOpaqueAssertions` checks
+the caller's original assertions with an opaque producer slot.
 
-With the file-level part (`passFile_safe_kinds`, section 6) every closed
-unit's value meets its interface, and with `crossModule_safe` (section 7)
-an importer's units meet theirs, their imports discharged by their modules'
-checks.
+For ordinary units, the file theorem (`passFile_safe_kinds`, section 6)
+establishes their interfaces, and `crossModule_safe` (section 7)
+discharges imports with the exporting modules' checks. The callback
+verdicts' source restrictions are stated in the paper.
+[Inferred callback preservation](drafts/inferred-callback-preservation.md)
 
 ### The hypotheses, by level and class
 

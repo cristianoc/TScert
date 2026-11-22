@@ -159,6 +159,21 @@ fragment.
 | An enum member named `__proto__` | The emit's assignment runs the prototype's setter and creates no property | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-proto-member` |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping may be written at the name | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-nan-name` |
 
+### Inferred callback preservation
+
+A marked producer is verified under its inferred callback interface.
+The worker checks producer scope in `callbackProducerScope` and
+`certifyProducer`. Fixed-call composition checks `callbackCallerScope`,
+`certifySourceProducer` and `certifyModuleCaller`. It accepts one
+resolved same-file producer with a fixed receiverless signature,
+a checked literal callback and an ordinary prefix that returns
+the direct result. Capture types, origins and the module binding
+must be recoverable. The producer's published contract discharges
+the callback dependency when the caller's inferred effect satisfies
+the applicable demands. The worker checks its assertions in the
+source module with that producer binding opaque.
+[Annotation and full list of checks](drafts/inferred-callback-preservation.md)
+
 ### Model limits
 
 Sound JavaScript that TypeScript accepts, refused because the model or its

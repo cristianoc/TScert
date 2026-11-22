@@ -430,6 +430,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   // among the selected groups, as their units' lines state it, in the order
   // their checks run.
   const decoded = lines.map(decodeVerdictLine);
+  const callbackInterfaces = new Map(decoded.flatMap((line) => "callbackInterface" in line
+    ? [[line.unit, JSON.stringify(line.callbackInterface)] as const] : []));
   const elaboration = decoded.map((l) => l.elaboration).find((e) => e !== null) ?? null;
   // The contracts each of the file's units' checks read, as its line records them.
   const contractReads: UnitContracts[] = decoded.filter((l, i) => !l.unit.startsWith("module:") &&
@@ -509,7 +511,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       const r = reach(v.unit);
       if ("verified" in r)
         return { unit: v.unit, members: v.members, status: "verified", phase: "check",
-          detail: "",
+          detail: callbackInterfaces.has(v.unit)
+            ? `verified under inferred callback interface ${callbackInterfaces.get(v.unit)}` : "",
           depends: v.depends };
       // A unit open by a dependency: the dependency on its path, then the
       // refusal of the unit refused of its own that the path reaches.

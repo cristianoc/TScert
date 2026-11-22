@@ -945,7 +945,7 @@ export type ContractRead =
  * the contracts its group's check read: its group accepted or refused. */
 export type VerdictLine =
   { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; elaboration: string | null;
-    contracts: readonly ContractRead[] } |
+    contracts: readonly ContractRead[]; callbackInterface?: unknown } |
   { unit: string; members: readonly string[]; refusal: string; elaboration: string | null;
     contracts: readonly ContractRead[] };
 
@@ -964,7 +964,9 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const what = "a unit's verdict line";
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
-  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "elaboration", "contracts"]
+  const hasCallbackInterface = accepted && "callbackInterface" in value;
+  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "elaboration", "contracts",
+    ...(hasCallbackInterface ? ["callbackInterface"] : [])]
     : ["unit", "members", "refusal", "elaboration", "contracts"], what);
   const { unit, members, depends, refusal, elaboration } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
@@ -974,7 +976,8 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const contracts = read.map((c: unknown) => decodeContractRead(c, `${what}'s contract`));
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, accepted: true, depends, elaboration, contracts };
+    return { unit, members, accepted: true, depends, elaboration, contracts,
+      ...(hasCallbackInterface ? { callbackInterface: v["callbackInterface"] } : {}) };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
   return { unit, members, refusal, elaboration, contracts };
