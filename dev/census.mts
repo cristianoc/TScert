@@ -459,7 +459,7 @@ function writeStable(path: string, text: string): void {
 
 /** Copy the source checkout's tools, selected directory and local imports.
  * Link the source checkout's tools dependencies into the census project. */
-export function prepare(out: string, directory: string, sourceRoot = repository): void {
+export function prepare(out: string, directory: string, sourceRoot: string = repository): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
     const names = new Set(readdirSync(from).filter(select).sort());
