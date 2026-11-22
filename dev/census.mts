@@ -458,7 +458,8 @@ function writeStable(path: string, text: string): void {
 }
 
 /** Copy the source checkout's tools, selected directory and local imports.
- * Link the source checkout's tools dependencies into the census project. */
+ * Use the verifier's tools installation so its reviewed host contracts
+ * apply to the same package paths in the census project. */
 export function prepare(out: string, directory: string, sourceRoot: string = repository): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
@@ -471,16 +472,16 @@ export function prepare(out: string, directory: string, sourceRoot: string = rep
   copy(join(sourceRoot, "tools"), join(out, "tools"),
     (n) => n.endsWith(".mts") || n.endsWith(".d.ts") || n === "tsconfig.json");
   const installation = join(out, "tools", "node_modules");
-  const sourceInstallation = join(sourceRoot, "tools", "node_modules");
+  const verifierInstallation = join(repository, "tools", "node_modules");
   if (!existsSync(installation)) {
     try {
-      symlinkSync(sourceInstallation, installation);
+      symlinkSync(verifierInstallation, installation);
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
     }
   }
-  if (sourceRoot !== repository && readlinkSync(installation) !== sourceInstallation)
-    throw new Error(`Choose a census output directory that uses the dependencies at ${sourceInstallation}`);
+  if (sourceRoot !== repository && readlinkSync(installation) !== verifierInstallation)
+    throw new Error(`Choose a census output directory that uses the dependencies at ${verifierInstallation}`);
   if (directory !== "tools") copy(join(sourceRoot, directory), join(out, directory), (n) => n.endsWith(".mts"));
   const seen = new Set<string>();
   const work = [...new Set(["tools", directory])].flatMap((dir) =>

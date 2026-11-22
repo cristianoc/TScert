@@ -353,8 +353,10 @@ files without it, and deep status is computed over the shards' records
 together.
 
 CI checks the `tools/` corpus from v0.94 with the verifier built from the
-revision under test. It installs the corpus checkout's project dependencies
-and applies the release census's per-stage limits of 30 minutes and 4 GiB.
+revision under test. The census project shares the verifier's dependency
+installation so the verifier recognizes the compiler API's reviewed host
+contracts. CI applies the release census's per-stage limits of 30 minutes
+and 4 GiB.
 CI compares results when the corpus and stage limits match. Local census
 runs use the current checkout by default. Pass `--source-root <checkout>`
 to `node dev/census.mts` to select another checkout of TScert.
