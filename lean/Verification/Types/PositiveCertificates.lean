@@ -1212,20 +1212,25 @@ structure TargetClauses (ι : Type) where
     (a : Clause (List ι)) : List (Clause (List ι)) :=
   ClauseSelection.among G a t.clauses
 
-/-- The pairs coverage of `X` by `Y` demands, `Y`'s clauses `t` read once:
+/-- The pairs coverage of `X` by `Y` demands, with both sides' clauses supplied:
 for each clause of `X` that `t` does not hold itself, the pairs it demands of
 each candidate clause of `t` (of each clause when `select` is false), then the
 pairs of the two sides' scheme components. -/
-@[nospecialize] def demandPairsIn [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
-    (select : Bool) (t : TargetClauses ι) : List (List ι × List ι) :=
+@[nospecialize] private def demandPairsFrom [DecidableEq ι] (G : NormalGraph ι) (known : Known ι)
+    (X Y : List ι) (select : Bool) (t : TargetClauses ι) (source : List (Clause (List ι))) : List (List ι × List ι) :=
   -- A clause the target holds itself is covered as it is (`Same`): it
   -- demands no pair.
-  (clausesOf G X).flatMap (fun a => if t.own.has G a then [] else
+  source.flatMap (fun a => if t.own.has G a then [] else
     (if select then t.candidates G a else t.clauses).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
     | _, _ => []
+
+/-- The pairs coverage of `X` by `Y` demands, with `Y`'s clauses supplied. -/
+@[nospecialize] def demandPairsIn [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
+    (select : Bool) (t : TargetClauses ι) : List (List ι × List ι) :=
+  demandPairsFrom G known X Y select t (clausesOf G X)
 
 /-- How deep a pair's rows follow `Var`: search only. -/
 def varDepthDefault : Nat := 8
@@ -1386,20 +1391,28 @@ one of whose elements has no candidate either: no valid closed family covers
 the pair, since every covering it chooses is by a candidate
 (`SelectionPreservation.valid_selected`). Search does not grow a table for
 such a pair, nor expand such a row's demand, with or without selection. -/
-@[nospecialize] def structurallyHopelessIn [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (t : TargetClauses ι) : Bool :=
-  (sourceClauses G S).any fun a => !t.own.has G a && !(t.clauses.any fun b => !ClauseSelection.excludes G a b) &&
+@[nospecialize] private def structurallyHopelessFrom [DecidableEq ι] (G : NormalGraph ι)
+    (source : List (Clause (List ι))) (t : TargetClauses ι) : Bool :=
+  source.any fun a => !t.own.has G a && !(t.clauses.any fun b => !ClauseSelection.excludes G a b) &&
     a.elements.any fun e => !(t.clauses.any fun b => !ClauseSelection.excludes G e b)
+
+@[nospecialize] def structurallyHopelessIn [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (t : TargetClauses ι) : Bool :=
+  structurallyHopelessFrom G (sourceClauses G S) t
 
 @[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
   structurallyHopelessIn G S (TargetClauses.of G T)
 
 /-- The pairs a row's coverage compares (`demandPairsIn`), and quantified
 members after renaming. -/
-@[nospecialize] def reachedPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) : List (List ι × List ι) :=
-  demandPairsIn G known p.1 p.2 images.budget.select t ++ (match images.sub with
+@[nospecialize] private def reachedPairsFrom [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) (source : List (Clause (List ι))) : List (List ι × List ι) :=
+  demandPairsFrom G known p.1 p.2 images.budget.select t source ++ (match images.sub with
     | some r => renamedPairs G r p.1 p.2
     | none => [])
+
+@[nospecialize] def reachedPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) : List (List ι × List ι) :=
+  reachedPairsFrom G images known p t (clausesOf G p.1)
 
 /-- `growTable` over a frontier whose rows carry the pairs they reach, each
 computed once, when the row is inserted. -/
@@ -1417,9 +1430,13 @@ computed once, when the row is inserted. -/
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
       let t := TargetClauses.of G p.2
-      let reached := reachedPairs G images known p t
+      let source := clausesOf G p.1
+      -- Demand reads the unsplit clauses. The coverage tests share their split
+      -- form, which is only needed when the row reaches one of those tests.
+      let split := Thunk.mk fun _ => source.flatMap splitClause
+      let reached := reachedPairsFrom G images known p t source
       if reached.isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          (sourceClauses G p.1).all fun a => t.own.has G a || t.clauses.any (fun b =>
+          split.get.all fun a => t.own.has G a || t.clauses.any (fun b =>
             checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
             (a.elements != [a] && a.elements.all fun e => t.clauses.any fun b =>
               checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
@@ -1427,7 +1444,7 @@ computed once, when the row is inserted. -/
         if grows r tbl p.1 p.2 then throw .growth
       -- A row no valid closed family covers (`structurallyHopelessIn`) is not
       -- expanded; a row reachable only through it is not discovered.
-      return (tbl ++ [p], if structurallyHopelessIn G p.1 t then fresh else fresh ++ [(p, reached)])
+      return (tbl ++ [p], if structurallyHopelessFrom G split.get t then fresh else fresh ++ [(p, reached)])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
     match cand.foldl step (.ok (fb.table, [])) with
     | .error why => { fb with refused := some why }
