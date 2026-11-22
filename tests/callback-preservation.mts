@@ -52,6 +52,27 @@ export function appendToAliasedTarget(xs: number[]): number {
   return walkWithTarget(xs, xs, (destination, i) => { destination.push(i); });
 }
 `;
+const phaseProducer = `
+type PhaseBox = { data: number[] };
+export function headAfter(xs: number[], box: PhaseBox, visit: InferPreserves<() => void>): number {
+  box.data = [];
+  if (xs.length === 0) return 0;
+  visit();
+  return xs[0]!;
+}
+`;
+const phaseClients = `
+export function observeReplacement(box: {data: number[]}): number {
+  return headAfter(box.data, box, () => {});
+}
+export function popOriginal(box: {data: number[]}): number {
+  const old = box.data;
+  return headAfter(old, box, () => { old.pop(); });
+}
+export function forwardFieldRead(box: {data: number[]}, visit: InferPreserves<() => void>): number {
+  return headAfter(box.data, box, visit);
+}
+`;
 const annotations = resolve(import.meta.dirname, "../tools/resolvable.d.ts");
 const project = join(dir, "tsconfig.json");
 const combined = join(dir, "combined.ts");
@@ -61,9 +82,9 @@ writeFileSync(project, JSON.stringify({
   compilerOptions: { strict: true, target: "ES2022", module: "NodeNext" },
   files: [annotations, combined, producer, consumer],
 }));
-writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients);
-writeFileSync(producer, walker + forwarder + argumentWalker);
-writeFileSync(consumer, 'import { walk, through, walkWithTarget } from "./producer.js";\n' + clients + forwardedClient + argumentClients);
+writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients);
+writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer);
+writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients);
 
 for (const source of [combined, consumer]) {
   const outcome = check(source, project, false, undefined, false,
@@ -79,6 +100,9 @@ for (const source of [combined, consumer]) {
     assert.match(detail("walk"), /inferred callback interface checked experimentally/);
     assert.match(detail("through"), /inferred callback interface checked experimentally/);
   }
+  assert.match(detail("observeReplacement"), /inferred callback preservation checked experimentally/);
+  assert.match(detail("popOriginal"), /fails its inferred preservation requirement/);
+  assert.match(detail("forwardFieldRead"), /the forwarded requirement .* cannot name a caller input/);
   assert.match(detail("throughAlias"), /callback argument 2 at call of through .* fails its inferred preservation requirement/);
   assert.match(detail("appendToTarget"), /inferred callback preservation checked experimentally/);
   assert.match(detail("appendToAliasedTarget"), /callback argument 3 at call of walkWithTarget .* fails its inferred preservation requirement/);

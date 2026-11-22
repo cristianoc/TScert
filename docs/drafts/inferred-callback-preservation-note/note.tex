@@ -511,11 +511,12 @@ reading an absent component as the empty footprint. Ordinary
 actuals map to caller slots when their composed paths are empty.
 Capture origins are taken at the allocation label. The collected
 rest slot and unresolved actuals map to unknown. For support
-projection, \lean{operandAt} can recover a field path from a
-field-read origin if the backwards predecessor walk to the read
-encounters only observation steps. Its \lean{unchanged} predicate
-uses side-effect-free terms, reads through a slot, and allocations
-with pure initializers. The caller constructs spine-separation
+projection, \lean{argumentRoots} assigns each field-read operand at
+position $i$ the slot $n_{\rm inputs}+n_{\rm nodes}+i$. The slot
+denotes the value bound at producer entry, including when the
+producer replaces the field before invoking the callback. These
+slots supply no separation evidence. Forwarding requires a public
+input identity for every projected support root. The caller constructs spine-separation
 facts for distinct root identities when at least one is an
 allocation identity. An input identity and an allocation identity
 at label $\ell$ are encoded by $i$ and $n_{\rm inputs}+\ell$
@@ -726,7 +727,7 @@ Closure effects &
 \ruleName{Use} and \ruleName{Forward} &
   \lean{CallbackPreservation.project}, \lean{Demand.check},
   \lean{Demand.forward}; \lean{CallbackInterfaceCheck.check},
-  \lean{closure}, \lean{operandAt}, \lean{separation}, \lean{writeInterface} \\
+  \lean{closure}, \lean{argumentRoots}, \lean{separation}, \lean{writeInterface} \\
 Publication and source verdict &
   \code{Source/RequestCli.lean}: \lean{produceModuleCallback},
   \lean{PreparedFile.callbackInterface}, \lean{PreparedFile.check} \\

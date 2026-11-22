@@ -190,3 +190,15 @@ private def verdict (row : CallEffects.Arrow (Ty Nat)) : Bool :=
 example (row : CallEffects.Arrow (Ty Nat)) : verdict row = false := by rfl
 
 end Verification.SourceClaimJson.CallbackInterfaceCheck.Controls
+
+namespace Verification.SourceClaimJson.CallbackInterfaceCheck.Controls
+open CallbackOrigins
+
+-- A copied field value and the source object have independent names.
+-- Only the input name can escape into a forwarded interface.
+example :
+    let roots := argumentRoots 1 3 #[[.read 0], [.input 0]] [.var 0, .var 1]
+    roots 0 = some (4, []) ∧ roots 1 = some (0, []) ∧
+      publicOperand 1 roots 0 = none ∧ publicOperand 1 roots 1 = some (0, []) := by decide
+
+end Verification.SourceClaimJson.CallbackInterfaceCheck.Controls

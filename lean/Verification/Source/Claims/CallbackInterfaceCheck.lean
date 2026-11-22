@@ -47,47 +47,23 @@ private def identity (inputCount : Nat) : Origin → Option Nat
   | .allocated label => some (inputCount + label)
   | _ => none
 
-private def predecessors (nodes : Array Node) : Array (List Nat) := Id.run do
-  let mut out := Array.replicate nodes.size []
-  for (node, label) in nodes.toList.zipIdx do
-    for edge in CertificateProducer.successors node.continuation ++ node.handler.toList do
-      out := out.modify edge.label (label :: ·)
-  return out
+/-- Name a producer actual at the caller boundary. A field read receives
+a slot for its evaluated value. The producer may replace the field before
+invoking its callback. Evaluated slots have no separation evidence. -/
+def operandRoot (inputs nodes : Nat) (slots : Slots) (position : Nat) (t : Tm) :
+    Option (Nat × List String) := do
+  let origin ← originOf slots t
+  match origin with
+  | .read _ => return (inputs + nodes + position, [])
+  | named => (identity inputs named).map (·, [])
 
-private def observesOnly : Tm → Bool
-  | .readAt _ (.var _) => true
-  | .makeAt _ _ initializers => initializers.all Purity.pureTerm
-  | term => Purity.pureTerm term
+def argumentRoots (inputs nodes : Nat) (slots : Slots) (frame : List Tm) : RootMap :=
+  fun position => frame[position]?.bind (operandRoot inputs nodes slots position)
 
-/-- A copied field path names the same value at the call if the intervening
-steps do not write. Traverse predecessors from the call to the read and
-stop at that read, including through copies and joins. -/
-private def unchanged (nodes : Array Node) (preds : Array (List Nat)) (read use : Nat) : Bool := Id.run do
-  let mut pending := preds.getD use []
-  let mut seen : Std.HashSet Nat := {}
-  while let label :: rest := pending do
-    pending := rest
-    if label == read || seen.contains label then continue
-    if label == use || !(nodes[label]?.any (observesOnly ·.expression)) then return false
-    let before := preds.getD label []
-    if before.isEmpty then return false
-    seen := seen.insert label
-    pending := before ++ pending
-  return true
-
-private def operandAt (inputs : Nat) (nodes : Array Node) (origins : Table)
-    (preds : Array (List Nat)) : Nat → Nat → Tm → Option (Nat × List String)
-  | 0, _, _ => none
-  | fuel + 1, use, t => do
-    let origin ← originOf (origins.at use) t
-    match origin with
-    | .read label =>
-      let node ← nodes[label]?
-      let .readAt (.str key) receiver := node.expression | none
-      if !unchanged nodes preds label use then none else
-        let (root, path) ← operandAt inputs nodes origins preds fuel label receiver
-        return (root, path ++ [key])
-    | root => (identity inputs root).map (·, [])
+/-- Only an input identity can occur in a forwarded public requirement. -/
+def publicOperand (inputs : Nat) (roots : RootMap) : RootMap := fun position => do
+  let (root, path) ← roots position
+  if root < inputs then some (root, path) else none
 
 /-- Instantiate the checked rows for a literal closure using its allocation frame. -/
 def closure {ι : Type} [DecidableEq ι] (codes : Array (CheckedCode ι))
@@ -129,7 +105,6 @@ def check (f : FilePlans) (i fuel : Nat) (interfaces : List Published)
   let (codes, _, _) ← inferCodes r fuel
   let nodes := r.program.toArray
   let inputs := r.inputs.length
-  let preds := predecessors nodes
   let some origins := CallbackOrigins.infer r.program (r.claims.map (·.context.length)).toArray r.start inputs
     | throw "caller origin analysis did not settle"
   -- Bind the callee's immutable declaration identity to a root of this
@@ -164,7 +139,7 @@ def check (f : FilePlans) (i fuel : Nat) (interfaces : List Published)
     let some (.input root) := originOf slots callee | continue
     let some (_, producer) := known.find? (·.1 == root) | continue
     let frame := if producer.receiver then receiver :: args else args
-    let toCaller := fun position => (frame[position]?).bind (operandAt inputs nodes origins preds (nodes.size + 1) label)
+    let toCaller := argumentRoots inputs nodes.size slots frame
     for demand in producer.interface.demands do
       if demand.support.normal.isEmpty && demand.support.exceptional.isEmpty then continue
       let absent : Bool := match frame[demand.parameter]? with
@@ -175,9 +150,7 @@ def check (f : FilePlans) (i fuel : Nat) (interfaces : List Published)
       if absent then continue
       if let some (.input position) := frame[demand.parameter]?.bind (originOf slots) then
         if forwarding.contains position then
-          let some rebased := demand.forward position (fun root => do
-            let (input, path) ← toCaller root
-            if input < inputs then some (input, path) else none)
+          let some rebased := demand.forward position (publicOperand inputs toCaller)
             | throw s!"the forwarded requirement at node {label} cannot name a caller input"
           forwarded := rebased :: forwarded
           continue
