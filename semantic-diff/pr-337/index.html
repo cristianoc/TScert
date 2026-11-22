@@ -93,14 +93,14 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-337"><code>be65d58fbebdff8ba81b6c082b06c8b882fae8c3..pr-337</code></a><ul><li>2 commits</li><li>changes: 1 Theorem, 3 Check</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: An accepted producer reports its callbackInterface.</li></ul></li></ul></section>
-<h2 id="g-pr-337"><code>be65d58fbebdff8ba81b6c082b06c8b882fae8c3..pr-337</code></h2><article class="card" id="c-6047ee008"><header><div><div class="sha">6047ee008 · Cristiano Calcagno · Nov 22, 12:23</div><h3>Prove callback preservation and certify worker verdicts</h3></div><span class="pill ok">verified</span></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-337"><code>ee9a57cf75bcedcc31a5e0def56ad7f8c742be8a..pr-337</code></a><ul><li>2 commits</li><li>changes: 1 Theorem, 3 Check</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: An accepted producer reports its callbackInterface.</li></ul></li></ul></section>
+<h2 id="g-pr-337"><code>ee9a57cf75bcedcc31a5e0def56ad7f8c742be8a..pr-337</code></h2><article class="card" id="c-abdda26cd"><header><div><div class="sha">abdda26cd · Cristiano Calcagno · Nov 22, 12:23</div><h3>Prove callback preservation and certify worker verdicts</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The paper's walker inferred a requirement and the fresh collector satisfied it. Both needed a sound worker verdict for those results.</p></div>
 <h4 class="change"><span class="act added">added</span>Theorem <span class="target">verified callback producer and caller</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A producer is safe under the published callback requirements</span>.</span></div><div class="row"><span><span class="m-text">A certified caller establishes those requirements at its actual</span></span></div><div class="row"><span><span class="m-text">call using the checked callback effect and separation evidence</span>.</span></div></div></div>
 <h4 class="change"><span class="act modified">modified</span>Check <span class="target">callback verification</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Successful preservation checks were reported as experimental.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>The worker certifies the producer once and applies its published requirements at a checked same-file call. Refusals name the corresponding scope check in the paper and the source regression exercises each named check.</p></div></figure></div>
 <h4 class="change">Effect</h4><ul class="effect"><li><code>walk</code> <span class="why">producer refused → verified under its published requirement</span></li><li><code>sumAndTrace</code> <span class="why">caller refused → verified the callback appends to a separate array</span></li><li><code>sumAndAlias</code> <span class="why">caller refused → refused the callback extends the protected spine</span></li></ul>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>certifyProducer · certifyModuleCaller · publicInvoke_safe · mode8Accepted_sound</dd><dt>Wire</dt><dd>An accepted producer reports its callbackInterface.</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>75 files changed, 9390 insertions(+), 158 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   2 +-
+<details><summary>75 files changed, 9384 insertions(+), 156 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   2 +-
  docs/DESIGN.md                                     |   5 +-
  docs/REQUEST-PROTOCOL.md                           |   6 +-
  docs/SINGLE-PASS-THEOREM.md                        |  55 +-
@@ -111,7 +111,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackAllocationSpines.lean    |  79 +++
  .../Source/Claims/CallbackCallPositions.lean       | 120 +++++
  .../Source/Claims/CallbackCallPreparation.lean     | 105 ++++
- .../Source/Claims/CallbackCallerAccepted.lean      | 195 +++++++
+ .../Source/Claims/CallbackCallerAccepted.lean      | 194 +++++++
  .../Source/Claims/CallbackCallerAssertions.lean    | 102 ++++
  .../Source/Claims/CallbackCallerPrefix.lean        |  91 ++++
  .../Source/Claims/CallbackCodeRowsSound.lean       | 225 ++++++++
@@ -123,7 +123,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackFixedOperands.lean       | 240 +++++++++
  .../Source/Claims/CallbackFramedPrefixes.lean      | 263 ++++++++++
  .../Source/Claims/CallbackGraphDispatch.lean       |  79 +++
- .../Source/Claims/CallbackInferencePlan.lean       | 211 +++++++-
+ .../Source/Claims/CallbackInferencePlan.lean       | 209 +++++++-
  .../Source/Claims/CallbackInterfaceCheck.lean      | 581 ++++++++++++++++++++-
  .../Source/Claims/CallbackLinkedEntry.lean         |  73 +++
  .../Source/Claims/CallbackLiteralInvocation.lean   |  62 +++
@@ -138,8 +138,8 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/CallbackPrivateFlow.lean         | 221 ++++++++
  .../Source/Claims/CallbackPrivateFrame.lean        | 183 +++++++
  .../Source/Claims/CallbackPrivateOperands.lean     | 182 +++++++
- .../Source/Claims/CallbackProducerAccepted.lean    |  92 ++++
- .../Source/Claims/CallbackProducerClosure.lean     | 172 ++++++
+ .../Source/Claims/CallbackProducerAccepted.lean    |  91 ++++
+ .../Source/Claims/CallbackProducerClosure.lean     | 173 ++++++
  .../Source/Claims/CallbackProducerGuarantee.lean   |  27 +
  .../Source/Claims/CallbackProducerOrigins.lean     | 216 ++++++++
  .../Source/Claims/CallbackProducerReplay.lean      |  94 ++++
@@ -167,16 +167,16 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Source/Claims/PassUnitInterfaces.lean          |  37 --
  lean/Verification/Source/Claims/PassUnitPlans.lean |  46 ++
  .../Source/Claims/PassUnitRealize.lean             |   9 +
- lean/Verification/Source/Claims/PassUnitRun.lean   |  41 +-
- lean/Verification/Source/RequestCli.lean           | 189 +++++--
- lean/Verification/Source/WorkerWire.lean           |   8 +-
+ lean/Verification/Source/Claims/PassUnitRun.lean   |  39 +-
+ lean/Verification/Source/RequestCli.lean           | 186 +++++--
+ lean/Verification/Source/WorkerWire.lean           |  10 +-
  lean/Verification/Tests/AxiomCheck.lean            |  52 ++
  .../Tests/CallbackPreservationControls.lean        |  20 +
  pipeline/stage-execution.mts                       |   9 +-
- pipeline/verify-source.mts                         |   7 +-
+ pipeline/verify-source.mts                         |   5 +-
  tests/callback-preservation.mts                    | 205 +++++++-</pre></details>
 </article>
-<article class="card" id="c-16a41b85e"><header><div><div class="sha">16a41b85e · Cristiano Calcagno · Nov 22, 12:23</div><h3>Verify a straight-line caller continuation after a callback call</h3></div><span class="pill ok">verified</span></header>
+<article class="card" id="c-526ad5df5"><header><div><div class="sha">526ad5df5 · Cristiano Calcagno · Nov 22, 12:23</div><h3>Verify a straight-line caller continuation after a callback call</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>A caller that binds the result of walk and then returns total + 1 was refused even with a visitor that appends to a separate array. The caller proof required an immediate return. The ordinary replay of assertions also tried to invoke the opaque producer to recheck separation between unchanged bindings after the call.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Check <span class="target">caller continuation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> the producer call</span><span class="tgt"><span class="m-text">bind its result and return that value directly</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> the producer call</span><span class="tgt"><span class="m-text">bind or discard its verified result and check the straight-line path and the type of the returned value</span>.</span></div></div></figure></div>
 <h4 class="change"><span class="act modified">modified</span>Check <span class="target">caller assertions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> every caller assertion</span><span class="tgt"><span class="m-text">prove it by ordinary graph replay</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> every caller assertion</span><span class="tgt"><span class="m-text">prove it by ordinary replay or by transporting an earlier checked separation-only assertion across edges that retain the relevant bindings</span>.</span></div></div></figure></div>
