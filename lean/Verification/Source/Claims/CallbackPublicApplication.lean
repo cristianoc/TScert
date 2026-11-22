@@ -149,10 +149,86 @@ theorem publicInvoke_safe {f caller fuel p forwarded} (a : AcceptedCaller f call
   exact linked args n W h I persist allowed ⟨argRoots,typed⟩ (fixed.typed typed) argRoots
     (same.symm ▸ roots fn) adm heap (suppliedAtCall a found invoked binding selected abi supplies callerValues callerRoots callerHeap reached)
 
-/-- A checked application in tail position. The declaration and its result
-type are public. The caller prefix is checked using only the caller's code
-table. Its continuation returns the result of this particular invocation. -/
-structure PublicTail {f : FilePlans} (r : Req f) (p : Published) (formals : List (Ty _))
+/-- A certified ordinary path from the application continuation to a return. -/
+structure CallerReturn {ι : Type} [DecidableEq ι] (G : NormalGraph ι)
+    (I : PositiveCertificates.InstanceImageCheck G) (codes : CodeEntry ι → Bool) (P : Program)
+    (start : Nat) (Γ : List (Option (Ty ι))) (result : Ty ι) where
+  label : Nat
+  slots : List (Option (Ty ι))
+  term : Tm
+  type : Ty ι
+  node : P[label]? = some ⟨term,.ret,none⟩
+  path : PrefixPlan G I codes P label slots start Γ
+  expression : PrefixExpression G I codes slots term type
+  returns : FamLe (meaning G type) (meaning G result)
+
+private def findCallerReturn (P : Program) : Nat → Nat → Option Nat
+  | 0, _ => none
+  | fuel+1, label => do
+    let node ← P[label]?
+    if node.handler.isSome then none else
+      match node.continuation with
+      | .ret => some label
+      | .bind dest | .effect dest => findCallerReturn P fuel dest.label
+      | _ => none
+
+private def readCallerReturn {ι : Type} [Labels ι] [Instantiates ι] (G : NormalGraph ι)
+    (I : PositiveCertificates.InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (pool : List (Ty ι)) (aliases : List (ι × ι)) (fuel : Nat) (answers : Answered G)
+    (P : Program) (claims : List (PointClaim ι)) (filler : Ty ι) (fill : PromiseCalls.admitsUndef G filler = true)
+    (start : Nat) (Γ : List (Option (Ty ι))) (result : Ty ι) : Option (CallerReturn G I codes P start Γ result) := do
+  let bound := P.length + 1
+  let label ← findCallerReturn P bound start
+  let node ← P[label]?
+  let claim ← claims[label]?
+  if location : P[label]? = some ⟨node.expression,.ret,none⟩ then
+    let ⟨slots,path⟩ ← readPrefixPlan G I codes pool aliases fuel answers P claims label filler fill bound start Γ
+    let expr ← readPrefixExpression G I codes pool aliases fuel answers filler fill slots node.expression claim.type
+    let evidence ← (subtypeSearch G I claim.type result).value
+    if checked : PositiveCertificates.checkUsing G I claim.type result evidence = true then
+      return ⟨label,slots,node.expression,claim.type,location,path,expr,PositiveCertificates.acceptedUsing checked⟩
+  none
+
+theorem CallerReturn.safe {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {I codes P start Γ result}
+    (tail : CallerReturn G I codes P start Γ result) (codeTable : CodesSound G codes)
+    (source : P.all (fun nd => ObjectCoherence.sourceTerm nd.expression) = true)
+    {L d comp n W h} (typed : PartialEnv G Γ (envOf L d) n W) (roots : RootsOk W (envOf L d))
+    (values : ∀ i, isVal (envOf L d i) = true) (world : WorldAdm W) (heap : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G result) (fun _ _ => True) (fun _ => True) n W h (gotoOf P start L d comp) := by
+  apply tail.path.safe (Keep := fun _ _ => True) codeTable source (fun _ _ _ _ => trivial) _
+    (.refl : Execution P 0 h (.at start (envOf L d)) h (.at start (envOf L d)))
+    typed roots values trivial world heap
+  intro _ h' L' d' m U _ _ slots refs _ adm ok
+  let E := P.map (·.expression)
+  let K := P.map fun nd => (nd.continuation,nd.handler)
+  let ρ := envOf L' d'
+  have outer := gotoOf_refsOk (start := tail.label) (comp := comp) source refs
+  have atExpr : E[tail.label]? = some tail.term := by simp [E,List.getElem?_map,tail.node]
+  have atCont : K[tail.label]? = some (.ret,none) := by simp [K,List.getElem?_map,tail.node]
+  have enter : Step h' (gotoOf P tail.label L' d' comp)
+      h' (.frame E K (instantiate 0 ρ tail.term) L' d' .ret none comp) := .gotoEnter atExpr atCont
+  have enterReturn : AdminPrefix U h' _ _ := .next outer enter .refl
+  apply enterReturn.safe adm ok
+  intro k le
+  have termRefs : RefsOk U (instantiate 0 ρ tail.term) := by
+    intro loc hit
+    rcases Kinds.instantiate_refs _ _ _ _ hit with ht | ⟨i,hi⟩
+    · exact program_source_refsOk source U _ (List.mem_of_getElem? tail.node) loc ht
+    · exact refs i loc hi
+  have run := tail.expression.safe codeTable (slots.transfer k le _ (WExt_refl _))
+    (WorldAdm_trunc le adm) (heapAtLower le ok) (RefsOk_trunc le termRefs)
+  apply frameContinue (PositiveGraphs.builtinExc_adm G _) (WorldAdm_trunc le adm)
+    (heapAtLower le ok) (RefsOk_trunc le outer) (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (of_safe run))
+  intro j below V ext vAdm after v hHeap hv ty _ rv
+  have outerRefs := RefsOk_mono ext (RefsOk_trunc below (RefsOk_trunc le outer))
+  have step : AdminPrefix V after (.frame E K v L' d' .ret none comp) v :=
+    .next (frame_refs outerRefs rv) (.frameRet hv) .refl
+  exact step.safe vAdm hHeap fun b lower =>
+    SafePostExc.value hv ((meaning_adm G result).down_le _ _ lower V v (tail.returns _ _ _ ty))
+      trivial (RefsOk_trunc lower rv)
+
+/-- A checked application and its straight-line caller context. -/
+structure PublicApplication {f : FilePlans} (r : Req f) (p : Published) (formals : List (Ty _))
     (result : Ty _) (origins : Table) (codes : Array (CheckedCode _)) (input : Nat) where
   label : Nat
   node : Node
@@ -168,15 +244,16 @@ structure PublicTail {f : FilePlans} (r : Req f) (p : Published) (formals : List
   supplies : ∀ d ∈ p.interface.demands, CanSupply r origins codes slots label frame formals d
   prefixPlan : PrefixPlan (RequestJson.graph r.toRequest) (StoreView.images r.types)
     (admits (codes.toList.map (·.entry))) r.program label slots r.start (callerEntryTypes r.inputs input)
-  ret : Nat
-  mapping : List Nat
-  cont : node.continuation = .bind ⟨ret,some (0::mapping)⟩
-  last : r.program[ret]? = some ⟨.var 0,.ret,none⟩
+  pushesResult : Bool
+  destination : ControlFlow.Target
+  cont : node.continuation = PrefixMap pushesResult destination
   noHandler : node.handler = none
   source : r.program.all (fun nd => ObjectCoherence.sourceTerm nd.expression) = true
   callerResult : Ty _
   goal : r.goal = .plain callerResult
-  returns : FamLe (meaning (RequestJson.graph r.toRequest) result) (meaning (RequestJson.graph r.toRequest) callerResult)
+  suffix : CallerReturn (RequestJson.graph r.toRequest) (StoreView.images r.types)
+    (admits (codes.toList.map (·.entry))) r.program destination.label
+    (mappedPrefixTypes destination.mapping (prefixPush pushesResult (some result) slots)) callerResult
 
 private theorem singleSelection {inputs names p slot i selected}
     (hit : (knownSiblings inputs names [p]).find? (·.1 == slot) = some (i,selected)) : i = slot ∧ selected = p := by
@@ -189,9 +266,9 @@ private theorem singleSelection {inputs names p slot i selected}
   cases same
   simpa using picked
 
-def readPublicTail {f : FilePlans} (r : Req f) (p : Published) (formals : List (Ty _)) (result : Ty _)
+def readPublicApplication {f : FilePlans} (r : Req f) (p : Published) (formals : List (Ty _)) (result : Ty _)
     (origins : Table) (codes : Array (CheckedCode _)) (answers : Answered (RequestJson.graph r.toRequest))
-    (fuel input : Nat) : Except String (PublicTail r p formals result origins codes input) := do
+    (fuel input : Nat) : Except String (PublicApplication r p formals result origins codes input) := do
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
   let some (_,label) := r.program.zipIdx.find? (fun (nd,l) => match nd.expression with
@@ -207,14 +284,16 @@ def readPublicTail {f : FilePlans} (r : Req f) (p : Published) (formals : List (
     exact found
   let ⟨abi⟩ ← requireCheck (CallbackPreservation.scopeRefusal "fixedDirectApplication"
     "application disagrees with fixed receiverless public signature") (checkedCallFrame p .undef frame = frame)
-  let ⟨.bind ⟨ret,some (0::mapping)⟩,cont⟩ := inspect node.continuation | throw (CallbackPreservation.scopeRefusal "directCallbackReturn" "expected a direct return")
-  let ⟨last⟩ ← requireCheck (CallbackPreservation.scopeRefusal "directCallbackReturn"
-    "application result is not returned directly") (r.program[ret]? = some ⟨.var 0,.ret,none⟩)
-  let ⟨noHandler⟩ ← requireCheck (CallbackPreservation.scopeRefusal "directCallbackReturn" "handler on the direct application") (node.handler = none)
+  let continuation := match node.continuation with
+    | .bind dest => some (true,dest)
+    | .effect dest => some (false,dest)
+    | _ => none
+  let some (pushesResult,destination) := continuation
+    | throw (CallbackPreservation.scopeRefusal "callerContinuation" "expected a bind or effect continuation")
+  let ⟨cont⟩ ← requireCheck "invalid application continuation" (node.continuation = PrefixMap pushesResult destination)
+  let ⟨noHandler⟩ ← requireCheck (CallbackPreservation.scopeRefusal "callerContinuation" "handler on the application") (node.handler = none)
   let ⟨source⟩ ← requireCheck "non-source caller expression" (r.program.all (fun nd => ObjectCoherence.sourceTerm nd.expression) = true)
   let ⟨.plain callerResult,goal⟩ := inspect r.goal | throw (CallbackPreservation.scopeRefusal "plainCallerResult" "expected an ordinary caller result")
-  let some evidence := (subtypeSearch G images result callerResult).value | throw "producer result does not meet caller signature"
-  let ⟨sub⟩ ← requireCheck "invalid result comparison" (PositiveCertificates.checkUsing G images result callerResult evidence = true)
   let pool := vocabulary G r.searchLabels r.claims r.inputs
   let some filler := pool.find? (PromiseCalls.admitsUndef G) | throw (CallbackPreservation.scopeRefusal "readPrefixPlan" "missing undefined input filler")
   let ⟨fill⟩ ← requireCheck "invalid filler" (PromiseCalls.admitsUndef G filler = true)
@@ -223,11 +302,15 @@ def readPublicTail {f : FilePlans} (r : Req f) (p : Published) (formals : List (
     | throw (CallbackPreservation.scopeRefusal "readPrefixPlan" "uncertified caller prefix")
   let ⟨args⟩ ← readFixedArguments G images slots frame formals
   let ⟨supplies⟩ ← readSupplies r origins codes slots label frame formals p.interface.demands
-  return ⟨label,node,fn,frame,loc,direct,binding,selected,abi,slots,args,supplies,prefixPlan,ret,mapping,
-    cont,last,noHandler,source,callerResult,goal,PositiveCertificates.acceptedUsing sub⟩
+  let some suffix := readCallerReturn G images (admits (codes.toList.map (·.entry))) pool r.aliases fuel answers
+      r.program r.claims filler fill destination.label
+      (mappedPrefixTypes destination.mapping (prefixPush pushesResult (some result) slots)) callerResult
+    | throw (CallbackPreservation.scopeRefusal "callerContinuation" "uncertified path from application to return")
+  return ⟨label,node,fn,frame,loc,direct,binding,selected,abi,slots,args,supplies,prefixPlan,pushesResult,destination,
+    cont,noHandler,source,callerResult,goal,suffix⟩
 
-theorem PublicTail.safe {f caller fuel p forwarded} {a : AcceptedCaller f caller fuel [p] [] forwarded}
-    {formals result input} (site : PublicTail a.request p formals result a.origins a.codes input)
+theorem PublicApplication.safe {f caller fuel p forwarded} {a : AcceptedCaller f caller fuel [p] [] forwarded}
+    {formals result input} (site : PublicApplication a.request p formals result a.origins a.codes input)
     {startL startD n} {W : WorldT n} {h₀}
     (typed : PartialEnv (RequestJson.graph a.request.toRequest) (callerEntryTypes a.request.inputs input) (envOf startL startD) n W)
     (roots : RootsOk W (envOf startL startD)) (vals : ∀ i, isVal (envOf startL startD i) = true)
@@ -252,23 +335,28 @@ theorem PublicTail.safe {f caller fuel p forwarded} {a : AcceptedCaller f caller
   let E := P.map (·.expression)
   let K := P.map fun nd => (nd.continuation,nd.handler)
   have atExpr : E[site.label]? = some site.node.expression := by simp [E,P,List.getElem?_map,site.loc]
-  have atCont : K[site.label]? = some (.bind ⟨site.ret,some (0::site.mapping)⟩,none) := by simp [K,P,List.getElem?_map,site.loc,site.cont,site.noHandler]
-  have endExpr : E[site.ret]? = some (.var 0) := by simp [E,P,List.getElem?_map,site.last]
-  have endCont : K[site.ret]? = some (.ret,none) := by simp [K,P,List.getElem?_map,site.last]
+  have atCont : K[site.label]? = some (PrefixMap site.pushesResult site.destination,none) :=
+    by simp [K,P,List.getElem?_map,site.loc,site.cont,site.noHandler]
   have enter : Step h (gotoOf P site.label L d c) h
-      (.frame E K (instantiate 0 ρ site.node.expression) L d (.bind ⟨site.ret,some (0::site.mapping)⟩) none c) := .gotoEnter atExpr atCont
-  have pre : AdminPrefix U h _ _ := .next outer enter .refl
+      (.frame E K (instantiate 0 ρ site.node.expression) L d (PrefixMap site.pushesResult site.destination) none c) :=
+    .gotoEnter atExpr atCont
+  have pre : AdminPrefix U h (gotoOf P site.label L d c) _ := .next outer enter .refl
   apply pre.safe adm ok
   intro k le
   have w := WorldAdm_trunc le adm
   have hh := heapAtLower le ok
   have pt := point.transfer k le _ (WExt_refl _)
-  apply returnCall_safe (PositiveGraphs.builtinExc_adm G _) (meaning_adm G site.callerResult) endExpr endCont
-    w hh (RefsOk_trunc le outer)
   have run := publicInvoke_safe a site.loc site.direct site.binding site.selected site.abi site.args site.supplies
     (fun i _ => vals i) roots heap reached linked (stable le (WExt_refl _) current) pt
     (fun i => RefsOk_trunc le (root i)) w hh
-  exact SafePostExcV.iff_lift.mp (SafePostExcV.mono_result site.returns (SafePostExcV.iff_lift.mpr run))
+  apply frameContinue (PositiveGraphs.builtinExc_adm G _) w hh (RefsOk_trunc le outer) run
+  intro m low V ext valid h' v hHeap hv ty _ rv
+  have refs := fun i => RefsOk_mono ext (RefsOk_trunc low (RefsOk_trunc le (root i)))
+  have destinationRefs := gotoOf_refsOk (start := site.destination.label) (comp := c) site.source refs
+  exact resumeChecked (fun _ _ hit => mappedPrefixTypes_checked hit) (pt.transfer _ low _ ext)
+    refs values ty hv rv valid hHeap destinationRefs
+    (fun typed' refs' values' world' heap' =>
+      site.suffix.safe (inferCodes_table_sound a.codeAnswers) site.source typed' refs' values' world' heap')
 
 /-- The whole caller statement names only the conditional contract of the
 producer value in its resolved sibling slot and ordinary entry evidence. -/
@@ -300,7 +388,7 @@ def certifyPublicCaller {f : FilePlans} {i name pos} (r : Req f) (plan : PlanAt 
     | throw "caller origin analysis did not settle"
   let origins := nameable (namedSites r.program.toArray) raw
   let ⟨forwarded,uses⟩ ← readChecked (checkUses r codes origins [p] [])
-  let site ← readPublicTail r p formals result origins codes answers fuel input
+  let site ← readPublicApplication r p formals result origins codes answers fuel input
   return ⟨by
     refine ⟨?_,inferCodes_assertions codeRead⟩
     have accepted : check f i fuel [p] [] = .ok forwarded := by

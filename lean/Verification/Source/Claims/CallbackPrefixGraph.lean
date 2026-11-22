@@ -3,7 +3,7 @@ namespace Verification.SourceClaimJson.CallbackInterfaceCheck
 open ControlFlow GraphCode ProgramTyping PositiveGraphs PositiveRules ProgramCertificates HeapObservations
 open CallbackInferencePlan TolerantFrames PointClaims PassUnit
 
-private theorem frame_refs {n} {W : WorldT n} {E K l L d comp c t}
+theorem frame_refs {n} {W : WorldT n} {E K l L d comp c t}
     (outer : RefsOk W (.goto E K l L d comp)) (inner : RefsOk W t) : RefsOk W (.frame E K t L d c none comp) := by
   intro loc item
   simp only [refs,List.mem_append] at item
@@ -15,7 +15,7 @@ private theorem frame_refs {n} {W : WorldT n} {E K l L d comp c t}
 
 /-- Run one ordinary prefix expression, then resume the actual graph continuation
 at the reached heap and extended world. A thrown expression exits its frame. -/
-private theorem frameContinue {Ξ A B : Fam} {Q : Post} (excAdm : Adm Ξ) {n} {W : WorldT n} {h t E K L d l c comp}
+theorem frameContinue {Ξ A B : Fam} {Q : Post} (excAdm : Adm Ξ) {n} {W : WorldT n} {h t E K L d l c comp}
     (adm : WorldAdm W) (heap : HeapOk n W h) (outer : RefsOk W (.goto E K l L d comp))
     (run : SafePostExc Ξ A Q (fun _ => True) n W h t)
     (next : ∀ j (le : j ≤ n) U, WExt (trunc j le W) U → WorldAdm U → ∀ h' v, HeapOk j U h' →
@@ -158,5 +158,46 @@ theorem PrefixPlan.safe {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {I cod
     intro b below
     exact ih complete (atTarget.transfer _ below _ (WExt_refl _)) (fun i => RefsOk_trunc below (targetRefs i))
       targetVals (stable below (WExt_refl _) (stable small ext (stable le (WExt_refl _) keep))) (WorldAdm_trunc below au) (heapAtLower below ok)
+
+/-- Resume a checked straight-line edge after the call produces its result. -/
+theorem resumeChecked {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {P Γ Δ A flag dest}
+    (mapped : ∀ i B, Δ[i]?.join = some B →
+      (prefixPush flag (some A) Γ)[PointClaims.slot dest.mapping i]?.join = some B)
+    {n W h L d comp v T}
+    (typed : PartialEnv G Γ (envOf L d) n W) (roots : RootsOk W (envOf L d))
+    (values : ∀ i, isVal (envOf L d i) = true) (value : meaning G A n W v)
+    (hv : isVal v = true) (rv : RefsOk W v) (world : WorldAdm W) (heap : HeapOk n W h)
+    (outer : RefsOk W (gotoOf P dest.label L d comp))
+    (next : ∀ {j U L' d'}, PartialEnv G Δ (envOf L' d') j U → RootsOk U (envOf L' d') →
+      (∀ i, isVal (envOf L' d' i) = true) → WorldAdm U → HeapOk j U h →
+      SafePostExc (excOf G) T (fun _ _ => True) (fun _ => True) j U h (gotoOf P dest.label L' d' comp)) :
+    SafePostExc (excOf G) T (fun _ _ => True) (fun _ => True) n W h
+      (.frame (P.map (·.expression)) (P.map fun nd => (nd.continuation,nd.handler)) v L d (PrefixMap flag dest) none comp) := by
+  let pack := envMap dest.mapping (prefixPush flag v L) d
+  have envEq : mapEnv dest.mapping (prefixPushEnv flag v (envOf L d)) = envOf pack.1 pack.2 := by
+    rw [← mapEnv_envOf,← prefixPush_env]
+  have pushed := pushed_partial typed value flag
+  have target : PartialEnv G Δ (envOf pack.1 pack.2) n W := by
+    rw [← envEq]
+    exact ⟨fun i => pushed.1 _,fun i B hit => pushed.2 _ B (mapped i B hit)⟩
+  have targetRefs : RootsOk W (envOf pack.1 pack.2) := by
+    rw [← envEq]
+    have all : RootsOk W (prefixPushEnv flag v (envOf L d)) := by
+      cases flag <;> first | exact roots | exact push_refs rv roots
+    exact fun _ => all _
+  have targetVals : ∀ i, isVal (envOf pack.1 pack.2 i) = true := by
+    rw [← envEq]
+    have all : ∀ i, isVal (prefixPushEnv flag v (envOf L d) i) = true := by
+      intro i; cases flag <;> first | exact values i | cases i <;> first | exact hv | exact values _
+    exact fun _ => all _
+  have advance : Step h
+      (.frame (P.map (·.expression)) (P.map fun nd => (nd.continuation,nd.handler)) v L d (PrefixMap flag dest) none comp)
+      h (gotoOf P dest.label pack.1 pack.2 comp) := by
+    cases flag <;> first | exact .frameBind hv | exact .frameEffect hv
+  have edge : AdminPrefix W h _ _ := .next (frame_refs outer rv) advance .refl
+  apply edge.safe world heap
+  intro j below
+  exact next (target.transfer _ below _ (WExt_refl _)) (fun i => RefsOk_trunc below (targetRefs i))
+    targetVals (WorldAdm_trunc below world) (heapAtLower below heap)
 
 end Verification.SourceClaimJson.CallbackInterfaceCheck

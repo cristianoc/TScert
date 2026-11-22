@@ -22,6 +22,7 @@ private theorem shadow_typed {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {
 mutual
 def prefixReads (visible : Nat → Bool) (depth : Nat) : Tm → Bool
   | .var i => i < depth || visible (i-depth)
+  | .arith _ a b => prefixReads visible depth a && prefixReads visible depth b
   | .letE a b => prefixReads visible depth a && prefixReads visible (depth+1) b
   | .arrLit args | .makeAt .absent _ args => prefixReadsAll visible depth args
   | .makeAt (.graph _ _ _ _ caps _ _ _) _ args => prefixReadsAll visible depth caps && prefixReadsAll visible depth args
@@ -42,6 +43,9 @@ theorem prefixReads_eq {visible : Nat → Bool} {ρ σ : Env} (agree : ∀ i, vi
     by_cases h : i < d
     · simp [instantiate,h]
     · simp [instantiate,h,agree _ (ok.resolve_left h)]
+  case arith op a b =>
+    obtain ⟨ha,hb⟩ := Bool.and_eq_true_iff.mp ok
+    simp [instantiate,prefixReads_eq agree _ a ha,prefixReads_eq agree _ b hb]
   case letE a b =>
     obtain ⟨ha,hb⟩ := Bool.and_eq_true_iff.mp ok
     simp [instantiate,prefixReads_eq agree _ a ha,prefixReads_eq agree _ b hb]

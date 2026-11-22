@@ -8,7 +8,7 @@ def mappedPrefixTypes (m : Mapping) (slots : List (Option (Ty ι))) : List (Opti
   | none => slots
   | some indices => indices.map fun i => slots[i]?.join
 
-private theorem mappedPrefixTypes_checked {ι : Type} {A : Ty ι} {slots : List (Option (Ty ι))} {i : Nat} {m : Mapping}
+theorem mappedPrefixTypes_checked {ι : Type} {A : Ty ι} {slots : List (Option (Ty ι))} {i : Nat} {m : Mapping}
     (hit : (mappedPrefixTypes m slots)[i]?.join = some A) : slots[PointClaims.slot m i]?.join = some A := by
   cases m with
   | none => exact hit
@@ -16,6 +16,19 @@ private theorem mappedPrefixTypes_checked {ι : Type} {A : Ty ι} {slots : List 
     cases position : ids[i]? with
     | none => simp [mappedPrefixTypes,position] at hit
     | some j => simpa [mappedPrefixTypes,PointClaims.slot,position] using hit
+
+def readPrefixExpression {ι : Type} [Labels ι] (G : NormalGraph ι)
+    (I : PositiveCertificates.InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (pool : List (Ty ι)) (aliases : List (ι × ι)) (fuel : Nat) (answers : Answered G)
+    (filler : Ty ι) (fill : PromiseCalls.admitsUndef G filler = true)
+    (Γ : List (Option (Ty ι))) (term : Tm) (result : Ty ι) : Option (PrefixExpression G I codes Γ term result) := do
+  if indep : prefixReads (fun (i : Nat) => Γ[i]?.join.isSome) 0 term = true then
+    let masked := Γ.map (·.getD filler)
+    let tree ← (expressionWithUsing G I pool [] aliases (fun _ _ => true) fuel masked term result answers).1.value
+    if same : claim tree = ⟨masked,term,result⟩ then
+      if checked : checkTreeUsing G I tree codes [] = true then
+        return ⟨filler,fill,indep,tree,same,checked⟩
+  none
 
 /-- Compile ordinary prefix evidence against the actual graph and checked code
 table. The returned dependent value contains all the decisions read by
@@ -37,15 +50,10 @@ def readPrefixPlan {ι : Type} [Labels ι] (G : NormalGraph ι) (I : PositiveCer
         | .bind dest => some (true,dest)
         | _ => none
       if same : node = ⟨node.expression,PrefixMap flag dest,none⟩ then
-        if indep : prefixReads (fun (i : Nat) => Γ[i]?.join.isSome) 0 node.expression = true then
-          let masked := Γ.map (·.getD filler)
-          let tree ← (expressionWithUsing G I pool [] aliases (fun _ _ => true) searchFuel masked node.expression cl.type answers).1.value
-          if sq : claim tree = ⟨masked,node.expression,cl.type⟩ then
-            if verified : checkTreeUsing G I tree codes [] = true then
-              let next := mappedPrefixTypes dest.mapping (prefixPush flag (some cl.type) Γ)
-              let ⟨final,tail⟩ ← readPrefixPlan G I codes pool aliases searchFuel answers P claims cut filler fill budget dest.label next
-              return ⟨final,.step (hp.trans (congrArg some same)) ⟨filler,fill,indep,tree,sq,verified⟩
-                (fun _ _ hit => mappedPrefixTypes_checked hit) tail⟩
+        let expr ← readPrefixExpression G I codes pool aliases searchFuel answers filler fill Γ node.expression cl.type
+        let next := mappedPrefixTypes dest.mapping (prefixPush flag (some cl.type) Γ)
+        let ⟨final,tail⟩ ← readPrefixPlan G I codes pool aliases searchFuel answers P claims cut filler fill budget dest.label next
+        return ⟨final,.step (hp.trans (congrArg some same)) expr (fun _ _ hit => mappedPrefixTypes_checked hit) tail⟩
       none
 
 /-- Choosing the witnesses for an actual joint check retains the two exact

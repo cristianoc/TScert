@@ -146,7 +146,18 @@ export function callWithExtraArgument(): number {
 `;
 const scopeExamples = `
 export function postprocess(xs: number[]): number {
-  return walk(xs, () => {}) + 1;
+  const visited: number[] = [];
+  const total = walk(xs, i => { visited.push(i); });
+  return total + 1;
+}
+export function postprocessShrinking(xs: number[]): number {
+  const total = walk(xs, () => { xs.pop(); });
+  return total + 1;
+}
+export function branchAfterCall(xs: number[]): number {
+  const total = walk(xs, () => {});
+  if (total > 0) return 1;
+  return 0;
 }
 /** @ensures safeInteger(result) && 0 <= result */
 export function statedExit(xs: number[]): number {
@@ -270,7 +281,10 @@ for (const source of [combined, consumer]) {
     refusesScope("spreadCallback", "fixedDirectApplication");
     refusesScope("ignoreSpread", "fixedCallbackSignature");
     refusesScope("observeReplacement", "readPrefixPlan");
-    refusesScope("postprocess", "directCallbackReturn");
+    const postprocessed = outcome.units.find(u => u.unit.startsWith("postprocess@"));
+    assert.equal(postprocessed?.status, "verified", postprocessed?.detail);
+    assert.match(detail("postprocessShrinking"), /fails its inferred preservation requirement/);
+    refusesScope("branchAfterCall", "callerContinuation");
     refusesScope("statedExit", "callerPlainExit");
     refusesScope("useLocalVisitor", "readSourceModule");
     refusesScope("useRestVisitor", "readFixedLiteral");
