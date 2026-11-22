@@ -17,7 +17,7 @@ if (git(["rev-parse", "HEAD"]) !== release || git(["status", "--porcelain"]) ||
     git(["rev-parse", "--abbrev-ref", "HEAD"]) !== "HEAD")
   throw Error("census preparation requires a clean detached v0.94 worktree");
 
-let count = 0;
+let count: number = 0;
 try {
   const tools = join(cwd, "tools");
   for (const name of readdirSync(tools).sort()) {
