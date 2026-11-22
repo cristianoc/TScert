@@ -1,3 +1,5 @@
+import Verification.Source.Claims.CallbackPublication
+import Verification.Source.Claims.CallbackInterfaceCheck
 import Verification.Source.FlowJson
 -- FlowJson.lean supplies the execution graphs `--lower-control-flow` prints.
 import Verification.Source.Claims.Json
@@ -294,6 +296,102 @@ def interfacePlanFile (path selection : String) : IO UInt32 := do
     | .ok j => IO.println j.compress; return 0
     | .error e => refuse e
 
+private abbrev CallbackKey := String × String
+
+private abbrev CallbackOutcome := SourceClaimJson.CallbackPublication.Outcome
+
+private def readPreservationRows (document : Json) : Except String (List CallbackOutcome) := do
+  let modules ← (← jArr document "modules").mapM fun row => do
+    let m ← jField row "module"
+    SourceClaimJson.CallbackPublication.decodeDeclarations (← m.getObjValAs? String "location")
+      (← jArr m "functions") (← jField row "callbackOutcomes")
+  return modules.flatten
+
+/-- This projection reads the importing document's binding declarations
+and the producer's published records only. -/
+private abbrev importedOutcomes := SourceClaimJson.CallbackPublication.importedOutcomes
+
+private def demandedImports (bindings : List (String × Option SourceClaimJson.CallbackInterfaceCheck.Published))
+    (names : List String) : Except String (List SourceClaimJson.CallbackInterfaceCheck.Published) :=
+  (bindings.filter (fun (name,_) => names.contains name)).mapM fun (name,row) => do
+    let some iface := row | throw s!"{name} has no checked inferred callback interface"
+    return iface
+
+private def markedCallbackParams (fr : SourceClaimJson.Front) (i : Nat) : List Nat :=
+  (fr.units[i]?).map (fun (fn, _, _) =>
+    fn.params.zipIdx.filterMap fun (param, slot) => if param.inferPreserves then some slot else none) |>.getD []
+
+/-- Follow function references within the fragment before consulting its
+published rows. An absent row for a wrapper cannot turn its declared
+type into evidence for a callback-dependent body. -/
+private def callbackRequired (own : List Fragment.ModuleAst) (available : List CallbackOutcome) : Except String (List CallbackKey) := do
+  let sc : SourceClaimJson.ImportScope := ⟨own,SourceClaimJson.ModuleCode.of own⟩
+  let foreign := (available.filter (·.dependent)).map fun row => (row.location,row.name)
+  let markers := own.any fun m => ((jArr m.document "functions").toOption.getD []).any fun fn =>
+    ((jArr fn "params").toOption.getD []).any fun p => (p.getObjValAs? Bool "inferPreserves").toOption == some true
+  if !markers && foreign.isEmpty then return []
+  let mut callers : Std.HashMap CallbackKey (List CallbackKey) := {}
+  let mut pending := foreign
+  let mut total := 0
+  for m in sc.modules do
+    let some code := sc.code[m.location]? | throw s!"missing callback module {m.location}"
+    let decoded ← code.get
+    let locals := Std.HashSet.ofList (decoded.functions.map (·.name))
+    let owned := Std.HashSet.ofList (decoded.init.flatMap Fragment.Stmt.bound)
+    let initNames := decoded.init.flatMap SourceElaboration.stmtNames
+    let imports := SourceClaimJson.documentValues m.document
+    for fn in decoded.functions do
+      total := total + 1
+      let key := (m.location,fn.name)
+      if fn.params.any (·.inferPreserves) then pending := key :: pending
+      let body := fn.body.flatMap SourceElaboration.stmtNames
+      let names := if body.any owned.contains then body ++ initNames else body
+      for name in names.eraseDups do
+        let dependencies := (if locals.contains name then [(m.location,name)] else []) ++
+          imports.filterMap (fun (localName,loc,target) => if localName == name then some (loc,target) else none)
+        for dep in dependencies do callers := callers.alter dep (fun old => some (key :: old.getD []))
+  let mut reached : Std.HashSet CallbackKey := .ofList pending
+  for _ in [0:total+1] do
+    if pending.isEmpty then break
+    let mut next := []
+    for key in pending do
+      for caller in callers.getD key [] do
+        if !reached.contains caller then
+          reached := reached.insert caller
+          next := caller :: next
+    pending := next
+  return reached.toList
+
+private def checkedSupply (f : SourceClaimJson.FilePlans) (i fuel : Nat)
+    (dependencies : List SourceClaimJson.CallbackInterfaceCheck.Published) :
+    Except String SourceClaimJson.CallbackInterfaceCheck.Published := do
+  let some (fn,_,_) := f.fr.units[i]? | throw "missing callback-dependent member"
+  if fn.params.any (·.inferPreserves) then
+    return ← SourceClaimJson.CallbackInterfaceCheck.writeInterface f i fuel dependencies
+  if dependencies.isEmpty then throw s!"{fn.name} has no checked callback dependency"
+  let _ ← SourceClaimJson.CallbackInterfaceCheck.check f i fuel dependencies
+  let (_, verdict, _, _) := f.passGroupMode8 true [] (fun _ => []) fuel (f.fr.group i)
+  let _ ← verdict
+  return ⟨fn.name,some fn.namePos,fn.params.head?.any (·.name == "this"),(fn.params.takeWhile (!·.rest)).length,⟨[]⟩⟩
+
+private def produceModuleCallback (f : SourceClaimJson.FilePlans) (i fuel : Nat)
+    (sc : SourceClaimJson.ImportScope) (required : List CallbackKey)
+    (published : List CallbackOutcome) :
+    Except String SourceClaimJson.CallbackInterfaceCheck.Published :=
+  produce (f.fr.units.length + 1) i
+where
+  produce : Nat → Nat → Except String SourceClaimJson.CallbackInterfaceCheck.Published
+  | 0, _ => .error "recursive callback interface checking is unavailable"
+  | remaining + 1, member => do
+    let some (_, _, _) := f.fr.units[member]? | throw "marked module function not found"
+    let location ← f.fr.ast.getObjValAs? String "file"
+    let deps := (f.fr.edges member).filter fun j => (f.fr.units[j]?).any fun (fn,_,_) => required.contains (location,fn.name)
+    let local_ ← deps.mapM (produce remaining)
+    let some mod := sc.modules.find? (·.location == location) | throw s!"missing callback module {location}"
+    let bindings := importedOutcomes mod.document (sc.modules.map (·.location)) published
+    let imported ← demandedImports bindings (f.fr.mentions member)
+    checkedSupply f member fuel (local_ ++ imported)
+
 /-- A complete canonical component check. All semantic inputs are in its
 request; no environment-supplied stand-ins or evidence enter this check. -/
 def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) : IO UInt32 := do
@@ -327,6 +425,8 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
     let incoming := decoded.flatMap (·.1)
     let incomingTables := decoded.flatMap (·.2)
+    let preservation ← ds.mapM fun d => readPreservationRows (d.getObjValD "interface")
+    let required ← callbackRequired modules preservation.flatten
     let needs ← SourceClaimJson.interfaceNeeds sc
     let own := needs.filter fun (n : SourceClaimJson.ModuleNeed) => modules.any (·.location == n.module.location)
     -- No module unit is given a line: every loop head's proposal is
@@ -340,15 +440,36 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     let prepare := fun location (f : SourceClaimJson.FilePlans) =>
       SinglePass.work "prepare: head facts" (SourceClaimJson.fileItem f.fr.ast) fun _ =>
       f.withHeadFacts (forModule location given) false (inferred := infer)
+    let preservationPrefix := "inferred-preservation: "
     let check := fun (f : SourceClaimJson.FilePlans) group =>
       SinglePass.work "check: group" (f.fr.workItem (group.headD 0)) fun _ =>
       -- The given lines inference computes and the region separations, as
       -- for the file's own units (`passGroupMode8`).
-      let r := f.passGroupMode8 infer force (fun _ => []) fuel group (given := some (moduleGiven f.fr.ast given))
-      (r.1, r.2.1)
-    let (est, _, _, tables) ← SourceClaimJson.establishModules
-      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
-    SourceClaimJson.encodeInterfaces modules est tables
+      let location := (f.fr.ast.getObjValAs? String "file").toOption.getD ""
+      let marked := group.filter fun i =>
+        (f.fr.units[i]?).any fun (fn, _, _) => required.contains (location,fn.name)
+      if marked.isEmpty then
+        let r := f.passGroupMode8 infer force (fun _ => []) fuel group (given := some (moduleGiven f.fr.ast given))
+        (r.1, r.2.1)
+      else
+        let checked := marked.map fun i => produceModuleCallback f i fuel sc required preservation.flatten
+        let lines := checked.filterMap fun
+          | .ok iface => some (preservationPrefix ++ iface.toJson.compress)
+          | .error _ => none
+        (lines, .error "inferred callback preservation is experimental")
+    let (est, verdicts, _, tables) ← SourceClaimJson.establishModulesWith
+      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables (fun loc => required.filterMap fun (m,n) => if m == loc then some n else none)
+    let document ← SourceClaimJson.encodeInterfaces modules est tables
+    let rows ← (← jArr document "modules").mapM fun row => do
+      let location ← (← jField row "module").getObjValAs? String "location"
+      let own := verdicts.filter fun v => v.unit.startsWith s!"module:{location}#"
+      let interfaces ← ((own.flatMap (·.lines)).filterMap fun s =>
+        if s.startsWith preservationPrefix then some ((s.drop preservationPrefix.length).toString) else none).mapM
+          Lean.Json.parse
+      let declarations ← (← jArr (row.getObjValD "module") "functions").mapM
+        (SourceClaimJson.CallbackPublication.emitDeclaration location required interfaces)
+      return row.setObjVal! "callbackOutcomes" (Json.mkObj [("declarations",toJson declarations)])
+    return document.setObjVal! "modules" (Json.arr rows.toArray)
   match parsed with
   | .error e => refuse e
   | .ok j => match EffectCodec.document j with
@@ -387,6 +508,10 @@ structure PreparedFile where
   their inputs (`FilePlans.proposed`): a later planning reads an entry only
   for the same inputs. -/
   memo : IO.Ref SourceClaimJson.ProposalMemo
+  callbackInterfaces : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.CallbackInterfaceCheck.Published))
+  callbackBindings : List (String × Option SourceClaimJson.CallbackInterfaceCheck.Published)
+  callbackUnits : Std.HashSet Nat
+
 
 /-- The prepared file's front: its units, their identities and groups. -/
 def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
@@ -441,7 +566,8 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let tj ← IO.monoNanosNow
   -- The interfaces decoded, and the file's claims and front.
   let prepared : Except String (SourceClaimJson.Established × List (String × SourceClaimJson.RowTable) ×
-      (Json × SourceClaimJson.Front) × Json) ← IO.lazyPure fun _ => do
+      (Json × SourceClaimJson.Front) × Json ×
+      List CallbackOutcome) ← IO.lazyPure fun _ => do
     let cached ← interfaces
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
@@ -454,7 +580,8 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     let claims ← SinglePass.work "prepare: claims" item fun _ => SourceClaimJson.fragmentClaims a' fileKey {} force
     let fr ← SinglePass.work "prepare: file lowering" item fun _ =>
       SourceClaimJson.fileFront a' claims fileKey budget [] (lenient := true)
-    return (est, tables, (claims, fr), a)
+    let callbackImports ← readPreservationRows cached
+    return (est, tables, (claims, fr), a, callbackImports)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms"
@@ -467,10 +594,18 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
-  return prepared.map fun (est, tables, front, a) =>
+  let callbackInterfaces ← IO.mkRef {}
+  return prepared.map fun (est, tables, front, a, callbackImports) =>
+    let locations := ((jArr a "modules").toOption.getD []).filterMap fun m => (m.getObjValAs? String "location").toOption
+    let callbackBindings := importedOutcomes a locations callbackImports
+    let fr := front.2
+    let direct := (List.range fr.units.length).filter fun i => !(markedCallbackParams fr i).isEmpty ||
+      (!callbackBindings.isEmpty && (fr.mentions i).any fun name => callbackBindings.any (·.1 == name))
+    let callbackUnits : Std.HashSet Nat := if direct.isEmpty then {} else .ofList <|
+      (List.range fr.units.length).filter fun i => direct.contains i || (fr.reach i).any direct.contains
     { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans, memo }
+      givenLines, fuel, quiet, t0, proposals, plans, memo, callbackInterfaces, callbackBindings, callbackUnits }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -550,6 +685,32 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   let memo ← p.proposals.get
   return below.flatMap fun h => (memo.get? h).getD []
 
+private def PreparedFile.callbackDependencies (p : PreparedFile) (i : Nat) : List Nat :=
+  (p.fr.edges i).filter p.callbackUnits.contains
+
+private def PreparedFile.callbackInterface (p : PreparedFile) (i : Nat)
+    (plan : Option (Except String SourceClaimJson.FilePlans) := none) :
+    IO (Except String SourceClaimJson.CallbackInterfaceCheck.Published) :=
+  produce (p.fr.units.length + 1) i plan
+where
+  produce : Nat → Nat → Option (Except String SourceClaimJson.FilePlans) →
+      IO (Except String SourceClaimJson.CallbackInterfaceCheck.Published)
+  | 0, _, _ => pure (.error "recursive callback interface checking is unavailable")
+  | remaining + 1, member, supplied => do
+    if let some cached := (← p.callbackInterfaces.get).get? member then return cached
+    let imports := demandedImports p.callbackBindings (p.fr.mentions member)
+    let local_ ← (p.callbackDependencies member).mapM (fun dep => produce remaining dep none)
+    let planned ← match supplied with
+      | some planned => pure planned
+      | none =>
+        let known ← p.known member
+        pure (p.plan member known (← p.memo.get))
+    let result := do
+      let dependencies := (← local_.mapM id) ++ (← imports)
+      checkedSupply (← planned) member p.fuel dependencies
+    p.callbackInterfaces.modify (·.insert member result)
+    return result
+
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
 earlier unit's proposals planned it at, where kept, then released), then
@@ -588,6 +749,25 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
+  if !(markedCallbackParams fr i).isEmpty then
+    let result ← p.callbackInterface i (some planned)
+    let detail := match result with
+      | .ok iface => s!"inferred callback interface checked experimentally: {reprStr iface.interface}"
+      | .error reason => s!"inferred callback interface: {reason}"
+    return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+  let producers := p.callbackDependencies i
+  if p.callbackUnits.contains i then
+    let published ← producers.mapM (p.callbackInterface ·)
+    let result := do
+      let interfaces := (← published.mapM id) ++ (← demandedImports p.callbackBindings (fr.mentions i))
+      let f ← planned
+      let _ ← SourceClaimJson.CallbackInterfaceCheck.check f i p.fuel interfaces
+      let (_, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
+      verdict
+    let detail := match result with
+      | .ok _ => "inferred callback preservation checked experimentally"
+      | .error reason => s!"inferred callback preservation: {reason}"
+    return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
   let (lines, verdict, elaboration, contracts) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [])
     | .ok f => do

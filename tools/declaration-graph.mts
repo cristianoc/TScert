@@ -871,6 +871,7 @@ export interface TypeAnswers {
   /** The verifier's statement of a signature's effect, `Modifies`
    * (`resolvable.d.ts`), resolved at a source name. */
   within?: (span: Span) => void;
+  inferPreserves?: (span: Span) => void;
   /** The verifier's `Fresh` (`resolvable.d.ts`), at a source name. */
   fresh?: (span: Span) => void;
   /** The verifier's `SafeInt` (`resolvable.d.ts`), at a source name. */
@@ -2888,6 +2889,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             declaration.name.text === "Modifies") {
           typeAnswers.within?.(span);
+          continue;
+        }
+        if (verifierAlias(identifier) === "InferPreserves") {
+          typeAnswers.inferPreserves?.(span);
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&

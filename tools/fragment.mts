@@ -389,7 +389,7 @@ export type LambdaParamAst = { name: string; type: TypeTerm; default?: Expr; res
 
 /** A function declaration's parameter: its fragment name, where it is
  * written, its contract, and whether it collects the rest. */
-export type FunctionParamAst = { name: string; pos: Span; type: TypeTerm; rest?: true };
+export type FunctionParamAst = { name: string; pos: Span; type: TypeTerm; rest?: true; inferPreserves?: true };
 
 export interface FunctionAst {
   name: string;

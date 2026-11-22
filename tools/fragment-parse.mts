@@ -203,6 +203,7 @@ export class Gate {
   /** The file names the verifier's `Modifies` (`resolvable.d.ts`), a
    * signature's statement of its frame. */
   standardWithin: boolean = false;
+  readonly inferredPreservation: Set<string> = new Set();
   /** The file names the verifier's `Fresh` (`resolvable.d.ts`). */
   standardFresh: boolean = false;
   /** The file names the verifier's `SafeInt` (`resolvable.d.ts`). */
@@ -1850,7 +1851,8 @@ function lowerFile(file: string, carriesContext: boolean,
   const findGlobals = (node: Node): void => {
     const typeName = ts.isTypeReferenceNode(node) ? node.typeName : null;
     if (typeName && ts.isIdentifier(typeName) && !rooted.has(typeName.text) &&
-        (blockNames.has(typeName.text) || !globalNodes.some(g => qualifiedSpelling(g) === typeName.text)))
+        (typeName.text === "InferPreserves" || blockNames.has(typeName.text) ||
+          !globalNodes.some(g => qualifiedSpelling(g) === typeName.text)))
       globalNodes.push(typeName);
     // `Intl.T`: the member of the standard library's namespace `Intl`, by its
     // name's own identifier, which the overlay of library types may state.
@@ -2524,6 +2526,7 @@ function lowerFile(file: string, carriesContext: boolean,
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
         within: () => { gate.standardWithin = true; },
+        inferPreserves: ([start, end]) => gate.inferredPreservation.add(`${start}:${end}`),
         fresh: () => { gate.standardFresh = true; },
         safeInt: () => { gate.standardSafeInt = true; },
         associatedAlias: (name, identity) => {

@@ -41,7 +41,8 @@ def decodeInterfaces (sc : ImportScope) (j : Json) : Except String (Established 
   let mut out : Established := []
   let mut tables : List (String × RowTable) := []
   for row in ← jArr j "modules" do
-    fieldsExactly row ["module", "entries", "rows"]
+    fieldsExactly row (["module", "entries", "rows"] ++
+      ["callbackOutcomes"].filter (fun key => (row.getObjVal? key).isOk))
     let m ← Fragment.decodeModule (← jField row "module")
     if seen.contains m.location then throw "duplicate interface module"
     seen := seen ++ [m.location]

@@ -698,6 +698,7 @@ structure Param where
   /-- A rest parameter stands for the required positions of its tuple
   contract, and binds the array its arguments are collected into. -/
   rest : Bool := false
+  inferPreserves : Bool := false
 structure Fn where
   name : String
   namePos : Span
@@ -1359,13 +1360,16 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     fun m => s!"the function {name} at [{namePos.1},{namePos.2}): stated: {m}"
   let fn : Fn := ⟨name, namePos,
     ← (← jArr j "params").mapM (fun p => do
-      fieldsExactly p (["name", "pos", "type"] ++ ["rest"].filter (fun k => (p.getObjVal? k).isOk))
-      let rest ← match (p.getObjVal? "rest").toOption with
+      fieldsExactly p (["name", "pos", "type"] ++ ["rest", "inferPreserves"].filter (fun k => (p.getObjVal? k).isOk))
+      let marker := fun key (value : Except String Json) => match value.toOption with
         | none => pure false
         | some b => do
-          if !(← b.getBool?) then throw "a rest parameter is marked by `true`"
+          if !(← b.getBool?) then throw s!"{key} is marked by `true`"
           pure true
-      return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
+      let rest ← marker "rest" (p.getObjVal? "rest")
+      let infer ← marker "inferPreserves" (p.getObjVal? "inferPreserves")
+      if rest && infer then throw "InferPreserves requires an ordinary parameter"
+      return ⟨← jStr (← jField p "name"), ← jField p "type", rest, infer⟩),
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
     ← decodeGuard (← jField j "guard"), ← decodeCompletion (← jField j "completion"),
     stated, ← fromJson? (← jField j "requires"), ← fromJson? (← jField j "ensures")⟩

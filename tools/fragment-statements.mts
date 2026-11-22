@@ -2111,13 +2111,31 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       gate.fail(node.type ?? node, "`Modifies` on a resolution-qualified declaration is outside the fragment: such a unit claims no footprint");
     // The header is the signature's: the declaration's own, or an
     // overload's (`overloadedDecl`).
+    const parameterMarker = (p: ts.ParameterDeclaration): ts.TypeNode | undefined => {
+      const annotation = p.type;
+      if (!annotation || !ts.isTypeReferenceNode(annotation)) return undefined;
+      const [start, end] = gate.span(annotation.typeName);
+      if (!gate.inferredPreservation.has(`${start}:${end}`)) return undefined;
+      const argument = annotation.typeArguments?.[0];
+      if (!argument || annotation.typeArguments?.length !== 1)
+        gate.fail(annotation, "InferPreserves needs one callback type");
+      return argument;
+    };
     const { retType, guard, stated, parameterTypes } = gate.headerTypes((): FunctionHeader => {
       const guard = gate.guardOf(signature);
       const written = gate.statedResult(signature.type, signature);
       const retType = guard ? guardResult(guard) : gate.typeOf(written.result, signature);
-      const parameterTypes: TypeTerm[] = signature.parameters.map((p): TypeTerm => p.dotDotDotToken ? gate.moduleRestType(p, signature)
-        : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
-        : gate.typeOf(p.type, p));
+      const parameterTypes: TypeTerm[] = signature.parameters.map((p): TypeTerm => {
+        const marked = parameterMarker(p);
+        if (marked && (p.dotDotDotToken || p.initializer || !ts.isIdentifier(p.name) ||
+            p.name.text === "this" || signature !== node || !ts.isSourceFile(node.parent))) {
+          gate.fail(p, "InferPreserves expects a named ordinary parameter of a module function");
+        }
+        const annotation = marked ?? p.type;
+        return p.dotDotDotToken ? gate.moduleRestType(p, signature)
+          : p.questionToken || p.initializer ? gate.optionalTypeOf(annotation, p)
+          : gate.typeOf(annotation, p);
+      });
       return { retType, guard, stated: written.stated, parameterTypes };
     });
     gate.guardBody = guard !== null;
@@ -2155,6 +2173,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
           pos: gate.span(p.name),
           type: parameterTypes[i] ?? gate.fail(p, "missing parameter contract"),
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
+          ...(parameterMarker(p) ? { inferPreserves: true as const } : {}),
         };
       }
       const hidden = parameterName(i);

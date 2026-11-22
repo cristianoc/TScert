@@ -540,6 +540,14 @@ def Front.proposes (fr : Front) (n : String) : Bool :=
     fr.statesMore n
 
 
+private def Front.proposeInterface (fr : Front) (name : String) : Bool :=
+  fr.proposes name || fr.units.any fun (fn, _, _) => fn.name == name && fn.params.any (·.inferPreserves)
+
+/-- Include callback-dependent exports even when their ordinary type has
+no more precise effect to publish. -/
+private def Front.offersInterface (fr : Front) (extra : List String) : String → Bool :=
+  if extra.isEmpty then fr.proposeInterface else fun name => fr.proposeInterface name || extra.contains name
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type, at its stand-in's footprint, or at the footprint `qualified` gives it
@@ -551,12 +559,12 @@ those `known` names taken as given. With
 `closure`, the selected groups and every group they reach; with
 `proposed`, of the selected functions those whose footprint is more than
 the ordinary effect. -/
-def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+def fragmentPlansCoreWith (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
     (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
     (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) (extra : List String := []) :
     Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
@@ -616,9 +624,9 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf [] memo
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr
-  -- With `proposed`, the selected functions whose footprint is more than
-  -- the ordinary effect alone, and what they reach.
-  let names := if !proposed then names else names.map (·.filter fr.proposes)
+  -- With `proposed`, select declarations that offer an effect or request
+  -- a callback interface, along with their dependencies.
+  let names := if !proposed then names else names.map (·.filter (fr.offersInterface extra))
   let wanted := wantedOf fr names
   let (T, plans) := SinglePass.timedKind "lower: elaborateSome" fun _ =>
     fr.elaborateSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
@@ -639,6 +647,16 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
   return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, memo⟩
+
+/-- The ordinary module checker uses the standard selection. -/
+def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
+    (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
+    (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
+    (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
+    Except String FilePlans :=
+  fragmentPlansCoreWith ast fileKey budget names standIns force imported depends closure proposed front interfaceSlots known memo
 
 /-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
 def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
@@ -741,13 +759,17 @@ def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (establishe
     | some (n, _) => .error s!"signature rows differ: the import '{n}', its module's interface rows refused by the store-map check"
     | none => .ok plan }
 
-/-- The groups of a module's prepared plans its step checks: every group the
-selected functions whose claims propose more than the ordinary effect reach,
-by leader. -/
-def establishChecked (m : ModuleNeed) (fm : FilePlans) : List Nat :=
-  let wanted := fm.fr.selected (some (m.names.filter fm.fr.proposes))
+/-- The groups of a module's prepared plans its step checks: every group
+reachable from a selected declaration offering an effect or requesting a
+callback interface, by leader. -/
+def establishCheckedWith (m : ModuleNeed) (fm : FilePlans) (extra : List String := []) : List Nat :=
+  let wanted := fm.fr.selected (some (m.names.filter (fm.fr.offersInterface extra)))
   let reach := (wanted ++ wanted.flatMap fm.fr.reach).eraseDups.filterMap fun j => (fm.fr.group j).head?
   fm.fr.leaders.filter reach.contains
+
+/-- The ordinary module checker uses the standard selection. -/
+def establishChecked (m : ModuleNeed) (fm : FilePlans) : List Nat :=
+  establishCheckedWith m fm
 
 /-- The units a step establishes: the least set holding each accepted unit
 (with its dependencies on the wire) whose every dependency is in it or among
@@ -952,10 +974,10 @@ over its document at its names, reading the entries `established` before it
 checked (`check`); the entries it publishes (`establishEntry`) over the units
 it establishes (`establishedUnits`); its verdicts and notes. It reads
 `established` and nothing else of the steps before it. -/
-def establishStep (budget : PositiveCertificates.SearchBudget) (force : List String)
+def establishStepWith (budget : PositiveCertificates.SearchBudget) (force : List String)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String))
-    (established : Established) (tables : List (String × RowTable)) (m : ModuleNeed) :
+    (established : Established) (tables : List (String × RowTable)) (m : ModuleNeed) (extra : List String := []) :
     Established × List ModuleVerdict × List String × List (String × RowTable) :=
   let location := m.module.location
   let foreign := m.reads.filter (·.location != location)
@@ -963,15 +985,15 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
   let forced : StandIns := if force.contains "imports" then
       { functions := m.names.map fun n => StandIn.ofFormat n ⟨.keep, .keep, .keep⟩ true } else {}
   let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
-    fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
-      (closure := true) (proposed := true) (interfaceSlots := true)
+    fragmentPlansCoreWith m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
+      (closure := true) (proposed := true) (interfaceSlots := true) (extra := extra)
   match planned with
   | .error e => ([], [], [s!"{location}: its plans: {e.take 200}"], [])
   | .ok fm =>
     -- The module's own reads of entries published before it, checked by
     -- rows as an importer's are (`FilePlans.refuseRows`).
     let fm := (prepare location fm).refuseRows foreign established tables
-    let toCheck := establishChecked m fm
+    let toCheck := establishCheckedWith m fm extra
     -- Each function checked, at the footprint its claim states.
     let checkedNotes := (toCheck.flatMap fm.fr.group).filterMap fun j => match fm.fr.units[j]? with
       | some (g, _, none) => (fm.fr.d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map fun c =>
@@ -1016,30 +1038,56 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
       | .ok t => if published.isEmpty then [] else [(location, t)]
       | .error _ => [])
 
+/-- The ordinary module checker uses the standard selection. -/
+def establishStep (budget : PositiveCertificates.SearchBudget) (force : List String)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String))
+    (established : Established) (tables : List (String × RowTable)) (m : ModuleNeed) :
+    Established × List ModuleVerdict × List String × List (String × RowTable) :=
+  establishStepWith budget force prepare check established tables m
+
 /-- The steps over a component's modules in order, each reading the entries
 published before it: the fold `establishModules` makes. -/
+def establishFoldWith (budget : PositiveCertificates.SearchBudget) (force : List String)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String))
+    (prior : List (String × RowTable) := []) (extra : String → List String := fun _ => []) :
+    List ModuleNeed → Established × List ModuleVerdict × List String × List (String × RowTable) →
+      Established × List ModuleVerdict × List String × List (String × RowTable)
+  | [], acc => acc
+  | m :: ms, (est, vs, ns, ts) =>
+    let (es, vs', ns', ts') := establishStepWith budget force prepare check est (prior ++ ts) m (extra m.module.location)
+    establishFoldWith budget force prepare check prior extra ms (est ++ es, vs ++ vs', ns ++ ns', ts ++ ts')
+
+/-- The ordinary module checker uses the standard selection. -/
 def establishFold (budget : PositiveCertificates.SearchBudget) (force : List String)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String))
     (prior : List (String × RowTable) := []) :
     List ModuleNeed → Established × List ModuleVerdict × List String × List (String × RowTable) →
-      Established × List ModuleVerdict × List String × List (String × RowTable)
-  | [], acc => acc
-  | m :: ms, (est, vs, ns, ts) =>
-    let (es, vs', ns', ts') := establishStep budget force prepare check est (prior ++ ts) m
-    establishFold budget force prepare check prior ms (est ++ es, vs ++ vs', ns ++ ns', ts ++ ts')
+      Established × List ModuleVerdict × List String × List (String × RowTable) :=
+  establishFoldWith budget force prepare check prior
 
 /-- The canonical component computation. Every candidate's required groups
 are checked without measurement stand-ins. Incoming footprints are closed
 results of predecessor components. Each module is one step
 (`establishStep`) over the entries published before it (`establishFold`). -/
+def establishModulesWith (needs : List ModuleNeed) (budget : PositiveCertificates.SearchBudget)
+    (force : List String) (incoming : Established)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String))
+    (incomingTables : List (String × RowTable) := []) (extra : String → List String := fun _ => []) :
+    Except String (Established × List ModuleVerdict × List String × List (String × RowTable)) :=
+  .ok (establishFoldWith budget force prepare check incomingTables extra needs (incoming, [], [], []))
+
+/-- The ordinary module checker uses the standard selection. -/
 def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.SearchBudget)
     (force : List String) (incoming : Established)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String))
     (incomingTables : List (String × RowTable) := []) :
     Except String (Established × List ModuleVerdict × List String × List (String × RowTable)) :=
-  .ok (establishFold budget force prepare check incomingTables needs (incoming, [], [], []))
+  establishModulesWith needs budget force incoming prepare check incomingTables
 
 /-- A document's values by their local names, each with the module and name
 of its declaration: its imports and the globals it reads. -/

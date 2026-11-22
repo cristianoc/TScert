@@ -124,6 +124,17 @@ two-state postconditions. Its model rules are the theorems of
 states each of its notions as the note defines it is in
 [AGENTS.md](../AGENTS.md#general-statements-no-lists-of-special-cases).
 
+### The Inferred callback preservation paper
+
+*Inferred callback preservation: effect requirements for heap-dependent
+refinements in TScert.* TScert working paper, 22 November 2026.
+[PDF](drafts/inferred-callback-preservation-note/inferred-callback-preservation.pdf) ·
+[LaTeX source](drafts/inferred-callback-preservation-note/note.tex).
+
+The paper specifies the experimental producer and consumer judgments for
+`InferPreserves<T>`. The executable rules and algorithms are indexed by
+Lean definition. The paper states the source soundness target as a
+conjecture.
 
 ## Objects and self types
 
