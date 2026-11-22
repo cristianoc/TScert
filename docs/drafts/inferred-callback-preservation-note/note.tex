@@ -1,22 +1,65 @@
 \documentclass[10pt,a4paper]{article}
 \usepackage[margin=2.6cm]{geometry}
 \usepackage[T1]{fontenc}
-\usepackage{lmodern,amsmath,amssymb,amsthm,microtype,booktabs,tabularx,listings,xcolor}
-\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+\usepackage{amsmath,amsthm}
+\IfFileExists{newtxtext.sty}{\usepackage{newtxtext,newtxmath}}{\usepackage{txfonts}}
+\usepackage[scaled=.95]{helvet}
+\usepackage{microtype,booktabs,tabularx,listings,xcolor,titlesec}
+\usepackage[most]{tcolorbox}
+% Palette of the Read-only frames paper.
+\definecolor{accent}{HTML}{1F5F8B}
+\definecolor{chgc}{HTML}{0B7A68}
+\definecolor{rulec}{HTML}{8A1C4A}
+\definecolor{codec}{HTML}{24292F}
+\definecolor{ckc}{HTML}{0550AE}
+\definecolor{csc}{HTML}{116329}
+\definecolor{cnc}{HTML}{953800}
+\definecolor{ccmc}{HTML}{6E7781}
+\definecolor{leanc}{HTML}{2F6F5E}
+\definecolor{defbg}{HTML}{EEF6F1}
+\definecolor{exbg}{HTML}{F6F4EE}
+\usepackage[colorlinks,linkcolor=accent,citecolor=accent,urlcolor=accent]{hyperref}
+\titleformat*{\section}{\Large\bfseries\sffamily\color{accent}}
+\titleformat*{\subsection}{\large\bfseries\sffamily\color{accent}}
+\newcommand{\ruleName}[1]{\textcolor{rulec}{\textsc{#1}}}
 \lstset{basicstyle=\small\ttfamily,columns=fullflexible,keepspaces=true,
-  breaklines=true,showstringspaces=false,frame=single,rulecolor=\color{black!20}}
+  breaklines=true,showstringspaces=false,upquote=true,xleftmargin=1em,
+  frame=l,rulecolor=\color{accent},framesep=6pt,backgroundcolor=\color{exbg},
+  keywordstyle=\color{ckc}\bfseries,
+  commentstyle=\color{ccmc},stringstyle=\color{csc}}
+\lstdefinelanguage{TypeScript}{
+  morekeywords={type,export,function,const,let,while,if,throw,new,return,
+    number,void,InferPreserves},
+  sensitive=true,morecomment=[l]{//},morecomment=[s]{/*}{*/},
+  morestring=[b]",morestring=[b]',
+  literate=*{0}{{\textcolor{cnc}{0}}}1 {1}{{\textcolor{cnc}{1}}}1
+           {2}{{\textcolor{cnc}{2}}}1 {3}{{\textcolor{cnc}{3}}}1
+}
+\lstdefinelanguage{Pseudocode}{
+  morekeywords={for,each,in,if,else,except,otherwise,while,return,require,
+    then,and,or,all,absent,some,reject,skip},
+  sensitive=true
+}
+\theoremstyle{definition}
 \newtheorem{definition}{Definition}
 \newtheorem{conjecture}{Conjecture}
-\newcommand{\keep}{\ensuremath{\mathsf{keep}}}
-\newcommand{\any}{\mathsf{any}}
+\newcommand{\paperbox}[2]{\tcolorboxenvironment{#1}{enhanced,breakable,
+  colback=#2,colframe=#2,boxrule=0pt,frame hidden,sharp corners,
+  borderline west={2.5pt}{0pt}{accent},left=9pt,right=6pt,top=4pt,bottom=4pt,
+  before skip=10pt,after skip=10pt}}
+\paperbox{definition}{defbg}
+\paperbox{conjecture}{exbg}
+\newcommand{\change}[1]{\textcolor{chgc}{\mathsf{#1}}}
+\newcommand{\keep}{\ensuremath{\change{keep}}}
+\newcommand{\any}{\change{any}}
 \newcommand{\norm}{\mathsf{normal}}
 \newcommand{\exc}{\mathsf{exceptional}}
 \newcommand{\absent}{\mathsf{none}}
 \newcommand{\some}{\ensuremath{\mathsf{some}}}
-\newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\lean}[1]{\texttt{\small #1}}
-\newcommand{\status}[1]{\textsf{\small[#1]}}
-\newcommand{\ruleof}[3]{\frac{\begin{gathered}#2\end{gathered}}{#3}\;\textsc{#1}}
+\newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}
+\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}
+\newcommand{\status}[1]{\textcolor{leanc}{\textsf{\small[#1]}}}
+\newcommand{\ruleof}[3]{\frac{\begin{gathered}#2\end{gathered}}{#3}\;\ruleName{#1}}
 \newcommand{\respects}{\mathrel{\triangleleft}}
 \newcommand{\supp}{\operatorname{supp}}
 \newcommand{\proj}{\operatorname{project}}
@@ -29,7 +72,8 @@
 \newcommand{\argroots}{\operatorname{actuals}}
 \newcommand{\spine}{\operatorname{spine}}
 \newcommand{\termsame}{\mathrel{\#}}
-\title{Inferred callback preservation\\[2pt]\large Effect requirements for heap-dependent refinements in TScert}
+\title{\sffamily\bfseries\color{accent}Inferred callback preservation\\[2pt]
+  \large\normalfont\color{black}Effect requirements for heap-dependent refinements in TScert}
 \author{TScert working paper}
 \date{22 November 2026}
 
@@ -47,15 +91,17 @@ closure captures. The rules reuse the supports and separation queries
 of \emph{Tolerant frames}. We give executable judgments and pseudocode
 for the annotated source path, including its two body walks and direct
 forwarding. Source tests exercise nonempty requirements in one file
-and across module boundaries. The guarded Pretext walker produced an
-empty requirement. A separate Lean control uses a length equality as
-a premise. The source feature is experimental and its composition
-with the verifier's soundness theorem remains open.
+and across module boundaries. A guarded Pretext walker infers a
+requirement to preserve a length equality. A reduced example shows
+where applications succeed and where fresh-array separation and
+closure adaptation exceed the implemented rules. The source feature
+is experimental and its composition with the verifier's soundness
+theorem remains open.
 \end{abstract}
 
 \section{The problem}\label{sec:problem}
 
-\begin{lstlisting}
+\begin{lstlisting}[language=TypeScript]
 type Visitor = (i: number) => void;
 export function walk(xs: number[], visit: InferPreserves<Visitor>): number {
   const c = { i: 0 };
@@ -97,8 +143,8 @@ A footprint is a list of pairs $(r,\delta)$, where $r$ denotes a heap
 region and $\delta$ is a bound on change. Write $\sqsubseteq$ for
 \lean{Change.le}, the order
 \[
-\keep\sqsubseteq \mathsf{init}\sqsubseteq \mathsf{scalar}
-\sqsubseteq \mathsf{extend}\sqsubseteq \mathsf{grow}\sqsubseteq \any.
+\keep\sqsubseteq \change{init}\sqsubseteq \change{scalar}
+\sqsubseteq \change{extend}\sqsubseteq \change{grow}\sqsubseteq \any.
 \]
 An effect footprint bounds writes. A support footprint bounds the
 changes a fact tolerates. The partial function $\supp(a)$ used in
@@ -294,7 +340,7 @@ assertions and entry indices, an empty list of candidate
 head facts, and the ordinary bound when the member has a
 stated effect or a freshness promise.
 
-\begin{lstlisting}
+\begin{lstlisting}[language=Pseudocode]
 origins(graph, widths, start, inputCount):
     entry = all absent
     entry[start] = [{Input(j)} for j in 0 .. inputCount-1]
@@ -333,7 +379,7 @@ $(n_{\rm inputs}+n_{\rm nodes}+2)(1+\max_\ell\mathsf{width}_\ell)$.
 The worklist allows $1+n_{\rm nodes}\cdot\mathsf{limit}$ transfers.
 Exhaustion returns failure.
 
-\begin{lstlisting}
+\begin{lstlisting}[language=Pseudocode]
 walk(initial, origins, privateLabels, marked, interface?):
     state = initial
     demands = []
@@ -384,7 +430,7 @@ closure receives the unrestricted footprint on both exits. A
 summary component is either absent, meaning the analysis has no
 contribution, or a footprint, including the empty footprint.
 
-\begin{lstlisting}
+\begin{lstlisting}[language=Pseudocode]
 inferEffect(codeRequest, visitRecords):
     links = regionTable of the code graph, starting with each input slot
             rooted at itself (receiver, ordinary arguments, captures)
@@ -426,7 +472,7 @@ into the handler entry when one exists, or into the exceptional
 summary otherwise. The worklist limit is two plus the sum of
 lengths of all present local exit footprints.
 
-\begin{lstlisting}
+\begin{lstlisting}[language=Pseudocode]
 checkUses(member, publishedInterfaces, markedForwardingSlots):
     codes = inferCodes(member)
     O = origins(member.graph)
@@ -474,7 +520,7 @@ soundness theorem.
 
 \section{Examples and evidence}\label{sec:examples}
 
-\begin{lstlisting}
+\begin{lstlisting}[language=TypeScript]
 export function sumAndTrace(xs: number[]): number {
   const visited: number[] = [];
   return walk(xs, i => { visited.push(i); });
@@ -489,7 +535,7 @@ In \code{walk}, the cursor field can be discharged locally. The
 observed nonempty demand includes \keep{} on the input array's
 spine. The native call in each closure contributes an extension
 of the array spine. In \code{sumAndTrace}, the capture maps to the
-fresh allocation; separation satisfies \textsc{Use}. In
+fresh allocation; separation satisfies \ruleName{Use}. In
 \code{sumAndAlias}, the capture maps to the same input as the
 demand. Extension exceeds \keep{} and separation fails.
 The source regression also exercises the corresponding
@@ -498,27 +544,120 @@ marked declaration. It checks both layouts of the test program,
 with the declarations in one file and with imports across a
 module boundary. \status{source regression}
 
-The guarded Pretext walker \code{walkPreparedLinesRaw} takes the
-annotated parameter below. Its caller \code{findWholeLine} passes
-\code{flow.data} and the callback.
-\begin{lstlisting}
-onLine?: InferPreserves<InternalLineVisitor>
+\subsection{Parallel arrays and an adapting visitor}
+
+Pretext's \code{walkRichInlineLineRanges} adapts a raw line walker
+by allocating a line-range record and invoking a captured visitor.
+A client can append to a fresh result array from that visitor.
+The following reduction uses parallel width and flag arrays and
+retains the two callback shapes.
+
+\begin{lstlisting}[language=TypeScript]
+type Prepared = { widths: number[]; segmentFlags: Uint8Array; lastWidth: number };
+type RawVisitor = (width: number, flag: number) => void;
+type Line = { width: number; flag: number };
+type LineVisitor = (line: Line) => void;
+
+export function prepare(): Prepared {
+  const widths = [2, 3];
+  return { widths, segmentFlags: new Uint8Array(widths.length), lastWidth: 0 };
+}
+
+export function walkRaw(
+  prepared: Prepared,
+  visit: InferPreserves<RawVisitor>,
+): number {
+  if (prepared.widths.length !== prepared.segmentFlags.length) {
+    throw new RangeError("width and flag counts differ");
+  }
+  const cursor = { i: 0 };
+  /** @invariant safeInteger(cursor.i) && 0 <= cursor.i && prepared.widths.length === prepared.segmentFlags.length */
+  while (cursor.i < prepared.widths.length) {
+    const width = prepared.widths[cursor.i]!;
+    const flag = prepared.segmentFlags[cursor.i]!;
+    visit(width, flag);
+    cursor.i++;
+  }
+  return cursor.i;
+}
 \end{lstlisting}
-The source run
-published an empty requirement and the experimental client check
-passed under that interface. This observation measures interface
-production and use for that pair. A Lean control models the
-heap-dependent refinement
-\[
- \code{prepared.widths.length}
-   = \code{prepared.segmentFlags.length}.
-\]
-Given the equality as a premise, the control checks its frame
-condition against writes to the cache fields \code{wholeWidth},
-\code{wholeStart}, and \code{wholeEnd}. That is a lowered-rule
-control with supplied facts and effects. The source experiment
-has yet to demonstrate a nonempty inferred preservation requirement
-on a Pretext use. \status{source run and Lean control}
+
+The entry guard establishes the equality. The loop invariant
+requires it again after each callback and cursor increment.
+\ruleName{Candidate} selects the available length facts.
+\ruleName{Retain} and \ruleName{Replay} use the normal-return
+support: \keep{} on the two fields of \code{prepared} and on the
+array spine of \code{prepared.widths}. The modeled length of the
+typed array is fixed for its view identity. The cursor is a private
+allocation. Removing only the marker from \code{walkRaw} makes
+the loop back edge fail to reestablish the length equality.
+
+\begin{lstlisting}[language=TypeScript]
+export function walkLines(
+  prepared: Prepared,
+  visit: InferPreserves<LineVisitor>,
+): number {
+  return walkRaw(prepared, (width, flag) => {
+    visit({ width, flag });
+  });
+}
+
+export function rememberLastWidth(prepared: Prepared): number {
+  walkRaw(prepared, (width, _flag) => { prepared.lastWidth = width; });
+  return prepared.lastWidth;
+}
+
+export function collectDirect(prepared: Prepared): number[] {
+  const walked: number[] = [];
+  walkRaw(prepared, (width, _flag) => { walked.push(width); });
+  return walked;
+}
+
+export function collectAdapted(prepared: Prepared): number[] {
+  const walked: number[] = [];
+  walkLines(prepared, line => { walked.push(line.width); });
+  return walked;
+}
+
+export function appendToProtected(prepared: Prepared): number {
+  return walkRaw(prepared, (width, _flag) => { prepared.widths.push(width); });
+}
+\end{lstlisting}
+
+\begin{description}
+\item[\code{prepare}] The ordinary checker verifies its declared
+return type. The type contains no relation between the two lengths.
+\item[\code{rememberLastWidth}] \ruleName{Use} accepts the
+write to \code{lastWidth}. Its field is outside the support.
+\item[\code{collectDirect}] \ruleName{Use} cannot discharge the
+overlap query for the append. The checker emits separation facts
+between root locations. Here the demanded spine is reached through
+\code{prepared.widths} and the written spine is the fresh
+\code{walked} root.
+\item[\code{walkLines}] \ruleName{Forward} applies when the
+callback operand is the marked parameter itself. The operand here
+is an allocated closure that invokes the marked parameter.
+\ruleName{Use} also fails to discharge the obligation for that
+closure. Interface production for \code{walkLines} fails.
+\item[\code{collectAdapted}] The check fails because
+\code{walkLines} did not publish an interface.
+\item[\code{appendToProtected}] \ruleName{Use} rejects the
+append to the demanded spine. On a normal return from the append,
+the width count grows while the flag count stays fixed.
+\end{description}
+\status{source run}
+
+In the Pretext source experiment, the marked
+\code{walkPreparedLinesRaw} with a length guard before the callback
+and a loop invariant inferred the same normal-return requirement.
+\code{findWholeLine} satisfied it with writes to its cache fields.
+Adding a write that appends to \code{flow.data.widths} made that
+client fail. The real adapting closure in
+\code{walkRichInlineLineRanges} failed even with its outer visitor
+marked. Removing the guard before the raw callback, while keeping
+the entry guard and invariant, made the raw walk fail at the loop
+back edge. The checker could no longer recover the equality after
+the stepper and statistics updates. \status{source run}
 
 \section{Soundness and scope}\label{sec:soundness}
 
@@ -565,16 +704,16 @@ Construction & Module and definitions \\
 Provenance and local discharge &
   \lean{CallbackOrigins.infer}, \lean{privateAllocations}, \lean{entryRoot};
   \lean{CallbackInferencePlan.ownPrivate} \\
-\textsc{Candidate} and two walks &
+\ruleName{Candidate} and two walks &
   \lean{CallbackInferencePlan.atCall}, \lean{covers}, \lean{visit},
   \lean{walk}, \lean{infer} \\
-\textsc{Retain} &
+\ruleName{Retain} &
   \code{Programs/SinglePass.lean}:
   \lean{supportedIn}, \lean{framedKept}, \lean{keptStep} \\
 Closure effects &
   \lean{CallbackEffectInference.inferCodes}, \lean{infer},
   \lean{step}, \lean{rebaseStep}, \lean{compose} \\
-\textsc{Use} and \textsc{Forward} &
+\ruleName{Use} and \ruleName{Forward} &
   \lean{CallbackPreservation.project}, \lean{Demand.check},
   \lean{Demand.forward}; \lean{CallbackInterfaceCheck.check},
   \lean{closure}, \lean{operandAt}, \lean{separation}, \lean{writeInterface} \\

@@ -11,10 +11,13 @@ pseudocode follows the executable Lean implementation.
 
 The source regression tests nonempty requirements inferred from
 `InferPreserves<T>`. It exercises captures, ordinary callback arguments,
-direct forwarding, and module boundaries. The guarded Pretext pair
-published an empty requirement. The Lean control for a length-equality
-refinement supplies that fact as a premise at the lowered rule boundary.
-The paper states the source soundness target as a conjecture.
+direct forwarding, and module boundaries. The paper includes a reduced
+Pretext example with parallel arrays and an adapting visitor. Its guarded
+raw walker infers a length-preservation requirement. A direct cache write
+satisfies the requirement. An append through the same array is rejected,
+and the prototype cannot check the fresh-array append or the adapting
+closure with its existing rules. The paper states the source soundness
+target as a conjecture.
 
 - [Producer](../../lean/Verification/Source/Claims/CallbackInferencePlan.lean)
 - [Provenance and escape scan](../../lean/Verification/Source/Claims/CallbackOrigins.lean)
