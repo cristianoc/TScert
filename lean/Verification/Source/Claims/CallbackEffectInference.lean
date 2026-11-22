@@ -1,3 +1,4 @@
+import Verification.Source.Claims.CallbackRootPaths
 import Verification.Source.Claims.PassProposals
 import Verification.Source.Claims.CallbackPreservation
 import Verification.Source.Claims.CallbackEffectFlow
@@ -90,7 +91,7 @@ def inferChecked (G : NormalGraph ι) (q : CodeRequest ι) (records : Array Sing
   let origins := (List.range inputs.length).map fun slot =>
     ({ position := slot, path := [] } : ArgumentSpineRegion)
   let entries := q.claims.map fun c => ({ sequent := some ⟨c.context, .undef, c.type⟩, edges := [] } : NodeEvidence ι)
-  let facts := regionTable nodes entries q.entry.start origins |>.toArray
+  let facts := certifiedRootTable nodes q.entry.start inputs.length (regionTable nodes entries q.entry.start origins) |>.toArray
   let ns := nodes.toArray
   let claims := q.claims.toArray
   let locals ← records.foldlM (init := Array.replicate ns.size none) fun acc record => do
@@ -116,6 +117,35 @@ structure CheckedCode (ι : Type) where
   entry : CodeEntry ι
   summary : Summary
 
+/-- Process the closure requests in their dependency order, retaining the
+same accepted entries, checked rows and summary answers between requests. -/
+def inferCodeRows {σ ι : Type} [Labels ι] [StoreView σ ι] [CertificateProducer.Instantiates ι]
+    (r : SourceRequest σ ι) (fuel : Nat) (known : List (ProgramCertificates.Evidence ι))
+    (accepted : List (CodeEntry ι)) (table : Array (CheckedCode ι))
+    (answers : CertificateProducer.Answered (RequestJson.graph r.toRequest)) :
+    List (CodeRequest ι × Nat) → Except String (Array (CheckedCode ι) ×
+      CertificateProducer.Answered (RequestJson.graph r.toRequest))
+  | [] => if summariesChecked r answers.summaries.toList then .ok (table,answers)
+    else .error "the closure code table's read summaries did not pass"
+  | (q,code) :: rest => do
+    let G := RequestJson.graph r.toRequest
+    let images := StoreView.images r.types
+    let labels := r.searchLabels
+    if !codeConditions q.entry || !asyncAdmits q.async q.entry.row.effect then
+      throw s!"closure {code} did not meet its signature conditions"
+    let rq := q.asRequest r.toRequest
+    let hints := (r.codeHints[code]?).getD {}
+    let pool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
+    let (outcome, counts, next, _) := SinglePass.run G images pool fuel rq.program rq.claims rq.start
+      rq.inputs q.entry.goal hints.requirements hints.cuts hints.candidates rq.entryIndices
+      [] known (GraphCode.admits accepted) r.aliases .ordinary answers
+      (bound := codeBound q.entry) (grading := true)
+    let .accepted := outcome | throw s!"closure {code} was refused: {outcome}"
+    let summary : Summary ← if q.async then
+      pure ⟨some Footprints.Closed.top.fp, some Footprints.Closed.top.fp⟩
+      else (inferChecked G q counts.grades).mapError fun msg => s!"closure {code}: {msg}"
+    inferCodeRows r fuel known (accepted ++ [q.entry]) (table.push ⟨q.entry,summary⟩) next rest
+
 /-- Check the code requests in their usual dependency order and infer their
 effects using the accepted walks. The parent graph can consume these without
 walking closure source a second time. -/
@@ -134,26 +164,7 @@ def inferCodes {σ ι : Type} [Labels ι] [StoreView σ ι]
     | .error _ => throw "the member's expression obligations did not pass"
   let (rendered, answers) := ExpressionClaims.renderKnownUsing G images labels valid r.nodePlans answers
   let known := known ++ rendered
-  let mut answers := answers
-  let mut table := #[]
-  let mut accepted := []
-  for (q, code) in r.codes.zipIdx do
-    if !codeConditions q.entry || !asyncAdmits q.async q.entry.row.effect then
-      throw s!"closure {code} did not meet its signature conditions"
-    let rq := q.asRequest r.toRequest
-    let hints := (r.codeHints[code]?).getD {}
-    let pool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
-    let (outcome, counts, next, _) := SinglePass.run G images pool fuel rq.program rq.claims rq.start
-      rq.inputs q.entry.goal hints.requirements hints.cuts hints.candidates rq.entryIndices
-      [] known (GraphCode.admits accepted) r.aliases .ordinary answers
-      (bound := codeBound q.entry) (grading := true)
-    let .accepted := outcome | throw s!"closure {code} was refused: {outcome}"
-    answers := next
-    accepted := accepted ++ [q.entry]
-    let summary : Summary ← if q.async then
-      pure ⟨some Footprints.Closed.top.fp, some Footprints.Closed.top.fp⟩
-      else (inferChecked G q counts.grades).mapError fun msg => s!"closure {code}: {msg}"
-    table := table.push ⟨q.entry, summary⟩
+  let (table,answers) ← inferCodeRows r fuel known [] #[] answers r.codes.zipIdx
   return (table, known, answers)
 
 end Verification.SourceClaimJson.CallbackEffectInference

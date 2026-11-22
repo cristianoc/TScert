@@ -100,7 +100,7 @@ theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : Positi
       interfaceSlots known memo = .ok f) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
-  unfold fragmentPlansCore at h
+  unfold fragmentPlansCore fragmentPlansCoreWith at h
   cases front with
   | none =>
     dsimp only at h

@@ -1,3 +1,4 @@
+import Verification.Source.Claims.CallbackAllocationSites
 import Verification.Source.Claims.RegionInference
 
 /-! Provenance for a lowered callback invocation. The join keeps every
@@ -11,14 +12,14 @@ inductive Origin where
   | allocated (label : Nat)
   | read (label : Nat)
   | other
-  deriving BEq, DecidableEq, Repr
+  deriving BEq, DecidableEq, Repr, ReflBEq, LawfulBEq
 
 abbrev Slots := Array (List Origin)
 abbrev Table := Array (Option Slots)
 
 def Table.at (table : Table) (label : Nat) : Slots := (table.getD label none).getD #[]
 
-private def allocates : Tm → Bool
+def allocates : Tm → Bool
   | .makeAt .. | .arrLit .. | .merge .. | .makeKey .. => true
   | .letE _ body => allocates body
   | _ => false
@@ -51,6 +52,52 @@ def infer (nodes : Program) (widths : Array Nat) (start inputs : Nat) : Option T
       | none => normal
   let limit := (inputs + nodes.length + 2) * (widths.foldl max 0 + 1)
   graphWorklist graph step (fun table l => table.getD l none) limit entries
+
+/-- Repeated allocations cannot name a single object across a closure's
+capture and a later call. Retain the other origin information at joins. -/
+def nameable (allowed : Array Bool) (table : Table) : Table :=
+  table.map fun row => row.map fun slots => slots.map fun origins => origins.map fun origin =>
+    match origin with
+    | .allocated l => if allowed.getD l false then origin else .other
+    | value => value
+
+/-- Only singleton input and allocation origins name values. Other entries
+carry no equality obligation in the caller's execution history. -/
+def namedAt (slots : Slots) (i : Nat) : Option Origin :=
+  match slots[i]? with
+  | some [.input j] => some (.input j)
+  | some [.allocated l] => some (.allocated l)
+  | _ => none
+
+def namedResult (allowed : Array Bool) (slots : Slots) (l : Nat) (t : Tm) : Option Origin :=
+  match t with
+  | .var i => namedAt slots i
+  | _ => if allowed.getD l false && allocates t then some (.allocated l) else none
+
+def sourceName (slots : Slots) (pushed : Bool) (value : Option Origin) (i : Nat) : Option Origin :=
+  if pushed then match i with
+    | 0 => value
+    | j+1 => namedAt slots j
+  else namedAt slots i
+
+def checkNameEdge (table : Table) (src : Nat → Option Origin) (target : Target) : Bool :=
+  let dst := table.at target.label
+  (List.range dst.size).all fun i => (namedAt dst i).all fun o =>
+    src (PointClaims.slot target.mapping i) == some o
+
+def checkNames (nodes : Array Node) (allowed : Array Bool) (start inputs : Nat) (table : Table) : Bool :=
+  let initial := table.at start
+  (table[start]?.join.isSome || nodes.size ≤ start) && (List.range initial.size).all (fun i => (namedAt initial i).all fun o => i < inputs && o == .input i) &&
+    (List.range nodes.size).all fun l =>
+      match table[l]?.join with
+      | none => true
+      | some slots =>
+        let node := nodes[l]!
+        let normal := sourceName slots (GraphCode.pushes node.continuation) (namedResult allowed slots l node.expression)
+        let edge := fun src (t : Target) => (table[t.label]?.join.isSome || nodes.size ≤ t.label) &&
+          checkNameEdge table src t
+        (CertificateProducer.successors node.continuation).all (edge normal) &&
+          node.handler.toList.all (edge (sourceName slots true none))
 
 /-- An allocation is private if its value is used only by copying it or
 accessing its own fields. The receiver of a field write stays private, but

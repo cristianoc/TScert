@@ -97,6 +97,24 @@ export function spreadCallback(xs: number[]): number {
   return walk(...args);
 }
 `;
+const shrinkingWrapper = `
+export function shrink(xs: number[]): number {
+  return walk(xs, () => { xs.pop(); });
+}
+`;
+const capturedRoot = `
+const shared: number[] = [1];
+export function readShared(visit: InferPreserves<() => void>): number {
+  if (shared.length === 0) return 0;
+  visit();
+  return shared[0]!;
+}
+export function callWithExtraArgument(): number {
+  const unrelated: number[] = [2];
+  const widened: (visit: () => void, unused: number[], extra: number[]) => number = readShared;
+  return widened(() => { shared.pop(); }, unrelated, unrelated);
+}
+`;
 const annotations = resolve(import.meta.dirname, "../tools/resolvable.d.ts");
 const project = join(dir, "tsconfig.json");
 const combined = join(dir, "combined.ts");
@@ -106,9 +124,13 @@ writeFileSync(project, JSON.stringify({
   compilerOptions: { strict: true, target: "ES2022", module: "NodeNext" },
   files: [annotations, combined, producer, consumer],
 }));
-writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients + spreadProducer + spreadClients);
-writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer + spreadProducer);
-writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter, walkSpread } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients + spreadClients);
+writeFileSync(combined, walker + clients + forwarder + forwardedClient + argumentWalker + argumentClients + phaseProducer + phaseClients + spreadProducer + spreadClients + capturedRoot);
+writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer + spreadProducer + shrinkingWrapper);
+writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter, walkSpread, shrink } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients + spreadClients + `
+export function callShrinkingWrapper(xs: number[]): number {
+  return shrink(xs);
+}
+`);
 
 for (const source of [combined, consumer]) {
   const outcome = check(source, project, false, undefined, false,
@@ -125,8 +147,10 @@ for (const source of [combined, consumer]) {
     assert.match(detail("through"), /inferred callback interface checked experimentally/);
     assert.match(detail("walkSpread"), /actualRoots := \[none\]/);
     assert.match(detail("spreadCallback"), /a spread obscures callback argument 2 at call of walk/);
+    assert.match(detail("callWithExtraArgument"), /callback requirement for readShared refers outside its fixed parameters/);
   } else {
     assert.match(detail("spreadCallback"), /callback argument 2 at call of walk .* fails its inferred preservation requirement/);
+    assert.match(detail("callShrinkingWrapper"), /shrink has no checked inferred callback interface/);
   }
   assert.match(detail("ignoreSpread"), /inferred callback preservation checked experimentally/);
   assert.match(detail("popSpread"), /fails its inferred preservation requirement/);

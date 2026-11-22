@@ -263,31 +263,25 @@ instruction and edge checks to the single pass. The source path
 uses the ordinary exceptional transfer, which drops heap-dependent
 facts at a handler.
 
-In the replay, an inferred candidate must be covered by the
-completed list $I$ from the proposing walk. Let $I[p,A]$ be the
-concatenated normal footprints of all entries of $I$ with that
-parameter and exactly that actual-root list.
-\[
-\ruleof{Replay}
- {d=(p,S^{\norm},[],A)\qquad
-  \forall(r,\delta)\in S^{\norm}.      \exists(s,\gamma)\in I[p,A].\ s=r\land\gamma\sqsubseteq\delta}
- {I\vdash d\;\mathsf{covered}}
-\]
-This test compares regions syntactically. It does not invoke the
-separation query. An empty requirement is covered vacuously.
-The publication rule below uses the ordinary success test of each
-walk. The second walk recomputes the candidates from its own states.
-
+The proposing walk collects rows $B$, each recording a label, its
+supports, and its demand. The published demands $I(B)$ are the
+deduplicated demands of these rows. The ordinary replay uses the
+fixed frame table $\mathsf{frames}(B)$ read from the same rows.
+It checks the body and validates the read summaries it leaves.
 \[
 \ruleof{Publish}
- {\mathsf{walk}(G,\absent)=I\qquad
-  \mathsf{walk}(G,\some(I))\mathbin{\downarrow}\\
-  \mathsf{checkUses}(G,I_{\rm deps},\mathsf{marked})=F}
- {I_{\rm deps}\vdash G\;\mathsf{publishes}\;\du(I\mathbin{+\!+}F)}
+ {\mathsf{propose}(G)=B\qquad
+  \mathsf{run}(G,\mathsf{frames}(B))\mathbin{\downarrow}\\
+  \mathsf{checkUses}(G,I_{\rm deps},\mathsf{marked})=F\qquad
+  \mathsf{fixedFormals}(I(B)\mathbin{+\!+}F)}
+ {I_{\rm deps}\vdash G\;\mathsf{publishes}\;\du(I(B)\mathbin{+\!+}F)}
 \]
 The graph $G$ carries the initial checking state and the marked
-inputs. A down arrow denotes successful completion.
-Section~\ref{sec:producer} gives the walks and dependency order.
+inputs. A down arrow denotes a successful run with validated read
+summaries. The last premise restricts published parameter positions,
+support roots, and named callback actuals to the receiver and fixed
+formal parameters. Section~\ref{sec:producer} gives the walks and
+dependency order.
 
 \subsection{Application and forwarding}
 
@@ -383,44 +377,45 @@ The worklist allows $1+n_{\rm nodes}\cdot\mathsf{limit}$ transfers.
 Exhaustion returns failure.
 
 \begin{lstlisting}[language=Pseudocode]
-walk(initial, origins, privateLabels, marked, interface?):
+propose(initial, origins, privateLabels, marked):
     state = initial
-    demands = []
+    rows = []
     while the single-pass queue has a label:
         remove the first label
         supports = []
-        if the node invokes a marked input by singleton provenance:
+        if the node invokes a marked input by singleton provenance
+           and the callee, receiver, and arguments only read the heap:
             entry = ordinary visitEntry(state, label)
             K = materialize all slots at entry
             supports, demand = Candidate selections at K
-            if interface is present: require Replay coverage for demand
-            append demand
+            append (label, supports, demand) to rows
         state = ordinary visit(state, label, framed = supports at this label)
     require queue empty and all reachable labels visited
-    return dedup(demands)
+    return rows
 
 produce(member, dependencyInterfaces):
     check code requests and prepare ordinary walk
-    O = origins(member.graph)
-    U = privateAllocations(member.graph, O)
-    I = walk(initial, O, U, markedParameters, absent)
-    walk(initial, O, U, markedParameters, some I)
+    O = validate origins(member.graph)
+    U = validate privateAllocations(member.graph, O)
+    B = propose(initial, O, U, markedParameters)
+    run the ordinary pass with the frames from B
+    require an accepted replay and valid read summaries
     F = check uses of dependencyInterfaces, forwarding marked inputs
-    return dedup(I ++ F)
+    I = dedup(demands from B ++ F)
+    require every public root and position in I to name a fixed formal
+    return I
 \end{lstlisting}
 
-The actual walk visits at most $n_{\rm nodes}+1$ queue entries.
-Both walks start from the same initial state. The second
-recomputes candidates and checks coverage against the first
-walk's interface before calling \lean{SinglePass.visit}.
-\lean{writeInterface} handles the final dependency check and
-adds forwarded demands. It refuses direct self-reference and
-groups with multiple members. The source driver resolves
-dependencies before the interface is used, retains local results
-in the prepared-file cache, and reads imported results from the
-module interface. The publication entry contains the declaration
-name and position, receiver flag, and demands, including the
-per-exit supports and optional argument paths.
+The proposing walk visits at most $n_{\rm nodes}+1$ queue entries.
+Both walks start from the same initial state. The ordinary replay reads
+the recorded frames by label. \lean{writeInterface} checks dependencies
+and adds forwarded demands. It refuses direct self-reference and groups
+with multiple members. The source driver retains local results in the
+prepared-file cache and reads imported results from the module
+interface. Each declaration has an ordinary, checked, or refused
+callback outcome. A checked outcome identifies the declaration by name
+and position and carries its receiver convention, fixed parameter
+count, and demands.
 
 \section{Inferring and consuming closure effects}\label{sec:effects}
 
@@ -488,11 +483,11 @@ checkUses(member, publishedInterfaces, markedForwardingSlots):
     codes = inferCodes(member)
     O = origins(member.graph)
     bind each published declaration to a singleton input origin
-        using source-map descriptors and the resolved import identity
+        using the ordered sibling inputs and resolved declaration identity
     for node in member.graph:
         reject a use of a known declaration escaping direct application
         if node is an invocation of a known singleton input:
-            resolve operands before the first spread to caller roots
+            resolve fixed formal operands before the first spread to caller roots
             for each published demand:
                 skip an empty demand
                 reject a callback position obscured by a spread
@@ -525,7 +520,8 @@ input identity for every projected support root. The caller constructs spine-sep
 facts for distinct root identities when at least one is an
 allocation identity. An input identity and an allocation identity
 at label $\ell$ are encoded by $i$ and $n_{\rm inputs}+\ell$
-respectively. The concrete Boolean check is \lean{Demand.check}.
+respectively. A caller allocation identity requires a checked
+single-execution site. The concrete Boolean check is \lean{Demand.check}.
 
 For a consumer unit, the source driver checks the uses of the
 completed interfaces and then runs the ordinary group check.
@@ -600,7 +596,7 @@ export function walkRaw(
 The entry guard establishes the equality. The loop invariant
 requires it again after each callback and cursor increment.
 \ruleName{Candidate} selects the available length facts.
-\ruleName{Retain} and \ruleName{Replay} use the normal-return
+\ruleName{Retain} and the replay use the normal-return
 support: \keep{} on the two fields of \code{prepared} and on the
 array spine of \code{prepared.widths}. The modeled length of the
 typed array is fixed for its view identity. The cursor is a private
@@ -720,7 +716,7 @@ Provenance and local discharge &
   \lean{CallbackOrigins.infer}, \lean{privateAllocations}, \lean{entryRoot};
   \lean{CallbackInferencePlan.ownPrivate} \\
 \ruleName{Candidate} and two walks &
-  \lean{CallbackInferencePlan.atCall}, \lean{covers}, \lean{visit},
+  \lean{CallbackInferencePlan.atCall}, \lean{framesOf}, \lean{visit},
   \lean{walk}, \lean{infer} \\
 \ruleName{Retain} &
   \code{Programs/SinglePass.lean}:
