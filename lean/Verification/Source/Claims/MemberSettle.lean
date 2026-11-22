@@ -171,7 +171,7 @@ def FilePlans.computedGiven (f : FilePlans) («given» : Std.HashMap String Json
             ("target", toJson x.target), ("type", toJson x.type)]).toArray), ("arguments", Json.arr #[]),
           ("inputs", toJson (ps.map fun (a, b) => [a, b]))]
       m.insert u (Json.mkObj ([("unit", toJson u), ("graph", Json.arr rows.toArray), ("codes", Json.arr #[])] ++ regional))
-    | .ok (.framed ..) | .error _ => m
+    | .ok (.framed ..) | .ok (.callbackDemands ..) | .error _ => m
 
 /-- The given file's loop-head facts of plan `i` (`headFacts`), by label:
 the candidates no rerun drops. -/

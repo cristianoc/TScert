@@ -542,6 +542,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
   let .graph name _ r := cert
     | match cert with
       | .framed name .. => return .before name (.refused "a framed plan, which no check certifies")
+      | .callbackDemands name .. => return .before name (.refused "a callback-demand plan, which passMemberGraph does not certify")
       | .graph name .. => return .before name (.refused "a framed plan, which no check certifies")
   -- The request's own checks over its whole certificate the pass does
   -- not make: the graph is passed, and its verdict is not handled.
@@ -1033,8 +1034,23 @@ def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
           else ""
           .before name (.refused s!"framed plan: the request check of {w} fails{why}")
 
+/-- **One callback-demand member's single pass**: settles the member's
+main graph with its callback call nodes framed at `spec.framed`
+(`framedSettle`). Accepted with zero client trust `Θ_C` when the framed
+single pass accepts. -/
+def FilePlans.callbackDemandsRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
+    (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (spec : CallbackDemands.CallbackDemandSpec) :
+    MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
+      (CertificateProducer.Answered (StoreView.graph f.F.store)) :=
+  if r.qualification.isSome then .before name (.refused "callback-demand plan: a qualified body") else
+  match f.framedSettle fuel i name pos r spec.framed 12 r.candidates with
+  | .error w => .before name (.refused w)
+  | .ok _ =>
+    { name, outcome := .accepted, line := s!"accepted with {spec.demands.length} callback demand(s)" }
+
 /-- **One member's single pass**: a graph plan's (`passMemberGraph`); a
-framed plan's (`framedRun`). -/
+framed plan's (`framedRun`); a callback-demand plan's (`callbackDemandsRun`). -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
@@ -1043,6 +1059,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       (CertificateProducer.Answered (StoreView.graph f.F.store))) :=
   match f.plans[i]? with
   | some (.ok (.framed name pos r spec)) => .ok (f.framedRun fuel i name pos r spec)
+  | some (.ok (.callbackDemands name pos r spec)) => .ok (f.callbackDemandsRun fuel i name pos r spec)
   | _ => f.passMemberGraph fuel i compare debugNode repeats given observe counting grading framed
 
 /-- The node label a pass refusal's text names after `key` (`expression at

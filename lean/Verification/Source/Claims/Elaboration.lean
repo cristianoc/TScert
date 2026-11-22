@@ -691,7 +691,7 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
       throw (if RequestJson.hasDiagnostic e then e
         else sourceRefusal d.types f.namePos .genericValidation e)
   match plan with
-  | .graph _ _ r | .framed _ _ r _ => return (r.types, plan)
+  | .graph _ _ r | .framed _ _ r _ | .callbackDemands _ _ r _ => return (r.types, plan)
 
 /-- Whether a group's code mentions a qualified read. -/
 def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=

@@ -192,6 +192,30 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
       counting located).2.1 = .ok deps) :
     Mode8Accepted f' i
 
+  /-- A unit accepted at a member's callback-demand plan (`PreparedFile.callbackDemandVerdict`):
+  the plans with that member's plan replaced by `.callbackDemands`, their group
+  accepted with zero client trust `Θ_C`. -/
+  | callbackDemands
+    {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
+    {prepare : String → FilePlans → FilePlans}
+    {check : FilePlans → List Nat → List String × Except String (List String)}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i j fuel : Nat} {compare : Bool}
+    {debugNode repeats : Nat} {«given» : Option (Std.HashMap String Json)} {observe : Option String}
+    {counting located : Bool} {deps : List String} {name : String} {pos : Span}
+    {r : Req (preparedMode8 force givenLines infer f₀)} {spec : CallbackDemands.CallbackDemandSpec}
+    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
+        .ok f₀) ∨
+      (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
+        .ok (f₀, ms, notes)))
+    (hselected : i ∈ (preparedMode8 force givenLines infer f₀).fr.selected selection)
+    (hgraph : (preparedMode8 force givenLines infer f₀).plans[j]? = some (.ok (.graph name pos r)))
+    (haccepted : (((preparedMode8 force givenLines infer f₀).withPlan j (.callbackDemands name pos r spec)).passGroupMode8
+      infer force keep fuel (((preparedMode8 force givenLines infer f₀).withPlan j (.callbackDemands name pos r spec)).fr.group i)
+      compare debugNode repeats given observe counting located).2.1 = .ok deps) :
+    Mode8Accepted ((preparedMode8 force givenLines infer f₀).withPlan j (.callbackDemands name pos r spec)) i
+
 /-- Every member of a group accepted at a mode 8 in-process check is safe. -/
 theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
     (h : Mode8Accepted f i) : PassUnitSafe f i := by
@@ -202,5 +226,9 @@ theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
     exact passGroupMode8_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
       (fun _ _ => Verification.TolerantFrames.runKeepsSummaries)
       (framedPlan_overStore (preparedMode8_overStore hplanned) hframed) haccepted
+  | callbackDemands hplanned _ hgraph haccepted =>
+    exact passGroupMode8_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
+      (fun _ _ => Verification.TolerantFrames.runKeepsSummaries)
+      (overStore_withPlan (y := .callbackDemands _ _ _ _) (preparedMode8_overStore hplanned) hgraph rfl) haccepted
 
 end Verification.SourceClaimJson.PassUnit

@@ -263,6 +263,20 @@ inductive GraphAccepted (f : FilePlans) (i : Nat) (fr : List (Nat × List Footpr
       r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
       c.Accepts after → summariesChecked r after.summaries.toList = true → GraphAccepted f i fr fb
 
+/-- **A callback-demand plan accepted**: its codes accepted in order, its main
+graph walked at its framed callback nodes (`spec.framed`), its read summaries
+checked, and its regional entry conditions satisfied. -/
+def CallbackDemandsAccepted (f : FilePlans) (r : Req f) (spec : CallbackDemands.CallbackDemandSpec) : Prop :=
+  (∃ (a₀ a₁ : Answered (StoreView.graph f.F.store)),
+      CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
+      ∃ (c : RunCall (StoreView.graph f.F.store) (StoreView.images f.F.store))
+        (after : Answered (StoreView.graph f.F.store)),
+        MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary a₁ ∧
+        c.bound = mainBound r ∧ regionOf c.regional = regionalSpec r ∧ c.AcceptsWalk after ∧
+        summariesChecked r after.summaries.toList = true ∧ c.framed = spec.framed) ∧
+    (∀ Φ regions, r.regional = some (Φ, regions) →
+      GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true)
+
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each
 stated region meets its entry conditions, its code requests are accepted in
@@ -271,7 +285,8 @@ it is a qualified body, at the footprint letting everything change on
 normal return alone, with no postcondition, regions or codes, accepted by
 one call at its checker, its read summaries checked; or its plan is a
 framed plan accepted (`FramedAccepted`), its request at the candidates its
-walk settled at. -/
+walk settled at; or its plan is a callback-demand plan accepted
+(`CallbackDemandsAccepted`), its request at the settled candidates. -/
 inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
   | ordinary (name : String) (pos : Span) (r : Req f) (a₀ a₁ : Answered (StoreView.graph f.F.store)) :
       PlanAt f i name pos r → r.qualification = none → declaredEffect r = true →
@@ -293,6 +308,11 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive))
       (cands : List (Nat × List HeapKnowledge.IndexAtom)) :
       FramedPlanAt f i name pos r spec → FramedAccepted f name { r with candidates := cands } spec → MemberAccepted f i
+  | callbackDemands (name : String) (pos : Span) (r : Req f)
+      (spec : CallbackDemands.CallbackDemandSpec)
+      (cands : List (Nat × List HeapKnowledge.IndexAtom)) :
+      CallbackDemandsPlanAt f i name pos r spec →
+      CallbackDemandsAccepted f { r with candidates := cands } spec → MemberAccepted f i
 
 /-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
 every member `MemberAccepted`, at every value of every argument. Proved

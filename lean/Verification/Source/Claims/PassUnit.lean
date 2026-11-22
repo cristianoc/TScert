@@ -309,6 +309,87 @@ def FramedReturnsReachedW (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (
 
 end
 
+/-! ## Safety of a callback-demand request (no client obligation `Θ_C`) -/
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **A callback-demand plan's return condition**: at every framed callback
+call node `l ∈ spec.framed`, an execution invariant `I` guarantees `RetAt`
+at every step (discharged by operational local confinement
+`CallbackDemands.valRun_preserves_ge_of_deep` for confined allocations and
+by caller-supplied `SupportedAt` for parameter-rooted demands). -/
+def CallbackReturnsMet (spec : CallbackDemands.CallbackDemandSpec)
+    (n : Nat) (W : WorldT n) (h : Heap) (t : Tm) : Prop :=
+  ∃ (I : Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop),
+    I none n W h t ∧
+    ∀ p (k : Nat) (W' : WorldT (k + 1)) h' t' (U : WorldT k) h'' t'',
+      I p (k + 1) W' h' t' → Step h' t' h'' t'' →
+      WExt (trunc k (Nat.le_succ k) W') U → WorldAdm U → HeapOk k U h'' →
+      HeapObservations.RetAt
+        (fun l ρ h₁ h₂ => ∀ T ∈ (SinglePass.framedAt spec.framed l).getD [], Footprints.Supported T ρ h₁ h₂)
+        (fun _ _ _ _ => True) p h'' t' t'' ∧
+        (RefsOk U t'' →
+          I (HeapObservations.framedPend (fun l => (SinglePass.framedAt spec.framed l).isSome) p h' t' t'')
+            k U h'' t'')
+
+/-- **A callback-demand request is safe at every call meeting its callback
+returns**: ordinary `SafeGraph`, `SafePostExc`, `SafePost`, regional and
+assertion safety (zero `ClientFrame`, zero `Θ_C`). -/
+def CallbackDemandRequestSafe (r : SourceRequest σ ι) (spec : CallbackDemands.CallbackDemandSpec) : Prop :=
+  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    CallbackReturnsMet spec n W h (gotoOf r.program r.start L d r.comp) →
+    SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d))) n W h
+      (.at r.start (envOf L d))) ∧
+  (r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
+    ∀ η n W h (L : List Tm) (d : Tm),
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RootsOk W (envOf L d) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
+      CallbackReturnsMet spec n W h (gotoOf r.program r.start L d r.comp) →
+      HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+        (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp)) ∧
+  (r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    CallbackReturnsMet spec n W h (gotoOf r.program r.start L d r.comp) →
+    HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
+      (gotoOf r.program r.start L d r.comp)) ∧
+  (∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    CallbackReturnsMet spec n W h (gotoOf r.program r.start L d r.comp) →
+    HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' => r.stated.any (·.onThrow) = true →
+        Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      n W h (gotoOf r.program r.start L d r.comp)) ∧
+  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    CallbackReturnsMet spec n W h (gotoOf r.program r.start L d r.comp) →
+    ∀ l k, (l, k) ∈ r.assertions → ∀ j h' ρ', j < n →
+      ReachesIn r.program j h (.at r.start (envOf L d)) h' (.at l ρ') →
+      HeapKnowledge.Holds k ⟨envOf L d, h⟩ ρ' h') ∧
+  (∀ ci q, r.codes[ci]? = some q → ∀ η n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
+      (codeRequest r q).entryIndices (envOf L d) n W h →
+    RootsOk W (envOf L d) →
+    CallbackReturnsMet spec n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d none) →
+    ∀ l k, (l, k) ∈ (codeHintsAt r ci).requirements → ∀ j h' ρ', j < n →
+      ReachesIn (codeRequest r q).program j h (.at (codeRequest r q).start (envOf L d)) h' (.at l ρ') →
+      HeapKnowledge.Holds k ⟨envOf L d, h⟩ ρ' h')
+
+end
+
 /-! ## A unit's members -/
 
 /-- **A member is safe**: its plan crosses the exhaustive certification
@@ -317,13 +398,16 @@ safe: a graph plan's for every execution (`RequestSafe`), a framed plan's
 under its frame's client obligation (`FramedRequestSafe`), the obligation's
 callback row included (`FramedSpec.CallbacksWithin`: a call of an
 argument's own value at an entry whose type states an effect,
-`callEffects`, changes the heap within it). -/
+`callEffects`, changes the heap within it), or a callback-demand plan's at
+every call whose callback arguments meet its demands (`CallbackDemandRequestSafe`,
+with zero client obligation `Θ_C`). -/
 def MemberSafe (f : FilePlans) (i : Nat) : Prop :=
   ∃ p c, f.plans[i]? = some (.ok p) ∧ p.certify = .ok c ∧
     match c with
     | .graph _ _ r => RequestSafe r
     | .framed _ _ r spec =>
       spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r) → FramedRequestSafe r (spec.frame r)
+    | .callbackDemands _ _ r spec => CallbackDemandRequestSafe r spec
 
 /-- **A unit is safe**: every member of its group is. -/
 def PassUnitSafe (f : FilePlans) (i : Nat) : Prop :=

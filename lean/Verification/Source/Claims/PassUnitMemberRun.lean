@@ -101,6 +101,11 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
       subst hcert
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h; simp [MemberRun.accepted, MemberRun.before] at hacc
+    | callbackDemands n' p' r' spec =>
+      simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hcert
+      subst hcert
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h; simp [MemberRun.accepted, MemberRun.before] at hacc
   obtain ⟨name, pos, r, rfl, rfl⟩ := hgraph
   split at h
   rotate_left
@@ -465,8 +470,49 @@ theorem framedRun_sound (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
         fun Φ regions hr => (hregs Φ regions hr).2.2, ?_, FilePlans.framedChecks_none hchk, hreq⟩
       rw [← spec.componentRefusal.property]; exact hcomp
 
+/-- **An accepted callback-demand run establishes `MemberAccepted`** (proved):
+the settled framed walk gives `CallbackDemandsAccepted` at the settled candidates. -/
+theorem callbackDemandsRun_sound (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span) (r : Req f)
+    (spec : CallbackDemands.CallbackDemandSpec)
+    (hp : CallbackDemandsPlanAt f i name pos r spec)
+    (hacc : (f.callbackDemandsRun fuel i name pos r spec).accepted = true) :
+    MemberAccepted f i := by
+  unfold FilePlans.callbackDemandsRun at hacc
+  split at hacc
+  · simp [MemberRun.accepted, MemberRun.before] at hacc
+  rename_i hq
+  split at hacc
+  · simp [MemberRun.accepted, MemberRun.before] at hacc
+  rename_i cands hset
+  obtain ⟨m, hrun, hmacc⟩ := framedSettle_ok f fuel i name pos r spec.framed 12 r.candidates cands hset
+  have hi : i < f.plans.length := (List.getElem?_eq_some_iff.mp hp).1
+  have hplan : (f.withPlan i (.graph name pos { r with candidates := cands })).plans[i]? =
+      some (.ok (.graph name pos { r with candidates := cands })) := by
+    simp only [FilePlans.withPlan]
+    exact List.getElem?_set_self hi
+  have hq' : r.qualification = none := by simpa using hq
+  cases passMemberGraph_accepted _ fuel false 1000000000 1 none none false i spec.framed false m hrun hmacc with
+  | qualified name' pos' r'' q c a₀ after hp' hq'' =>
+    unfold PlanAt at hp'
+    rw [hplan] at hp'
+    simp only [Option.some.injEq, Except.ok.injEq, FunctionPlan.graph.injEq] at hp'
+    obtain ⟨-, -, rfl⟩ := hp'
+    rw [hq'] at hq''; cases hq''
+  | ordinary name' pos' r'' a₀ a₁ hp' _ _ hregs hcodes hmain =>
+    unfold PlanAt at hp'
+    rw [hplan] at hp'
+    simp only [Option.some.injEq, Except.ok.injEq, FunctionPlan.graph.injEq] at hp'
+    obtain ⟨-, -, rfl⟩ := hp'
+    cases hmain with
+    | fallback _ _ hfb => cases hfb
+    | direct c after hm hb hreg hw hs =>
+      exact .callbackDemands name pos r spec cands hp
+        ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hw.1, hs, hw.2⟩,
+         fun Φ regions hr => (hregs Φ regions hr).2.2⟩
+
 /-- **What an accepted member run establishes** (proved): a framed plan's
-run is `framedRun`'s (`framedRun_sound`); a graph plan's run is
+run is `framedRun`'s (`framedRun_sound`); a callback-demand plan's run is
+`callbackDemandsRun`'s (`callbackDemandsRun_sound`); a graph plan's run is
 `passMemberGraph`'s. -/
 theorem passMember_sound : PassMemberSound := by
   intro f fuel compare debugNode repeats given observe counting j m h hacc
@@ -475,6 +521,9 @@ theorem passMember_sound : PassMemberSound := by
   · rename_i name pos r spec hp
     cases h
     exact framedRun_sound f fuel j name pos r spec hp hacc
+  · rename_i name pos r spec hp
+    cases h
+    exact callbackDemandsRun_sound f fuel j name pos r spec hp hacc
   · exact passMemberGraph_sound f fuel compare debugNode repeats given observe counting j m h hacc
 
 /-- **H3** (proved): `passGroup` accepting a group makes every member

@@ -3434,4 +3434,25 @@ for (const [file, call] of [
     "invalid-destructuring-assignment-dictionary: the pattern reads a key the dictionary lacks");
   assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
     "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
+  // Support-parametric callback demands: positive callers return exact results;
+  // negative callers mutate protected spines and read undefined (NaN under Node).
+  assert.equal(runExample(ofKind("callback-demand-walk", ["positive"]), "sumAndTrace([10, 20, 30])"), 60,
+    "callback-demand-walk: sumAndTrace sums the array while tracing indices into a fresh array");
+  assert.equal(runExample(negative("invalid-callback-demand-walk"), "Number.isNaN(sumAndAlias([1]))"), true,
+    "invalid-callback-demand-walk: popping xs inside visit makes xs[c.i] undefined (NaN)");
+  assert.equal(runExample(ofKind("callback-demand-nested-path", ["positive"]),
+    "JSON.stringify(collectDirect({ widths: [4, 7], segmentFlags: [1, 2] }))"), "[4,7]",
+    "callback-demand-nested-path: collectDirect collects widths into a fresh array");
+  assert.equal(runExample(negative("invalid-callback-demand-nested-path"),
+    "Number.isNaN(appendToProtected({ widths: [4], segmentFlags: [1] }))"), true,
+    "invalid-callback-demand-nested-path: pushing to prepared.widths makes prepared.segmentFlags[1] undefined (NaN)");
+  assert.equal(runExample(ofKind("callback-demand-adapter", ["positive"]),
+    "JSON.stringify(collectAdapted({ widths: [3, 8], segmentFlags: [0, 1] }))"), "[3,8]",
+    "callback-demand-adapter: collectAdapted collects adapted line widths into a fresh array");
+  assert.equal(runExample(negative("invalid-callback-demand-adapter"),
+    "Number.isNaN(appendAdapted({ widths: [3], segmentFlags: [0] }))"), true,
+    "invalid-callback-demand-adapter: pushing to prepared.widths through walkLines makes prepared.segmentFlags[1] undefined (NaN)");
+  assert.equal(runExample(negative("invalid-callback-demand-exported"),
+    "(() => { const xs = [1]; return Number.isNaN(walk(xs, () => { xs.pop(); })); })()"), true,
+    "invalid-callback-demand-exported: an external caller popping xs makes xs[c.i] undefined (NaN)");
 }

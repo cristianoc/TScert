@@ -357,11 +357,13 @@ theorem callSafe_of_member {f : FilePlans} {j : Nat} (hm : MemberSafe f j) :
       match c with
       | .graph _ _ r => ∀ Ent, CallSafe Ent r
       | .framed _ _ r spec => spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r) →
-        (spec.frame r).Met → CallSafe (spec.frame r).Call r := by
+        (spec.frame r).Met → CallSafe (spec.frame r).Call r
+      | .callbackDemands _ _ r spec => CallSafe (CallbackReturnsMet spec) r := by
   obtain ⟨p, c, hp, hc, hs⟩ := hm
   refine ⟨p, c, hp, hc, ?_⟩
   cases c with
   | graph _ _ r => exact requestSafe_callSafe hs
   | framed _ _ r spec => exact fun hcb => framed_callSafe (hs hcb)
+  | callbackDemands _ _ r spec => exact hs
 
 end Verification.SourceClaimJson.PassUnit

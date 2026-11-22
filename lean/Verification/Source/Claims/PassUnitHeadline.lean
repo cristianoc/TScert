@@ -255,6 +255,71 @@ theorem framedRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ 
   exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
     fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
 
+/-- **The callback-demand claim from the check** (proved, under `RunSound` and
+`RunKeepsSummaries`, with ZERO `ClientFrame` and ZERO `Θ_C`): the codes
+accepted in order make a sound table; the main graph's framed run over
+`spec.framed` gives `FramedReturnsGuarantee` via `run_sound_framed`, and
+`CallbackDemands.safeRet_to_safePostExcW` collapses `SafeRet` directly into
+ordinary `CallbackDemandRequestSafe` (`SafeGraph`, `SafePostExc`, `SafePost`,
+regional and assertions) at every call satisfying `CallbackReturnsMet spec`. -/
+theorem callbackDemand_requestSafe {f : FilePlans} {r : Req f}
+    {spec : CallbackDemands.CallbackDemandSpec}
+    (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (htypes : r.types = f.F.store) (hacc : CallbackDemandsAccepted f r spec) :
+    CallbackDemandRequestSafe r spec := by
+  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs⟩ := hacc
+  let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
+  have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
+    intro c hc; simp [GraphCode.admits] at hc
+  have hentries : r.codes.zipIdx.map (·.1.entry) = r.codes.map (·.entry) := by
+    calc r.codes.zipIdx.map (·.1.entry) = (r.codes.zipIdx.map (·.1)).map (·.entry) := by
+          rw [List.map_map]; rfl
+      _ = r.codes.map (·.entry) := by rw [List.zipIdx_map_fst]
+  have hsums := summaries_of_checked htypes hs'
+  have hsub : ∀ s ∈ a₁.summaries.toList, s ∈ after.summaries.toList := by
+    intro s hs''
+    obtain ⟨-, -, -, -, -, -, -, -, -, hans, -, -⟩ := hm
+    obtain ⟨counts, trace, hres⟩ := hwalk
+    have := hkeep _ _ c s (hans ▸ hs'')
+    rwa [hres] at this
+  have htable : ProgramCertificates.CodesSound (StoreView.graph f.F.store)
+      (GraphCode.admits (r.codes.map (·.entry))) := by
+    have := codesAccepted_sound hrun hkeep hsums hcodes hsub hnone
+    rwa [List.nil_append, hentries] at this
+  have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
+    (Verification.TolerantFrames.acceptsFramed_of_acceptedWalk hwalk) (summaries_of_checked htypes hs')
+  rw [hfr] at hguar
+  obtain ⟨hgs, hgf, hge, hgreg, hga⟩ := hguar
+  have hcodeG := codesAccepted_guarantees hrun hkeep hsums hcodes hsub hnone
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro η hη n W h L d hE hR ⟨I, hI0, hIstep⟩
+    have hsr := hgs η hη n W h L d hE hR
+    have hpost := (CallbackDemands.safeRet_to_safePostExcW hIstep hI0 hsr).1.post.erase
+    have hsg := GraphCode.safeGraph_of_sim n W h (sim_gotoOf r.program r.start L d r.comp) hpost
+    rwa [SourceElaboration.program_nodes] at hsg
+  · intro hbd η n W h L d hE hR hL hd ⟨I, hI0, hIstep⟩
+    exact (CallbackDemands.safeRet_to_safePostExcW hIstep hI0 (hgf hbd η n W h L d hE hR hL hd)).1
+  · intro hne η n W h L d hE hR ⟨I, hI0, hIstep⟩
+    exact (CallbackDemands.safeRet_to_safePostExcW hIstep hI0 (hge hne η n W h L d hE hR)).1.post
+  · intro Φ regions hreg' η n W h L d hE hR ⟨I, hI0, hIstep⟩
+    exact (CallbackDemands.safeRet_to_safePostExcW hIstep hI0 (hgreg Φ regions hreg' η n W h L d hE hR)).1
+  · intro η hη n W h L d hE hR ⟨I, hI0, hIstep⟩ l k hl j h' ρ' hj hre
+    exact asserted_of_reach (CallbackDemands.safeRet_to_safePostExcW hIstep hI0 (hga η hη n W h L d hE hR)).2 hl hj hre
+  · intro ci q hci η n W h L d hE hR _ l k hl j h' ρ' hj hre
+    have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci
+    have hg := hcodeG (q, ci) hmem
+    exact hg.asserted η trivial n W h (envOf L d) hE (program_source_refsOk hg.source W) hR l k hl j h' ρ' hj hre
+
+/-- A callback-demand request safe at other candidates is safe (proved). -/
+theorem callbackDemandRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ ι]
+    (r : SourceRequest σ ι) (spec : CallbackDemands.CallbackDemandSpec) c :
+    CallbackDemandRequestSafe { r with candidates := c } spec →
+      CallbackDemandRequestSafe r spec := by
+  intro ⟨h1, h2, h3, h4, h5, h6⟩
+  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
+    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
+
 /-- **A member `passGroup` accepts is safe** (proved, under `RunSound` and
 `RunKeepsSummaries`, its plans over the file's store): its plan crosses the exhaustive certification boundary and its
 request is safe. -/
@@ -271,5 +336,8 @@ theorem member_safe {f : FilePlans} {j : Nat}
   | framed name pos r spec cands hplan hacc =>
     exact ⟨_, _, hplan, rfl, fun hcb => framedRequestSafe_recandidated r spec cands
       (framed_requestSafe (r := { r with candidates := cands }) hrun hkeep (hover.framed hplan :) hacc hcb)⟩
+  | callbackDemands name pos r spec cands hplan hacc =>
+    exact ⟨_, _, hplan, rfl, callbackDemandRequestSafe_recandidated r spec cands
+      (callbackDemand_requestSafe (r := { r with candidates := cands }) hrun hkeep (hover.callbackDemands hplan :) hacc)⟩
 
 end Verification.SourceClaimJson.PassUnit

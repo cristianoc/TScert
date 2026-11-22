@@ -5165,4 +5165,18 @@ export const cases: Case[] = [
     "unverified", "search", /framed node \d+ drops a support: the region a class has no sites/),
   gap("readonly-frame-handler", "A fact read on a framed call's handler edge (framed-acceptance draft, \"Milestone 2\"): the copies hold across the handler, but the framed returns claim the supports at a normal return only, so the walk at the catch block lacks h.flags.length === n.",
     "unverified", "search", /framed plan: its framed walk is refused/),
+  // Support-parametric callback demands (zero client trust Θ_C, no readonly handles,
+  // no InferPreserves wrapper): internal walkers infer local confinement and
+  // parameter-rooted callback demands; callers discharge them via path-provenance
+  // freshness or forward them through adapting closures.
+  positive("callback-demand-walk", "Internal walker with local cursor and unannotated visitor called by a closure pushing to a fresh local array: verified with zero client trust."),
+  negative("invalid-callback-demand-walk", "Caller passing a closure that pops the walked array violates the walker's spine-preservation demand (NaN under Node).",
+    /callback demand check of sumAndAlias at \[\d+,\d+\): callback call modifies param 0\.\[\] \(any\), violating demanded param 0\.\[\] \((keep|grow)\)/),
+  positive("callback-demand-nested-path", "Internal walker over nested record arrays (`prepared.widths` / `prepared.segmentFlags`) called by `collectDirect` pushing to a fresh local array: verified via path-provenance freshness."),
+  negative("invalid-callback-demand-nested-path", "Caller pushing to `prepared.widths` violates the walker's nested-path demand (NaN under Node).",
+    /callback demand check of appendToProtected at \[\d+,\d+\): callback call modifies param 0\.widths\.\[\] \(extend\), violating demanded param 0\.widths\.\[\] \(keep\)/),
+  positive("callback-demand-adapter", "Adapting wrapper (`walkLines`, modeling Pretext's `walkRichInlineLineRanges`) forwards `walkRaw`'s nested-path demand through `(w, f) => visit({ width: w, flag: f })` to `collectAdapted`: verified with zero client trust."),
+  negative("invalid-callback-demand-adapter", "Caller pushing to `prepared.widths` through the adapting wrapper `walkLines` violates the forwarded nested-path demand (NaN under Node).",
+    /callback demand check of appendAdapted at \[\d+,\d+\): callback call modifies param 0\.widths\.\[\] \(extend\), violating demanded param 0\.widths\.\[\] \(keep\)/),
+  negative("invalid-callback-demand-exported", "An exported walker with an unannotated callback parameter cannot silently impose an unstated demand on external callers (NaN under Node)."),
 ];

@@ -164,6 +164,7 @@ import Verification.Semantics.Bindings
 import Verification.Semantics.Calculus
 import Verification.Semantics.CallArguments
 import Verification.Semantics.CallEffects
+import Verification.Semantics.CallbackDemands
 import Verification.Semantics.CanonicalLists
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.ComponentTags
@@ -239,6 +240,7 @@ import Verification.Semantics.ViewFormats
 import Verification.Semantics.ViewSpines
 import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
+import Verification.Source.Claims.CallbackDemandSpec
 import Verification.Source.Claims.Diagnostics
 import Verification.Source.Claims.Elaboration
 import Verification.Source.Claims.FlowProbe

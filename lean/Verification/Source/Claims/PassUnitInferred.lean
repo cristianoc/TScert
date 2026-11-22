@@ -71,6 +71,11 @@ theorem Recandidated.memberSafe {f f' : FilePlans} (h : Recandidated f f') {j : 
     subst hc
     exact ⟨.framed name pos r spec, .framed name pos r spec, h₀, rfl,
       fun hcb => framedRequestSafe_recandidated r spec cands (hsafe hcb)⟩
+  | callbackDemands name pos r spec =>
+    simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
+    subst hc
+    exact ⟨.callbackDemands name pos r spec, .callbackDemands name pos r spec, h₀, rfl,
+      callbackDemandRequestSafe_recandidated r spec cands hsafe⟩
 
 /-- Plans mapped index by index, each one of the original's with its
 request's candidates replaced, are `Recandidated` (proved). -/
@@ -124,6 +129,11 @@ theorem withFreshApart_recandidated (f : FilePlans) (force : Bool) (group : List
         · exact ⟨_, rfl, r₀.candidates, rfl⟩
         · exact ⟨_, rfl, _, rfl⟩
       | framed n ps r₀ sp =>
+        simp only [FunctionPlan.mapRequest]
+        split
+        · exact ⟨_, rfl, r₀.candidates, rfl⟩
+        · exact ⟨_, rfl, _, rfl⟩
+      | callbackDemands n ps r₀ sp =>
         simp only [FunctionPlan.mapRequest]
         split
         · exact ⟨_, rfl, r₀.candidates, rfl⟩

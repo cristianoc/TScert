@@ -2,22 +2,27 @@ import Verification.Source.SourceRequests
 import Verification.Source.Equations.Store
 import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Source.Claims.FramedSpec
+import Verification.Semantics.CallbackDemands
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 /-- A unit's plan: its graph request, a generic unit and a generic closure
 included, their binders parameter rows the graph checks at every
-assignment; or its request with the proposals of the read-only frame
+assignment; its request with the proposals of the read-only frame
 (`FramedSpec`), accepted under the client obligation of the frame they
-define. -/
+define; or its request with support-parametric callback demands
+(`CallbackDemands.CallbackDemandSpec`), accepted with no client obligation
+`Θ_C` when callers discharge the published demands. -/
 inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
   | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
   | framed (name : String) (namePos : Span) (request : SourceRequest σ ι) (spec : FramedSpec ι)
+  | callbackDemands (name : String) (namePos : Span) (request : SourceRequest σ ι)
+      (spec : CallbackDemands.CallbackDemandSpec)
 
 /-- A plan's name, the position of its name and its request. -/
 def FunctionPlan.parts {σ ι : Type} [Labels ι] [StoreView σ ι] : FunctionPlan σ ι → String × Span × SourceRequest σ ι
-  | .graph name pos r | .framed name pos r _ => (name, pos, r)
+  | .graph name pos r | .framed name pos r _ | .callbackDemands name pos r _ => (name, pos, r)
 
 /-- **A plan with its request changed**: the same kind, name, position and
 proposals, its request `g`'s image. -/
@@ -25,6 +30,7 @@ def FunctionPlan.mapRequest {σ ι : Type} [Labels ι] [StoreView σ ι] (g : So
     FunctionPlan σ ι → FunctionPlan σ ι
   | .graph name pos r => .graph name pos (g r)
   | .framed name pos r spec => .framed name pos (g r) spec
+  | .callbackDemands name pos r spec => .callbackDemands name pos (g r) spec
 
 theorem FunctionPlan.parts_mapRequest {σ ι : Type} [Labels ι] [StoreView σ ι] (g : SourceRequest σ ι → SourceRequest σ ι)
     (p : FunctionPlan σ ι) : (p.mapRequest g).parts = (p.parts.1, p.parts.2.1, g p.parts.2.2) := by
@@ -36,16 +42,20 @@ exhaustive boundary through a projection. A graph plan is accepted for every
 execution (`PassUnit.RequestSafe`); a framed plan for the executions in
 which code outside its frame's component keeps the frame's client
 obligation (`PassUnit.FramedRequestSafe`), at the frame its proposals
-define (`FramedSpec.frame`). -/
+define (`FramedSpec.frame`); a callback-demand plan for every call whose
+callback arguments meet the published demands (`PassUnit.CallbackDemandRequestSafe`). -/
 inductive CertifiedPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
   | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
   | framed (name : String) (namePos : Span) (request : SourceRequest σ ι) (spec : FramedSpec ι)
+  | callbackDemands (name : String) (namePos : Span) (request : SourceRequest σ ι)
+      (spec : CallbackDemands.CallbackDemandSpec)
 
-/-- **The trust a certified plan is accepted under**: none for a graph plan;
-the client obligation of its frame for a framed plan. -/
+/-- **The trust a certified plan is accepted under**: none for a graph plan
+or a callback-demand plan; the client obligation of its frame for a framed plan. -/
 def CertifiedPlan.clientTrust {σ ι : Type} [Labels ι] [StoreView σ ι] : CertifiedPlan σ ι → Bool
   | .graph .. => false
   | .framed .. => true
+  | .callbackDemands .. => false
 
 /-- The conversion into the verified-plan type used by the acceptance path.
 Exhaustive matching makes
@@ -53,6 +63,7 @@ a new `FunctionPlan` constructor a compile error here. -/
 def FunctionPlan.certify {σ ι : Type} [Labels ι] [StoreView σ ι] : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)
   | .framed name pos request spec => pure (.framed name pos request spec)
+  | .callbackDemands name pos request spec => pure (.callbackDemands name pos request spec)
 
 open EquationGraphs EquationStore in
 /-- A unit's plan over the frozen equations (`EquationStore.freeze`). -/
@@ -61,5 +72,6 @@ def FunctionPlan.over (F : Frozen) :
       (CheckedLabel F.equations F.primitive))
   | .graph name pos r => do return .graph name pos (← SourceRequest.over F r)
   | .framed name pos r spec => do return .framed name pos (← SourceRequest.over F r) (← spec.over F)
+  | .callbackDemands name pos r spec => do return .callbackDemands name pos (← SourceRequest.over F r) spec
 
 end Verification.SourceClaimJson

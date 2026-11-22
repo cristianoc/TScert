@@ -7,6 +7,7 @@ import Verification.Source.WorkerWire
 import Verification.Source.ComponentChecks
 import Verification.Source.Claims.FlowProbe
 import Verification.Source.Claims.FramedCheck
+import Verification.Source.Claims.CallbackDemandSpec
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -398,6 +399,9 @@ structure PreparedFile where
   and the checks that read the component alone run; or the located
   refusal of a framed plan of the file's units. -/
   framed : IO.Ref (Option (Except String SourceClaimJson.FramedComponent))
+  /-- Published support-parametric callback demands per module function name,
+  computed on demand for callees and recorded as units are verified. -/
+  callbackDemands : IO.Ref (Std.HashMap String (List CallbackDemands.CallbackDemand))
 
 /-- The prepared file's front: its units, their identities and groups. -/
 def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
@@ -497,10 +501,11 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
   let framed ← IO.mkRef none
+  let callbackDemands ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
     { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans, memo, framed }
+      givenLines, fuel, quiet, t0, proposals, plans, memo, framed, callbackDemands }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -721,6 +726,7 @@ def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlan
                 | some (.error e) => e
                 | some (.ok (.graph _ _ r)) => s!"receiver {r.receiver}, rest {r.restParam}"
                 | some (.ok (.framed ..)) => "a framed plan"
+                | some (.ok (.callbackDemands ..)) => "a callback-demand plan"
                 | none => "no plan"
               IO.eprintln s!"probe component: no closure code for {x}: {(reason.splitOn "\n").head?.getD reason}"
             if pf.index == own.index then g.keepModuleCodes (pf.file.fr.group j)
@@ -812,6 +818,111 @@ def PreparedFile.framedComponent (p : PreparedFile) :
   let fc ← p.prepareFramedComponent
   p.framed.set (some fc)
   return fc
+
+/-- Exported module function names declared by the file's component metadata.
+An exported function cannot silently publish unstated callback demands on
+unanalyzed external callers (zero silent trust escalation). -/
+def PreparedFile.exportedNames (p : PreparedFile) : List String :=
+  let F := (Fragment.decodeComponents p.ast).toOption.getD ComponentWire.Components.empty
+  let file := (p.ast.getObjValAs? String "file").toOption.getD p.fileKey
+  (F.components.flatMap fun c =>
+    match c.interface with
+    | .known es => (es.filter (·.module == file)).map (·.name)
+    | _ => []).eraseDups
+
+/-- **Support-parametric callback-demand verification for a refused producer**
+(`Mode8Accepted.callbackDemands`, zero client trust `Θ_C`): infers locally
+confined allocations and parameter-rooted supports at direct unannotated
+callback call nodes (`FilePlans.inferCallbackDemandSpec`), certifies the group
+via `passGroupMode8` on `.callbackDemands`, and records published demands for
+internal (non-exported) functions so every caller is verified within the module. -/
+def PreparedFile.callbackDemandVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans) (i : Nat)
+    (reason : String) : IO (Except String (List String) × List Nat) := do
+  let fr := p.fr
+  let exported := p.exportedNames
+  for j in fr.group i do
+    match f.plans[j]? with
+    | some (.ok (.graph name pos r)) =>
+      if let some spec ← IO.lazyPure fun _ => f.inferCallbackDemandSpec p.fuel j then
+        if exported.contains name && !spec.demands.isEmpty then
+          continue
+        let f' := f.withPlan j (.callbackDemands name pos r spec)
+        let (_, v, _, _) ← IO.lazyPure fun _ =>
+          f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel (f'.fr.group i) (located := true)
+        if let .ok deps := v then
+          p.callbackDemands.modify fun m => m.insert name spec.demands
+          return (.ok deps, [])
+    | _ => pure ()
+  return (.error reason, [])
+
+/-- Ensure every same-file callee of group `i` has had its callback demands
+populated in `p.callbackDemands` (handling forward-declared callers). -/
+def PreparedFile.ensureCalleeDemands (p : PreparedFile) (i : Nat) : IO Unit := do
+  let fr := p.fr
+  let exported := p.exportedNames
+  let deps := fr.dependencies (fr.group i)
+  for depLeader in deps do
+    for j in fr.group depLeader do
+      let some (fn, _, none) := fr.units[j]? | continue
+      if (← p.callbackDemands.get).contains fn.name then continue
+      let memo ← p.memo.get
+      let planned ← IO.lazyPure fun _ => p.plan depLeader [] memo
+      match planned with
+      | .ok g =>
+        let (_, v, _, _) ← IO.lazyPure fun _ =>
+          g.passGroupMode8 true p.force (g.givenAt p.givenLines) p.fuel (g.fr.group depLeader) (located := true)
+        match v with
+        | .ok _ =>
+          p.callbackDemands.modify fun m => m.insert fn.name []
+        | .error _ =>
+          match g.plans[j]? with
+          | some (.ok (.graph name pos r)) =>
+            if let some spec ← IO.lazyPure fun _ => g.inferCallbackDemandSpec p.fuel j then
+              if exported.contains name && !spec.demands.isEmpty then
+                p.callbackDemands.modify fun m => m.insert name []
+              else
+                let g' := g.withPlan j (.callbackDemands name pos r spec)
+                let (_, v', _, _) ← IO.lazyPure fun _ =>
+                  g'.passGroupMode8 true p.force (g'.givenAt p.givenLines) p.fuel (g'.fr.group depLeader) (located := true)
+                if let .ok _ := v' then
+                  p.callbackDemands.modify fun m => m.insert name spec.demands
+                else
+                  p.callbackDemands.modify fun m => m.insert name []
+            else
+              p.callbackDemands.modify fun m => m.insert name []
+          | _ =>
+            p.callbackDemands.modify fun m => m.insert fn.name []
+      | .error _ =>
+        p.callbackDemands.modify fun m => m.insert fn.name []
+
+/-- **Caller discharge and forwarding check**: verifies every call in group `i`
+to a callee with published `CallbackDemand`s, refusing violations and recording
+any demands forwarded through adapting closures (refusing forwarded demands on
+exported functions so no unstated demand escapes the module). -/
+def PreparedFile.checkCallerCallbackDemands (p : PreparedFile) (f : SourceClaimJson.FilePlans) (i : Nat)
+    (deps : List String) : IO (Except String (List String)) := do
+  p.ensureCalleeDemands i
+  let demandMap ← p.callbackDemands.get
+  let active := demandMap.toList.filter fun (_, ds) => !ds.isEmpty
+  if active.isEmpty then return .ok deps
+  let exported := p.exportedNames
+  for j in p.fr.group i do
+    match f.plans[j]? with
+    | some (.ok plan) =>
+      let (name, pos, r) := plan.parts
+      match SourceClaimJson.checkCallerDemands r active with
+      | .error why => return .error s!"callback demand check of {name} at [{pos.1},{pos.2}): {why}"
+      | .ok forwarded =>
+        if !forwarded.isEmpty then
+          if exported.contains name then
+            return .error s!"callback demand check of {name} at [{pos.1},{pos.2}): exported function cannot forward unstated callback demand to external callers"
+          p.callbackDemands.modify fun m =>
+            let existing := m.getD name []
+            let merged := forwarded.foldl (fun acc d =>
+              d.support.foldl (fun a e => SourceClaimJson.addDemandEntry a d.param e) acc) existing
+            m.insert name merged
+    | _ => pure ()
+  return .ok deps
 
 /-- **A refused group's framed plan** (the draft "Accepting a unit through
 the read-only frame", "The plan"): for a member of a group the pass
@@ -952,9 +1063,22 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
           f.elaborationRefusal (some [SourceClaimJson.memberName unit]),
           f.contractReads (fr.group i), f.clientComponents (f.fr.group i))
-  -- A refused group's framed plan, checked (`framedVerdict`).
+  -- A refused group's callback-demand plan (zero client trust Θ_C), falling
+  -- back to a framed plan (`framedVerdict`) where no callback demand applies;
+  -- for every accepted group, verify caller discharge of callee demands.
   let (verdict, trusted) ← match verdict, planned with
-    | .error reason, .ok f => p.framedVerdict f i reason
+    | .error reason, .ok f => do
+      let (cbV, cbT) ← p.callbackDemandVerdict f i reason
+      match cbV with
+      | .ok deps =>
+        match ← p.checkCallerCallbackDemands f i deps with
+        | .ok deps' => pure (.ok deps', cbT)
+        | .error why => pure (.error why, [])
+      | .error _ => p.framedVerdict f i reason
+    | .ok deps, .ok f => do
+      match ← p.checkCallerCallbackDemands f i deps with
+      | .ok deps' => pure (.ok deps', trusted)
+      | .error why => pure (.error why, [])
     | v, _ => pure (v, trusted)
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow

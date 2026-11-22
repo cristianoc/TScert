@@ -71,6 +71,15 @@ theorem planAt_not_framed {f : FilePlans} {j : Nat} {n n' : String} {p p' : Span
   injection h' with h'
   cases h'
 
+theorem planAt_not_callbackDemands {f : FilePlans} {j : Nat} {name name' : String} {pos pos' : Span} {r r' : Req f}
+    {spec : CallbackDemands.CallbackDemandSpec}
+    (hp : PlanAt f j name pos r) (hc : CallbackDemandsPlanAt f j name' pos' r' spec) : False := by
+  unfold PlanAt at hp; unfold CallbackDemandsPlanAt at hc
+  rw [hp] at hc
+  injection hc with hc
+  injection hc with hc
+  cases hc
+
 /-- **An accepted async member claims no footprint** (proved): the declared
 effect's conditions `passGroup` checks make an async member's footprint the
 one letting every location change, the property `checkRequests_async`
@@ -82,6 +91,7 @@ theorem member_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r :
     | ordinary name' pos' r' _ _ hplan _ hdecl _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
     | qualified name' pos' r' _ _ _ _ hplan _ hdecl _ _ _ _ _ _ _ _ _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
     | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
+    | callbackDemands _ _ _ _ _ hplan _ => exact (planAt_not_callbackDemands hp hplan).elim
   simp only [declaredEffect, RequestJson.asyncEffects, Bool.and_eq_true, ha,
     Bool.not_true, Bool.false_or, beq_iff_eq] at hd
   exact hd.1.1
@@ -119,5 +129,6 @@ theorem codes_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r : 
     rw [← planAt_unique hp hplan] at hcodes
     rw [hcodes] at hq; cases hq
   | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
+  | callbackDemands _ _ _ _ _ hplan _ => exact (planAt_not_callbackDemands hp hplan).elim
 
 end Verification.SourceClaimJson.PassUnit

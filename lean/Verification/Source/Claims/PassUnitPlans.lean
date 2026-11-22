@@ -25,8 +25,14 @@ def FramedPlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop :=
   f.plans[i]? = some (Except.ok (FunctionPlan.framed name pos r spec))
 
-/-- Every plan of `f`, a graph plan or a framed plan, is over `f`'s frozen
-store: its request's store is the file's. -/
+/-- The plan of unit `i` of `f` is the callback-demand plan of the request `r`
+with specification `spec`. -/
+def CallbackDemandsPlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f)
+    (spec : CallbackDemands.CallbackDemandSpec) : Prop :=
+  f.plans[i]? = some (Except.ok (FunctionPlan.callbackDemands name pos r spec))
+
+/-- Every plan of `f`, a graph plan, framed plan or callback-demand plan, is
+over `f`'s frozen store: its request's store is the file's. -/
 def OverStore (f : FilePlans) : Prop :=
   ∀ (i : Nat) (p : FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive)),
@@ -40,6 +46,11 @@ theorem OverStore.graph {f : FilePlans} (h : OverStore f) {i name pos} {r : Req 
 /-- A framed plan of a file over its store has the file's store. -/
 theorem OverStore.framed {f : FilePlans} (h : OverStore f) {i name pos} {r : Req f} {spec}
     (hp : FramedPlanAt f i name pos r spec) : r.types = f.F.store :=
+  h i _ hp
+
+/-- A callback-demand plan of a file over its store has the file's store. -/
+theorem OverStore.callbackDemands {f : FilePlans} (h : OverStore f) {i name pos} {r : Req f} {spec}
+    (hp : CallbackDemandsPlanAt f i name pos r spec) : r.types = f.F.store :=
   h i _ hp
 
 /-- A request over the frozen equations has their store. -/
@@ -80,6 +91,15 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
           injection h with h
           subst h
           exact over_types hr
+    | callbackDemands n ps r₀ spec =>
+      simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
+      cases hr : SourceRequest.over F r₀ with
+      | error _ => rw [hr] at h; cases h
+      | ok r₁ =>
+        rw [hr] at h
+        injection h with h
+        subst h
+        exact over_types hr
 
 theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {b : β}
     (h : (x >>= k) = .ok b) : ∃ a, x = .ok a ∧ k a = .ok b := by
