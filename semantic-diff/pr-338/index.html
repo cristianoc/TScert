@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-338"><code>53613347757101bec63f38f1eef5c4d3bd513653..pr-338</code></a><ul><li>1 commit</li><li>changes: 1 Check, 1 Docs</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-338"><code>53613347757101bec63f38f1eef5c4d3bd513653..pr-338</code></a><ul><li>2 commits</li><li>changes: 1 Check, 2 Docs</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
 <h2 id="g-pr-338"><code>53613347757101bec63f38f1eef5c4d3bd513653..pr-338</code></h2><article class="card" id="c-5eebc0781"><header><div><div class="sha">5eebc0781 · Cristiano Calcagno · Nov 22, 10:36</div><h3>Infer and check callback preservation interfaces</h3></div><span class="pill gap">gap</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The cursor walker needs its array length after an unknown visitor runs. Clients need a preservation requirement they can check against a supplied closure.</p></div>
 <h4 class="change"><span class="act added">added</span>Check <span class="target">inferred callback preservation</span></h4><div class="prose"><p>At a marked parameter: infer and publish the requirements from the producer's body. At a call: check the supplied callback's effect against the published requirements.</p></div>
@@ -129,5 +129,12 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tools/fragment-statements.mts                      |  25 +-
  tools/fragment.mts                                 |   2 +-
  tools/resolvable.d.ts                              |   2 +</pre></details>
+</article>
+<article class="card" id="c-be65d58fb"><header><div><div class="sha">be65d58fb · Cristiano Calcagno · Nov 22, 12:23</div><h3>Document straight-line continuations after a checked callback call</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The paper specifies the verified worker's caller fragment. That fragment includes computations that use the producer's result.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">verified caller scope</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>A caller immediately returned the producer's result.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>A caller can bind or discard the result and follow a checked straight-line path to a return. Separation between unchanged bindings can be carried from an earlier checked assertion.</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>2 files changed, 15 insertions(+), 7 deletions(-)</summary><pre class="code"> .../inferred-callback-preservation.pdf             | Bin 157889 -&gt; 158316 bytes
+ .../inferred-callback-preservation-note/note.tex   |  22 ++++++++++++++-------</pre></details>
 </article>
 </main></body></html>
