@@ -730,8 +730,9 @@ A node whose step certificate has no scope receives the unrestricted
 summary $\top$ on both exits.
 
 \emph{\code{walkVia} through the mechanism.} \code{walk} publishes
-$d=(1,[(\spine(0,[]),\keep)],[],[\absent])$: keep the spine of its
-input~0. At the call in \code{walkVia}, $\mathit{roots}(0)=(0,[])$, since
+$d=(1,[(\spine(0,[]),\keep)],[],[\absent,\absent])$: keep the spine
+of its input~0; the receiver and the argument \code{c.i} of its call have
+no public root. At the call in \code{walkVia}, $\mathit{roots}(0)=(0,[])$, since
 \code{xs} is \code{walkVia}'s input~0. The callback operand is a closure,
 not a marked input, so the check reaches \ruleName{Use}. The closure's
 code has one node, \code{visit(i)}, an invocation of its capture slot.
@@ -765,9 +766,9 @@ by the empty footprint on both exits.
  {d=(p,S^{\norm},S^{\exc},A)\qquad \mathsf{actual}_F(p)=c\qquad
   c.\mathsf{capture}(k)=\mathsf{input}(q)\qquad q\;\mathsf{marked}\\
   \forall e.\ \proj_{\pi_F}(S^e)=T^e\qquad
-  T=\du(T^{\norm}\mathbin{+\!+}T^{\exc})\ \text{is path-closed}\\
+  U=\du(T^{\norm}\mathbin{+\!+}T^{\exc})\ \text{is path-closed}\\
   \forall e.\ T^e\respects_{K_F}\ren_\sigma(E_{\setminus k}^e)}
- {\pi_F;K_F\vdash d\leadsto(q,T,T,A_k)}
+ {\pi_F;K_F\vdash d\leadsto(q,U,U_c,A_k)}
 \]
 
 $A_k$ lists, for the receiver and ordinary arguments of each relied
@@ -775,15 +776,16 @@ call, the root of the operand under $\sigma$ when its origin is an
 entry slot of $c$ that $\sigma$ maps to a public input of $F$, and
 $\absent$ otherwise. A support $T$ is \emph{path-closed} when, for each
 of its regions rooted at $(x,p\mathbin{+\!+}[f]\mathbin{+\!+}p')$, the field
-region $(x,p)\cdot f$ is in $T$ with \keep. The premise on $E_{\setminus k}$
+region $(x,p)\cdot f$, or that region restricted to the value category
+of locations, is in $T$ with \keep. The premise on $E_{\setminus k}$
 is \ruleName{Use} for every step of $c$ that is not a relied call. The
 conclusion is a forwarded demand on $q$, which $F$ publishes as
 \ruleName{Forward} does.
 
-The forwarded demand asks $q$ to keep $T$ on both of its exits. A
-relied call's normal return can reach $c$'s exceptional exit, and its
-exceptional return can reach $c$'s normal exit through a handler in
-$c$, so one support covers both.
+A relied call's normal return can reach either exit of $c$, so the
+forwarded demand asks $q$ to keep $U$ on normal return. Its throw ends
+$c$ with a throw unless a node of $c$ has a handler, so $U_c$ is
+$T^{\exc}$ when $c$ has no handler and $U$ otherwise.
 
 \emph{\code{walkVia} through the rule.} The closure captures
 \code{visit} with origin $\mathsf{input}(1)$, and \code{visit} is
@@ -792,12 +794,14 @@ exits and the \ruleName{Use} premise holds. $T=[(\spine(0,[]),\keep)]$
 has an empty path and is path-closed. The relied call's operand
 \code{i} is the closure's ordinary argument; $\sigma$ maps it to
 \code{walk}'s actual root for that position, which is $\absent$ (the
-private cursor field). \code{walkVia} publishes
-$(1,T,T,[\absent])$: \code{walk}'s demand, required on both exits. A caller of
+private cursor field). The closure has no handler and $T^{\exc}=[]$, so
+\code{walkVia} publishes $(1,T,[],[\absent,\absent])$, the demand of
+\code{walk} with its receiver and argument roots. A caller of
 \code{walkVia} is then checked as a caller of \code{walk}:
 \code{walkVia(xs, i => \{ visited.push(i); \})} with a fresh
 \code{visited} is accepted, and
-\code{walkVia(xs, i => \{ xs.pop(); \})} is refused.
+\code{walkVia(xs, () => \{ xs.pop(); \})} is refused.
+\status{source regression}
 
 \emph{\code{walkLines} through the rule.} The closure
 \code{(width, flag) => \{ visit(\{ width, flag \}); \}} allocates a record
@@ -806,9 +810,10 @@ previously allocated location, so $E_{\setminus k}=[]$. \code{walkRaw}'s
 support keeps the fields \code{prepared.widths} and
 \code{prepared.segmentFlags} and the spine of \code{prepared.widths};
 it is path-closed. The relied call's operand is the fresh record, so
-$A_k=[\absent]$. \code{walkLines} publishes the projected demand, and
-\code{collectAdapted} is checked against it. Its push into
-\code{walked} meets the path-rooted region of the next subsection.
+$A_k=[\absent,\absent]$. \code{walkLines} publishes the projected
+demand, and \code{collectAdapted} is checked against it. Its push into
+\code{walked} meets the path-rooted region of the next subsection, and
+the check refuses it. \status{source regression}
 
 \begin{conjecture}[Soundness of \ruleName{Adapt}]
 Assume the premises of \ruleName{Adapt}, a separation query $K_F$
@@ -872,9 +877,21 @@ the allocation of the closure, and the call. $X_{\ell_r}=\emptyset$,
 since the only exposure, the capture of \code{visited}, comes after the
 read. \ruleName{FreshRead} adds $\mathsf{spines}((v,[]),(n_{\rm in}+a,[]))$,
 the query reports $\spine(v,[])$ and $\spine(a,[])$ disjoint, and
-\ruleName{Use} accepts. If \code{h.xs = visited} precedes the read,
-the write exposes $a$, $a\in X_{\ell_r}$, and the call is refused: the
-value read may then be the array the callback appends to.
+\ruleName{Use} accepts. \status{source regression}
+
+\begin{lstlisting}[language=TypeScript]
+export function aliasedRead(h: { xs: number[] }): number {
+  const visited: number[] = [1];
+  h.xs = visited;
+  return walk(h.xs, () => { visited.pop(); });
+}
+\end{lstlisting}
+
+The write \code{h.xs = visited} exposes $a$ before the read, so
+$a\in X_{\ell_r}$, \ruleName{FreshRead} adds no fact, and the call is
+refused. Under Node the walked array is the one the callback pops, the
+read \code{xs[c.i]!} returns \code{undefined}, and the result is
+\code{NaN}. \status{source regression}
 
 \emph{The path-rooted case.} In \code{collectDirect} the walked array
 is reached by the path \code{prepared.widths} from an input, not read by
@@ -908,6 +925,11 @@ flow-sensitive form over the caller's graph.
 \item \emph{Separation evidence.} \ruleName{FreshRead} adds facts of the
 existing kind $\mathsf{spines}$ to the existing query; the respect
 check and \lean{check\_arguments\_supported} consume them unchanged.
+\item \emph{Closure inference, a second time.} The experimental path
+recomputes each closure's visit records to build $E_{\setminus k}$,
+running the code walk of \lean{inferCodeRows} again, and repeats the
+caller scan of \lean{checkUses} around its own demand check. The
+verified path keeps the ordinary tables and checks.
 \item \emph{Annotations.} \ruleName{Adapt} is the subsumption a written
 demand would need: with a type form stating that a callback keeps $T$,
 checking \code{i => visit(i)} against \code{walk}'s demand is the rule
@@ -1087,8 +1109,11 @@ assertions, this run needs a source-value type and a type admitting null
 for the projection's inserted return.
 \end{description}
 
-The experimental checker retains its own rules for direct forwarding
-and for reading published outcomes from other modules. It refuses a
+The experimental checker retains its own rules for direct forwarding,
+\ruleName{Adapt}, \ruleName{FreshRead}, and reading published outcomes
+from other modules. A caller in the verified scope whose verified check
+fails at an obligation other than a scope check is reported by the
+experimental check when that check accepts it. It refuses a
 spread if it obscures a demanded callback position and rejects uses
 that escape resolved applications. \lean{demandedImports} requires the
 published outcome for each callback-dependent imported binding, including
@@ -1181,6 +1206,10 @@ Closure effects &
   \lean{CallbackPreservation.project}, \lean{Demand.check},
   \lean{Demand.forward}; \lean{CallbackInterfaceCheck.check},
   \lean{closure}, \lean{argumentRoots}, \lean{separation}, \lean{writeInterface} \\
+\ruleName{Adapt} and \ruleName{FreshRead} &
+  \lean{CallbackAdaptation.inferAdapted}, \lean{adaptedClosure},
+  \lean{pathClosed}, \lean{exposedBefore}, \lean{freshReads},
+  \lean{checkDemand} \\
 Publication and source verdict &
   \code{Source/RequestCli.lean}: \lean{produceModuleCallback},
   \lean{PreparedFile.callbackInterface}, \lean{PreparedFile.check} \\

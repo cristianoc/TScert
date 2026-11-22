@@ -12,6 +12,10 @@ open Footprints HeapKnowledge CallEffects
 def scopeRefusal (check reason : String) : String :=
   s!"callback scope [{check}]: {reason}"
 
+/-- The message names a scope refusal of `scopeRefusal`'s form. -/
+def carriesScopeRefusal (message : String) : Bool :=
+  (message.splitOn "callback scope [").length > 1
+
 /-- Facts the continuation needs at this invocation. Both languages give
 their supports to the existing call stability rule. -/
 structure LiveFacts where

@@ -6,6 +6,7 @@ import Verification.Source.Claims.Json
 import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.WorkerWire
 import Verification.Source.Claims.CallbackModularEntry
+import Verification.Source.Claims.CallbackAdaptation
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -367,9 +368,9 @@ private def checkedSupply (f : SourceClaimJson.FilePlans) (i fuel : Nat)
     Except String SourceClaimJson.CallbackInterfaceCheck.Published := do
   let some (fn,_,_) := f.fr.units[i]? | throw "missing callback-dependent member"
   if fn.params.any (·.inferPreserves) then
-    return ← SourceClaimJson.CallbackInterfaceCheck.writeInterface f i fuel dependencies
+    return ← SourceClaimJson.CallbackAdaptation.writeInterface f i fuel dependencies
   if dependencies.isEmpty then throw s!"{fn.name} has no checked callback dependency"
-  let _ ← SourceClaimJson.CallbackInterfaceCheck.check f i fuel dependencies
+  let _ ← SourceClaimJson.CallbackAdaptation.check f i fuel dependencies
   let (_, verdict, _, _) := f.passGroupMode8 true [] (fun _ => []) fuel (f.fr.group i)
   let _ ← verdict
   return ⟨fn.name,some fn.namePos,fn.params.head?.any (·.name == "this"),(fn.params.takeWhile (!·.rest)).length,⟨[]⟩⟩
@@ -838,6 +839,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
     | .error reason =>
       let detail := s!"inferred callback interface: {reason}"
       return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+  -- A scope refusal of the verified caller check stands. Another refusal
+  -- stands unless the experimental check, which adds the rules Adapt and
+  -- FreshRead, accepts the caller.
+  let mut verifiedRefusal : Option String := none
   if let some producer := p.callbackCallerScope i then
     let published ← p.verifiedProducer producer
     let verdict := do
@@ -854,7 +859,12 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
         (file.contractReads [i,producer]), none)
     | .error reason =>
       let detail := s!"inferred callback preservation: {reason}"
-      return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+      if SourceClaimJson.CallbackPreservation.carriesScopeRefusal reason then
+        return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
+      verifiedRefusal := some detail
+  if let some refusal := verifiedRefusal then
+    if !p.callbackUnits.contains i then
+      return (WorkerWire.verdictLine unit members (.error refusal) none [], some refusal)
   let known ← p.known i
   -- (a group's plans kept from a later unit's proposals read once, here:
   -- no unit checked after this one reads them, only their proposals)
@@ -886,13 +896,14 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
     let result := do
       let interfaces := (← published.mapM id) ++ (← demandedImports p.callbackBindings (fr.mentions i))
       let f ← planned
-      let _ ← SourceClaimJson.CallbackInterfaceCheck.check f i p.fuel interfaces
+      let _ ← SourceClaimJson.CallbackAdaptation.check f i p.fuel interfaces
       let (_, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
       verdict
-    let detail := match result with
-      | .ok _ => SourceClaimJson.CallbackPreservation.scopeRefusal "callbackCallerScope"
+    let detail := match result, verifiedRefusal with
+      | .ok _, _ => SourceClaimJson.CallbackPreservation.scopeRefusal "callbackCallerScope"
         "inferred callback preservation checked experimentally"
-      | .error reason => s!"inferred callback preservation: {reason}"
+      | .error _, some refusal => refusal
+      | .error reason, none => s!"inferred callback preservation: {reason}"
     return (WorkerWire.verdictLine unit members (.error detail) none [], some detail)
   let (lines, verdict, elaboration, contracts) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [])

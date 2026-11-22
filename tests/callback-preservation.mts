@@ -28,6 +28,29 @@ function paperExample(section: string): string {
 }
 const walker = paperExample("The problem");
 const clients = paperExample("Examples and evidence");
+const extensions = paperExample("Adapting closures and fresh reads");
+const parallelStart = paper.indexOf("\\subsection{Parallel arrays and an adapting visitor}");
+assert.ok(parallelStart >= 0, "parallel arrays example");
+const parallelListings = /\\begin\{lstlisting\}\[language=TypeScript\]\n([\s\S]*?)\\end\{lstlisting\}/g;
+const parallelSection = paper.slice(parallelStart);
+const parallelTypes = parallelListings.exec(parallelSection);
+const parallelClients = parallelListings.exec(parallelSection);
+assert.ok(parallelTypes && parallelClients, "parallel arrays listings");
+const parallel = parallelTypes[1] + parallelClients[1];
+const extensionClients = `
+export function viaTrace(xs: number[]): number {
+  const visited: number[] = [];
+  return walkVia(xs, i => { visited.push(i); });
+}
+export function viaShrink(xs: number[]): number {
+  return walkVia(xs, () => { xs.pop(); });
+}
+export function aliasedRead(h: { xs: number[] }): number {
+  const visited: number[] = [1];
+  h.xs = visited;
+  return walk(h.xs, () => { visited.pop(); });
+}
+`;
 const directCallers = `
 export function preserves(xs: number[]): number {
   return walk(xs, () => {});
@@ -228,7 +251,7 @@ writeFileSync(project, JSON.stringify({
   files: [annotations, combined, producer, consumer],
 }));
 writeFileSync(combined, walker + directCallers + clients + forwarder + forwardedClient + argumentWalker + argumentClients +
-  phaseProducer + phaseClients + spreadProducer + spreadClients + capturedRoot + scopeExamples);
+  phaseProducer + phaseClients + spreadProducer + spreadClients + capturedRoot + scopeExamples + extensions + extensionClients + parallel);
 writeFileSync(producer, walker + forwarder + argumentWalker + phaseProducer + spreadProducer + shrinkingWrapper);
 writeFileSync(consumer, 'import { walk, through, walkWithTarget, headAfter, walkSpread, shrink } from "./producer.js";\n' + clients + forwardedClient + argumentClients + phaseClients + spreadClients + `
 export function callShrinkingWrapper(xs: number[]): number {
@@ -237,10 +260,12 @@ export function callShrinkingWrapper(xs: number[]): number {
 `);
 
 // The callback invalidates the indexed read, so the declared number result
-// becomes undefined on a one-element array.
+// becomes undefined on a one-element array. In aliasedRead the walked array
+// is the one the callback pops, and the sum reads past its end.
 execFileSync(process.execPath, ["--input-type=module", "-e",
-  `import { preservesHead, dropsHead } from ${JSON.stringify(pathToFileURL(combined).href)};
-   if (preservesHead([7]) !== 7 || dropsHead([7]) !== undefined) process.exit(1);`]);
+  `import { preservesHead, dropsHead, aliasedRead } from ${JSON.stringify(pathToFileURL(combined).href)};
+   if (preservesHead([7]) !== 7 || dropsHead([7]) !== undefined) process.exit(1);
+   if (!Number.isNaN(aliasedRead({ xs: [] }))) process.exit(1);`]);
 
 const exercisedScope = new Set<string>();
 for (const source of [combined, consumer]) {
@@ -296,6 +321,18 @@ for (const source of [combined, consumer]) {
     refusesScope("recursiveWalker", "nonrecursiveDeclaration");
     refusesScope("asyncWalker", "ordinaryProducerGraph");
     assert.equal(outcome.units.find(u => u.unit.startsWith("appendToTarget@"))?.status, "verified");
+    // Adapt: the closure i => visit(i) forwards walk's demand to visit.
+    assert.match(detail("walkVia"), /inferred callback interface checked experimentally/);
+    assert.match(detail("walkVia"), /parameter := 1/);
+    assert.match(detail("viaTrace"), /inferred callback preservation checked experimentally/);
+    assert.match(detail("viaShrink"), /callback argument 2 at call of walkVia .* fails its inferred preservation requirement/);
+    // FreshRead: visited is apart from the array read from h.xs, unless
+    // a write exposes it before the read.
+    assert.match(detail("traceField"), /inferred callback preservation checked experimentally/);
+    assert.match(detail("aliasedRead"), /callback argument 2 at call of walk .* fails its inferred preservation requirement/);
+    // Adapt on the adapting visitor; its client meets a path-rooted region.
+    assert.match(detail("walkLines"), /inferred callback interface checked experimentally/);
+    assert.match(detail("collectAdapted"), /callback argument 2 at call of walkLines .* fails its inferred preservation requirement/);
   } else {
     assert.match(detail("sumAndTrace"), /inferred callback preservation checked experimentally/);
     refusesScope("sumAndTrace", "callbackCallerScope");
