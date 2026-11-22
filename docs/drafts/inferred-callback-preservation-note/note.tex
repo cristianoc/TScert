@@ -96,8 +96,9 @@ for the annotated source path, including its two body walks and direct
 forwarding. Source tests exercise nonempty requirements in one file
 and across module boundaries. A guarded Pretext walker infers a
 requirement to preserve a length equality. A reduced example shows
-where applications succeed and where fresh-array separation and
-closure adaptation exceed the implemented rules. The accompanying
+where applications succeed. Two rules extend the checker to a closure
+that calls a marked input and to a fresh array separated from a value
+read from the heap. The accompanying
 soundness development certifies the motivating walker under its inferred
 interface and the caller whose callback appends to a fresh captured array.
 It refuses the aliasing callback. This paper states the scope of those
@@ -655,9 +656,11 @@ between root locations. Here the demanded spine is reached through
 callback operand is the marked parameter itself. The operand here
 is an allocated closure that invokes the marked parameter.
 \ruleName{Use} also fails to discharge the obligation for that
-closure. Interface production for \code{walkLines} fails.
+closure. Interface production for \code{walkLines} fails. \ruleName{Adapt} (Section~\ref{sec:extensions})
+covers this closure.
 \item[\code{collectAdapted}] The check fails because
-\code{walkLines} did not publish an interface.
+\code{walkLines} did not publish an interface. Under \ruleName{Adapt}
+it meets the path-rooted region of \code{collectDirect}.
 \item[\code{appendToProtected}] \ruleName{Use} rejects the
 append to the demanded spine. On a normal return from the append,
 the width count grows while the flag count stays fixed.
@@ -675,6 +678,241 @@ marked. Removing the guard before the raw callback, while keeping
 the entry guard and invariant, made the raw walk fail at the loop
 back edge. The checker could no longer recover the equality after
 the stepper and statistics updates. \status{source run}
+
+\section{Adapting closures and fresh reads}\label{sec:extensions}
+
+Two programs, each one line away from the paper's first example, show
+the two limits of Section~\ref{sec:examples}. Both are safe. This section
+states one rule for each.
+
+\begin{lstlisting}[language=TypeScript]
+export function walkVia(xs: number[], visit: InferPreserves<Visitor>): number {
+  return walk(xs, i => { visit(i); });
+}
+export function traceField(h: { xs: number[] }): number {
+  const visited: number[] = [];
+  return walk(h.xs, i => { visited.push(i); });
+}
+\end{lstlisting}
+
+\code{walkVia} passes \code{walk} a closure that calls the marked
+parameter. \code{walk(xs, visit)} forwards by \ruleName{Forward}; the
+eta-expanded closure behaves the same and is outside every rule.
+\code{traceField} is \code{sumAndTrace} with the walked array read from
+a field.
+
+\subsection{The existing mechanism this extends}
+
+The consumer check of a direct application (\lean{checkDemand}) runs,
+for each published demand $d=(p,S^{\norm},S^{\exc},A)$:
+
+\begin{lstlisting}[language=Pseudocode]
+checkDemand(caller, call at label l, demand d):
+    roots = argumentRoots(operands at l)
+        -- an input or single-site allocation names itself;
+        -- a field-read operand at position i gets the fresh slot
+        -- inputs + nodes + i, denoting the value read
+    if the callback operand is a marked input q of the caller:
+        return Forward(d, q, roots)
+    callback = closure(operand p)
+        -- effect E: the join of the checked code rows' summaries
+        -- substitution: ordinary slots by the call's actual roots,
+        -- captures by their origins at the closure allocation
+    K = separation(origins at l)
+        -- spines(a, b) for distinct identities a, b,
+        -- at least one an allocation
+    require Use: project(roots, S^e) respects_K rename(callback, E^e)
+\end{lstlisting}
+
+A closure's effect $E$ is composed from one local summary per reached
+node of its code graph (\lean{inferChecked}, Section~\ref{sec:effects}).
+A node whose step certificate has no scope receives the unrestricted
+summary $\top$ on both exits.
+
+\emph{\code{walkVia} through the mechanism.} \code{walk} publishes
+$d=(1,[(\spine(0,[]),\keep)],[],[\absent])$: keep the spine of its
+input~0. At the call in \code{walkVia}, $\mathit{roots}(0)=(0,[])$, since
+\code{xs} is \code{walkVia}'s input~0. The callback operand is a closure,
+not a marked input, so the check reaches \ruleName{Use}. The closure's
+code has one node, \code{visit(i)}, an invocation of its capture slot.
+Its callee is unknown, its summary is $\top$, and $E^{\norm}=\top$.
+The test $\any\sqsubseteq\keep$ fails and the separation query has no
+fact for the region $\mathsf{all}$. The application is refused, and
+\code{walkVia} publishes no interface.
+
+\emph{\code{traceField} through the mechanism.} The operand \code{h.xs}
+is a field read, so $\mathit{roots}(0)=(n_{\rm in}+n_{\rm nodes}+0,[])$,
+a slot $v$ denoting the array read. The demand projects to
+$T=[(\spine(v,[]),\keep)]$. The closure's push contributes
+$(\spine(a,[]),\change{extend})$, where $a$ is the allocation of
+\code{visited}. Since $\change{extend}\not\sqsubseteq\keep$,
+\ruleName{Use} needs $K(\spine(v,[]),\spine(a,[]))$. \lean{separation}
+pairs only input and allocation identities, so it has no fact for $v$,
+and the application is refused.
+
+\subsection{Adapting a closure that calls a marked input}
+
+Let $c$ be a closure literal allocated in a declaration $F$, and let the
+capture slot $k$ of $c$ have the singleton origin $\mathsf{input}(q)$ at
+the allocation, with $q$ a marked input of $F$. An invocation in $c$'s
+code whose callee is the entry slot $k$ itself is a \emph{relied call}
+of $q$. Write $E_{\setminus k}$ for the effect composed from $c$'s
+local summaries with the summary of every relied call of $q$ replaced
+by the empty footprint on both exits.
+
+\[
+\ruleof{Adapt}
+ {d=(p,S^{\norm},S^{\exc},A)\qquad \mathsf{actual}_F(p)=c\qquad
+  c.\mathsf{capture}(k)=\mathsf{input}(q)\qquad q\;\mathsf{marked}\\
+  \forall e.\ \proj_{\pi_F}(S^e)=T^e\qquad
+  T=\du(T^{\norm}\mathbin{+\!+}T^{\exc})\ \text{is path-closed}\\
+  \forall e.\ T^e\respects_{K_F}\ren_\sigma(E_{\setminus k}^e)}
+ {\pi_F;K_F\vdash d\leadsto(q,T,T,A_k)}
+\]
+
+$A_k$ lists, for the receiver and ordinary arguments of each relied
+call, the root of the operand under $\sigma$ when its origin is an
+entry slot of $c$ that $\sigma$ maps to a public input of $F$, and
+$\absent$ otherwise. A support $T$ is \emph{path-closed} when, for each
+of its regions rooted at $(x,p\mathbin{+\!+}[f]\mathbin{+\!+}p')$, the field
+region $(x,p)\cdot f$ is in $T$ with \keep. The premise on $E_{\setminus k}$
+is \ruleName{Use} for every step of $c$ that is not a relied call. The
+conclusion is a forwarded demand on $q$, which $F$ publishes as
+\ruleName{Forward} does.
+
+The forwarded demand asks $q$ to keep $T$ on both of its exits. A
+relied call's normal return can reach $c$'s exceptional exit, and its
+exceptional return can reach $c$'s normal exit through a handler in
+$c$, so one support covers both.
+
+\emph{\code{walkVia} through the rule.} The closure captures
+\code{visit} with origin $\mathsf{input}(1)$, and \code{visit} is
+marked. Its only node is a relied call, so $E_{\setminus k}=[]$ on both
+exits and the \ruleName{Use} premise holds. $T=[(\spine(0,[]),\keep)]$
+has an empty path and is path-closed. The relied call's operand
+\code{i} is the closure's ordinary argument; $\sigma$ maps it to
+\code{walk}'s actual root for that position, which is $\absent$ (the
+private cursor field). \code{walkVia} publishes
+$(1,T,T,[\absent])$: \code{walk}'s demand, required on both exits. A caller of
+\code{walkVia} is then checked as a caller of \code{walk}:
+\code{walkVia(xs, i => \{ visited.push(i); \})} with a fresh
+\code{visited} is accepted, and
+\code{walkVia(xs, i => \{ xs.pop(); \})} is refused.
+
+\emph{\code{walkLines} through the rule.} The closure
+\code{(width, flag) => \{ visit(\{ width, flag \}); \}} allocates a record
+and makes one relied call. The allocation contributes no change to a
+previously allocated location, so $E_{\setminus k}=[]$. \code{walkRaw}'s
+support keeps the fields \code{prepared.widths} and
+\code{prepared.segmentFlags} and the spine of \code{prepared.widths};
+it is path-closed. The relied call's operand is the fresh record, so
+$A_k=[\absent]$. \code{walkLines} publishes the projected demand, and
+\code{collectAdapted} is checked against it. Its push into
+\code{walked} meets the path-rooted region of the next subsection.
+
+\begin{conjecture}[Soundness of \ruleName{Adapt}]
+Assume the premises of \ruleName{Adapt}, a separation query $K_F$
+sound at every prestate of a step of $c$, and a value of $q$ that keeps
+$T$ from the dispatch to the return of each of its invocations. Then
+every execution of $c$ keeps $T^{\norm}$ on normal return and
+$T^{\exc}$ on a throw.
+\end{conjecture}
+
+The argument splits an execution of $c$ at its relied calls. A segment
+between relied calls satisfies $\ren_\sigma(E_{\setminus k})$
+(\lean{composeChecked\_execution} on the modified local table), and
+\lean{respect\_sound} gives $T$ over it. A relied call keeps $T$ by
+assumption. Path-closure makes every region of $T$ denote the same
+locations at the start of each segment, since each segment keeps the
+fields its paths read; supports with \keep\ then compose across the
+segments. The composition lemma for path-closed supports is not yet
+stated in Lean.
+
+\subsection{Separating a fresh allocation from a value read}
+
+The second rule adds separation facts for the slots
+\lean{argumentRoots} gives to field-read operands. Define the
+\emph{exposed} set $X_\ell$ of allocation labels at label $\ell$ of the
+caller as the least solution of
+\[
+X_{\rm start}=\emptyset,\qquad
+X_{\ell'}\supseteq X_\ell\cup\mathsf{exposes}(\ell)\ \text{for each normal or
+handler edge}\ \ell\to\ell',
+\]
+where $\mathsf{exposes}(\ell)$ is the set of allocation origins of the
+slots node $\ell$ exposes, with the classification of
+\lean{privateAllocations}: a copy exposes nothing except at a return, a
+field read exposes nothing, a field write exposes the slots of its
+written value, and every other operation exposes every operand slot. A
+closure allocation exposes its captures and an invocation exposes its
+callee, receiver and arguments.
+
+\[
+\ruleof{FreshRead}
+ {\mathit{roots}(i)=(v,[])\ \text{for a field read at label}\ \ell_r\qquad
+  a\ \text{a single-execution allocation site}\qquad a\notin X_{\ell_r}}
+ {\mathsf{spines}((v,[]),(n_{\rm in}+a,[]))\in K_C}
+\]
+
+\emph{Justification.} Every operation that can store a reference to
+the object allocated at $a$ into a heap cell exposes a slot holding it,
+so while $a\notin X_\ell$ no heap cell outside the object itself holds
+that reference. A field read at $\ell_r$ reads a heap cell, so the value
+$v$ denotes differs from the object allocated at $a$. Two different
+arrays have different spines. The slot $v$ denotes the value read, which
+later writes do not change (\lean{argumentRoots\_realizes}), so the
+fact holds at every callback prestate. The site premise makes
+$n_{\rm in}+a$ name one object per activation, as for the existing
+allocation facts. The invariant on exposed allocations is not yet
+stated in Lean.
+
+\emph{\code{traceField} through the rule.} The nodes are the
+allocation of \code{visited} ($a$), the read of \code{h.xs} ($\ell_r$),
+the allocation of the closure, and the call. $X_{\ell_r}=\emptyset$,
+since the only exposure, the capture of \code{visited}, comes after the
+read. \ruleName{FreshRead} adds $\mathsf{spines}((v,[]),(n_{\rm in}+a,[]))$,
+the query reports $\spine(v,[])$ and $\spine(a,[])$ disjoint, and
+\ruleName{Use} accepts. If \code{h.xs = visited} precedes the read,
+the write exposes $a$, $a\in X_{\ell_r}$, and the call is refused: the
+value read may then be the array the callback appends to.
+
+\emph{The path-rooted case.} In \code{collectDirect} the walked array
+is reached by the path \code{prepared.widths} from an input, not read by
+the caller, and the demanded region is $\spine(\mathit{prepared},
+[\code{widths}])$ evaluated at each callback prestate. A fact for it
+must hold at every invocation, so it depends on what the walker and
+the callback write between invocations. \ruleName{FreshRead} does not
+cover it.
+
+\begin{conjecture}[Fresh allocation against a kept path]
+Let $T$ be path-closed and contain the fields of the path $(x,p)$ with
+\keep, let $a$ be a single-execution allocation unexposed at the call,
+and let every entry of the callback's effect be rooted at $a$. Then
+$\spine(x,p)$ and $\spine(a,[])$ are disjoint at every callback prestate
+of the call.
+\end{conjecture}
+
+\subsection{What this duplicates}
+
+\begin{itemize}
+\item \emph{Forwarding.} \ruleName{Adapt} concludes with the demand
+\ruleName{Forward} would publish for the same support and computes it
+with the same projection; it differs only in the callback operand, a
+closure whose relied calls stand for $q$.
+\item \emph{Closure effects.} $E_{\setminus k}$ is the existing
+composition (\lean{composeChecked}) over the existing local summaries,
+with the summaries of relied calls replaced.
+\item \emph{Escape analysis.} $\mathsf{exposes}$ is the classification
+of \lean{privateAllocations}, the producer's escape scan; $X_\ell$ is its
+flow-sensitive form over the caller's graph.
+\item \emph{Separation evidence.} \ruleName{FreshRead} adds facts of the
+existing kind $\mathsf{spines}$ to the existing query; the respect
+check and \lean{check\_arguments\_supported} consume them unchanged.
+\item \emph{Annotations.} \ruleName{Adapt} is the subsumption a written
+demand would need: with a type form stating that a callback keeps $T$,
+checking \code{i => visit(i)} against \code{walk}'s demand is the rule
+that a callback keeping a support satisfies every demand it contains.
+\end{itemize}
 
 \section{Soundness and scope}\label{sec:soundness}
 
