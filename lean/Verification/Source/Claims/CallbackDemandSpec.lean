@@ -50,7 +50,61 @@ inductive SlotOrigin where
   | closure (codeIdx : Nat) (caps : List SlotOrigin)
   | prim
   | unknown
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+/-- Structural equality of slot origins. -/
+def SlotOrigin.beq : SlotOrigin → SlotOrigin → Bool
+  | .param p, .param q | .fresh p, .fresh q | .callerFresh p, .callerFresh q => p == q
+  | .sibling a, .sibling b => a == b
+  | .path p fs, .path q gs => p == q && fs == gs
+  | .closure c cs, .closure d ds => c == d && SlotOrigin.beqList cs ds
+  | .prim, .prim | .unknown, .unknown => true
+  | _, _ => false
+/-- Structural equality of slot-origin lists. -/
+def SlotOrigin.beqList : List SlotOrigin → List SlotOrigin → Bool
+  | [], [] => true
+  | a :: as, b :: bs => SlotOrigin.beq a b && SlotOrigin.beqList as bs
+  | _, _ => false
+end
+
+instance : BEq SlotOrigin := ⟨SlotOrigin.beq⟩
+
+mutual
+/-- Structural equality decides equality. -/
+theorem SlotOrigin.eq_of_beq : ∀ {a b : SlotOrigin}, SlotOrigin.beq a b = true → a = b
+  | .closure c cs, .closure d ds, h => by
+    simp only [SlotOrigin.beq, Bool.and_eq_true, beq_iff_eq] at h
+    rw [h.1, SlotOrigin.eq_of_beqList h.2]
+  | .param _, b, h | .fresh _, b, h | .callerFresh _, b, h | .sibling _, b, h | .path .., b, h
+  | .prim, b, h | .unknown, b, h => by
+    cases b <;> simp_all [SlotOrigin.beq]
+  | .closure .., .param _, h | .closure .., .fresh _, h | .closure .., .callerFresh _, h
+  | .closure .., .sibling _, h | .closure .., .path .., h | .closure .., .prim, h
+  | .closure .., .unknown, h => by simp [SlotOrigin.beq] at h
+/-- Structural list equality decides equality. -/
+theorem SlotOrigin.eq_of_beqList : ∀ {a b : List SlotOrigin}, SlotOrigin.beqList a b = true → a = b
+  | [], [], _ => rfl
+  | a :: as, b :: bs, h => by
+    simp only [SlotOrigin.beqList, Bool.and_eq_true] at h
+    rw [SlotOrigin.eq_of_beq h.1, SlotOrigin.eq_of_beqList h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [SlotOrigin.beqList] at h
+end
+
+mutual
+/-- Structural equality is reflexive. -/
+theorem SlotOrigin.beq_refl : ∀ a : SlotOrigin, SlotOrigin.beq a a = true
+  | .closure c cs => by simp only [SlotOrigin.beq, beq_self_eq_true, Bool.true_and]; exact SlotOrigin.beqList_refl cs
+  | .param _ | .fresh _ | .callerFresh _ | .sibling _ | .path .. | .prim | .unknown => by simp [SlotOrigin.beq]
+/-- Structural list equality is reflexive. -/
+theorem SlotOrigin.beqList_refl : ∀ a : List SlotOrigin, SlotOrigin.beqList a a = true
+  | [] => rfl
+  | a :: as => by simp only [SlotOrigin.beqList, SlotOrigin.beq_refl a, SlotOrigin.beqList_refl as, Bool.and_self]
+end
+
+instance : LawfulBEq SlotOrigin where
+  eq_of_beq := SlotOrigin.eq_of_beq
+  rfl := SlotOrigin.beq_refl _
 
 /-- Join two origins at a control-flow merge. -/
 def SlotOrigin.join (a b : SlotOrigin) : SlotOrigin :=
@@ -78,12 +132,9 @@ def matchCodeIdx {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (ar : N
   (codes.zipIdx.find? fun (q, _) =>
     q.entry.arity == ar && q.entry.exprs == E && q.entry.conts == K && q.entry.start == s).map (·.2)
 
-/-- Whether an expression allocates a fresh plain object or array (including
-a `.letE`-wrapped array literal `.letE (.arrLit ...) (.makeAt .absent ...)`). -/
-def isFreshAllocExpr : Tm → Bool
-  | .makeAt .absent _ _ | .arrLit _ => true
-  | .letE _ b => isFreshAllocExpr b
-  | _ => false
+/-- Whether an expression allocates a fresh plain object or array (using the
+proved operational predicate `CallbackDemands.isFreshAlloc`). -/
+abbrev isFreshAllocExpr : Tm → Bool := CallbackDemands.isFreshAlloc
 
 /-- Compute the origin of expression `e` at node `l` in slot environment `env`. -/
 def exprOrigin {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (l : Nat)
@@ -162,6 +213,37 @@ def computeOrigins {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : 
     if !changed then break
   return table
 
+/-- Point-wise refinement check between a stored origin vector `stored` and a
+computed successor vector `next`: every non-`.unknown` slot in `stored` must
+agree with `next`. -/
+def originsLe (stored next : List SlotOrigin) : Bool :=
+  (List.range stored.length).all fun i =>
+    match stored[i]? with
+    | some .unknown => true
+    | some o => next[i]? == some o
+    | none => true
+
+/-- Pure decidable witness check that `table` is a valid forward origin
+assignment for `P` from `(start, initEnv)`:
+1. `table[start]` refines `initEnv`;
+2. Every reachable node `l` in `table` has all of its `nodeSuccessors` in
+   `table` refined by `originsLe`. -/
+def originsValid {ι : Type} (codes : List (RequestJson.CodeRequest ι)) (P : Program)
+    (start : Nat) (initEnv : List SlotOrigin) (table : Array (Option (List SlotOrigin))) : Bool :=
+  let startOk := match table[start]?.join with
+    | some env => originsLe env initEnv
+    | none => false
+  let edgesOk := (List.range P.length).all fun l =>
+    match P[l]?, table[l]?.join with
+    | some node, some env =>
+      let res := exprOrigin codes l env node.expression
+      (nodeSuccessors node env res).all fun (tgt, nextEnv) =>
+        match table[tgt]?.join with
+        | some tgtEnv => originsLe tgtEnv nextEnv
+        | none => false
+    | _, _ => true
+  startOk && edgesOk
+
 /-- Initial slot origins for a `SourceRequest` at `r.start`. -/
 def requestInitOrigins {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceElaboration.SourceRequest σ ι) :
     List SlotOrigin :=
@@ -180,56 +262,58 @@ def requestOrigins {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceElabo
 
 /-! ## Local confinement and term inspection -/
 
-/-- Whether a term mentions a slot whose origin is `.fresh allocNode`. -/
+/-- Whether a term mentions a slot whose origin is `.fresh allocNode`
+(conservative `true` on runtime-only closure/frame terms). -/
 def mentionsFresh (env : List SlotOrigin) (allocNode : Nat) : Tm → Bool
   | .var s => originAt env s == .fresh allocNode
   | .invoke f r args => mentionsFresh env allocNode f || mentionsFresh env allocNode r || args.any (mentionsFresh env allocNode)
   | .construct f args => mentionsFresh env allocNode f || args.any (mentionsFresh env allocNode)
   | .letE a b => mentionsFresh env allocNode a || mentionsFresh (.unknown :: env) allocNode b
   | .makeAt (.graph _ _ _ _ caps _ _ _) _ xs => caps.any (mentionsFresh env allocNode) || xs.any (mentionsFresh env allocNode)
-  | .makeAt _ _ xs | .arrLit xs => xs.any (mentionsFresh env allocNode)
+  | .makeAt .absent _ xs | .makeAt (.view ..) _ xs | .arrLit xs => xs.any (mentionsFresh env allocNode)
+  | .makeAt (.bound ..) _ _ => true
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => mentionsFresh env allocNode a
   | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
       mentionsFresh env allocNode a || mentionsFresh env allocNode b
   | .ite c a b | .setElem c a b =>
       mentionsFresh env allocNode c || mentionsFresh env allocNode a || mentionsFresh env allocNode b
+  | .objAt _ (.bound ..) _ | .objAt _ (.graph ..) _ | .goto .. | .frame .. => true
   | _ => false
 
+/-- Exhaustive check that expression `e` never lets a `.fresh allocNode` value
+escape into any call, non-confined write, closure capture, allocation, or throw. -/
+def exprConfinedOk (env : List SlotOrigin) (allocNode : Nat) : Tm → Bool
+  | .var _ => true
+  | .readAt _ a =>
+    match a with
+    | .var _ => true
+    | _ => !mentionsFresh env allocNode a
+  | .writeAt _ target val =>
+    !mentionsFresh env allocNode val &&
+      (match target with
+       | .var _ => true
+       | _ => !mentionsFresh env allocNode target)
+  | .setElem arr idx val =>
+    !mentionsFresh env allocNode idx && !mentionsFresh env allocNode val &&
+      (match arr with
+       | .var _ => true
+       | _ => !mentionsFresh env allocNode arr)
+  | .letE a b => exprConfinedOk env allocNode a && !mentionsFresh (.unknown :: env) allocNode b
+  | .ite c a b => !mentionsFresh env allocNode c && exprConfinedOk env allocNode a && exprConfinedOk env allocNode b
+  | e => !mentionsFresh env allocNode e
+
 /-- Whether `allocNode`'s fresh local object is confined to `P`:
-1. `allocNode` allocates a fresh plain object or array literal (`.makeAt .absent` or `.arrLit`)
-   whose initializers do not escape another fresh object;
-2. No node stores a `.fresh allocNode` value into any object whose origin is not `.fresh allocNode`;
-3. No node passes a `.fresh allocNode` value to any `.invoke` or `.construct`;
-4. No node captures a `.fresh allocNode` value in a closure (`.makeAt (.graph ...)`), merges it,
-   throws it, or returns it. -/
+1. `allocNode` allocates a fresh plain object or array literal (`isFreshAlloc`);
+2. Every node's expression satisfies `exprConfinedOk` (exhaustive — no escape
+   through calls, writes, captures, allocations, throws, or compound forms);
+3. No `.ret` node returns a `.fresh allocNode` value. -/
 def isConfinedAlloc (P : Program) (origins : Array (Option (List SlotOrigin))) (allocNode : Nat) : Bool :=
   match P[allocNode]? with
   | some n =>
     isFreshAllocExpr n.expression && (List.range P.length).all fun l =>
       match P[l]?, origins[l]?.join with
       | some node, some env =>
-        let okExpr := match node.expression with
-          | .var _ | .readAt _ _ => true
-          | .writeAt _ target val =>
-            -- Writing a field of the confined object itself (with a non-escaping value) is fine;
-            -- storing the confined object into another object escapes it.
-            !mentionsFresh env allocNode val || (match target with
-              | .var s => originAt env s == .fresh allocNode
-              | _ => false)
-          | .setElem arr _ val =>
-            !mentionsFresh env allocNode val || (match arr with
-              | .var s => originAt env s == .fresh allocNode
-              | _ => false)
-          | .invoke f r args =>
-            !mentionsFresh env allocNode f && !mentionsFresh env allocNode r && !args.any (mentionsFresh env allocNode)
-          | .construct f args =>
-            !mentionsFresh env allocNode f && !args.any (mentionsFresh env allocNode)
-          | .makeAt (.graph _ _ _ _ caps _ _ _) _ xs =>
-            !caps.any (mentionsFresh env allocNode) && !xs.any (mentionsFresh env allocNode)
-          | .makeAt _ _ xs | .arrLit xs => !xs.any (mentionsFresh env allocNode)
-          | .throw e | .spread e => !mentionsFresh env allocNode e
-          | .merge _ a b | .makeKey a b => !mentionsFresh env allocNode a && !mentionsFresh env allocNode b
-          | _ => true
+        let okExpr := exprConfinedOk env allocNode node.expression
         let okRet := match node.continuation with
           | .ret => !mentionsFresh env allocNode node.expression
           | _ => true
@@ -291,7 +375,6 @@ def projectEntry (env : List SlotOrigin) (confined : List Nat) :
     | _ => .unsupported
   | (.cells x, δ) =>
     match originAt env x with
-    | .fresh a => if confined.contains a then .confined else .unsupported
     | .param p => .demand (.cells (p + 1), δ)
     | .path p fs => .demand (.pathCells (p + 1) fs, δ)
     | _ => .unsupported
@@ -309,7 +392,6 @@ def projectEntry (env : List SlotOrigin) (confined : List Nat) :
     | _ => .unsupported
   | (.pathCells x p, δ) =>
     match originAt env x with
-    | .fresh a => if confined.contains a && p.isEmpty then .confined else .unsupported
     | .param q => .demand (if p.isEmpty then .cells (q + 1) else .pathCells (q + 1) p, δ)
     | .path q fs => .demand (.pathCells (q + 1) (fs ++ p), δ)
     | _ => .unsupported
@@ -341,6 +423,30 @@ def prefixKeepEntries : Footprints.Region → List (Footprints.Region × Footpri
   | .inCls r _ => prefixKeepEntries r
   | _ => []
 
+/-- Exhaustive check that non-framed expression `e` does not mutate any prefix
+field key in `keys` on any non-confined object. -/
+def exprPreservesPrefix {ι : Type} [Labels ι] (G : NormalGraph ι)
+    (claim? : Option (CertificateProducer.PointClaim ι))
+    (env : List SlotOrigin) (confined : List Nat) (keys : List String) : Tm → Bool
+  | .writeAt (.str f) target val =>
+    isReadOnlyOrAlloc target && isReadOnlyOrAlloc val &&
+      (!keys.contains f || (match target with
+        | .var s => match originAt env s with
+          | .fresh a => confined.contains a
+          | _ => false
+        | _ => false))
+  | .writeAt (.sym _) target val => isReadOnlyOrAlloc target && isReadOnlyOrAlloc val
+  | .setElem a i v => isReadOnlyOrAlloc a && isReadOnlyOrAlloc i && isReadOnlyOrAlloc v
+  | .invoke f r args =>
+    match claim? with
+    | some c =>
+      match callEffectAt G c (.invoke f r args) with
+      | some Φ => Φ.all fun (_, ch) => ch == .keep
+      | none => false
+    | none => false
+  | .construct .. => false
+  | e => isReadOnlyOrAlloc e
+
 /-- Check that `P` does not mutate any prefix field of `support` on any
 non-confined object (and makes no unframed non-pure call other than framed
 callback nodes and pure intrinsics like `%ElementAt%`). -/
@@ -353,26 +459,7 @@ def checkPrefixPreserved {ι : Type} [Labels ι] (G : NormalGraph ι) (P : Progr
   else (List.range P.length).all fun l =>
     if framedNodes.contains l then true
     else match P[l]?, origins[l]?.join with
-      | some node, some env =>
-        match node.expression with
-        | .writeAt (.str f) target _ =>
-          !keys.contains f || (match target with
-            | .var s => match originAt env s with
-              | .fresh a => confined.contains a
-              | _ => false
-            | _ => false)
-        | .writeAt _ _ _ => true
-        | .invoke .. =>
-          -- A non-framed call inside the producer preserves prefix fields if its
-          -- stated/inferred effect respects `(cls values, keep)` (e.g. `%ElementAt%` is pure).
-          match claims[l]? with
-          | some c =>
-            match callEffectAt G c node.expression with
-            | some Φ => Φ.all fun (_, ch) => ch == .keep
-            | none => false
-          | none => false
-        | .construct .. => false
-        | _ => true
+      | some node, some env => exprPreservesPrefix G claims[l]? env confined keys node.expression
       | _, _ => true
 
 /-- Merge a footprint entry into a demand list, strengthening change with `min`
@@ -431,6 +518,7 @@ def CallbackDemandSpec.checkProducer {σ ι : Type} [Labels ι] [StoreView σ ι
     (r : SourceElaboration.SourceRequest σ ι) (spec : CallbackDemandSpec) : Bool :=
   let G := RequestJson.graph r.toRequest
   let origins := requestOrigins r
+  let originsOk := originsValid r.codes r.program r.start (requestInitOrigins r) origins
   let confinedOk := spec.confined.all (isConfinedAlloc r.program origins)
   let framedNodes := spec.framed.map (·.1)
   let callsOk := spec.framed.all fun (l, Ss) =>
@@ -451,7 +539,7 @@ def CallbackDemandSpec.checkProducer {σ ι : Type} [Labels ι] [StoreView σ ι
     | _, _, _ => false
   let prefixOk := spec.demands.all fun d =>
     checkPrefixPreserved G r.program r.claims origins spec.confined framedNodes d.support
-  confinedOk && callsOk && prefixOk
+  originsOk && confinedOk && callsOk && prefixOk
 
 /-! ## Precise call effect extraction (sharpening `Array.prototype.push` via `statesExtension`) -/
 
@@ -619,14 +707,14 @@ def originRegionRoot : OriginRegion → Option SlotOrigin
   | _ => none
 
 /-- Whether a write `(writeReg, writeCh)` respects a demanded support entry
-`(supReg, supCh)`:
+`(supReg, supCh)` (restricted strictly to the proved rules):
 1. `writeCh.le supCh` (change tolerance, e.g. `extend ⊑ grow`); OR
 2. `writeReg` is a fresh allocation (inside the closure or an unaliased fresh
    allocation in the caller) while `supReg` is rooted at a pre-existing
    parameter/path (`CallbackDemands.region_mem_lt_length` +
    `supportedAt_of_write_ge`); OR
-3. Disjoint keys (a named field write `k₁ ≠ k₂` vs a field/spine read); OR
-4. Disjoint location classes (value field vs array spine). -/
+3. Disjoint location classes (value fields vs array spines vs array cells;
+   class selector disjointness). -/
 def writeRespectsSupport (writeReg : OriginRegion) (writeCh : Footprints.Change)
     (supReg : OriginRegion) (supCh : Footprints.Change) : Bool :=
   if writeCh.le supCh then true
@@ -635,10 +723,6 @@ def writeRespectsSupport (writeReg : OriginRegion) (writeCh : Footprints.Change)
       match originRegionRoot supReg with
       | some o => isPreExistingOrigin o
       | none => false
-    | .rootField _ k₁, .rootField _ k₂ => k₁ != k₂
-    | .rootField _ k₁, .rootPath _ _ k₂ => k₁ != k₂
-    | .rootPath _ _ k₁, .rootField _ k₂ => k₁ != k₂
-    | .rootPath _ _ k₁, .rootPath _ _ k₂ => k₁ != k₂
     | .rootField _ k₁, .rootSpine _ _ => k₁ != arraySpineKey
     | .rootPath _ _ k₁, .rootSpine _ _ => k₁ != arraySpineKey
     | .rootSpine _ _, .rootField _ k₂ => k₂ != arraySpineKey
@@ -662,20 +746,9 @@ def originRegionToCallerDemand : OriginRegion → Option Footprints.Region
   | .rootSpine (.param p) fs => some (.spine (p + 1) fs)
   | _ => none
 
-/-- Whether an expression performs no writes to existing heap storage (only
-reads, arithmetic, conditionals, lets, or fresh allocations), so every step
-keeps `h.IsPrefix h'` (`CallbackDemands.supportedAt_of_prefix`). -/
-def isReadOnlyOrAllocExpr : Tm → Bool
-  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
-  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => isReadOnlyOrAllocExpr a
-  | .indexAt a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
-      isReadOnlyOrAllocExpr a && isReadOnlyOrAllocExpr b
-  | .ite c a b => isReadOnlyOrAllocExpr c && isReadOnlyOrAllocExpr a && isReadOnlyOrAllocExpr b
-  | .letE a b => isReadOnlyOrAllocExpr a && isReadOnlyOrAllocExpr b
-  | .makeAt .absent _ xs | .arrLit xs => xs.all isReadOnlyOrAllocExpr
-  | .makeAt (.graph _ _ _ _ caps _ _ _) _ xs =>
-      caps.all isReadOnlyOrAllocExpr && xs.all isReadOnlyOrAllocExpr
-  | _ => false
+/-- Whether an expression performs no writes to existing heap storage (using
+the proved operational predicate `CallbackDemands.isReadOnlyOrAlloc`). -/
+abbrev isReadOnlyOrAllocExpr : Tm → Bool := CallbackDemands.isReadOnlyOrAlloc
 
 private def originName : SlotOrigin → String
   | .param p => s!"param {p}"
@@ -728,6 +801,8 @@ def checkClosureAgainstDemand {σ ι : Type} [Labels ι] [StoreView σ ι]
   let initEnv : List SlotOrigin :=
     .unknown :: List.replicate q.entry.arity .unknown ++ taggedCaps
   let qOrigins := computeOrigins r.codes qProg q.entry.start initEnv
+  if !originsValid r.codes qProg q.entry.start initEnv qOrigins then
+    throw s!"callback closure code {codeIdx} failed origin fixpoint witness check"
   -- A closure-local allocation is fresh inside the closure if `isFreshAllocExpr` holds
   let isClosureFresh (a : Nat) : Bool :=
     match qProg[a]? with
@@ -782,8 +857,8 @@ def checkClosureAgainstDemand {σ ι : Type} [Labels ι] [StoreView σ ι]
         throw s!"callback executes effectful term at node {nl}, violating demanded preservation"
   return forwardedParams
 
-/-- Whether a term references any sibling in `demandedNames` (used to prevent
-first-class escape of internal functions carrying callback demands). -/
+/-- Whether a term references any sibling in `demandedNames` (conservative
+`true` on runtime-only closure/frame terms). -/
 def mentionsDemandedSibling (env : List SlotOrigin) (demandedNames : List String) : Tm → Bool
   | .var s => match originAt env s with | .sibling nm => demandedNames.contains nm | _ => false
   | .invoke f r args => mentionsDemandedSibling env demandedNames f ||
@@ -794,13 +869,15 @@ def mentionsDemandedSibling (env : List SlotOrigin) (demandedNames : List String
       mentionsDemandedSibling (.unknown :: env) demandedNames b
   | .makeAt (.graph _ _ _ _ caps _ _ _) _ xs =>
       caps.any (mentionsDemandedSibling env demandedNames) || xs.any (mentionsDemandedSibling env demandedNames)
-  | .makeAt _ _ xs | .arrLit xs => xs.any (mentionsDemandedSibling env demandedNames)
+  | .makeAt .absent _ xs | .makeAt (.view ..) _ xs | .arrLit xs => xs.any (mentionsDemandedSibling env demandedNames)
+  | .makeAt (.bound ..) _ _ => true
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => mentionsDemandedSibling env demandedNames a
   | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
       mentionsDemandedSibling env demandedNames a || mentionsDemandedSibling env demandedNames b
   | .ite c a b | .setElem c a b =>
       mentionsDemandedSibling env demandedNames c || mentionsDemandedSibling env demandedNames a ||
       mentionsDemandedSibling env demandedNames b
+  | .objAt _ (.bound ..) _ | .objAt _ (.graph ..) _ | .goto .. | .frame .. => true
   | _ => false
 
 /-- **Caller demand discharge & forwarding**: checks every call in `r.program`
@@ -816,6 +893,8 @@ def checkCallerDemands {σ ι : Type} [Labels ι] [StoreView σ ι]
   let demandedNames := activeDemands.map (·.1)
   let G := RequestJson.graph r.toRequest
   let origins := requestOrigins r
+  if !originsValid r.codes r.program r.start (requestInitOrigins r) origins then
+    throw "caller failed origin fixpoint witness check"
   let mut forwarded : List CallbackDemand := []
   for l in List.range r.program.length do
     let some node := r.program[l]? | continue

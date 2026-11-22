@@ -240,6 +240,7 @@ import Verification.Semantics.ViewFormats
 import Verification.Semantics.ViewSpines
 import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
+import Verification.Source.Claims.CallbackDemandOriginSound
 import Verification.Source.Claims.CallbackDemandSpec
 import Verification.Source.Claims.Diagnostics
 import Verification.Source.Claims.Elaboration
@@ -257,6 +258,7 @@ import Verification.Source.Claims.MemberSettle
 import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.Claims.PassProposals
 import Verification.Source.Claims.PassUnit
+import Verification.Source.Claims.PassUnitCallbackLink
 import Verification.Source.Claims.PassUnitCodes
 import Verification.Source.Claims.PassUnitCross
 import Verification.Source.Claims.PassUnitFile
