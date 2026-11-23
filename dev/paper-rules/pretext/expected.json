@@ -10,7 +10,7 @@
       "getTerminalLetterSpacing": "accepted",
       "normalizeMaxWidth": "accepted",
       "normalizePreparedLineStart": "accepted",
-      "walkPreparedLinesRaw": "refused",
+      "walkPreparedLinesRaw": "accepted",
       "countPreparedLines": "accepted",
       "countSteppedLines": "accepted",
       "staysAfterObject": "accepted",

@@ -591,7 +591,17 @@ parameters are replaced by the arguments before $\theta$, whose images
 are written in the caller's variables. The caller chooses $\theta$,
 written at the call, proves each bound at the actual arguments by the
 order of Definition~\ref{def:order}, and gives each argument its
-parameter's type.
+parameter's type. Two images need no written effect. Where every callback
+a variable types receives \code{undefined} or is omitted, no callback runs,
+and the image is the empty effect $\{\}$, within every bound: the call's
+effect is the callee's own. Inside a function with a variable $\varepsilon$
+of its own, an image may be $\varepsilon$ (a forwarding call,
+$\theta(\varepsilon')=\varepsilon$). Its bound is then proved by including
+$\varepsilon$'s bound, read at the call's arguments, in the callee's bound,
+since $\varepsilon$ is within its own bound; and the argument has the
+parameter's type when it is the outer callback, or a closure whose only
+effect on old storage is calls of it, effect $\varepsilon$, besides storage
+it allocates.
 \end{description}
 
 \noindent
