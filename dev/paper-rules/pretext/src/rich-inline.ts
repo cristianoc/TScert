@@ -1378,10 +1378,8 @@ export function materializeRichInlineLineRange(
   }
 }
 
-// contract on callers: onLine changes no typed array and shortens no array; it may change
-// any value and grow any array. Assumed, not checked outside pretext. Its type states it as
-// Modifies<{ values: "any"; spines: "grow" }, void>, which TypeScript reads as void.
-// PAPER: the client's effect is the effect variable E, bounded by the paragraph's reach.
+// PAPER: onLine's effect is the effect variable E: a caller states it as the instance, and
+// the bound requires it to keep every location the paragraph reaches and allows any other change.
 export function walkRichInlineLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: PreparedRichInline,
   maxWidth: number,
