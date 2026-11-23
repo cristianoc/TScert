@@ -433,9 +433,11 @@ array \code{sumAndTrace} allocated.
 \begin{definition}[Instances and anchoring]\label{def:effexp}
 An instantiation $\theta$ maps effect variables to effect expressions,
 and $E[\theta]$ replaces each variable by its image. An instance of a
-variable bound at a call is an effect without variables, whose regions
-are rooted at the caller's variables and read in the caller's
-environment wherever the instance is used. An effect $\Phi$ is anchored
+variable bound at a call is an effect without variables and with
+$\kw{else}:\keep$, whose regions are rooted at the caller's variables and
+read in the caller's environment wherever the instance is used. An
+instance with a wider $\kw{else}$ would change storage allocated after the
+call, which \ruleName{Anch} excludes. An effect $\Phi$ is anchored
 at a state $(\rho,h_0)$ when every region of $\Phi$ denotes the same set
 in every heap reached from $h_0$ by an admissible run; a field, the
 fields or a spine at a rigid path is anchored, by (T3). A judgment, an
