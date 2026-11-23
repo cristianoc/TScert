@@ -148,7 +148,12 @@ def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k 
     | some S => keeps S
     | none => false
   let cells := k.cells.filter fun f => keeps [(Footprints.Region.field f.slot f.field, .keep)]
-  { cells := HeapFacts.shift cells, indices := HeapKnowledge.shiftIndices idx }
+  -- A read link `y = x.f` holds while the field location of `x` at `f`
+  -- keeps its contents: its support is that location at `keep`. An alias
+  -- link reads no heap, and the ordinary output keeps it.
+  let links := k.links.filter fun l => !l.alias && keeps [(Footprints.Region.path l.cell [] l.field, .keep)]
+  { cells := HeapFacts.shift cells, indices := HeapKnowledge.shiftIndices idx,
+    links := links.map fun l => { l with cell := l.cell + 1, value := l.value + 1 } }
 
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
@@ -165,7 +170,8 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     match u.bounds.find? (fun b => aliases (slotOf u d b.callback)) with
     | some b => r.map fun out =>
       let add := kept u b (stableFirst G j.context) d k
-      { out with cells := out.cells ++ add.cells, indices := out.indices ++ add.indices }
+      { out with cells := out.cells ++ add.cells, indices := out.indices ++ add.indices,
+                 links := (out.links ++ add.links).eraseDups }
     | none => r
   | _ => r
 
