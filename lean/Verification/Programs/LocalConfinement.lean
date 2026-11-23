@@ -1390,41 +1390,52 @@ private def proposePostN (G : NormalGraph ι) (node : Node) (c : PointClaim ι)
         else ({}, !(pre.owned.isEmpty && pre.ownedArr.isEmpty && pre.ownedSpines.isEmpty))
 
 /-- Run one fixed-point pass for a chosen `allocPriv` set; returns the converged
-node table and whether any non-empty confined set escaped. -/
+node table and whether any non-empty confined set escaped. Rounds visit the
+reached nodes in label order; a node is recomputed only when its entry
+changed since its last visit (`dirty`), since its post-state, its escape and
+the merges it makes are functions of that entry and merging the same out
+again changes nothing. The escape is that of every reached node at its final
+entry (`esc`). The program and claims are read as arrays. -/
 private def runFixedPoint (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (allocPriv : List Nat) : Array NodeConf × Bool := Id.run do
-  let n := P.length
+  let nodes := P.toArray
+  let cls := claims.toArray
+  let n := nodes.size
+  let widthAt := fun (l : Nat) => ((cls[l]?).map (·.context.length)).getD 0
   let mut reached := Array.replicate n false
+  let mut dirty := Array.replicate n false
+  let mut esc := Array.replicate n false
   let mut tbl : Array NodeConf := Array.replicate n {}
   if start < n then
     reached := reached.set! start true
+    dirty := dirty.set! start true
   let mut changed := true
-  let mut escaped := false
   let mut iter := 0
   let maxIter := n * 4 + 16
   while changed && iter < maxIter do
     changed := false
-    escaped := false
     iter := iter + 1
     for l in List.range n do
-      if reached[l]! then
-        let some node := P[l]? | continue
-        let c : PointClaim ι := (claims[l]?).getD ⟨[], []⟩
+      if reached[l]! && dirty[l]! then
+        dirty := dirty.set! l false
+        let some node := nodes[l]? | continue
+        let c : PointClaim ι := (cls[l]?).getD ⟨[], []⟩
         let pre := tbl.getD l {}
-        let (postN, esc) := proposePostN G node c pre (allocPriv.contains l)
-        if esc then escaped := true
+        let (postN, e) := proposePostN G node c pre (allocPriv.contains l)
+        esc := esc.set! l e
         for (t, pushed) in normalExits node do
           if t.label < n then
-            let dstW := ((claims[t.label]?).map (·.context.length)).getD 0
-            let out := mapOut postN c.context.length pushed t.mapping dstW
+            let out := mapOut postN c.context.length pushed t.mapping (widthAt t.label)
             if !reached[t.label]! then
               reached := reached.set! t.label true
               tbl := tbl.set! t.label out
+              dirty := dirty.set! t.label true
               changed := true
             else
               let merged := mergeConf (tbl.getD t.label {}) out
               if merged != tbl.getD t.label {} then
                 tbl := tbl.set! t.label merged
+                dirty := dirty.set! t.label true
                 changed := true
         if let some t := node.handler then
           if t.label < n then
@@ -1432,12 +1443,15 @@ private def runFixedPoint (G : NormalGraph ι) (P : Program) (claims : List (Poi
             if !reached[t.label]! then
               reached := reached.set! t.label true
               tbl := tbl.set! t.label {}
+              dirty := dirty.set! t.label true
               changed := true
             else
               let merged := mergeConf (tbl.getD t.label {}) emptyH
               if merged != tbl.getD t.label {} then
                 tbl := tbl.set! t.label merged
+                dirty := dirty.set! t.label true
                 changed := true
+  let escaped := (List.range n).any fun l => reached[l]! && esc[l]!
   return (tbl, escaped)
 
 /-- **Untrusted confinement proposer**: finds locally allocated objects/arrays
@@ -1445,14 +1459,16 @@ that never escape and marks unreachable writing calls as framed. If the graph
 has no unreachable writing call over a confined object, returns an empty table
 (`framed = []`), keeping zero overhead for ordinary functions. -/
 def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (start : Nat) : Table := Id.run do
-  let n := P.length
+  let nodes := P.toArray
+  let cls := claims.toArray
+  let n := nodes.size
   let hasCall := P.any fun node => match node.expression with
     | .invoke .. | .construct .. => true
     | _ => false
   if !hasCall then return ⟨#[], [], []⟩
   let mut allocs : List Nat := []
   for l in List.range n do
-    let some nd := P[l]? | continue
+    let some nd := nodes[l]? | continue
     let e := nd.expression
     if Purity.inspectTerm e then
       if isFreshObjectTerm e || (e matches .arrLit _) ||
@@ -1481,9 +1497,9 @@ def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (
       tbl := tFinal
   let mut framed : List Nat := []
   for l in List.range n do
-    let some node := P[l]? | continue
+    let some node := nodes[l]? | continue
     let nc := tbl.getD l {}
-    let width := ((claims[l]?).map (·.context.length)).getD 0
+    let width := ((cls[l]?).map (·.context.length)).getD 0
     if !(nc.owned.isEmpty && nc.ownedArr.isEmpty) &&
         !Purity.inspectTerm node.expression &&
         freeSlotsNotIn width 0 nc.holders node.expression then
