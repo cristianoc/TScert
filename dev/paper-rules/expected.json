@@ -151,5 +151,19 @@
       "walkVisitingAssumed": "accepted",
       "walkVisitingWeak": "refused"
     }
+  },
+  "assume-lib.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "paperAssume": "accepted",
+      "first": "accepted",
+      "size": "accepted"
+    }
+  },
+  "assume-importer.ts": {
+    "ordinary": "verified",
+    "units": {
+      "twice": "accepted"
+    }
   }
 }

@@ -65,9 +65,10 @@ structure QCall where
   components : List ParamEff
 
 /-- An unsafe assume `paperAssume(fact, "#n");`: the issue it names and its
-line. The prototype checks the statement as `if (!(fact)) throw "#n";`
-(`assumedAst`), so past it the pass knows `fact` as on the branch where it
-holds; the issue tracks the verifier's extension. -/
+line. The prototype checks the statement of the checked file as
+`if (!(fact)) throw "#n";` (`assumedFile`), so past it the pass knows `fact`
+as on the branch where it holds; the issue tracks either a verifier
+extension or a proof the source does not yet give. -/
 structure Assume where
   issue : String
   line : Nat
@@ -443,6 +444,14 @@ partial def assumedAst : Lean.Json → Lean.Json
   | .arr xs => .arr (xs.map assumedAst)
   | j => j
 
+/-- The parsed file with the unsafe assumes of the checked file read as
+`assumedAst` reads them, and its imported modules (`modules`) as written:
+their interfaces were established over the source as written, and an
+importer's check compares each module with its interface. -/
+def assumedFile : Lean.Json → Lean.Json
+  | .obj kvs => .obj (kvs.map fun k v => if k == "modules" then v else assumedAst v)
+  | j => assumedAst j
+
 end PaperRules
 end Verification.HeapExpressionRules
 
@@ -505,7 +514,7 @@ def main (args : List String) : IO UInt32 := do
       | .error e => IO.eprintln s!"parsed file: {e}"; return 2
       | .ok parsed =>
         let assumed := "fragment-assumed.json"
-        IO.FS.writeFile assumed (HeapExpressionRules.PaperRules.assumedAst parsed).compress
+        IO.FS.writeFile assumed (HeapExpressionRules.PaperRules.assumedFile parsed).compress
         checkFile units assumed key fuel interfaces
   | _ =>
     IO.eprintln "usage: paper-rules-prototype <side.json> <ast.json> <interfaces.json> <file-key> <depth>"
