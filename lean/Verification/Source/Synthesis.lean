@@ -6345,6 +6345,46 @@ the pass does not handle. -/
 def undetermined (m : String) : String :=
   if m.startsWith refusalMark then m else s!"not handled: {m} (type undetermined)"
 
+/-- Project a completed `Walk` onto `fc` without repeating `walkUnit`. -/
+def retypeFromWalk (T' : EquationStore.State) (w : Walk) (fc : SourceClaims.Function Tree)
+    (parts : String := "xec") :
+    EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
+      Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
+      Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
+      Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String) :=
+  let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
+    (span, r.mapError undetermined)
+  let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
+    w.entries.toList.map fun (pos, vars) => (pos, vars.map fun (n, A) => (n, .ok A))
+  let contracts : SourceClaims.Contracts Tree := w.contracts.map fun (k, D) => (k, .ok D)
+  let claimed := fc.exprs.foldl (fun (acc : List (Span × SourceClaims.Candidate Tree)) (sp, c) =>
+    if (acc.lookup sp).isSome then acc else (sp, c) :: acc) []
+  let lo := ((parts.splitOn ":")[1]?.bind String.toNat?).getD 0
+  let hi := ((parts.splitOn ":")[2]?.bind String.toNat?).getD 0
+  let exprs := if parts.contains 'x' then
+      (if hi > 0 then claimed.filter (fun (sp, _) => lo ≤ sp.1 && sp.1 < hi) ++
+        exprs.filter (fun (sp, _) => !(lo ≤ sp.1 && sp.1 < hi)) else exprs)
+    else claimed
+  let envs := if parts.contains 'e' then envs else fc.envs
+  let contracts := if parts.contains 'c' then contracts else fc.contracts
+  let keep := parts.contains 'k'
+  let readPaths := w.readPaths.toList
+  let read (root : String) (p : List PropKey) : Bool :=
+    readPaths.any fun (r, q) => r == root && p.isPrefixOf q
+  let currents := w.currents.toList.map fun (at_, cs) =>
+    (at_, (cs.map fun (root, ps) => (root, ps.filter fun (p, _) => read root p)).filter (!·.2.isEmpty))
+  (T', ({ fc with
+    exprs, envs, contracts, ctorBinders := w.ctorBinders
+    entryCurrent := if keep then fc.entryCurrent else currents
+    exprCurrent := if keep then fc.exprCurrent else []
+    arrowClaims := w.arrowClaims
+    points := fc.points.map fun (id, row) =>
+      (id, { row with exprs := exprs, envs := envs,
+                      entryCurrent := if keep then row.entryCurrent else currents,
+                      exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
+    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {},
+    w.contractReads)
+
 /-- A unit's claims with what the walk computes in place of what a producer
 infers: every expression's type, every statement entry's bindings and every
 `let`'s storage contract, at each execution point alike; no asserted field
@@ -6364,44 +6404,6 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
   -- A generic closure at the scheme its claim names.
   let schemes := fc.exprs.filterMap fun (sp, c) => c.toOption.map (sp, ·)
   let (w, T') ← walkUnit T f module generics force scope (schemes := schemes) (initBinders := initBinders)
-  let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
-    (span, r.mapError undetermined)
-  let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
-    w.entries.toList.map fun (pos, vars) => (pos, vars.map fun (n, A) => (n, .ok A))
-  let contracts : SourceClaims.Contracts Tree := w.contracts.map fun (k, D) => (k, .ok D)
-  -- Debugging: which parts are replaced (`x` expressions, `e` entries, `c`
-  -- contracts), the claims' kept for the others.
-  let claimed := fc.exprs.foldl (fun (acc : List (Span × SourceClaims.Candidate Tree)) (sp, c) =>
-    if (acc.lookup sp).isSome then acc else (sp, c) :: acc) []
-  let lo := ((parts.splitOn ":")[1]?.bind String.toNat?).getD 0
-  let hi := ((parts.splitOn ":")[2]?.bind String.toNat?).getD 0
-  let exprs := if parts.contains 'x' then
-      (if hi > 0 then claimed.filter (fun (sp, _) => lo ≤ sp.1 && sp.1 < hi) ++
-        exprs.filter (fun (sp, _) => !(lo ≤ sp.1 && sp.1 < hi)) else exprs)
-    else claimed
-  let envs := if parts.contains 'e' then envs else fc.envs
-  let contracts := if parts.contains 'c' then contracts else fc.contracts
-  -- The entry facts are the given ones (class (d) of the single pass's
-  -- draft, section 8): the unit's own, kept per point.
-  -- Debugging: `k` keeps the claims' asserted field contents (`current`).
-  let keep := parts.contains 'k'
-  -- Each entry's narrowed paths that some read of the walk reads narrowed,
-  -- or of which it reads a longer path of the same root so.
-  let readPaths := w.readPaths.toList
-  let read (root : String) (p : List PropKey) : Bool :=
-    readPaths.any fun (r, q) => r == root && p.isPrefixOf q
-  let currents := w.currents.toList.map fun (at_, cs) =>
-    (at_, (cs.map fun (root, ps) => (root, ps.filter fun (p, _) => read root p)).filter (!·.2.isEmpty))
-  return (T', ({ fc with
-    exprs, envs, contracts, ctorBinders := w.ctorBinders
-    entryCurrent := if keep then fc.entryCurrent else currents
-    exprCurrent := if keep then fc.exprCurrent else []
-    arrowClaims := w.arrowClaims
-    points := fc.points.map fun (id, row) =>
-      (id, { row with exprs := exprs, envs := envs,
-                      entryCurrent := if keep then row.entryCurrent else currents,
-                      exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
-    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {},
-    w.contractReads)
+  return retypeFromWalk T' w fc parts
 
 end Verification.SourceElaboration.Synthesis
