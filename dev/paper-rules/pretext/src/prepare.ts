@@ -49,7 +49,7 @@ import {
   type SegmentMetrics,
   zeros,
 } from './measurement.js'
-import type { PreparedText } from './layout.js'
+import type { ParagraphSegmentData, PreparedLineBreakData } from './line-break.js'   // PAPER: annotation
 
 // Text and spaces take letter spacing after each grapheme; a ZWSP takes none.
 function countRenderedSpacingGraphemes(text: string, kind: number, graphemeTable: GraphemeTable): number {
@@ -275,6 +275,13 @@ export type ParagraphLists = {
   breakableFitAdvances: (number[] | null)[]
 }
 
+// PAPER: annotation
+// What measureAnalysis() returns: a text's handle, or, for a rich-inline item, its paragraph's
+// lists with the item's segments added, whose segmentFlags has room for the segments after
+// them, beside the item's own other lists. Its fields are a handle's (PreparedLineData), whose
+// invariant, one flags byte per segment, this type does not state.
+export type MeasuredSegments = PreparedLineBreakData & { items?: ParagraphSegmentData }
+
 // The functions from here to measureAnalysis() are its loop's. They are given what they read
 // and not nested in it: nested, every call makes an object for the variables they read and
 // one for each of them, in every engine. Where that object is as large as a handle,
@@ -370,7 +377,7 @@ export function measureAnalysis(
   overflowBreaks: boolean,
   // The paragraph's lists for a rich-inline item, null for a text.
   paragraph: ParagraphLists | null,
-): PreparedText {
+): MeasuredSegments {   // PAPER: annotation
   const { normalized, texts, starts, flags } = analysis
   // The measured text and where it starts in the analysis's: what is asked of the whole text
   // is asked of it, and places in it count from its start.
@@ -675,7 +682,7 @@ export function measureAnalysis(
   if (engineProfile.hangsIdeographicSpace && own.includes('\u3000')) {
     lineEndTrims = addIdeographicSpaceHangs(lineEndTrims, analysis, fontMeasurement, letterSpacing, discretionaryHyphenWidth, from, to)
   }
-  const prepared: PreparedText = {
+  const prepared: MeasuredSegments = {   // PAPER: annotation
     widths,
     segmentFlags,
     simpleLineWalkFastPath: simpleKinds && !analysis.hasUnbroken,

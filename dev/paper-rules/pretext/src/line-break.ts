@@ -314,7 +314,6 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
   const cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
   if (!prepared.simpleLineWalkFastPath) {
     if (normalizePreparedLineStart(prepared, cursor)) walkPreparedComplexLines<E>(prepared, cursor, maxWidth, onLine, stats)   // PAPER: forwards E
-    paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     return stats.lineCount
   }
   // A fast-path handle is one chunk of text, spaces and ZWSPs, so each line steps
@@ -339,7 +338,6 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
     onLine?.(width, startSegmentIndex, startGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
     const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
     paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
-    paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   }
 }
 
@@ -352,9 +350,7 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
 export function countPreparedLines(prepared: PreparedLineData, maxWidth: number): number {
   // The loop takes no overflow trims, which the stepper takes for a line's first segment.
   if (!prepared.simpleLineWalkFastPath || prepared.overflowLineEndTrims !== null) {
-    const count = prepared.simpleLineCountFastPath ? countSteppedLines(prepared, maxWidth) : walkPreparedLinesRaw(prepared, maxWidth)   // PAPER: the result through a local
-    paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
-    return count
+    return prepared.simpleLineCountFastPath ? countSteppedLines(prepared, maxWidth) : walkPreparedLinesRaw(prepared, maxWidth)
   }
   const { widths, segmentFlags, breakableFitAdvances, breakableLineStartExtras, lineStartExtras, lineEndTrims } = prepared
   const fitLimit = Math.max(0, maxWidth) + getEngineProfile().lineFitEpsilon
@@ -433,10 +429,7 @@ function countSteppedLines(prepared: PreparedLineData, maxWidth: number): number
       cursor.segmentIndex = startSegmentIndex
       cursor.graphemeIndex = startGraphemeIndex
       walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)
-      const segmentAfterWalk = cursor.segmentIndex   // PAPER: a local copy for the assume
-      paperAssume(Number.isSafeInteger(segmentAfterWalk) && 0 <= segmentAfterWalk, "#362")   // PAPER: unsafe assume until #362
     }
-    paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     count++
   }
   return count
@@ -1154,8 +1147,8 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
     onLine?.(lineWidth, lineStartSegmentIndex, lineStartGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
     const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
     paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
+    paperAssume(widths.length === segmentCount, "#364")   // PAPER: unsafe assume until #364
     // A single-line caller owns normalization of the following line.
-    paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (singleLine || !normalizePreparedLineStart(prepared, cursor)) break
   }
   return lastLineWidth
@@ -1262,9 +1255,5 @@ export function stepPreparedLineGeometryFromStart(
   maxWidth: number,
 ): number | null {
   if (prepared.simpleLineWalkFastPath) return stepPreparedSimpleLineGeometry(prepared, cursor, maxWidth)
-  const width = walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)   // PAPER: the result through a local
-  const segmentAfterWalk = cursor.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAfterWalk) && 0 <= segmentAfterWalk, "#362")   // PAPER: unsafe assume until #362
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
-  return width
+  return walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)
 }

@@ -75,7 +75,7 @@
     }
   },
   "src/prepare.ts": {
-    "ordinary": "unverified",
+    "ordinary": "verified",
     "units": {
       "countRenderedSpacingGraphemes": "accepted",
       "addInternalLetterSpacing": "accepted",
@@ -91,7 +91,7 @@
       "getTailKerning": "accepted",
       "getJoinedNarrowing": "accepted",
       "getTextSegmentWidth": "accepted",
-      "measureAnalysis": "refused",
+      "measureAnalysis": "accepted",
       "addKanaKerning": "accepted",
       "addIdeographicSpaceHangs": "accepted",
       "init": "accepted"

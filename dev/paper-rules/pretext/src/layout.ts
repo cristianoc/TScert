@@ -302,16 +302,13 @@ function stepNextLine(
   lineEnd.graphemeIndex = start.graphemeIndex
   const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
   if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
-  const started = normalizePreparedLineStart(internal, lineEnd)   // PAPER: the result through a local
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
-  if (!started) return null
+  if (!normalizePreparedLineStart(internal, lineEnd)) return null
 
-  lineStart.segmentIndex = lineEnd.segmentIndex
-  lineStart.graphemeIndex = lineEnd.graphemeIndex
-  paperAssume(internal.segmentFlags.length === internal.widths.length, "#356")   // PAPER: unsafe assume until #356
-  const segmentAtLineStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < internal.widths.length, "#362")   // PAPER: unsafe assume until #362
+  const lineStartSegmentIndex = lineEnd.segmentIndex   // PAPER: the line start through locals, written after the step
+  const lineStartGraphemeIndex = lineEnd.graphemeIndex   // PAPER: the line start through locals, written after the step
   const width = stepPreparedLineGeometryFromStart(internal, lineEnd, maxWidth)
+  lineStart.segmentIndex = lineStartSegmentIndex   // PAPER: the line start through locals, written after the step
+  lineStart.graphemeIndex = lineStartGraphemeIndex   // PAPER: the line start through locals, written after the step
   paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return width === null ? null : Math.max(0, width)
 }

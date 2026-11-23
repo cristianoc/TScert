@@ -215,6 +215,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     const analysis = analyzeText(only.text, profile, whiteSpace, wordBreak, language)
     const segments: string[] = []
     const measured = measureAnalysis(analysis, 0, analysis.flags.length, only.font, segments, readLetterSpacing(only.letterSpacing, profile), profile, language, true, null)
+    paperAssume(measured.segmentFlags.length === measured.widths.length, "#356")   // PAPER: unsafe assume until #356
     const data: PreparedSegments = { ...measured, segments }
     const itemSegments: number[] = []
     for (let index = 0; index <= items.length; index++) itemSegments.push(index <= onlyIndex ? 0 : data.segmentFlags.length)
@@ -367,12 +368,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, null, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null)
         const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
         paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
-        if (normalizePreparedLineStart(own, start)) {   // PAPER: a block for the assume
-          paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
-          const segmentAtLineStart = start.segmentIndex   // PAPER: a local copy for the assume
-          paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < own.widths.length, "#362")   // PAPER: unsafe assume until #362
-          width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
-        }
+        if (normalizePreparedLineStart(own, start)) width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
         width += item.extraWidth ?? 0
         // The chip's text as a line of it paints it (buildLineTextFromRange).
         for (let i = 0; i < ownAnalysis.texts.length; i++) {
@@ -1250,9 +1246,6 @@ export function layoutNextRichInlineLineRange(
   if (!normalizePreparedLineStart(data, lineEnd)) return null
   const startSegmentIndex = lineEnd.segmentIndex
   const startGraphemeIndex = lineEnd.graphemeIndex
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
-  const segmentAtLineStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < data.widths.length, "#362")   // PAPER: unsafe assume until #362
   const width = stepPreparedLineGeometryFromStart(data, lineEnd, safeWidth)   // PAPER: the handle through a local
   if (width === null) return null
   return flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
