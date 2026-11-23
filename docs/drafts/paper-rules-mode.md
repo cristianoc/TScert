@@ -68,18 +68,31 @@ unchanged. The rules of the paper that TScert already proves (Frame,
 Seq-Eff, Call, Fun) are not in it; the mode uses their existing theorems.
 
 **2. The idealised model.**
-`Verification/Paper/EffectLanguage/Model.lean` gives the paper's language a
-meaning in the indexed model of *Tolerant frames*
-(`Verification/Paper/TolerantFrames`): effects with `else` as relations
-between states, the regions of the paper including declared reach and
-`old`, instances read in the caller's environment, and bounds. It proves:
+`Verification/Paper/EffectLanguage/Model.lean` gives the paper's effects a
+meaning over the heaps, regions and changes of
+`Verification.Semantics.Footprints`, the ones the verifier's `Post` reads. A
+state is a heap; an effect is a list of atoms, their meet; an atom is an
+effect of the paper with its `else` and the environment its regions are read
+in, so an instance is read in its caller's environment, or `{old: any}` at a
+call. Its transitions are heap extensions; it reads no admissibility. It
+proves:
 
 ```lean
 theorem model_rules : PaperRules Model.semantics
 ```
 
 A rule that is false fails to prove here. A rule that proves here holds in
-the model, not in TScert's calculus.
+the model, not in TScert's calculus. The model fixes two premises the paper
+leaves implicit:
+
+- **An anchored instance keeps every location allocated since the call.**
+  An instance whose `else` is wider than `keep` changes new storage, the
+  cursor of `walk` included, so Anch needs the instance's `else` at `keep`.
+- **Inst's substitution reads every position at the caller.** The
+  existing `Post.renameM` widens a position with no argument slot to `all`
+  at the entry's change. That is sound for an effect whose `else` is
+  `keep`, and unsound for one whose `else` is wider than the entry's change,
+  which the widened entry would narrow.
 
 **3. The mode.** The verifier, under a flag, reads the paper's annotations
 and applies its rules:
@@ -139,9 +152,9 @@ maximal length), so it is a refusal of a safe program, not a negative case.
   representation of a closed effect.
 - **Inclusion.** Every inclusion the mode decides is `Support.respects`,
   with its theorem `respect_sound`.
-- **The model.** Part 2 reuses the indexed model's states and admissible
-  transitions from `Verification/Paper/TolerantFrames`, as `ModelRules.lean`
-  does for the note's rules.
+- **The model.** Part 2 reuses `Footprints.Region`, `Region.mem`,
+  `Change.Holds`, `Change.min_holds` and `Region.renameM`, the definitions
+  the verifier's frame reads.
 - **Trust.** The removed read-only frame accepted a unit under an
   obligation on code outside its component. This mode's verdict rests on
   the rules, named in its theorem's premise and proved in the model. It is
@@ -152,7 +165,7 @@ maximal length), so it is a refusal of a safe program, not a negative case.
 Not measured. The files the steps change:
 
 - step 1: one new module;
-- step 2: one new module, over the existing paper model;
+- step 2: one new module, over `Verification.Semantics.Footprints`;
 - step 3: `tools/type-term.mts` (`statedResult`), `tools/fragment.mts` and
   `tools/declaration-types.mts` with Lean's decoder (the wire),
   `EffectSignatures.Effect`, `PromiseCalls` (the frame at a call and
