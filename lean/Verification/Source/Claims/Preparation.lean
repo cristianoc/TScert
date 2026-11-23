@@ -172,14 +172,26 @@ partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
 signature by its parts, so that the instances a unit's calls name conjoin
 as one callable (`Scheme.moduleInstances`). -/
 def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : GenericType → Json
-  | .function recv ps rest res =>
+  | .function recv ps rest res effect guard =>
     let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
-    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj ([("a", toJson "function"),
-      ("this", (recv.map c).getD topClaim), ("params", Json.arr (ps.map c).toArray)] ++
-      (match rest with
-        | some e => [("rest", c e)]
-        | none => []) ++
-      [("result", c res), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
+    let sig (r : Json) (eff : CallEffects.Effect) : Json :=
+      Json.mkObj ([("a", toJson "function"),
+        ("this", (recv.map c).getD topClaim), ("params", Json.arr (ps.map c).toArray)] ++
+        (match rest with
+          | some e => [("rest", c e)]
+          | none => []) ++
+        [("result", r), ("construct", toJson "unknown"), ("array", toJson "unknown")] ++
+        (if eff == .ordinary then [] else [("effect", toJson eff)]))
+    let plain := sig (c res) effect
+    let atom := match guard with
+      | some (promise, guardTy) =>
+        let promisedEff : CallEffects.Effect :=
+          { effect with
+            exits := { effect.exits with normal := { effect.exits.normal with ensures := [] } },
+            promise := some promise }
+        plain.setObjVal! "and" (Json.arr #[sig (c guardTy) promisedEff])
+      | none => plain
+    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[atom])]
   | .construct ss fs =>
     let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
     let statics := fs.map fun (k, r, U) => Json.mkObj ([("name", toJson k), ("type", c U)] ++
@@ -253,7 +265,8 @@ def equationFront (ast claims : Json) (fileKey : String)
       | none => graphClaim U)) ast
   let ast := ast.setObjVal! "declarations" emptyDeclarations
   let imported := L.values
-  let instantiate (g : GenericValue) (θ : List (String × Json)) (T : EquationStore.State) :
+  let instantiate (g : GenericValue) (closed : Option (Footprints.Closed × Bool))
+      (θ : List (String × Json)) (T : EquationStore.State) :
       Except String ((Json × List (String × Option Json)) × EquationStore.State) := do
     let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)
     let (T, θ) ← g.packed.foldlM (fun (T, θ) n => do
@@ -261,13 +274,20 @@ def equationFront (ast claims : Json) (fileKey : String)
       let (T, P) ← SourceTypes.instancePack T X n
       return (T, θ ++ [(EquationLowering.packedName n, P)])) (T, θ)
     let t ← g.type
+    let t := match closed with
+      | some (fp, ot) => t.withClosed fp ot
+      | none => t
     let bounds := g.bounds.map fun (n, B) =>
       (n, B.map fun B => graphClaim (normUnion (B.flatMap (rebind T θ))))
     return ((genericClaim T θ t, bounds), T)
   let generics := L.generics.map fun g =>
+    let initial := if !g.ownFunction then none
+      else (d.functions.find? fun c => c.name == g.name && c.namePos == g.pos).map fun c => (c.footprint, c.onThrow)
     ({ name := g.name, pos := g.pos, binders := g.binders,
        widenBinders := g.widenBinders,
-       resolution := g.resolution, instantiate := instantiate g } :
+       resolution := g.resolution,
+       instantiate := instantiate g initial,
+       withFootprint := if g.ownFunction then some (fun fp ot => instantiate g (some (fp, ot))) else none } :
       Instantiable)
   let units := L.units.filterMap fun (path, bs) => do
     let i ← (path.dropPrefix? "/functions/").bind (·.toString.toNat?)

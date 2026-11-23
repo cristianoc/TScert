@@ -66,21 +66,29 @@ exit of a schema whose every postcondition is among those a run establishes
 (`codeEstablished`) holds at an admissible transition within the class bound
 of its frame (`Footprint.classBound_sound`) at which the run established
 them. -/
-theorem Exits.exitPost_of_established {x : Exits ExitSchema} {c : Completion} {fresh : Bool}
+theorem Exits.exitPost_of_frame {x : Exits ExitSchema} {c : Completion} {fresh : Bool}
     {facts : List HeapKnowledge.IndexFact} {r : Tm} {args : List Tm} {v : Tm} {s s' : TolerantFrames.IndexedHeap}
-    (hadm : TolerantFrames.Admissible s s') (hb : (x.get c).frame.classBound.Holds s.h s'.h)
+    (hadm : TolerantFrames.Admissible s s') (hframe : Footprints.Post (x.get c).frame (callEnv r args) s.h s'.h)
     (hm : (x.get c).ensures.all (· ∈ codeEstablished fresh facts) = true)
     (hf : fresh = true → Footprints.FreshAt s.h.length v)
     (he : ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h) :
     x.exitPost c r args s s' v := by
   have hm' : ∀ F ∈ (x.get c).ensures, F ∈ codeEstablished fresh facts := by
     simpa only [List.all_eq_true, decide_eq_true_eq] using hm
-  have hframe : Footprints.Post (x.get c).frame (callEnv r args) s.h s'.h := Footprints.Footprint.classBound_sound hb
   cases c <;>
   · refine ⟨⟨hadm, hframe⟩, ?_⟩
     simp only [Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate, List.mem_map]
     rintro _ ⟨F, hF, rfl⟩
     exact codeEstablished_holds hf he F (hm' F hF)
+
+theorem Exits.exitPost_of_established {x : Exits ExitSchema} {c : Completion} {fresh : Bool}
+    {facts : List HeapKnowledge.IndexFact} {r : Tm} {args : List Tm} {v : Tm} {s s' : TolerantFrames.IndexedHeap}
+    (hadm : TolerantFrames.Admissible s s') (hb : (x.get c).frame.classBound.Holds s.h s'.h)
+    (hm : (x.get c).ensures.all (· ∈ codeEstablished fresh facts) = true)
+    (hf : fresh = true → Footprints.FreshAt s.h.length v)
+    (he : ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h) :
+    x.exitPost c r args s s' v :=
+  Exits.exitPost_of_frame hadm (Footprints.Footprint.classBound_sound hb) hm hf he
 
 /-- **The closed bounds of a signature's two exits**: the class bound of
 each exit's frame (`Footprint.classBound`), within which a run meets the
@@ -103,6 +111,23 @@ returning within the normal exit's bound with its fresh result and the facts
 `facts`, and throwing within the exceptional exit's bound, is safe at the
 signature's exits (`Exits.exitPost_of_established` at every admissible state
 it reaches, `SafePostExcV.weaken_reached`). -/
+theorem exportsEstablished_frame_sound {e : Effect} {facts : List HeapKnowledge.IndexFact}
+    (hx : exportsEstablished e facts = true) {Ξ T : Fam} {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j}
+    {heap : Heap} {t : Tm} (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hs : HeapObservations.SafePostExc Ξ T
+      (fun h' v => Footprints.Post e.schema.normal.frame (callEnv r args) heap h' ∧
+        (e.schema.normal.freshResult = true → Footprints.FreshAt heap.length v) ∧
+        ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, heap⟩ (ensuresEnv v r args) h')
+      (fun h' => Footprints.Post e.schema.exceptional.frame (callEnv r args) heap h') j U heap t) :
+    HeapObservations.SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap)
+      (e.schema.exitPostW .exceptional r args U heap) j U heap t := by
+  simp only [exportsEstablished, Bool.and_eq_true] at hx
+  obtain ⟨hn, hexc⟩ := hx
+  refine SafePostExcV.weaken_reached hu hh ?_ ?_ (HeapObservations.SafePostExcV.iff_lift.mpr hs) <;>
+    rintro s s' v rfl hW rfl hadm hp <;> cases eq_of_heq hW <;> rw [Exits.exitPostW_iff]
+  · exact Exits.exitPost_of_frame hadm hp.1 hn hp.2.1 hp.2.2
+  · exact Exits.exitPost_of_frame (fresh := false) (facts := []) hadm hp hexc (by simp) (by simp)
+
 theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexFact}
     (hx : exportsEstablished e facts = true) {Ξ T : Fam} {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j}
     {heap : Heap} {t : Tm} (hu : WorldAdm U) (hh : HeapOk j U heap)
@@ -111,13 +136,11 @@ theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexF
         ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, heap⟩ (ensuresEnv v r args) h')
       (fun h' => (exitBounds e).exceptional.Holds heap h') j U heap t) :
     HeapObservations.SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap)
-      (e.schema.exitPostW .exceptional r args U heap) j U heap t := by
-  simp only [exportsEstablished, Bool.and_eq_true] at hx
-  obtain ⟨hn, hexc⟩ := hx
-  refine SafePostExcV.weaken_reached hu hh ?_ ?_ (HeapObservations.SafePostExcV.iff_lift.mpr hs) <;>
-    rintro s s' v rfl hW rfl hadm hp <;> cases eq_of_heq hW <;> rw [Exits.exitPostW_iff]
-  · exact Exits.exitPost_of_established hadm hp.1 hn hp.2.1 hp.2.2
-  · exact Exits.exitPost_of_established (fresh := false) (facts := []) hadm hp hexc (by simp) (by simp)
+      (e.schema.exitPostW .exceptional r args U heap) j U heap t :=
+  exportsEstablished_frame_sound hx hu hh
+    (HeapObservations.SafePostExc.weaken
+      (fun _ _ hp => ⟨Footprints.Footprint.classBound_sound hp.1, hp.2.1, hp.2.2⟩)
+      (fun _ hp => Footprints.Footprint.classBound_sound hp) hs)
 
 /-- **Whether a signature's frames read the heap at each location alone**
 (`Region.atLocation`), on both exits. -/

@@ -24,7 +24,7 @@ open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs
 /-- An entry of a module's interface: the module's location and the
 function's name, its footprint, throw flag and result footprint, and its
 unit's identity on the wire (`Established`'s element). -/
-abbrev Entry := (String × String) × (Footprints.Closed × Bool × Footprints.Closed) × String
+abbrev Entry := (String × String) × QualifiedEffect × String
 
 /-- **What an outside slot holds**: an import read at an entry of its
 module's interface (`established`); an import read at its declared
@@ -220,13 +220,15 @@ def EstablishedStep (budget : PositiveCertificates.SearchBudget) (force : List S
     (check : FilePlans → List Nat → List String × Except String (List String))
     (needs : List ModuleNeed) (incoming : Established) (e : Entry) : Prop :=
   ∃ m ∈ needs, e.1.1 = m.module.location ∧ e.1.2 ∈ m.names ∧
-  ∃ (fm₀ : FilePlans) (forced : StandIns) (imported : List (String × Footprints.Closed × Bool × Footprints.Closed))
+  ∃ (fm₀ : FilePlans) (forced : StandIns) (imported : List (String × QualifiedEffect))
     (depends : List (String × List String)) (reads : List FragmentRead) (tables : List (String × RowTable)),
     fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported depends
       true true none true = .ok fm₀ ∧
     ∃ ok : List String, e.2.2 ∈ ok ∧
-      (∃ c ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.d.functions, c.name = e.1.2 ∧
-        (c.footprint, c.onThrow, c.resultFootprint) = e.2.1) ∧
+      (∃ u ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.units,
+        ∃ c ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.d.functions,
+          u.2.2 = none ∧ u.1.name = e.1.2 ∧ c.name = e.1.2 ∧ c.namePos = u.1.namePos ∧
+          publishedEffect u.1 c = e.2.1) ∧
       ∀ u ∈ ok, ∃ l ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.leaders,
         moduleUnitId m.module.location ((stepPlans prepare m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
         ∃ lines deps, check (stepPlans prepare m.module.location fm₀ reads incoming tables)
@@ -268,7 +270,7 @@ theorem step_units_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
-    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
       depends true true none true = .ok fm₀)
     {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}

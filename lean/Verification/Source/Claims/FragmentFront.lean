@@ -268,7 +268,7 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
     | none => match module.find? (·.1 == n) with
       | some v => match runCompiler T [] (moduleValueType v) with
         | .ok (A, r) => match PositiveRules.expand (SourceTypes.graph r.types) A with
-          | [.arrs [a] _] => a.effect.schema.normal.facts
+          | [.arrs L _] => (L.find? (·.effect.promise.isNone)).map (·.effect.schema.normal.facts) |>.getD []
           | _ => []
         | .error _ => []
       | none => []
@@ -509,7 +509,10 @@ def Front.withStandIns (fr : Front) (sis : List StandIn) : Front :=
     | none => c }
   let ordinary := fr.units.filterMap fun (f, tps, c) => if tps.isEmpty && c.isNone then some f else none
   let slots := ordinarySlots d ordinary (sis.map (·.name))
-  { fr with d, moduleFunctions := fr.moduleFunctions.map fun v => ((slots.find? (·.1 == v.1)).getD v) }
+  let generics := fr.generics.map fun g => match g.withFootprint, sis.find? (·.name == g.name) with
+    | some update, some s => { g with instantiate := update s.footprint s.onThrow }
+    | _, _ => g
+  { fr with d, generics, moduleFunctions := fr.moduleFunctions.map fun v => ((slots.find? (·.1 == v.1)).getD v) }
 
 /-- The claims document with the functions the stand-ins name at their
 footprints, as `fragmentClaims` states a stand-in's. -/
@@ -543,7 +546,7 @@ def Front.withNeverImports (fr : Front) : Front := Id.run do
       match PositiveRules.expand (SourceTypes.graph T') A with
       | [.arrs [a] []] =>
         if a.effect.promise.isNone && (PositiveRules.expand (SourceTypes.graph T') a.result).isEmpty then
-          match importedArrow T' A ⟨.keep, .keep, .keep⟩ false .top with
+          match importedArrow T' A (QualifiedEffect.ofClosed ⟨.keep, .keep, .keep⟩ false .top) with
           | .ok J =>
             T := T'
             out := out ++ [(v.1, v.2.1, .ok (.written J))]
@@ -557,7 +560,8 @@ def Front.withNeverImports (fr : Front) : Front := Id.run do
 type and the ordinary effect: a postcondition or a guard's promise, which an
 importer reads only at an entry its module establishes (`ordinaryImport`). -/
 def Front.statesMore (fr : Front) (n : String) : Bool :=
-  fr.units.any fun (f, _, c) => c.isNone && f.name == n && (!f.ensures.isEmpty || f.guard.isSome)
+  fr.units.any fun (f, _, c) => c.isNone && f.name == n &&
+    (!f.ensures.isEmpty || f.guard.isSome || f.stated.any fun s => !s.regions.isEmpty || s.fresh)
 
 /-- Whether the front's claims state a function of that name at more than
 the ordinary effect. -/
@@ -579,7 +583,7 @@ those `known` names taken as given. With
 the ordinary effect. -/
 def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
-    (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
+    (imported : List (String × QualifiedEffect) := [])
     (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
     (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
     (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
@@ -587,7 +591,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
   -- establish.
-  let given := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
+  let given := standIns.imports.map fun s => (s.name, QualifiedEffect.ofClosed s.footprint s.onThrow s.resultFootprint)
   let qualified := given ++ imported.filter fun q => !given.any (·.1 == q.1)
   let depends := depends.filter fun d => !given.any (·.1 == d.1)
   -- (`front`: the claims and front `fileFront` gave with no qualified read
@@ -689,10 +693,10 @@ structure ModuleVerdict where
   lines : List String
   verdict : Except String (List String)
 
-abbrev Established := List ((String × String) × (Footprints.Closed × Bool × Footprints.Closed) × String)
+abbrev Established := List ((String × String) × QualifiedEffect × String)
 
 def readsOf (rs : List FragmentRead) (est : Established) :
-    List ((String × Footprints.Closed × Bool × Footprints.Closed) × (String × List String)) :=
+    List ((String × QualifiedEffect) × (String × List String)) :=
   rs.filterMap fun r => (est.lookup (r.location, r.name)).map fun (p, u) => ((r.localName, p), (r.localName, [u]))
 
 /-- Complete module candidates and their resolved imports, independent of
@@ -789,8 +793,8 @@ def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (establishe
     (tables : List (String × RowTable)) : FilePlans :=
   let atEntry := reads.filter fun r => match established.lookup (r.location, r.name),
       f.fr.imported.find? (·.1 == r.localName), f.fr.moduleFunctions.find? (·.1 == r.localName) with
-    | some ((fp, ot, ret), _), some (_, _, U), some (_, _, .ok (.written J)) =>
-      match importedArrow f.fr.d.types U fp ot ret with
+    | some (q, _), some (_, _, U), some (_, _, .ok (.written J)) =>
+      match importedArrow f.fr.d.types U q with
       | .ok J' => J' == J
       | .error _ => false
     | _, _, _ => false
@@ -861,7 +865,7 @@ leader whose identity is in `ok`, at the footprint the module's claim of the
 function states, where that is more than the ordinary effect; else the note
 saying why it has none. -/
 def establishEntry (location : String) (fm : FilePlans) (ok : List String) (n : String) :
-    Except String ((String × String) × (Footprints.Closed × Bool × Footprints.Closed) × String) :=
+    Except String ((String × String) × QualifiedEffect × String) :=
   match (List.range fm.fr.units.length).find? fun i => match fm.fr.units[i]? with
       | some (f, _, none) => f.name == n
       | _ => false with
@@ -870,10 +874,10 @@ def establishEntry (location : String) (fm : FilePlans) (ok : List String) (n : 
     | some l, some f => match fm.fr.d.functions.find? fun c => c.name == n && c.namePos == f.1.namePos with
       | some c =>
         let u := moduleUnitId location (fm.fr.unitId l)
-        let p := (c.footprint, c.onThrow, c.resultFootprint)
-        if p == (.top, false, .top) && !fm.fr.statesMore n then .error s!"{location}#{n}: the ordinary effect"
+        let p := publishedEffect f.1 c
+        if p == QualifiedEffect.ofClosed .top false .top && !fm.fr.statesMore n then .error s!"{location}#{n}: the ordinary effect"
         else if !ok.contains u then
-          .error s!"{location}#{n}: proposed {(toJson p.1).compress} onThrow {p.2.1}, not established"
+          .error s!"{location}#{n}: proposed {(toJson p.1.closed).compress} onThrow {p.1.onThrow}, not established"
         else .ok ((location, n), p, u)
       | none => .error ""
     | _, _ => .error ""
@@ -1008,13 +1012,23 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
         q.entrySeparation.facts.all fun a => cellLevel a.slot && a.partners.all fun pt => cellLevel pt.1
     let ensuresOk := fun (q : SourceRequest _ _) =>
       (if receiverless then receiverlessEnsures == some q.ensures else q.ensures == eff.schema.normal.facts)
+    let regionalOk := fun (q : SourceRequest _ _) => match q.regional with
+      | some (Φ, qregs) =>
+        let regs := eff.schema.normal.frame.filterMap EffectJson.spineRegionOf
+        let normalFrame := Φ.fp ++ regs.map Footprints.ArgumentSpineRegion.entry
+        !eff.schema.normal.freshResult &&
+        (if receiverless then regs.mapM Footprints.ArgumentSpineRegion.pastReceiver == some qregs else regs == qregs) &&
+        eff.schema.normal.frame == normalFrame &&
+        (eff.schema.exceptional.frame == Parity.topEffect ||
+          (q.stated.any (·.onThrow) && eff.schema.exceptional.frame == normalFrame))
+      | none => false
     let frameOk := fun (q : SourceRequest _ _) =>
       q.qualification.isNone &&
       q.inputs == (if receiverless then p.arguments.take arity ++ captures else codeFrame arity p captures none) &&
       sepOk q && ensuresOk q &&
       (if receiverless then q.entryIndices.all past.contains else q.entryIndices == facts) &&
-      decide (ProgramTyping.RunBound.ofRequest q.footprint q.onThrow q.fresh =
-        (ProgramTyping.exitBounds eff, eff.schema.normal.freshResult))
+      (decide (ProgramTyping.RunBound.ofRequest q.footprint q.onThrow q.fresh =
+        (ProgramTyping.exitBounds eff, eff.schema.normal.freshResult)) || regionalOk q)
     if !members.any fun q => frameOk q && q.toRequest.goal == goal then
       if members.any frameOk then return .outside "its goal"
       return .outside "no member realizes a signature row (its frame, entry facts or effect)"

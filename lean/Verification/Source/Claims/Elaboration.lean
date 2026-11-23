@@ -30,13 +30,32 @@ def importedSignatures (T : EquationStore.State) (U : List Tree) :
     return (a, some { param := p.param, asserts, type := graphClaim g.result })
   | _ => throw "a certified import needs one fixed call signature"
 
+/-- The certified effect an established module interface entry carries:
+the function's stated/closed exits (closed footprint, throw flag, fresh flag
+and any stated argument regions) together with its returned function's closed
+footprint. -/
+abbrev QualifiedEffect := EffectJson.StatedEffect × Footprints.Closed
+
+def QualifiedEffect.ofClosed (fp : Footprints.Closed) (onThrow : Bool)
+    (ret : Footprints.Closed := .top) : QualifiedEffect :=
+  (⟨fp, onThrow, false, []⟩, ret)
+
+/-- The entry effect a module function publishes, matching `ordinarySlots`. -/
+def publishedEffect (f : Fragment.Fn) (c : Function Tree) : QualifiedEffect :=
+  let stated : EffectJson.StatedEffect := match f.stated with
+    | some s => if !s.regions.isEmpty then ⟨s.closed, s.onThrow, false, s.regions⟩
+      else ⟨c.footprint, c.onThrow, s.fresh, []⟩
+    | none => ⟨c.footprint, c.onThrow, false, []⟩
+  (stated, c.resultFootprint)
+
 /-- An import a certified unit stands for, read as the unit's module reads
 the unit (`moduleArrow`): its declared signature, `U`'s one call signature,
-with the unit's footprint and on-throw flag, its returned function's
-signature with the footprint the unit proposes for it, and its extension
-discarding further actuals, which the unit's code does. -/
-def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footprints.Closed) (onThrow : Bool)
-    (result : Footprints.Closed) : Except String Json := do
+with the unit's certified exits (footprint, throw flag, fresh flag and any
+stated argument regions), its returned function's signature with the
+footprint the unit proposes for it, and its extension discarding further
+actuals, which the unit's code does. -/
+def importedArrow (T : EquationStore.State) (U : List Tree) (q : QualifiedEffect) : Except String Json := do
+  let (s, result) := q
   let (a, guard) ← importedSignatures T U
   if a.effect.promise.isSome then throw "a certified import's plain signature states no promise"
   -- (a receiver the declaration states is its `this` parameter, as the
@@ -46,7 +65,7 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
   let params : List Fragment.Param := receiver ++ a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
   let ret ← resultWithFootprint T (graphClaim a.result) result
   moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.schema.normal.facts⟩
-    footprint onThrow
+    s.closed s.onThrow s.fresh s.regions
 
 /-- Whether a declaration's module is one with a body, whose functions a
 module check certifies: a source file, not a declaration file. -/
@@ -326,7 +345,7 @@ other at its declared type. With `lenient` (mode 8), a qualified import
 whose declared type `importedArrow` does not read is at its declared type. -/
 def fileFront (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) (lenient : Bool := false) :
+    (qualified : List (String × QualifiedEffect) := []) (lenient : Bool := false) :
     Except String Front := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
@@ -380,7 +399,7 @@ def fileFront (ast claims : Json) (fileKey : String)
         if bodyImports.contains (name, span) then (ordinaryImport d.types U).map .written
         else .ok (.written (graphClaim U))
       (name, span, match qualified.lookup name with
-      | some (footprint, onThrow, result) => match importedArrow d.types U footprint onThrow result with
+      | some q => match importedArrow d.types U q with
         | .ok J => .ok (.written J)
         | .error e => if lenient then declared else .error e
       | none => declared)) ++
@@ -457,11 +476,11 @@ front it gave with none (`lenient`, mode 8): each imported value the reads
 name at its certified unit's footprint and on-throw flag
 (`importedArrow`), else at its declared type. -/
 def Front.withQualified (fr : Front)
-    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)) : Front :=
+    (qualified : List (String × QualifiedEffect)) : Front :=
   { fr with
     moduleFunctions := fr.moduleFunctions.map fun v =>
       match fr.imported.find? (fun (n, span, _) => n == v.1 && span == v.2.1), qualified.lookup v.1 with
-      | some (_, _, U), some (footprint, onThrow, result) => match importedArrow fr.d.types U footprint onThrow result with
+      | some (_, _, U), some q => match importedArrow fr.d.types U q with
         | .ok J => (v.1, v.2.1, .ok (.written J))
         | .error _ => v
       | _, _ => v
