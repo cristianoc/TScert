@@ -28,7 +28,7 @@ theorem passUnitVerdict_safe
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.Candidate)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =

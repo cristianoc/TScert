@@ -76,7 +76,7 @@ its context is the inputs. -/
 def StartEntered {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (w : Walk ι)
     (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop :=
   let written := stated c.start
-  ∃ (supplied : List HeapKnowledge.IndexAtom)
+  ∃ (supplied : List HeapKnowledge.Candidate)
     (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
     (fresh : Nat) (reentered : Bool),
     SinglePass.entryRefusal G c.inputs c.claims c.start c.goal written supplied givenImplies givenArgs givenInputs

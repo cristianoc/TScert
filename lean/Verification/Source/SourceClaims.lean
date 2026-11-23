@@ -64,6 +64,9 @@ structure PointData (ι : Type) where
   /-- At a statement entry, the spine separations the producer proposes,
   each guarded (ARITHMETIC.md, "Spine separation"). -/
   entrySpinesApart : List (Nat × List SpinesApartClaim) := []
+  /-- At a statement entry, the read links proposed: `(cell, value, field)`,
+  stating that `value` holds the value read from `cell.field`. -/
+  entryLinks : List (Nat × List (String × String × String)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -83,6 +86,8 @@ def PointData.overlay (base row : PointData ι) : PointData ι :=
     entryApart := row.entryApart ++ base.entryApart.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1)
     entrySpinesApart := row.entrySpinesApart ++ base.entrySpinesApart.filter (fun p =>
+      !(row.envs.map Prod.fst).contains p.1)
+    entryLinks := row.entryLinks ++ base.entryLinks.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1) }
 
 /-- A lifetime storage contract is keyed by its initializer and binding name.
@@ -108,6 +113,7 @@ structure Function (ι : Type) where
   entryEvery : List (Nat × List EveryClaim) := []
   entryApart : List (Nat × List (String × String)) := []
   entrySpinesApart : List (Nat × List SpinesApartClaim) := []
+  entryLinks : List (Nat × List (String × String × String)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The declaring unit's parameter rows for each internal constructor scheme. -/
@@ -141,14 +147,15 @@ def Function.atPoint (f : Function ι) (point : String) : Function ι :=
     entryFacts := row.entryFacts
     entryEvery := row.entryEvery
     entryApart := row.entryApart
-    entrySpinesApart := row.entrySpinesApart }
+    entrySpinesApart := row.entrySpinesApart
+    entryLinks := row.entryLinks }
 
 /-- A signature overlay retains other bodies' claims, while replacing its own
 sites in every execution point. -/
 def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
   let points := (f.points.map Prod.fst ++ row.points.map Prod.fst).eraseDups.map fun id =>
     (id, ((f.points.lookup id).getD {}).overlay ((row.points.lookup id).getD {}))
-  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts f.entryEvery f.entryApart f.entrySpinesApart).overlay
+  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts f.entryEvery f.entryApart f.entrySpinesApart f.entryLinks).overlay
     row.toPointData
   { f with
     exprs := active.exprs
@@ -160,6 +167,7 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
     entryEvery := active.entryEvery
     entryApart := active.entryApart
     entrySpinesApart := active.entrySpinesApart
+    entryLinks := active.entryLinks
     points := points
     contracts := row.contracts ++ f.contracts.filter (fun p => !(row.contracts.map Prod.fst).contains p.1) }
 

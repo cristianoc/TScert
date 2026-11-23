@@ -39,14 +39,19 @@ def implicationIn (why : String) : Option (Nat × Option (Nat × Nat)) :=
 its implications by its tested and narrowed slots (all of them where the
 refusal names none). -/
 inductive LeftOut where
-  | facts (fs : List IndexAtom)
+  | facts (fs : List HeapKnowledge.Candidate)
   | implication (which : Option (Nat × Nat))
 
 /-- The head's given state without the facts `drop`. -/
 def weakenedAt {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
-    (drop : List IndexAtom) : WalkEnv ι G images :=
+    (drop : List HeapKnowledge.Candidate) : WalkEnv ι G images :=
   match env.given[l]? with
-  | some (some req) => { env with given := env.given.set! l (some { req with indices := req.indices.filter (!drop.contains ·) }) }
+  | some (some req) =>
+    let dropIdx := HeapKnowledge.Candidate.indices drop
+    let dropLinks := HeapKnowledge.Candidate.links drop
+    { env with given := env.given.set! l (some { req with
+        indices := req.indices.filter (!dropIdx.contains ·)
+        links := req.links.filter (!dropLinks.contains ·) }) }
   | _ => env
 
 /-- One exit (`exitStep`), an edge into a head lacking facts `droppable`
@@ -54,7 +59,7 @@ admits taken again with them left out of the head's state, or refused for
 an implication the head states taken again without the head's
 implications (with `implied`), at most `k` times: the walk's environment, the facts left out by head, and the exits'
 record; or where it stopped. -/
-def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool) (l : Nat)
+def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool) (l : Nat)
     (en : Entered ι) (sd : StepDone ι G) (ysAll : List (PromiseCalls.Yield ι)) (outAll : Thunk Knowledge)
     (exi : Exit × Nat) :
     Nat → WalkEnv ι G images × List (Nat × LeftOut) × ExitsDone ι G →
@@ -87,7 +92,7 @@ def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppabl
       | _, _ => .error stop
 
 /-- A node's exits (`visitExits`), each diagnosed (`exitDiagnosed`). -/
-def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool)
+def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool)
     (env : WalkEnv ι G images) (dropped : List (Nat × LeftOut)) (σ : WalkState ι G)
     (l : Nat) (en : Entered ι) (sd : StepDone ι G) :
     Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × ExitsDone ι G) :=
@@ -114,7 +119,7 @@ def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
       (env, dropped, acc0)
 
 /-- One node's visit (`visitBody`, `visit`), its exits diagnosed. -/
-def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool)
+def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool)
     (env : WalkEnv ι G images) (dropped : List (Nat × LeftOut)) (σ : WalkState ι G) (l : Nat) :
     Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × WalkState ι G) :=
   match visitEntry G images env σ l with
@@ -134,7 +139,7 @@ def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
 
 /-- The walk on fuel (`drive`), each visit diagnosed: the facts left out by
 head, up to where it ends or stops. -/
-def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool) :
+def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool) :
     Nat → WalkEnv ι G images → List (Nat × LeftOut) → WalkState ι G → List (Nat × LeftOut)
   | 0, _, dropped, _ => dropped
   | fuel + 1, env, dropped, σ => match σ.queue with
@@ -147,11 +152,11 @@ def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
 setup, then the visits each diagnosed (`driveDiagnosed`); the given facts
 `droppable` admits that some edge into their head lacks, by head, each left
 out where found. -/
-def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool)
+def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool)
     (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
-    (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
+    (candidates : List (Nat × List HeapKnowledge.Candidate)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (bound : Option RunBound)

@@ -58,6 +58,8 @@ inductive Fact where
   /-- Unless a guard's path of its binding holds its tag, the linear fact
   (`IndexFact.guarded`, a type invariant's `x.f === null || …`). -/
   | guarded (guards : List (String × List String × HeapKnowledge.GuardTag)) (l : Lin)
+  /-- A read link: `value` holds the value read from `cell.field`. -/
+  | readLink (cell value field : String)
   deriving BEq, Inhabited
 
 def Fact.names : Fact → List String
@@ -68,13 +70,14 @@ def Fact.names : Fact → List String
   | .every a _ stop body => a :: stop.1 :: body.flatMap fun (ts, _) => ts.filterMap fun
     | (.term k, _) => some k.1
     | _ => none
+  | .readLink c v _ => [c, v]
 
 /-- The claim the producer would write for the fact. -/
 def Fact.claim : Fact → Option SourceClaims.ClauseClaim
   | .lin l => some (.linear [] (l.terms.map fun ((n, p, k), c) => (n, p, k, c)) l.bound)
   | .int n => some (.linear [] [(n, [], .value, 0)] 0)
   | .guarded gs l => some (.linear gs (l.terms.map fun ((n, p, k), c) => (n, p, k, c)) l.bound)
-  | .apart .. | .every .. => none
+  | .apart .. | .every .. | .readLink .. => none
 
 /-- The quantified fact the producer would write for the fact. -/
 def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
@@ -93,9 +96,15 @@ def Fact.spinesClaim : Fact → Option SourceClaims.SpinesApartClaim
   | .apart gs a pa b pb => some (gs, (a, pa), (b, pb))
   | _ => none
 
+/-- The read link the producer would write for the fact. -/
+def Fact.linkClaim : Fact → Option (String × String × String)
+  | .readLink c v f => some (c, v, f)
+  | _ => none
+
 /-- The fact as `@invariant` text. -/
 partial def Fact.text : Fact → String
   | .int n => s!"safeInteger({n})"
+  | .readLink c v f => s!"{v} === {c}.{f}"
   | .apart gs a pa b pb =>
     let tag := fun (t : HeapKnowledge.GuardTag) => match t with
       | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
@@ -463,6 +472,10 @@ structure Rules where
   adversarial fact a loop head it reaches proposes and the pass's edge check
   refuses. -/
   falseEnsures : Bool := false
+  /-- Forced (`--force-proposals head-links`): each carried read link also
+  stated with the object as its own field's value (`c === c.f`), the
+  adversarial proposal the pass's edge check refuses. -/
+  falseLinks : Bool := false
 
 /-- The typed arrays' constructors: a value one constructs has a view
 length (`HeapKnowledge.Term.Kind.view`). -/
@@ -496,6 +509,10 @@ guards' paths read: each is a proposal the pass checks at the head on
 every edge. -/
 partial def Fact.keptAcross (es : List Expr) : Fact → Bool
   | .int _ => true
+  | .readLink c _ f => !es.any fun
+    | .write _ (.str g) o _ => g == f && match pathOf o with | some (r, []) => r == c | _ => true
+    | .objectAssign .. => true
+    | _ => false
   -- A separation of spines: kept unless a field its paths read is written
   -- (`linear_facts.ml:skept`, a path's identity changed only by a write).
   | .apart _ _ pa _ pb => !es.any fun
@@ -738,6 +755,8 @@ def Fact.restate (n root : String) (path : List String) : Fact → Option Fact
     let gs' := gs.map fun (g, p, t) => if g == root && path.isPrefixOf p then (n, p.drop path.length, t) else (g, p, t)
     let f' := Fact.guarded gs' { l with terms := addTerms [] (l.terms.map fun (t, c) => (move t, c)) }
     if f' == f then none else some f'
+  | .readLink c v f =>
+    if path.isEmpty && v == root && c != n then some (.readLink c n f) else none
   | _ => none
 
 /-- Whether the facts entail a linear fact (`linear_facts.ml:entails`, with
@@ -1196,12 +1215,15 @@ def headFacts (rules : Rules) (ctx : Ctx) (cond : Expr) (loop : List Stmt) (upda
   let falseSeparations := if !rules.falseSeparations then [] else carried.filterMap fun
     | .apart _ a pa _ _ => some (Fact.apart [] a pa a pa)
     | _ => none
+  let falseLinks := if !rules.falseLinks then [] else carried.filterMap fun
+    | .readLink c _ f => some (Fact.readLink c c f)
+    | _ => none
   -- (a fact once, whatever the order of its terms)
   let same := fun (a b : Fact) => match a, b with
     | .lin l, .lin l' => l.bound == l'.bound && l.terms.length == l'.terms.length && l.terms.all l'.terms.contains
     | _, _ => a == b
   (carried ++ eliminated ++ counterFacts ++ joined ++ paired ++ called ++ falseCarried ++ falseSeparations ++ falseEvery ++
-    falseCalled ++ falseEliminated).foldl (fun acc f => if acc.any (same f) then acc else acc ++ [f]) []
+    falseCalled ++ falseEliminated ++ falseLinks).foldl (fun acc f => if acc.any (same f) then acc else acc ++ [f]) []
 
 /-- The bindings statements declare at their own level, which leave scope
 after them. -/
@@ -1239,6 +1261,10 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
   -- fact of `o`'s paths)
   if let some (root, p) := pathOf init then
     if root != x then
+      -- (a single-field read `x = root.f`: read link `x ← root.f`)
+      match p with
+      | [f] => ctx := ctx.add [Fact.readLink root x f]
+      | _ => pure ()
       -- (of an alias, the facts of the object's paths and lengths:
       -- its own value is the equality's, `equalTo`)
       let restated := (ctx.filterMap (Fact.restate x root p)).filter fun
@@ -1337,7 +1363,9 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
       | .object _ props _, some (root, p) =>
         if t.names.contains root then pure ctx else
         pure (props.foldl (init := ctx) fun ctx (f, pt, d) => match pt, d with
-          | .name n _, none => ctx.add (ctx.filterMap (Fact.restate n root (p ++ [f])))
+          | .name n _, none =>
+            let links := if p.isEmpty then [Fact.readLink root n f] else []
+            ctx.add (links ++ ctx.filterMap (Fact.restate n root (p ++ [f])))
           | _, _ => ctx)
       | _, _ => pure ctx
     | .ret .. | .throw .. | .brk .. | .cont .. => pure ctx

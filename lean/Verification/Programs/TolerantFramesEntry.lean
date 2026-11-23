@@ -25,11 +25,11 @@ open ProgramTyping PositiveGraphs
 assertion with the request's entry index facts and separation, then the
 supplied facts. -/
 def startGiven (written : Option HeapKnowledge.Knowledge) (entryIndices : List HeapKnowledge.IndexAtom)
-    (entrySeparation : HeapSeparation.Separation) (supplied : List HeapKnowledge.IndexAtom) : HeapKnowledge.Knowledge :=
+    (entrySeparation : HeapSeparation.Separation) (supplied : List HeapKnowledge.Candidate) : HeapKnowledge.Knowledge :=
   let w := written.getD {}
   let w : HeapKnowledge.Knowledge :=
     { w with indices := w.indices ++ entryIndices, separation := HeapSeparation.union w.separation entrySeparation }
-  { w with indices := w.indices ++ supplied }
+  HeapKnowledge.withCandidates w supplied
 
 /-! ## What an accepted entry check states -/
 
@@ -50,7 +50,7 @@ given implication, the promised input's slot at each slot its given state
 names after it, each input's entry value at its own slot, and the entry
 facts' entailment of the written and supplied facts. -/
 theorem entryRefusal_ok {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : List (CertificateProducer.PointClaim ι)} {start : Nat}
-    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.IndexAtom}
+    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.Candidate}
     {givenImplies : List (PromiseCalls.Implication ι)} {givenArgs : List Nat} {givenInputs : List (Nat × Nat)}
     {entryIndices : List HeapKnowledge.IndexAtom} {entrySeparation : HeapSeparation.Separation}
     (h : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs
@@ -58,7 +58,7 @@ theorem entryRefusal_ok {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : L
     (∃ c, claims[start]? = some c ∧ c.context = inputs) ∧ (∀ sl, goal.slot = some sl → sl < inputs.length) ∧
       givenImplies = [] ∧ (∀ i ∈ givenArgs, goal.slot = some i) ∧ (∀ p ∈ givenInputs, p.1 = p.2) ∧
       ControlFlow.entryKnows G inputs entrySeparation entryIndices
-        { written.getD {} with indices := (written.getD {}).indices ++ supplied } = true := by
+        (HeapKnowledge.withCandidates (written.getD {}) supplied) = true := by
   unfold SinglePass.entryRefusal at h
   split at h
   · cases h
@@ -110,15 +110,16 @@ theorem union_holds {S T : HeapSeparation.Separation} {ρ : Env} (hS : HeapSepar
 entry check accepted it: its written and supplied facts by the entry facts'
 entailment, the entry facts and separation as the request states them. -/
 theorem startGiven_holds {G : NormalGraph ι} {inputs : List (Ty ι)} {written : Option HeapKnowledge.Knowledge}
-    {supplied entryIndices : List HeapKnowledge.IndexAtom} {entrySeparation : HeapSeparation.Separation}
+    {supplied : List HeapKnowledge.Candidate} {entryIndices : List HeapKnowledge.IndexAtom}
+    {entrySeparation : HeapSeparation.Separation}
     (hk : ControlFlow.entryKnows G inputs entrySeparation entryIndices
-      { written.getD {} with indices := (written.getD {}).indices ++ supplied } = true)
+      (HeapKnowledge.withCandidates (written.getD {}) supplied) = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G inputs ρ n W)
     (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, h⟩ entryIndices ρ h) :
     HeapKnowledge.Holds (startGiven written entryIndices entrySeparation supplied) ⟨ρ, h⟩ ρ h := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := ControlFlow.entryKnows_sound hk he hs hi
   refine ⟨h1, h2, h3, union_holds h4 hs, h5, fun a ha => ?_⟩
-  simp only [startGiven, List.append_assoc, List.mem_append] at ha
+  simp only [startGiven, HeapKnowledge.withCandidates, List.append_assoc, List.mem_append] at ha
   rcases ha with ha | ha | ha
   · exact h6 a (List.mem_append_left _ ha)
   · exact hi a ha
@@ -233,7 +234,7 @@ given invariant over the start's names `0, …, |inputs| - 1`, holds at the
 start environment `ρ`, each start name holding its entry value `ρ q`; its
 store is well-formed and each slot named by itself. -/
 theorem entry_stateHolds {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : List (CertificateProducer.PointClaim ι)} {start : Nat}
-    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.IndexAtom}
+    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.Candidate}
     {givenImplies : List (PromiseCalls.Implication ι)} {givenArgs : List Nat} {givenInputs : List (Nat × Nat)}
     {entryIndices : List HeapKnowledge.IndexAtom} {entrySeparation : HeapSeparation.Separation}
     (hacc : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs

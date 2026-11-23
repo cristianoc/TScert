@@ -2034,8 +2034,8 @@ numbered `index` out of `previous`, the evidence of node `source`, into it at
 (`HeapKnowledge.indicesCheckWith`). An edge out of a context no environment
 meets establishes every candidate. -/
 @[nospecialize] def unestablished [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (source : Node)
-    (index : Nat) (target : Target) (k : HeapKnowledge.Knowledge) (cs : List HeapKnowledge.IndexAtom) :
-    List HeapKnowledge.IndexAtom :=
+    (index : Nat) (target : Target) (k : HeapKnowledge.Knowledge) (cs : List HeapKnowledge.Candidate) :
+    List HeapKnowledge.Candidate :=
   let Γ := edgeContextOf G previous source.continuation index
   let unreachable := match source.continuation with
     | .tagBind tag _ _ => ControlFlow.branchUnreachable G Γ (.tag tag (index == 0))
@@ -2045,13 +2045,16 @@ meets establishes every candidate. -/
   let facts := edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context)
     (ControlFlow.outFacts G previous) source.continuation index
   let a := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ k target.mapping facts)
-  let M := Partitions.cls (LinkClasses.closure a.links)
+  let cls := LinkClasses.closure a.links
+  let M := Partitions.cls cls
   let tags := HeapKnowledge.guardTags a
   let B := HeapKnowledge.bridgeOf a.links a.indices k.indices
   let m := target.mapping
-  cs.filter fun t => !(a.indices.any (fun s => HeapKnowledge.indexFollows M m s t) ||
-    HeapKnowledge.linearFollows M m a.indices B t || HeapKnowledge.guardFollows M m a.links tags a.indices t ||
-    HeapKnowledge.spineFollows M m a.links a.indices t || HeapKnowledge.guardBodyFollows M m a.indices t)
+  cs.filter fun
+    | .index t => !(a.indices.any (fun s => HeapKnowledge.indexFollows M m s t) ||
+      HeapKnowledge.linearFollows M m a.indices B t || HeapKnowledge.guardFollows M m a.links tags a.indices t ||
+      HeapKnowledge.spineFollows M m a.links a.indices t || HeapKnowledge.guardBodyFollows M m a.indices t)
+    | .link g => !HeapLinks.checkWith (LinkClasses.repIn cls) a.links [g] m
 
 /-- A table by label of the first entry `xs` gives each label below `n`, as
 `List.lookup` finds it. -/
@@ -2096,7 +2099,7 @@ independent consumer. The search's result, and the candidates it left out. -/
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (goal : ControlFlow.Goal ι := .plain []) (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) :
+    (goal : ControlFlow.Goal ι := .plain []) (candidates : List (Nat × List HeapKnowledge.Candidate) := []) :
     ProduceM G (Except (Failure ι) (ControlFlow.Certificate ι) × List LeftOut) := do
   if P.length != claims.length then throw .claimCount
   -- The known derivations by key, read by every node's search.
@@ -2126,16 +2129,16 @@ independent consumer. The search's result, and the candidates it left out. -/
   -- unchanged take their earlier production (`latest`). A handler's entry
   -- keeps all its candidates, which the edges of throws into it are checked
   -- against.
-  let mut kept : Array (List HeapKnowledge.IndexAtom) := (byLabel P.length candidates).map (·.getD [])
+  let mut kept : Array (List HeapKnowledge.Candidate) := (byLabel P.length candidates).map (·.getD [])
   let mut leftOut : List LeftOut := []
   if let some c := claimed[start]? then
     let here := kept.getD start []
     let assumed := (stating.getD start none).getD {}
     let out := here.filter fun a =>
-      !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) assumed { indices := [a] } none
+      !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) assumed (HeapKnowledge.withCandidates {} [a]) none
     if !out.isEmpty then
       kept := kept.set! start (here.filter (!out.contains ·))
-      leftOut := out.map fun a => ⟨start, start, a⟩
+      leftOut := (HeapKnowledge.Candidate.indices out).map fun a => ⟨start, start, a⟩
   let count := kept.foldl (fun n cs => n + cs.length) 0
   -- Each node's latest production, with the knowledge, implications and
   -- argument slots it was produced from: a later round producing the node
@@ -2211,7 +2214,10 @@ independent consumer. The search's result, and the candidates it left out. -/
           let stated := (stating.getD l none).getD {}
           let stated := match kept.getD l [] with
             | [] => stated
-            | here => { stated with indices := (here ++ stated.indices).eraseDups }
+            | here =>
+              { stated with
+                indices := (HeapKnowledge.Candidate.indices here ++ stated.indices).eraseDups
+                links := (HeapKnowledge.Candidate.links here ++ stated.links).eraseDups }
           let required := { stated with elems := stated.elems ++ (elemSeeded.getD l none).getD [] }
           let mut k := required
           let mut implies : List (PromiseCalls.Implication ι) := (seeded.getD l none).getD []
@@ -2394,6 +2400,7 @@ independent consumer. The search's result, and the candidates it left out. -/
     -- The candidates some produced edge into their entry does not establish.
     let final := result.getD lastTable
     let mut removed : List LeftOut := []
+    let mut droppedAny := false
     for l in cuts do
       if l == start || handlerTargets.contains l then continue
       let here := kept.getD l []
@@ -2401,16 +2408,20 @@ independent consumer. The search's result, and the candidates it left out. -/
       let stated := (stating.getD l none).getD {}
       let k := match final.getD l none with
         | some e => e.knowledge
-        | none => { stated with indices := (here ++ stated.indices).eraseDups }
-      let mut out : List HeapKnowledge.IndexAtom := []
+        | none =>
+          { stated with
+            indices := (HeapKnowledge.Candidate.indices here ++ stated.indices).eraseDups
+            links := (HeapKnowledge.Candidate.links here ++ stated.links).eraseDups }
+      let mut out : List HeapKnowledge.Candidate := []
       for (pred, index, target) in incoming.getD l [] do
         let some previous := final.getD pred none | continue
         let some source := nodes[pred]? | continue
         for a in unestablished G previous source index target k (here.filter (!out.contains ·)) do
           out := out ++ [a]
-          removed := removed ++ [⟨l, pred, a⟩]
+          droppedAny := true
+          if let .index x := a then removed := removed ++ [⟨l, pred, x⟩]
       if !out.isEmpty then kept := kept.set! l (here.filter (!out.contains ·))
-    if removed.isEmpty then break
+    if !droppedAny then break
     leftOut := leftOut ++ removed
   let leftCount := leftOut.length
   modify fun (s : Answered G) => { s with
@@ -2457,7 +2468,7 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (aliases : List (ι × ι) := []) (answers : Answered G := {})
     (recheck : Option ((i : InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none)
     (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := [])
-    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) (unchecked : Bool := false) :
+    (candidates : List (Nat × List HeapKnowledge.Candidate) := []) (unchecked : Bool := false) :
     Except (Failure ι) (ControlFlow.Certificate ι) × Answered G × List LeftOut :=
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]

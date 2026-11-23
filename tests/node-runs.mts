@@ -3355,4 +3355,11 @@ for (const [file, call] of [
     "invalid-destructuring-assignment-dictionary: the pattern reads a key the dictionary lacks");
   assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
     "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
+  assert.equal(runExample(ofKind("loop-head-read-links", ["positive"]),
+    "JSON.stringify([sumVia({ xs: [1, 2, 3] }), sumDestructured({ xs: [1, 2, 3] }), sumViaGrow({ xs: [1, 2, 3] }, []), sumViaAlias({ xs: [1, 2, 3] }), sumViaLengthField({ length: [1, 2, 3] }), sumDestructuredLengthField({ length: [1, 2, 3] })])"),
+    "[6,6,6,6,6,6]", "loop-head-read-links: direct copy, destructuring, grow call, alias, and a field named length all sum the array");
+  assert.equal(runExample(negative("invalid-loop-head-read-link-write"), "String(sumViaWrites({ xs: [1] }))"), "NaN",
+    "invalid-loop-head-read-link-write: writing h.xs to a longer array makes xs[i] read undefined");
+  assert.equal(runExample(negative("invalid-loop-head-read-link-call"), "String(sumViaCalls({ xs: [1] }))"), "NaN",
+    "invalid-loop-head-read-link-call: a call changing h.xs to a longer array makes xs[i] read undefined");
 }

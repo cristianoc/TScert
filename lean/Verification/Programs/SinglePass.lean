@@ -434,7 +434,7 @@ diagnostic's data (`RefusalDetail`), deferred to where the refusal is
 printed. -/
 inductive Outcome (ι : Type) where
   | accepted
-  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
+  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.Candidate) := none)
       (detail : Option (Thunk (Option (RefusalDetail ι))) := none)
   /-- Refused at node `l`'s footprint check (`GraphCode.nodeChecked`): the
   one refusal a regional check may still answer. -/
@@ -1427,7 +1427,7 @@ the entry separation's depth, so the start's given state
 are entailed by the request's entry facts (`ControlFlow.entryKnows`). The
 refusal where one fails. -/
 def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (PointClaim ι)) (start : Nat)
-    (goal : Goal ι) (written : Option Knowledge) (supplied : List IndexAtom)
+    (goal : Goal ι) (written : Option Knowledge) (supplied : List HeapKnowledge.Candidate)
     (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
     (entryIndices : List IndexAtom) (entrySeparation : HeapSeparation.Separation) : Option String :=
   match claims[start]? with
@@ -1440,8 +1440,7 @@ def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (Po
     else if !givenInputs.all (fun (j, q) => j == q) then some "the entry: a slot given an input's value"
     else if !startSeparationKept written entrySeparation then some "the entry: its written separation"
     else
-      let k := written.getD {}
-      let k := { k with indices := k.indices ++ supplied }
+      let k := HeapKnowledge.withCandidates (written.getD {}) supplied
       if !ControlFlow.entryKnows G inputs entrySeparation entryIndices k then
         some "the entry: a given fact the entry facts do not entail"
       else none
@@ -1495,17 +1494,16 @@ def startOldFacts (G : NormalGraph ι) (inputs : List (Ty ι)) (entryIndices : L
 among the start's. -/
 def withStartOld (G : NormalGraph ι) (inputs : List (Ty ι)) (entryIndices : List IndexAtom)
     (entrySeparation : HeapSeparation.Separation) (start : Nat) (ens : List HeapKnowledge.IndexFact)
-    (candidates : List (Nat × List IndexAtom)) : List (Nat × List IndexAtom) :=
+    (candidates : List (Nat × List HeapKnowledge.Candidate)) : List (Nat × List HeapKnowledge.Candidate) :=
   match startOldFacts G inputs entryIndices entrySeparation ens with
   | [] => candidates
-  | extra => (start, ((candidates.find? (·.1 == start)).map (·.2)).getD [] ++ extra) :: candidates
+  | extra => (start, ((candidates.find? (·.1 == start)).map (·.2)).getD [] ++ extra.map .index) :: candidates
 
 /-- The start's given state as `run` builds it: `startWritten`, with the
 claims' facts there (`supplied`). -/
 def startGiven (written : Option Knowledge) (entryIndices : List IndexAtom)
-    (entrySeparation : HeapSeparation.Separation) (supplied : List IndexAtom) : Knowledge :=
-  let w := startWritten written entryIndices entrySeparation
-  { w with indices := w.indices ++ supplied }
+    (entrySeparation : HeapSeparation.Separation) (supplied : List HeapKnowledge.Candidate) : Knowledge :=
+  HeapKnowledge.withCandidates (startWritten written entryIndices entrySeparation) supplied
 
 /-- **A step's derivation checked** where a footprint or a fresh result
 reads it (`GraphCode.nodeChecked`'s conjuncts beside `selectedWithinAt`):
@@ -2392,7 +2390,7 @@ structure WalkState (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) wher
 facts an edge into it lacks, where it is that refusal), a refusal at a
 footprint, a construct not handled, an observation. -/
 inductive StopOutcome (ι : Type) where
-  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
+  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.Candidate) := none)
       (detail : Option (Thunk (Option (RefusalDetail ι))) := none)
   | outsideBound (l : Nat)
   | notHandled (what : String)
@@ -2512,7 +2510,7 @@ assertion and the claims' facts there (`supplied`); at the start the
 request's entry facts, its index facts and the separation of its inputs
 (`startWritten`, `startGiven`); and the counters after them. -/
 def setupGiven (n start : Nat) (isHead : Array Bool) (stated : Array (Option Knowledge))
-    (supplied : Array (Option (List IndexAtom))) (entryIndices : List IndexAtom)
+    (supplied : Array (Option (List HeapKnowledge.Candidate))) (entryIndices : List IndexAtom)
     (entrySeparation : HeapSeparation.Separation) (counts : Counts) : Array (Option Knowledge) × Counts :=
   (List.range n).foldl (fun (acc : Array (Option Knowledge) × Counts) l =>
     if isHead[l]! then
@@ -2523,7 +2521,7 @@ def setupGiven (n start : Nat) (isHead : Array Bool) (stated : Array (Option Kno
         givenWritten := acc.2.givenWritten + (atomsOf written).length
         givenClaims := acc.2.givenClaims + claimsFacts.length }
       (acc.1.set! l (some (if l == start then startGiven stated[l]! entryIndices entrySeparation claimsFacts
-        else { written with indices := written.indices ++ claimsFacts })), counts)
+        else HeapKnowledge.withCandidates written claimsFacts)), counts)
     else acc) (Array.replicate n none, counts)
 
 /-- **The state the first visit starts from**, over `n` labels: the empty
@@ -2562,7 +2560,7 @@ starts from (`setupState`), or where it stopped. -/
 def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
-    (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
+    (candidates : List (Nat × List HeapKnowledge.Candidate)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
@@ -3596,7 +3594,7 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
             { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
           else acc.trace
         .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {missing.length} of its facts"
-          (some (t.label, missing.filterMap fun a => match a with | .index x => some x | _ => none))
+          (some (t.label, missing.filterMap fun a => match a with | .index x => some (.index x) | .link g => some (.link g) | _ => none))
           (some (Thunk.mk fun _ => some (.edge (edgeFactsAt G env l exit t tc Γ .facts req src []))))) counts answers trace)
       else .ok { acc with edges, answers, counts }
 
@@ -3924,7 +3922,7 @@ walk's state and the nodes the start reaches, or where it stopped. Under
 def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
-    (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
+    (candidates : List (Nat × List HeapKnowledge.Candidate)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
@@ -3950,7 +3948,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
-    (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
+    (candidates : List (Nat × List HeapKnowledge.Candidate)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)

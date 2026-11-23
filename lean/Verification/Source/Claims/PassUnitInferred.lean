@@ -84,7 +84,7 @@ theorem recandidated_of_map {f : FilePlans}
   exact ⟨x₀, hp', hr⟩
 
 /-- Candidates left out keep the plans `Recandidated` (proved). -/
-theorem dropCandidates_recandidated (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) :
+theorem dropCandidates_recandidated (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.Candidate) :
     Recandidated f (f.dropCandidates i l drop) := by
   unfold FilePlans.dropCandidates
   refine recandidated_of_map _ (fun e j x h => ?_)
@@ -148,8 +148,8 @@ theorem settleInferred_last {S G R W : Type} {run : S → G → R} {refusal : R 
         exact ⟨htrans _ _ _ (hnext _ _ _ _ _ _ _ hn) hq, hr⟩
 
 /-- A next state of `inferredNext` is `Recandidated` (proved). -/
-theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List (Nat × List HeapKnowledge.IndexAtom)}
-    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.IndexAtom)}
+theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List (Nat × List HeapKnowledge.Candidate)}
+    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.Candidate)}
     {f' : FilePlans} {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
     (h : f.inferredNext fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
   unfold FilePlans.inferredNext at h
@@ -181,8 +181,8 @@ theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List
           · dsimp only at h
             simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, -, -, -⟩ := h
-            have key : ∀ (xs : List (Nat × List HeapKnowledge.IndexAtom)) (g : FilePlans), Recandidated f g →
-                Recandidated f (xs.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.IndexAtom) =>
+            have key : ∀ (xs : List (Nat × List HeapKnowledge.Candidate)) (g : FilePlans), Recandidated f g →
+                Recandidated f (xs.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.Candidate) =>
                   g.dropCandidates i x.1 x.2) g) := by
               intro xs
               induction xs with
@@ -192,11 +192,11 @@ theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List
 
 /-- Leaving candidates out head by head keeps the plans `Recandidated`
 (proved). -/
-theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnowledge.IndexAtom)) :
+theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnowledge.Candidate)) :
     Recandidated f (f.dropAll i ds) := by
   unfold FilePlans.dropAll
-  have key : ∀ (xs : List (Nat × List HeapKnowledge.IndexAtom)) (g : FilePlans), Recandidated f g →
-      Recandidated f (xs.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.IndexAtom) =>
+  have key : ∀ (xs : List (Nat × List HeapKnowledge.Candidate)) (g : FilePlans), Recandidated f g →
+      Recandidated f (xs.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.Candidate) =>
         g.dropCandidates i x.1 x.2) g) := by
     intro xs
     induction xs with
@@ -207,8 +207,8 @@ theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List H
 /-- A next state of `inferredNextAll` is `Recandidated` (proved):
 `inferredNext`'s, then candidates left out. -/
 theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
-    {protect : List (Nat × List HeapKnowledge.IndexAtom)}
-    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.IndexAtom)}
+    {protect : List (Nat × List HeapKnowledge.Candidate)}
+    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.Candidate)}
     {f' : FilePlans} {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
     (h : f.inferredNextAll fuel fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
   unfold FilePlans.inferredNextAll at h
@@ -226,7 +226,7 @@ theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
 
 /-- **A member's runs end at an inferred run of plans with other
 candidates** (proved). -/
-theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
+theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (Nat × List HeapKnowledge.Candidate)}
     {fixed compare : Bool} {debugNode repeats : Nat} {observe : Option String} {counting located : Bool}
     {given : Option (Std.HashMap String Json)} {i : Nat} :
     Recandidated f (f.inferredSettle fuel keep fixed compare debugNode repeats observe counting located given i).state ∧
@@ -256,7 +256,7 @@ theorem inferredRun_accepted {g : FilePlans} {fuel : Nat} {compare : Bool} {debu
 accepted** (proved): each member `j` has an accepted `passMember` run over
 plans `Recandidated` from the group's. -/
 theorem passGroupInferred_members {f : FilePlans} {fuel : Nat} {group : List Nat}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {fixed compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.Candidate)} {fixed compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (h : (f.passGroupInferred fuel group keep fixed compare debugNode repeats given observe counting located).2.1 =
@@ -309,7 +309,7 @@ plans with other candidates, whose safety is the member's. -/
 theorem passGroupMode8_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {f : FilePlans} (hover : OverStore f) {infer : Bool} {force : List String}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.Candidate)} {i fuel : Nat} {compare : Bool}
     {debugNode repeats : Nat} {given : Option (Std.HashMap String Json)} {observe : Option String}
     {counting located : Bool} {deps : List String}
     (haccepted : (f.passGroupMode8 infer force keep fuel (f.fr.group i) compare debugNode repeats given observe
@@ -336,7 +336,7 @@ theorem passUnit_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans} {i : Nat}
-    {givenLines : Std.HashMap String Json} {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
+    {givenLines : Std.HashMap String Json} {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.Candidate)}
     {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool} {deps : List String}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)

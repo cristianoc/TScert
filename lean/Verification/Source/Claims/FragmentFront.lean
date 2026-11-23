@@ -189,7 +189,8 @@ def headRules (force : List String) : HeadInference.Rules :=
     falseEntails := force.contains "head-entails", falseEvery := force.contains "head-every",
     falseExits := force.contains "head-exits", falseGuards := force.contains "head-guards",
     falseRestated := force.contains "head-restated", falseElements := force.contains "head-elements",
-    falseCalled := force.contains "head-called", falseEliminated := force.contains "head-eliminated" }
+    falseCalled := force.contains "head-called", falseEliminated := force.contains "head-eliminated",
+    falseLinks := force.contains "head-links" }
 
 /-- The names of a statement list's early bindings (`Fragment.Binding.early`),
 nested statements' included: a term rooted at one reads no initialized
@@ -304,8 +305,26 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       let apartFits : HeadInference.Fact → Bool
         | .apart _ a pa b pb => (!pa.isEmpty || holdsArray a) && (!pb.isEmpty || holdsArray b)
         | _ => true
+      -- (a read link names value bindings alone, no cell; for a field named
+      -- `length`, skip when the receiver's type lowers `length` to a string,
+      -- array-spine, or typed-array view length rather than a property read
+      -- (`Lowering/Atoms.lean`: `.lenOf` / `lengthRead` emits no read link))
+      let lengthLowered := fun (n : String) => match typed.lookup n with
+        | some (.ok A) =>
+          let field := fun (fs : List (Stored (List Tree))) (vs : List (PropKey × List Tree)) (k : PropKey) =>
+            ((Stored.views fs).lookup k <|> vs.lookup k).isSome
+          let cs := PositiveRules.expand (SourceTypes.graph T) A
+          !cs.isEmpty && cs.all fun
+            | .str | .strLit _ | .strIn _ | .view .. => true
+            | .refs fs _ vs .. => field fs vs SourceTypes.spineField
+            | _ => false
+        | _ => false
+      let linkFits : HeadInference.Fact → Bool
+        | .readLink c _ f => f != "length" || !lengthLowered c
+        | _ => true
       let fits := fun (F : HeadInference.Fact) => F.names.all inScope && match F with
         | .apart .. => F.names.all (fun n => !g.cells.any (·.name == n)) && apartFits F
+        | .readLink .. => F.names.all (fun n => !g.cells.any (·.name == n)) && linkFits F
         | _ => true
       match (heads.get? pos).map (·.filter fits) with
       | some (fs@(_ :: _)) => [(node.source.1, fs)]
@@ -363,7 +382,8 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         | none, none => []
       entryFacts := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
       entrySpinesApart := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.spinesClaim)
-      entryEvery := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim) }
+      entryEvery := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim)
+      entryLinks := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.linkClaim) }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
@@ -374,7 +394,9 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         entryCurrent := r.entryCurrent ++ row.entryCurrent.filter (fun (pos, _) => !r.entryCurrent.any (·.1 == pos))
         entryFacts := r.entryFacts ++ row.entryFacts.filter (fun (pos, _) => !r.entryFacts.any (·.1 == pos))
         entrySpinesApart := r.entrySpinesApart ++
-          row.entrySpinesApart.filter (fun (pos, _) => !r.entrySpinesApart.any (·.1 == pos)) }
+          row.entrySpinesApart.filter (fun (pos, _) => !r.entrySpinesApart.any (·.1 == pos))
+        entryLinks := r.entryLinks ++
+          row.entryLinks.filter (fun (pos, _) => !r.entryLinks.any (·.1 == pos)) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,

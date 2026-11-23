@@ -200,7 +200,7 @@ private structure GraphFrame where
   /-- The index facts the producer supplies at each statement entry, apart
   from its assertion: candidates a search keeps where every edge into the
   entry establishes them. -/
-  candidates : Array (Nat × List HeapKnowledge.IndexAtom) := #[]
+  candidates : Array (Nat × List HeapKnowledge.Candidate) := #[]
   /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- While a `try` body or handler is compiled: where a throw out of a node
@@ -605,7 +605,7 @@ def completeFlowEntry (reserved target : Target) : Compiler Unit :=
 def recordAssertion (target : Target) (knowledge : HeapKnowledge.Knowledge) : Compiler Unit :=
   updateBuilt fun s => { s with assertions := s.assertions.push (target.label,knowledge) }
 
-def recordCandidates (target : Target) (atoms : List HeapKnowledge.IndexAtom) : Compiler Unit :=
+def recordCandidates (target : Target) (atoms : List HeapKnowledge.Candidate) : Compiler Unit :=
   updateBuilt fun s => { s with candidates := s.candidates.push (target.label,atoms) }
 
 def recordCut (target : Target) : Compiler Unit :=

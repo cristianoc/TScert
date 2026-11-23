@@ -443,9 +443,18 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- require. Each atom once: two claimed facts may lower to one atom (a
   -- cell's value term stated an integer and bounded by `2^53 - 1`), and an
   -- atom the invariant states is required.
+  let readLinks ← ((fc.entryLinks.lookup node.source.1).getD []).mapM fun (cell, value, field) =>
+    match valueSlot scope cell, valueSlot scope value with
+    | some x, some y => pure (⟨x, y, false, .str field, false⟩ : HeapLinks.Link)
+    | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a read link names '{cell}' as its object, which is no value binding")
+    | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a read link names '{value}' as its value, which is no value binding")
   let invariant := invariant.eraseDups
-  let candidates := (bounds ++ linear ++ quantified ++ apart ++ spinesApart).eraseDups.filter
+  let indexCandidates := (bounds ++ linear ++ quantified ++ apart ++ spinesApart).eraseDups.filter
     (!invariant.contains ·)
+  let linkCandidates := readLinks.eraseDups.filter (!links.contains ·)
+  let candidates := indexCandidates.map HeapKnowledge.Candidate.index ++ linkCandidates.map HeapKnowledge.Candidate.link
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !invariant.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], invariant⟩
   if !candidates.isEmpty then recordCandidates reserved candidates

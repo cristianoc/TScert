@@ -73,7 +73,7 @@ theorem closedUnits_closed (vs : Verdicts) : ClosedIn vs (closedUnits vs) := by
 selected unit, its identity and, where mode 8's check (`passGroupMode8`)
 accepts its group, the dependencies it prints. -/
 def fileVerdicts (f : FilePlans) (selection : Option (List String)) (givenLines : Std.HashMap String Json)
-    (infer : Bool) (force : List String) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
+    (infer : Bool) (force : List String) (keep : Nat → List (Nat × List HeapKnowledge.Candidate))
     (fuel : Nat) (compare : Bool) (debugNode repeats : Nat) («given» : Option (Std.HashMap String Json))
     (observe : Option String) (counting located : Bool) : Verdicts :=
   (f.fr.selected selection).map fun i => (f.fr.unitId i,
@@ -104,7 +104,7 @@ theorem closedUnits_safe
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.Candidate)} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f) {u : String}
     (hu : u ∈ closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)) :

@@ -187,7 +187,7 @@ meeting the inputs, the entry separation and the entry index facts
 (`entry_stateHolds`). -/
 theorem start_passPre {G : NormalGraph ι} {w : Walk ι} {inputs : List (Ty ι)}
     {claims : List (CertificateProducer.PointClaim ι)} {start : Nat} {goal : ControlFlow.Goal ι}
-    {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.IndexAtom}
+    {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.Candidate}
     {givenImplies : List (PromiseCalls.Implication ι)} {givenArgs : List Nat} {givenInputs : List (Nat × Nat)}
     {entryIndices : List HeapKnowledge.IndexAtom} {entrySeparation : HeapSeparation.Separation} {fresh : Nat}
     (hacc : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs

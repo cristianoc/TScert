@@ -125,7 +125,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   goal : Goal ι
   assertions : List (Nat × HeapKnowledge.Knowledge)
   cuts : List Nat
-  candidates : List (Nat × List HeapKnowledge.IndexAtom)
+  candidates : List (Nat × List HeapKnowledge.Candidate)
   entryIndices : List HeapKnowledge.IndexAtom
   suggestions : List (ProgramCertificates.Sequent ι)
   known : List (ProgramCertificates.Evidence ι)
