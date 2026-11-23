@@ -1,3 +1,5 @@
+import Verification.Paper.EffectLanguage.Model
+import Verification.Paper.EffectLanguage.Rules
 import Verification.Paper.TolerantFrames.Bridges.ExitProposals
 import Verification.Paper.TolerantFrames.Bridges.Grow
 import Verification.Paper.TolerantFrames.Bridges.ModelTyped
