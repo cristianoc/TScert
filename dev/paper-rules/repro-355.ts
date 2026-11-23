@@ -25,14 +25,14 @@ export function walk(xs: number[]): number {
 }
 
 // Refused (safe): the callback's call drops the facts over c.i, which the
-// callback cannot reach.
+// callback cannot reach. The loop reads xs.length at each test, which onStep
+// may change.
 export function walkVisiting(xs: number[], onStep: (x: number) => void): number {
   const c: Cursor = { i: 0 };
-  const n = xs.length;
   let total = 0;
   while (true) {
     const s = c.i;
-    if (s >= n) return total;
+    if (s >= xs.length) return total;
     const x = step(xs, c);
     total += x;
     onStep(x);
