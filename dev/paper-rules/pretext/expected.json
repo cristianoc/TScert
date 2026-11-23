@@ -1,0 +1,74 @@
+{
+  "src/line-break.ts": {
+    "ordinary": "verified",
+    "units": {
+      "breaksAfterKind": "accepted",
+      "isDiscretionaryLineEnd": "accepted",
+      "consumesAtLineStart": "accepted",
+      "getTabAdvance": "accepted",
+      "getItemTabAdvance": "accepted",
+      "getTerminalLetterSpacing": "accepted",
+      "normalizeMaxWidth": "accepted",
+      "normalizePreparedLineStart": "accepted",
+      "walkPreparedLinesRaw": "refused",
+      "countPreparedLines": "accepted",
+      "countSteppedLines": "accepted",
+      "staysAfterObject": "accepted",
+      "returnsFromUnfitHyphen": "accepted",
+      "walkPreparedComplexLines": "accepted",
+      "stepPreparedSimpleLineGeometry": "accepted",
+      "stepPreparedLineGeometryFromStart": "accepted",
+      "init": "accepted"
+    }
+  },
+  "src/layout.ts": {
+    "ordinary": "verified",
+    "units": {
+      "prepareInternal": "accepted",
+      "prepare": "accepted",
+      "prepareWithSegments": "accepted",
+      "getInternalPrepared": "accepted",
+      "layout": "accepted",
+      "createLayoutLine": "accepted",
+      "createLayoutLineRange": "accepted",
+      "materializeLineRange": "accepted",
+      "walkLineRanges": "refused",
+      "measureLineStats": "accepted",
+      "measureNaturalWidth": "accepted",
+      "stepNextLine": "accepted",
+      "layoutNextLine": "accepted",
+      "layoutNextLineRange": "accepted",
+      "layoutWithLines": "refused",
+      "clearCache": "accepted",
+      "setLocale": "accepted",
+      "init": "accepted"
+    }
+  },
+  "src/rich-inline.ts": {
+    "ordinary": "verified",
+    "units": {
+      "getInternalPreparedRichInline": "accepted",
+      "prepareRichInline": "accepted",
+      "getHyphenRooms": "accepted",
+      "isSoftHyphenSegment": "accepted",
+      "setEmptyObjectFacts": "accepted",
+      "findWholeLine": "accepted",
+      "narrowsLine": "accepted",
+      "fitsWhole": "accepted",
+      "zeroList": "accepted",
+      "getOpeningFit": "accepted",
+      "getPartWidth": "accepted",
+      "createOnlyItemLine": "accepted",
+      "createLine": "accepted",
+      "getSegmentIndex": "accepted",
+      "layoutNextRichInlineLineRange": "accepted",
+      "getSourceUnits": "accepted",
+      "findSegmentSources": "accepted",
+      "getSourceOffset": "accepted",
+      "materializeRichInlineLineRange": "accepted",
+      "walkRichInlineLineRanges": "refused",
+      "measureRichInlineStats": "accepted",
+      "init": "accepted"
+    }
+  }
+}
