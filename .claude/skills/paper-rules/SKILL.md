@@ -1,0 +1,91 @@
+---
+name: paper-rules
+description: Continue the effect-language work - the paper "An effect language for TScert", its rules in Lean and their model, and the paper-rules prototype that applies them to Pretext's walkers. Use when the owner asks to resume or continue the paper rules, the prototype, the effect language, or the walkers' guards, from a chat with no context.
+---
+
+# The effect language and its prototype
+
+This skill is the context a new chat needs. Read it, then the row
+"Pretext's walkers across their visitors" of [WORK.md](../../../WORK.md#status),
+then [the prototype's README](../../../dev/paper-rules/README.md).
+
+## The goal
+
+TScert refuses Pretext's line walkers because a walker calls a visitor
+between reads, and the visitor's effect is one fixed type for every caller.
+The goal is to verify the walkers by writing the visitor's effect down as a
+bounded effect variable, without the runtime guards (`?? missing()`) Pretext
+carries today:
+
+```ts
+walkLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(prepared, onLine: Visitor<E>)
+walkLines<'{ "lines[*]": "extend" }'>(p, w => { lines.push(w) })   // accepted
+walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
+```
+
+## Where things are
+
+- **The paper**: [docs/drafts/effect-languages.md](../../../docs/drafts/effect-languages.md)
+  and its LaTeX (`docs/drafts/effect-languages-note/`). One effect language:
+  an effect is a relation between heaps with an explicit `else`, bounds are
+  effects, every check is inclusion. Section "The effects TScert has" maps
+  the existing footprints to it.
+- **The rules in Lean**: `lean/Verification/Paper/EffectLanguage/Rules.lean`
+  (propositions over a semantics interface) and `Model.lean` (an idealised
+  model over the verifier's heaps that proves them).
+- **The mode's design and the prototype**:
+  [docs/drafts/paper-rules-mode.md](../../../docs/drafts/paper-rules-mode.md),
+  [dev/paper-rules/README.md](../../../dev/paper-rules/README.md).
+- **The Pretext copy and its verdicts**: `dev/paper-rules/pretext/`.
+- **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
+  based on `single-pass`).
+- **Issues for gaps of the sound verifier**: each `paperAssume` names one
+  (for example cristianoc/TScert#351, links at loop heads).
+
+## Standing decisions (the owner's, 2026-11-23)
+
+- **Write effects down, don't infer them.** The inference approach (PRs 337, 338, 342)
+  is closed.
+- **The rules are experiments.** They change as applying them to patterns
+  shows what the patterns need. A change keeps the rule's statement in
+  `Rules.lean`, its proof in `Model.lean`, the prototype's check and the
+  paper in one commit (AGENTS.md, "Experimental rules: a lighter process":
+  no design draft, no Astra or Fable review for this work).
+- **A proved mode was measured and deferred.** It needs arrows whose effect is a
+  variable; the change to regions or exit schemas is not local. The
+  prototype runs the real pass with one extra layer resting on one named
+  axiom, outside the library.
+- **General rules only.** No rule keyed on names, fields or the examples' shapes;
+  where the pass's knowledge can't decide the general rule, refuse.
+- **Low-risk premises.** Premises such as "allocated in the body" are decided in the
+  layer under the axiom, without asking.
+- **Gaps of the sound verifier** are not worked around in the code. Write
+  `paperAssume(fact, "#N")` where the fact is lost, a self-contained repro,
+  and an issue N for a PR that extends the verifier.
+- **Keep partial progress.** Annotations added for a guard that still can't
+  come out stay if they break nothing. Guards come out one at a time, kept
+  only if every function of the file still passes.
+- **Tests.** Every behaviour has positive and negative cases recorded in an
+  expectation set; each negative says whether the program is unsafe or
+  only unprovable.
+
+## How the work runs
+
+- Work happens on the branch of #347 in a worktree under the session's
+  scratchpad, never in `~/GitHub`. Copy `lean/.lake` and the
+  `node_modules` from the main checkout (AGENTS.md, "Working in a separate
+  git worktree").
+- Each step is one agent with a narrow brief. It commits locally with
+  commit records and does not push. The lead session reruns both
+  expectation sets, checks the code for names or shapes, and then pushes.
+- Before a push: `node tests/docs.mts`; `(cd lean && lake build
+  Verification verifier paper-rules-prototype)` when Lean changed;
+  `(cd tools && npx tsc -p tsconfig.json)` and `node tools/unchecked.mts`
+  when `dev/` or `tools/` changed; both expectation sets.
+- Reports to the owner are short and conceptual, with a small program as
+  the example, and say what each result means for verifying Pretext.
+
+## The state
+
+The WORK.md row holds the current state and the next step. Update it in
+the commit that changes either.
