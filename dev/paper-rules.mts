@@ -19,7 +19,9 @@ import { annotations } from "./paper-annotations.mts";
 const prototype = resolve(import.meta.dirname, "../lean/.lake/build/bin/paper-rules-prototype");
 
 /** A unit's verdict line from the prototype. */
-interface Verdict { unit: string; accepted?: boolean; acceptedUnderPaperRules?: boolean; assumed?: string; refusal?: string }
+interface Verdict {
+  unit: string; accepted?: boolean; acceptedUnderPaperRules?: boolean; assumed?: string; assumes?: string[]; refusal?: string;
+}
 
 function isVerdict(v: unknown): v is Verdict {
   return typeof v === "object" && v !== null && "unit" in v && typeof v.unit === "string";
@@ -47,14 +49,18 @@ function run(file: string, project: string | undefined, quiet: boolean = false):
   const interfaces = existsSync(join(artifacts, established)) ? established : join("interfaces", "ordinary-interfaces.json");
   const out = execFileSync(prototype, [sidePath, "fragment.json", interfaces,
     sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", process.env.PAPER_TRACE ? "inherit" : "ignore"], timeout: 300_000 });
-  const failed = new Map(side.calls.filter((c) => !c.ok).map((c) => [c.caller, c.reason ?? "instance"]));
+  const failed = new Map([
+    ...side.calls.filter((c) => !c.ok).map((c): [string, string] => [c.caller, c.reason ?? "instance"]),
+    ...side.assumes.filter((a) => !a.ok).map((a): [string, string] => [a.caller, `assume at line ${a.line}: ${a.reason ?? "form"}`]),
+  ]);
   for (const line of out.split("\n").filter((l) => l.startsWith("{"))) {
     const parsed: unknown = JSON.parse(line);
     if (!isVerdict(parsed)) continue;
     const name = parsed.unit.split("@")[0] ?? parsed.unit;
     const inst = failed.get(name);
     const verdict = inst !== undefined ? `refused: ${inst}`
-      : parsed.acceptedUnderPaperRules ? `accepted under the paper's rules (assumes ${parsed.assumed ?? "?"})`
+      : parsed.acceptedUnderPaperRules ? `accepted under the paper's rules (assumes ${parsed.assumed ?? "?"}` +
+          `${(parsed.assumes ?? []).map((a) => `; assumes ${a}`).join("")})`
       : parsed.accepted ? "accepted"
       : `refused: ${(parsed.refusal ?? "").split("\n")[0]?.slice(0, 160)}`;
     result.units.set(name, { kind: verdict.startsWith("refused") ? "refused" : "accepted", text: verdict });

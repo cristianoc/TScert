@@ -41,6 +41,36 @@ interface CallInfo {
   params: string[]; bounds: Effect[]; own: Effect | string; span: [number, number];
 }
 
+/** An unsafe assume `paperAssume(a === b, "#n")`: the equality states a
+ * fact the sound verifier should have established at the call, and the
+ * issue tracks the verifier's extension. Its form is read here and its fact
+ * added by the prototype's layer, under its axiom. */
+interface AssumeInfo {
+  /** The span of the assumed equality, whose step the layer extends. */
+  caller: string; span: [number, number]; issue: string; line: number; ok: boolean; reason: string | null;
+}
+
+/** Whether an operand of an assumed equality is one the layer represents:
+ * a variable, or a field read of one. */
+function assumeOperand(e: ts.Expression): boolean {
+  const u = unwrapExpr(e);
+  return ts.isIdentifier(u) || (ts.isPropertyAccessExpression(u) && ts.isIdentifier(unwrapExpr(u.expression)));
+}
+
+/** An assume's form: `paperAssume(a === b, "#n")`, at most one operand a
+ * field read; the reason otherwise. */
+function assumeForm(n: ts.CallExpression): { issue: string } | string {
+  const [fact, issue] = n.arguments;
+  if (fact === undefined || issue === undefined || !ts.isStringLiteral(issue))
+    return "an assume is written paperAssume(fact, \"#issue\")";
+  const f = unwrapExpr(fact);
+  if (!ts.isBinaryExpression(f) || f.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
+      !assumeOperand(f.left) || !assumeOperand(f.right) ||
+      (ts.isPropertyAccessExpression(unwrapExpr(f.left)) && ts.isPropertyAccessExpression(unwrapExpr(f.right))))
+    return "an assumed fact is an equality of a variable and a variable or a field read of one";
+  return { issue: issue.text };
+}
+
 /** The effect a string literal type `'{ "x[*]": "keep", "else": "any" }'`
  * holds as JSON. */
 function effectOfText(text: string): Effect | null {
@@ -555,7 +585,7 @@ function importedFile(from: string, spec: string): string | null {
   return resolve(dirname(from), spec.replace(/\.(?:js|ts)$/, "") + ".ts");
 }
 
-export function annotations(path: string): { functions: Record<string, FunctionInfo>; calls: CallInfo[] } {
+export function annotations(path: string): { functions: Record<string, FunctionInfo>; calls: CallInfo[]; assumes: AssumeInfo[] } {
   const tree = openText(path, readFileSync(path, "utf8"));
   const { functions, bodies, decls } = functionInfos(tree);
   // A callee imported by name from a relative module: its effect parameters
@@ -582,8 +612,17 @@ export function annotations(path: string): { functions: Record<string, FunctionI
     return fs[name];
   };
   const calls: CallInfo[] = [];
+  const assumes: AssumeInfo[] = [];
   for (const [caller, body] of bodies) {
     const visit = (n: ts.Node): undefined => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "paperAssume") {
+        const form = assumeForm(n);
+        const line = tree.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+        const fact = n.arguments[0] ?? n;
+        assumes.push({ caller, span: [fact.getStart(), fact.getEnd()], line,
+          issue: typeof form === "string" ? "" : form.issue,
+          ok: typeof form !== "string", reason: typeof form === "string" ? form : null });
+      }
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.typeArguments) {
         const callee = calleeOf(n.expression.text);
         if (callee && callee.effectParams.length > 0) {
@@ -646,7 +685,7 @@ export function annotations(path: string): { functions: Record<string, FunctionI
     visit(body);
   }
   closeParser();
-  return { functions, calls };
+  return { functions, calls, assumes };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
