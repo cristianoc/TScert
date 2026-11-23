@@ -46,7 +46,7 @@ function run(file: string, project: string | undefined, quiet: boolean = false):
   const established = join("interfaces", "interfaces.json");
   const interfaces = existsSync(join(artifacts, established)) ? established : join("interfaces", "ordinary-interfaces.json");
   const out = execFileSync(prototype, [sidePath, "fragment.json", interfaces,
-    sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 300_000 });
+    sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", process.env.PAPER_TRACE ? "inherit" : "ignore"], timeout: 300_000 });
   const failed = new Map(side.calls.filter((c) => !c.ok).map((c) => [c.caller, c.reason ?? "instance"]));
   for (const line of out.split("\n").filter((l) => l.startsWith("{"))) {
     const parsed: unknown = JSON.parse(line);

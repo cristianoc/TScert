@@ -52,5 +52,15 @@
       "bump": "accepted",
       "note": "accepted"
     }
+  },
+  "inst-effect.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walkLines": "accepted",
+      "caller": "accepted",
+      "outside": "refused",
+      "badInst": "refused",
+      "callerUntold": "refused"
+    }
   }
 }

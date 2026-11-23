@@ -21,8 +21,23 @@ for a bound with a reach entry `"x.**"`, the keys its types declare. */
 interface Effect { entries: [string, Change][]; else: Change; reachKeys?: string[] }
 
 interface EffectParam { name: string; bound: Effect }
-interface FunctionInfo { params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[] }
-interface CallInfo { caller: string; callee: string; instance: Record<string, Effect>; ok: boolean; reason: string | null }
+/** A function's effect parameters, its bounded callback parameters, and,
+ * for a function with effect parameters, its own effect besides them (the
+ * writes of its body other than its bounded callbacks' calls, keyed by its
+ * parameters), or the reason it is not read. */
+interface FunctionInfo {
+  params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[];
+  own?: Effect | string;
+}
+/** A call of a function with effect parameters: the instance, whether it is
+ * within the bounds (rule Inst), and what the layer needs to give the call
+ * its effect at the caller: the callee's parameters, the bounds, its own
+ * effect besides them, the call's arity, and whether no other call in the
+ * caller's own body has that arity, so the layer can tell the call apart. */
+interface CallInfo {
+  caller: string; callee: string; instance: Record<string, Effect>; ok: boolean; reason: string | null;
+  params: string[]; bounds: Effect[]; own: Effect | string; arity: number; unique: boolean;
+}
 
 /** The effect a string literal type `'{ "x[*]": "keep", "else": "any" }'`
  * holds as JSON. */
@@ -177,11 +192,11 @@ const isPathExpr = (e: ts.Expression | undefined): e is ts.Expression => {
   return ts.isIdentifier(u) || (ts.isPropertyAccessExpression(u) && isPathExpr(u.expression));
 };
 
-function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 0): Resolved | null {
+function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 0, paramRoots: boolean = false): Resolved | null {
   const e = unwrapExpr(expr);
   if (depth > 32) return null;
   if (ts.isPropertyAccessExpression(e)) {
-    const base = resolve_(e.expression, closure, depth + 1);
+    const base = resolve_(e.expression, closure, depth + 1, paramRoots);
     if (base === null) return null;
     return base.fresh ? base : { fresh: false, root: base.root, path: [...base.path, e.name.text], literal: false };
   }
@@ -189,8 +204,11 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   const d = declOf(e.text, e);
   if (d === null || d.kind === "function") return null;
   const local = closure !== null && (d.kind === "param" ? d.owner === closure || within(d.owner, closure) : within(d.at, closure));
-  if (d.kind === "param") return local ? null : { fresh: false, root: e.text, path: [], literal: false };
-  if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1);
+  // A function's own parameter is a root of its own effect (`paramRoots`);
+  // a closure's parameter names no caller's storage.
+  if (d.kind === "param")
+    return local && !(paramRoots && d.owner === closure) ? null : { fresh: false, root: e.text, path: [], literal: false };
+  if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots);
   if (local) return d.kind === "const" && isAllocation(d.init) ? { fresh: true } : null;
   return { fresh: false, root: e.text, path: [], literal: d.kind === "const" && isAllocation(d.init) };
 }
@@ -274,7 +292,8 @@ function inside(r: Loc, b: Loc, keys: Set<string>): boolean {
  * allocates is no part of it (Fresh-Eff). Any other step that may write (an
  * assignment to a captured binding, another call, `delete` of an unnamed
  * location, `new`) cannot be bounded here: the result names it. */
-function closureEffect(fn: ts.ArrowFunction | ts.FunctionExpression): Effect | string {
+function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySet<string> = new Set()): Effect | string {
+  if (fn.body === undefined) return "has no body";
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
   let error: string | null = null;
@@ -283,7 +302,7 @@ function closureEffect(fn: ts.ArrowFunction | ts.FunctionExpression): Effect | s
   const write = (target: ts.Expression, change: Change, at: ts.Node): undefined => {
     const t = unwrapExpr(target);
     if (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) {
-      const base = resolve_(t.expression, fn);
+      const base = resolve_(t.expression, fn, 0, paramRoots);
       if (base === null) return fail(at, "writes a location no key of the instance can name");
       if (base.fresh) return undefined;
       if (ts.isPropertyAccessExpression(t)) entries.push([keyOf(base, "." + t.name.text), change]);
@@ -312,9 +331,12 @@ function closureEffect(fn: ts.ArrowFunction | ts.FunctionExpression): Effect | s
     else if (ts.isCallExpression(n)) {
       const callee = unwrapExpr(n.expression);
       if (ts.isPropertyAccessExpression(callee) && callee.name.text === "push") {
-        const base = resolve_(callee.expression, fn);
+        const base = resolve_(callee.expression, fn, 0, paramRoots);
         if (base === null) return fail(n, "pushes onto an array no key of the instance can name");
         if (!base.fresh) entries.push([keyOf(base, "[*]"), "extend"]);
+      } else if (ts.isIdentifier(callee) && skip.has(callee.text)) {
+        // A call of a bounded callback parameter: its effect is the effect
+        // variable's, which the caller's instance gives.
       } else if (ts.isIdentifier(callee)) {
         const d = declOf(callee.text, callee);
         const result = d?.kind === "function" ? d.node.type : undefined;
@@ -326,7 +348,7 @@ function closureEffect(fn: ts.ArrowFunction | ts.FunctionExpression): Effect | s
         for (const [k, c] of eff.entries) {
           const at = params.indexOf(rootOf(k));
           const arg = n.arguments[at];
-          const base = arg === undefined ? null : resolve_(arg, fn);
+          const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots);
           if (base === null) return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
           if (!base.fresh) entries.push([keyOf(base, restOf(k)), c]);
         }
@@ -432,7 +454,9 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
       if (p.type) mentions(p.type, seen);
       for (const e of effectParams) if (seen.has(e.name)) bounded.push({ param: params[index] ?? "", index, variable: e.name });
     });
-    functions[s.name.text] = { params, effectParams, bounded };
+    const own = effectParams.length === 0 ? undefined
+      : closureEffect(s, true, new Set(bounded.map((b) => b.param)));
+    functions[s.name.text] = own === undefined ? { params, effectParams, bounded } : { params, effectParams, bounded, own };
   }
   return { functions, bodies, decls };
 }
@@ -523,7 +547,20 @@ export function annotations(path: string): { functions: Record<string, FunctionI
             reason = instCheck(inst, e.bound, callee.params, args, fresh);
             if (reason !== null) break;
           }
-          calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason });
+          const arity = n.arguments.length;
+          // Calls of the caller's own body (nested functions are other
+          // units) with this arity: the layer tells this call apart by it.
+          let same = 0;
+          const countCalls = (m: ts.Node): undefined => {
+            if (m !== body && isFn(m)) return undefined;
+            if (ts.isCallExpression(m) && m.arguments.length === arity) same++;
+            m.forEachChild(countCalls);
+            return undefined;
+          };
+          countCalls(body);
+          calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
+            params: callee.params, bounds: callee.effectParams.map((e) => e.bound),
+            own: callee.own ?? "has no effect parameters", arity, unique: same === 1 });
         }
       }
       n.forEachChild(visit);
