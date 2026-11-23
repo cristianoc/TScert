@@ -602,9 +602,16 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
         | none =>
           let got := settledInterface fp proposalDepth j
           (got, memo.insert key (got.map fun e => (e.summary, e.result, e.visits)))
+  -- A written effect fixes `summary` to `S`; `establish` can only contribute a
+  -- returned function's footprint, which `resultWithFootprint` rejects unless
+  -- `f.ret` is a function type whose signatures state no effect.
+  let canReturnFn := (resultWithFootprint fr.d.types f.ret keepAll).isOk
   let (r, memo) : Option Established × ProposalMemo := if let some S := written f then
-      let (got, memo) := establish (some { name := f.name, summary := S }) memo
-      (got.map fun got => { got with summary := S }, memo)
+      if !canReturnFn then
+        (some { summary := S, result := .top, visits := 0 }, memo)
+      else
+        let (got, memo) := establish (some { name := f.name, summary := S }) memo
+        (got.map fun got => { got with summary := S }, memo)
     else if (fr.mentions i).contains f.name then Id.run do
       -- A recursion assumption, per exit, found by a bounded search: first
       -- both exits keeping everything; kept where each exit of what the

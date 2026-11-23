@@ -233,11 +233,13 @@ graphs, each point holding its node's sites' expressions and its statement
 entry's bindings, where `checkPointSites` places a producer's; its
 parameters' and result's types its annotations', each read where the
 elaboration reads them. -/
-def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
+def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fun fr T f fc module scope cachedWalk => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
-    SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else [])
+  let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← match cachedWalk with
+    | some w => pure (Synthesis.retypeFromWalk T w fc "xec")
+    | none => SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
+        SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else [])
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
@@ -429,16 +431,18 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
 generic module value at the type each binder takes there
 (`Synthesis.Walk.instances`), a binder a resolution qualifies with the
 certificate its type's form gives (`Synthesis.Walk.resolutions`). -/
-def instancesFromWalk (force : List String := []) : Instances := fun fr T f c module scope => do
+def instancesFromWalk (force : List String := []) : Instances Synthesis.Walk := fun fr T f c module scope => do
   let calls := f.body.flatMap Fragment.Stmt.callees
   let used := fr.generics.filter fun g => calls.any (·.2.2.1 == g.name)
-  if used.isEmpty then return (T, c)
+  if used.isEmpty then return (T, c, none)
   let (schemes, generics) := fr.genericValues
+  let init := f.name.isEmpty
   let (w, T) ← SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
     SinglePass.work "walk: instances" (fr.fnItem f) fun _ => Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
       (schemes := c.expressions.filterMap fun e => match e.type with
         | .labels A => some (e.pos, A)
         | _ => none)
+      (initBinders := if init then fr.initBinders else [])
   let expressions := w.instances.filterMap fun (pos, θ) => do
     let (_, _, name, _) ← calls.find? (·.1 == pos)
     let g ← used.find? (·.name == name)
@@ -450,7 +454,7 @@ def instancesFromWalk (force : List String := []) : Instances := fun fr T f c mo
       let resolution := (certificates.lookup n).map fun c => ({ certificate := c } : ResolutionWire.Instance)
       return ({ name := n, type := .labels (← θ.lookup n), resolution } : Instantiation Tree)
     return ({ point := "", pos, type := .labels [], instantiate := some inst } : Expression Tree)
-  return (T, { c with expressions := c.expressions ++ expressions })
+  return (T, { c with expressions := c.expressions ++ expressions }, some w)
 
 /-- The front with its module constants and cells typed by the
 initialization unit's walk: a constant at its initializer's computed type
@@ -477,7 +481,7 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
   let (T0, f, c) := match atSchemes with
     | .ok r => r
     | .error _ => (fr.d.types, f, c)
-  match retypeFromFragment force fr T0 f c.normalized module none with
+  match retypeFromFragment force fr T0 f c.normalized module none none with
   | .error reason =>
     let failed := fun (v : ModuleValue Tree) => ((v.1, v.2.1, .error s!"not handled: the module initialization's walk: {reason}") : ModuleValue Tree)
     return { fr with moduleConstants := fr.moduleConstants.map failed }
@@ -601,9 +605,19 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
         SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
         fileFront ast claims fileKey budget qualified (lenient := true))
   let fr := fr.withNeverImports
-  -- (each typing of the initialization recorded as one, `SinglePass.work`)
+  -- (each typing of the initialization recorded as one, `SinglePass.work`;
+  -- reused whenever a stand-in list changes no function named in `fr.init`)
   let initTyped := fun (g : Front) => SinglePass.work "prepare: initialization typing" s!"{fileItem ast}#init" fun _ =>
     g.withInitTypes force
+  let initReads : Std.HashSet String := Std.HashSet.ofList (fr.init.flatMap stmtNames)
+  let frInit := Thunk.mk fun _ => initTyped fr
+  let initWith (sis : List StandIn) : Front :=
+    let affects := sis.any fun s => initReads.contains s.name &&
+      fr.d.functions.any fun c => c.name == s.name &&
+        (c.footprint, c.onThrow, c.resultFootprint) != (s.footprint, s.onThrow, s.resultFootprint)
+    if sis.isEmpty then frInit.get
+    else if !affects then frInit.get.withStandIns sis
+    else initTyped (fr.withStandIns sis)
   let wantedOf (fr : Front) (names : Option (List String)) : List Nat :=
     let selected := (fr.selected names).flatMap fr.group
     if closure then (selected ++ selected.flatMap fr.reach).eraseDups.flatMap fr.group |>.eraseDups else selected
@@ -611,7 +625,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   -- footprints, as the plans below are: the proposals' runs read it.
   let planOf := fun (sis : List StandIn) (name : String) =>
       SinglePass.work "propose: member plans" (fr.nameItem name) fun _ => (do
-    let fr' := initTyped (fr.withStandIns sis)
+    let fr' := initWith sis
     let members := (fr'.selected (some [name])).flatMap fr'.group
     let (T, plans) := fr'.elaborateSome (members.foldl (·.insert ·) {}) (some (retypeFromFragment force))
       (some (instancesFromWalk force)) (some (writtenSchemes force))
@@ -636,8 +650,8 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
       PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf [] memo
-  let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
-  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr
+  let claims := if computed.isEmpty then claims else withStandIns claims computed
+  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initWith computed
   -- With `proposed`, the selected functions whose footprint is more than
   -- the ordinary effect alone, and what they reach.
   let names := if !proposed then names else names.map (·.filter fr.proposes)

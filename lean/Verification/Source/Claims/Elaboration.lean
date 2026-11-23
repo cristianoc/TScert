@@ -471,16 +471,17 @@ def Front.withQualified (fr : Front)
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
 a grown store, and the members and names the computation read
 (`SourceElaboration.contractReads`). -/
-abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
-  List (SourceElaboration.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
+abbrev Retype (ω : Type := Unit) := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
+  List (SourceElaboration.ModuleValue Tree) → Option (SchemeRow Tree × List String) → Option ω →
   Except String (EquationStore.State × SourceClaims.Function Tree × (List SourceElaboration.ContractRead × List String))
 
 /-- What states a unit's calls' type arguments before its generic module
 values are instantiated, where a computation gives them: its claims with
-each such call's, over a grown store. -/
-abbrev Instances := Front → EquationStore.State → Fragment.Fn → Function Tree →
+each such call's, over a grown store, and an optional walk for `Retype` to
+reuse without walking the same body again. -/
+abbrev Instances (ω : Type := Unit) := Front → EquationStore.State → Fragment.Fn → Function Tree →
   List (SourceElaboration.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
-  Except String (EquationStore.State × Function Tree)
+  Except String (EquationStore.State × Function Tree × Option ω)
 
 /-- What claims a unit's generic closures at their schemes where no claim
 names them, before their scheme rows are made (`Scheme.closureRows`): from
@@ -489,9 +490,9 @@ abbrev ClosureSchemes := EquationStore.State → Json →
   Except String (EquationStore.State × List (Expression Tree))
 
 /-- One unit's plan, elaborated from the front over the store `T`. -/
-def elaborateMember (fr : Front) (T : EquationStore.State)
-    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none)
-    (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
+def elaborateMember {ω : Type} (fr : Front) (T : EquationStore.State)
+    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option (Retype ω) := none)
+    (instances : Option (Instances ω) := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _, values, componentAt⟩ := fr
@@ -616,12 +617,15 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
       f := { f with body }
     else
       f := (← Fragment.decodeFn source).1
-  -- The calls' type arguments, where computed (`instances`).
+  -- The calls' type arguments, where computed (`instances`), and any walk
+  -- it produced for `retype` to reuse.
+  let mut cachedWalk : Option ω := none
   if let some h := instances then
-    let (T, c') ← h fr d.types f c module (sourceScheme.map fun row =>
+    let (T, c', w) ← h fr d.types f c module (sourceScheme.map fun row =>
       (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
     d := { d with types := T }
     c := c'
+    cachedWalk := w
   let finish (d : Document EquationStore.State Tree) (module : List (SourceElaboration.ModuleValue Tree)) (c : Function Tree)
       (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
     let mut d := d
@@ -675,7 +679,7 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
       | .error reason => throw reason
     let (types, claims, (members, names)) ← match retype with
       | some r => r fr d.types f c.normalized module (sourceScheme.map fun row =>
-          (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
+          (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution)) cachedWalk
       | none => pure (d.types, c.normalized, ([], []))
     let request ← lowerNormalizedFn types f claims module (SourceElaboration.sourceClasses init) freshConstructors
       moduleOwned (readValues values) componentAt

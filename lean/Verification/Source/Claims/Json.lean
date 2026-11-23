@@ -123,8 +123,8 @@ def Front.selected (fr : Front) (names : Option (List String)) : List Nat :=
 
 /-- `elaborateMember` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
-def Front.elaborateSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
-    (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
+def Front.elaborateSome {ω : Type} (fr : Front) (wanted : Std.HashSet Nat) (retype : Option (Retype ω) := none)
+    (instances : Option (Instances ω) := none) (closureSchemes : Option ClosureSchemes := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not elaborated")) else
