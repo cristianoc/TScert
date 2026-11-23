@@ -78,11 +78,12 @@ def mergeRenamedAway (live : Std.HashSet Nat) (renames : List (Std.HashMap Nat (
 /-- What each predecessor states beyond the met store `met0`: its facts the
 met store lacks over names it does not rename, and its restatements the met
 store lacks. -/
-def mergeDiffs (preds : List State) (renames : List (Std.HashMap Nat (List Nat)))
+def mergeDiffs (live : Std.HashSet Nat) (preds : List State) (renames : List (Std.HashMap Nat (List Nat)))
     (variants : List (Std.HashSet Atom)) (met0 : Store) : List (List Atom) :=
   ((preds.zip renames).zip variants).map
     fun (((st : State), (m : Std.HashMap Nat (List Nat))), (v : Std.HashSet Atom)) =>
-      ((SinglePass.timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a => !a.names.any m.contains) ++
+      ((SinglePass.timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a =>
+        !a.names.any fun x => m.contains x && !live.contains x) ++
         v.fold (fun acc a => if met0.live.contains a.canon then acc else a :: acc) []
 
 /-- One predecessor's linear bounds by form and condition, the strongest of
@@ -135,7 +136,8 @@ def mergeEntailed (live : Std.HashSet Nat) (diffs : List (List Atom)) (views : L
     return acc
 
 /-- The guarded facts a join keeps, at slots. -/
-def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : List (List Atom))
+def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
+    (renames : List (Std.HashMap Nat (List Nat))) (met0 met : Store) (diffs : List (List Atom))
     (views : List State) : List HeapKnowledge.IndexAtom :=
   let tags : List HeapKnowledge.GuardTag := [.null, .undef, .tru, .fls]
   let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
@@ -149,10 +151,12 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : 
       | .index _ => a.names
       | _ => if a.names.any tagged.contains then a.names else [])
   let seedSlots := (CertificateProducer.keepFirst {} (seeds.filterMap mergedNames.idxOf?)).2.toList
-  if seedSlots.isEmpty then [] else Id.run do
+  let guarded0 : List HeapKnowledge.IndexAtom := if seedSlots.isEmpty then [] else Id.run do
     let projections := views.map fun ps => (SinglePass.materialize ps width seedSlots false).1
     let common := (SinglePass.materialize { names := mergedNames, store := met0 } width seedSlots false).1
-    let lowered := projections.map fun (p : HeapKnowledge.Knowledge) =>
+    let flat := projections.map fun (p : HeapKnowledge.Knowledge) =>
+      { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true }
+    let lowered := flat.map fun (p : HeapKnowledge.Knowledge) =>
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := SinglePass.timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := SinglePass.timedKind "meet tagged" fun _ =>
@@ -162,13 +166,29 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : 
       if nullish.isEmpty then [] else
       let candidates := (projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
-        | .guarded .. => []
+        | .guarded .. | .either .. => []
         | F => nullish.map fun (z, g) =>
             ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
-      candidates.filter fun a => projections.all fun (p : HeapKnowledge.Knowledge) =>
+      candidates.filter fun a => flat.all fun (p : HeapKnowledge.Knowledge) =>
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
           p.indices [a] none
     return joined ++ tagged
+  let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
+    m.fold (fun acc _ φs => φs.foldl (·.insert ·) acc) acc) {}
+  let disjoined : List HeapKnowledge.IndexAtom := SinglePass.timedKind "meet disjoined" fun _ =>
+    let disjNameCands := SinglePass.mergeDisjCandidates live phiNames met diffs views
+    if disjNameCands.isEmpty then [] else
+    let candidates := (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
+      | some (.index x) => some x
+      | _ => none).eraseDups
+    candidates.filter fun a =>
+      let slots := a.fact.slots.eraseDups
+      views.all fun ps =>
+        let p0 := (SinglePass.materialize ps width slots false).1
+        let p := { p0 with indices := p0.indices.filter fun x => x == a || match x.fact with | .either _ _ => false | _ => true }
+        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+          p.indices [a] none
+  guarded0 ++ disjoined
 
 /-- The guarded facts, renamed from slots to the merge's names, added. -/
 def mergeAddGuarded (mergedNames : List Nat) (guarded : List HeapKnowledge.IndexAtom) (met : Store) : Store :=
@@ -219,12 +239,13 @@ def mergeMet0 (preds : List State) (names : Array Nat) (renames : List (Std.Hash
 /-- The merge's store, from its parts. -/
 def mergeStore (preds : List State) (width : Nat) (names : Array Nat) (renames : List (Std.HashMap Nat (List Nat))) :
     Store :=
+  let live := Std.HashSet.ofList names.toList
   let variants := mergeVariants preds names renames
   let met0 := mergeMet0 preds names renames
-  let diffs := mergeDiffs preds renames variants met0
+  let diffs := mergeDiffs live preds renames variants met0
   let views := mergeViews names.toList diffs met0
-  mergeAddGuarded names.toList (mergeGuarded width names.toList met0 diffs views)
-    (mergeEntailed (Std.HashSet.ofList names.toList) diffs views (mergeBounds diffs met0))
+  let met := mergeEntailed live diffs views (mergeBounds diffs met0)
+  mergeAddGuarded names.toList (mergeGuarded width names.toList live renames met0 met diffs views) met
 
 /-- **The merge's state is the composition of its parts**, by unfolding. -/
 theorem mergeState_state (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State)

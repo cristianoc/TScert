@@ -58,12 +58,13 @@ variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 merge adds a bound only where every view passes `entailDefinedCheck`. -/
 theorem OnPath.entailed_ok_checked (P : OnPath preds width fresh0 p ε ρ η h) (hnear : LinearNearSound) {met : Store}
     (hm : StoreOk ε met (mVal preds width fresh0 ρ η) h) :
+    let live := Std.HashSet.ofList (mNames preds width fresh0).toList
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-    let diffs := mergeDiffs preds (mRen preds width fresh0)
+    let diffs := mergeDiffs live preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
-    StoreOk ε (mergeEntailed (Std.HashSet.ofList (mNames preds width fresh0).toList) diffs
+    StoreOk ε (mergeEntailed live diffs
       (mergeViews (mNames preds width fresh0).toList diffs met0) met) (mVal preds width fresh0 ρ η) h := by
-  intro met0 diffs
+  intro live met0 diffs
   obtain ⟨v, -, hv, hall⟩ := P.view_ok
   refine mergeEntailed_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h)
     (fun a => AtomHolds ε a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm

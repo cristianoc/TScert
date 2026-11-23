@@ -1,11 +1,10 @@
 // Issue #367.
 // A branch that sets `end` from `pending` is followed by an exit that every
 // run of that branch takes, so past the exit `end` is as it was. The pass
-// merges the two arms of the first `if` and keeps a bound over `end` only
-// where both arms entail it from their linear facts; `start <= pending`
-// holds only where `pending >= 0`, so the merge drops `start <= end`.
+// keeps `0 <= pending || start <= end` at the merge of the first `if` and
+// releases `start <= end` past the exit where `pending < 0`.
 
-// Refused (unprovable): the loop head lacks `start <= end`.
+// Verified by the ordinary verifier.
 /** @requires safeInteger(start) && safeInteger(n) && 0 <= start && start < n
  *  @ensures safeInteger(result) && 0 <= result */
 export function lineEnd(start: number, n: number, unbroken: boolean, flags: number[]): number {
@@ -29,7 +28,7 @@ export function lineEnd(start: number, n: number, unbroken: boolean, flags: numb
 // ordinary verifier reads it as a call that changes nothing.
 function paperAssume(fact: boolean, issue: string): Modifies<{}, void> {}
 
-// Accepted by the prototype, naming #367; refused by the ordinary verifier.
+// Verified by the ordinary verifier; accepted under the prototype naming #367.
 /** @requires safeInteger(start) && safeInteger(n) && 0 <= start && start < n
  *  @ensures safeInteger(result) && 0 <= result */
 export function lineEndAssumed(start: number, n: number, unbroken: boolean, flags: number[]): number {
@@ -48,7 +47,7 @@ export function lineEndAssumed(start: number, n: number, unbroken: boolean, flag
   return end;
 }
 
-// Refused (unprovable): `0 <= end` does not give the invariant `start <= end`.
+// Verified by the ordinary verifier; accepted under the prototype naming #367.
 /** @requires safeInteger(start) && safeInteger(n) && 0 <= start && start < n
  *  @ensures safeInteger(result) && 0 <= result */
 export function lineEndWeak(start: number, n: number, unbroken: boolean, flags: number[]): number {

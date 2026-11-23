@@ -1914,6 +1914,71 @@ structure Merged (ι : Type) where
   views : List State
   renames : List (Std.HashMap Nat (List Nat))
 
+/-- The linear negation of a linear fact, as atoms whose conjunction
+contradicts it over integers. -/
+def negLinear : Linear.Fact HeapKnowledge.Term → List HeapKnowledge.IndexAtom
+  | .le F d => [{ fact := .linear (.le (F.map fun (t, c) => (t, -c)) (-d - 1)) }]
+  | .ne F d => [{ fact := .linear (.le F d) }, { fact := .linear (.le (F.map fun (t, c) => (t, -c)) (-d)) }]
+
+/-- Candidate disjunctive facts at a merge, at the merge's names: any
+unconditional `.either` atom in `diffs` over live names not in `met`, and
+`either (.linear G) F` for any differing unconditional linear path-condition
+`G` over unchanged live names (`!phiNames`) and any differing unconditional
+non-disjunctive fact `F` over live names mentioning a changed name (`phiNames`)
+not in `met` such that every predecessor entails `G` or `F` (skipping pairs
+already entailed by `met`). -/
+def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
+    (diffs : List (List Atom)) (views : List State) : List HeapKnowledge.IndexAtom := Id.run do
+  let mut seen : Std.HashSet Atom := {}
+  let mut existing : List HeapKnowledge.IndexAtom := []
+  let mut rawGuards : List (Atom × Linear.Fact HeapKnowledge.Term) := []
+  let mut rawBodies : List (Atom × HeapKnowledge.IndexFact) := []
+  for d in diffs do
+    for a in d do
+      if !seen.contains a && a.names.all live.contains && !met.holds a then
+        seen := seen.insert a
+        if let .index ⟨F, none, _⟩ := a then
+          match F with
+          | .either _ (.pastSafe _) => pure ()
+          | .either .. => existing := { fact := F } :: existing
+          | .guarded .. => pure ()
+          | .linear L =>
+            if a.names.any phiNames.contains then
+              rawBodies := (a, F) :: rawBodies
+            else
+              rawGuards := (a, L) :: rawGuards
+          | _ =>
+            if a.names.any phiNames.contains then
+              rawBodies := (a, F) :: rawBodies
+  if rawGuards.isEmpty || rawBodies.isEmpty then return existing
+  let linMask (a : Atom) (L : Linear.Fact HeapKnowledge.Term) : List Bool :=
+    views.map fun (qs : State) =>
+      (qs.store.holds a || HeapKnowledge.entailsKnown (qs.store.linearNear a.names) L) &&
+        entailDefinedCheck qs a L
+  let guards := rawGuards.filterMap fun (a, L) =>
+    let m := linMask a L
+    if m.all id || m.all (!·) then none else some (a, L, m)
+  if guards.isEmpty then return existing
+  let bodies := rawBodies.filterMap fun (a, F) =>
+    let m := match F with
+      | .linear L => linMask a L
+      | _ => views.map fun (qs : State) => qs.store.holds a
+    if m.all id || m.all (!·) then none else some (a, F, m)
+  if bodies.isEmpty then return existing
+  let mut out : List HeapKnowledge.IndexAtom := existing
+  for (ga, gL, gM) in guards do
+    for (ba, bF, bM) in bodies do
+      if (gM.zip bM).all (fun (x, y) => x || y) then
+        let taut := match bF with
+          | .linear bL =>
+            let near := met.linearNear (ga.names ++ ba.names)
+            HeapKnowledge.entailsKnown (near ++ negLinear gL) bL ||
+            HeapKnowledge.entailsKnown (near ++ negLinear bL) gL
+          | _ => false
+        if !taut then
+          out := { fact := .either (.linear gL) bF } :: out
+  return out
+
 /-- The merge of the states `preds` entering a node of context `context`
 through the edges `edgesIn` (each as the search's merge reads it), its
 fresh names from `fresh`: the names, the facts every predecessor holds and
@@ -1984,7 +2049,8 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   -- by its restatements.
   let diffs : List (List Atom) := ((preds.zip renames).zip variants).map
     fun (((st : State), (m : Std.HashMap Nat (List Nat))), (v : Std.HashSet Atom)) =>
-      ((timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a => !a.names.any m.contains) ++
+      ((timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a =>
+        !a.names.any fun x => m.contains x && !live.contains x) ++
         v.fold (fun acc a => if met0.live.contains a.canon then acc else a :: acc) []
   let diffCount := diffs.foldl (fun acc d => acc + d.length) 0
   -- A linear bound every predecessor states of one form (under one
@@ -2048,10 +2114,12 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
       | .index _ => a.names
       | _ => if a.names.any tagged.contains then a.names else [])
   let seedSlots := (keepFirst {} (seeds.filterMap mergedNames.idxOf?)).2.toList
-  let guarded : List HeapKnowledge.IndexAtom := if seedSlots.isEmpty then [] else Id.run do
+  let guarded0 : List HeapKnowledge.IndexAtom := if seedSlots.isEmpty then [] else Id.run do
     let projections := views.map fun ps => (materialize ps width seedSlots false).1
     let common := (materialize { names := mergedNames, store := met0 } width seedSlots false).1
-    let lowered := projections.map fun (p : Knowledge) =>
+    let flat := projections.map fun (p : Knowledge) =>
+      { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true }
+    let lowered := flat.map fun (p : Knowledge) =>
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := timedKind "meet tagged" fun _ =>
@@ -2061,13 +2129,29 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
       if nullish.isEmpty then [] else
       let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
-        | .guarded .. => []
+        | .guarded .. | .either .. => []
         | F => nullish.map fun (z, g) =>
             ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
-      candidates.filter fun a => projections.all fun (p : Knowledge) =>
+      candidates.filter fun a => flat.all fun (p : Knowledge) =>
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
           p.indices [a] none
     return joined ++ tagged
+  let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
+    m.fold (fun acc _ φs => φs.foldl (·.insert ·) acc) acc) {}
+  let disjoined : List HeapKnowledge.IndexAtom := timedKind "meet disjoined" fun _ =>
+    let disjNameCands := mergeDisjCandidates live phiNames met diffs views
+    if disjNameCands.isEmpty then [] else
+    let candidates := (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
+      | some (.index x) => some x
+      | _ => none).eraseDups
+    candidates.filter fun a =>
+      let slots := a.fact.slots.eraseDups
+      views.all fun ps =>
+        let p0 := (materialize ps width slots false).1
+        let p := { p0 with indices := p0.indices.filter fun x => x == a || match x.fact with | .either _ _ => false | _ => true }
+        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+          p.indices [a] none
+  let guarded := guarded0 ++ disjoined
   met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
     | some a => acc.add a
     | none => acc) met

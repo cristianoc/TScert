@@ -147,6 +147,11 @@ theorem lowered_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ 
   · exact h6 a ha hc
   · exact lowerGuards_holds h3 h6 a (List.mem_filter.mp ha).1 hc
 
+/-- Filtering out disjunctions from a knowledge's indices keeps it holding. -/
+theorem filter_holds {k : Knowledge} {ρ : Env} {h : Heap} {pred : IndexAtom → Bool} (hk : Holds k ε ρ h) :
+    Holds { k with indices := k.indices.filter pred } ε ρ h :=
+  ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hc⟩
+
 /-- **A check against a holding knowledge is sound**: a fact
 `indicesCheckWith` accepts over a knowledge that holds, with its guard tags
 and alias classes, holds. -/
@@ -188,20 +193,28 @@ theorem guardedHolds_of_path (P : OnPath preds width fresh0 p ε ρ η h) : Guar
     rfl
   intro x hx
   unfold mergeGuarded at hx
-  replace hx := mem_ite_nil hx
   rcases List.mem_append.mp hx with hx | hx
-  · -- the joined facts: each checked against every lowered projection
-    simp only [SinglePass.timedKind] at hx
-    unfold CertificateProducer.joinGuarded at hx
-    have hall := (List.mem_filter.mp hx).2
-    simp only [Bool.and_eq_true] at hall
-    have hc := List.all_eq_true.mp hall.2 _ (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
-    exact check_holds (lowered_holds (P.projection_holds hv hvn _ _)) hc
-  · -- the tagged facts: each checked against every projection
+  · replace hx := mem_ite_nil hx
+    rcases List.mem_append.mp hx with hx | hx
+    · -- the joined facts: each checked against every lowered flat projection
+      simp only [SinglePass.timedKind] at hx
+      unfold CertificateProducer.joinGuarded at hx
+      have hall := (List.mem_filter.mp hx).2
+      simp only [Bool.and_eq_true] at hall
+      have hc := List.all_eq_true.mp hall.2 _
+        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩, rfl⟩)
+      exact check_holds (lowered_holds (filter_holds (P.projection_holds hv hvn _ _))) hc
+    · -- the tagged facts: each checked against every flat projection
+      simp only [SinglePass.timedKind] at hx
+      replace hx := mem_ite_nil hx
+      have hc := List.all_eq_true.mp (List.mem_filter.mp hx).2 _
+        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
+      exact check_holds (filter_holds (P.projection_holds hv hvn _ _)) hc
+  · -- the disjoined facts: each checked against every filtered view at its own slots
     simp only [SinglePass.timedKind] at hx
     replace hx := mem_ite_nil hx
-    have hc := List.all_eq_true.mp (List.mem_filter.mp hx).2 _ (List.mem_map.mpr ⟨v, hvm, rfl⟩)
-    exact check_holds (P.projection_holds hv hvn _ _) hc
+    have hc := List.all_eq_true.mp (List.mem_filter.mp hx).2 _ hvm
+    exact check_holds (filter_holds (P.projection_holds hv hvn _ _)) hc
 
 end Path
 

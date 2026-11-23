@@ -63,10 +63,10 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   bounds by the length of its segment's list: the read refused, the same
   read with both bounds assumed accepted naming #365, and one assuming only
   the upper bound refused.
-- `repro-367.ts`: issue #367, a bound over a local lost where the pass
-  merges an `if` whose branch changing the local always leaves at the next
-  statement: the loop refused, the same loop with the bound assumed past the
-  exit accepted naming #367, and one assuming too little refused.
+- `repro-367.ts`: issue #367, a bound over a local whose changing branch
+  always leaves at the next statement: the merge keeps the bound disjoined
+  with the changing branch's linear condition and releases it past the exit,
+  so every unit verifies.
 - `assume-lib.ts`, `assume-importer.ts`: a module holding an assume, and its
   importer, which keeps its ordinary verdict under the prototype.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
