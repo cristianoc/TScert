@@ -1,3 +1,4 @@
+// PAPER: the verifier's declarations at the version whose `Modifies` bound admits "extend", which the instances write.
 // The verifier's own declarations a program writes. The parser recognizes
 // each by its declaration here, which TypeScript binds the name to, never by
 // its spelling.
@@ -15,25 +16,27 @@ type Awaitable = unknown;
 // each changed at most as `P` says: `values` the locations holding a value
 // (`init` only those holding `null` or `undefined`, `scalar` only those
 // holding neither an object nor a spine), `spines` those holding an array
-// spine, and a quoted location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
+// spine (`extend` only by appending fresh cells at its end), and a quoted
+// location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
 // the locations it names (SOURCE-ELABORATION.md, "Stated effects"). As a
 // type it is `T`; the verifier certifies the statement from the definition's
 // code. `Fresh<T>` states that a normal return's value holds an array spine
 // the call allocated; as a type it is `T`.
 type Modifies<
   P extends {
-    values?: "keep" | "init" | "scalar" | "grow" | "any";
-    spines?: "keep" | "init" | "scalar" | "grow" | "any";
+    values?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
+    spines?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
     onThrow?: true;
     [location: string]:
       | "keep"
       | "init"
       | "scalar"
+      | "extend"
       | "grow"
       | "any"
       | {
-          values?: "keep" | "init" | "scalar" | "grow" | "any";
-          spines?: "keep" | "init" | "scalar" | "grow" | "any";
+          values?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
+          spines?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
         }
       | true
       | undefined;

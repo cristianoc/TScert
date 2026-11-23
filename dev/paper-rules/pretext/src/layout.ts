@@ -247,11 +247,10 @@ export function materializeLineRange(
 // any value and grow any array. Assumed, not checked outside pretext. Its type states it as
 // Modifies<{ values: "any"; spines: "grow" }, void>, which TypeScript reads as void.
 // PAPER: the client's effect is the effect variable E, bounded by the handle's reach.
-type AtMost<P> = P extends unknown ? unknown : unknown
-export function walkLineRanges<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(
+export function walkLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: PreparedText,
   maxWidth: number,
-  onLine: (line: LayoutLineRange, effect?: E) => void,
+  onLine: (line: LayoutLineRange) => Modifies<E, void>,   // PAPER
 ): number {
   const lineCount = walkPreparedLinesRaw<E>(   // PAPER: forwards E; the result through a local
     getInternalPrepared(prepared),
@@ -360,7 +359,7 @@ export function layoutNextLineRange(
 // resize hot path.
 export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): LayoutLinesResult {
   const lines: LayoutLine[] = []
-  const lineCount = walkPreparedLinesRaw<'{ "lines[*]": "extend" }'>(   // PAPER: the visitor's instance
+  const lineCount = walkPreparedLinesRaw<{ "lines[*]": "extend" }>(   // PAPER: the visitor's instance
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {

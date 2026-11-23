@@ -18,9 +18,10 @@ bounded effect variable, without the runtime guards (`?? missing()`) Pretext
 carries today:
 
 ```ts
-walkLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(prepared, onLine: Visitor<E>)
-walkLines<'{ "lines[*]": "extend" }'>(p, w => { lines.push(w) })   // accepted
-walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
+type Visitor<E extends Footprint> = (width: number) => Modifies<E, void>
+walkLines<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(prepared, onLine: Visitor<E>)
+walkLines<{ "lines[*]": "extend" }>(p, w => { lines.push(w) })   // accepted
+walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
 ```
 
 ## Where things are

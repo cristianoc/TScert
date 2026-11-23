@@ -164,11 +164,13 @@ the rules run first in a prototype, which reuses the whole pass:
   fact the allocation records). Its soundness is the one axiom
   `paperKeptFactsSurvive`.
 - **The side file.** `dev/paper-annotations.mts` reads the bounds and the
-  instances from the source. The ordinary front end is unchanged, so an
-  effect is written as a string literal type holding the literal, for
-  example `AtMost<'{ "xs[*]": "keep", "else": "any" }'>` and
-  `walk<'{ "visited[*]": "extend" }'>`: the ordinary reader refuses an
-  object type with keys such as `"xs[*]"` in a type argument.
+  instances from the source, written as the paper writes them:
+  `AtMost<{ "xs[*]": "keep"; else: "any" }>`,
+  `walk<{ "visited[*]": "extend" }>`, and a callback's effect as its type's
+  result `Modifies<E, T>`. The ordinary reader reads that result as changing
+  every location and the bound's and instance's arguments as arguments
+  without type meaning
+  ([SOURCE-CONTRACTS.md](../SOURCE-CONTRACTS.md#arguments-without-type-meaning)).
 - **Inst** is decided by the side script: an instance's root is a caller's
   local, which a checker does not see by name. A `const` local initialised
   by an object or array literal and never assigned is apart from the

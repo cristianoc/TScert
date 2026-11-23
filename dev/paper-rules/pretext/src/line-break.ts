@@ -120,17 +120,14 @@ export type ParagraphSegmentData = {
   hangEnds: Uint8Array | null
 }
 
-// PAPER: the visitor's effect is the effect variable E (docs/drafts/effect-languages.md);
-// `effect` is a phantom parameter that uses E, which TypeScript would report unused.
-type AtMost<P> = P extends unknown ? unknown : unknown
-type InternalLineVisitor<E> = (
+// PAPER: the visitor's effect is the effect variable E (docs/drafts/effect-languages.md).
+type InternalLineVisitor<E extends Footprint> = (   // PAPER
   width: number,
   startSegmentIndex: number,
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-  effect?: E,
-) => void
+) => Modifies<E, void>   // PAPER
 
 // PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
 // `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
@@ -308,7 +305,7 @@ export function normalizePreparedLineStart(
 }
 
 // Walks every line of the text into `stats`, visiting each, and returns the line count.
-export function walkPreparedLinesRaw<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(   // PAPER
+export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(   // PAPER
   prepared: PreparedLineData,
   maxWidth: number,
   onLine?: InternalLineVisitor<E>,
@@ -501,7 +498,7 @@ function returnsFromUnfitHyphen(
 // PAPER: annotation
 /** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
  *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex */
-function walkPreparedComplexLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(   // PAPER
+function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(   // PAPER
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,

@@ -1,12 +1,12 @@
 // The walk of "An effect language for TScert" (docs/drafts/effect-languages.md),
-// for the paper-rules prototype (dev/paper-rules.mts). `AtMost` is a local
-// alias, so the ordinary reader sees a plain bound; each effect is written as a
-// string literal type holding the paper's literal, since the ordinary reader
-// refuses an object type with keys such as "xs[*]" in a type argument.
-type AtMost<P> = unknown;
-type Visitor<E> = (i: number) => void;
+// for the paper-rules prototype (dev/paper-rules.mts). The ordinary reader
+// reads `AtMost`'s argument and each instance as arguments without type
+// meaning, and the visitor's `Modifies<E, void>` as changing every location.
+type Footprint = { [location: string]: "keep" | "init" | "scalar" | "extend" | "grow" | "any" | true };
+type AtMost<P extends Footprint> = Footprint;
+type Visitor<E extends Footprint> = (i: number) => Modifies<E, void>;
 
-export function walk<E extends AtMost<'{ "xs[*]": "keep", "else": "any" }'>>(xs: number[], visit: Visitor<E>): number {
+export function walk<E extends AtMost<{ "xs[*]": "keep"; else: "any" }>>(xs: number[], visit: Visitor<E>): number {
   const c = { i: 0 };
   let sum = 0;
   /** @invariant safeInteger(c.i) && 0 <= c.i */
@@ -20,10 +20,10 @@ export function walk<E extends AtMost<'{ "xs[*]": "keep", "else": "any" }'>>(xs:
 
 export function sumAndTrace(xs: number[]): number {
   const visited: number[] = [];
-  return walk<'{ "visited[*]": "extend" }'>(xs, i => { visited.push(i); });
+  return walk<{ "visited[*]": "extend" }>(xs, i => { visited.push(i); });
 }
 
 export function sumAndAlias(xs: number[]): number {
   const visited = xs;
-  return walk<'{ "visited[*]": "extend" }'>(xs, i => { visited.push(i); });
+  return walk<{ "visited[*]": "extend" }>(xs, i => { visited.push(i); });
 }

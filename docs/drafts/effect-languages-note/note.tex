@@ -673,8 +673,9 @@ written & meaning\\
 
 \noindent
 TypeScript reads \code{Modifies<P, T>} as \code{T} and
-\code{AtMost<P>} as \code{unknown}, and never reads \code{P}. So the
-instantiation is written at the call: TypeScript cannot infer it.
+\code{AtMost<P>} as \code{Footprint}, the type of every effect literal,
+and never reads \code{P}. So the instantiation is written at the call:
+TypeScript cannot infer it.
 
 \section{The walk}\label{sec:walk}
 
@@ -1117,10 +1118,10 @@ admits only as numbers or bigints; every other write is
 \ruleName{Field-Write}.
 \item \textbf{Callback types.} A bounded callback's type is read where its
 effect is the variable alone: a function type, or a local alias of one,
-whose result is \code{Modifies<E, T>} or states no effect, the variable
-appearing only as a phantom parameter. A callback typed with an effect
-besides the variable ($\varepsilon\cup P$, $P$ not empty) refuses its
-function.
+whose result is \code{Modifies<E, T>}, with the variable in neither its
+parameters nor $T$. A callback typed with an effect besides the variable
+($\varepsilon\cup P$, $P$ not empty), such as a union with a function
+type stating another effect, refuses its function.
 \item \textbf{Bounds.} A bound is read where it is an effect literal
 whose keys are those of \textbf{Keys}. A bound not read, a bound with a
 class key (\code{values}, \code{spines}) and a callback type not read

@@ -3,13 +3,14 @@
 // local `widths`. Safe under the bound, which keeps the handle's reach; the
 // pass keeps the link from `widths` to `prepared.widths` across the loop
 // head (cristianoc/TScert#351, fixed by #353).
-type AtMost<P> = unknown;
-type LineVisitor<E> = (width: number, start: number, end: number) => void;
+type Footprint = { [location: string]: "keep" | "init" | "scalar" | "extend" | "grow" | "any" | true };
+type AtMost<P extends Footprint> = Footprint;
+type LineVisitor<E extends Footprint> = (width: number, start: number, end: number) => Modifies<E, void>;
 type Prepared = { widths: number[]; flags: number[] };
 type Cursor = { segmentIndex: number };
 type Flow = { data: Prepared; wholeWidth: number; widths: number[] };
 
-export function walkLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(
+export function walkLines<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: Prepared, onLine: LineVisitor<E>): number {
   const cursor: Cursor = { segmentIndex: 0 };
   const widths = prepared.widths;

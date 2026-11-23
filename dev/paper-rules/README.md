@@ -9,8 +9,8 @@ the process it follows is AGENTS.md, "Experimental rules: a lighter process".
 ## What runs
 
 - `dev/paper-annotations.mts` reads a source's paper annotations into a side
-  file: each function's effect variables and bounds (`AtMost<…>`), each
-  call's instance (`f<'{…}'>(…)`), each callback's effect read from its
+  file: each function's effect variables and bounds (`AtMost<{…}>`), each
+  call's instance (`f<{…}>(…)`), each callback's effect read from its
   body, and the `paperAssume` statements.
 - The ordinary stages build the request, as `make check` does.
 - `lean/PaperRulesPrototype.lean`, the `paper-rules-prototype` executable,
@@ -69,10 +69,13 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 
 `pretext/src` is Pretext at commit
 `0dafecb370638ddc244909cc949efaf85b1efa26` (`~/GitHub/pretext`), with
-the prototype's edits. Every edit is marked:
+the prototype's edits and `src/paper.d.ts`, the effect language's
+declarations (`Footprint`, `AtMost`), a declaration file so that
+`AtMost`'s parameter, which its body does not name, is no unused one to
+TypeScript. Every edit is marked:
 
-- `// PAPER`: a paper annotation (a bound, an instance, the phantom effect
-  parameter of a visitor type);
+- `// PAPER`: a paper annotation (a bound, an instance, a visitor type's
+  `Modifies<E, void>`, the verifier's declarations the instances need);
 - `// PAPER: annotation`: a bounds annotation (`@requires`, `@ensures`,
   `@invariant`, `Modifies`) added for the experiment;
 - `// PAPER: guard removed`: a `?? missing()` read restored to `x[k]!`;
