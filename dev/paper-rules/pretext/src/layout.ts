@@ -97,6 +97,11 @@ export type PrepareOptions = {
 
 // --- Public API ---
 
+// PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
+// `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
+// that changes nothing.
+function paperAssume(_fact: boolean, _issue: string): Modifies<{}, void> {}   // PAPER
+
 function prepareInternal(
   text: string,
   font: string,
@@ -109,7 +114,9 @@ function prepareInternal(
   // One language read: break rules and measurement both follow it.
   const language = getPreparationLanguage(engineProfile)
   const analysis = analyzeText(text, engineProfile, options?.whiteSpace, wordBreak, language)
-  return measureAnalysis(analysis, 0, analysis.flags.length, font, segments, letterSpacing, engineProfile, language, true, null)
+  const prepared = measureAnalysis(analysis, 0, analysis.flags.length, font, segments, letterSpacing, engineProfile, language, true, null)   // PAPER: the result through a local
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
+  return prepared
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,
@@ -140,7 +147,9 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
   // Each segment's kind by name, from its flags.
   const kinds: SegmentBreakKind[] = []
   for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
-  return { ...prepared, segments, kinds }
+  const result = { ...prepared, segments, kinds }   // PAPER: the result through a local
+  paperAssume(result.segmentFlags.length === result.widths.length, "#356")   // PAPER: unsafe assume until #356
+  return result
 }
 
 function getInternalPrepared(prepared: PreparedText): InternalPreparedText {
@@ -156,6 +165,7 @@ export function layout(prepared: PreparedText, maxWidth: number, lineHeight: num
   // The resize hot path counts the same lines as `layoutWithLines()` without
   // building line ranges or text.
   const lineCount = countPreparedLines(getInternalPrepared(prepared), normalizeMaxWidth(maxWidth))
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { lineCount, height: lineCount * lineHeight }
 }
 
@@ -172,7 +182,7 @@ function createLayoutLine(
   endSegmentIndex: number,
   endGraphemeIndex: number,
 ): LayoutLine {
-  return {
+  const line = {   // PAPER: the result through a local
     text: buildLineTextFromRange(
       prepared,
       startSegmentIndex,
@@ -190,6 +200,8 @@ function createLayoutLine(
       graphemeIndex: endGraphemeIndex,
     },
   }
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
+  return line
 }
 
 function createLayoutLineRange(
@@ -241,7 +253,7 @@ export function walkLineRanges<E extends AtMost<'{ "prepared.**": "keep", "else"
   maxWidth: number,
   onLine: (line: LayoutLineRange, effect?: E) => void,
 ): number {
-  return walkPreparedLinesRaw<E>(   // PAPER: forwards E
+  const lineCount = walkPreparedLinesRaw<E>(   // PAPER: forwards E; the result through a local
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {
@@ -254,6 +266,8 @@ export function walkLineRanges<E extends AtMost<'{ "prepared.**": "keep", "else"
       ))
     },
   )
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
+  return lineCount   // PAPER: the walker's result
 }
 
 export function measureLineStats(
@@ -262,6 +276,7 @@ export function measureLineStats(
 ): LineStats {
   const stats = { lineCount: 0, maxLineWidth: 0 }
   walkPreparedLinesRaw(getInternalPrepared(prepared), normalizeMaxWidth(maxWidth), undefined, stats)
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return stats
 }
 
@@ -288,11 +303,15 @@ function stepNextLine(
   const internal = getInternalPrepared(prepared)
   lineEnd.segmentIndex = start.segmentIndex
   lineEnd.graphemeIndex = start.graphemeIndex
-  if (!normalizePreparedLineStart(internal, lineEnd)) return null
+  const started = normalizePreparedLineStart(internal, lineEnd)   // PAPER: the result through a local
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
+  if (!started) return null
 
   lineStart.segmentIndex = lineEnd.segmentIndex
   lineStart.graphemeIndex = lineEnd.graphemeIndex
+  paperAssume(internal.segmentFlags.length === internal.widths.length, "#356")   // PAPER: unsafe assume until #356
   const width = stepPreparedLineGeometryFromStart(internal, lineEnd, maxWidth)
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return width === null ? null : Math.max(0, width)
 }
 
@@ -316,6 +335,7 @@ export function layoutNextLine(
     end.segmentIndex,
     end.graphemeIndex,
   )
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { text, width, start: lineStart, end }
 }
 
@@ -340,6 +360,7 @@ export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: nu
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {
+      paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
       lines.push(createLayoutLine(
         prepared,
         width,
@@ -351,6 +372,7 @@ export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: nu
     },
   )
 
+  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { lineCount, height: lineCount * lineHeight, lines }
 }
 

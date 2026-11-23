@@ -1,7 +1,8 @@
 {
   "src/line-break.ts": {
-    "ordinary": "verified",
+    "ordinary": "unverified",
     "units": {
+      "paperAssume": "accepted",
       "breaksAfterKind": "accepted",
       "isDiscretionaryLineEnd": "accepted",
       "consumesAtLineStart": "accepted",
@@ -22,8 +23,9 @@
     }
   },
   "src/layout.ts": {
-    "ordinary": "verified",
+    "ordinary": "unverified",
     "units": {
+      "paperAssume": "accepted",
       "prepareInternal": "accepted",
       "prepare": "accepted",
       "prepareWithSegments": "accepted",
@@ -45,8 +47,9 @@
     }
   },
   "src/rich-inline.ts": {
-    "ordinary": "verified",
+    "ordinary": "unverified",
     "units": {
+      "paperAssume": "accepted",
       "getInternalPreparedRichInline": "accepted",
       "prepareRichInline": "accepted",
       "getHyphenRooms": "accepted",
@@ -68,6 +71,29 @@
       "materializeRichInlineLineRange": "accepted",
       "walkRichInlineLineRanges": "refused",
       "measureRichInlineStats": "accepted",
+      "init": "accepted"
+    }
+  },
+  "src/prepare.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "countRenderedSpacingGraphemes": "accepted",
+      "addInternalLetterSpacing": "accepted",
+      "needsComplexTextPath": "accepted",
+      "isSpaceKind": "accepted",
+      "getScriptFacts": "accepted",
+      "getScriptFactsAt": "accepted",
+      "mayHoldCursive": "accepted",
+      "readScriptRuns": "accepted",
+      "spaceSharesScriptRun": "accepted",
+      "getUnspacedGraphemes": "accepted",
+      "getFollowingSpaceTail": "accepted",
+      "getTailKerning": "accepted",
+      "getJoinedNarrowing": "accepted",
+      "getTextSegmentWidth": "accepted",
+      "measureAnalysis": "refused",
+      "addKanaKerning": "accepted",
+      "addIdeographicSpaceHangs": "accepted",
       "init": "accepted"
     }
   }
