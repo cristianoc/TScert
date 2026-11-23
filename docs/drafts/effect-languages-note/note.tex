@@ -1043,8 +1043,9 @@ Where TScert's verifier loses a fact it should establish, the prototype
 states the fact with an unsafe assume \code{paperAssume(fact, "\#N")}: the
 layer adds the equality \code{fact} at the step that evaluates it, and the
 verdict names the issue \code{\#N} that tracks the verifier's extension.
-Issue \#351 is one: a local copy of a field loses its link to the field at
-a loop head.
+No assume is in use: the one gap it stood for, a local copy of a field
+losing its link to the field at a loop head (\#351), is fixed in the
+verifier.
 
 \subsection{Where the prototype decides less}
 The prototype applies each rule of this paper, and decides less than the

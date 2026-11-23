@@ -39,8 +39,9 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
 - **The Pretext copy and its verdicts**: `dev/paper-rules/pretext/`.
 - **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
   based on `single-pass`).
-- **Issues for gaps of the sound verifier**: each `paperAssume` names one
-  (for example cristianoc/TScert#351, links at loop heads).
+- **Issues for gaps of the sound verifier**: each `paperAssume` names one.
+  None is in use; cristianoc/TScert#351 (links at loop heads) was one, fixed
+  by #353.
 
 ## Standing decisions (the owner's, 2026-11-23)
 
