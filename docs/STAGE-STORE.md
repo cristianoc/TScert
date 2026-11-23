@@ -180,15 +180,18 @@ A check uses the `interface-plan`, `module-interface` and `pass` process
 stages (`verifierCall`). Discovery (`--module-interface-plan`) consumes the
 whole fragment and a selection document (function names and explicit
 own-module roots) and returns a dependency-ordered DAG of the strongly
-connected components of the module graph for the requested roots and their
-complete module dependencies; a component's members are ordered by module
-location, ready components by their first location. The orchestrator
+connected components of the module graph for the `(module, function)` pairs
+the requested roots reach transitively (every function for an explicit
+`ownModule` root); a component's members are ordered by module location,
+each member's requested function names sorted canonically, and ready
+components ordered by their first location. The orchestrator
 (`prepareInterfaces`, `pipeline/module-interfaces.mts`) resolves each
 outgoing dependency before invoking its parent's stage, and therefore
 before acquiring its execution claim. Each component request
-(`--module-interface`) contains its complete module documents, its
-dependencies' result bytes and keys, the forced proposals, the fuel and the
-mode; subtype rounds are an explicit argument. The standard process
+(`--module-interface`) contains its complete module documents, each member's
+requested function names (`names`), its dependencies' result bytes and keys,
+the forced proposals, the fuel and the mode; subtype rounds are an explicit
+argument. The standard process
 manifest binds the request file by content, alongside executable,
 libraries, runner, runtime and adapter. Changes propagate through the
 component DAG. An own-file publication supplies the parser's canonical

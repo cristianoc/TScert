@@ -88,8 +88,9 @@ def interfacePlan (ast selection : Json) : Except String Json := do
   let components := (interfaceComponents needs).map fun c =>
     let dependencies := ((c.flatMap fun n => n.reads.map (·.location)).eraseDups.filter
       fun l => !c.any (·.module.location == l)).mergeSort (· ≤ ·)
+    let reqNames := c.map fun n => Json.mkObj [("location", toJson n.module.location), ("names", toJson n.names)]
     Json.mkObj [("modules", toJson (c.map fun n => interfaceModuleJson n.module)),
-      ("dependencies", toJson dependencies)]
+      ("names", toJson reqNames), ("dependencies", toJson dependencies)]
   return Json.mkObj [("components", toJson components)]
 
 end Verification.SourceClaimJson

@@ -96,7 +96,7 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   const byModule = new Map<string, { key: string; interface: Canonical }>();
   const projections: Canonical[] = [];
   for (const [index, raw] of array(plan.components).entries()) {
-    const component = exact(raw, ["modules", "dependencies"]);
+    const component = exact(raw, ["modules", "names", "dependencies"]);
     const members = array(component.modules).map((m) => string(object(m).location));
     const dependencies: { key: string; interface: Canonical }[] = [];
     for (const location of array(component.dependencies).map(string)) {
@@ -104,8 +104,8 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
       if (dependency === undefined) throw Error(`dependency not established before parent: ${location}`);
       if (!dependencies.includes(dependency)) dependencies.push(dependency);
     }
-    const request = { modules: array(component.modules), dependencies, force: options.force, fuel: options.fuel,
-      mode: options.mode };
+    const request = { modules: array(component.modules), names: array(component.names), dependencies,
+      force: options.force, fuel: options.fuel, mode: options.mode };
     const path = join(options.work, `component-${index}.json`);
     writeFileSync(path, canonical(request));
     const run = invoke(["--module-interface", path]);

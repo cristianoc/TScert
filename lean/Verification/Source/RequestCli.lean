@@ -300,7 +300,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
   let request ← readJson path
   let parsed : Except String Json := do
     let j ← request
-    fieldsExactly j ["modules", "dependencies", "force", "fuel", "mode"]
+    fieldsExactly j ["modules", "names", "dependencies", "force", "fuel", "mode"]
     -- Every symbol key at its canonical number (`Fragment.canonicalSymbols`):
     -- the members' documents, and the dependencies', which their own
     -- components' checks wrote so.
@@ -327,8 +327,21 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
     let incoming := decoded.flatMap (·.1)
     let incomingTables := decoded.flatMap (·.2)
-    let needs ← SourceClaimJson.interfaceNeeds sc
-    let own := needs.filter fun (n : SourceClaimJson.ModuleNeed) => modules.any (·.location == n.module.location)
+    let rawNames ← jArr j "names"
+    let mut requested : List (String × List String) := []
+    for entry in rawNames do
+      fieldsExactly entry ["location", "names"]
+      let loc ← entry.getObjValAs? String "location"
+      let ns : List String ← fromJson? (← jField entry "names")
+      if requested.any (·.1 == loc) then throw s!"duplicate requested module {loc}"
+      if !modules.any (·.location == loc) then throw s!"requested names for unknown module {loc}"
+      requested := requested ++ [(loc, ns.eraseDups.mergeSort (· ≤ ·))]
+    let own ← modules.mapM fun m => do
+      let some ns := requested.lookup m.location | throw s!"missing requested names for {m.location}"
+      let declared ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
+      if ns.any (fun n => !declared.contains n) then throw s!"requested unknown function in {m.location}"
+      let reads ← SourceClaimJson.moduleReads sc m ns
+      return ({ module := m, names := ns, reads } : SourceClaimJson.ModuleNeed)
     -- No module unit is given a line: every loop head's proposal is
     -- inferred (`HeadInference`).
     let given : Std.HashMap String Json := {}
