@@ -175,6 +175,11 @@ const RICH_INLINE_START_CURSOR: RichInlineCursor = {
   graphemeIndex: 0,
 }
 
+// PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
+// `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
+// that changes nothing.
+function paperAssume(_fact: boolean, _issue: string): Modifies<{}, void> {}   // PAPER
+
 function getInternalPreparedRichInline(prepared: PreparedRichInline): InternalPreparedRichInline {
   return prepared
 }
@@ -361,7 +366,11 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         const ownAnalysis = analyzeText(item.text, profile, 'normal', wordBreak, language)
         const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, null, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null)
         const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
-        if (normalizePreparedLineStart(own, start)) width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
+        paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
+        if (normalizePreparedLineStart(own, start)) {   // PAPER: a block for the assume
+          paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
+          width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
+        }
         width += item.extraWidth ?? 0
         // The chip's text as a line of it paints it (buildLineTextFromRange).
         for (let i = 0; i < ownAnalysis.texts.length; i++) {
@@ -726,6 +735,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     items: segmentData,
     segments,
   }
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (hasEmptyObject && profile.emptyAtomicAlwaysFits) setEmptyObjectFacts(segmentData, data, items, itemSegments, segmentItems, source, starts)
   // Each item is a text frame: a zero-width space after preserved spaces of its own item ends
   // the run of them that hangs (ParagraphSegmentData, hangEnds).
@@ -777,7 +787,7 @@ function getHyphenRooms(hyphenWidths: number[], itemSegments: number[], segmentI
 
 // A soft hyphen, as a segment of any kind: Gecko drops soft hyphens from a text frame's text
 // (IsDiscardable, nsTextFrameUtils.cpp:32-49).
-function isSoftHyphenSegment(data: PreparedSegments, i: number): boolean {
+function isSoftHyphenSegment(data: PreparedSegments, i: number): Modifies<{}, boolean> {   // PAPER: annotation
   const kind = (data.segmentFlags[i] ?? missing()) & KIND_BITS
   return kind === SOFT_HYPHEN || ((kind === ZERO_WIDTH_BREAK || kind === ZERO_WIDTH_GLUE) && (data.segments[i] ?? missing()).charCodeAt(0) === 0x00AD)
 }
@@ -849,6 +859,7 @@ function setEmptyObjectFacts(
     const end = itemSegments[index + 1]
     if (end === undefined) throw new RangeError('missing value')
     if (first === end) continue
+    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     const kind = (segmentFlags[first] ?? missing()) & KIND_BITS
     const item = items[index]
     if (item === undefined) throw new RangeError('missing value')
@@ -858,6 +869,7 @@ function setEmptyObjectFacts(
         continue
       }
       let before = first - 1
+      /** @invariant data.segmentFlags.length === data.widths.length */   // PAPER: annotation
       while (before >= 0 && isSoftHyphenSegment(data, before)) before--
       const beforeKind = before < 0 ? TEXT : (segmentFlags[before] ?? missing()) & KIND_BITS
       let space = -1
@@ -874,6 +886,7 @@ function setEmptyObjectFacts(
     let softHyphens = true
     let holdsSpace = false
     let establishesLine = false
+    /** @invariant data.segmentFlags.length === data.widths.length */   // PAPER: annotation
     for (let i = first; i < end; i++) {
       if (isSoftHyphenSegment(data, i)) continue
       softHyphens = false
@@ -881,12 +894,14 @@ function setEmptyObjectFacts(
       else establishesLine = true
     }
     if (softHyphens) continue
+    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if ((item.extraWidth ?? 0) > 0 || (holdsSpace && !establishesLine)) keeps = false
     else if (kind === SPACE) keeps = true
     else keeps = (kind === ZERO_WIDTH_BREAK && !isSoftHyphenSegment(data, first)) || kind === HARD_BREAK || kind === PRESERVED_SPACE
   }
   segmentData.emptyObjectSpaces = spaces
   segmentData.emptyObjectReturns = returns
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
 }
 
 // Finds the paragraph's line where nothing wraps it, which is taken without a walk at any width it
@@ -909,8 +924,10 @@ function setEmptyObjectFacts(
 // measured and left out (RESEARCH.md, Decisions Log, 2026-10-09, a loop of its own for the count
 // of lines).
 function findWholeLine(flow: InternalPreparedRichInline): InternalPreparedRichInline {
+  const data = flow.data   // PAPER: the handle through a local
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   // PAPER: the visitor's instance
-  const lineCount = walkPreparedLinesRaw<'{ "flow.wholeWidth": "any", "flow.wholeStart": "any", "flow.wholeEnd": "any" }'>(flow.data, Number.POSITIVE_INFINITY, (width, startSegmentIndex, _startGraphemeIndex, endSegmentIndex) => {
+  const lineCount = walkPreparedLinesRaw<'{ "flow.wholeWidth": "any", "flow.wholeStart": "any", "flow.wholeEnd": "any" }'>(data, Number.POSITIVE_INFINITY, (width, startSegmentIndex, _startGraphemeIndex, endSegmentIndex) => {
     flow.wholeWidth = width
     flow.wholeStart = startSegmentIndex
     flow.wholeEnd = endSegmentIndex
@@ -1076,6 +1093,7 @@ function createLine(
   const itemEndHalts = items.itemEndHalts
   const fragments: RichInlineFragmentRange[] = []
   const lastSegmentIndex = endGraphemeIndex > 0 ? endSegmentIndex : endSegmentIndex - 1
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   const firstPartWidth = startSegmentIndex <= lastSegmentIndex && (startGraphemeIndex > 0 || startSegmentIndex === endSegmentIndex)
     ? getPartWidth(data, startSegmentIndex, startGraphemeIndex, startSegmentIndex < endSegmentIndex ? -1 : endGraphemeIndex, true) : 0
   const lastPartWidth = endGraphemeIndex > 0 && endSegmentIndex > startSegmentIndex ? getPartWidth(data, endSegmentIndex, 0, endGraphemeIndex, false) : 0
@@ -1154,6 +1172,7 @@ function createLine(
       let w: number
       if ((i > startSegmentIndex || startGraphemeIndex === 0) && i < endSegmentIndex) {
         const startExtra = i === startSegmentIndex && lineStartExtras !== null ? (lineStartExtras[i] ?? missing()) : 0
+        paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
         w = startExtra + (((segmentFlags[i] ?? missing()) & KIND_BITS) !== TAB ? (widths[i] ?? missing()) : getItemTabAdvance(data, items, i, lineW + startExtra, tabsInAppUnits))
         if (letterSpacing !== 0 && ((segmentFlags[i] ?? missing()) & SPACED) !== 0) w += letterSpacing
       } else {
@@ -1222,10 +1241,13 @@ export function layoutNextRichInlineLineRange(
     return flow.onlyItem >= 0 ? createOnlyItemLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0) : createLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0)
   }
   const lineEnd: LayoutCursor = { segmentIndex: getSegmentIndex(flow, start), graphemeIndex: start.graphemeIndex }
-  if (!normalizePreparedLineStart(flow.data, lineEnd)) return null
+  const data = flow.data   // PAPER: the handle through a local
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
+  if (!normalizePreparedLineStart(data, lineEnd)) return null
   const startSegmentIndex = lineEnd.segmentIndex
   const startGraphemeIndex = lineEnd.graphemeIndex
-  const width = stepPreparedLineGeometryFromStart(flow.data, lineEnd, safeWidth)
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
+  const width = stepPreparedLineGeometryFromStart(data, lineEnd, safeWidth)   // PAPER: the handle through a local
   if (width === null) return null
   return flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
     : createLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
@@ -1321,10 +1343,13 @@ export function materializeRichInlineLineRange(
     // Only the fragment a line ends with shows the hyphen of a soft hyphen it ends at.
     const endsLine = i === line.fragments.length - 1 && endSegmentIndex === lineEndSegmentIndex && endGraphemeIndex === line.end.graphemeIndex
     let sourceStart = startSegmentIndex < itemEnd ? (sourceStarts[startSegmentIndex] ?? missing()) : startSegmentIndex > first ? ((sourceEnds ?? missing())[startSegmentIndex - 1] ?? missing()) : 0
+    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (startGraphemeIndex > 0 && startSegmentIndex < itemEnd) sourceStart = getSourceOffset(sourceStarts, sourceUnits, startSegmentIndex, getGraphemeStart(data, startSegmentIndex, startGraphemeIndex))
     let sourceEnd = sourceStart
+    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (endGraphemeIndex > 0) sourceEnd = getSourceOffset(sourceStarts, sourceUnits, endSegmentIndex, getGraphemeStart(data, endSegmentIndex, endGraphemeIndex) - 1) + 1
     else if (endSegmentIndex > startSegmentIndex) sourceEnd = (sourceEnds ?? missing())[endSegmentIndex - 1] ?? missing()
+    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     const materialized: InternalRichInlineFragment = {
       itemIndex: fragment.itemIndex,
       text: endsLine ? buildLineTextFromRange(data, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
@@ -1363,7 +1388,9 @@ export function walkRichInlineLineRanges<E extends AtMost<'{ "prepared.**": "kee
     onLine(flow.onlyItem >= 0 ? createOnlyItemLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0) : createLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0))
     return 1
   }
-  return walkPreparedLinesRaw<E>(flow.data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E
+  const data = flow.data   // PAPER: the handle through a local
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
+  return walkPreparedLinesRaw<E>(data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E
     onLine(flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
       : createLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex))
   })
@@ -1377,6 +1404,8 @@ export function measureRichInlineStats(
   const safeWidth = Math.max(0, normalizeMaxWidth(maxWidth))
   if (fitsWhole(flow, safeWidth)) return { lineCount: 1, maxLineWidth: Math.max(0, flow.wholeWidth ?? missing()) }
   const stats = { lineCount: 0, maxLineWidth: 0 }
-  walkPreparedLinesRaw(flow.data, safeWidth, undefined, stats)
+  const data = flow.data   // PAPER: the handle through a local
+  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
+  walkPreparedLinesRaw(data, safeWidth, undefined, stats)
   return stats
 }

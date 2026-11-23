@@ -1049,10 +1049,12 @@ where the condition holds. It does so in the checked file only: an imported
 module is read as written, the source its interface was established over. The program checked and the source agree
 wherever \code{fact} holds at the assume, which the assume asserts and no
 proof establishes; the verdict names the issue \code{\#N} that tracks
-either a verifier extension or a proof the source does not yet give. One
-assume is in use: a call of a callback drops the facts over an object the
+either a verifier extension or a proof the source does not yet give. Two
+issues are in use: a call of a callback drops the facts over an object the
 caller allocated and never passed to it, which the callback cannot reach
-(\#355).
+(\#355); and Pretext's prepared handle states that its \code{segmentFlags}
+are as long as its \code{widths}, which its builders and the readers that
+pass it on do not yet prove (\#356).
 
 \subsection{Where the prototype decides less}
 The prototype applies each rule of this paper, and decides less than the
