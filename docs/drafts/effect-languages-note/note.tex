@@ -1039,27 +1039,83 @@ Conjectures 1--4 are not proved. A prototype applies its rules
 checker layer, whose soundness is the axiom \lean{paperKeptFactsSurvive},
 outside the Lean library.
 
+Where TScert's verifier loses a fact it should establish, the prototype
+states the fact with an unsafe assume \code{paperAssume(fact, "\#N")}: the
+layer adds the equality \code{fact} at the step that evaluates it, and the
+verdict names the issue \code{\#N} that tracks the verifier's extension.
+Issue \#351 is one: a local copy of a field loses its link to the field at
+a loop head.
+
 \subsection{Where the prototype decides less}
-The prototype applies each rule of this paper, and in three places it
-decides less than the rule, refusing where the rule would accept:
+The prototype applies each rule of this paper, and decides less than the
+rule in the places below, refusing where the rule would accept:
 \begin{itemize}[leftmargin=1.5em]
 \item \textbf{Anch.} The rule leaves every location of $\kw{old}$'s
 complement alone. The prototype decides it only for the fields and the
 spine of an object the function allocates, read from the separation fact
 the allocation records; element locations and paths through fields are
 left to the bound.
-\item \textbf{Declared reach.} The rule takes the access paths of the
-type. The prototype takes the slots the root reaches through the pass's
-read links at declared keys and its alias links, so a reach the knowledge
-does not link is not covered.
+\item \textbf{Declared reach.} The prototype reads $\mathit{Acc}(T)$ for a
+type literal, an interface with its \code{extends} clauses, an array, a
+readonly array, a typed array, a union, an intersection, a primitive and
+a type alias or interface of the same file. Any other form (a tuple, an
+index, call or method signature, a generic or recursive reference, a
+name declared elsewhere) leaves the reach open: no key is decided absent
+from it. In the layer, a region lies in the reach where its slot is one
+the root reaches through the pass's read links along the access paths and
+its alias links, at a path of $\mathit{Acc}(T)$, so a reach the knowledge
+does not link is not covered. A reach entry is read at $\keep$ only.
+\item \textbf{Keys.} The layer reads the keys \code{p[*]} (the spine),
+\code{p[\#]} (the cells, $p.\kw{cells}$), \code{p.f}, \code{p.*} and
+\code{p.**} at a parameter \code{p}. A bound with any other key (a path
+through a field) gives its function no layer, and a call's effect with one
+keeps nothing.
 \item \textbf{Inst's disjointness.} The rule decides it with the pass's
 separation evidence at the call. The prototype decides it from the source,
-before the pass: a field and a spine are disjoint, as are fields at
-different keys, a field whose key no type in the reach declares, and a
-\code{const} local the caller initialises by a literal and never assigns.
+before the pass, with each argument's \code{const} aliases resolved: a
+field, a spine and cells are disjoint, as are fields at different keys
+and a field whose key no type of a closed reach declares. An own location
+of an object the caller allocates (a \code{const} of its body initialised
+by a literal, never stored, passed or returned) is disjoint from an own
+location and from the reach of a parameter the caller never assigns.
+\item \textbf{Anchoring.} An instance is decided anchored where its
+$\kw{else}$ is $\keep$, it has no class key, and each key is a field, the
+fields or the spine of a \code{const} or of a parameter its function never
+assigns. A path through a field, a reach and the cells are not decided
+anchored.
+\item \textbf{The argument's type.} A callback argument is a closure
+written at the call or held by a \code{const}, or, for a forwarded
+variable, a callback parameter of that variable or a closure whose only
+effect on old storage is calls of such parameters. A closure's effect is
+read from its steps: field and element writes, \code{push}, calls of
+functions with a stated effect or forwarding their variables, and natives
+whose audited row keeps the heap. Any other call refuses the closure.
+\ruleName{Field-Write-Scalar} is decided by the operator: an increment
+and an arithmetic compound assignment, whose operands strict TypeScript
+admits only as numbers or bigints; every other write is
+\ruleName{Field-Write}.
+\item \textbf{Callback types.} A bounded callback's type is read where its
+effect is the variable alone: a function type, or a local alias of one,
+whose result is \code{Modifies<E, T>} or states no effect, the variable
+appearing only as a phantom parameter. A callback typed with an effect
+besides the variable ($\varepsilon\cup P$, $P$ not empty) refuses its
+function.
+\item \textbf{Bound's second premise.} The prototype decides it for a
+field and a spine at a parameter, one location at every state, and for a
+reach where the function's own effect, read from its body without its
+callbacks' calls, keeps the reach. A function whose own effect is not read,
+or may change a reach of its bound, is refused.
+\item \textbf{Every call.} A signature holds for every call. The prototype
+checks \ruleName{Inst} at each call in a function declaration of the files
+it reads, and refuses a quantified function referenced otherwise in its
+file or in a file of its directory that imports it: as a value, or by a
+call outside every function declaration.
+\item \textbf{Exceptional exits.} The prototype reads no \code{onThrow}.
 \end{itemize}
-At a call the prototype also reads the call's effect with the bound in
-place of the image (Section~\ref{sec:rules}, \ruleName{Inst}).
+At a call the prototype reads the call's effect with the bound in place
+of the image (Section~\ref{sec:rules}, \ruleName{Inst}), each bound and
+the callee's own effect a component of the union, so a fact survives the
+call where every component keeps it.
 
 \subsection{Limits}
 

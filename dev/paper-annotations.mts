@@ -5,7 +5,7 @@
 // of the instance against the bound (rule Inst). The ordinary front end reads
 // none of this: `AtMost` is a local alias of `unknown` there.
 //   node dev/paper-annotations.mts file.ts
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
@@ -19,8 +19,18 @@ const isChange = (s: string): s is Change => changes.some((c) => c === s);
 const le = (a: Change, b: Change): boolean => changes.indexOf(a) <= changes.indexOf(b);
 
 /** An effect of the paper: entries in the `Modifies` key syntax, and `else`;
-for a bound with a reach entry `"x.**"`, the keys its types declare. */
-interface Effect { entries: [string, Change][]; else: Change; reachKeys?: string[] }
+for each reach entry `"x.**"` of a bound, its access paths (`reach`, by the
+entry's key); and whether a class key (`values`, `spines`) was written,
+which the effect reads into its `else`. Besides the `Modifies` keys, the
+key `"x[#]"` names `x.cells`, the element locations of the array `x` holds,
+as rule Elem-Write writes them. */
+interface Effect { entries: [string, Change][]; else: Change; reach?: Record<string, AccJson>; classes?: boolean }
+
+/** The access paths of a type, `Acc(T)` of "Declared reach": for each path
+(field keys and `[*]` steps), the keys the type there declares and whether
+it is an array (a spine and cells); `open` where some part of the type is a
+form this script does not read, which may then declare any key. */
+interface AccJson { paths: { path: string[]; keys: string[]; array: boolean }[]; open: boolean }
 
 interface EffectParam { name: string; bound: Effect }
 /** A function's effect parameters, its bounded callback parameters, and,
@@ -30,6 +40,10 @@ interface EffectParam { name: string; bound: Effect }
 interface FunctionInfo {
   params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[];
   own?: Effect | string;
+  /** Why the function's own verdict cannot rest on its bounds: its
+  callback's type is not read, or its own steps are not shown to keep the
+  regions its bounds read (rule Bound's second premise). */
+  refusal?: string;
 }
 /** A call of a function with effect parameters: the instance, whether it is
  * within the bounds (rule Inst), and what the layer needs to give the call
@@ -79,15 +93,17 @@ function effectOfText(text: string): Effect | null {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
+  let classes = false;
   for (const [key, value] of Object.entries(parsed)) {
     if (typeof value !== "string" || !isChange(value)) return null;
     // A class key bounds every location of its class: the effect read here
     // has no class regions, so it widens the `else` (each location is in one
     // class, and a change on a class the other key names is within the max).
+    if (key === "values" || key === "spines") classes = true;
     if (key === "else" || key === "values" || key === "spines") { if (!le(value, otherwise)) otherwise = value; }
     else entries.push([key, value]);
   }
-  return { entries, else: otherwise };
+  return classes ? { entries, else: otherwise, classes } : { entries, else: otherwise };
 }
 
 /** The effect a type writes: a string literal type holding the paper's
@@ -99,6 +115,7 @@ function effectOf(node: ts.TypeNode): Effect | null {
   if (!ts.isTypeLiteralNode(node)) return null;
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
+  let classes = false;
   for (const m of node.members) {
     if (!ts.isPropertySignatureDeclaration(m) || !m.type || !ts.isLiteralTypeNode(m.type)) return null;
     const literal = m.type.literal;
@@ -107,53 +124,95 @@ function effectOf(node: ts.TypeNode): Effect | null {
     if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
         (name.text === "else" || name.text === "values" || name.text === "spines")) {
       // A class key widens the `else`, as in `effectOfText`.
+      if (name.text !== "else") classes = true;
       if (!le(literal.text, otherwise)) otherwise = literal.text;
     } else if (ts.isStringLiteral(name)) entries.push([name.text, literal.text]);
     else return null;
   }
-  return { entries, else: otherwise };
+  return classes ? { entries, else: otherwise, classes } : { entries, else: otherwise };
 }
 
-/** The keys a type declares and, through them, the types it holds
-(`docs/drafts/effect-languages.md`, "Declared reach"): the members of a type
-literal or an interface, the element type of an array, the members of a
-union, and a type alias or interface named in the same file. */
-function declaredKeys(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>, seen: Set<string>, out: Set<string>): void {
-  if (!node) return;
-  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
-    const name = node.typeName.text;
+/** The access paths of a type (`docs/drafts/effect-languages.md`, "Declared
+reach"): `Acc(T)`, with the keys the type declares at each path and whether
+it is an array there. Read are the members of a type literal or an
+interface (its `extends` clauses too), the element type of an array, a
+readonly array or `Array<T>`, a typed array (a spine and cells, no key), the
+members of a union or an intersection, a primitive or literal type (no
+key), and a type alias or interface named in the same file. Any other form
+(a tuple, an index or call signature, a method, a mapped or conditional
+type, a name declared elsewhere, a recursive reference) is open: it may
+declare any key, so no key is decided absent from the reach. */
+interface Acc { paths: Map<string, { keys: Set<string>; array: boolean }>; open: boolean }
+
+function accOf(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>): Acc {
+  const acc: Acc = { paths: new Map(), open: false };
+  const at = (path: string[]): { keys: Set<string>; array: boolean } => {
+    const k = path.join(".");
+    let e = acc.paths.get(k);
+    if (e === undefined) { e = { keys: new Set(), array: false }; acc.paths.set(k, e); }
+    return e;
+  };
+  const members = (ms: ts.NodeArray<ts.TypeElement>, path: string[], seen: string[]): void => {
+    at(path);
+    for (const m of ms) {
+      if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
+        at(path).keys.add(m.name.text);
+        walk(m.type, [...path, m.name.text], seen);
+      } else acc.open = true;
+    }
+  };
+  const named = (name: string, args: ts.NodeArray<ts.TypeNode> | undefined, path: string[], seen: string[]): void => {
     const decl = decls.get(name);
     if (decl === undefined) {
-      // A typed array holds numbers and declares no field; `Array<T>` is `T[]`.
-      // Any other name this file does not declare may declare any key: the
-      // reach is then unknown ("*"), and no field is disjoint from it by key.
-      if (/^(?:Uint8|Uint8Clamped|Int8|Uint16|Int16|Uint32|Int32|Float32|Float64)Array$/.test(name)) return;
-      if (name === "Array" || name === "ReadonlyArray") {
-        for (const t of node.typeArguments ?? []) declaredKeys(t, decls, seen, out);
-        return;
+      if (/^(?:Uint8|Uint8Clamped|Int8|Uint16|Int16|Uint32|Int32|Float32|Float64)Array$/.test(name)) { at(path).array = true; return; }
+      if ((name === "Array" || name === "ReadonlyArray") && args?.length === 1) {
+        at(path).array = true;
+        return walk(args[0], [...path, "[*]"], seen);
       }
-      out.add("*");
+      acc.open = true;
       return;
     }
-    if (seen.has(name)) return;
-    seen.add(name);
-    if (ts.isTypeAliasDeclaration(decl)) declaredKeys(decl.type, decls, seen, out);
-    else if (ts.isInterfaceDeclaration(decl)) membersKeys(decl.members, decls, seen, out);
-    return;
-  }
-  if (ts.isTypeLiteralNode(node)) membersKeys(node.members, decls, seen, out);
-  else if (ts.isArrayTypeNode(node)) declaredKeys(node.elementType, decls, seen, out);
-  else if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) for (const t of node.types) declaredKeys(t, decls, seen, out);
-  else if (ts.isParenthesizedTypeNode(node)) declaredKeys(node.type, decls, seen, out);
+    if (seen.includes(name) || (args ?? []).length > 0) { acc.open = true; return; }
+    const inner = [...seen, name];
+    if (ts.isTypeAliasDeclaration(decl) && (decl.typeParameters ?? []).length === 0) return walk(decl.type, path, inner);
+    if (ts.isInterfaceDeclaration(decl) && (decl.typeParameters ?? []).length === 0) {
+      for (const h of decl.heritageClauses ?? [])
+        for (const t of h.types) {
+          if (ts.isIdentifier(t.expression) && (t.typeArguments ?? []).length === 0) named(t.expression.text, undefined, path, inner);
+          else acc.open = true;
+        }
+      return members(decl.members, path, inner);
+    }
+    acc.open = true;
+  };
+  const walk = (n: ts.TypeNode | undefined, path: string[], seen: string[]): void => {
+    if (n === undefined) { acc.open = true; return; }
+    switch (n.kind) {
+      case ts.SyntaxKind.NumberKeyword: case ts.SyntaxKind.StringKeyword: case ts.SyntaxKind.BooleanKeyword:
+      case ts.SyntaxKind.BigIntKeyword: case ts.SyntaxKind.SymbolKeyword: case ts.SyntaxKind.NullKeyword:
+      case ts.SyntaxKind.UndefinedKeyword: case ts.SyntaxKind.VoidKeyword: case ts.SyntaxKind.NeverKeyword:
+        return;
+    }
+    if (ts.isLiteralTypeNode(n)) return;
+    if (ts.isParenthesizedTypeNode(n)) return walk(n.type, path, seen);
+    if (ts.isUnionTypeNode(n) || ts.isIntersectionTypeNode(n)) { for (const t of n.types) walk(t, path, seen); return; }
+    if (ts.isArrayTypeNode(n)) { at(path).array = true; return walk(n.elementType, [...path, "[*]"], seen); }
+    if (ts.isTypeOperatorNode(n) && n.operator === ts.SyntaxKind.ReadonlyKeyword && ts.isArrayTypeNode(n.type))
+      return walk(n.type, path, seen);
+    if (ts.isTypeLiteralNode(n)) return members(n.members, path, seen);
+    if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) return named(n.typeName.text, n.typeArguments, path, seen);
+    acc.open = true;
+  };
+  walk(node, [], []);
+  return acc;
 }
 
-function membersKeys(members: ts.NodeArray<ts.TypeElement>, decls: Map<string, ts.Node>, seen: Set<string>, out: Set<string>): void {
-  for (const m of members)
-    if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
-      out.add(m.name.text);
-      declaredKeys(m.type, decls, seen, out);
-    }
-}
+const accJson = (a: Acc): AccJson => ({
+  paths: [...a.paths].map(([k, e]) => ({ path: k === "" ? [] : k.split("."), keys: [...e.keys].sort(), array: e.array })),
+  open: a.open,
+});
+const accFromJson = (a: AccJson | undefined): Acc => a === undefined ? { paths: new Map(), open: true }
+  : { paths: new Map(a.paths.map((e) => [e.path.join("."), { keys: new Set(e.keys), array: e.array }])), open: a.open };
 
 /** The root variable of a region key: `xs` of `"xs[*]"`, `flow` of `"flow.data.**"`. */
 const rootOf = (key: string): string => /^[A-Za-z_$][\w$]*/.exec(key)?.[0] ?? key;
@@ -210,12 +269,14 @@ function declOf(name: string, from: ts.Node): Decl | null {
 
 const within = (inner: ts.Node, outer: ts.Node): boolean => inner.pos >= outer.pos && inner.end <= outer.end;
 
-/** A location expression, resolved: storage allocated by the closure itself
- * (no effect on the caller's storage), or a path from a root variable of the
- * caller's scope, with every `const` alias of a path replaced by the path it
- * holds (`const ws = p.widths`: `ws` is `p.widths`); null where the path is
- * not a caller's variable's (the closure's parameter, an element, a call). */
-type Resolved = { fresh: true } | { fresh: false; root: string; path: string[]; literal: boolean };
+/** A location expression, resolved: an object allocated by the closure
+itself, whose own fields and spine are no effect on the caller's storage
+(Fresh-Eff), or a path from a root variable of the caller's scope, with
+every `const` alias of a path replaced by the path it holds
+(`const ws = p.widths`: `ws` is `p.widths`); null where the path is not a
+caller's variable's (the closure's parameter, an element, a call, or a
+field of a fresh object, which may hold any older object). */
+type Resolved = { fresh: true } | { fresh: false; root: string; path: string[] };
 
 function unwrapExpr(e: ts.Expression): ts.Expression {
   while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e)) e = e.expression;
@@ -235,8 +296,8 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   if (depth > 32) return null;
   if (ts.isPropertyAccessExpression(e)) {
     const base = resolve_(e.expression, closure, depth + 1, paramRoots);
-    if (base === null) return null;
-    return base.fresh ? base : { fresh: false, root: base.root, path: [...base.path, e.name.text], literal: false };
+    if (base === null || base.fresh) return null;
+    return { fresh: false, root: base.root, path: [...base.path, e.name.text] };
   }
   if (!ts.isIdentifier(e)) return null;
   const d = declOf(e.text, e);
@@ -245,16 +306,73 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   // A function's own parameter is a root of its own effect (`paramRoots`);
   // a closure's parameter names no caller's storage.
   if (d.kind === "param")
-    return local && !(paramRoots && d.owner === closure) ? null : { fresh: false, root: e.text, path: [], literal: false };
+    return local && !(paramRoots && d.owner === closure) ? null : { fresh: false, root: e.text, path: [] };
   if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots);
   if (local) return d.kind === "const" && isAllocation(d.init) ? { fresh: true } : null;
-  return { fresh: false, root: e.text, path: [], literal: d.kind === "const" && isAllocation(d.init) };
+  return { fresh: false, root: e.text, path: [] };
 }
 
-/** A key's root resolved at a node: the key with its root replaced by the
- * path an alias holds, and whether its storage was allocated by a `const`
- * literal; null where the root resolves to nothing this script reads. */
-function normalizeKey(key: string, at: ts.Node): { key: string; literal: boolean } | null {
+/** The outermost function declaration enclosing a node: the unit whose
+verdict carries a call's check. */
+function unitOf(n: ts.Node): ts.FunctionDeclaration | null {
+  let found: ts.FunctionDeclaration | null = null;
+  for (let m: ts.Node | undefined = n.parent; m; m = m.parent)
+    if (ts.isFunctionDeclaration(m) && m.parent !== undefined && ts.isSourceFile(m.parent)) found = m;
+  return found;
+}
+
+/** Whether a parameter of a function is assigned anywhere in its body. */
+function assignedIn(name: string, fn: ts.Node): boolean {
+  let found = false;
+  const visit = (n: ts.Node): undefined => {
+    if (found) return undefined;
+    const target = ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment ? n.left
+      : (ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) ? n.operand : undefined;
+    if (target !== undefined && ts.isIdentifier(unwrapExpr(target)) && unwrapExpr(target).getText() === name) found = true;
+    n.forEachChild(visit);
+    return undefined;
+  };
+  fn.forEachChild(visit);
+  return found;
+}
+
+/** Whether an object a `const` holds may be reached from other storage:
+some reference to the binding (or to a `const` alias of it) is other than
+the object of a member access (`x.f`, `x[i]`, `x.push(…)`), so it may be
+stored, passed or returned. */
+function escapes(decl: ts.VariableDeclaration, scope: ts.Node): boolean {
+  if (!ts.isIdentifier(decl.name)) return true;
+  const name = decl.name.text;
+  let out = false;
+  const visit = (n: ts.Node): undefined => {
+    if (out) return undefined;
+    if (ts.isIdentifier(n) && n.text === name && n !== decl.name) {
+      const d = declOf(name, n);
+      if (d !== null && d.kind === "const" && d.at === decl) {
+        const p = n.parent;
+        const member = p !== undefined && (ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n;
+        const alias = p !== undefined && ts.isVariableDeclaration(p) && p.initializer === n &&
+          (p.parent.flags & ts.NodeFlags.Const) !== 0;
+        if (alias) { if (escapes(p, scope)) out = true; }
+        else if (!member) out = true;
+      }
+    }
+    n.forEachChild(visit);
+    return undefined;
+  };
+  scope.forEachChild(visit);
+  return out;
+}
+
+/** A key's root resolved at a call: the key with its root replaced by the
+path an alias holds, and whether its root is an object the calling
+function allocated: a `const` of its body initialised by an object or
+array literal, never stored, passed or returned (Rule Alloc of Tolerant
+frames gives its separation); null where the root resolves to nothing this
+script reads. */
+function normalizeKey(key: string, at: ts.Node, unit: ts.Node | null): { key: string; fresh: boolean } | null {
   const root = rootOf(key);
   const d = declOf(root, at);
   if (d === null || d.kind === "function") return null;
@@ -262,59 +380,91 @@ function normalizeKey(key: string, at: ts.Node): { key: string; literal: boolean
     const inner = d.init === undefined ? null : resolveAt(d.init);
     if (inner === null) return null;
     const head = [inner.root, ...inner.path].join(".");
-    return { key: head + restOf(key), literal: inner.literal };
+    const fresh = inner.path.length === 0 && freshAt(inner.root, d.init ?? at, unit);
+    return { key: head + restOf(key), fresh };
   }
-  return { key, literal: d.kind === "const" && isAllocation(d.init) };
+  return { key, fresh: freshAt(root, at, unit) };
 }
 
-function resolveAt(e: ts.Expression): { root: string; path: string[]; literal: boolean } | null {
+/** Whether a variable, read at a node, holds an object the unit allocated
+in its body and never let escape. */
+function freshAt(name: string, at: ts.Node, unit: ts.Node | null): boolean {
+  const d = declOf(name, at);
+  if (unit === null || d === null || d.kind !== "const" || !isAllocation(d.init) || !within(d.at, unit)) return false;
+  return ts.isVariableDeclaration(d.at) && !escapes(d.at, unit);
+}
+
+function resolveAt(e: ts.Expression): { root: string; path: string[] } | null {
   const r = resolve_(e, null);
   return r === null || r.fresh ? null : r;
 }
 
+/** A call's argument as a path, its `const` aliases resolved; null for any
+other expression. */
+function argPath(e: ts.Expression): string | null {
+  if (!isPathExpr(e)) return null;
+  const r = resolveAt(e);
+  return r === null ? null : [r.root, ...r.path].join(".");
+}
+
 /** A region key, parsed: its root, the declared keys from the root to the
 location's object, and what it names there: a field, every field (`.*`),
-the spine (`[*]`), or the reach through declared keys (`.**`). */
-interface Loc { root: string; path: string[]; kind: "field" | "fields" | "spine" | "reach"; key: string | null }
+the spine (`[*]`), the cells (`[#]`), or the reach through declared keys
+(`.**`). */
+interface Loc { root: string; path: string[]; kind: "field" | "fields" | "spine" | "cells" | "reach"; key: string | null }
 
 function locOf(key: string): Loc | null {
-  const m = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)*)(\.\*\*|\.\*|\[\*\])?$/.exec(key);
+  const m = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)*)(\.\*\*|\.\*|\[\*\]|\[#\])?$/.exec(key);
   if (!m || m[1] === undefined) return null;
   const steps = (m[2] ?? "").split(".").filter((x) => x !== "");
   const tail = m[3];
   if (tail === ".**") return { root: m[1], path: steps, kind: "reach", key: null };
   if (tail === ".*") return { root: m[1], path: steps, kind: "fields", key: null };
   if (tail === "[*]") return { root: m[1], path: steps, kind: "spine", key: null };
+  if (tail === "[#]") return { root: m[1], path: steps, kind: "cells", key: null };
   const last = steps.pop();
   return last === undefined ? null : { root: m[1], path: steps, kind: "field", key: last };
 }
 
 const pathText = (l: Loc): string => [l.root, ...l.path].join(".");
 
-/** Whether two locations are disjoint, decided as the pass decides it
- * (docs/drafts/effect-languages.md, "Decisions"): a field location and a
- * spine differ (the spine's key is `[]`); two field locations at different
- * keys differ whatever objects they are on (disjointness by key); a field
- * whose key no type in a reach declares lies outside it; and storage the
- * caller allocated in its body (rule Alloc of Tolerant frames) is apart from
- * every value passed in from elsewhere. Anything else may overlap. */
-function disjoint(r: Loc, b: Loc, keys: Set<string>, fresh: Set<string>): boolean {
-  if (fresh.has(r.root) && r.root !== b.root && pathText(b) !== r.root) return true;
-  if (b.kind === "reach") return r.kind === "field" && r.key !== null && !keys.has("*") && !keys.has(r.key);
-  if (r.kind === "reach") return b.kind === "field" && b.key !== null && !keys.has("*") && !keys.has(b.key);
+/** Whether a field key is declared anywhere in a reach. */
+const declaresKey = (acc: Acc, key: string): boolean => [...acc.paths.values()].some((e) => e.keys.has(key));
+
+/** Whether two locations are disjoint, decided from the source
+(docs/drafts/effect-languages.md, "Decisions"): a field location, a spine
+and cells differ (their keys differ); two field locations at different
+keys differ whatever objects they are on (disjointness by key); a field
+whose key no type in a closed reach declares lies outside it; and an own
+location (a field or the spine, at the empty path) of an object the caller
+allocated is apart from an own location of a parameter the caller never
+assigns, and, where the object never escapes, from the parameter's reach
+(rule Alloc of Tolerant frames). Anything else may overlap. `acc` is the
+reach's access paths where one of them is a reach. */
+function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<string>): boolean {
+  const ownOf = (l: Loc): boolean => l.path.length === 0 && (l.kind === "field" || l.kind === "fields" || l.kind === "spine");
+  const apart = (f: Loc, o: Loc): boolean => fresh.has(f.root) && ownOf(f) && f.root !== o.root && params.has(o.root) &&
+    o.path.length === 0 && (ownOf(o) || o.kind === "reach");
+  if (apart(r, b) || apart(b, r)) return true;
+  if (b.kind === "reach") return r.kind === "field" && r.key !== null && !acc.open && !declaresKey(acc, r.key);
+  if (r.kind === "reach") return b.kind === "field" && b.key !== null && !acc.open && !declaresKey(acc, b.key);
   if (r.kind === "field" && b.kind === "field") return r.key !== b.key;
-  if ((r.kind === "field" && b.kind === "spine") || (r.kind === "spine" && b.kind === "field")) return true;
-  return false;
+  const pair = new Set<Loc["kind"]>([r.kind, b.kind]);
+  const differ = (x: Loc["kind"], y: Loc["kind"]): boolean => pair.size === 2 && pair.has(x) && pair.has(y);
+  return differ("field", "spine") || differ("field", "cells") || differ("spine", "cells") || differ("fields", "spine");
 }
 
-/** Whether `r` lies in `b`: the same location, or a location reached from
- * `b`'s root through declared keys when `b` is a reach. */
-function inside(r: Loc, b: Loc, keys: Set<string>): boolean {
+/** Whether `r` lies in `b`: the same location, or a location at a path
+`Acc(T)` admits when `b` is a reach. */
+function inside(r: Loc, b: Loc, acc: Acc): boolean {
   if (b.kind === "reach") {
-    const base = pathText(b);
+    const base = [b.root, ...b.path];
     const full = [r.root, ...r.path];
-    const rel = pathText(r) === base ? [] : pathText(r).startsWith(base + ".") ? full.slice(base.split(".").length) : null;
-    return rel !== null && rel.every((k) => keys.has(k)) && (r.kind !== "field" || (r.key !== null && keys.has(r.key))) && r.kind !== "reach";
+    if (full.length < base.length || base.some((x, i) => full[i] !== x)) return false;
+    const e = acc.paths.get(full.slice(base.length).join("."));
+    if (e === undefined) return false;
+    if (r.kind === "field") return r.key !== null && e.keys.has(r.key);
+    return (r.kind === "spine" || r.kind === "cells") && e.array;
   }
   return r.kind === b.kind && r.key === b.key && pathText(r) === pathText(b);
 }
@@ -366,15 +516,27 @@ function boundedParams(fn: FnNode): Set<string> {
 
 /** A closure's effect on its caller's storage, read from its body by the
  * paper's rules for steps (Section "Rules for steps"): a field write
- * `x.f = e` is `x.f: any` (Field-Write), and a compound write or an
- * increment of a field `x.f: scalar` (strict TypeScript makes its old and new
- * contents primitives); an element write `x[i] = e` is `x[*]: any`, the key
- * naming the array's spine and its cells (Elem-Write); `x.push(…)` is
+ * `x.f = e` is `x.f: any` (Field-Write), as are a logical assignment
+ * (`??=`, `||=`, `&&=`) and `+=`, which may write or keep a non-primitive
+ * value; an arithmetic compound write or an increment of a field is
+ * `x.f: scalar` (Field-Write-Scalar: strict TypeScript admits only number
+ * and bigint operands there, and the fragment refuses `any`); an element
+ * write `x[i] = e` is `x[*]: grow, x[#]: any`, the spine and the cells
+ * (Elem-Write); `x.push(…)` is
  * `x[*]: extend` (Push); a call of a function declared with a result
  * `Modifies<P, T>` is `P` at its arguments (Call). Storage the closure
  * allocates is no part of it (Fresh-Eff). Any other step that may write (an
  * assignment to a captured binding, another call, `delete` of an unnamed
  * location, `new`) cannot be bounded here: the result names it. */
+/** The compound assignments whose old and new contents are numbers or
+bigints in strict TypeScript. */
+const arithmetic = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.MinusEqualsToken, ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.PercentEqualsToken, ts.SyntaxKind.LessThanLessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken, ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.AmpersandEqualsToken, ts.SyntaxKind.BarEqualsToken, ts.SyntaxKind.CaretEqualsToken,
+]);
+
 function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySet<string> = new Set()): Effect | string {
   if (fn.body === undefined) return "has no body";
   const entries: [string, Change][] = [];
@@ -389,7 +551,7 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
       if (base === null) return fail(at, "writes a location no key of the instance can name");
       if (base.fresh) return undefined;
       if (ts.isPropertyAccessExpression(t)) entries.push([keyOf(base, "." + t.name.text), change]);
-      else entries.push([keyOf(base, "[*]"), "any"]);
+      else entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]);
       return undefined;
     }
     if (ts.isIdentifier(t)) {
@@ -405,7 +567,7 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
     if (n !== fn && isFn(n)) return undefined;
     if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
         n.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
-      write(n.left, n.operatorToken.kind === ts.SyntaxKind.EqualsToken ? "any" : "scalar", n);
+      write(n.left, arithmetic.has(n.operatorToken.kind) ? "scalar" : "any", n);
     else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
         (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
       write(n.operand, "scalar", n);
@@ -458,6 +620,10 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
           const arg = n.arguments[at];
           const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots);
           if (base === null) return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
+          // A fresh object's own fields and spine are no change of older
+          // storage; a location through one of its fields may be.
+          const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
+          if (base.fresh && !own) return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
           if (!base.fresh) entries.push([keyOf(base, restOf(k)), c]);
         }
         if (!le(eff.else, otherwise)) otherwise = eff.else;
@@ -480,25 +646,28 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
   return error ?? { entries, else: otherwise };
 }
 
+/** The access paths of an effect's reach entry, open where not read. */
+const accAt = (e: Effect, key: string): Acc => accFromJson(e.reach?.[key]);
+
 /** Whether a claim's location covers an effect's location: the same
  * location, a field among the fields `x.*`, or a location in the reach
- * `x.**` through declared keys. */
-function covers(c: Loc, r: Loc, keys: Set<string>): boolean {
-  if (c.kind === "reach") return inside(r, c, keys);
+ * `x.**` at an access path of its type. */
+function covers(c: Loc, r: Loc, acc: Acc): boolean {
+  if (c.kind === "reach") return inside(r, c, acc);
   if (c.kind === "fields") return r.kind === "field" && pathText(r) === pathText(c);
   return r.kind === c.kind && r.key === c.key && pathText(r) === pathText(c);
 }
 
 /** **The argument's type at Inst**: the closure's effect is included in the
  * written instance by the paper's order, each entry of the effect within a
- * claim entry covering it or within the claim's `else`. */
-function effectWithin(eff: Effect, claim: Effect, keysOf: (root: string) => Set<string>): string | null {
+ * claim entry covering it (an instance's `else` is `keep`). */
+function effectWithin(eff: Effect, claim: Effect): string | null {
   for (const [k, c] of eff.entries) {
     const r = locOf(k);
     if (!r) return `the callback changes ${k}, which no key of the instance can name`;
     const ok = claim.entries.some(([ck, d]) => {
       const l = locOf(ck);
-      return l !== null && covers(l, r, keysOf(l.root)) && le(c, d);
+      return l !== null && covers(l, r, accAt(claim, ck)) && le(c, d);
     }) || le(c, claim.else);
     if (!ok) return `the callback changes ${k} by ${c}; the instance allows ${claim.entries.map(([ck, d]) => `${ck}: ${d}`).join(", ") || "nothing"}${claim.else === "keep" ? "" : `, else ${claim.else}`}`;
   }
@@ -509,46 +678,137 @@ function effectWithin(eff: Effect, claim: Effect, keysOf: (root: string) => Set<
  * included in the bound at the actual arguments when, for every bound entry
  * `b : d`, every instance entry not disjoint from `b` is within `d`, and,
  * where the bound's `else` is not `any`, every instance entry lying in no
- * bound entry, and the instance's `else`, are within that `else`. A key this
- * check cannot parse is refused. */
-function instCheck(instance: Effect, bound: Effect, params: string[], args: string[], fresh: Set<string>): string | null {
+ * bound entry, and the instance's `else`, are within that `else`. The
+ * arguments are paths with their `const` aliases resolved (null for any
+ * other expression); `fresh` holds the instance's roots the caller
+ * allocated, and `params` the caller's parameters it never assigns. A key
+ * this check cannot parse is refused. */
+function instCheck(instance: Effect, bound: Effect, params: string[], args: (string | null)[], fresh: Set<string>,
+    callerParams: Set<string>): string | null {
   // The empty effect is within every bound, whatever its arguments.
   if (instance.entries.length === 0 && instance.else === "keep") return null;
-  const actual = (key: string): string => {
+  const actual = (key: string): string | null => {
     const at = params.indexOf(rootOf(key));
-    return at < 0 ? key : (args[at] ?? "?") + restOf(key);
+    if (at < 0) return key;
+    const arg = args[at];
+    return arg === null || arg === undefined ? null : arg + restOf(key);
   };
-  const keys = new Set(bound.reachKeys ?? []);
-  const bs: [Loc, Change, string][] = [];
+  const bs: [Loc, Change, string, Acc][] = [];
   for (const [b, d] of bound.entries) {
     const text = actual(b);
-    const l = locOf(text);
-    if (!l || text.startsWith("?")) return `the bound's entry ${b} is not read at this call's arguments`;
-    bs.push([l, d, text]);
+    const l = text === null ? null : locOf(text);
+    if (text === null || l === null) return `the bound's entry ${b} is not read at this call's arguments`;
+    bs.push([l, d, text, accAt(bound, b)]);
   }
+  const is: [Loc, Change, Acc, string][] = [];
   for (const [r, c] of instance.entries) {
     const l = locOf(r);
     if (!l) return `the instance's key ${r} is not decided`;
-    for (const [b, d, text] of bs)
-      if (!disjoint(l, b, keys, fresh) && !le(c, d)) return `the instance changes ${r} by ${c}; the bound allows ${text}: ${d}`;
-    if (bound.else !== "any" && !bs.some(([b]) => inside(l, b, keys)) && !le(c, bound.else))
+    is.push([l, c, accAt(instance, r), r]);
+  }
+  for (const [l, c, iacc, r] of is) {
+    for (const [b, d, text, bacc] of bs)
+      if (!disjoint(l, b, l.kind === "reach" ? iacc : bacc, fresh, callerParams) && !le(c, d))
+        return `the instance changes ${r} by ${c}; the bound allows ${text}: ${d}`;
+    if (bound.else !== "any" && !bs.some(([b, , , bacc]) => inside(l, b, bacc)) && !le(c, bound.else))
       return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
   }
   // The instance's `else` reaches the locations of a bound entry that no
   // instance entry covers: the same location, or one inside an instance
   // reach.
-  const covered = (b: Loc): boolean => instance.entries.some(([r]) => {
-    const l = locOf(r);
-    return l !== null && (l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b) || inside(b, l, keys));
-  });
+  const covered = (b: Loc): boolean => is.some(([l, , iacc]) =>
+    l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b) || inside(b, l, iacc));
   for (const [b, d, text] of bs)
     if (!covered(b) && !le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
   if (!le(instance.else, bound.else)) return `the instance's else ${instance.else} exceeds the bound's else ${bound.else}`;
   return null;
 }
 
+/** Whether an instance is anchored as the prototype decides it
+(Definition "Instances and anchoring"): its `else` is `keep`, it has no
+class key, and each key is a field, the fields or the spine of a variable
+that is a `const` or a parameter its function never assigns; the reason
+otherwise. A path through a field, a reach or the cells are anchored only
+where their contracts admit one value or no growth, which this script
+does not read. */
+function anchored(instance: Effect, at: ts.Node): string | null {
+  if (instance.classes) return "an instance has no class key (values, spines): such regions are not anchored";
+  if (instance.else !== "keep") return `an instance's else is keep; this one's is ${instance.else}, which changes storage allocated after the call`;
+  for (const [k] of instance.entries) {
+    const l = locOf(k);
+    if (l === null || l.path.length > 0 || !(l.kind === "field" || l.kind === "fields" || l.kind === "spine"))
+      return `the instance's key ${k} is not a field, the fields or the spine of a variable, which the prototype decides anchored`;
+    const d = declOf(l.root, at);
+    const rigid = d !== null && (d.kind === "const" || (d.kind === "param" && !assignedIn(l.root, d.owner)));
+    if (!rigid) return `the instance's key ${k} is rooted at ${l.root}, which is no const or unassigned parameter`;
+  }
+  return null;
+}
+
+/** The effect variable a callback parameter's type gives its calls, null
+where the type mentions no effect variable, or the reason the prototype
+does not read it. Read is a function type, a local alias of one, or a union
+of one with `undefined` or `null`, whose effect is the variable alone: its
+result `Modifies<E, T>`, or a result with no `Modifies` and the variable
+only as a phantom (a parameter of type `E`, or an alias's type argument its
+function type uses no otherwise). A result `Modifies<[E, P], T>` makes the
+callback's effect `ε ∪ P`; the layer reads `ε` alone at the callback's
+calls, so a non-empty `P` is refused. */
+function callbackVar(type: ts.TypeNode, vars: string[], decls: Map<string, ts.Node>): { variable: string } | string | null {
+  const seen = new Set<string>();
+  mentions(type, seen);
+  const used = vars.filter((v) => seen.has(v));
+  if (used.length === 0) return null;
+  const isVar = (t: ts.TypeNode, v: string): boolean => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) &&
+    t.typeName.text === v && (t.typeArguments ?? []).length === 0;
+  const mentionsName = (t: ts.Node, v: string): boolean => { const m = new Set<string>(); mentions(t, m); return m.has(v); };
+  /** A function type whose effect is the variable `x` alone. */
+  const arrow = (f: ts.FunctionTypeNode, x: string): string | null => {
+    for (const p of f.parameters)
+      if (p.type !== undefined && mentionsName(p.type, x) && !isVar(p.type, x))
+        return `the callback type uses its effect variable in the parameter ${p.name.getText()}`;
+    const r = f.type;
+    if (r === undefined) return "the callback type has no result type";
+    if (ts.isTypeReferenceNode(r) && ts.isIdentifier(r.typeName) && r.typeName.text === "Modifies") {
+      const [eff, result] = r.typeArguments ?? [];
+      if (eff === undefined || (result !== undefined && mentionsName(result, x))) return "the callback type's Modifies is not read";
+      if (isVar(eff, x)) return null;
+      if (ts.isTupleTypeNode(eff) && eff.elements.length === 2 && eff.elements[0] !== undefined && isVar(eff.elements[0], x)) {
+        const p = eff.elements[1] === undefined ? null : effectOf(eff.elements[1]);
+        if (p !== null && p.entries.length === 0 && p.else === "keep" && !p.classes) return null;
+        return `the callback's effect is ${x} with ${eff.elements[1]?.getText() ?? "?"}, which the layer does not read at its calls`;
+      }
+      return "the callback's stated effect is not its effect variable";
+    }
+    return mentionsName(r, x) ? "the callback type's result mentions its effect variable" : null;
+  };
+  const members = ts.isUnionTypeNode(type)
+    ? type.types.filter((t) => t.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword))
+    : [type];
+  const only = members.length === 1 ? members[0] : undefined;
+  const f = only !== undefined && ts.isParenthesizedTypeNode(only) ? only.type : only;
+  if (used.length !== 1 || f === undefined) return "a callback type uses one effect variable, in one function type";
+  const v = used[0] ?? "";
+  if (ts.isFunctionTypeNode(f)) { const why = arrow(f, v); return why ?? { variable: v }; }
+  if (ts.isTypeReferenceNode(f) && ts.isIdentifier(f.typeName)) {
+    const decl = decls.get(f.typeName.text);
+    const args = f.typeArguments ?? [];
+    const at = args.findIndex((t) => isVar(t, v));
+    if (decl === undefined || !ts.isTypeAliasDeclaration(decl) || !ts.isFunctionTypeNode(decl.type) || at < 0 ||
+        args.some((t, i) => i !== at && mentionsName(t, v)))
+      return `the callback type ${f.getText()} is no local alias of a function type taking ${v}`;
+    const x = decl.typeParameters?.[at]?.name.text;
+    if (x === undefined) return `the callback type ${f.getText()} is not read`;
+    const why = arrow(decl.type, x);
+    return why ?? { variable: v };
+  }
+  return `the callback type ${f.getText()} is not read`;
+}
+
 /** A file's functions with their effect parameters, its function bodies and
- * its type declarations. */
+ * its type declarations. A function with a bound whose reach its own steps
+ * may change, or whose callback's type is not read, is refused
+ * (`refusal`). */
 function functionInfos(tree: ts.SourceFile): { functions: Record<string, FunctionInfo>; bodies: Map<string, ts.Node>; decls: Map<string, ts.Node> } {
   const functions: Record<string, FunctionInfo> = {};
   const bodies = new Map<string, ts.Node>();
@@ -569,21 +829,43 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     }
     const params = s.parameters.map((p) => ts.isIdentifier(p.name) ? p.name.text : "");
     for (const e of effectParams) {
-      const reach = e.bound.entries.filter(([k]) => k.endsWith(".**")).map(([k]) => rootOf(k));
-      if (reach.length === 0) continue;
-      const out = new Set<string>();
-      for (const root of reach) declaredKeys(s.parameters[params.indexOf(root)]?.type, decls, new Set(), out);
-      e.bound.reachKeys = [...out].sort();
+      const reach: Record<string, AccJson> = {};
+      for (const [k] of e.bound.entries) {
+        const l = locOf(k);
+        if (l?.kind !== "reach") continue;
+        const p = l.path.length === 0 ? s.parameters[params.indexOf(l.root)] : undefined;
+        reach[k] = accJson(accOf(p?.type, decls));
+      }
+      if (Object.keys(reach).length > 0) e.bound.reach = reach;
     }
+    let refusal: string | undefined;
     const bounded: FunctionInfo["bounded"] = [];
     s.parameters.forEach((p, index) => {
-      const seen = new Set<string>();
-      if (p.type) mentions(p.type, seen);
-      for (const e of effectParams) if (seen.has(e.name)) bounded.push({ param: params[index] ?? "", index, variable: e.name });
+      const form = p.type === undefined ? null : callbackVar(p.type, effectParams.map((e) => e.name), decls);
+      if (typeof form === "string") refusal ??= `${params[index] ?? ""}: ${form}`;
+      else if (form !== null) bounded.push({ param: params[index] ?? "", index, variable: form.variable });
     });
-    const own = effectParams.length === 0 ? undefined
-      : closureEffect(s, true, new Set(bounded.map((b) => b.param)));
-    functions[s.name.text] = own === undefined ? { params, effectParams, bounded } : { params, effectParams, bounded, own };
+    const own = effectParams.length === 0 ? undefined : closureEffect(s, true, boundedParams(s));
+    // Rule Bound's second premise: the regions of each bound read at a
+    // callback's call are those read at the function's entry. A field or
+    // the spine of a parameter is one location at every state. A reach is
+    // read through the fields and spines it holds, so it is read the same
+    // where every step since the entry keeps it: the function's own steps
+    // (its callbacks' calls keep it by the rule itself).
+    if (own !== undefined && refusal === undefined)
+      for (const e of effectParams) {
+        const reach = e.bound.entries.filter(([k]) => locOf(k)?.kind === "reach");
+        if (reach.length === 0) continue;
+        const keeps: Effect = { entries: reach.map(([k]) => [k, "keep"]), else: "any" };
+        if (e.bound.reach !== undefined) keeps.reach = e.bound.reach;
+        const why = typeof own === "string" ? `its own effect is not read (${own})`
+          : instCheck(own, keeps, params, params, new Set(), new Set());
+        if (why !== null) { refusal = `rule Bound's second premise for ${e.name}: ${why}`; break; }
+      }
+    const info: FunctionInfo = { params, effectParams, bounded };
+    if (own !== undefined) info.own = own;
+    if (refusal !== undefined) info.refusal = refusal;
+    functions[s.name.text] = info;
   }
   return { functions, bodies, decls };
 }
@@ -594,147 +876,235 @@ function importedFile(from: string, spec: string): string | null {
   return resolve(dirname(from), spec.replace(/\.(?:js|ts)$/, "") + ".ts");
 }
 
-export function annotations(path: string): { functions: Record<string, FunctionInfo>; calls: CallInfo[]; assumes: AssumeInfo[] } {
-  const tree = openText(path, readFileSync(path, "utf8"));
-  const { functions, bodies, decls } = functionInfos(tree);
+/** A file's tree, parsed once. */
+function treeOf(file: string): ts.SourceFile {
+  let tree = importedFiles.get(file);
+  if (tree === undefined) { tree = openText(file, readFileSync(file, "utf8")); importedFiles.set(file, tree); }
+  return tree;
+}
+
+/** Whether an identifier is in an expression's position: no declaration's
+name, import or export specifier, member name, or part of a type. */
+function isValueReference(n: ts.Identifier): boolean {
+  const p = n.parent;
+  if (p === undefined) return false;
+  if ((ts.isFunctionDeclaration(p) || ts.isVariableDeclaration(p) || ts.isParameterDeclaration(p)) && p.name === n) return false;
+  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p) || ts.isExportSpecifier(p)) return false;
+  if ((ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n)) return false;
+  for (let m: ts.Node | undefined = p; m; m = m.parent) if (ts.isTypeNode(m)) return false;
+  return true;
+}
+
+/** The references of a file to quantified functions (`names`: the local
+name and the function's own name) that no unit's verdict carries a check
+of rule Inst for: a reference other than a call's callee (an alias, an
+argument, an export of the value), or a call outside every function
+declaration (in a module statement, a class, a `const` closure at the top
+level). `bound` tells whether a local name is the quantified function
+itself (a local of that name shadows it). */
+function uncheckedReferences(tree: ts.SourceFile, names: Map<string, string>, bound: (n: ts.Identifier) => boolean): { name: string; reason: string }[] {
+  const out: { name: string; reason: string }[] = [];
+  const visit = (n: ts.Node): undefined => {
+    if (ts.isIdentifier(n)) {
+      const name = names.get(n.text);
+      if (name !== undefined && isValueReference(n) && bound(n)) {
+        const line = tree.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+        const where = `${tree.fileName.split("/").pop() ?? ""}:${line}`;
+        const p = n.parent;
+        if (p === undefined || !ts.isCallExpression(p) || p.expression !== n)
+          out.push({ name, reason: `the reference to ${name} at ${where} is no call, so the calls made through it are not checked against its bounds (a signature holds for every call)` });
+        else if (unitOf(n) === null)
+          out.push({ name, reason: `the call of ${name} at ${where} is in no function declaration, so no verdict carries its check of rule Inst (a signature holds for every call)` });
+      }
+    }
+    n.forEachChild(visit);
+    return undefined;
+  };
+  visit(tree);
+  return out;
+}
+
+export function annotations(path: string): {
+  functions: Record<string, FunctionInfo>; calls: CallInfo[]; assumes: AssumeInfo[]; refusals: { unit: string; reason: string }[];
+} {
+  const tree = treeOf(path);
+  const { functions, decls } = functionInfos(tree);
   // A callee imported by name from a relative module: its effect parameters
   // are read from that module, so a call to it is checked as a local one is.
-  const imported = new Map<string, string>();
+  const imported = new Map<string, { file: string; name: string }>();
   for (const s of tree.statements)
     if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)) {
       const file = importedFile(path, s.moduleSpecifier.text);
       const named = s.importClause?.namedBindings;
       if (file !== null && named && ts.isNamedImports(named))
-        for (const e of named.elements) if (!e.isTypeOnly) imported.set(e.name.text, file);
+        for (const e of named.elements)
+          if (!e.isTypeOnly) imported.set(e.name.text, { file, name: e.propertyName?.getText() ?? e.name.text });
     }
   const loaded = new Map<string, Record<string, FunctionInfo>>();
-  const calleeOf = (name: string): FunctionInfo | undefined => {
-    const local = functions[name];
-    if (local !== undefined) return local;
-    const file = imported.get(name);
-    if (file === undefined) return undefined;
-    let fs = loaded.get(file);
+  const calleeOf = (name: string, at: ts.Node): FunctionInfo | undefined => {
+    const d = declOf(name, at);
+    if (d !== null) return d.kind === "function" && d.node.parent !== undefined && ts.isSourceFile(d.node.parent) ? functions[name] : undefined;
+    const imp = imported.get(name);
+    if (imp === undefined) return undefined;
+    let fs = loaded.get(imp.file);
     if (fs === undefined) {
-      fs = functionInfos(openText(file, readFileSync(file, "utf8"))).functions;
-      loaded.set(file, fs);
+      fs = existsSync(imp.file) ? functionInfos(treeOf(imp.file)).functions : {};
+      loaded.set(imp.file, fs);
     }
-    return fs[name];
+    return fs[imp.name];
   };
   const calls: CallInfo[] = [];
   const assumes: AssumeInfo[] = [];
-  for (const [caller, body] of bodies) {
-    const visit = (n: ts.Node): undefined => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "paperAssume") {
-        const form = assumeForm(n);
-        const line = tree.getLineAndCharacterOfPosition(n.getStart()).line + 1;
-        const fact = n.arguments[0] ?? n;
-        assumes.push({ caller, span: [fact.getStart(), fact.getEnd()], line,
-          issue: typeof form === "string" ? "" : form.issue,
-          ok: typeof form !== "string", reason: typeof form === "string" ? form : null });
+  const refusals: { unit: string; reason: string }[] = [];
+  for (const [name, f] of Object.entries(functions)) if (f.refusal !== undefined) refusals.push({ unit: name, reason: f.refusal });
+  // Every reference to this file's quantified functions, here and in the
+  // files of its directory that import them, is a call some unit checks.
+  const quantified = new Map(Object.entries(functions).filter(([, f]) => f.effectParams.length > 0).map(([n]) => [n, n]));
+  const isLocal = (n: ts.Identifier): boolean => {
+    const d = declOf(n.text, n);
+    return d !== null && d.kind === "function" && d.node.parent !== undefined && ts.isSourceFile(d.node.parent);
+  };
+  const unchecked = uncheckedReferences(tree, quantified, isLocal);
+  for (const f of readdirSync(dirname(path))) {
+    const other = resolve(dirname(path), f);
+    if (!f.endsWith(".ts") || f.endsWith(".d.ts") || other === resolve(path)) continue;
+    const t = treeOf(other);
+    const names = new Map<string, string>();
+    for (const s of t.statements)
+      if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier) && importedFile(other, s.moduleSpecifier.text) === resolve(path)) {
+        const named = s.importClause?.namedBindings;
+        if (named && ts.isNamespaceImport(named) && quantified.size > 0)
+          for (const q of quantified.keys()) unchecked.push({ name: q, reason: `${f} imports the module as a namespace, whose calls the prototype does not check` });
+        if (named && ts.isNamedImports(named))
+          for (const e of named.elements) {
+            const exported = e.propertyName?.getText() ?? e.name.text;
+            if (!e.isTypeOnly && quantified.has(exported)) names.set(e.name.text, exported);
+          }
       }
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
-        const callee = calleeOf(n.expression.text);
-        if (callee && callee.effectParams.length > 0) {
-          // The instance of each effect parameter: an effect written as the
-          // call's type argument; the calling function's own effect parameter
-          // (a forwarding call, θ(ε') = ε), whose bound stands for it; or,
-          // where every callback the parameter bounds receives `undefined` or
-          // is omitted, the empty effect, since no callback runs.
-          const outer = functions[caller];
-          const instance: Record<string, Effect> = {};
-          const forwarded = new Set<string>();
-          const empty = new Set<string>();
-          callee.effectParams.forEach((e, i) => {
-            const arg = n.typeArguments?.[i];
-            const eff = arg ? effectOf(arg) : null;
-            const variable = arg !== undefined && ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName)
-              ? outer?.effectParams.find((o) => o.name === arg.typeName.getText()) : undefined;
-            const none = callee.bounded.filter((b) => b.variable === e.name).every((b) => {
-              const a = n.arguments[b.index];
-              return a === undefined || unwrapExpr(a).kind === ts.SyntaxKind.UndefinedKeyword ||
-                ts.isIdentifier(unwrapExpr(a)) && unwrapExpr(a).getText() === "undefined";
-            });
-            if (eff) instance[e.name] = eff;
-            else if (variable) { instance[e.name] = variable.bound; forwarded.add(e.name); }
-            else if (arg === undefined && none) { instance[e.name] = { entries: [], else: "keep" }; empty.add(e.name); }
+    if (names.size > 0) unchecked.push(...uncheckedReferences(t, names, (n) => declOf(n.text, n) === null));
+  }
+  for (const u of unchecked) refusals.push({ unit: u.name, reason: u.reason });
+
+  const visit = (n: ts.Node): undefined => {
+    const unit = unitOf(n);
+    const caller = unit?.name?.text;
+    if (caller !== undefined && unit !== null && ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "paperAssume") {
+      const form = assumeForm(n);
+      const line = tree.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+      const fact = n.arguments[0] ?? n;
+      assumes.push({ caller, span: [fact.getStart(), fact.getEnd()], line,
+        issue: typeof form === "string" ? "" : form.issue,
+        ok: typeof form !== "string", reason: typeof form === "string" ? form : null });
+    }
+    if (caller !== undefined && unit !== null && ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      const callee = calleeOf(n.expression.text, n.expression);
+      if (callee && callee.effectParams.length > 0) {
+        // The instance of each effect parameter: an effect written as the
+        // call's type argument; the calling function's own effect parameter
+        // (a forwarding call, θ(ε') = ε), whose bound stands for it; or,
+        // where every callback the parameter bounds receives `undefined` or
+        // is omitted, the empty effect, since no callback runs.
+        const outer = functions[caller];
+        const instance: Record<string, Effect> = {};
+        const forwarded = new Map<string, string>();
+        const empty = new Set<string>();
+        let reason: string | null = null;
+        callee.effectParams.forEach((e, i) => {
+          const arg = n.typeArguments?.[i];
+          const eff = arg ? effectOf(arg) : null;
+          const variable = arg !== undefined && ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName)
+            ? outer?.effectParams.find((o) => o.name === arg.typeName.getText()) : undefined;
+          const none = callee.bounded.filter((b) => b.variable === e.name).every((b) => {
+            const a = n.arguments[b.index];
+            return a === undefined || unwrapExpr(a).kind === ts.SyntaxKind.UndefinedKeyword ||
+              ts.isIdentifier(unwrapExpr(a)) && unwrapExpr(a).getText() === "undefined";
           });
-          const args = n.arguments.map((a) => ts.isIdentifier(a) || ts.isPropertyAccessExpression(a) ? a.getText() : "?");
-          const outerCallbacks = new Set((outer?.bounded ?? []).map((b) => b.param));
-          let reason: string | null = null;
-          for (const e of callee.effectParams) {
-            const written = instance[e.name];
-            if (written === undefined) { reason = `no instance written for ${e.name}`; break; }
-            // The instance's roots resolved at the call: aliases replaced by
-            // the paths they hold, and the caller's literal allocations.
-            const fresh = new Set<string>();
-            const entries: [string, Change][] = [];
-            for (const [k, c] of written.entries) {
-              const norm = normalizeKey(k, n);
-              if (norm === null) { reason = `the instance's key ${k} names no variable of the caller`; break; }
-              if (norm.literal) fresh.add(rootOf(norm.key));
-              entries.push([norm.key, c]);
-            }
-            if (reason !== null) break;
-            const inst: Effect = { entries, else: written.else };
-            const keysOf = (root: string): Set<string> => {
-              const d = declOf(root, n);
-              const out = new Set<string>();
-              if (d !== null && d.kind !== "function") declaredKeys(d.type, decls, new Set(), out);
-              return out;
-            };
-            for (const b of callee.bounded.filter((x) => x.variable === e.name)) {
-              if (empty.has(e.name)) break;
-              let arg: ts.Expression | undefined = n.arguments[b.index];
-              // A forwarded variable: the callback is the calling function's own
-              // bounded callback, or a closure whose only effect on old storage
-              // is calls of it (effect ε) besides fresh allocations.
-              if (forwarded.has(e.name)) {
-                const passed = arg === undefined ? undefined : unwrapExpr(arg);
-                if (passed !== undefined && ts.isIdentifier(passed) && outerCallbacks.has(passed.text)) continue;
-                if (passed === undefined || !(ts.isArrowFunction(passed) || ts.isFunctionExpression(passed))) {
-                  reason = `the callback passed for ${b.param} has no body visible here`;
-                  break;
-                }
-                const eff = closureEffect(passed, false, outerCallbacks);
-                reason = typeof eff === "string" ? eff
-                  : eff.entries.length > 0 || eff.else !== "keep"
-                    ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable does not allow`
-                    : null;
-                if (reason !== null) break;
-                continue;
-              }
-              if (arg !== undefined && ts.isIdentifier(unwrapExpr(arg))) {
-                const d = declOf(unwrapExpr(arg).getText(), arg);
-                arg = d !== null && d.kind === "const" ? d.init : undefined;
-              }
-              const fn = arg === undefined ? undefined : unwrapExpr(arg);
-              if (fn === undefined || !(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
-                reason = `the callback passed for ${b.param} has no body visible here`;
+          if (eff) {
+            instance[e.name] = eff;
+            reason ??= anchored(eff, n);
+          } else if (variable) { instance[e.name] = variable.bound; forwarded.set(e.name, variable.name); }
+          else if (arg === undefined && none) { instance[e.name] = { entries: [], else: "keep" }; empty.add(e.name); }
+        });
+        const args = n.arguments.map((a) => argPath(a));
+        // The caller's parameters it never assigns: their values and own
+        // locations are apart from what the caller allocates.
+        const callerParams = new Set(unit.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "")
+          .filter((q) => q !== "" && !assignedIn(q, unit)));
+        for (const e of callee.effectParams) {
+          if (reason !== null) break;
+          const written = instance[e.name];
+          if (written === undefined) { reason = `no instance written for ${e.name}`; break; }
+          // The instance's roots resolved at the call: aliases replaced by
+          // the paths they hold, and the objects the caller allocated.
+          const fresh = new Set<string>();
+          const entries: [string, Change][] = [];
+          const reach: Record<string, AccJson> = {};
+          for (const [k, c] of written.entries) {
+            const norm = normalizeKey(k, n, unit);
+            if (norm === null) { reason = `the instance's key ${k} names no variable of the caller`; break; }
+            if (norm.fresh) fresh.add(rootOf(norm.key));
+            entries.push([norm.key, c]);
+            const a = written.reach?.[k];
+            if (a !== undefined) reach[norm.key] = a;
+          }
+          if (reason !== null) break;
+          const inst: Effect = Object.keys(reach).length > 0 ? { entries, else: written.else, reach } : { entries, else: written.else };
+          for (const b of callee.bounded.filter((x) => x.variable === e.name)) {
+            if (empty.has(e.name)) break;
+            let arg: ts.Expression | undefined = n.arguments[b.index];
+            // A forwarded variable: the callback is one of the calling
+            // function's own callbacks of that variable, or a closure whose
+            // only effect on old storage is calls of them (effect ε) besides
+            // fresh allocations.
+            const outerVar = forwarded.get(e.name);
+            if (outerVar !== undefined) {
+              const own = new Set((outer?.bounded ?? []).filter((o) => o.variable === outerVar).map((o) => o.param));
+              const passed = arg === undefined ? undefined : unwrapExpr(arg);
+              if (passed !== undefined && ts.isIdentifier(passed) && own.has(passed.text) &&
+                  declOf(passed.text, passed)?.kind === "param") continue;
+              if (passed === undefined || !(ts.isArrowFunction(passed) || ts.isFunctionExpression(passed))) {
+                reason = `the callback passed for ${b.param} is neither a callback of ${outerVar} nor a closure`;
                 break;
               }
-              const eff = closureEffect(fn);
-              reason = typeof eff === "string" ? eff : effectWithin(eff, inst, keysOf);
+              const eff = closureEffect(passed, false, own);
+              reason = typeof eff === "string" ? eff
+                : eff.entries.length > 0 || eff.else !== "keep"
+                  ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable ${outerVar} does not allow`
+                  : null;
               if (reason !== null) break;
+              continue;
             }
-            if (reason !== null) break;
-            reason = instCheck(inst, e.bound, callee.params, args, fresh);
+            if (arg !== undefined && ts.isIdentifier(unwrapExpr(arg))) {
+              const d = declOf(unwrapExpr(arg).getText(), arg);
+              arg = d !== null && d.kind === "const" ? d.init : undefined;
+            }
+            const fn = arg === undefined ? undefined : unwrapExpr(arg);
+            if (fn === undefined || !(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
+              reason = `the callback passed for ${b.param} has no body visible here`;
+              break;
+            }
+            const eff = closureEffect(fn);
+            reason = typeof eff === "string" ? eff : effectWithin(eff, inst);
             if (reason !== null) break;
           }
-          // The call's effect at the caller (Inst's conclusion) is within the
-          // bounds and the callee's own effect; an empty instance stands for
-          // its bound exactly.
-          calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
-            params: callee.params, bounds: callee.effectParams.map((e) => empty.has(e.name) ? instance[e.name] ?? e.bound : e.bound),
-            own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
+          if (reason !== null) break;
+          reason = instCheck(inst, e.bound, callee.params, args, fresh, callerParams);
         }
+        // The call's effect at the caller (Inst's conclusion) is within the
+        // bounds and the callee's own effect; an empty instance stands for
+        // its bound exactly.
+        calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
+          params: callee.params, bounds: callee.effectParams.map((e) => empty.has(e.name) ? instance[e.name] ?? e.bound : e.bound),
+          own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
       }
-      n.forEachChild(visit);
-      return undefined;
-    };
-    visit(body);
-  }
+    }
+    n.forEachChild(visit);
+    return undefined;
+  };
+  visit(tree);
   closeParser();
-  return { functions, calls, assumes };
+  importedFiles.clear();
+  return { functions, calls, assumes, refusals };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {

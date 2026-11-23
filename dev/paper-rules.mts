@@ -4,7 +4,10 @@
 // rules' layer (`lean/PaperRulesPrototype.lean`, its soundness the axiom
 // `paperKeptFactsSurvive`) over the same parsed file. A caller whose written
 // instance fails its bound (rule Inst, decided by the annotations script) is
-// refused whatever the pass says of it.
+// refused whatever the pass says of it, as is a function the annotations
+// script refuses: one whose bound's regions its own steps may change (rule
+// Bound's second premise), whose callback's type it does not read, or one
+// referenced other than by a call some unit checks.
 //   node dev/paper-rules.mts file.ts [--project dir]
 //   node dev/paper-rules.mts --check dev/paper-rules/expected.json
 // The second form runs every file the expectations list, with their
@@ -50,6 +53,7 @@ function run(file: string, project: string | undefined, quiet: boolean = false):
   const out = execFileSync(prototype, [sidePath, "fragment.json", interfaces,
     sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", process.env.PAPER_TRACE ? "inherit" : "ignore"], timeout: 300_000 });
   const failed = new Map([
+    ...side.refusals.map((r): [string, string] => [r.unit, r.reason]),
     ...side.calls.filter((c) => !c.ok).map((c): [string, string] => [c.caller, c.reason ?? "instance"]),
     ...side.assumes.filter((a) => !a.ok).map((a): [string, string] => [a.caller, `assume at line ${a.line}: ${a.reason ?? "form"}`]),
   ]);
