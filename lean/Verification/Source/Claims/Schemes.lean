@@ -28,6 +28,11 @@ structure Instantiable where
   widenBinders : List String := []
   resolution : List ResolutionSlots := []
   instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
+  /-- For a generic function declared in this module, rebind its closed
+  footprint and throw bound when its declaration states no argument regions
+  (matching `ordinarySlots` in `Front.withStandIns`). -/
+  withFootprint : Option (Footprints.Closed → Bool → List (String × Json) →
+    SourceTypes.Lowering (Json × List (String × Option Json))) := none
 
 /-- A claim with the binder names `θ` names read as it gives them: the source
 spells a binder by its name, and a unit or closure decides what the name

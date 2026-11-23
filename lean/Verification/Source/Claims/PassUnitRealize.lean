@@ -350,14 +350,30 @@ end
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
+/-- **A request's regional check establishes a signature's stated regional
+frame**: its regional bound matches the signature's normal frame (with each
+region shifted past the receiver where `receiverless`), no fresh result is
+claimed, and the signature's exceptional exit is either unbounded (`topEffect`)
+or bounded by the same regional frame when the request's statement bounds
+throws. -/
+def RegionalBound (r : SourceRequest σ ι) (e : CallEffects.Effect) (receiverless : Bool) : Prop :=
+  ∃ Φ qregs regs,
+    r.regional = some (Φ, qregs) ∧
+    e.schema.normal.freshResult = false ∧
+    (if receiverless then regs.mapM Footprints.ArgumentSpineRegion.pastReceiver = some qregs else regs = qregs) ∧
+    e.schema.normal.frame = Φ.fp ++ regs.map Footprints.ArgumentSpineRegion.entry ∧
+    (e.schema.exceptional.frame = Parity.topEffect ∨
+      (r.stated.any (·.onThrow) = true ∧
+        e.schema.exceptional.frame = Φ.fp ++ regs.map Footprints.ArgumentSpineRegion.entry))
+
 /-- **A unit request is a code's**: unqualified, its inputs the code's frame
 (receiver, parameters, then the captures), its program the code's node
 lists, its start and goal the code's, the code's precondition as its entry
 facts, the signature's postcondition as its own (a function declaring
 `this` reads each call position at the input slot of the same number), and
-its run's bound (`RunBound.ofRequest`) the code's: the bounds of its
-signature's exits (`exitBounds`) and its fresh flag. Its entry separation
-is the separation of the code's frames (`rowSpec_of_requestSafe`). -/
+its run's bound (`RunBound.ofRequest`) or regional check (`RegionalBound`)
+the code's. Its entry separation is the separation of the code's frames
+(`rowSpec_of_requestSafe`). -/
 structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   inputs : r.inputs = codeFrame c.arity c.row c.captures c.spine
@@ -367,7 +383,8 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   goal : r.goal = c.goal
   indices : r.entryIndices = GraphCode.codeEntryIndices c
   «ensures» : r.ensures = c.row.effect.schema.normal.facts
-  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult) ∨
+    RegionalBound r c.row.effect false
 
 omit [Labels ι] [StoreView σ ι] in
 /-- **The bound a code's run is given**: the bounds of its signature's
@@ -545,20 +562,85 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
   -- The unit's run, at its own component, is the code's at any (`SameRun`).
   have hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
-  apply rowSpec_of_clauses hcond hspine
-  · intro η n W h ρ he hP hρ
-    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
-    rw [hprog, hu.goal, hu.start] at this
-    exact this
-  · intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
-    rw [← hu.goal]
-    exact requestBound_of_footprint hsafe.2.1 hu.bound hgoto Φ Ψ fresh hb η n W h L d
-      (by rw [hu.inputs, hu.indices]; exact he) hgo hvals hd
-  · intro hne η n W h L d he hgo
-    have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
-      (GraphCode.goto_refs hgo).2
-    rw [hgoto, hu.goal, hu.ensures] at this
-    exact (HeapObservations.SafePostW.goto_comp_iff r.comp none).mp this
+  rcases hu.bound with hclosed | hreg
+  · apply rowSpec_of_clauses hcond hspine
+    · intro η n W h ρ he hP hρ
+      have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
+      rw [hprog, hu.goal, hu.start] at this
+      exact this
+    · intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
+      rw [← hu.goal]
+      exact requestBound_of_footprint hsafe.2.1 hclosed hgoto Φ Ψ fresh hb η n W h L d
+        (by rw [hu.inputs, hu.indices]; exact he) hgo hvals hd
+    · intro hne η n W h L d he hgo
+      have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
+        (GraphCode.goto_refs hgo).2
+      rw [hgoto, hu.goal, hu.ensures] at this
+      exact (HeapObservations.SafePostW.goto_comp_iff r.comp none).mp this
+  · obtain ⟨Φ, qregs, regs, hrg, hfr, hregs, hnorm, hexc⟩ := hreg
+    simp only [Bool.false_eq_true, ↓reduceIte] at hregs
+    subst hregs
+    simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
+    obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
+    have hpos : ∀ g ∈ regs, g.position ≤ c.arity := by
+      intro g hg
+      have hsb := CallEffects.Effect.schema_belowRow hrow
+      simp only [CallEffects.Exits.belowRow, CallEffects.ExitSchema.belowRow, Bool.and_eq_true] at hsb
+      have hsc := List.all_eq_true.mp hsb.1.2.1.1 g.entry (by rw [hnorm]; exact List.mem_append_right _ (List.mem_map.mpr ⟨g, hg, rfl⟩))
+      have hlt : g.position < c.arity + 1 := by
+        cases hgk : g.key <;>
+          simpa [Footprints.ArgumentSpineRegion.entry, hgk, Parity.regionRoots] using hsc
+      omega
+    intro η
+    refine ⟨harity, hrow, ?_⟩
+    intro n W heap L comp he hw hh hgo hvalues hpre hsep recv args hframe
+    replace hgo := (goto_refsOk_comp_iff comp none).mp hgo
+    apply (HeapObservations.SafePostExcV.goto_comp_iff none comp).mp
+    have he' : EnvOk (reassign (RequestJson.graph r.toRequest) η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W := by
+      rw [hspine]; exact he
+    have hpre' : PreAt c.row.effect c.spine L heap := by rw [hspine]; exact hpre
+    have hentry : EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L .nul) n W heap := by
+      rw [hu.inputs, hu.indices]; exact ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
+    obtain ⟨pre, vs, hpl, rfl⟩ := hframe
+    have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
+    subst hpre0
+    simp only [List.nil_append] at he hgo hvalues hpre hsep hentry ⊢
+    have hregRun := SafePostExc.grow (Nat.le_refl heap.length)
+      ((HeapObservations.SafePostExcW.goto_comp_iff r.comp none).mp
+        (by rw [← hgoto]; exact hsafe.2.2.2.1 Φ regs hrg η n W heap _ .nul hentry (GraphCode.goto_refs hgo).2))
+    rw [hu.goal, code_goal, hspine] at hregRun
+    have htransfer : ∀ h', Footprints.ArgumentSpineRegionsWithin Φ regs
+        (envOf (recv :: CallArguments.parameters c.arity args ++ vs) .nul) heap h' →
+        Footprints.Post (Φ.fp ++ regs.map Footprints.ArgumentSpineRegion.entry) (CallEffects.callEnv recv args) heap h' := by
+      intro h' hw'
+      exact Footprints.ArgumentSpineRegionsWithin.iff_post.mp
+        (Footprints.ArgumentSpineRegionsWithin.of_env (fun g hg =>
+          ⟨g, hg, rfl, rfl, rfl, CallEffects.callEnv_frame (hpos g hg) recv args vs .nul⟩) hw')
+    have hbase : HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (c.row.effect.result (meaning (reassign (RequestJson.graph r.toRequest) η) c.row.result)
+          (framePromised c.row.effect (frameOffset (none : Option (Ty ι))) (recv :: CallArguments.parameters c.arity args ++ vs)))
+        (fun h' v => Footprints.Post c.row.effect.schema.normal.frame (CallEffects.callEnv recv args) heap h' ∧
+          (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
+        (fun h' => Footprints.Post c.row.effect.schema.exceptional.frame (CallEffects.callEnv recv args) heap h')
+        n W heap (.goto c.exprs c.conts c.start (recv :: CallArguments.parameters c.arity args ++ vs) .nul none) := by
+      refine HeapObservations.SafePostExc.weaken (fun h' _ hq => ?_) (fun h' hq => ?_) hregRun
+      · exact ⟨by rw [hnorm]; exact htransfer h' hq.1, by simp [hfr]⟩
+      · rcases hexc with htop | ⟨hot, hframeExc⟩
+        · rw [htop]
+          exact Footprints.Footprint.classBound_sound (show Parity.topEffect.classBound.Holds heap h' from Footprints.Closed.holds_top.mpr hq.2)
+        · rw [hframeExc]; exact htransfer h' (hq.1 hot)
+    refine exportsEstablished_frame_sound hx hw hh ?_
+    by_cases hne : c.row.effect.schema.normal.facts = []
+    · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hbase
+    · have hens := (HeapObservations.SafePostW.goto_comp_iff r.comp none).mp
+        (by rw [← hgoto]; exact hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W heap _ .nul hentry (GraphCode.goto_refs hgo).2)
+      rw [hu.goal, hu.ensures, code_goal, hspine] at hens
+      refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hbase hens)
+      obtain ⟨⟨h1, h2⟩, hq⟩ := hq
+      exact ⟨h1, h2, fun F hF =>
+        (CallEffects.Effect.ensures_frame (CallEffects.Effect.belowRow_ensures hrow hF).1
+          (CallEffects.Effect.belowRow_ensures hrow hF).2 v recv args vs .nul heap h').mpr (by simpa using hq F hF)⟩
 
 end
 
@@ -622,7 +704,8 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) d, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) d) h →
     HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ r.entryIndices (envOf L d) h
   «ensures» : c.row.effect.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
-  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult) ∨
+    RegionalBound r c.row.effect true
 
 end
 
@@ -640,6 +723,18 @@ past the receiver as `result = old(slot 0)`, the request's first input. -/
 theorem resultIsOldFirst_pastReceiver :
     (HeapKnowledge.IndexFact.linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 1 []), -1)] 0)).pastReceiver =
       some (.linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 0 []), -1)] 0)) := rfl
+
+theorem mapM_mem_orig {α β : Type} {f : α → Option β} :
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ y ∈ l', ∃ x ∈ l, f x = some y
+  | [], _, h, y, hy => by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; subst h; cases hy
+  | a :: t, l', h, y, hy => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨b, hb, t', ht, rfl⟩ := h
+    rcases List.mem_cons.mp hy with rfl | hy
+    · exact ⟨a, List.mem_cons_self, hb⟩
+    · obtain ⟨x, hx, hfx⟩ := mapM_mem_orig ht y hy
+      exact ⟨x, List.mem_cons_of_mem _ hx, hfx⟩
 
 theorem mapM_some_mem {α β : Type} {f : α → Option β} :
     ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y ∈ l', f x = some y
@@ -840,7 +935,7 @@ theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : Sour
     (framePromised c.row.effect (frameOffset (none : Option (Ty ι))) (recv :: tail))
   have hE' : E' = (dropReceiver c).exprs := rfl
   have hK' : K' = (dropReceiver c).conts := rfl
-  refine exportsEstablished_sound hx hw hh ?_
+  refine exportsEstablished_frame_sound hx hw hh ?_
   -- Step through the prologue's two transitions (`gotoEnter`, `frameEffect`).
   have hstep1 : Step heap (.goto E' K' c.exprs.length (recv :: tail) .nul comp)
       heap (.frame E' K' .undef (recv :: tail) .nul (.effect ⟨c.start, some slots⟩) none comp) := by
@@ -985,22 +1080,72 @@ theorem receiverDropSound {σ ι : Type} [Labels ι] [StoreView σ ι] {r : Sour
             rw [dropReceiver_envOf_lt kLen recv tail (by omega), Nat.add_comm]
           simp only [GoalHolds, ControlFlow.Goal.argument, ControlFlow.Goal.slot, CallEffects.Effect.result,
             framePromised, frameOffset, hpr, CallEffects.TypePromise.result, CallEffects.TypePromise.param, harg]
-      -- Run `r` from `(k, W₂, heap, L', recv)` via `codeRun_of_clauses` and `EnsuresClause`.
-      have hrunR := codeRun_of_clauses (G := RequestJson.graph r.toRequest) (c := c)
-        (inputs := r.inputs) (sep := r.entrySeparation) (indices := r.entryIndices) (goal := r.goal) (comp := comp)
-        (fun η' n' W' h' ρ' he' _ hρ' => by
-          have := hsafe.1 η' (hadm η') n' W' h' ρ' he' hρ'
-          rw [hprog, hu.start] at this
-          exact this)
-        (requestBound_of_footprint hsafe.2.1 hu.bound hgoto)
-        η k W₂ heap L' recv hentry' hgoR hvals' hvalRecv
-      rw [hgoal] at hrunR
+      -- Run `r` from `(k, W₂, heap, L', recv)` via either its closed bound or its regional bound.
+      have hrunR : HeapObservations.SafePostExc (excOf G) T
+          (fun h' v => Footprints.Post c.row.effect.schema.normal.frame (CallEffects.callEnv recv args) heap h' ∧
+            (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
+          (fun h' => Footprints.Post c.row.effect.schema.exceptional.frame (CallEffects.callEnv recv args) heap h')
+          k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) := by
+        rcases hu.bound with hclosed | hreg
+        · have hrun := codeRun_of_clauses (G := RequestJson.graph r.toRequest) (c := c)
+            (inputs := r.inputs) (sep := r.entrySeparation) (indices := r.entryIndices) (goal := r.goal) (comp := comp)
+            (fun η' n' W' h' ρ' he' _ hρ' => by
+              have := hsafe.1 η' (hadm η') n' W' h' ρ' he' hρ'
+              rw [hprog, hu.start] at this
+              exact this)
+            (requestBound_of_footprint hsafe.2.1 hclosed hgoto)
+            η k W₂ heap L' recv hentry' hgoR hvals' hvalRecv
+          rw [hgoal] at hrun
+          exact HeapObservations.SafePostExc.weaken
+            (fun _ _ hq => ⟨Footprints.Footprint.classBound_sound hq.1, hq.2⟩)
+            (fun _ hq => Footprints.Footprint.classBound_sound hq) hrun
+        · obtain ⟨Φ, qregs, regs, hrg, hfr, hregs, hnorm, hexc⟩ := hreg
+          simp only [↓reduceIte] at hregs
+          have hpos : ∀ g ∈ regs, g.position ≤ c.arity := by
+            intro g hg
+            have hsb := CallEffects.Effect.schema_belowRow hrow
+            simp only [CallEffects.Exits.belowRow, CallEffects.ExitSchema.belowRow, Bool.and_eq_true] at hsb
+            have hsc := List.all_eq_true.mp hsb.1.2.1.1 g.entry
+              (by rw [hnorm]; exact List.mem_append_right _ (List.mem_map.mpr ⟨g, hg, rfl⟩))
+            have hlt : g.position < c.arity + 1 := by
+              cases hgk : g.key <;>
+                simpa [Footprints.ArgumentSpineRegion.entry, hgk, Parity.regionRoots] using hsc
+            omega
+          have hregRun := SafePostExc.grow (Nat.le_refl heap.length)
+            ((HeapObservations.SafePostExcW.goto_comp_iff r.comp comp).mp
+              (by rw [← hgoto]; exact hsafe.2.2.2.1 Φ qregs hrg η k W₂ heap L' recv hentry' hroots'))
+          rw [hgoal] at hregRun
+          have htransfer : ∀ h', Footprints.ArgumentSpineRegionsWithin Φ qregs (envOf L' recv) heap h' →
+              Footprints.Post (Φ.fp ++ regs.map Footprints.ArgumentSpineRegion.entry) (CallEffects.callEnv recv args) heap h' := by
+            intro h' hw'
+            refine Footprints.ArgumentSpineRegionsWithin.iff_post.mp
+              (Footprints.ArgumentSpineRegionsWithin.of_env (fun g' hg' => ?_) hw')
+            obtain ⟨g, hg, hfg⟩ := mapM_mem_orig hregs g' hg'
+            unfold Footprints.ArgumentSpineRegion.pastReceiver at hfg
+            split at hfg
+            · cases hfg
+            · rename_i hne0
+              simp only [Option.some.injEq] at hfg
+              subst hfg
+              refine ⟨g, hg, rfl, rfl, rfl, ?_⟩
+              have hle := hpos g hg
+              have h1 := CallEffects.callEnv_frame hle recv args vs .nul
+              have h2 := dropReceiver_envOf_lt kLen recv tail (i := g.position - 1) (by omega)
+              have hadd : g.position - 1 + 1 = g.position := by omega
+              rw [hadd] at h2
+              exact h1.trans h2.symm
+          refine HeapObservations.SafePostExc.weaken (fun h' _ hq => ?_) (fun h' hq => ?_) hregRun
+          · exact ⟨by rw [hnorm]; exact htransfer h' hq.1, by simp [hfr]⟩
+          · rcases hexc with htop | ⟨hot, hframeExc⟩
+            · rw [htop]
+              exact Footprints.Footprint.classBound_sound (show Parity.topEffect.classBound.Holds heap h' from Footprints.Closed.holds_top.mpr hq.2)
+            · rw [hframeExc]; exact htransfer h' (hq.1 hot)
       have hfullR : HeapObservations.SafePostExc (excOf G) T
-          (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+          (fun h' v => Footprints.Post c.row.effect.schema.normal.frame (CallEffects.callEnv recv args) heap h' ∧
             (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v) ∧
             ∀ F ∈ c.row.effect.schema.normal.facts,
               F.HoldsAt ⟨CallEffects.callEnv recv args, heap⟩ (CallEffects.ensuresEnv v recv args) h')
-          (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h')
+          (fun h' => Footprints.Post c.row.effect.schema.exceptional.frame (CallEffects.callEnv recv args) heap h')
           k W₂ heap (.goto c.exprs c.conts c.start L' recv comp) := by
         by_cases hne : c.row.effect.schema.normal.facts = []
         · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩)

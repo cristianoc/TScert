@@ -3369,4 +3369,20 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("exact-overload-discovery", ["positive"]),
     "JSON.stringify([newLedger().entries.size, narrowCallable((x) => x)(4), narrowMethod({ pick: (x) => x }).pick(5), narrowMethodField({ pick: (x) => x }).pick(6)])"),
     "[0,4,5,6]", "exact-overload-discovery: empty Map ledger and narrowed overloaded callable and methods");
+  assert.equal(runExample(ofKind("generic-ensures", ["positive"]),
+    "JSON.stringify([callGeneric(), callGenericScalar([7]), callNullable()])"),
+    "[0,7,0]", "generic-ensures: generic callee preserves postcondition and stated frame");
+  assert.equal(runExample(negative("invalid-generic-ensures-body"), "typeof read([1])"), "undefined",
+    "invalid-generic-ensures-body: badGeneric sets c.i = xs.length past the array");
+  assert.equal(runExample(negative("invalid-generic-requires-caller"), "typeof badCall([1])"), "undefined",
+    "invalid-generic-requires-caller: badCall passes c.i = -1 without establishing @requires");
+  assert.equal(runImporting("stated-region-ensures-value-import",
+    "JSON.stringify([stepNext([5]), growAndUse([])])"),
+    "[5,0]", "stated-region-ensures-value-import: certified stated regional frame and postcondition");
+  assert.equal(runImporting("invalid-false-stated-region-ensures-value-import", "typeof stepNext([1])"), "undefined",
+    "invalid-false-stated-region-ensures-value-import: lyingNormalize sets c.i = xs.length");
+  assert.equal(runImporting("invalid-escaping-stated-region-value-import", "typeof kept([1])"), "undefined",
+    "invalid-escaping-stated-region-value-import: escapingNormalize pops xs outside its stated frame");
+  assert.equal(runImporting("invalid-false-generic-ensures-value-import", "typeof read([1])"), "undefined",
+    "invalid-false-generic-ensures-value-import: lyingGeneric sets c.i = xs.length");
 }

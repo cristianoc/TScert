@@ -59,7 +59,7 @@ def entryRealized_of_step
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {«given» : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
-    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
       depends true true none true = .ok fm₀)
     {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}
@@ -93,7 +93,7 @@ def StepLayouts (budget : PositiveCertificates.SearchBudget) (force : List Strin
     («given» : Std.HashMap String Json) (Chosen : (e : Entry) → EntryRealized e → Prop) (e : Entry) : Prop :=
   ∀ (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     (m : ModuleNeed) (fm₀ : FilePlans) (forced : StandIns)
-    (imported : List (String × Footprints.Closed × Bool × Footprints.Closed)) (depends : List (String × List String))
+    (imported : List (String × QualifiedEffect)) (depends : List (String × List String))
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
       depends true true none true = .ok fm₀)
     (ok : List String) (incoming : Established) (reads : List FragmentRead) (tables : List (String × RowTable))

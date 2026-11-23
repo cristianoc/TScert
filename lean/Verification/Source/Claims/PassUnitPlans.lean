@@ -68,7 +68,7 @@ front given and the interface slots included): its import plan has no module run
 plans over its frozen store. -/
 theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
-    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
     {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
@@ -96,7 +96,7 @@ theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : Positi
 every value of its arguments. -/
 theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
-    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
     {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
@@ -118,7 +118,7 @@ theorem fragmentPlans_overStore {ast : Json} {fileKey : String} {budget : Positi
 its arguments. -/
 theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
-    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
     {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front

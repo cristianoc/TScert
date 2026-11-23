@@ -21,6 +21,10 @@
       "@fixture/module-cells": ["./module-cells.ts"],
       "@fixture/postcondition-row": ["./postcondition-row.ts"],
       "@fixture/false-ensures": ["./false-ensures.ts"],
+      "@fixture/stated-region-ensures": ["./stated-region-ensures.ts"],
+      "@fixture/false-stated-region-ensures": [
+        "./false-stated-region-ensures.ts"
+      ],
       "@fixture/guards": ["./guards.ts"],
       "@fixture/recursive-local": ["./recursive-local.ts"],
       "@fixture/early": ["./early.ts"],
@@ -74,6 +78,8 @@
     "./postcondition-row.ts",
     "./false-ensures.ts",
     "./two-state.ts",
+    "./stated-region-ensures.ts",
+    "./false-stated-region-ensures.ts",
     "./guards.ts",
     "./recursive-local.ts",
     "../examples/invalid-interface-precondition-value-import.ts",

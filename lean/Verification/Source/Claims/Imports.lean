@@ -14,15 +14,15 @@ structure ModuleRun where
   location : String
   ast : Json
   claims : Json
-  qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)
+  qualified : List (String × QualifiedEffect)
 
 /-- What certified imports give the check: the importer's document and claims
 without modules, the importer's qualified reads by name, each with its unit's
-footprint and on-throw flag, and the module runs. -/
+certified exits, and the module runs. -/
 structure ImportPlan where
   ast : Json
   claims : Json
-  qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)
+  qualified : List (String × QualifiedEffect)
   modules : List ModuleRun
   /-- The module units each qualified read's footprint rests on, by the
   read's local name: the units mode 8 checks in the same invocation

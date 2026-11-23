@@ -70,7 +70,7 @@ planning result and the successful pass result printed by `establishStep`;
 wire-prefixing the dependency identities preserves this success. -/
 theorem freshModuleVerdict_sound
     {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
-    {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
+    {forced : StandIns} {imported : List (String × QualifiedEffect)}
     {depends : List (String × List String)} {f₀ : FilePlans}
     {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
     {incoming : Established} {tables : List (String × RowTable)}
@@ -137,7 +137,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     Mode8Accepted (preparedMode8 force givenLines infer f₀) i
   | freshModule
     {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
-    {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
+    {forced : StandIns} {imported : List (String × QualifiedEffect)}
     {depends : List (String × List String)} {f₀ : FilePlans}
     {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
     {incoming : Established} {tables : List (String × RowTable)}

@@ -27,10 +27,13 @@ private partial def explicitConstructorNames (j : Json) : List String :=
   | _ => []
 
 /-- A generic module value's type, its binders their name placeholders: a
-function's signature (receiver, parameters, rest element and result), a
-construct signature (parameters and result), or any other type. -/
+function's signature (receiver, parameters, rest element, result, effect and
+optional type-guard promise), a construct signature (parameters and result),
+or any other type. -/
 inductive GenericType where
   | function (receiver : Option Union) (params : List Union) (rest : Option Union) (result : Union)
+      (effect : CallEffects.Effect := .ordinary)
+      (guard : Option (CallEffects.TypePromise × Union) := none)
   /-- A generic class: its construct signatures, each its parameters, result
   and effect, every instance meeting all of them, and its static fields,
   each readonly or not, which name none of its binders. -/
@@ -39,10 +42,21 @@ inductive GenericType where
   | other (type : Union)
 
 def GenericType.map (f : Union → Union) : GenericType → GenericType
-  | .function r ps e res => .function (r.map f) (ps.map f) (e.map f) (f res)
+  | .function r ps e res eff g =>
+      .function (r.map f) (ps.map f) (e.map f) (f res) eff (g.map fun (p, u) => (p, f u))
   | .construct ss fs => .construct (ss.map fun (ps, res, e) => (ps.map f, f res, e))
       (fs.map fun (k, r, t) => (k, r, f t))
   | .other t => .other (f t)
+
+/-- Replace a generic function's closed footprint and throw bound when its
+effect states no argument regions (matching `ordinarySlots`). -/
+def GenericType.withClosed (fp : Footprints.Closed) (onThrow : Bool) : GenericType → GenericType
+  | .function r ps e res eff g =>
+      let eff' := if !eff.schema.normal.frame.nonClasses.isEmpty then eff
+        else CallEffects.Effect.ofStated fp eff.promise onThrow eff.schema.normal.freshResult
+          eff.pre eff.schema.normal.facts []
+      .function r ps e res eff' g
+  | t => t
 
 /-- A generic module value: a generic module function, a generic class or a
 generic imported value. Its type and its binders' bounds have the binders
@@ -61,6 +75,10 @@ structure GenericValue where
   rest is its packed name's placeholder, which an instance gives the argument
   lists of the binder's array (`packedName`). -/
   packed : List String := []
+  /-- Whether this generic value is a function declared in this module (not
+  an import or generic class), whose footprint proposals update its closed
+  effect (`Front.withStandIns`). -/
+  ownFunction : Bool := false
 
 /-- A source lowered for the source path. -/
 structure SourceLowering where
@@ -90,7 +108,6 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
   | some "function" =>
     fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
     let effect : CallEffects.Effect ← fromJson? (← field term "effect")
-    if effect != .ordinary then return .other (← lowerType ctx term)
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure none else some <$> lowerType ctx recv
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
@@ -98,7 +115,7 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     -- A rest is its element's claim; a pack binder has no claim form.
     if kindOf restTerm == some "pack" then return .other (← lowerType ctx term)
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
-    return .function receiver params rest (← lowerType ctx (← field term "result"))
+    return .function receiver params rest (← lowerType ctx (← field term "result")) effect
   | some "constructor" => constructorType term
   -- Several construct signatures of one generic class, under its binders:
   -- each a construct signature, all with the same static fields.
@@ -188,8 +205,34 @@ def restView (f : Json) : Json :=
 /-- Lower a generic module value's pieces with its binders as placeholders.
 Its declared bounds are checked at each instance a call names
 (`Scheme.moduleInstances`), not here. -/
+private def decodeStatedJson (j : Json) : Except String (Option EffectJson.StatedEffect) :=
+  if j == .null then pure none
+  else do some <$> EffectJson.StatedEffect.ofExits (← EffectCodec.decodeExits j)
+
+private def bodyModulePath (module : String) : Bool :=
+  let ends := fun (x : String) => module.endsWith x
+  (ends ".ts" || ends ".mts" || ends ".cts" || ends ".tsx" || ends ".js" || ends ".mjs" || ends ".cjs") &&
+    !(ends ".d.ts" || ends ".d.mts" || ends ".d.cts")
+
+/-- Strip uncertified caller-assumed effects from a generic import of a module
+with a body (matching `ordinaryImport`), keeping preconditions. -/
+private partial def stripBodyGenericType (term : Json) : Except String Json := do
+  match (term.getObjValAs? String "k").toOption with
+  | some "function" =>
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
+    let ordinary : CallEffects.Effect :=
+      { CallEffects.Effect.ofFootprint .top with pre := effect.pre, requires := effect.requires }
+    if ordinary == effect then pure term
+    else pure (term.setObjVal! "effect" (← EffectJson.effectJson ordinary))
+  | some "intersection" =>
+    let parts ← arr term "parts"
+    let parts' ← parts.mapM stripBodyGenericType
+    pure (term.setObjVal! "parts" (.arr parts'))
+  | _ => pure term
+
 private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
-    (type : List (String × Binding) → M GenericType) (packed : List String := []) : M GenericValue := do
+    (type : List (String × Binding) → M GenericType) (packed : List String := [])
+    (ownFunction : Bool := false) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
   let scope := (← packed.mapM fun n => do
     return (packedName n, ({ pack := true, value := [← placeholder (packedName n) .arguments] } : Binding))) ++ scope
@@ -207,7 +250,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
     return (n, some (← lowerType ctx b))
   let widenBinders := tps.toList.filterMap fun p =>
     if p.getObjValD "bound" == .null then (p.getObjValAs? String "name").toOption else none
-  return { name, pos, binders, widenBinders, resolution := ResolutionWire.groups parameters, type := t, bounds, packed }
+  return { name, pos, binders, widenBinders, resolution := ResolutionWire.groups parameters, type := t, bounds, packed, ownFunction }
 
 /-- Everything the source path lowers, in one run: the declarations, every
 annotation, the imported values, the generic units' binders, the producer's
@@ -273,23 +316,45 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
         return .other (← lowerType ctx (Json.mkObj [("k", .str "intersection"), ("parts", .arr parts.toArray),
           ("span", toJson pos)]))]
       continue
-    generics := generics ++ [← genericOf name pos path f tps fun scope => do
-      -- Its signature by its parameters' annotations: a rest's element, the
-      -- claim of a rest being its element's (`Fragment.callableType`).
+    generics := generics ++ [← genericOf name pos path f tps (ownFunction := true) fun scope => do
+      -- Its signature by its parameters' annotations, stated effect,
+      -- precondition, postcondition and guard (matching `moduleArrow`).
       let ctx : Ctx := { binders := scope, site := path }
+      let stated ← decodeStatedJson (← field f "stated")
+      let reqs : List HeapKnowledge.IndexFact ← fromJson? (← field f "requires")
+      let ens : List HeapKnowledge.IndexFact ← fromJson? (← field f "ensures")
+      let effect := match stated with
+        | some s =>
+          if !s.regions.isEmpty then CallEffects.Effect.ofStated s.closed none s.onThrow false reqs ens s.regions
+          else CallEffects.Effect.ofStated s.closed none s.onThrow s.fresh reqs ens []
+        | none => CallEffects.Effect.ofStated .top none false false reqs ens []
       -- A rest typed by its own type parameter is that parameter as an
       -- argument pack, which each call instantiates.
       if (packRest f).isSome then
         let params ← arr f "params"
         if params.any (·.getObjValD "type" == .null) || f.getObjValD "retType" == .null then
           throw s!"{path}: a generic module function's type needs every parameter's and its result's annotation"
-        return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", .null),
-          ("params", .arr (params.pop.map (·.getObjValD "type"))), ("rest", params.back!.getObjValD "type"),
-          ("result", f.getObjValD "retType"), ("effect", ← EffectJson.effectJson CallEffects.Effect.ordinary),
+        let (recv, restParams) := match params.toList with
+          | p :: ps => if (p.getObjValAs? String "name").toOption == some "this" then (p.getObjValD "type", ps.toArray)
+              else (.null, params)
+          | [] => (.null, params)
+        return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", recv),
+          ("params", .arr (restParams.pop.map (·.getObjValD "type"))), ("rest", restParams.back!.getObjValD "type"),
+          ("result", f.getObjValD "retType"), ("effect", ← EffectJson.effectJson effect),
           ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
+      let rawParams ← arr f "params"
+      let (receiver, paramList) ← match rawParams.toList with
+        | p :: ps =>
+          if (p.getObjValAs? String "name").toOption == some "this" then do
+            let ty ← field p "type"
+            if ty == .null then
+              throw s!"{path}: a generic module function's type needs every parameter's annotation"
+            pure (some (← lowerType ctx ty), ps)
+          else pure (none, rawParams.toList)
+        | [] => pure (none, [])
       let mut params := []
       let mut rest := none
-      for p in ← arr f "params" do
+      for p in paramList do
         let ty ← field p "type"
         if ty == .null then
           throw s!"{path}: a generic module function's type needs every parameter's annotation"
@@ -300,7 +365,14 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
         else params := params ++ [← lowerType ctx ty]
       let result ← field f "retType"
       if result == .null then throw s!"{path}: a generic module function's type needs its result's annotation"
-      return .function none params rest (← lowerType ctx result)]
+      let guardVal ← field f "guard"
+      let guard ← if guardVal == .null then pure none else do
+        fieldsExactly guardVal ["param", "asserts", "type", "span"]
+        let some gp := (← field guardVal "param").getNat?.toOption | throw s!"{path}: a guard's parameter is a position"
+        let asserts ← bool guardVal "asserts"
+        let gty ← lowerType ctx (← field guardVal "type")
+        pure (some (if asserts then CallEffects.TypePromise.asserts gp else .guards gp, gty))
+      return .function receiver params rest (← lowerType ctx result) effect guard]
   let init := ast.getObjValD "init"
   let targets := explicitConstructorNames init
   let constructorPacks ← ((init.getArr?.toOption.getD #[]).toList.flatMap fun st =>
@@ -375,7 +447,12 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
         let n ← (p.getObjValAs? String "name").toOption
         let u := binderUse n (v.getObjValD "type")
         if u.pack && u.value then some n else none
+      let decl ← field v "declaration"
+      let modPath := (decl.getObjValAs? String "module").toOption.getD ""
       let v := renamePacks packed v
+      let v ← if bodyModulePath modPath then do
+          pure (v.setObjVal! "type" (← stripBodyGenericType (← field v "type")))
+        else pure v
       let _ ← enterUnit path [] v tps
       units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
       let generic ← genericOf name span path v tps (packed := packed) fun scope => do
