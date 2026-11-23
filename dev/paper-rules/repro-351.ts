@@ -1,27 +1,12 @@
-// The pattern of cristianoc/TScert#351: a local copy of a field loses its
-// link to the field at a loop head, so a read through the copy inside the
-// loop is refused. `paperAssume` is the prototype's unsafe assume: the
-// prototype adds the fact its equality states where it is evaluated, and
-// names the issue in its verdict; the ordinary verifier reads it as a call
-// that changes nothing.
-function paperAssume(fact: boolean, issue: string): Modifies<{}, void> {}
+// The pattern of cristianoc/TScert#351, fixed by #353: a local copy of a
+// field keeps its link to the field across a loop head when nothing in the
+// loop changes the field.
 
-// Refused by both today; the fix of #351 should accept it.
+// Accepted: nothing in the loop writes h.xs.
 export function sumVia(h: { xs: number[] }): number {
   const xs = h.xs;
   let s = 0;
   for (let i = 0; i < h.xs.length; i++) s += xs[i]!;
-  return s;
-}
-
-// The same with the link assumed: accepted by the prototype, naming #351.
-export function sumViaAssumed(h: { xs: number[] }): number {
-  const xs = h.xs;
-  let s = 0;
-  for (let i = 0; i < h.xs.length; i++) {
-    paperAssume(xs === h.xs, "#351"); // unsafe assume until #351: the pass drops the link at the loop head
-    s += xs[i]!;
-  }
   return s;
 }
 

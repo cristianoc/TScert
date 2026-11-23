@@ -48,7 +48,8 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 - `claims.ts`: a caller's claim about its callback, checked against the
   callback's body.
 - `inst-effect.ts`: the caller's facts kept across a walker call.
-- `repro-351.ts`: the loop-head pattern of issue #351.
+- `repro-351.ts`: the loop-head pattern of issue #351, fixed in the verifier
+  by #353: accepted, with its two refused variants.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
   paper's rules, one per rule, each refused.
 - `review2.ts`, `review2-reexporter.ts`, `review2-reimporter.ts`,
