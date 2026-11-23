@@ -175,36 +175,59 @@ forward derivation by rules that exist.
 
 \section{Effect languages}\label{sec:languages}
 
-\subsection{The model}
+\subsection{The syntax}
 
 The model is that of \emph{Tolerant frames}~\cite{tf}, Sections ``What
-exists'' and ``Model''.
+exists'' and ``Model''. Every set and meta-variable of
+Sections~\ref{sec:languages}--\ref{sec:l0} is introduced here.
 
-\begin{definition}[Heaps, environments, changes]
-$\Loc$ is the set of locations and $\Val$ the set of values. A heap
-$h:\Loc\rightharpoonup\Val\uplus\mathit{Spine}$ maps an initial
-segment $\{0,\ldots,\len h-1\}$ of the locations to contents. An
-environment $\rho:\Var\rightharpoonup\Val$ maps variables to values.
-$\Delta$ is the set of changes
+\begin{definition}[Syntax of the first part]\label{def:syntax}
+\begin{center}\small$\begin{array}{rcll}
+x,y,p &\in& \Var & \text{variables; $p$ a parameter}\\
+f,g &\in& \mathit{Key} & \text{property keys}\\
+v &\in& \Val & \text{values}\\
+l &\in& \Loc=\mathbb{N} & \text{locations}\\
+h &\in& \mathit{Heap}=\Loc\rightharpoonup\Val\uplus\mathit{Spine} & \text{heaps}\\
+\rho &\in& \mathit{Env}=\Var\rightharpoonup\Val & \text{environments}\\
+\delta &::=& \keep\mid\init\mid\scalar\mid\extend\mid\grow\mid\any & \text{changes, the set }\Delta\\
+\pi &::=& x\mid\pi.f & \text{paths, the set }\Path\\
+\Lang & & & \text{effect languages (Definition~\ref{def:language})}\\
+r &\in& \Reg_\Lang & \text{regions of }\Lang\\
+G &\subseteq& \{\kw{value},\kw{array},\kw{view}\} & \text{sets of categories}\\
+r &::=& \val\mid\st\mid\vw\mid\pi.\kw{spine}\mid\pi.\kw{cells} & \text{regions of }\Lang_0\\
+ &\mid& \pi.f\mid\pi.\kw{fields}\mid r\cap\kw{cls}(G)\mid\kw{all} & \\
+\Phi,\Psi,S &::=& \{r_1:\delta_1,\ \ldots,\ r_k:\delta_k\} & \text{effects, the set }\Eff_\Lang\\
+\sigma &\in& \Var\rightharpoonup\Path & \text{substitutions}\\
+K &\in& \mathcal{K} & \text{evidence: assertions about a state}\\
+F,P,Q,R & & & \text{assertions (\emph{Tolerant frames})}\\
+c & & & \text{commands (\emph{Tolerant frames}, ``Commands'')}
+\end{array}$\end{center}
+\begin{itemize}[leftmargin=1.5em]
+\item An effect named $S$ is read as a support
+(Definition~\ref{def:support}). $\Lang_0$'s regions mean what
+Section~\ref{sec:l0} says. The categories $\kw{value}$, $\kw{array}$
+and $\kw{view}$ are those of a value, an array spine and a view spine.
+\item A heap $h$ maps the initial segment $\{0,\ldots,\len h-1\}$ of the
+locations to contents.
+\item The changes are ordered
 $\keep\sqsubseteq\init\sqsubseteq\scalar\sqsubseteq\extend\sqsubseteq\grow\sqsubseteq\any$.
 A change $\delta$ at heap length $b$ is a reflexive and transitive
 relation $\delta_b$ on contents.
+\item A path reads a value $\sem{\pi}(\rho,h)$: $\rho(x)$ for $x$, and
+the contents of the field $f$ of the object $\sem{\pi}(\rho,h)$ for
+$\pi.f$. A read that fails gives $\bot$.
+\item The judgment $c:\Phi\mid\Phi^e$ bounds the command $c$ at its
+normal and its exceptional exit (Section~\ref{sec:rules}).
+\end{itemize}
 \end{definition}
 
 \begin{example}
 \code{a.push(40)} changes the spine of $a$ from
 $\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,10\rangle$, with 10 a
 new element location. The pair is in $\extend_{10}$ when the heap
-started with 10 locations.
+started with 10 locations. The path $a$ reads the array in both heaps,
+and the region $a.\kw{spine}$ of $\Lang_0$ denotes its spine location.
 \end{example}
-
-\begin{definition}[Paths]
-A path is $\pi::=x\mid\pi.f$, with $x\in\Var$ and $f$ a property key.
-$\Path$ is the set of paths. The value $\sem{\pi}(\rho,h)$ that a path
-reads is $\rho(x)$ for $x$, and the contents of the field $f$ of the
-object $\sem{\pi}(\rho,h)$ for $\pi.f$. A read that fails gives
-$\bot$.
-\end{definition}
 
 \subsection{What a language provides}
 
@@ -252,10 +275,9 @@ array: the spine location of an array object is fixed for its lifetime
 The next notions use a language only through Definition~\ref{def:language}.
 
 \begin{definition}[Effect and action]
-An effect over $\Lang$ is a finite set $\Phi$ of entries $r:\delta$,
-with $r\in\Reg_\Lang$ a region and $\delta\in\Delta$ a change.
-$\Eff_\Lang$, or $\Eff$ when $\Lang$ is fixed, is the set of effects
-over $\Lang$. Its action relates heaps:
+An effect $\Phi\in\Eff_\Lang$ (Definition~\ref{def:syntax}), written
+$\Eff$ when $\Lang$ is fixed, is a finite set of entries $r:\delta$.
+Its action relates heaps:
 \[
 h\tr{\Phi}_\rho h'\iff h\tr{}_\rho h'\ \wedge\ \forall l<\len h.\
 \bigl(h'(l)=h(l)\ \vee\ \exists (r:\delta)\in\Phi.\ l\in\sem r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l))\bigr).
@@ -392,11 +414,8 @@ $x.\kw{cells}$ inherits these rules unchanged.
 \subsection{Regions}
 
 \begin{definition}[$\Lang_0$]
-The regions of $\Lang_0$ are
-\[
-r::=\val\mid\st\mid\vw\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.f\mid\pi.\kw{fields}\mid r\cap\kw{cls}(C)\mid\kw{all}
-\]
-with $C$ a set of the categories value, array spine and view spine.
+The regions of $\Lang_0$ are the forms of Definition~\ref{def:syntax}.
+Their meanings:
 \begin{itemize}[leftmargin=1.5em]
 \item $\sem{\val}(\rho,h)$, $\sem{\st}(\rho,h)$, $\sem{\vw}(\rho,h)$
 are the locations of $h$ whose contents are a value, a spine, a view
@@ -407,8 +426,8 @@ locations that spine lists in $h$.
 \item $\sem{\pi.f}$ is the location of the field $f$ of the object that
 $\pi$ reads, and $\sem{\pi.\kw{fields}}$ the locations of all its
 fields but the spine.
-\item $\sem{r\cap\kw{cls}(C)}$ is the part of $\sem r$ in the categories
-$C$. $\sem{\kw{all}}$ is every location below $\len h$.
+\item $\sem{r\cap\kw{cls}(G)}$ is the part of $\sem r$ in the categories
+$G$. $\sem{\kw{all}}$ is every location below $\len h$.
 \end{itemize}
 The roots of a path region are the variable its path starts with.
 Substitution replaces that variable by a path. Inclusion and
@@ -644,11 +663,38 @@ logic~\cite{bnr}. \emph{Tolerant frames} names effect variables as the
 form a callback that writes its captures needs, after
 Birkedal, Torp-Smith and Yang~\cite{bty}.
 
-\subsection{Regions rooted at captures}
+\begin{definition}[Syntax of $\Lang_1$]\label{def:syntax1}
+$\Lang_1$ extends Definition~\ref{def:syntax}. Every set and
+meta-variable not listed here is as there.
+\begin{center}\small$\begin{array}{rcll}
+\varepsilon &\in& \EVar & \text{effect variables, a countable set}\\
+k & & & \text{code, with parameters and free variables}\\
+\eta &\in& \mathit{Env} & \text{the environment of a closure}\\
+\langle k,\eta\rangle & & & \text{closures}\\
+r &::=& \cdots\mid\reach{\pi}{T}\mid N(\pi_1,\ldots,\pi_n) & \text{regions of }\Lang_1\\
+N(x_1,\ldots,x_n) &\triangleq& S & \text{named region definitions}\\
+E &::=& \Phi\mid\varepsilon\mid E\cup E & \text{effect expressions}\\
+T &::=& \cdots\mid(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{types}\\
+\kappa &::=& \varepsilon\resp S & \text{constraints}\\
+C &::=& \kappa_1,\ \ldots,\ \kappa_n & \text{constraint lists}\\
+\Sigma &::=& \forall\varepsilon_1\ldots\varepsilon_j.\ C\Rightarrow & \text{signatures}\\
+ & & \quad(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \\
+\theta &\in& \EVar\rightharpoonup\Eff & \text{instantiations}
+\end{array}$\end{center}
+A region of $\Lang_1$ is a region of $\Lang_0$, a declared reach or a
+named region. A type is a TypeScript type, with function types that
+carry an effect at each exit. The meanings follow: closures in Section~\ref{sec:captures}, effect
+expressions and instantiations in Definition~\ref{def:effexp}, declared
+reach in Definition~\ref{def:reach}, constraints and signatures in
+Definition~\ref{def:constraint}, named regions in
+Definition~\ref{def:named}.
+\end{definition}
+
+\subsection{Regions rooted at captures}\label{sec:captures}
 
 \begin{definition}[Closures and their roots]
-A closure is a pair $\langle k,\eta\rangle$ of code $k$ with
-parameters $\vec p$ and an environment $\eta$ for its free variables.
+A closure $\langle k,\eta\rangle$ pairs code $k$ with parameters
+$\vec p$ and an environment $\eta$ for its free variables.
 The effect of a function type in $\Lang_1$ may have roots among
 $\vec p$ and the free variables of the code it types. At a call of
 the closure with arguments $\vec v$, its regions are read in
@@ -671,18 +717,8 @@ capture is a variable, and so a rigid path.
 
 \subsection{Effect variables}
 
-\begin{definition}[Effect expressions]
-The syntax, with $r\in\Reg$ a region and $\delta\in\Delta$ a change:
-\[
-\begin{array}{rcll}
-\varepsilon &\in& \EVar & \text{effect variables, a countable set}\\
-\Phi &::=& \{r_1:\delta_1,\ \ldots,\ r_k:\delta_k\} & \text{effects of entries}\\
-E &::=& \Phi\mid\varepsilon\mid E\cup E & \text{effect expressions}
-\end{array}
-\]
-An instantiation
-$\theta:\EVar\rightharpoonup\Eff$ maps effect variables to effects of
-entries. $E[\theta]$ replaces each variable by its image. The action
+\begin{definition}[Effect expressions]\label{def:effexp}
+An instantiation $\theta$ maps effect variables to effects. $E[\theta]$ replaces each variable by its image. The action
 of $E$ under $\theta$ is the action of $E[\theta]$.
 \end{definition}
 
@@ -731,7 +767,7 @@ needs about its cursor: the visitor's effect is fixed at the call of
 
 \subsection{Reach through declared keys}
 
-\begin{definition}[Declared reach]
+\begin{definition}[Declared reach]\label{def:reach}
 Let $T$ be the declared type at a path $\pi$. The region
 $\reach\pi T$ is the least set of locations that contains the field
 location $\sem{\pi}.f$ for each key $f$ that $T$ declares, the spine
@@ -759,22 +795,8 @@ type in the reach declares the key $g$.
 \subsection{Constraints and quantified signatures}
 
 \begin{definition}[Constraint, signature]\label{def:constraint}
-The syntax, with $\varepsilon\in\EVar$ an effect variable, $r\in\Reg$
-a region, $\delta\in\Delta$ a change, $p\in\Var$ a parameter and $E$ an
-effect expression:
-\[
-\begin{array}{rcll}
-S &::=& \{r_1:\delta_1,\ \ldots,\ r_k:\delta_k\} & \text{supports}\\
-c &::=& \varepsilon\resp S & \text{constraints}\\
-C &::=& c_1,\ \ldots,\ c_n & \text{constraint lists}\\
-T &::=& \cdots\mid(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{types}\\
-\sigma &::=& \forall\varepsilon_1\ldots\varepsilon_j.\ C\Rightarrow(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{signatures}
-\end{array}
-\]
-An instantiation is a map $\theta:\EVar\rightharpoonup\Eff$.
+The syntax is that of Definition~\ref{def:syntax1}.
 \begin{itemize}[leftmargin=1.5em]
-\item A type extends the TypeScript types with function types that
-carry an effect at each exit.
 \item A support $S$ is read as in Definition~\ref{def:support}: each
 region $r_i$ may change at most by $\delta_i$, and every other location
 is unconstrained.
@@ -785,7 +807,7 @@ within $\delta_i$. A list $C$ holds when each of its constraints holds.
 \item In a signature, the regions of $C$ have their roots among
 $p_1,\ldots,p_m$, and $C$, $E$, $E^e$ and the $T_i$ mention only the
 variables $\varepsilon_1,\ldots,\varepsilon_j$. A function has the
-signature $\sigma$ when, for every $\theta$ that maps each
+signature $\Sigma$ when, for every $\theta$ that maps each
 $\varepsilon_i$ to an effect anchored at the call and satisfies $C$ at
 the call, each normal return is bounded by $E[\theta]$ and each throw
 by $E^e[\theta]$.
@@ -804,9 +826,9 @@ $xs$ and none that shortens it.
 
 \subsection{Named regions}
 
-\begin{definition}[Named region]
-A named region is a definition $N(\vec x)\triangleq S$, with $S$ an
-effect of entries over the roots $\vec x$. A region $N(\vec\pi)$
+\begin{definition}[Named region]\label{def:named}
+In a named region definition $N(\vec x)\triangleq S$, the regions of
+$S$ have their roots among $\vec x$. A region $N(\vec\pi)$
 stands for $S[\vec\pi/\vec x]$.
 \end{definition}
 
