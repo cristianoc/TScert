@@ -1243,8 +1243,8 @@ export function layoutNextRichInlineLineRange(
     return flow.onlyItem >= 0 ? createOnlyItemLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0) : createLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0)
   }
   const lineEnd: LayoutCursor = { segmentIndex: getSegmentIndex(flow, start), graphemeIndex: start.graphemeIndex }
-  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart, "#361")   // PAPER: unsafe assume until #361
+  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
+  if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
   const data = flow.data   // PAPER: the handle through a local
   paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (!normalizePreparedLineStart(data, lineEnd)) return null

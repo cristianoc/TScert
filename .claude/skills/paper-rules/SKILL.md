@@ -45,8 +45,7 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
   object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy,
   and #365 (no clause bounds the cursor's grapheme index) in
   `dev/paper-rules/repro-365.ts` and the copy; in the copy also #356 (the
-  prepared handle's length invariant), #361 (the public line streams'
-  `start` cursor), #362 (no `@ensures` of a generic or imported callee),
+  prepared handle's length invariant), #362 (no `@ensures` of a generic or imported callee),
   #363 (the complex walker's returned cursor) and #364 (the handle's length
   across the walkers' visits); #351 (links at loop heads) was one, fixed by
   #353.

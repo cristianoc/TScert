@@ -300,8 +300,8 @@ function stepNextLine(
   const internal = getInternalPrepared(prepared)
   lineEnd.segmentIndex = start.segmentIndex
   lineEnd.graphemeIndex = start.graphemeIndex
-  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart, "#361")   // PAPER: unsafe assume until #361
+  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
+  if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
   const started = normalizePreparedLineStart(internal, lineEnd)   // PAPER: the result through a local
   paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (!started) return null
