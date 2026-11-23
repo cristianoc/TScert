@@ -58,6 +58,7 @@ import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
 import * as guards from "./fragment-guards.mts";
 import { memberUses, namespaceMembers, type MemberUse, type NamespaceMember } from "./namespace-members.mts";
+import { withoutMeaning, type ParameterKind } from "./written-applications.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -247,6 +248,10 @@ export class Gate {
    * span: each the parameter's default at the arguments before it, or the
    * reason it has none. */
   readonly completions: Map<string, Answered<TypeTerm[]>> = new Map();
+  /** The file's type applications and calls with explicit type arguments
+   * that have positions whose parameter has no type meaning, by span: the
+   * parameters' kinds (`parameterKinds`), by which each argument is read. */
+  readonly meaninglessArguments: Map<string, readonly ParameterKind[]> = new Map();
   /** The file's type references TypeScript binds to a type declared in one
    * of its blocks, by span: that declaration, or the reason it is refused
    * (`blockTypes` of the declaration graph). */
@@ -913,7 +918,19 @@ export class Gate {
     if (!omitted.ok) return this.fail(node, omitted.refused);
     return { k: "reference", reference: { name, span,
       arguments: args.map(arg => this.span(arg)), target: declared.declaration },
-      args: [...closed, ...args.map(read), ...omitted.value.map(t => this.settled(t, node))], span };
+      args: [...closed, ...withoutMeaning(args, this.meaninglessArguments.get(span.join(":")) ?? [], read,
+        (arg, message) => this.fail(arg, message)),
+        ...omitted.value.map(t => this.settled(t, node))], span };
+  }
+
+  /** A call's or a construction's explicit type arguments, each read at
+   * `at`, but none at a parameter without type meaning
+   * (`parameterKinds`), a frame's included; undefined where none is written. */
+  typeArgumentsOf(node: ts.CallExpression | ts.NewExpression, at: (argument: TypeNode) => Node):
+      Modifies<{ values: "any"; spines: "grow" }, TypeTerm[] | undefined> {
+    const written = node.typeArguments;
+    return written && withoutMeaning(written, this.meaninglessArguments.get(this.span(node).join(":")) ?? [],
+      argument => this.typeOf(argument, at(argument)), (argument, message) => this.fail(argument, message), true);
   }
 
   /** The complete declaration document's definitions, as a named type's
@@ -2485,6 +2502,7 @@ function lowerFile(file: string, carriesContext: boolean,
         blockTypes: blockNodes.map(node => gate.span(node)),
         blockType: ([start, end], result) => gate.blockTypes.set(`${start}:${end}`, result),
         completion: ([start, end], result) => gate.completions.set(`${start}:${end}`, result),
+        meaningless: ([start, end], positions) => gate.meaninglessArguments.set(`${start}:${end}`, positions),
         symbolNames: symbolNameNodes.map(node => gate.span(node)),
         keyTypes: keyTypeNodes.map(node => gate.span(node)),
         keyType: ([start, end], keys) => gate.keyTypes.set(`${start}:${end}`, keys),

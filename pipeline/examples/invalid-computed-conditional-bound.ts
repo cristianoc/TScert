@@ -3,7 +3,7 @@
 interface R {
   x: number;
 }
-type B<T extends string> = R;
+type B<T extends string> = R | T;
 export function f(x: Extract<B<number>, unknown>): Extract<B<number>, unknown> {
   return x;
 }

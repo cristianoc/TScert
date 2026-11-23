@@ -1205,8 +1205,9 @@ export const statedEffect = (stated: StatedFrame): Modifies<{ values: "any"; spi
  * `Modifies<P, T>` with `Modifies` the verifier's (SOURCE-ELABORATION.md,
  * "Stated effects"), and the result `T` it is stated of; no statement, and
  * the annotation itself, where the result is no such reference. `P` is a
- * type literal written in place (`statementOf`). Refused: a statement letting
- * both classes change arbitrarily, which states nothing; one on an async
+ * type literal written in place (`statementOf`), or a type parameter in
+ * scope (`frameVariable`). Refused: a type literal letting both classes
+ * change arbitrarily, which states nothing; a statement on an async
  * definition, whose throw is its promise's rejection; one on a constructor or
  * a construct signature, whose effect is its class's construction. */
 export function statedResult(scope: TermScope, result: TypeNode | undefined, at: Node | null):
@@ -1228,7 +1229,8 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   const [footprint, type, ...others] = node.typeArguments ?? [];
   if (!footprint || !type || others.length)
     return scope.fail(node, "`Modifies` takes a frame and a result: `Modifies<P, T>`");
-  const frame = statementOf(scope, footprint, at);
+  const variable = frameVariable(scope, footprint);
+  const frame = variable ? variableFrame : statementOf(scope, footprint, at);
   // `Modifies<P, Fresh<T>>` is the one order of a frame and a fresh result.
   const inner = unwrap(type);
   const withFresh = ts.isTypeReferenceNode(inner) && (scope.fresh?.(inner) ?? false);
@@ -1237,7 +1239,7 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   const stated = { ...frame, fresh: withFresh };
   if (withFresh && stated.regions.length)
     return scope.fail(footprint, "a fresh result beside spine regions is outside the fragment: a frame with spine regions states no fresh result");
-  if (stated.footprint.value === "any" && stated.footprint.spine === "any" && !stated.fresh)
+  if (!variable && stated.footprint.value === "any" && stated.footprint.spine === "any" && !stated.fresh)
     return scope.fail(footprint, "`Modifies` letting every value and every spine change states nothing: a throw's heap is as unconstrained by it as a normal return's");
   return { stated, result: predicate ? result : withFresh && ts.isTypeReferenceNode(inner) ? freshResult(scope, inner) : type };
 }
@@ -1292,6 +1294,21 @@ const locationKey = (key: string): boolean => {
   const root = "(?:[A-Za-z_$][\\w$]*)";
   return new RegExp(`^${root}(?:\\.${root})*(?:\\.${root}|\\[\\*\\]|\\.\\*)$`).test(key);
 };
+
+/** Whether a statement's frame `P` is a type parameter in scope: a reference
+ * the scope reads as a binder or as a declaration's parameter. */
+function frameVariable(scope: TermScope, written: TypeNode): Modifies<{ values: "any"; spines: "grow" }, boolean> {
+  const node = unwrap(written);
+  if (!ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName) || node.typeArguments?.length) return false;
+  const term = scope.named(node, spanOf(scope, node), part => typeTerm(scope, part));
+  return term.k === "binder" || term.k === "parameter";
+}
+
+/** The frame a type parameter `E` in scope states, `Modifies<E, T>`: every
+ * location may change, values and spines at `any`, with no region and no
+ * guarantee on a throw. A caller assumes no more of a callee of that type,
+ * and every body is within it (SOURCE-ELABORATION.md, "Stated effects"). */
+const variableFrame: StatedFrame = { footprint: { value: "any", spine: "any" }, onThrow: false, fresh: false, regions: [] };
 
 /** A statement's frame `P`, written in place as a type literal: `values`
  * and `spines` at a change, unquoted, `onThrow: true`, and quoted location

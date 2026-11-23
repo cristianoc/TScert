@@ -128,7 +128,11 @@ keeps its contents but those `P` names, each changed at most as `P` says.
 `"extend"`, `"grow"` or `"any"`) bounds changes to locations holding a
 value, `spines` the same for array spines, `"extend"` appending fresh
 cells at a spine's end, as `push` does, and `onThrow: true` makes the bound hold on a throw too;
-`{}` states that nothing previously allocated changes. On a function
+`{}` states that nothing previously allocated changes. `P` may instead be
+a type parameter in scope, `Modifies<E, T>`, which the verifier reads as
+letting every location change, at every instance of `E`; an application
+of an alias stating its parameter's frame admits there a type parameter
+only ([arguments without type meaning](SOURCE-CONTRACTS.md#arguments-without-type-meaning)). On a function
 declaration, `"x[*]": "any"` excepts the spine parameter `x` holds at the
 call, and `"x.f[*]": "any"` the spine its `@stable` field `f` holds, which
 may change arbitrarily; the declared type at the region's path is an
@@ -153,6 +157,14 @@ function evens(n: number): Modifies<{ values: "any"; spines: "grow" }, number[]>
 function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void> {
   xs.pop();
 }
+
+type Footprint = { [location: string]: "keep" | "init" | "scalar" | "extend" | "grow" | "any" };
+type Visitor<E extends Footprint> = (i: number) => Modifies<E, void>;
+function each<E extends Footprint>(n: number, visit: Visitor<E>): void {
+  for (let i = 0; i < n; i++) visit(i);
+}
+const seen: number[] = [];
+each<{ "seen[*]": "extend" }>(3, i => { seen.push(i); });
 ```
 
 ### `Fresh<T>`

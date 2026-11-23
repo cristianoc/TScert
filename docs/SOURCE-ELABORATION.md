@@ -4115,8 +4115,19 @@ a file each of whose statements is one of that file's, as written but for
 its type parameters' bounds (the census's copy of `tools/` holds one, and a
 checked project may keep one written at an earlier version, whose `P` admits
 fewer changes): a bound restricts only what TypeScript admits, and the
-verifier reads $`P`$ itself. $`P`$ is a type literal written in place,
-one map from what may change to how much: `values: c` for the locations
+verifier reads $`P`$ itself. $`P`$ is a type parameter in scope, or a
+type literal written in place. A type parameter $`E`$, a binder of an
+enclosing signature or a parameter of the declaration the statement is
+written in, states the frame changing every location, values and spines at
+`any`, with no region and no guarantee on a throw: a caller assumes no
+more of a callee of type $`(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle E,T\rangle`$
+than of one without a statement, and every body is within it, so the
+reading is sound at every instance of $`E`$. A declaration's parameter at
+a frame is read so, and an application of the declaration admits there
+only a type parameter in scope ([arguments without type meaning](SOURCE-CONTRACTS.md#arguments-without-type-meaning);
+`stated-effect-variable`, `invalid-stated-effect-variable-kept`,
+`invalid-stated-effect-alias-frame`). A type
+literal is one map from what may change to how much: `values: c` for the locations
 holding a value and `spines: c` for those holding an array spine, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"extend"`, `"grow"`, `"any"`, an
 omitted class key `"keep"`; on a value `extend` and `grow` are `scalar`, on
@@ -4143,6 +4154,9 @@ fresh result, no promise and no receiver-spine exception,
 ```math
 \frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{spines}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}\ \text{or a fresh result}}
      {⟦(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle P,T\rangle⟧=\mathcal F_{\epsilon(P)}(R,\vec Q,B)}\ \textsf{stated-effect}
+\qquad
+\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad E\ \text{a type parameter in scope}}
+     {⟦(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle E,T\rangle⟧=\mathcal F_{\epsilon(\{\mathsf{any},\mathsf{any}\})}(R,\vec Q,B)}\ \textsf{stated-variable}
 ```
 
 A type guard or an assertion function states it at its promise's type,
@@ -4163,8 +4177,8 @@ lowers, reads it through one function (`statedResult` in
 `tools/type-term.mts`), so `typeof f` reads `f`'s statement too. Refused,
 each where it is read ([fragment boundary](SOURCE-FRAGMENT.md)): `Modifies`
 anywhere else, a reference the declaration reader resolves to `Modifies`
-outside a signature's result included; a frame written other than in
-place; a key other than `values`, `spines` and `onThrow`, `value` and
+outside a signature's result included; a frame other than a type parameter
+in scope or a type literal written in place; a key other than `values`, `spines` and `onThrow`, `value` and
 `store` among them (a module cell's key is `"cell(b)"`); both class keys at
 `"any"`, with or without `onThrow`, which states nothing; a statement on an async
 definition, whose call returns where its body throws

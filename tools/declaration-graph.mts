@@ -37,7 +37,7 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, 
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
+import { FRAME_ARGUMENT, literal, parameterKinds, SweepError, withoutMeaning, writtenApplications, type Entity, type ParameterKind } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { withPromise, footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
@@ -887,6 +887,11 @@ export interface TypeAnswers {
    * the omitted arguments: each parameter's default at the arguments before
    * it, or the reason it has none. */
   completion?: (span: Span, result: Answered<TypeTerm[]>) => void;
+  /** Told, for each client type application and each client call or
+   * construction with explicit type arguments, the positions whose
+   * parameters' kinds (`parameterKinds`), where one has no type meaning: a
+   * type application's declaration's, a call's one signature's. */
+  meaningless?: (span: Span, positions: readonly ParameterKind[]) => void;
   keyType?: (span: Span, keys: TypeTerm | null) => void;
   mappedType?: (span: Span, members: readonly MappedMember[] | null) => void;
   symbolName?: (span: Span, result: Answered<number | { literal: string; value: string | number }>) => void;
@@ -2291,6 +2296,31 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
     const typeDeclarationsOf = (name: Identifier): Node[] => resolutionTypeDeclarationsOf(checker, name);
+    // The parameters without type meaning of the declaration a written name
+    // applies (`parameterKinds`), its parts as TypeScript binds it, the
+    // frame of the verifier's `Modifies` its first argument.
+    const declarationParts = (name: Identifier): readonly Node[] | null => {
+      const parts = typeDeclarationsOf(name).filter(isTypeDeclaration);
+      return parts.length ? parts : null;
+    };
+    const frameArgument = (applied: ts.TypeReferenceNode, position: number): boolean =>
+      position === 0 && ts.isIdentifier(applied.typeName) && verifierAlias(applied.typeName) === "Modifies";
+    // A default at a frame parameter is a frame argument the application
+    // does not write: refused, as a written one other than a type parameter
+    // is (`withoutMeaning`).
+    const kindsOf = (parts: readonly Node[]): readonly ParameterKind[] => {
+      const kinds = parameterKinds(parts, declarationParts, frameArgument);
+      for (const part of parts)
+        childrenOf(part, "typeParameters").filter(ts.isTypeParameterDeclaration).forEach((parameter, index) => {
+          if (kinds[index] === "frame" && parameter.defaultType)
+            throw Error(`the default of ${parameter.name.text}: ${FRAME_ARGUMENT}`);
+        });
+      return kinds;
+    };
+    const meaningless = (name: Identifier): readonly ParameterKind[] => {
+      const parts = declarationParts(name);
+      return parts ? kindsOf(parts) : [];
+    };
     // TypeScript's evaluation of a form in a declaration's parameter list at
     // an application (`type-probe.mts`).
     const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name), (name, args, span) => {
@@ -4121,7 +4151,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           // reference's otherwise.
           const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
             : isTypeReference(type) ? checker.getTypeArguments(type) : [];
-          const args = actuals.map(argument => contextualTerm(closureBinders, typesRead, argument, span));
+          // None at a parameter without type meaning (`parameterKinds`), the
+          // declaration's own after the ones it captures; a type parameter at
+          // a frame, refused otherwise (`withoutMeaning`).
+          const positions: readonly ParameterKind[] = [...capturedOf(node).map((): ParameterKind => "meaning"), ...kindsOf([node])];
+          const args = actuals.map((argument, index): TypeTerm => {
+            const kind = positions[index] ?? "meaning";
+            if (kind === "meaning") return contextualTerm(closureBinders, typesRead, argument, span);
+            if (kind === "frame" && !isTypeParameter(argument)) throw Error(FRAME_ARGUMENT);
+            return { k: "atom", name: "never", span };
+          });
           // A type declared in a block closing over a type parameter has
           // arguments TypeScript's type does not state.
           if (args.length !== parametersOf(node).length)
@@ -4472,7 +4511,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             if (!computedAlias(target, aliasOf)) {
               const scope = valueScope(emptyDeclarationReading, node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
               const closed = capturedOf(target).length;
-              const completed = completeArguments(emptyDeclarationReading, target, written.map(arg => typeTerm(scope, arg)), node, name.text,
+              const completed = completeArguments(emptyDeclarationReading, target,
+                withoutMeaning(written, meaningless(name), arg => typeTerm(scope, arg),
+                  (_arg, message) => { throw Error(message); }), node, name.text,
                 capturedAt(node, name.text));
               typeAnswers.completion?.(span, { ok: true, value: completed.slice(closed + written.length) });
             }
@@ -4485,6 +4526,29 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       node.forEachChild(completing);
     };
     if (typeAnswers.completion) completing(client);
+    // The client's applications at parameters without type meaning: a type
+    // application's, at the declaration it names; a call's or a
+    // construction's type arguments, at the callee's signature when its
+    // type states one, since the instance names that signature's binders.
+    const instancing = (node: Node): void => {
+      const report = (positions: readonly ParameterKind[]): void => {
+        if (positions.some(p => p !== "meaning")) typeAnswers.meaningless?.([node.getStart(client), node.end], positions);
+      };
+      if (ts.isTypeReferenceNode(node) && node.typeArguments?.length) {
+        const name = memberName(node.typeName);
+        if (name) report(meaningless(name));
+      }
+      if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && node.typeArguments?.length) {
+        const callee = checker.getTypeAtLocation(node.expression);
+        const signatures = callee ? checker.getSignaturesOfType(callee,
+          ts.isNewExpression(node) ? SignatureKind.Construct : SignatureKind.Call) : [];
+        const [only, ...others] = signatures;
+        const declaration = only && !others.length ? only.declaration?.resolve() : undefined;
+        if (declaration) report(kindsOf([declaration]));
+      }
+      node.forEachChild(instancing);
+    };
+    if (typeAnswers.meaningless) instancing(client);
     // The applications written in the client file and in the declarations it
     // reaches (`written-applications.mts`), each target joining the graph for
     // its bounds; a library one is stated for its bounds only.
@@ -4567,6 +4631,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           return view.some(entry => d.getText(d.getSourceFile()).trim() === entry.text);
         }),
         read: (node, binder) => typeTerm(sweepScope(node, binder), node),
+        meaningless,
         reference: (name, args) => {
           const node = lookup(name, name.text);
           const source = name.getSourceFile();
@@ -4633,7 +4698,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       ...blockStarts,
     ];
     const collectionContext: DeclarationCollectionContext = {
-      complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup,
+      complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup, meaningless,
       computedMembers, instanceOf, instantiate: (owner, node, args, use) => instantiateAt({ owner, externalReads: 0 }, node, args, use),
       enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation: (owner, node) => equation({ owner, externalReads: 0 }, node),
       libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
@@ -6074,6 +6139,9 @@ type DeclarationInstance = { identity: DeclarationIdentity; args: readonly TypeT
 
 interface DeclarationElaborationContext {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
+  /** The parameters without type meaning of the declaration a written name
+   * applies (`parameterKinds`). */
+  meaningless: (identifier: Identifier) => readonly ParameterKind[];
   computedMembers: (node: TypeDeclaration) => boolean;
   instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
   instantiate: (owner: string, node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
@@ -6248,7 +6316,8 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     // computes at this reference's arguments.
     if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
     const target = identityOf(targetNode);
-    const completed = context.complete(key, targetNode, arguments_.map(read), written ?? null,
+    const completed = context.complete(key, targetNode, withoutMeaning(arguments_, context.meaningless(identifier), read,
+      (_arg, message) => { throw Error(message); }), written ?? null,
       `${target.module}#${target.name}`, capturedHere);
     if (context.computedMembers(targetNode)) {
       if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
