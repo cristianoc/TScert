@@ -754,22 +754,37 @@ type in the reach declares the key $g$.
 \subsection{Constraints and quantified signatures}
 
 \begin{definition}[Constraint, signature]\label{def:constraint}
-A constraint is $\varepsilon\resp S$, with $\varepsilon$ an effect
-variable and $S$ a set of entries $r:\delta$, read as a support
-(Definition~\ref{def:support}): each region $r$ of $S$ may change at most
-by its $\delta$. The constraint holds under $\theta$ at a state of $K$
-when $\theta(\varepsilon)\resp_K S$: every transition bounded by
-$\theta(\varepsilon)$ changes each location of each $r$ within $\delta$.
-A signature is
+The syntax, with $\varepsilon\in\EVar$ an effect variable, $r\in\Reg$
+a region, $\delta\in\Delta$ a change, $p\in\Var$ a parameter and $E$ an
+effect expression:
 \[
-\forall\vec\varepsilon.\ C\Rightarrow(\vec p)\to T\ [E\mid E^e]
+\begin{array}{rcll}
+S &::=& \{r_1:\delta_1,\ \ldots,\ r_k:\delta_k\} & \text{supports}\\
+c &::=& \varepsilon\resp S & \text{constraints}\\
+C &::=& c_1,\ \ldots,\ c_n & \text{constraint lists}\\
+T &::=& \cdots\mid(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{types}\\
+\sigma &::=& \forall\varepsilon_1\ldots\varepsilon_j.\ C\Rightarrow(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{signatures}
+\end{array}
 \]
-with $C$ a list of constraints over $\vec\varepsilon$ and roots in
-$\vec p$, and the effect expressions $E,E^e$ over $\vec\varepsilon$. A
-function has the signature when, for every $\theta$ that maps each
-$\varepsilon$ to an effect anchored at the call and satisfies $C$ at
+An instantiation is a map $\theta:\EVar\rightharpoonup\Eff$.
+\begin{itemize}[leftmargin=1.5em]
+\item A type extends the TypeScript types with function types that
+carry an effect at each exit.
+\item A support $S$ is read as in Definition~\ref{def:support}: each
+region $r_i$ may change at most by $\delta_i$, and every other location
+is unconstrained.
+\item The constraint $\varepsilon\resp S$ holds under $\theta$ at a
+state of $K$ when $\theta(\varepsilon)\resp_K S$: every transition
+bounded by $\theta(\varepsilon)$ changes each location of each $r_i$
+within $\delta_i$. A list $C$ holds when each of its constraints holds.
+\item In a signature, the regions of $C$ have their roots among
+$p_1,\ldots,p_m$, and $C$, $E$, $E^e$ and the $T_i$ mention only the
+variables $\varepsilon_1,\ldots,\varepsilon_j$. A function has the
+signature $\sigma$ when, for every $\theta$ that maps each
+$\varepsilon_i$ to an effect anchored at the call and satisfies $C$ at
 the call, each normal return is bounded by $E[\theta]$ and each throw
 by $E^e[\theta]$.
+\end{itemize}
 \end{definition}
 
 \begin{example}
