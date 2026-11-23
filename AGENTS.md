@@ -280,8 +280,13 @@ mode reads, and the tests the change touches.
   dropping a rule, or for the mode's checks that apply it.
 - **One commit keeps four things in step:** the rule's statement in
   `lean/Verification/Paper/EffectLanguage/Rules.lean`, its proof in the
-  idealised model (`Model.lean`), the mode's check, and the paper. A rule
-  the model cannot prove does not reach the mode.
+  idealised model (`Model.lean`), the prototype's check, and the paper. A
+  rule the model cannot prove does not reach the prototype.
+- **The prototype and the paper never disagree.** A commit that changes
+  what the prototype accepts or refuses states in the paper the rule it
+  applies; where the prototype decides less than the paper's rule (a safe
+  approximation), the paper says so. Before a push, check the prototype's
+  recent changes against the paper's rules for drift.
 - **The mode's verdict stays its own.** It never prints the ordinary
   accepted verdict, its soundness theorem takes the rules as a premise,
   and no change to the mode changes `mode8Accepted_sound` or its premise.

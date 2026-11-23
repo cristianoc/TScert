@@ -601,7 +601,11 @@ $\varepsilon$'s bound, read at the call's arguments, in the callee's bound,
 since $\varepsilon$ is within its own bound; and the argument has the
 parameter's type when it is the outer callback, or a closure whose only
 effect on old storage is calls of it, effect $\varepsilon$, besides storage
-it allocates.
+it allocates. Each image is within its bound, so the call's effect may be
+read with the bound in place of the image: it keeps fewer of the caller's
+facts, never more. The part of the callee's effect that is no variable is
+written in its signature, or, where it is not, is the effect
+\ruleName{Fun} gives its body without its calls of the callbacks.
 \end{description}
 
 \noindent
@@ -618,6 +622,8 @@ The effect of each kind of step, for a field \code{x.f}, an array
 \begin{mathpar}
 \inferrule*[left=Field-Write]{ }{\code{x.f = a}:\{x.f:\any\}}
 \and
+\inferrule*[left=Field-Write-Scalar]{x.f\text{ and }a\text{ of primitive type}}{\code{x.f = a}:\{x.f:\scalar\}}
+\and
 \inferrule*[left=Elem-Write]{ }{\code{x[i] = a}:\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}}
 \and
 \inferrule*[left=Push]{ }{\code{x.push(a)}:\{x.\kw{spine}:\extend\}}
@@ -629,6 +635,7 @@ The effect of each kind of step, for a field \code{x.f}, an array
 
 \noindent
 \status{Lean: \lean{fieldWriteFrame}, \lean{fieldWriteStep\_sound};
+\lean{ExpressionEffects.scalarWrite\_sound};
 \lean{elemWriteFrame}, \lean{elemWriteStep\_sound};
 \lean{receiverExtendFrame} with the assumed contract
 \lean{ReceiverAppends}; \lean{alloc\_post}. A native's row is trusted

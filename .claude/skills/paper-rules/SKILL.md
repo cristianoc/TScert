@@ -46,6 +46,8 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
 
 - **Write effects down, don't infer them.** The inference approach (PRs 337, 338, 342)
   is closed.
+- **The prototype and the paper stay in sync.** A change to what the
+  prototype decides changes the paper in the same commit (AGENTS.md).
 - **The rules are experiments.** They change as applying them to patterns
   shows what the patterns need. A change keeps the rule's statement in
   `Rules.lean`, its proof in `Model.lean`, the prototype's check and the
