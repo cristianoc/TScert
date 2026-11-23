@@ -638,6 +638,8 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
          *  @invariant segmentFlags.length === segmentCount && widths.length === segmentCount && safeInteger(lineStartGraphemeIndex) && 0 <= lineStartGraphemeIndex
          *  @invariant safeInteger(hangEndSegmentIndex) && hangEndSegmentIndex <= segmentCount && safeInteger(pendingBreakSegmentIndex) && pendingBreakSegmentIndex <= segmentCount
          *  @invariant hasContent === false || lineStartSegmentIndex < i
+         *  @invariant safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex
+         *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(fitBreakSegmentIndex)
          *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
          *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
          *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
@@ -953,6 +955,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
                 returnsFromHyphen = true
                 break decided
               }
+              paperAssume(lineStartSegmentIndex <= lineEndSegmentIndex, "#367")   // PAPER: unsafe assume until #367
               // Blink's retry halts the segment where that lets it fit, and the line ends after it,
               // but where the segment ends its item, whose mark stays halted while the line goes on.
               if (overflowLineEndTrims !== null && newFitW - (overflowLineEndTrims[i]!) <= fitLimit) {   // PAPER: guard removed
@@ -1069,7 +1072,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
           const fitAdvances = breakableFitAdvances[i]
           if (fitAdvances === undefined || fitAdvances === null) throw new RangeError('missing value')
           const fitCount = fitAdvances.length
-          /** @invariant safeInteger(g) && 0 <= g */   // PAPER: annotation
+          /** @invariant safeInteger(g) && 0 <= g && safeInteger(lineStartSegmentIndex) && safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex */   // PAPER: annotation
           for (let g = fillStart; g < fitCount; g++) {
             const baseGw = fitAdvances[g]
             if (baseGw === undefined) throw new RangeError('missing value')
@@ -1157,8 +1160,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
     paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (singleLine || !normalizePreparedLineStart(prepared, cursor)) break
   }
-  const segmentAtReturn = cursor.segmentIndex   // PAPER: a local copy for the assume
-  paperAssume(Number.isSafeInteger(segmentAtReturn) && 0 <= segmentAtReturn, "#363")   // PAPER: unsafe assume until #363
   return lastLineWidth
 }
 

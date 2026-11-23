@@ -43,11 +43,12 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
 - **Issues for unsafe assumes**: each `paperAssume` names one.
   cristianoc/TScert#355 (a callback's call drops the facts over a local
   object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy,
-  and #365 (no clause bounds the cursor's grapheme index) in
-  `dev/paper-rules/repro-365.ts` and the copy; in the copy also #356 (the
-  prepared handle's length invariant), #362 (no `@ensures` of a generic or imported callee),
-  #363 (the complex walker's returned cursor) and #364 (the handle's length
-  across the walkers' visits); #351 (links at loop heads) was one, fixed by
+  #365 (no clause bounds the cursor's grapheme index) in
+  `dev/paper-rules/repro-365.ts` and the copy, and #367 (a bound lost at an
+  `if` merge whose changing branch always exits next) in
+  `dev/paper-rules/repro-367.ts` and the copy; in the copy also #356 (the
+  prepared handle's length invariant), #362 (no `@ensures` of a generic or imported callee)
+  and #364 (the handle's length across the walkers' visits); #351 (links at loop heads) was one, fixed by
   #353.
 
 ## Standing decisions (the owner's, 2026-11-23)

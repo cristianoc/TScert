@@ -161,6 +161,15 @@
       "startAdvanceWeak": "refused"
     }
   },
+  "repro-367.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "lineEnd": "refused",
+      "paperAssume": "accepted",
+      "lineEndAssumed": "accepted",
+      "lineEndWeak": "refused"
+    }
+  },
   "assume-lib.ts": {
     "ordinary": "unverified",
     "units": {
