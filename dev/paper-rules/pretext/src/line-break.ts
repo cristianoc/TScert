@@ -268,6 +268,10 @@ export function normalizeMaxWidth(maxWidth: number): number {
 // source a line start consumes before it, such as soft hyphens, is an empty line,
 // which starts at its hard break. The rest of a chunk after a line that wrapped
 // inside it is no line of its own when a line start consumes all of it.
+// PAPER: annotation
+/** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex
+ *  @ensures result === false || cursor.segmentIndex < prepared.widths.length */
 export function normalizePreparedLineStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
@@ -278,7 +282,8 @@ export function normalizePreparedLineStart(
   if (segmentIndex >= segmentCount) return false
   if (cursor.graphemeIndex > 0) return true
 
-  let atChunkStart = segmentIndex === 0 || ((segmentFlags[segmentIndex - 1] ?? missing()) & KIND_BITS) === HARD_BREAK
+  let atChunkStart = segmentIndex === 0 || ((segmentFlags[segmentIndex - 1]!) & KIND_BITS) === HARD_BREAK   // PAPER: guard removed
+  /** @invariant safeInteger(segmentIndex) && safeInteger(segmentCount) && 0 <= segmentIndex && segmentIndex < segmentCount */   // PAPER: annotation
   while (true) {
     const flags = segmentFlags[segmentIndex]
     if (flags === undefined) throw new RangeError('missing value')
@@ -324,7 +329,8 @@ export function walkPreparedLinesRaw<E extends AtMost<'{ "prepared.**": "keep", 
   const segmentCount = prepared.widths.length
   while (true) {
     let startSegmentIndex = cursor.segmentIndex
-    while (startSegmentIndex < segmentCount && consumesAtLineStart(segmentFlags[startSegmentIndex] ?? missing())) {
+    /** @invariant safeInteger(startSegmentIndex) && 0 <= startSegmentIndex */   // PAPER: annotation
+    while (startSegmentIndex < segmentCount && consumesAtLineStart(segmentFlags[startSegmentIndex]!)) {   // PAPER: guard removed
       startSegmentIndex++
     }
     if (startSegmentIndex >= segmentCount) return stats.lineCount
@@ -334,6 +340,9 @@ export function walkPreparedLinesRaw<E extends AtMost<'{ "prepared.**": "keep", 
     stats.lineCount++
     if (width > stats.maxLineWidth) stats.maxLineWidth = width
     onLine?.(width, startSegmentIndex, startGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
+    paperAssume(segmentCount === prepared.widths.length, "#364")   // PAPER: unsafe assume until #364
+    const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
+    paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
     paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   }
 }
@@ -428,6 +437,8 @@ function countSteppedLines(prepared: PreparedLineData, maxWidth: number): number
       cursor.segmentIndex = startSegmentIndex
       cursor.graphemeIndex = startGraphemeIndex
       walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)
+      const segmentAfterWalk = cursor.segmentIndex   // PAPER: a local copy for the assume
+      paperAssume(Number.isSafeInteger(segmentAfterWalk) && 0 <= segmentAfterWalk, "#362")   // PAPER: unsafe assume until #362
     }
     paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     count++
@@ -487,6 +498,9 @@ function returnsFromUnfitHyphen(
 // stepping one line per call, it read the handle and the profile and derived its
 // limits again for every line, and short lines laid out 7 to 40% slower in all
 // three browsers (RESEARCH.md, Keeping Work Bounded).
+// PAPER: annotation
+/** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex */
 function walkPreparedComplexLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(   // PAPER
   prepared: PreparedLineData,
   cursor: LayoutCursor,
@@ -1116,14 +1130,21 @@ function walkPreparedComplexLines<E extends AtMost<'{ "prepared.**": "keep", "el
       if (lineWidth > stats.maxLineWidth) stats.maxLineWidth = lineWidth
     }
     onLine?.(lineWidth, lineStartSegmentIndex, lineStartGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
+    const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
+    paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
     // A single-line caller owns normalization of the following line.
     paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (singleLine || !normalizePreparedLineStart(prepared, cursor)) break
   }
+  const segmentAtReturn = cursor.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAtReturn) && 0 <= segmentAtReturn, "#363")   // PAPER: unsafe assume until #363
   return lastLineWidth
 }
 
 // Steps one line of a fast-path handle from a normalized line start.
+// PAPER: annotation
+/** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex */
 function stepPreparedSimpleLineGeometry(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
@@ -1138,7 +1159,7 @@ function stepPreparedSimpleLineGeometry(
   // The first segment of the line, or the rest of one a line ended inside. One that
   // overflows and can break fills the line grapheme by grapheme.
   const startAdvances = breakableFitAdvances[start]
-  const startW = lineStartExtras === null ? (widths[start] ?? missing()) : (widths[start] ?? missing()) + (lineStartExtras[start] ?? missing())
+  const startW = lineStartExtras === null ? (widths[start]!) : (widths[start]!) + (lineStartExtras[start] ?? missing())   // PAPER: guard removed
   const startEndTrim = lineEndTrims === null ? 0 : (lineEndTrims[start] ?? missing())
   // Blink's retry between graphemes halts an overflowing first segment where that lets it fit.
   const startTrim = overflowLineEndTrims !== null && startW - (overflowLineEndTrims[start] ?? missing()) <= fitLimit
@@ -1181,17 +1202,17 @@ function stepPreparedSimpleLineGeometry(
     if (w === undefined) throw new RangeError('missing value')
     const endTrim = lineEndTrims === null ? 0 : (lineEndTrims[i] ?? missing())
     if (lineW + w - endTrim > fitLimit) {
-      const kind = (segmentFlags[i] ?? missing()) & KIND_BITS
+      const kind = (segmentFlags[i]!) & KIND_BITS   // PAPER: guard removed
       let end = i
       if (kind === SPACE) {
         end = i + 1
-      } else if (kind === ZERO_WIDTH_BREAK && engineProfile.zeroWidthSpaceStaysAfterAtomic && ((segmentFlags[i - 1] ?? missing()) & KIND_BITS) === OBJECT) {
+      } else if (kind === ZERO_WIDTH_BREAK && engineProfile.zeroWidthSpaceStaysAfterAtomic && ((segmentFlags[i - 1]!) & KIND_BITS) === OBJECT) {   // PAPER: guard removed
         end = i + 1
-        while (end < widths.length && ((segmentFlags[end] ?? missing()) & KIND_BITS) === ZERO_WIDTH_BREAK) end++
+        while (end < widths.length && ((segmentFlags[end]!) & KIND_BITS) === ZERO_WIDTH_BREAK) end++   // PAPER: guard removed
       }
       cursor.segmentIndex = end
       cursor.graphemeIndex = 0
-      return end === i && breaksAfterKind((segmentFlags[i - 1] ?? missing()) & KIND_BITS) ? lineW - (widths[i - 1] ?? missing()) : lineW - endTrimmed
+      return end === i && breaksAfterKind((segmentFlags[i - 1]!) & KIND_BITS) ? lineW - (widths[i - 1]!) : lineW - endTrimmed   // PAPER: guard removed
     }
     lineW += w
     endTrimmed = lineW > fitLimit ? endTrim : 0
@@ -1203,6 +1224,9 @@ function stepPreparedSimpleLineGeometry(
 
 // Steps one line from a normalized line start. A cursor inside a segment needs that segment's
 // breakable fit advances.
+// PAPER: annotation
+/** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex */
 export function stepPreparedLineGeometryFromStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
@@ -1210,6 +1234,8 @@ export function stepPreparedLineGeometryFromStart(
 ): number | null {
   if (prepared.simpleLineWalkFastPath) return stepPreparedSimpleLineGeometry(prepared, cursor, maxWidth)
   const width = walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)   // PAPER: the result through a local
+  const segmentAfterWalk = cursor.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAfterWalk) && 0 <= segmentAfterWalk, "#362")   // PAPER: unsafe assume until #362
   paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return width
 }

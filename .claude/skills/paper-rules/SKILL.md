@@ -41,10 +41,12 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
   based on `single-pass`).
 - **Issues for unsafe assumes**: each `paperAssume` names one.
   cristianoc/TScert#355 (a callback's call drops the facts over a local
-  object) is in use in `dev/paper-rules/repro-355.ts`; cristianoc/TScert#356
-  (the prepared handle's length invariant, which the source does not yet
-  prove) in the Pretext copy; #351 (links at loop heads) was one, fixed by
-  #353.
+  object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy;
+  in the copy also #356 (the prepared handle's length invariant), #361 (the
+  public line streams' `start` cursor), #362 (no `@ensures` of a generic or
+  imported callee), #363 (the complex walker's returned cursor) and #364
+  (the raw walker's handle length across its visit); #351 (links at loop
+  heads) was one, fixed by #353.
 
 ## Standing decisions (the owner's, 2026-11-23)
 
