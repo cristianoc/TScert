@@ -99,23 +99,26 @@ stated once, over any effect language with these four properties. The
 \emph{specific rules} give the effects of the steps and the natives in
 the regions of one language. TScert implements one effect language,
 $\Lang_0$, the closed language of \emph{Tolerant frames}, with its
-specific rules and the general rules. In $\Lang_0$ a callback's effect
-is closed and has no roots among the closure's captures, so a walker
-that calls a visitor keeps no fact about a value location, its own
-cursor included. We extend $\Lang_0$ to $\Lang_1$ with regions rooted
+specific rules and the general rules. $\Lang_0$ has no effect
+variables, so a callback type carries one effect for every closure, and
+that effect has no roots among a closure's captures. A walker whose
+visitors may write captured values then keeps no fact about a value
+location across a visit, its own cursor included. We extend $\Lang_0$ to $\Lang_1$ with regions rooted
 at captures, effect variables that range over anchored effects,
 constraints that bound an effect variable by a support, and reach
-through declared keys. Each walker pattern of Pretext's line walkers is
-then a derivation by the general rules, with three rules that are
-specific to the new forms. This paper states the extension and its
-rules. It has no implementation and no proof.
+through declared keys. The patterns W1--W4 of Pretext's line walkers
+are then derivations by the general rules and three rules specific to
+the new forms, given assumed effects and postconditions of helpers. W5
+needs a region $\Lang_1$ lacks, and W6 is an assumption. This paper
+states the extension and its rules. It has no implementation and no
+proof.
 \end{abstract}
 
 \section*{The status of this paper}
 
 Sections~\ref{sec:languages}--\ref{sec:l0} describe what TScert has.
-Each statement there carries the Lean name that proves it, or is marked
-as a conjecture. Sections~\ref{sec:patterns}--\ref{sec:walkers} propose
+Each statement there carries the Lean name that proves it, says that no
+Lean theorem states it, or is marked as a conjecture. Sections~\ref{sec:patterns}--\ref{sec:walkers} propose
 $\Lang_1$. Every statement about $\Lang_1$ is proposed. No statement
 about $\Lang_1$ is implemented or proved.
 
@@ -145,6 +148,11 @@ export function sumAndTrace(xs: number[]): number {
   return walk(xs, i => { visited.push(i); });
 }
 
+export function sumAndCount(xs: number[]): number {
+  const seen = { n: 0 };
+  return walk(xs, i => { seen.n++; });
+}
+
 export function sumAndAlias(xs: number[]): number {
   const visited = xs;
   return walk(xs, i => { visited.push(i); });
@@ -163,8 +171,12 @@ call.
 
 The visitor is given a number. It cannot reach $c$, which \code{walk}
 allocates after the visitor exists. The effect $\Phi$ cannot say so:
-it is one closed effect for every visitor, and the only regions it can
-use for what a visitor writes through its captures are class regions.
+it is one closed effect for every visitor, and its regions cannot be
+rooted at a caller's captures. The visitor of \code{sumAndCount} writes
+the field $n$ of a captured object; the only region covering that field
+for every caller is the class $\val$, which contains $c.i$. With
+\code{sumAndTrace} alone, $\{\st:\grow\}$ would do, and would keep the
+fact.
 
 \emph{Inferred callback preservation} infers, from the body of
 \code{walk}, what a visitor must preserve, and checks each caller's
@@ -212,7 +224,8 @@ locations to contents.
 \item The changes are ordered
 $\keep\sqsubseteq\init\sqsubseteq\scalar\sqsubseteq\extend\sqsubseteq\grow\sqsubseteq\any$.
 A change $\delta$ at heap length $b$ is a reflexive and transitive
-relation $\delta_b$ on contents.
+relation $\delta_b$ on contents, and the order is inclusion of these
+relations \status{Lean: \lean{Change.Holds.mono}}.
 \item A path reads a value $\sem{\pi}(\rho,h)$: $\rho(x)$ for $x$, and
 the contents of the field $f$ of the object $\sem{\pi}(\rho,h)$ for
 $\pi.f$. A read that fails gives $\bot$.
@@ -340,14 +353,16 @@ replaced by the regions of an arbitrary language $\Lang$.
 \and
 \inferrule*[left=Call]{y=f(\vec p):\Phi}{y=f(\vec x):\Phi[\vec x/\vec p]}
 \and
+\inferrule*[left=Call-Var]{z:(\vec p)\to T\ [\Phi\mid\Phi^e]}{y=z(\vec x):\Phi[\vec x/\vec p]\mid\Phi^e[\vec x/\vec p]}
+\and
 \inferrule*[left=Fun]{c:\Phi\mid\Phi^e\text{ on the locations below the mark}}{y=f(\vec p):\Phi\mid\Phi^e}
 \and
-\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{r:\delta\} \\ \sem r\text{ at or above the mark}}{c:\Phi\text{ on the locations below the mark}}
+\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{r:\delta\} \\ \sem r\text{, read at the entry of }c\text{, at or above the mark}}{c:\Phi\text{ on the locations below the mark}}
 \end{mathpar}
 
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[\ruleName{Sub}] An effect may be widened. It uses inclusion
-alone.
+alone. \status{no Lean theorem states it as displayed}
 \item[\ruleName{Frame}] The tolerant frame: a fact survives a command
 whose effect respects the fact's support. It uses respect alone, and so
 disjointness alone. \status{Lean, for $\Lang_0$: \lean{respect\_sound},
@@ -365,16 +380,24 @@ iterations. \status{Lean, for $\Lang_0$: \lean{LoopEvidence.loop\_sound}}
 \item[\ruleName{Call}] The callee's effect is instantiated at the actual
 arguments by substitution (E2). \status{Lean, for $\Lang_0$:
 \lean{call\_exits\_exact}, \lean{call\_rule}}
+\item[\ruleName{Call-Var}] A call of a variable $z$ of function type,
+such as a callback parameter, has the effect its type states.
+\status{no Lean theorem states it as displayed}
 \item[\ruleName{Fun}] A function's effect is its body's, on the
 locations that exist at its entry. \status{Lean, for $\Lang_0$:
 \lean{codeObligations\_sound}, \lean{PassWalkSound}}
-\item[\ruleName{Fresh-Eff}] A change of storage allocated by the
-command is no change of a location the invocation started with.
+\item[\ruleName{Fresh-Eff}] A command may start after its invocation has
+allocated storage. A change of that storage, at or above the
+invocation's mark, is no change of a location the invocation started
+with. \status{no Lean theorem states it as displayed}
 \end{description}
 
 \begin{conjecture}[The general rules are language-generic]\label{conj:generic}
 Each general rule is sound for every effect language that has the
-properties (E1)--(E4).
+properties (E1)--(E4) and also supplies a sound rebasing and a sound
+decision of the rigidity of an effect, which \ruleName{Seq-Eff} and
+\ruleName{Loop-Eff} use and Definition~\ref{def:language} does not
+include.
 \end{conjecture}
 
 \noindent
@@ -510,10 +533,11 @@ dropped.
 \noindent
 The visitor's effect is closed. It is fixed when \code{Visitor} is
 written and is the same for each caller of \code{walk}. A closed effect
-that admits the visitor of \code{sumAndTrace}, which grows the spine of
-\code{visited}, must name a region that contains that spine for every
-caller. In $A_0$ that region is a class region. A class region read at
-the call contains $c.i$ when it contains any value location.
+that admits the visitor of \code{sumAndCount}, which writes the field
+$n$ of the object $\mathit{seen}$, must name a region that contains
+that field for every caller. Its regions cannot be rooted at the
+caller's $\mathit{seen}$, so that region is the class $\val$, which
+read at the call contains $c.i$.
 
 \section{The patterns of Pretext's line walkers}\label{sec:patterns}
 
@@ -671,22 +695,22 @@ meta-variable not listed here is as there.
 k & & & \text{code, with parameters and free variables}\\
 \eta &\in& \mathit{Env} & \text{the environment of a closure}\\
 \langle k,\eta\rangle & & & \text{closures}\\
-r &::=& \cdots\mid\reach{\pi}{T}\mid N(\pi_1,\ldots,\pi_n) & \text{regions of }\Lang_1\\
-N(x_1,\ldots,x_n) &\triangleq& S & \text{named region definitions}\\
+r &::=& \cdots\mid\reach{\pi}{T} & \text{regions of }\Lang_1\\
+S &::=& \cdots\mid N(\pi_1,\ldots,\pi_n) & \text{supports, with named supports}\\
+N(x_1,\ldots,x_n) &\triangleq& S & \text{named support definitions}\\
 E &::=& \Phi\mid\varepsilon\mid E\cup E & \text{effect expressions}\\
 T &::=& \cdots\mid(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \text{types}\\
 \kappa &::=& \varepsilon\resp S & \text{constraints}\\
 C &::=& \kappa_1,\ \ldots,\ \kappa_n & \text{constraint lists}\\
 \Sigma &::=& \forall\varepsilon_1\ldots\varepsilon_j.\ C\Rightarrow & \text{signatures}\\
  & & \quad(p_1:T_1,\ \ldots,\ p_m:T_m)\to T\ [E\mid E^e] & \\
-\theta &\in& \EVar\rightharpoonup\Eff & \text{instantiations}
+\theta &\in& \EVar\rightharpoonup\mathit{EExp} & \text{instantiations, to effect expressions}
 \end{array}$\end{center}
-A region of $\Lang_1$ is a region of $\Lang_0$, a declared reach or a
-named region. A type is a TypeScript type, with function types that
+A region of $\Lang_1$ is a region of $\Lang_0$ or a declared reach. A type is a TypeScript type, with function types that
 carry an effect at each exit. The meanings follow: closures in Section~\ref{sec:captures}, effect
 expressions and instantiations in Definition~\ref{def:effexp}, declared
 reach in Definition~\ref{def:reach}, constraints and signatures in
-Definition~\ref{def:constraint}, named regions in
+Definition~\ref{def:constraint}, named supports in
 Definition~\ref{def:named}.
 \end{definition}
 
@@ -718,8 +742,14 @@ capture is a variable, and so a rigid path.
 \subsection{Effect variables}
 
 \begin{definition}[Effect expressions]\label{def:effexp}
-An instantiation $\theta$ maps effect variables to effects. $E[\theta]$ replaces each variable by its image. The action
-of $E$ under $\theta$ is the action of $E[\theta]$.
+An instantiation $\theta$ maps effect variables to effect expressions,
+and $E[\theta]$ replaces each variable by its image. An instance of a
+variable bound at a call is a closed effect whose regions are rooted at
+the caller's variables and read in the caller's environment wherever
+the instance is used. A judgment, a respect or an anchoring stated of
+an expression with free variables holds when it holds of every instance
+of them that is anchored at the call and satisfies the constraints of
+the binding signature.
 \end{definition}
 
 \begin{example}
@@ -735,7 +765,8 @@ An effect $\Phi$ is anchored at a state $(\rho,h_0)$ when, for every
 heap $h$ reached from $h_0$ by an admissible run and every region $r$
 of $\Phi$, $\sem r(\rho,h)=\sem r(\rho,h_0)$. A sufficient condition:
 every region of $\Phi$ is a field, the fields or a spine at a rigid
-path.
+path, since by (T3) of \emph{Tolerant frames} an object's keys and
+field locations, its spine included, are the same in every heap.
 \end{definition}
 
 \begin{example}
@@ -748,7 +779,7 @@ cells.
 \end{example}
 
 \noindent
-Two consequences follow from (E1) and the definition.
+Two consequences are expected; neither is proved.
 
 \begin{conjecture}[Anchored effects are rigid]\label{conj:anchored-rigid}
 An effect anchored at $(\rho,h_0)$ is rigid on the heaps reached from
@@ -761,14 +792,15 @@ in no region of $\Phi$ read at any heap reached from $h_0$.
 \end{conjecture}
 
 \noindent
-The second is the fact that the walker of Section~\ref{sec:problem}
+The first is the fact that the walker of Section~\ref{sec:problem}
 needs about its cursor: the visitor's effect is fixed at the call of
 \code{walk}, and the cursor is allocated after it.
 
 \subsection{Reach through declared keys}
 
 \begin{definition}[Declared reach]\label{def:reach}
-Let $T$ be the declared type at a path $\pi$. The region
+Let $T$ be the declared type at a path $\pi$, or a type the value of
+$\pi$ is shown to have. The region
 $\reach\pi T$ is the least set of locations that contains the field
 location $\sem{\pi}.f$ for each key $f$ that $T$ declares, the spine
 and the element locations of each array or typed array held at such
@@ -808,9 +840,10 @@ within $\delta_i$. A list $C$ holds when each of its constraints holds.
 $p_1,\ldots,p_m$, and $C$, $E$, $E^e$ and the $T_i$ mention only the
 variables $\varepsilon_1,\ldots,\varepsilon_j$. A function has the
 signature $\Sigma$ when, for every $\theta$ that maps each
-$\varepsilon_i$ to an effect anchored at the call and satisfies $C$ at
-the call, each normal return is bounded by $E[\theta]$ and each throw
-by $E^e[\theta]$.
+$\varepsilon_i$ to an instance anchored at the call and satisfies $C$
+at the call, and every call whose arguments have the types
+$T_i[\theta]$, each normal return is bounded by $E[\theta]$ and each
+throw by $E^e[\theta]$.
 \end{itemize}
 \end{definition}
 
@@ -824,19 +857,19 @@ $\varepsilon\resp\{xs.\kw{spine}:\grow\}$ admits a visitor that grows
 $xs$ and none that shortens it.
 \end{example}
 
-\subsection{Named regions}
+\subsection{Named supports}
 
-\begin{definition}[Named region]\label{def:named}
-In a named region definition $N(\vec x)\triangleq S$, the regions of
-$S$ have their roots among $\vec x$. A region $N(\vec\pi)$
-stands for $S[\vec\pi/\vec x]$.
+\begin{definition}[Named support]\label{def:named}
+In a named support definition $N(\vec x)\triangleq S$, the regions of
+$S$ have their roots among $\vec x$. The support $N(\vec\pi)$ stands
+for $S[\vec\pi/\vec x]$.
 \end{definition}
 
 \noindent
 A module that exports $N$ and keeps $S$ private states its operations'
 effects and constraints with $N$. Its clients see $N$ alone. The module
 proves, for each exported operation, that the definition meets them.
-This paper uses named regions as abbreviations; their export is a limit
+This paper uses named supports as abbreviations; their export is a limit
 (Section~\ref{sec:status}).
 
 \subsection{Rules}
@@ -846,27 +879,34 @@ extended by the constraints of the enclosing signature, and the three
 rules below, which are specific to effect variables and anchoring.
 
 \begin{mathpar}
-\inferrule*[left=Var-Resp]{(\varepsilon\resp S')\in C \\ S'\text{ covers }S}{\varepsilon\resp_{K,C}S}
+\inferrule*[left=Var-Resp]{(\varepsilon\resp S')\in C \\ S'\text{ covers }S \\ \text{the regions of }S'\text{ read here are those read at the call}}{\varepsilon\resp_{K,C}S}
 \and
-\inferrule*[left=Fresh-Anch]{\varepsilon\text{ bound at the entry of the function} \\ x\text{ allocated in its body}}{x.\kw{fields}\sep_{K,C}\varepsilon\qquad x.\kw{spine}\sep_{K,C}\varepsilon}
+\inferrule*[left=Fresh-Anch]{\varepsilon\text{ bound at the entry of the function} \\ x\text{ a variable not reassigned, allocated in its body}}{x.\kw{fields}\sep_{K,C}\varepsilon\qquad x.\kw{spine}\sep_{K,C}\varepsilon}
 \and
-\inferrule*[left=Inst]{f:\forall\vec\varepsilon.\ C\Rightarrow(\vec p)\to T\ [E\mid E^e] \\
-  \theta(\varepsilon)\text{ anchored} \\ C[\theta][\vec x/\vec p]\text{ holds under }K}
- {y=f(\vec x):E[\theta][\vec x/\vec p]\mid E^e[\theta][\vec x/\vec p]}
+\inferrule*[left=Inst]{f:\forall\vec\varepsilon.\ C\Rightarrow(\vec p:\vec T)\to T\ [E\mid E^e] \\
+  \theta(\varepsilon)\text{ anchored} \\ C[\vec x/\vec p][\theta]\text{ holds under }K \\ \vec x:\vec T[\vec x/\vec p][\theta]}
+ {y=f(\vec x):E[\vec x/\vec p][\theta]\mid E^e[\vec x/\vec p][\theta]}
 \end{mathpar}
 
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[\ruleName{Var-Resp}] Respect of an entry that is an effect
 variable. $S'$ covers $S$ when every $(r:\delta)\in S$ has an
 $(r':\delta')\in S'$ with $r\subseteq r'$ and $\delta'\sqsubseteq\delta$.
-This is the one way an effect variable meets the sufficient condition
-of respect: its instance is unknown, and the constraint bounds it.
+The constraint was checked at the call and is used later in the body;
+the third premise makes the two readings of $S'$ agree. It holds when
+every step since the call respects $S'$ and $S'$ reads its regions only
+through locations it keeps.
+Respect of an expression is checked pair by pair: each pair of the
+support is met by each entry of the expression, and by each variable
+through \ruleName{Var-Resp} or \ruleName{Fresh-Anch}.
 \item[\ruleName{Fresh-Anch}] Conjecture~\ref{conj:anchored-fresh} as a
 decision of disjointness. It is how the cursor of W1 survives the visit.
 \item[\ruleName{Inst}] \ruleName{Call} at a quantified signature. The
-caller chooses $\theta$, here written at the call, and proves the
-constraints at the actual arguments with its own evidence, by the
-respect check that \ruleName{Frame} uses.
+parameters are replaced by the arguments before $\theta$, whose images
+are written in the caller's variables. The caller chooses $\theta$, here
+written at the call, proves the constraints at the actual arguments with
+its own evidence, by the respect check that \ruleName{Frame} uses, and
+gives each argument its parameter's type.
 \end{description}
 
 \noindent
@@ -962,6 +1002,14 @@ export function sumAndTrace(xs: number[]): Modifies<{}, number> {
   return walk<{ "visited[*]": "extend" }>(xs, trace);
 }
 
+export function sumAndCount(xs: number[]): Modifies<{}, number> {
+  const seen = { n: 0 };
+  const count = (i: number): Modifies<{ "seen.n": "any" }, void> => {
+    seen.n++;
+  };
+  return walk<{ "seen.n": "any" }>(xs, count);
+}
+
 export function sumAndAlias(xs: number[]): Modifies<{ "xs[*]": "extend" }, number> {
   const visited = xs;
   const trace = (i: number): Modifies<{ "visited[*]": "extend" }, void> => {
@@ -979,11 +1027,13 @@ evidence.
 the body.
 \item The test gives $c.i<\len{xs}$, with support
 $\{c.i:\keep,\ xs.\kw{spine}:\grow\}$.
-\item \code{visit(c.i)}: \ruleName{Call} at the parameter's type, effect
-$\varepsilon$. \ruleName{Frame} needs $\varepsilon$ to respect each pair.
-For $c.i:\keep$, \ruleName{Fresh-Anch} gives $c.\kw{fields}\sep\varepsilon$.
-For $xs.\kw{spine}:\grow$, \ruleName{Var-Resp} gives it from the
-constraint, since $\keep\sqsubseteq\grow$. The fact is kept.
+\item \code{visit(c.i)}: \ruleName{Call-Var} at the parameter's type,
+effect $\varepsilon$. \ruleName{Frame} needs $\varepsilon$ to respect
+each pair. For $c.i:\keep$, \ruleName{Fresh-Anch} gives
+$c.\kw{fields}\sep\varepsilon$, and $c.i\subseteq c.\kw{fields}$. For
+$xs.\kw{spine}:\grow$, \ruleName{Var-Resp} gives it from the
+constraint, since $\keep\sqsubseteq\grow$; $xs$ is a parameter, so by
+(T3) its spine is the location read at the call. The fact is kept.
 \item \code{xs[c.i]} is in bounds. \code{c.i++} writes fresh storage.
 \item \ruleName{Seq-Eff}, \ruleName{Loop-Eff} and \ruleName{Fresh-Eff}
 bound the body by $\varepsilon$: the iterations' effect is
@@ -1002,12 +1052,19 @@ $\theta(\varepsilon)=\{\mathit{visited}.\kw{spine}:\extend\}$. It is
 anchored: $\mathit{visited}$ is a \code{const}. The constraint at the
 actual arguments is
 $\{\mathit{visited}.\kw{spine}:\extend\}\resp\{xs.\kw{spine}:\keep\}$.
-It holds: by \ruleName{Alloc}, the array $\mathit{visited}$ is apart from
-every array that exists before it, $xs$ included, so the two spines are
-disjoint.
+It holds: by the rule \textsc{Alloc} of \emph{Tolerant frames}, the
+array $\mathit{visited}$ is apart from every array that exists before
+it, $xs$ included, so the two spines are disjoint.
 \item The call's effect is the spine of $\mathit{visited}$, which
 \ruleName{Fresh-Eff} removes. \ruleName{Fun} gives \code{Modifies<\{\}, number>}.
 \end{enumerate}
+
+\paragraph{\code{sumAndCount}.} \ruleName{Inst} with
+$\theta(\varepsilon)=\{\mathit{seen}.n:\any\}$, anchored since
+$\mathit{seen}$ is a \code{const} and $n$ one field. A field location
+is no spine, so the constraint holds, and \ruleName{Fresh-Eff} removes
+the fresh $\mathit{seen}$ from the caller's effect. This is the caller
+that forces $\val:\any$ in $\Lang_0$.
 
 \paragraph{\code{sumAndAlias}.} \ruleName{Inst} needs
 $\{\mathit{visited}.\kw{spine}:\extend\}\resp\{xs.\kw{spine}:\keep\}$.
@@ -1026,14 +1083,19 @@ change of its inferred demand to $\keep$, so it refuses
 \section{\texorpdfstring{The walkers in $\Lang_1$}{The walkers in L1}}\label{sec:walkers}
 
 Let $\mathit{Geom}(p)\triangleq\{\reach{p}{\mathit{PreparedLineData}}:\keep\}$,
-the named region of a handle's line-break data.
+the named support of a handle's line-break data. The derivations below
+assume the effects of the helpers they call: the stepper
+\code{stepPreparedSimpleLineGeometry} writes only the fields of the
+cursor it is given and storage rooted at module variables, and
+\code{getInternalPrepared}, \code{normalizeMaxWidth} and
+\code{createLayoutLineRange} change no old storage.
 
 \paragraph{W1 and W2.} The raw walker's signature:
 \[
 \begin{array}{l}
 \code{walkPreparedLinesRaw}:\ \forall\varepsilon.\ \varepsilon\resp\mathit{Geom}(\mathit{prepared})\Rightarrow\\
-\qquad(\mathit{prepared},\ \mathit{maxWidth},\ \mathit{onLine}:(w,s,g,e,h)\to\code{void}\ [\varepsilon],\ \mathit{stats})\to\code{number}\\
-\qquad[\varepsilon\cup\{\mathit{stats}.\mathit{lineCount}:\scalar,\ \mathit{stats}.\mathit{maxLineWidth}:\scalar\}].
+\qquad(\mathit{prepared},\ \mathit{maxWidth},\ \mathit{onLine}:(n_1,\ldots,n_5)\to\code{void}\ [\varepsilon],\ \mathit{stats})\to\code{number}\\
+\qquad[\varepsilon\cup\{\mathit{stats}.\mathit{lineCount}:\any,\ \mathit{stats}.\mathit{maxLineWidth}:\any\}].
 \end{array}
 \]
 In the surface:
@@ -1042,10 +1104,10 @@ type InternalLineVisitor<E> = (width: number, startSegmentIndex: number,
   startGraphemeIndex: number, endSegmentIndex: number, endGraphemeIndex: number,
 ) => Modifies<E, void>
 
-export function walkPreparedLinesRaw<E extends Respects<{ "prepared.**": "keep" }>>(
+export function walkPreparedLinesRaw<E extends Respects<Geom<"prepared">>>(
   prepared: PreparedLineData, maxWidth: number, onLine?: InternalLineVisitor<E>,
   stats: LineStats = { lineCount: 0, maxLineWidth: 0 },
-): Modifies<[E, { "stats.lineCount": "scalar"; "stats.maxLineWidth": "scalar" }], number>
+): Modifies<[E, { "stats.lineCount": "any"; "stats.maxLineWidth": "any" }], number>
 \end{lstlisting}
 
 \noindent
@@ -1055,8 +1117,10 @@ are:
 \item about $\mathit{cursor}$, allocated in the body:
 \ruleName{Fresh-Anch} keeps them;
 \item about the handle, with supports in
-$\reach{\mathit{prepared}}{}$: \ruleName{Var-Resp} keeps them from the
-constraint;
+$\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$: \ruleName{Var-Resp}
+keeps them from the constraint. The reach is read only through
+locations it keeps, and every step since the call respects it, so it
+reads the locations it read at the call;
 \item about $\mathit{segmentFlags}$ and $\mathit{segmentCount}$: the
 first is a variable holding the array that the field
 $\mathit{prepared}.\mathit{segmentFlags}$ holds, a field the constraint
@@ -1066,7 +1130,8 @@ The walker's own writes are to $\mathit{cursor}$, fresh, and to
 $\mathit{stats}$. The keys \code{lineCount} and \code{maxLineWidth} are
 declared by no type in the handle's reach, so the writes are disjoint
 from $\mathit{Geom}(\mathit{prepared})$ by keys, even if
-$\mathit{stats}$ were the handle. The bound
+$\mathit{stats}$ were the handle. So are the stepper's writes to the
+cursor. The bound
 \code{segmentFlags[startSegmentIndex]} then follows from the cursor's
 invariant and the stepper's postcondition. Those are facts about the
 stepper, which this paper does not state.
@@ -1082,13 +1147,14 @@ $\Phi_3\resp\mathit{Geom}(\mathit{flow}.\mathit{data})$. The keys
 no type in the reach of \code{PreparedLineData}. Disjointness by keys
 gives the constraint. No proof that $\mathit{flow}$ and
 $\mathit{flow}.\mathit{data}$ are distinct objects is needed.
-\code{findWholeLine}'s effect is $\Phi_3$, with the write after the walk
-within it.
+The call passes no \code{stats}, so the walker's writes to it are to a
+default object the call allocates. \code{findWholeLine}'s effect is
+$\Phi_3$, with the write after the walk within it.
 
 \paragraph{W4.} The public walker quantifies over the client's effect
 and forwards it:
 \begin{lstlisting}[language=TypeScript]
-export function walkLineRanges<E extends Respects<{ "prepared.**": "keep" }>>(
+export function walkLineRanges<E extends Respects<Layout<"prepared">>>(
   prepared: PreparedText, maxWidth: number,
   onLine: (line: LayoutLineRange) => Modifies<E, void>,
 ): Modifies<E, number> {
@@ -1105,19 +1171,22 @@ export function walkLineRanges<E extends Respects<{ "prepared.**": "keep" }>>(
 \item The adapter's body allocates a range, with effect $\emptyset$, and
 calls $\mathit{onLine}$, a capture whose type has effect $\varepsilon$.
 \ruleName{Seq-Eff} gives $\varepsilon$, the stated effect.
-\item \ruleName{Inst} at the raw walker with $\theta(\varepsilon')=\varepsilon$.
-It is anchored: $\varepsilon$ ranges over effects anchored at the call
-of \code{walkLineRanges}, which is before this call. The constraint is
+\item \ruleName{Inst} at the raw walker, its variable renamed
+$\varepsilon'$, with $\theta(\varepsilon')=\varepsilon$, an effect
+expression. It is anchored: every instance of $\varepsilon$ is
+anchored at the call of \code{walkLineRanges}, which is before this
+call. The constraint is
 $\varepsilon\resp\mathit{Geom}(\code{getInternalPrepared(prepared)})$.
 \ruleName{Var-Resp} gives it from the outer constraint when
 \code{getInternalPrepared(prepared)} reads the handle that
 \code{prepared} reads. That is a postcondition of
 \code{getInternalPrepared}, which this paper does not state.
-\item The reach in the outer constraint is through the declared keys of
-the internal type, which the public type \code{PreparedText} does not
-declare. The public signature uses a named region exported abstract:
-$\mathit{Layout}(p)$, defined inside the module as
-$\mathit{Geom}(p)$ at the internal type.
+\item The public type \code{PreparedText} does not declare the keys of
+the internal type, so the public signature uses the named support
+$\mathit{Layout}(p)\triangleq\{\reach{p}{\mathit{PreparedLineData}}:\keep\}$,
+exported abstract. The reach is at a type that is not the declared
+type of $p$, so the module carries the obligation that every
+\code{PreparedText} value is a \code{PreparedLineData}.
 \end{enumerate}
 
 \paragraph{W5.} In \code{layoutWithLines}, the visitor's effect is
@@ -1145,13 +1214,12 @@ implementation and no proof. Conjectures 1--4 are not proved.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Entries of a map] A \code{Map} or \code{WeakMap} entry is no
 region. W5 and the materializers' caches need one.
-\item[Exported named regions] A named region exported abstract needs a
+\item[Exported named supports] A named support exported abstract needs a
 proof inside the module that each operation's effects and constraints
 hold at its definition, and that two handles' regions are disjoint
 where the module says so.
-\item[Effects of the helpers] W2 and W4 need postconditions of
-\code{stepPreparedSimpleLineGeometry} and \code{getInternalPrepared},
-which are facts, not effects.
+\item[Effects of the helpers] W1, W2 and W4 assume the helpers' effects and need postconditions of
+\code{stepPreparedSimpleLineGeometry} and \code{getInternalPrepared}.
 \item[Instantiations are written] TypeScript erases \code{P} in
 \code{Modifies<P, T>}, so each call of a quantified function writes its
 instantiation.
