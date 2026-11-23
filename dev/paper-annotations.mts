@@ -16,8 +16,9 @@ type Change = (typeof changes)[number];
 const isChange = (s: string): s is Change => changes.some((c) => c === s);
 const le = (a: Change, b: Change): boolean => changes.indexOf(a) <= changes.indexOf(b);
 
-/** An effect of the paper: entries in the `Modifies` key syntax, and `else`. */
-interface Effect { entries: [string, Change][]; else: Change }
+/** An effect of the paper: entries in the `Modifies` key syntax, and `else`;
+for a bound with a reach entry `"x.**"`, the keys its types declare. */
+interface Effect { entries: [string, Change][]; else: Change; reachKeys?: string[] }
 
 interface EffectParam { name: string; bound: Effect }
 interface FunctionInfo { params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[] }
@@ -60,6 +61,35 @@ function effectOf(node: ts.TypeNode): Effect | null {
   return { entries, else: otherwise };
 }
 
+/** The keys a type declares and, through them, the types it holds
+(`docs/drafts/effect-languages.md`, "Declared reach"): the members of a type
+literal or an interface, the element type of an array, the members of a
+union, and a type alias or interface named in the same file. */
+function declaredKeys(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>, seen: Set<string>, out: Set<string>): void {
+  if (!node) return;
+  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+    const name = node.typeName.text;
+    const decl = decls.get(name);
+    if (decl === undefined || seen.has(name)) return;
+    seen.add(name);
+    if (ts.isTypeAliasDeclaration(decl)) declaredKeys(decl.type, decls, seen, out);
+    else if (ts.isInterfaceDeclaration(decl)) membersKeys(decl.members, decls, seen, out);
+    return;
+  }
+  if (ts.isTypeLiteralNode(node)) membersKeys(node.members, decls, seen, out);
+  else if (ts.isArrayTypeNode(node)) declaredKeys(node.elementType, decls, seen, out);
+  else if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) for (const t of node.types) declaredKeys(t, decls, seen, out);
+  else if (ts.isParenthesizedTypeNode(node)) declaredKeys(node.type, decls, seen, out);
+}
+
+function membersKeys(members: ts.NodeArray<ts.TypeElement>, decls: Map<string, ts.Node>, seen: Set<string>, out: Set<string>): void {
+  for (const m of members)
+    if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
+      out.add(m.name.text);
+      declaredKeys(m.type, decls, seen, out);
+    }
+}
+
 /** The root variable of a region key: `xs` of `"xs[*]"`, `flow` of `"flow.data.**"`. */
 const rootOf = (key: string): string => /^[A-Za-z_$][\w$]*/.exec(key)?.[0] ?? key;
 /** Whether two keys name the same kind of region beyond their roots. */
@@ -92,28 +122,82 @@ function freshLocals(body: ts.Node): Set<string> {
   return fresh;
 }
 
-/** The check of an instance against a bound at a call (rule Inst): every
- * instance entry that meets a bound entry at the actual arguments is within
- * that entry's change, or the two are apart because the instance's root is
- * storage the caller allocated and the bound's root is another value; every
- * other entry, and the instance's `else`, are within the bound's `else`. */
+/** A region key, parsed: its root, the declared keys from the root to the
+location's object, and what it names there: a field, every field (`.*`),
+the spine (`[*]`), or the reach through declared keys (`.**`). */
+interface Loc { root: string; path: string[]; kind: "field" | "fields" | "spine" | "reach"; key: string | null }
+
+function locOf(key: string): Loc | null {
+  const m = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)*)(\.\*\*|\.\*|\[\*\])?$/.exec(key);
+  if (!m || m[1] === undefined) return null;
+  const steps = (m[2] ?? "").split(".").filter((x) => x !== "");
+  const tail = m[3];
+  if (tail === ".**") return { root: m[1], path: steps, kind: "reach", key: null };
+  if (tail === ".*") return { root: m[1], path: steps, kind: "fields", key: null };
+  if (tail === "[*]") return { root: m[1], path: steps, kind: "spine", key: null };
+  const last = steps.pop();
+  return last === undefined ? null : { root: m[1], path: steps, kind: "field", key: last };
+}
+
+const pathText = (l: Loc): string => [l.root, ...l.path].join(".");
+
+/** Whether two locations are disjoint, decided as the pass decides it
+ * (docs/drafts/effect-languages.md, "Decisions"): a field location and a
+ * spine differ (the spine's key is `[]`); two field locations at different
+ * keys differ whatever objects they are on (disjointness by key); a field
+ * whose key no type in a reach declares lies outside it; and storage the
+ * caller allocated in its body (rule Alloc of Tolerant frames) is apart from
+ * every value passed in from elsewhere. Anything else may overlap. */
+function disjoint(r: Loc, b: Loc, keys: Set<string>, fresh: Set<string>): boolean {
+  if (fresh.has(r.root) && r.root !== b.root && pathText(b) !== r.root) return true;
+  if (b.kind === "reach") return r.kind === "field" && r.key !== null && !keys.has(r.key);
+  if (r.kind === "reach") return b.kind === "field" && b.key !== null && !keys.has(b.key);
+  if (r.kind === "field" && b.kind === "field") return r.key !== b.key;
+  if ((r.kind === "field" && b.kind === "spine") || (r.kind === "spine" && b.kind === "field")) return true;
+  return false;
+}
+
+/** Whether `r` lies in `b`: the same location, or a location reached from
+ * `b`'s root through declared keys when `b` is a reach. */
+function inside(r: Loc, b: Loc, keys: Set<string>): boolean {
+  if (b.kind === "reach") {
+    const base = pathText(b);
+    const full = [r.root, ...r.path];
+    const rel = pathText(r) === base ? [] : pathText(r).startsWith(base + ".") ? full.slice(base.split(".").length) : null;
+    return rel !== null && rel.every((k) => keys.has(k)) && (r.kind !== "field" || (r.key !== null && keys.has(r.key))) && r.kind !== "reach";
+  }
+  return r.kind === b.kind && r.key === b.key && pathText(r) === pathText(b);
+}
+
+/** **Rule Inst**, the paper's order (Definition "Order"): the instance is
+ * included in the bound at the actual arguments when, for every bound entry
+ * `b : d`, every instance entry not disjoint from `b` is within `d`, and,
+ * where the bound's `else` is not `any`, every instance entry lying in no
+ * bound entry, and the instance's `else`, are within that `else`. A key this
+ * check cannot parse is refused. */
 function instCheck(instance: Effect, bound: Effect, params: string[], args: string[], fresh: Set<string>): string | null {
   const actual = (key: string): string => {
     const at = params.indexOf(rootOf(key));
     return at < 0 ? key : (args[at] ?? "?") + restOf(key);
   };
-  for (const [r, c] of instance.entries) {
-    let covered = false;
-    for (const [b, d] of bound.entries) {
-      const bAt = actual(b);
-      const sameKind = restOf(r) === restOf(bAt);
-      const apart = fresh.has(rootOf(r)) && rootOf(r) !== rootOf(bAt);
-      if (!sameKind || apart) continue;
-      covered = true;
-      if (!le(c, d)) return `the instance changes ${r} by ${c}; the bound allows ${bAt}: ${d}`;
-    }
-    if (!covered && !le(c, bound.else)) return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
+  const keys = new Set(bound.reachKeys ?? []);
+  const bs: [Loc, Change, string][] = [];
+  for (const [b, d] of bound.entries) {
+    const text = actual(b);
+    const l = locOf(text);
+    if (!l || text.startsWith("?")) return `the bound's entry ${b} is not read at this call's arguments`;
+    bs.push([l, d, text]);
   }
+  for (const [r, c] of instance.entries) {
+    const l = locOf(r);
+    if (!l) return `the instance's key ${r} is not decided`;
+    for (const [b, d, text] of bs)
+      if (!disjoint(l, b, keys, fresh) && !le(c, d)) return `the instance changes ${r} by ${c}; the bound allows ${text}: ${d}`;
+    if (bound.else !== "any" && !bs.some(([b]) => inside(l, b, keys)) && !le(c, bound.else))
+      return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
+  }
+  for (const [, d, text] of bs)
+    if (!le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
   if (!le(instance.else, bound.else)) return `the instance's else ${instance.else} exceeds the bound's else ${bound.else}`;
   return null;
 }
@@ -122,6 +206,9 @@ export function annotations(path: string): { functions: Record<string, FunctionI
   const tree = openText(path, readFileSync(path, "utf8"));
   const functions: Record<string, FunctionInfo> = {};
   const bodies = new Map<string, ts.Node>();
+  const decls = new Map<string, ts.Node>();
+  for (const s of tree.statements)
+    if ((ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s))) decls.set(s.name.text, s);
   for (const s of tree.statements) {
     if (!ts.isFunctionDeclaration(s) || !s.name || !s.body) continue;
     bodies.set(s.name.text, s.body);
@@ -135,6 +222,13 @@ export function annotations(path: string): { functions: Record<string, FunctionI
       }
     }
     const params = s.parameters.map((p) => ts.isIdentifier(p.name) ? p.name.text : "");
+    for (const e of effectParams) {
+      const reach = e.bound.entries.filter(([k]) => k.endsWith(".**")).map(([k]) => rootOf(k));
+      if (reach.length === 0) continue;
+      const out = new Set<string>();
+      for (const root of reach) declaredKeys(s.parameters[params.indexOf(root)]?.type, decls, new Set(), out);
+      e.bound.reachKeys = [...out].sort();
+    }
     const bounded: FunctionInfo["bounded"] = [];
     s.parameters.forEach((p, index) => {
       const seen = new Set<string>();
@@ -156,7 +250,7 @@ export function annotations(path: string): { functions: Record<string, FunctionI
             const eff = arg ? effectOf(arg) : null;
             if (eff) instance[e.name] = eff;
           });
-          const args = n.arguments.map((a) => ts.isIdentifier(a) ? a.text : "?");
+          const args = n.arguments.map((a) => ts.isIdentifier(a) || ts.isPropertyAccessExpression(a) ? a.getText() : "?");
           let reason: string | null = null;
           for (const e of callee.effectParams) {
             const inst = instance[e.name];

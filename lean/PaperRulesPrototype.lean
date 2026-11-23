@@ -20,10 +20,12 @@ open PositiveCertificates (InstanceImageCheck)
 
 namespace PaperRules
 
-/-- A bound entry's region, relative to a parameter: its spine, or a field. -/
+/-- A bound entry's region, relative to a parameter: its spine, a field, or
+its reach through declared keys (`"x.**"`). -/
 inductive Key where
   | spine
   | field (f : String)
+  | reach
   deriving Repr, BEq
 
 /-- An effect variable's bound at a callback parameter: the callback's
@@ -33,6 +35,8 @@ structure Bound where
   callback : Nat
   entries : List (Nat × Key × Footprints.Change)
   otherwise : Footprints.Change
+  /-- The keys the types in the reach declare, for the entries `"x.**"`. -/
+  keys : List String := []
 
 /-- The rules' information about one unit: its bounded callbacks, and the
 number of its parameters, the last of the graph's inputs. -/
@@ -65,33 +69,80 @@ def freshSlots (k : Knowledge) : List Nat :=
 facts' supports take: a key at the empty path of a parameter's slot, the
 spine at the key `[]`. -/
 def boundAt (u : Unit) (d : Nat) (b : Bound) : Footprints.Footprint :=
-  b.entries.map fun (p, key, c) =>
+  b.entries.filterMap fun (p, key, c) =>
     let s := slotOf u d p
-    (match key with
-      | .spine => Footprints.Region.path s [] arraySpineKey
-      | .field f => Footprints.Region.path s [] (.str f), c)
+    match key with
+      | .spine => some (Footprints.Region.path s [] arraySpineKey, c)
+      | .field f => some (Footprints.Region.path s [] (.str f), c)
+      | .reach => none
+
+/-- The slots a reach entry's roots reach at the call: its parameters'
+slots, closed under the read links of a declared key and under alias
+links. The paper's reach follows the keys the types declare; the knowledge
+gives the slots the body read through such keys. -/
+def reachSlots (k : Knowledge) (keys : List String) (roots : List Nat) : List Nat :=
+  let step := fun (rs : List Nat) => (rs ++ k.links.filterMap fun l =>
+    if l.alias then
+      if rs.contains l.cell then some l.value else if rs.contains l.value then some l.cell else none
+    else match l.field with
+      | .str f => if rs.contains l.cell && keys.contains f then some l.value else none
+      | .sym _ => none).eraseDups
+  (List.range (k.links.length + 1)).foldl (fun rs _ => step rs) roots.eraseDups
+
+/-- Whether a key is the spine's or one the reach's types declare. -/
+def declared (keys : List String) : PropKey → Bool
+  | .str f => f == "[]" || keys.contains f
+  | .sym _ => false
+
+/-- Whether a region lies in the reach: rooted at a reach slot, through
+declared keys only. -/
+def inReach (slots : List Nat) (keys : List String) : Footprints.Region → Bool
+  | .field x k => slots.contains x && declared keys k
+  | .path x p k => slots.contains x && p.all keys.contains && declared keys k
+  | .spine x p => slots.contains x && p.all keys.contains
+  | .cells x => slots.contains x
+  | .pathCells x p => slots.contains x && p.all keys.contains
+  | .inCls r _ => inReach slots keys r
+  | .fields _ | .pathFields _ _ | .cls _ | .all => false
 
 /-- A region without its class restriction. -/
 def unrestricted : Footprints.Region → Footprints.Region
   | .inCls r _ => unrestricted r
   | r => r
 
-/-- **The pair rule** (Bound and Anch, the meet): a pair `r : δ` of a fact's
-support survives a call of the bounded callback when `r` is rooted at
-storage the body allocated (Anch), or the bound keeps it: every bound entry
-meeting `r` is within `δ`, and the bound's `else` is within `δ` unless an
-entry is `r` itself (Bound). -/
+/-- The slot whose object's own location a region names: a field, the
+fields or the spine at a slot itself. A path through a field, and an
+array's element locations, may name storage older than the slot's object. -/
+def ownSlot : Footprints.Region → Option Nat
+  | .field x _ | .fields x => some x
+  | .path x [] _ | .pathFields x [] | .spine x [] => some x
+  | .inCls r _ => ownSlot r
+  | _ => none
+
+/-- **The pair rule**: the callback's effect `ε` is within `δ` on `r`
+(Definition "Order") when one of the two effects `ε` is included in is
+(the meet, rules Anch and Bound):
+
+- Anch, `{old: any}`: `r` is an own location of an object the body
+  allocated, so no `old` location; its `else` is `keep`;
+- Bound: every bound entry not disjoint from `r` is within `δ` (the
+  existing `respects`, with its separation query), and the bound's `else`
+  is within `δ` unless `r` lies in an entry: equal to an entry's region, or
+  in a reach entry's declared reach. -/
 def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footprints.Change)
-    (e : Footprints.Region × Footprints.Change) : Bool :=
-  (rootSlot e.1).any fresh.contains ||
-    (Footprints.respects q [e] bound && (otherwise.le e.2 || bound.any (unrestricted ·.1 == unrestricted e.1)))
+    (reach : Footprints.Region → Bool) (e : Footprints.Region × Footprints.Change) : Bool :=
+  (ownSlot e.1).any fresh.contains ||
+    (Footprints.respects q [e] bound &&
+      (otherwise.le e.2 || reach e.1 || bound.any (unrestricted ·.1 == unrestricted e.1)))
 
 /-- The facts of the call's entry the rules keep, past the call's result. -/
 def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
   let fresh := freshSlots k
   let bound := boundAt u d b
-  let keeps := fun (S : Footprints.Footprint) => S.all (keepsPair q fresh bound b.otherwise)
+  let roots := b.entries.filterMap fun (p, key, _) => if key == .reach then some (slotOf u d p) else none
+  let reach := inReach (reachSlots k b.keys roots) b.keys
+  let keeps := fun (S : Footprints.Footprint) => S.all (keepsPair q fresh bound b.otherwise reach)
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S
@@ -144,9 +195,12 @@ def changeOf : String → Option Footprints.Change
   | "keep" => some .keep | "init" => some .init | "scalar" => some .scalar
   | "extend" => some .extend | "grow" => some .grow | "any" => some .any | _ => none
 
-/-- A key `"x[*]"` or `"x.f"` at a parameter list. -/
+/-- A key `"x[*]"`, `"x.f"` or `"x.**"` at a parameter list. -/
 def keyOf (params : List String) (key : String) : Option (Nat × Key) :=
-  if key.endsWith "[*]" then
+  if key.endsWith ".**" then
+    let root := String.ofList (key.toList.take (key.length - 3))
+    (params.idxOf? root).map (·, .reach)
+  else if key.endsWith "[*]" then
     let root := String.ofList (key.toList.take (key.length - 3))
     (params.idxOf? root).map (·, .spine)
   else match key.splitOn "." with
@@ -177,9 +231,15 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
         let c ← (pair[1]?.getD Json.null).getStr?
         let some k := keyOf params key | throw s!"unsupported key {key}"
         let some c := changeOf c | throw s!"unknown change {c}"
+        -- A reach is no region of the footprint, so `respects` cannot weigh
+        -- it against a support pair; at `keep` it is within every change.
+        if k.2 == .reach && c != .keep then throw s!"a reach entry {key} at {repr c}: the layer decides a reach at keep only"
         pure (k.1, k.2, c)
       let some otherwise := changeOf (← (← bound.getObjVal? "else").getStr?) | throw "unknown else"
-      bounds := bounds ++ [{ callback := index, entries, otherwise : Bound }]
+      let keys ← match bound.getObjVal? "reachKeys" with
+        | .ok ks => do (← ks.getArr?).toList.mapM (·.getStr?)
+        | .error _ => pure []
+      bounds := bounds ++ [{ callback := index, entries, otherwise, keys : Bound }]
     if !bounds.isEmpty then out := out.insert name { bounds, params := params.length }
   return out
 

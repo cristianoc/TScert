@@ -1,0 +1,23 @@
+{
+  "walk.ts": {
+    "ordinary": "unverified",
+    "units": { "walk": "accepted", "sumAndTrace": "accepted", "sumAndAlias": "refused" }
+  },
+  "w1.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walkLines": "accepted",
+      "collect": "accepted", "count": "accepted", "findWhole": "accepted", "quiet": "accepted", "peek": "accepted",
+      "pushHandle": "refused", "replaceField": "refused", "writeElement": "refused", "aliasPush": "refused",
+      "holderPush": "refused", "holderDeclaredKey": "refused"
+    }
+  },
+  "w1-snapshot.ts": {
+    "ordinary": "unverified",
+    "units": { "walkLines": "refused" }
+  },
+  "w1-walkers.ts": {
+    "ordinary": "unverified",
+    "units": { "walkPair": "refused", "walkField": "refused", "walkReach": "accepted" }
+  }
+}
