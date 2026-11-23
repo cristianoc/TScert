@@ -194,7 +194,7 @@ l &\in& \Loc=\mathbb{N} & \text{locations}\\
 h &\in& \mathit{Heap}=\Loc\rightharpoonup\Val\uplus\mathit{Spine} & \text{heaps}\\
 \rho,\eta &\in& \mathit{Env}=\Var\rightharpoonup\Val & \text{environments}\\
 \delta &::=& \keep\mid\init\mid\scalar\mid\extend\mid\grow\mid\any & \text{changes, the set }\Delta\\
-\pi &::=& x\mid\pi.f & \text{paths}\\
+\pi &::=& x\mid\pi.f\mid\pi[\ast] & \text{paths}\\
 G &\subseteq& \{\kw{value},\kw{array},\kw{view}\} & \text{sets of categories}\\
 r &::=& \val\mid\st\mid\vw\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.f & \text{regions}\\
  &\mid& \pi.\kw{fields}\mid\reach{\pi}{T}\mid r\cap\kw{cls}(G)\mid\kw{all}\mid\kw{old} & \\
@@ -214,9 +214,10 @@ s & & & \text{commands (\emph{Tolerant frames}, ``Commands'')}
 \end{array}$\end{center}
 \begin{itemize}[leftmargin=1.5em]
 \item A heap $h$ maps $\{0,\ldots,\len h-1\}$ to contents. A path reads
-a value $\sem{\pi}(\rho,h)$: $\rho(x)$ for $x$, the contents of the
-field $f$ of the object $\sem{\pi}(\rho,h)$ for $\pi.f$, and $\bot$
-where a read fails.
+a set of values $\sem{\pi}(\rho,h)$: $\{\rho(x)\}$ for $x$, the contents
+of the field $f$ of each object $\pi$ reads for $\pi.f$, and every
+element of each array $\pi$ reads for $\pi[\ast]$. A read that fails
+contributes nothing. A path without $[\ast]$ reads at most one value.
 \item A change $\delta$ at heap length $b$ is a reflexive and transitive
 relation $\delta_b$ on contents (\emph{Footprints}~\cite{fp}, ``Changes
 and footprints''). The order
@@ -245,14 +246,11 @@ array or view spine, and a view spine.
 \item $\pi.\kw{spine}$ is the spine location of the array or typed array
 that $\pi$ reads, and $\pi.\kw{cells}$ the element locations that spine
 lists in $h$.
-\item $\pi.f$ is the location of the field $f$ of the object $\pi$ reads,
-and $\pi.\kw{fields}$ the locations of all its fields but the spine.
-\item $\reach\pi T$ is $\mathit{Reach}_h(\sem\pi(\rho,h),T)$: for an object
-$o$ and a type $U$, the least set containing the field locations of $o$
-under the keys $U$ declares, the spine and element locations of each
-array held there, and $\mathit{Reach}_h(o',U')$ for each object $o'$ held
-there at declared type $U'$. $T$ is the declared type at $\pi$, or a
-type the value of $\pi$ is shown to have.
+\item $\pi.f$ is the location of the field $f$ of the objects $\pi$
+reads, and $\pi.\kw{fields}$ the locations of all their fields but the
+spine. A region at a path with $[\ast]$ is the union over the values
+the path reads.
+\item $\reach\pi T$ is the declared reach of Section~\ref{sec:reach}.
 \item $r\cap\kw{cls}(G)$ is the part of $\sem r$ in the categories $G$;
 $\kw{all}$ is every location below $\len h$; $\kw{old}$ is every location
 below the mark of the call that binds the enclosing signature's
@@ -264,19 +262,57 @@ variables.
 \code{a.push(40)} changes the spine of $a$ from
 $\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,10\rangle$, with $\circ$
 a hole and 10 a new element location. The region $a.\kw{spine}$ denotes
-the spine's location in both heaps. For \code{prepared: PreparedLineData},
-$\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ contains the
-fields \code{widths}, \code{segmentFlags} and the handle's other
-declared keys, and the spines and elements of the arrays they hold.
+the spine's location in both heaps.
+\end{example}
+
+\subsection{Declared reach}\label{sec:reach}
+
+A function that walks a data structure needs the whole structure kept
+across a callback. The declared reach names it as one region: the
+locations reached from a path through the keys and elements its type
+declares. It is a union of the regions above along the paths the type
+admits.
+
+\begin{definition}[Declared reach]\label{def:reach}
+The access paths of a type $T$ are the suffixes it admits:
+\[
+\mathit{Acc}(T)=\{\epsilon\}\ \cup\ \{.f\,a\mid f\text{ a key }T\text{ declares},\ a\in\mathit{Acc}(T_f)\}\ \cup\ \{[\ast]\,a\mid T=U[\,],\ a\in\mathit{Acc}(U)\},
+\]
+with $T_f$ the declared type of the field $f$, and the access paths of
+each member for a union type. With $T_a$ the type an access path $a$
+reaches,
+\[
+\reach\pi T\ =\ \bigcup_{a\in\mathit{Acc}(T)}\Bigl(\{\pi a.f\mid f\text{ a key }T_a\text{ declares}\}\cup\{\pi a.\kw{spine},\ \pi a.\kw{cells}\}\Bigr).
+\]
+$T$ is the declared type at $\pi$, or a type the value of $\pi$ is shown
+to have.
+\end{definition}
+
+\begin{example}
+For \code{prepared: PreparedLineData}, whose type declares
+\code{widths: number[]} and \code{breakableFitAdvances: (number[] | null)[]}
+among its keys, the access paths include $\epsilon$, $.\mathit{widths}$,
+$.\mathit{breakableFitAdvances}$ and $.\mathit{breakableFitAdvances}[\ast]$.
+So $\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ contains the
+handle's declared fields, the spine and cells of \code{widths}, the
+spine and cells of \code{breakableFitAdvances}, and the spine and cells
+of each inner array. A key the handle carries at run time beyond its
+type, such as a field \code{wholeWidth}, is not in the reach.
 \end{example}
 
 \noindent
+Every field in a declared reach is under a key its types declare. Two
+field regions at different keys are disjoint whatever objects their
+paths read, since a field location's role records its key. So a field
+whose key no type in the reach declares is disjoint from the reach,
+even where its object is reachable from $\pi$: W3 in
+Section~\ref{sec:walkers} uses this.
+
+\subsection{Decisions}
+
 The language decides three relations from evidence $K$ about a state.
 Inclusion $r\subseteq_K r'$ and disjointness $r\sep_K r'$ follow from the
-forms and from separation evidence; two field regions at different keys
-are disjoint whatever objects their paths read, since a field
-location's role records its key, and so a field is disjoint from a
-declared reach whose types do not declare its key. Stability
+forms and from separation evidence, disjointness by key included. Stability
 $\kw{stable}_K(r)$ holds where $r$ denotes the same old locations in
 every reachable heap: of a class region, and of a spine and the fields
 at a rigid path, a variable or a variable followed by fields whose
