@@ -41,3 +41,14 @@ export function graphemes(text: string): number {
     n += segment.input.length > 0 ? 1 : 0;
   return n;
 }
+
+let lastNote: string | null = null;
+
+export function segmentNoteLength(text: string, note: string): number {
+  const segmenter = getWordSegmenter();
+  lastNote ??= note;
+  for (const part of segmenter.segment(text)) {
+    if (part.index > 0) return lastNote.length;
+  }
+  return 0;
+}

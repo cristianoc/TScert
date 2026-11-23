@@ -26,6 +26,35 @@ export function firstLarge(s: Set<number>, fallback: number): number {
   return fallback;
 }
 
+let lastReason: string | null = null;
+
+export function firstReasonLength(s: Set<number>, reason: string): number {
+  lastReason ??= reason;
+  for (const value of s) {
+    if (value > 0) return lastReason.length;
+  }
+  return 0;
+}
+
+export function mapReasonLength(
+  m: Map<string, number>,
+  reason: string,
+): number {
+  lastReason ??= reason;
+  for (const [, value] of m) {
+    if (value > 0) return lastReason.length;
+  }
+  return 0;
+}
+
+export function stringReasonLength(s: string, reason: string): number {
+  lastReason ??= reason;
+  for (const ch of s) {
+    if (ch !== " ") return lastReason.length;
+  }
+  return 0;
+}
+
 export function entries(m: Map<string, number>): number {
   let total = 0;
   for (const entry of m) {

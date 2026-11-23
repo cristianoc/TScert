@@ -2401,7 +2401,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     ["invalid-for-of-readonly-map-values", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, get: () => undefined, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
     ["invalid-for-of-map-or-array", "typeof last(new Map(), true)", "undefined"],
     ["for-of-readonly-map-values", "counted(['a', 'bb', 'a'])", 5],
-    ["for-of-map-or-array", "[promised(new Map([['k', new Map([['ab', 1]])]]), 'k'), promised(new Map(), 'k'), letters(new Set(['ab']), ['c'], true), lastOf(new Map([['a', 4]]), [1], false)].join()", "3,0,2,4"],
+    ["for-of-host-iterables", "[firstReasonLength(new Set([0, 2]), 'abc'), mapReasonLength(new Map([['a', 1]]), 'xy'), stringReasonLength(' a', 'z')].join()", "3,3,3"],
+    ["for-of-map-or-array", "[promised(new Map([['k', new Map([['ab', 1]])]]), 'k'), promised(new Map(), 'k'), letters(new Set(['ab']), ['c'], true), lastOf(new Map([['a', 4]]), [1], false), unionTagLength(new Set([1]), [2], true, 'hi'), unionTagLength(new Set([1]), [2], false, 'hi')].join()", "3,0,2,4,2,2"],
     ["readonly-collection-views","JSON.stringify([size(), merged(['a', 'b']), scoped(['a', 'a', 'b']), counted(['x', 'y', 'x'])])", "[0,2,4,[\"x\",\"y\"]]"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
     ["invalid-evolving-use-contract", "build(6)", "many"],
@@ -3129,8 +3130,11 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-intl-segments-structural"), "typeof count(fake())"), "number",
     "a program's object typed Intl.Segments runs its own iterator, replacing the narrowed string");
   assert.equal(runExample(ofKind("intl-segmenter-words", ["positive"]),
-    "JSON.stringify([wordStarts(\"hello big world\", 10), firstWord(\" hi there\"), graphemes(\"abc\")])"),
-    "[[15,16,19,20],\"hi\",3]", "intl-segmenter-words: word starts after the first, the first word-like segment, three graphemes");
+    "JSON.stringify([wordStarts(\"hello big world\", 10), firstWord(\" hi there\"), graphemes(\"abc\"), segmentNoteLength(\"hi there\", \"note\")])"),
+    "[[15,16,19,20],\"hi\",3,4]", "intl-segmenter-words: word starts after the first, the first word-like segment, three graphemes, narrowed module cell kept across Segments iteration");
+  assert.equal(runExample(negative("invalid-for-of-host-iterables-clears-cell"),
+    "JSON.stringify(clearedDuringSetLoop(new Set([1, 2]), \"ok\"))"), "null",
+    "clearing a narrowed module cell in a Set loop body returns null at string on the next iteration");
   assert.equal(runExample(ofKind("typed-array-views", ["positive"]),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");

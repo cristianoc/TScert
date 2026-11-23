@@ -31,3 +31,18 @@ export function lastOf(
   for (const v of c ? xs : m.values()) n = v;
   return n;
 }
+
+let lastTag: string | null = null;
+
+export function unionTagLength(
+  s: Set<number>,
+  xs: readonly number[],
+  c: boolean,
+  tag: string,
+): number {
+  lastTag ??= tag;
+  for (const v of c ? s : xs) {
+    if (v > 0) return lastTag.length;
+  }
+  return 0;
+}
