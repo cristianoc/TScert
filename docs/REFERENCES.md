@@ -124,6 +124,19 @@ two-state postconditions. Its model rules are the theorems of
 states each of its notions as the note defines it is in
 [AGENTS.md](../AGENTS.md#general-statements-no-lists-of-special-cases).
 
+### The Effect languages paper
+
+*Effect languages: one set of effect rules, the language TScert has, and an
+extension for callbacks.* TScert working paper, 23 November 2026.
+[PDF](drafts/effect-languages-note/effect-languages.pdf) ·
+[LaTeX source](drafts/effect-languages-note/note.tex).
+
+The paper states the general effect rules over an effect language with
+four properties, describes the footprints as one such language, and
+proposes an extension with effect variables for Pretext's line walkers. It
+states the extension and its rules without implementation or proof.
+**Discussed in** [effect languages](drafts/effect-languages.md).
+
 
 ## Objects and self types
 
@@ -840,6 +853,26 @@ pp. 260–269.
 **Context** for frame rules at higher-order procedures, the general
 problem behind a footprint that depends on a callback's.
 **Cited in** [tolerant frames](drafts/tolerant-frames.md#10-limits).
+
+### Lucassen and Gifford 1988
+
+John M. Lucassen and David K. Gifford. *Polymorphic effect systems.*
+POPL 1988, pp. 47–57.
+
+**Used for** effect variables quantified in a function's type and
+instantiated at its applications; the paper's effects name abstract
+regions, and the constraints of TScert's extension bound a variable by a
+support.
+**Discussed in** [effect languages](drafts/effect-languages.md).
+
+### Talpin and Jouvelot 1992
+
+Jean-Pierre Talpin and Pierre Jouvelot. *Polymorphic type, region and
+effect inference.* Journal of Functional Programming 2(3):245–271, 1992.
+
+**Context** for effect polymorphism with regions, which the paper infers;
+TScert's extension writes the effects and their bounds.
+**Cited in** [effect languages](drafts/effect-languages.md).
 
 ## Compilation
 
