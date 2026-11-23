@@ -31,3 +31,13 @@ name = "proposals-experiment"
 root = "ProposalsExperiment"
 leanOptions = { warningAsError = true }
 moreLinkArgs = ["c/runtime_init.c"]
+
+# EXPERIMENT (docs/drafts/paper-rules-mode.md; AGENTS.md, "Experimental rules:
+# a lighter process"): the paper-rules prototype, the pass with one checker
+# layer whose soundness is the axiom `paperKeptFactsSurvive`, declared in its
+# root and outside the Verification library and its axiom checks.
+[[lean_exe]]
+name = "paper-rules-prototype"
+root = "PaperRulesPrototype"
+leanOptions = { warningAsError = true }
+moreLinkArgs = ["c/runtime_init.c"]
