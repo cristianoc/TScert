@@ -3366,4 +3366,7 @@ for (const [file, call] of [
     "invalid-loop-head-read-link-write: writing h.xs to a longer array makes xs[i] read undefined");
   assert.equal(runExample(negative("invalid-loop-head-read-link-call"), "String(sumViaCalls({ xs: [1] }))"), "NaN",
     "invalid-loop-head-read-link-call: a call changing h.xs to a longer array makes xs[i] read undefined");
+  assert.equal(runExample(ofKind("exact-overload-discovery", ["positive"]),
+    "JSON.stringify([newLedger().entries.size, narrowCallable((x) => x)(4), narrowMethod({ pick: (x) => x }).pick(5), narrowMethodField({ pick: (x) => x }).pick(6)])"),
+    "[0,4,5,6]", "exact-overload-discovery: empty Map ledger and narrowed overloaded callable and methods");
 }
