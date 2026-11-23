@@ -1033,9 +1033,33 @@ allows anything else. Neither assumption implies the other.
 \section{Status and limits}\label{sec:status}
 
 \subsection{What is not done}
-The language beyond $\Lang_0$ has no Lean
-definition, no implementation and no proof. Conjectures 1--4 are not
-proved.
+The language beyond $\Lang_0$ has no Lean definition and no proof.
+Conjectures 1--4 are not proved. A prototype applies its rules
+(\code{dev/paper-rules/README.md}): it runs TScert's pass with one more
+checker layer, whose soundness is the axiom \lean{paperKeptFactsSurvive},
+outside the Lean library.
+
+\subsection{Where the prototype decides less}
+The prototype applies each rule of this paper, and in three places it
+decides less than the rule, refusing where the rule would accept:
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Anch.} The rule leaves every location of $\kw{old}$'s
+complement alone. The prototype decides it only for the fields and the
+spine of an object the function allocates, read from the separation fact
+the allocation records; element locations and paths through fields are
+left to the bound.
+\item \textbf{Declared reach.} The rule takes the access paths of the
+type. The prototype takes the slots the root reaches through the pass's
+read links at declared keys and its alias links, so a reach the knowledge
+does not link is not covered.
+\item \textbf{Inst's disjointness.} The rule decides it with the pass's
+separation evidence at the call. The prototype decides it from the source,
+before the pass: a field and a spine are disjoint, as are fields at
+different keys, a field whose key no type in the reach declares, and a
+\code{const} local the caller initialises by a literal and never assigns.
+\end{itemize}
+At a call the prototype also reads the call's effect with the bound in
+place of the image (Section~\ref{sec:rules}, \ruleName{Inst}).
 
 \subsection{Limits}
 
