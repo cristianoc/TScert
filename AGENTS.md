@@ -257,6 +257,32 @@ as it would be, with what each step decides and why, before or beside
 any abstract statement. A decision put to the owner states what each
 choice does to that program.
 
+### Experimental rules: a lighter process
+
+The rules of [An effect language for TScert](docs/drafts/effect-languages.md)
+and the verifier's experimental mode that applies them
+([the mode's draft](docs/drafts/paper-rules-mode.md)) are experiments:
+rules change as applying them to verifying patterns shows what the
+patterns need. Work on them follows a lighter process than the one above.
+For that work this section takes precedence over the previous one and over
+every rule of this file that asks for a design draft or a review; every
+other rule still applies, among them Lean without `sorry`, axioms or
+warnings, commit records, an entry in ANNOTATIONS.md for each annotation the
+mode reads, and the tests the change touches.
+
+- **No design draft and no Astra or Fable review** for adding, changing or
+  dropping a rule, or for the mode's checks that apply it.
+- **One commit keeps four things in step:** the rule's statement in
+  `lean/Verification/Paper/EffectLanguage/Rules.lean`, its proof in the
+  idealised model (`Model.lean`), the mode's check, and the paper. A rule
+  the model cannot prove does not reach the mode.
+- **The mode's verdict stays its own.** It never prints the ordinary
+  accepted verdict, its soundness theorem takes the rules as a premise,
+  and no change to the mode changes `mode8Accepted_sound` or its premise.
+  Work that reaches the ordinary verdict follows the process above.
+- **A rule changed by a pattern is a result**, recorded in the commit's
+  record with the program that showed the need.
+
 ### Engineering trade-offs
 
 An explicit, enforced restriction, chosen by the behaviour it excludes and
