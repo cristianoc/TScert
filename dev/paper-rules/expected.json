@@ -27,7 +27,7 @@
   "w1-snapshot.ts": {
     "ordinary": "unverified",
     "units": {
-      "walkLines": "refused"
+      "walkLines": "accepted"
     }
   },
   "w1-walkers.ts": {
