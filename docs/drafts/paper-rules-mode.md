@@ -161,8 +161,10 @@ the rules run first in a prototype, which reuses the whole pass:
   a call of a parameter bound by an effect variable it adds back each fact
   the ordinary layers dropped whose support's every pair is kept by the
   bound or lies in an object the body allocated (read from the separation
-  fact the allocation records). Its soundness is the one axiom
-  `paperKeptFactsSurvive`.
+  fact the allocation records). At every other step its step and its
+  normal effect are the ordinary checker's (`run_eq_base`), so such a step
+  keeps the facts it does not name as in the ordinary pass. Its soundness
+  is the one axiom `paperKeptFactsSurvive`.
 - **The side file.** `dev/paper-annotations.mts` reads the bounds and the
   instances from the source, written as the paper writes them:
   `AtMost<{ "xs[*]": "keep"; else: "any" }>`,

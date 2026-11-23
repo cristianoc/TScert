@@ -42,12 +42,14 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
   based on `single-pass`).
 - **Issues for unsafe assumes**: each `paperAssume` names one.
   cristianoc/TScert#355 (a callback's call drops the facts over a local
-  object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy;
-  in the copy also #356 (the prepared handle's length invariant), #361 (the
-  public line streams' `start` cursor), #362 (no `@ensures` of a generic or
-  imported callee), #363 (the complex walker's returned cursor) and #364
-  (the raw walker's handle length across its visit); #351 (links at loop
-  heads) was one, fixed by #353.
+  object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy,
+  and #365 (no clause bounds the cursor's grapheme index) in
+  `dev/paper-rules/repro-365.ts` and the copy; in the copy also #356 (the
+  prepared handle's length invariant), #361 (the public line streams'
+  `start` cursor), #362 (no `@ensures` of a generic or imported callee),
+  #363 (the complex walker's returned cursor) and #364 (the handle's length
+  across the walkers' visits); #351 (links at loop heads) was one, fixed by
+  #353.
 
 ## Standing decisions (the owner's, 2026-11-23)
 
@@ -63,7 +65,8 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
 - **A proved mode was measured and deferred.** It needs arrows whose effect is a
   variable; the change to regions or exit schemas is not local. The
   prototype runs the real pass with one extra layer resting on one named
-  axiom, outside the library.
+  axiom, outside the library; at every step but a call of a slot, the
+  layer's step and its normal effect are the ordinary checker's.
 - **General rules only.** No rule keyed on names, fields or the examples' shapes;
   where the pass's knowledge can't decide the general rule, refuse.
 - **Low-risk premises.** Premises such as "allocated in the body" are decided in the

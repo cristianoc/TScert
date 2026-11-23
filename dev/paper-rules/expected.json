@@ -152,6 +152,15 @@
       "walkVisitingWeak": "refused"
     }
   },
+  "repro-365.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "startAdvance": "refused",
+      "paperAssume": "accepted",
+      "startAdvanceAssumed": "accepted",
+      "startAdvanceWeak": "refused"
+    }
+  },
   "assume-lib.ts": {
     "ordinary": "unverified",
     "units": {
