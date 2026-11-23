@@ -291,7 +291,8 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
             entrySeparation := r.entrySeparation, observe := SourceClaimJson.observedIn observe k observed, tracing := tracing, observeEntry := false,
             regional := rg, framed := fr },
           ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩, rfl, rfl, rfl,
-          by simp only [RunCall.result, walk, SinglePass.work, SinglePass.runRecorded, probeTrace_nil, List.append_nil]⟩
+          by simp only [RunCall.result, walk, SinglePass.work, SinglePass.runRecorded, probeTrace_nil, List.append_nil,
+            SinglePass.PassChecker.ofLayer]⟩
       have hrof : ∀ k Φ R ex, regionOf (some (regionalOf k Φ R ex)) = some (Φ, R, ex) := by
         intro k Φ R ex; simp only [regionOf, regionalOf, Option.map_some]
       have hspec : regionOf regional = regionalSpec r := by
