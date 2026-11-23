@@ -1,0 +1,230 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-353"><code>d699588fcb7939841fd7ecb3301946cd0c983614..pr-353</code></a><ul><li>1 commit</li><li>changes: 1 Definition, 1 Rule, 1 Proposal, 1 Check, 1 Theorem, 1 Control, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-353"><code>d699588fcb7939841fd7ecb3301946cd0c983614..pr-353</code></h2><article class="card" id="c-234da0a04"><header><div><div class="sha">234da0a04 · Cristiano Calcagno · Nov 23, 09:56</div><h3>Keep local field-copy read links across loop heads</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A local copy of a field before a loop (<code>const xs = h.xs; for (let i = 0; i &lt; h.xs.length; i++) s += xs[i]!;</code>) was refused at <code>xs[i]!</code> with <code>no derivation of its node-typing claim</code> (issue #351). At a loop head, the pass built initial knowledge only from written assertions and index-atom candidates, so the read link <code>xs ← h.xs</code> was dropped on entry to the loop; across calls inside a loop, read links were also not framed by the call's effect.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">single pass: loop-head candidates</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a loop head's candidate list holds index atoms only</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a loop head's candidate list holds index atoms and read links</span> <code class="m-code">y ← x.f</code></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">single pass: framing read links across calls</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>K</var> <span class="m-rel">⊨</span> (<var>y</var> ← <var>x</var>.<var>f</var>)</span><span><span class="m-op">respects</span>(<span class="m-op">query</span>(<var>K</var>), <span class="m-op">support</span>(<var>y</var> ← <var>x</var>.<var>f</var>), <span class="m-op">frame</span>(<var>e</var>))</span></div><div class="bar"></div><div class="conclusion"><div><var>K'</var> <span class="m-rel">⊨</span> (<var>y</var> ← <var>x</var>.<var>f</var>)</div></div></div><span class="rule-name">(frame-link)</span></div><div class="formulas"><div class="row"><span><span class="m-text">A read link whose field location the call's frame respects under the entry</span></span></div><div class="row"><span><span class="m-text">knowledge's query survives the call on normal return</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Proposal <span class="target">loop-head inference: read links of field copies</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">const</span> y = x.f; … loop …</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">candidate link</span> <var>y</var> ← <var>x</var>.<var>f</var> <span class="m-text">at the loop head</span></span></div></div><div class="map"><code class="src"><span class="tk-k">const</span> { f: y } = x; … loop …</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">candidate link</span> <var>y</var> ← <var>x</var>.<var>f</var> <span class="m-text">at the loop head</span></span></div></div><div class="map"><code class="src"><span class="tk-k">const</span> z = y; … loop …</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">candidate link</span> <var>z</var> ← <var>x</var>.<var>f</var> <span class="m-text">when</span> <var>y</var> ← <var>x</var>.<var>f</var> <span class="m-text">holds</span></span></div></div><div class="cond"><span class="label">side condition</span><span class="tgt"><var>x</var> <span class="m-text">and</span> <var>y</var> <span class="m-text">are in-scope non-cell bindings</span>, <var>f</var> <span class="m-rel">≠</span> <code class="m-code"><span class="tk-s">&quot;length&quot;</span></code>, <span class="m-text">and the loop body does not directly write</span> <var>x</var>.<var>f</var></span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">single pass: loop-head incoming edge obligation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a loop head</span><span class="tgt"><span class="m-text">every incoming edge establishes every written assertion and every candidate index atom</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a loop head</span><span class="tgt"><span class="m-text">every incoming edge establishes every written assertion, every candidate index atom, and every candidate read link; candidates an edge lacks are dropped by the settle loop</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">mode8Accepted_sound</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">Mode8Accepted</span><span class="m-text">(keep</span> <span class="m-rel">:</span> <span class="m-con">Nat</span> → <span class="m-text">List (Nat</span> × <span class="m-text">List IndexAtom</span>)) <var>u</var> ⟹ <span class="m-con">Safe</span> <var>u</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">Mode8Accepted</span><span class="m-text">(keep</span> <span class="m-rel">:</span> <span class="m-con">Nat</span> → <span class="m-text">List (Nat</span> × <span class="m-text">List Candidate</span>)) <var>u</var> ⟹ <span class="m-con">Safe</span> <var>u</var></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forced loop-head read links</span></h4><div class="control"><p>head-links</p><p>each carried read link also states the object as its own field's value (x ← x.f)</p><div class="outcomes"><span class="unit">loop-head-read-links sumVia@301</span><span class="label">unforced</span> <span class="verdict ok">accepted</span> <span class="arrow">→</span> <span class="label">forced</span> <span class="verdict principled">refused</span> <span class="why">at an edge into its loop's head</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SINGLE-PASS.md, FOOTPRINTS.md</span></h4><div class="prose"><p>Document loop-head read-link proposals and <code>--force-proposals head-links</code> in SINGLE-PASS.md and call framing of read links in FOOTPRINTS.md.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>loop-head-read-links</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">direct copy, destructuring, alias, and spine-growing call keep xs ← h.xs</span></summary><pre class="code"><span class="tk-c">// A local copy of a field keeps its read link across a loop head when every</span>
+<span class="tk-c">// edge into the head preserves the field: direct copy, object destructuring,</span>
+<span class="tk-c">// an alias of the copy, and a loop body calling a function whose effect keeps</span>
+<span class="tk-c">// fields (`Modifies&lt;{ spines: &quot;grow&quot; }, void&gt;`).</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumVia(h: { xs: number[] }): number {
+  <span class="tk-k">const</span> xs = h.xs;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) s += xs[i]!;
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumDestructured(h: { xs: number[] }): number {
+  <span class="tk-k">const</span> { xs } = h;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) s += xs[i]!;
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">function</span> pushZero(out: number[]): <span class="tk-t">Modifies</span>&lt;{ spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  out.push(<span class="tk-n">0</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumViaGrow(h: { xs: number[] }, out: number[]): number {
+  <span class="tk-k">const</span> xs = h.xs;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) {
+    pushZero(out);
+    s += xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumViaAlias(h: { xs: number[] }): number {
+  <span class="tk-k">const</span> xs = h.xs;
+  <span class="tk-k">const</span> ys = xs;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) s += ys[i]!;
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-loop-head-read-link-write</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">writing h.xs drops xs ← h.xs at the loop head (Node: NaN)</span></summary><pre class="code"><span class="tk-c">// Writing `h.xs` inside the loop breaks the read link `xs ← h.xs` on the back</span>
+<span class="tk-c">// edge, so the link is dropped at the loop head and `xs[i]!` is refused.</span>
+<span class="tk-c">// Unsafe under Node: `sumViaWrites({ xs: [1] })` sets `h.xs = [1, 0]` on</span>
+<span class="tk-c">// iteration 0 and reads `xs[1]` (`undefined`) on iteration 1.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumViaWrites(h: { xs: number[] }): number {
+  <span class="tk-k">const</span> xs = h.xs;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) {
+    h.xs = [...xs, <span class="tk-n">0</span>];
+    s += <mark>xs[i]</mark>!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-loop-head-read-link-call</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">values: &quot;any&quot; call drops xs ← h.xs at the loop head (Node: NaN)</span></summary><pre class="code"><span class="tk-c">// Calling a function whose effect may change fields (`values: &quot;any&quot;`) breaks</span>
+<span class="tk-c">// the read link `xs ← h.xs` on the back edge, so the link is dropped at the</span>
+<span class="tk-c">// loop head and `xs[i]!` is refused.</span>
+<span class="tk-c">// Unsafe under Node: `sumViaCalls({ xs: [1] })` sets `h.xs = [1, 0]` on</span>
+<span class="tk-c">// iteration 0 and reads `xs[1]` (`undefined`) on iteration 1, returning `NaN`.</span>
+
+<span class="tk-k">function</span> replaceWithLonger(h: {
+  xs: number[];
+}): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">if</span> (h.xs.length &lt; <span class="tk-n">2</span>) h.xs = [...h.xs, <span class="tk-n">0</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumViaCalls(h: { xs: number[] }): number {
+  <span class="tk-k">const</span> xs = h.xs;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; h.xs.length; i++) {
+    replaceWithLonger(h);
+    s += <mark>xs[i]</mark>!;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every candidate read link added to a loop head's knowledge is checked on every incoming edge before the head's knowledge is assumed; call framing of read links follows from the tolerant-frame step theorem applied to the read-link fact kind's field-location support. All Lean proofs and the axiom check build with zero sorry and no new axioms.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>Built <code>verifier</code> and <code>Verification.Tests.AxiomCheck</code> with zero warnings. Passed: <code>run-cases.mts loop-head-read-link</code> (3/3), <code>stated-</code> (78/78), <code>cursor-invariant</code> (4/4); all 183 controls in <code>single-pass-controls.mts</code> (including <code>forced head-links</code>); <code>node-runs.mts</code>; <code>tsc</code>, <code>json-field-names</code>, <code>axiom-check-imports</code>, <code>rule-inventory</code>, <code>generated-sections --check</code>, <code>unchecked.mts</code>, and Prettier on the added examples.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.Candidate · Verification.HeapKnowledge.withCandidates · Verification.HeapKnowledge.holds_of_withCandidates · Verification.PromiseCalls.frameLinks · Verification.PromiseCalls.frameLinks_holds · Verification.SinglePass.setupGiven · Verification.SinglePass.headExit · Verification.SourceClaimJson.PassUnit.mode8Accepted_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">loop-head-read-links</span> <span class="test neg">invalid-loop-head-read-link-write</span> <span class="test neg">invalid-loop-head-read-link-call</span> <span class="test forced">head-links</span></dd></dl>
+<details><summary>47 files changed, 440 insertions(+), 203 deletions(-)</summary><pre class="code"> docs/FOOTPRINTS.md                                 |  5 +-
+ docs/SINGLE-PASS.md                                |  7 ++
+ .../Verification/Programs/CertificateProducer.lean | 43 +++++++-----
+ lean/Verification/Programs/PromiseCalls.lean       | 56 +++++++++++++---
+ lean/Verification/Programs/SinglePass.lean         | 30 ++++-----
+ lean/Verification/Programs/SinglePassClose.lean    | 18 ++---
+ .../Verification/Programs/SinglePassDiagnosis.lean | 23 ++++---
+ .../Programs/TolerantFramesComposeEdges.lean       |  2 +-
+ .../Programs/TolerantFramesDriverSetup.lean        |  8 +--
+ .../Verification/Programs/TolerantFramesEntry.lean | 17 ++---
+ .../Programs/TolerantFramesExitChecks.lean         |  2 +-
+ .../Programs/TolerantFramesExitDelivers.lean       | 16 ++---
+ .../Programs/TolerantFramesExitHeadExtraction.lean |  4 +-
+ .../Programs/TolerantFramesExitStructural.lean     | 15 ++---
+ .../Programs/TolerantFramesExitsYield.lean         |  2 +-
+ .../Programs/TolerantFramesGuarantee.lean          |  2 +-
+ .../Programs/TolerantFramesGuaranteeTarget.lean    |  2 +-
+ .../Programs/TolerantFramesMergeGraph.lean         |  2 +-
+ .../Programs/TolerantFramesNodeAsserts.lean        | 10 +--
+ .../Programs/TolerantFramesRunSound.lean           |  2 +-
+ .../Programs/TolerantFramesWalkReassignChecks.lean |  2 +-
+ lean/Verification/Semantics/HeapKnowledge.lean     | 31 +++++++++
+ lean/Verification/Source/Claims/FragmentFront.lean | 11 +++-
+ lean/Verification/Source/Claims/HeadDiagnosis.lean |  2 +-
+ lean/Verification/Source/Claims/HeadInference.lean | 34 +++++++++-
+ lean/Verification/Source/Claims/Json.lean          | 22 +++----
+ lean/Verification/Source/Claims/MemberSettle.lean  | 77 ++++++++++++----------
+ lean/Verification/Source/Claims/PassProposals.lean | 10 +--
+ lean/Verification/Source/Claims/PassUnitFile.lean  |  4 +-
+ .../Source/Claims/PassUnitInferred.lean            | 28 ++++----
+ .../Source/Claims/PassUnitInterfaces.lean          |  4 +-
+ lean/Verification/Source/Claims/PassUnitLink.lean  |  4 +-
+ lean/Verification/Source/Claims/PassUnitRun.lean   | 10 +--
+ .../Source/Claims/PassUnitVerdict.lean             |  2 +-
+ .../Source/Claims/RegionInference.lean             |  6 +-
+ lean/Verification/Source/Lowering/Compact.lean     |  4 +-
+ lean/Verification/Source/Lowering/Flow.lean        | 11 +++-
+ lean/Verification/Source/Lowering/State.lean       |  4 +-
+ lean/Verification/Source/RequestJson.lean          |  7 +-
+ lean/Verification/Source/SourceClaims.lean         | 12 +++-
+ lean/Verification/Source/SourceRequests.lean       |  4 +-
+ pipeline/cases.mts                                 |  5 ++
+ .../examples/invalid-loop-head-read-link-call.ts   | 21 ++++++
+ .../examples/invalid-loop-head-read-link-write.ts  | 14 ++++
+ pipeline/examples/loop-head-read-links.ts          | 40 +++++++++++
+ tests/node-runs.mts                                |  7 ++
+ tests/single-pass-control-inputs.mts               |  1 +</pre></details>
+</article>
+</main></body></html>
