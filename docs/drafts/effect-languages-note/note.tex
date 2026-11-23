@@ -289,15 +289,25 @@ to have.
 \end{definition}
 
 \begin{example}
-For \code{prepared: PreparedLineData}, whose type declares
-\code{widths: number[]} and \code{breakableFitAdvances: (number[] | null)[]}
-among its keys, the access paths include $\epsilon$, $.\mathit{widths}$,
-$.\mathit{breakableFitAdvances}$ and $.\mathit{breakableFitAdvances}[\ast]$.
-So $\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ contains the
-handle's declared fields, the spine and cells of \code{widths}, the
-spine and cells of \code{breakableFitAdvances}, and the spine and cells
-of each inner array. A key the handle carries at run time beyond its
-type, such as a field \code{wholeWidth}, is not in the reach.
+Pretext's handle type, abridged to three of its keys (the others are
+arrays of numbers, booleans and numbers, and add nothing new):
+\begin{lstlisting}[language=TypeScript]
+type PreparedLineData = {
+  widths: number[]
+  segmentFlags: Uint8Array
+  breakableFitAdvances: (number[] | null)[]
+}
+\end{lstlisting}
+Its access paths are $\epsilon$, $.\mathit{widths}$,
+$.\mathit{segmentFlags}$, $.\mathit{breakableFitAdvances}$ and
+$.\mathit{breakableFitAdvances}[\ast]$. So, for
+\code{prepared: PreparedLineData},
+$\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ contains the three
+fields of \code{prepared}, the spine and cells of \code{widths}, the view
+spine and elements of \code{segmentFlags}, the spine and cells of
+\code{breakableFitAdvances}, and the spine and cells of each inner array.
+A key the handle carries at run time beyond its type, such as a field
+\code{wholeWidth}, is not in the reach.
 \end{example}
 
 \noindent
