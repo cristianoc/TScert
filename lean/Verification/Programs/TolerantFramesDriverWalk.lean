@@ -116,11 +116,40 @@ theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Ta
     rw [hw] at h
     simp only [Prod.mk.injEq] at h
     obtain ⟨ho, -, ha, -⟩ := h
+    have hout : σ.walk.outcome reach = .accepted := by
+      cases hc : c.confinement with
+      | none => simpa [hc] using ho
+      | some conf =>
+        simp only [hc] at ho
+        split at ho
+        · exact ho
+        · cases ho
     refine .inr ⟨σ, reach, rfl, ?_, ha⟩
-    unfold SinglePass.Walk.outcome at ho
-    split at ho
-    · cases ho
+    unfold SinglePass.Walk.outcome at hout
+    split at hout
+    · cases hout
     · omega
+
+/-- **An accepted call with a confinement table** has `c.framed = conf.framed`
+and passed `SinglePass.checkWalkConfinement` on the walk it returned. -/
+theorem confinement_of_accepts {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : Answered G} {conf : LocalConfinement.Table}
+    (h : c.AcceptsWalk after) (hc : c.confinement = some conf)
+    {σ reach} (hw : RunCall.walk c = .ok (σ, reach)) :
+    c.framed = conf.framed ∧
+      SinglePass.checkWalkConfinement G I c.codes after.summaries.toList c.P c.claims c.start conf σ.walk = true := by
+  obtain ⟨counts, trace, h⟩ := h
+  unfold Target.RunCall.result SinglePass.run at h
+  unfold RunCall.walk at hw
+  rw [hw, hc] at h
+  simp only [Prod.mk.injEq] at h
+  obtain ⟨ho, -, ha, -⟩ := h
+  subst ha
+  split at ho
+  · rename_i hcond
+    simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+    exact hcond
+  · cases ho
 
 variable (ι) in
 /-- **A stopped walk is never accepted**: every outcome `runWalk` stops

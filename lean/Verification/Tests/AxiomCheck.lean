@@ -18,6 +18,7 @@ import Verification.Programs.GraphCode
 import Verification.Programs.HeapExpressionRules
 import Verification.Programs.IndexWrites
 import Verification.Programs.JsonTraversal
+import Verification.Programs.LocalConfinement
 import Verification.Programs.ObjectMerge
 import Verification.Programs.OperatorTyping
 import Verification.Programs.Parametricity
@@ -35,6 +36,7 @@ import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesComposeRunSound
 import Verification.Programs.TolerantFramesComposeShape
 import Verification.Programs.TolerantFramesComposeYields
+import Verification.Programs.TolerantFramesConfined
 import Verification.Programs.TolerantFramesDelta
 import Verification.Programs.TolerantFramesDriverChecks
 import Verification.Programs.TolerantFramesDriverEntry
@@ -167,6 +169,7 @@ import Verification.Semantics.CallEffects
 import Verification.Semantics.CanonicalLists
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.ComponentTags
+import Verification.Semantics.Confinement
 import Verification.Semantics.ContractExits
 import Verification.Semantics.EffectSignatures
 import Verification.Semantics.ElementWrites
@@ -332,6 +335,7 @@ import Verification.Source.Synthesis
 import Verification.Source.Synthesis.ExitProposals
 import Verification.Source.WorkerWire
 import Verification.Tests.BaseWorldControls
+import Verification.Tests.ConfinementControls
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests
 import Verification.Tests.FootprintControls

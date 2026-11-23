@@ -370,7 +370,8 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.Ha
         (runDigests r line "main" (boundText none rg)) (fun x => match x with | .ok (σ, _) => σ.walk.visited | .error _ => 0) fun _ =>
       SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
-        main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg rg.isNone, codes)
+        main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg rg.isNone
+        (((proposeConfinement G r.program r.claims r.start []).map (·.framed)).getD []), codes)
   -- (prepared once, where a walk needs it)
   let prepared := Thunk.mk prepared
   -- The direct route: the settling run's steps, else a walk with no bound.

@@ -58,26 +58,67 @@ transition from `h` to `h'` at `ρ`, each index atom of the entry's
 knowledge whose produced support lies in one of them holds after it, past
 the result (`IndexFact.support?_supports`, `supported_sub`). -/
 theorem framedKept_holds {Ss : List Footprints.Footprint} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
-    {v : Tm} (hk : HeapKnowledge.IndexHolds ε k.indices ρ h) (hS : ∀ T ∈ Ss, Footprints.Supported T ρ h h') :
-    HeapKnowledge.IndexHolds ε (framedKept Ss k) (push v ρ) h' := by
-  refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
-  obtain ⟨ha, hin⟩ := List.mem_filter.mp ha
-  have hF := hk a ha hcd
-  unfold supportedIn at hin
-  split at hin
-  · rename_i T hT
-    obtain ⟨S, hSm, hall⟩ := List.any_eq_true.mp hin
-    exact Footprints.Supports.apply (Footprints.IndexFact.support?_supports {} a.fact hT)
-      (fun _ _ _ _ _ _ _ hs => by cases hs) hF
-      (Footprints.supported_sub (hS S hSm) fun e he => List.contains_iff_mem.mp (List.all_eq_true.mp hall e he))
-  · cases hin
+    {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h) (hS : ∀ T ∈ Ss, Footprints.Supported T ρ h h') :
+    ∀ a ∈ framedKept Ss k, AtomHolds ε a (push v ρ) h' := by
+  have hcov : ∀ {T : Footprints.Footprint}, SinglePass.footprintSupportedIn Ss T = true →
+      Footprints.Supported T ρ h h' := by
+    intro T hT
+    obtain ⟨S, hSm, hall⟩ := List.any_eq_true.mp hT
+    exact Confinement.entryCoveredBy_supported (hS S hSm) hall
+  intro a ha
+  simp only [SinglePass.framedKept, List.mem_append, List.mem_map] at ha
+  rcases ha with ((⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩) | ⟨e, he, rfl⟩) | ⟨idx, hidx, rfl⟩
+  · have hcells : HeapFacts.Holds (k.cells.filter fun f =>
+        SinglePass.footprintSupportedIn Ss (Footprints.FactKind.cell f).support) ρ h' := by
+      intro f₀ hf₀
+      obtain ⟨hf₀, hsup⟩ := List.mem_filter.mp hf₀
+      have := Footprints.FactKind.support_sound (F := .cell f₀)
+        (fun x hx => by rw [List.mem_singleton.mp hx]; exact hk.1 f₀ hf₀) (hcov hsup)
+      exact this f₀ (List.mem_singleton.mpr rfl)
+    intro x hx
+    rw [List.mem_singleton.mp hx]
+    exact HeapFacts.shift_holds hcells f hf
+  · have hlinks : HeapLinks.Holds (k.links.filter fun g =>
+        SinglePass.footprintSupportedIn Ss (Footprints.FactKind.link g).support) ρ h' := by
+      intro g₀ hg₀
+      obtain ⟨hg₀, hsup⟩ := List.mem_filter.mp hg₀
+      have := Footprints.FactKind.support_sound (F := .link g₀)
+        (fun x hx => by rw [List.mem_singleton.mp hx]; exact hk.2.2.1 g₀ hg₀) (hcov hsup)
+      exact this g₀ (List.mem_singleton.mpr rfl)
+    intro x hx
+    rw [List.mem_singleton.mp hx]
+    exact HeapLinks.pull_holds (pre := fun i => [i + 1]) hlinks
+      (fun i j hj => by rw [List.mem_singleton.mp hj]; rfl) g hg
+  · have helems : HeapKnowledge.ElemsHolds (k.elems.filter fun a =>
+        SinglePass.footprintSupportedIn Ss (Footprints.FactKind.elems a.slot a.pred).support) ρ h' := by
+      intro e₀ he₀ hcd
+      obtain ⟨he₀, hsup⟩ := List.mem_filter.mp he₀
+      exact Footprints.FactKind.support_sound (F := .elems e₀.slot e₀.pred)
+        (hk.2.2.2.2.1 e₀ he₀ hcd) (hcov hsup)
+    intro x hx
+    rw [List.mem_singleton.mp hx]
+    exact HeapKnowledge.shiftElems_holds helems e he
+  · have hind : HeapKnowledge.IndexHolds ε (k.indices.filter fun a =>
+        SinglePass.supportedIn Ss a.fact) ρ h' := by
+      intro a₀ ha₀ hcd
+      obtain ⟨ha₀, hin⟩ := List.mem_filter.mp ha₀
+      have hF := hk.2.2.2.2.2 a₀ ha₀ hcd
+      unfold SinglePass.supportedIn at hin
+      split at hin
+      · rename_i T hT
+        exact Footprints.Supports.apply (Footprints.IndexFact.support?_supports {} a₀.fact hT)
+          (fun _ _ _ _ _ _ _ hs => by cases hs) hF (hcov hin)
+      · cases hin
+    intro x hx
+    rw [List.mem_singleton.mp hx]
+    exact HeapKnowledge.shiftIndices_holds hind idx hidx
 
 /-- **What a framed node's exits read beside the step's output**: at a
 framed node `l`, the facts of the step's input `st.stepK` its supports
 keep (`framedKept`); nothing at another node. -/
 def framedK (F : Nat → Bool) (S : Nat → List Footprints.Footprint) (l : Nat) (stepK : HeapKnowledge.Knowledge) :
     Env → Heap → Prop :=
-  fun ρ' h' => F l = true → HeapKnowledge.IndexHolds ε (framedKept (S l) stepK) ρ' h'
+  fun ρ' h' => F l = true → ∀ a ∈ framedKept (S l) stepK, AtomHolds ε a ρ' h'
 
 /-- The framed nodes of the list `fr` (`SinglePass.framedAt`). -/
 def framedFOf (fr : List (Nat × List Footprints.Footprint)) : Nat → Bool := fun l => (SinglePass.framedAt fr l).isSome
@@ -87,13 +128,13 @@ def framedSOf (fr : List (Nat × List Footprints.Footprint)) : Nat → List Foot
   fun l => (SinglePass.framedAt fr l).getD []
 
 /-- **What a framed node's exits read holds the facts its store keeps**:
-where `framedK` holds at the node `l` of the list `fr`, the index atoms
+where `framedK` holds at the node `l` of the list `fr`, the atoms
 `SinglePass.keptStep` adds to the store after the step hold. -/
 theorem keptHolds_of_framedK {fr : List (Nat × List Footprints.Footprint)} {l : Nat}
     {stepK : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
     (hK : framedK (ε := ε) (framedFOf fr) (framedSOf fr) l stepK ρ h) :
-    HeapKnowledge.IndexHolds ε (((SinglePass.framedAt fr l).map (fun Ss => SinglePass.framedKept Ss stepK)).getD [])
-      ρ h := by
+    ∀ a ∈ (((SinglePass.framedAt fr l).map (fun Ss => SinglePass.framedKept Ss stepK)).getD []),
+      AtomHolds ε a ρ h := by
   unfold framedK framedFOf framedSOf at hK
   cases hf : SinglePass.framedAt fr l with
   | none => intro a ha; simp at ha
@@ -215,7 +256,7 @@ theorem stepEdgesSound_of_yieldsR {G : NormalGraph ι} {images : InstanceImageCh
       have hK : framedK (ε := ε) F S l na.st.stepK (push v ρ) s'.h := fun hFl => by
         have hR' : framedRet S l ρ s.h s'.h := by
           simpa only [RetP, enterPend, hFl, Bool.cond_true] using hR
-        exact framedKept_holds hkS.2.2.2.2.2 hR'
+        exact framedKept_holds hkS hR'
       by_cases hk : na.node.continuation = .ret
       · rw [hk]
         exact ⟨hY.ret hk ρ s' v hv hF he' hy, trivial⟩
@@ -473,9 +514,16 @@ driver's checked walk (`RunTraversedC`), each node's kept yields
 (`RegionsHeld`); the footprint and return fields from the walk's checks
 (`footprintKept_of_walk`, `returnsEnsured_of_walk`), the assertions at
 their labels from the setup's check (`labelsChecked`). -/
-theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq)
-    (hreg : RegionsHeld ι) : Target.RunSound ι := by
-  intro G I c after admits ⟨hacc, hnf⟩ hscope hcodes hsums hfields
+theorem run_sound_checked_unframed (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq)
+    (hreg : RegionsHeld ι) {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : Answered G} {admits : MixedAssignment ι → Prop}
+    (hacc : c.AcceptsWalk after) (hnf : c.framed = [])
+    (hscope : Target.CheckerScope G I c.passChecker admits)
+    (hcodes : CodesSound G c.codes) (hsums : SummariesSound G I after.summaries.toList)
+    (hfields : ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
+      GraphCode.ArgumentPathTracking.checkEntryFields G c.inputs regions = true) :
+    Target.GraphGuarantee G admits c.P c.start c.goal c.inputs c.entrySeparation c.entryIndices c.assertions
+      c.bound c.ensures (Target.regionOf c.regional) := by
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
   obtain ⟨r, hchk⟩ := hrun G I c after hacc hsums
   obtain ⟨dead, hd, hgiven, hmerging, hrecord⟩ := hchk
@@ -527,11 +575,7 @@ theorem run_traversedC (hrec : RecordsSound ι) (hchk : RecordsChecked ι) : Run
     hr.start, (fun _ => rfl), rfl, rfl⟩, dead, (fun l hl => ⟨(Classical.choose_spec (hn l hl)).1, (Classical.choose_spec (hn l hl)).2.1⟩),
     rfl, hr.merging, σ, reach, hw, rfl, fun l hl => (Classical.choose_spec (hn l hl)).2.2⟩
 
-/-- **THE GRAPH THEOREM of the single pass** (`run_sound_checked` with the
-driver's checked walk from its record, `run_traversedC`). -/
-theorem run_sound_pass (hrec : RecordsSound ι) (hchk : RecordsChecked ι) (hyield : NodesYield ι)
-    (hnear : LinearNearFuelEq) (hreg : RegionsHeld ι) : Target.RunSound ι :=
-  run_sound_checked (run_traversedC hrec hchk) hyield hnear hreg
+
 
 /-- **The pass's framed mode at a call** (the draft's
 `RunCall.AcceptsFramed`, "The graph at framed returns"): the call's walk

@@ -3385,4 +3385,19 @@ for (const [file, call] of [
     "invalid-escaping-stated-region-value-import: escapingNormalize pops xs outside its stated frame");
   assert.equal(runImporting("invalid-false-generic-ensures-value-import", "typeof read([1])"), "undefined",
     "invalid-false-generic-ensures-value-import: lyingGeneric sets c.i = xs.length");
+  assert.equal(runExample(ofKind("local-callback-cursor", ["positive"]),
+    '(() => { const seen = []; return JSON.stringify([walk([1, 2, 3]), walkVisiting([1, 2, 3], (x) => { seen.push(x); }), seen, cellFactAcrossCallback("hi", () => {}), localArrayAcrossCallback(() => {})]); })()'),
+    '[6,6,[1,2,3],"hi",30]', "local-callback-cursor: confined cursor, narrowed local cell, and local array survive callback calls");
+  assert.equal(runExample(negative("invalid-local-callback-passed"),
+    "(() => { let first = true; return String(walkPassed([1, 2], (c) => { if (first) { first = false; c.i = -1; } })); })()"), "NaN",
+    "invalid-local-callback-passed: callback mutates passed cursor c.i to -1 so xs[c.i] reads undefined");
+  assert.equal(runExample(negative("invalid-local-callback-captured"),
+    "(() => { let first = true; return String(walkCaptured([1, 2], (bump) => { if (first) { first = false; bump(); } })); })()"), "NaN",
+    "invalid-local-callback-captured: callback invokes closure capturing c so xs[c.i] reads undefined");
+  assert.equal(runExample(negative("invalid-local-callback-stored"),
+    "(() => { const h = { cur: null }; let first = true; return String(walkStored([1, 2], h, () => { if (first && h.cur !== null) { first = false; h.cur.i = -1; } })); })()"), "NaN",
+    "invalid-local-callback-stored: callback mutates cursor stored in holder.cur so xs[c.i] reads undefined");
+  assert.equal(runExample(negative("invalid-local-callback-helper-escape"),
+    "(() => { let first = true; return String(walkHelperEscape([1, 2], () => { if (first) { first = false; corruptEscaped(); } })); })()"), "NaN",
+    "invalid-local-callback-helper-escape: callback mutates cursor leaked to module state by helper so xs[c.i] reads undefined");
 }

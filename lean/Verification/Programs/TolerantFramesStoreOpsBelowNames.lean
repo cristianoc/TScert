@@ -484,7 +484,7 @@ theorem headEntry_below {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fr
 
 /-- **The store with kept facts is below the counter** where the store and
 the names the facts are renamed to are (`SinglePass.keepStore`). -/
-theorem keepStore_below {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} {N : Nat}
+theorem keepStore_below {names : List Nat} {kept : List SinglePass.Atom} {s : Store} {N : Nat}
     (hs : FactsBelow s N) (hn : ∀ x ∈ names, x < N) : FactsBelow (SinglePass.keepStore names kept s) N := by
   unfold SinglePass.keepStore
   induction kept generalizing s with

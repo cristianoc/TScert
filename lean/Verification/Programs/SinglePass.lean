@@ -6,6 +6,7 @@ import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.ExitSummaries
 -- PointerEquality.lean gives the pointer-equality fast path at a type variable; without it the generic fast equality does not compile.
 import Verification.Semantics.PointerEquality
+import Verification.Programs.LocalConfinement
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/SINGLE-PASS.md): each node visited once, in a topological order
@@ -2127,29 +2128,40 @@ structure Stepped (ι : Type) where
   stepDeriv : Option (ProgramCertificates.Evidence ι) := none
   stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
 
-/-- A fact's produced support (`IndexFact.support?`, no stable key) lies in
-one of the supports `Ss`. -/
+/-- Whether every entry of `T` is covered by some support in `Ss`
+(`Confinement.entryCoveredBy`). -/
+def footprintSupportedIn (Ss : List Footprints.Footprint) (T : Footprints.Footprint) : Bool :=
+  Ss.any fun S => T.all (Confinement.entryCoveredBy S)
+
+/-- A fact's produced support (`IndexFact.support?`, no stable key) is covered
+by one of the supports `Ss`. -/
 def supportedIn (Ss : List Footprints.Footprint) (F : HeapKnowledge.IndexFact) : Bool :=
   match F.support? {} with
-  | some T => Ss.any fun S => T.all fun e => S.contains e
+  | some T => footprintSupportedIn Ss T
   | none => false
 
 /-- **The facts a framed node's return keeps** (the draft "Framed
-acceptance", "The graph at framed returns"): the index atoms of its
-entry's knowledge whose produced support lies in a support it keeps
-(`supportedIn`), renamed past the node's result. -/
-def framedKept (Ss : List Footprints.Footprint) (k : Knowledge) : List IndexAtom :=
-  HeapKnowledge.shiftIndices (k.indices.filter fun a => supportedIn Ss a.fact)
+acceptance", "The graph at framed returns"): the heap facts of its entry's
+knowledge (cells, links, elements, and index atoms) whose support is covered
+by a support it keeps (`footprintSupportedIn`, `supportedIn`), renamed past
+the node's result. -/
+def framedKept (Ss : List Footprints.Footprint) (k : Knowledge) : List Atom :=
+  (HeapFacts.shift (k.cells.filter fun f => footprintSupportedIn Ss (Footprints.FactKind.cell f).support)).map Atom.cell ++
+  (HeapLinks.pull (k.links.filter fun g => footprintSupportedIn Ss (Footprints.FactKind.link g).support)
+    (fun i => [i + 1])).map Atom.link ++
+  (HeapKnowledge.shiftElems (k.elems.filter fun a =>
+    footprintSupportedIn Ss (Footprints.FactKind.elems a.slot a.pred).support)).map Atom.elem ++
+  (HeapKnowledge.shiftIndices (k.indices.filter fun a => supportedIn Ss a.fact)).map Atom.index
 
 /-- The supports a framed node keeps, among the framed nodes `framed`
 with their supports; none at a node no entry names. -/
 def framedAt (framed : List (Nat × List Footprints.Footprint)) (l : Nat) : Option (List Footprints.Footprint) :=
   (framed.find? (·.1 == l)).map (·.2)
 
-/-- The store `s` with the index atoms `kept`, at slots, added over the
+/-- The store `s` with the atoms `kept`, at slots, added over the
 names `names` hold (slot `i` the name `names[i]`). -/
-def keepStore (names : List Nat) (kept : List IndexAtom) (s : Store) : Store :=
-  kept.foldl (fun s a => match (Atom.index a).rename (names[·]?) with
+def keepStore (names : List Nat) (kept : List Atom) (s : Store) : Store :=
+  kept.foldl (fun s a => match a.rename (names[·]?) with
     | some b => s.add b
     | none => s) s
 
@@ -3968,8 +3980,29 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   let reachable := (env.reached.toList.filter id).length
   return (σ, reachable)
 
+/-- Check a local-confinement table `conf` against a completed walk `w`: the
+start entry is empty, every framed node is in bounds, and every visited node
+passes `LocalConfinement.checkNode` at its recorded `stepK` and `stepDeriv`. -/
+def checkWalkConfinement (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (codes : CodeEntry ι → Bool) (sums : List (ProgramCertificates.ReadSummary ι))
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat)
+    (conf : LocalConfinement.Table) (w : Walk ι) : Bool :=
+  (conf.at start == {}) &&
+  conf.framedNodes.all (· < P.length) &&
+  (List.range P.length).all fun l =>
+    match w.labels[l]? with
+    | some lw =>
+        if lw.visited then
+          match P[l]?, claims[l]?, lw.stepped with
+          | some node, some c, some st =>
+              LocalConfinement.checkNode G images codes sums claims conf l node c st.stepK st.stepDeriv
+          | _, _, _ => false
+        else true
+    | none => true
+
 /-- The pass over one graph: its verdict a function of the walk's record
-(`Walk.outcome`); under `grading`, the visits' records in its counts. -/
+(`Walk.outcome`), plus `checkWalkConfinement` when `confinement` is supplied;
+under `grading`, the visits' records in its counts. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
@@ -3983,13 +4016,23 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := []) : Outcome ι × Counts × Answered G × Trace :=
+    (framed : List (Nat × List Footprints.Footprint) := [])
+    (confinement : Option LocalConfinement.Table := none) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
       codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
       entrySeparation observe tracing observeEntry regional grading framed with
   | .error stop => (stop.outcome.outcome, stop.counts, stop.answers, stop.trace)
   | .ok (σ, reachable) =>
-    (σ.walk.outcome reachable, { σ.counts with reached := reachable, grades := σ.walk.visits }, σ.answers, σ.trace)
+    let counts := { σ.counts with reached := reachable, grades := σ.walk.visits }
+    let out := match confinement with
+      | none => σ.walk.outcome reachable
+      | some conf =>
+          if framed == conf.framed &&
+             checkWalkConfinement G images codes σ.answers.summaries.toList P claims start conf σ.walk then
+            σ.walk.outcome reachable
+          else
+            .refused "local confinement"
+    (out, counts, σ.answers, σ.trace)
 
 
 /-- Where a fact over names, absent on entry of node `p`, was last present,

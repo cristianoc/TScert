@@ -191,31 +191,30 @@ theorem headStore_ok {g : HeapKnowledge.Knowledge} {f : Nat → Option Nat} {ρ 
 /-- **The store with kept facts holds** where the store holds at the
 names' valuation `η` and the kept index atoms at the slots `ρ`, each slot
 holding its name's value (`SinglePass.keepStore`). -/
-theorem keepStore_ok {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} {ρ η : Env} {h : Heap}
-    (hs : StoreOk ε s η h) (hk : HeapKnowledge.IndexHolds ε kept ρ h) (hf : ∀ i x, names[i]? = some x → ρ i = η x) :
+theorem keepStore_ok {names : List Nat} {kept : List SinglePass.Atom} {s : Store} {ρ η : Env} {h : Heap}
+    (hs : StoreOk ε s η h) (hk : ∀ a ∈ kept, AtomHolds ε a ρ h) (hf : ∀ i x, names[i]? = some x → ρ i = η x) :
     StoreOk ε (SinglePass.keepStore names kept s) η h := by
   unfold SinglePass.keepStore
   refine foldl_inv (fun s' => StoreOk ε s' η h) _ _ _ hs ?_
   intro a ha s' hs'
   split
   · rename_i b hb
-    exact add_ok hs' (atomHolds_rename (η := ρ) (ρ := η) (fun x i hx => (hf x i hx).symm) hb
-      (fun a' ha' hc => hk a' (List.mem_singleton.mp ha' ▸ ha) hc))
+    exact add_ok hs' (atomHolds_rename (η := ρ) (ρ := η) (fun x i hx => (hf x i hx).symm) hb (hk a ha))
   · exact hs'
 
 omit [DecidableEq ι] in
 /-- **A state with kept facts holds** where the state holds and the kept
-index atoms hold at its slots (`keepStore_ok`). -/
+atoms hold at its slots (`keepStore_ok`). -/
 theorem stateHolds_keep {G : NormalGraph ι} {names : List Nat} {store : Store} {fresh : List Nat}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {kept : List HeapKnowledge.IndexAtom} {ρ : Env}
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {kept : List SinglePass.Atom} {ρ : Env}
     {m : Nat} {s : IndexedHeap} (hS : StateHolds G ⟨names, store, fresh⟩ I start ε ρ m s)
-    (hk : HeapKnowledge.IndexHolds ε kept ρ s.h) :
+    (hk : ∀ a ∈ kept, AtomHolds ε a ρ s.h) :
     StateHolds G ⟨names, SinglePass.keepStore names kept store, fresh⟩ I start ε ρ m s := by
   obtain ⟨η, hsl, hn, hi, hf, hst⟩ := hS
   exact ⟨η, hsl, keepStore_ok hn hk hsl, hi, hf, hst⟩
 
 /-- The store with kept facts is well-formed where the store is. -/
-theorem keepStore_wf {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} (ws : StoreWF s) :
+theorem keepStore_wf {names : List Nat} {kept : List SinglePass.Atom} {s : Store} (ws : StoreWF s) :
     StoreWF (SinglePass.keepStore names kept s) := by
   unfold SinglePass.keepStore
   induction kept generalizing s with
