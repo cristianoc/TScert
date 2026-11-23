@@ -54,6 +54,8 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   object the caller allocated: the walker refused, the same walker with the
   facts assumed after the call accepted naming #355, and one assuming too
   little refused.
+- `assume-lib.ts`, `assume-importer.ts`: a module holding an assume, and its
+  importer, which keeps its ordinary verdict under the prototype.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
   paper's rules, one per rule, each refused.
 - `review2.ts`, `review2-reexporter.ts`, `review2-reimporter.ts`,
@@ -81,7 +83,9 @@ the prototype's edits. Every edit is marked:
   `Modifies<{}, void>`, so the ordinary verifier's call changes nothing; the
   prototype checks the statement as `if (!(fact)) throw "#N";`, so after it
   the pass knows `fact` as on the branch of an `if` where it holds, and
-  names the issue in the verdict.
+  names the issue in the verdict. It does so in the checked file only: an
+  imported module is read as written, the source its interface was
+  established over.
 
 The edits against the pin:
 
