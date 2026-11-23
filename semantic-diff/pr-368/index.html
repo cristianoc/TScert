@@ -93,8 +93,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-368"><code>1d1c05d5c00d4d52bea7cbd83282033801e46331..pr-368</code></a><ul><li>1 commit</li><li>changes: 1 Tooling, 2 Example, 1 Docs</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
-<h2 id="g-pr-368"><code>1d1c05d5c00d4d52bea7cbd83282033801e46331..pr-368</code></h2><article class="card" id="c-810d752d1"><header><div><div class="sha">810d752d1 · Cristiano Calcagno · Nov 23, 17:56</div><h3>Run loop-head diagnosis with the supplied checker layer and drop #364 assumes</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-368"><code>28e66cd56f1bfc04bb801eae32cb7598926f6ad9..pr-368</code></a><ul><li>1 commit</li><li>changes: 1 Tooling, 2 Example, 1 Docs</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-368"><code>28e66cd56f1bfc04bb801eae32cb7598926f6ad9..pr-368</code></h2><article class="card" id="c-08807cd9d"><header><div><div class="sha">08807cd9d · Cristiano Calcagno · Nov 23, 17:56</div><h3>Run loop-head diagnosis with the supplied checker layer and drop #364 assumes</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>In the Pretext copy (dev/paper-rules/pretext/src/line-break.ts), walkPreparedLinesRaw and walkPreparedComplexLines lost the handle's length equality (<code>segmentCount === prepared.widths.length</code> and <code>widths.length === segmentCount</code>) across <code>onLine?.(...)</code> despite their bounds keeping <code>prepared.**</code>, while reduced walkers kept it (cristianoc/TScert#364). When a loop head needs settling because another proposed fact fails on the back edge, settling ran its diagnosing walk with the ordinary checker instead of the supplied checker layer. Without the layer, the diagnosing walk saw <code>onLine?.(...)</code> drop the handle-length fact and removed it from the loop head before the next run.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the pass: loop-head diagnosing walk</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">loop-head settling called the diagnosing walk with the ordinary checker</span><span class="ln">even when the pass ran with a supplied checker layer</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">loop-head settling passes the optional checker layer into the diagnosing</span><span class="ln">walk, defaulting to none (the ordinary checker) so ordinary runs are</span><span class="ln">unchanged</span></pre></figure></div>
 <h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">walkSettling: bounded walker whose loop mutates a local object field</span><span class="ln">  through a helper call, triggering loop-head settling; accepted under the</span><span class="ln">  paper's rules without any assume</span><span class="ln">walkUnbounded: same walker with an unbounded effect variable; refused</span><span class="ln">  (unsafe, <span class="tk-k">as</span> the visitor may pop the array)</span></pre>
@@ -103,14 +103,15 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <h4 class="change">Soundness</h4><div class="prose"><p>The diagnosing walk only selects which loop-head candidates to drop between settling runs; the final accepting run decides acceptance. With no supplied layer (default none), the diagnosing walk runs the ordinary checker unchanged, and mode8Accepted_sound and its premise are unchanged.</p></div>
 <h4 class="change">Validation</h4><div class="prose"><p>Before rebasing onto origin/single-pass, the diagnosing-walk fix was built and checked with lake build Verification verifier paper-rules-prototype (including AxiomCheck), tests/axiom-check-imports.mts, tests/docs.mts, tsc, unchecked.mts, dev/paper-rules/expected.json (with walkSettling verified refused without the fix), and dev/paper-rules/pretext/expected.json; full CI runs on the pull request.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>SourceClaimJson.FilePlans.lackingAt · SourceClaimJson.FilePlans.inferredNextAll · SourceClaimJson.FilePlans.inferredSettle</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>9 files changed, 102 insertions(+), 20 deletions(-)</summary><pre class="code"> .claude/skills/paper-rules/SKILL.md                |  8 +--
- WORK.md                                            |  2 +-
- dev/paper-rules/README.md                          |  3 +
- dev/paper-rules/expected.json                      |  9 +++
- dev/paper-rules/pretext/src/line-break.ts          |  2 -
- dev/paper-rules/repro-364.ts                       | 71 ++++++++++++++++++++++
- docs/drafts/effect-languages-note/note.tex         | 13 ++--
- lean/Verification/Source/Claims/HeadDiagnosis.lean |  8 ++-
- lean/Verification/Source/Claims/MemberSettle.lean  |  6 +-</pre></details>
+<details><summary>10 files changed, 96 insertions(+), 15 deletions(-)</summary><pre class="code"> .claude/skills/paper-rules/SKILL.md                |   4 +-
+ WORK.md                                            |   2 +-
+ dev/paper-rules/README.md                          |   3 +
+ dev/paper-rules/expected.json                      |   9 +++
+ dev/paper-rules/pretext/src/line-break.ts          |   2 -
+ dev/paper-rules/repro-364.ts                       |  71 +++++++++++++++++++++
+ .../effect-languages-note/effect-languages.pdf     | Bin 356977 -&gt; 356866 bytes
+ docs/drafts/effect-languages-note/note.tex         |   6 +-
+ lean/Verification/Source/Claims/HeadDiagnosis.lean |   8 ++-
+ lean/Verification/Source/Claims/MemberSettle.lean  |   6 +-</pre></details>
 </article>
 </main></body></html>
