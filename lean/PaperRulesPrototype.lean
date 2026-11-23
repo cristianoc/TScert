@@ -38,10 +38,24 @@ structure Bound where
   /-- The keys the types in the reach declare, for the entries `"x.**"`. -/
   keys : List String := []
 
+/-- A call of a function with effect parameters, whose instances are
+within their bounds (rule Inst, decided by the side file): the call's
+arity, the bounds' entries at the callee's parameters and their `else`
+(the largest), the callee's own effect besides its effect variables at
+its parameters, and the keys of the reach entries. -/
+structure QCall where
+  arity : Nat
+  entries : List (Nat × Key × Footprints.Change)
+  otherwise : Footprints.Change
+  keys : List String := []
+
 /-- The rules' information about one unit: its bounded callbacks, and the
 number of its parameters, the last of the graph's inputs. -/
 structure Unit where
   bounds : List Bound
+  /-- The calls of the unit to functions with effect parameters that the
+  layer can tell apart by their arity. -/
+  calls : List QCall := []
   params : Nat
   /-- The number of the graph's inputs, set when the pass supplies it. -/
   inputs : Nat := 0
@@ -135,14 +149,15 @@ def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.F
     (Footprints.respects q [e] bound &&
       (otherwise.le e.2 || reach e.1 || bound.any (unrestricted ·.1 == unrestricted e.1)))
 
-/-- The facts of the call's entry the rules keep, past the call's result. -/
-def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
+/-- The facts of the call's entry an effect keeps, past the call's result:
+the effect given by its entries at the call's slots, its `else`, the roots
+and keys of its reach entries, and the slots of storage the effect leaves
+alone by Anch (none at a call whose effect is not an anchored variable). -/
+def keptBy (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footprints.Change)
+    (roots : List Nat) (keys : List String) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
-  let fresh := freshSlots k
-  let bound := boundAt u d b
-  let roots := b.entries.filterMap fun (p, key, _) => if key == .reach then some (slotOf u d p) else none
-  let reach := inReach (reachSlots k b.keys roots) b.keys
-  let keeps := fun (S : Footprints.Footprint) => S.all (keepsPair q fresh bound b.otherwise reach)
+  let reach := inReach (reachSlots k keys roots) keys
+  let keeps := fun (S : Footprints.Footprint) => S.all (keepsPair q fresh bound otherwise reach)
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S
@@ -155,6 +170,35 @@ def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k 
   { cells := HeapFacts.shift cells, indices := HeapKnowledge.shiftIndices idx,
     links := links.map fun l => { l with cell := l.cell + 1, value := l.value + 1 } }
 
+/-- At a call of a bounded callback parameter: the callback's effect is
+the variable, within the bound (Bound) and within `{old: any}` (Anch). -/
+def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
+  let roots := b.entries.filterMap fun (p, key, _) => if key == .reach then some (slotOf u d p) else none
+  keptBy (freshSlots k) (boundAt u d b) b.otherwise roots b.keys stable k
+
+/-- A region of a callee's parameter key at a caller's slot. -/
+def keyRegion (s : Nat) : Key → Option Footprints.Region
+  | .spine => some (Footprints.Region.path s [] arraySpineKey)
+  | .field f => some (Footprints.Region.path s [] (.str f))
+  | .reach => none
+
+/-- At a call of a function with effect parameters (rule Inst's
+conclusion): the call's effect is the callee's effect with each variable
+replaced by its instance, and each instance is within its bound, so the
+call's effect is within the bounds and the callee's own effect, read at the
+actual arguments' slots. No Anch: the instance may change the caller's own
+storage. Where an entry's parameter receives no slot, nothing is kept. -/
+def keptAtCall (c : QCall) (args : List Tm) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
+  let slot := fun (p : Nat) => match args[p]? with
+    | some (.var a) => some a
+    | _ => none
+  let resolved := c.entries.map fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
+  if resolved.any Option.isNone then {} else
+  let es := resolved.filterMap id
+  let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
+  let roots := es.filterMap fun (a, key, _) => if key == .reach then some a else none
+  keptBy [] bound c.otherwise roots c.keys stable k
+
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
 def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
@@ -162,17 +206,26 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (sums : List (ReadSummary ι)) : CheckResult ι Knowledge :=
   let r := base.run j k e codes sums
   match j.term with
-  | .invoke (.var s) _ _ =>
+  | .invoke (.var s) _ args =>
     let d := j.context.length
     -- The callee is the parameter's slot or a copy of it (an alias link).
     let aliases := fun (x : Nat) => x == s || k.links.any fun l => l.alias &&
       ((l.cell == s && l.value == x) || (l.cell == x && l.value == s))
-    match u.bounds.find? (fun b => aliases (slotOf u d b.callback)) with
-    | some b => r.map fun out =>
-      let add := kept u b (stableFirst G j.context) d k
+    let add := fun (add : Knowledge) => r.map fun out =>
       { out with cells := out.cells ++ add.cells, indices := out.indices ++ add.indices,
                  links := (out.links ++ add.links).eraseDups }
-    | none => r
+    match u.bounds.find? (fun b => aliases (slotOf u d b.callback)) with
+    | some b => add (kept u b (stableFirst G j.context) d k)
+    | none =>
+      -- A call of a function with effect parameters: its callee is one of
+      -- the unit's inputs (a module value it reads), or a copy of one, and
+      -- the side file's call of that arity is the only call of it.
+      let input := fun (x : Nat) => x + u.inputs ≥ d
+      let callee := input s || k.links.any fun l => l.alias &&
+        ((l.cell == s && input l.value) || (l.value == s && input l.cell))
+      match (if callee then u.calls.find? (·.arity == args.length) else none) with
+      | some c => add (keptAtCall c args (stableFirst G j.context) k)
+      | none => r
   | _ => r
 
 /-- **The assumption the prototype rests on**: the facts the layer keeps
@@ -247,6 +300,52 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
         | .error _ => pure []
       bounds := bounds ++ [{ callback := index, entries, otherwise, keys : Bound }]
     if !bounds.isEmpty then out := out.insert name { bounds, params := params.length }
+  -- Each caller's calls the layer can tell apart: instances within their
+  -- bounds, the callee's own effect read, the only call of its arity.
+  let calls ← (← side.getObjVal? "calls").getArr?
+  for call in calls do
+    let caller ← (← call.getObjVal? "caller").getStr?
+    let ok := (call.getObjValAs? Bool "ok").toOption == some true
+    let unique := (call.getObjValAs? Bool "unique").toOption == some true
+    let own := call.getObjVal? "own"
+    if !ok || !unique then continue
+    let .ok ownEff := own | continue
+    if (ownEff.getStr?).isOk then continue
+    let params ← (← call.getObjVal? "params").getArr?
+    let params ← params.toList.mapM (·.getStr?)
+    let arity ← (← call.getObjVal? "arity").getNat?
+    let read : Json → Except String (List (Nat × Key × Footprints.Change) × Footprints.Change × List String) :=
+      fun eff => do
+      let entries ← (← eff.getObjVal? "entries").getArr?
+      let entries ← entries.toList.mapM fun (en : Json) => do
+        let pair ← en.getArr?
+        let key ← (pair[0]?.getD Json.null).getStr?
+        let c ← (pair[1]?.getD Json.null).getStr?
+        let some k := keyOf params key | throw s!"unsupported key {key}"
+        let some c := changeOf c | throw s!"unknown change {c}"
+        if k.2 == Key.reach && c != Footprints.Change.keep then throw s!"a reach entry {key} at {repr c}"
+        pure (k.1, k.2, c)
+      let some e := changeOf (← (← eff.getObjVal? "else").getStr?) | throw "unknown else"
+      let keys ← match eff.getObjVal? "reachKeys" with
+        | .ok ks => do (← ks.getArr?).toList.mapM (fun (x : Json) => x.getStr?)
+        | .error _ => pure []
+      pure (entries, e, keys)
+    let bounds ← (← call.getObjVal? "bounds").getArr?
+    let mut entries := []
+    let mut otherwise := Footprints.Change.keep
+    let mut keys := []
+    let mut readable := true
+    for bd in bounds.toList ++ [ownEff] do
+      match read bd with
+      | .ok (es, e, ks) =>
+        entries := entries ++ es
+        otherwise := otherwise.max e
+        keys := keys ++ ks
+      | .error _ => readable := false
+    if !readable then continue
+    let c : QCall := { arity, entries, otherwise, keys := keys.eraseDups }
+    let u := (out.get? caller).getD { bounds := [], params := 0 }
+    out := out.insert caller { u with calls := u.calls ++ [c] }
   return out
 
 end PaperRules
