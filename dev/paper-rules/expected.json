@@ -194,5 +194,14 @@
       "storedInLoop": "refused",
       "storedByHoisted": "refused"
     }
+  },
+  "repro-364.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "readAt": "accepted",
+      "bump": "accepted",
+      "walkSettling": "accepted",
+      "walkUnbounded": "refused"
+    }
   }
 }
