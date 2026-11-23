@@ -49,6 +49,8 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   callback's body.
 - `inst-effect.ts`: the caller's facts kept across a walker call.
 - `repro-351.ts`: the loop-head pattern of issue #351.
+- `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
+  paper's rules, one per rule, each refused.
 
 ## The Pretext copy
 

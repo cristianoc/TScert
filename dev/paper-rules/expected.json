@@ -87,5 +87,38 @@
       "widerAdapter": "refused",
       "countingAdapter": "refused"
     }
+  },
+  "review.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walkLines": "accepted",
+      "freshAlias": "refused",
+      "moduleConst": "refused",
+      "freshHolder": "refused",
+      "walkAny": "accepted",
+      "classInstance": "refused",
+      "logicalWrite": "refused",
+      "walkExtended": "accepted",
+      "extendedKey": "refused",
+      "scramble": "accepted",
+      "walkOwn": "accepted",
+      "ownElse": "refused",
+      "walkCells": "accepted",
+      "cellsCaller": "refused",
+      "cellsNoCall": "accepted",
+      "walkPlus": "refused",
+      "twoVars": "refused",
+      "walkSwap": "refused",
+      "walkAliased": "refused",
+      "viaAlias": "accepted",
+      "walkImported": "refused",
+      "init": "accepted"
+    }
+  },
+  "review-importer.ts": {
+    "ordinary": "verified",
+    "units": {
+      "init": "accepted"
+    }
   }
 }
