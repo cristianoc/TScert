@@ -13,10 +13,14 @@ export function sumVia(h: { xs: number[] }): number {
 }
 ```
 
-Pretext's walkers have this shape (`const { segmentFlags } = prepared`, then
-`segmentFlags[i]` in the loop). The prototype's example
-`dev/paper-rules/w1-snapshot.ts` reads through the handle instead, marked
-`REVERT`, until this is fixed.
+The issue is [cristianoc/TScert#351](https://github.com/cristianoc/TScert/issues/351),
+and `dev/paper-rules/repro-351.ts` reproduces it. Pretext's walkers have
+this shape (`const { segmentFlags } = prepared`, then `segmentFlags[i]` in
+the loop). Until this is fixed, the prototype's example
+`dev/paper-rules/w1-snapshot.ts` states the link with the prototype's
+unsafe assume, `paperAssume(widths === prepared.widths, "#351")`, at the top
+of the loop body; the prototype adds the equality's fact where it is
+evaluated and names the issue in the walker's verdict.
 
 ## The existing mechanism this extends
 

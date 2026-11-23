@@ -27,6 +27,7 @@
   "w1-snapshot.ts": {
     "ordinary": "unverified",
     "units": {
+      "paperAssume": "accepted",
       "walkLines": "accepted"
     }
   },
@@ -63,6 +64,17 @@
       "callerTwoCalls": "accepted",
       "touch": "accepted",
       "callerTouched": "refused"
+    }
+  },
+  "repro-351.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "paperAssume": "accepted",
+      "sumVia": "refused",
+      "sumViaAssumed": "accepted",
+      "sumViaWrites": "refused",
+      "touch": "accepted",
+      "sumViaCalls": "refused"
     }
   }
 }

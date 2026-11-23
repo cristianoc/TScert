@@ -50,12 +50,23 @@ structure QCall where
   otherwise : Footprints.Change
   keys : List String := []
 
+/-- An unsafe assume `paperAssume(a === b, "#n")`: the source span of its
+equality, the issue it names, and its line. At the step evaluating the
+equality the layer adds the fact it states, which the sound verifier should
+have established there; the issue tracks the verifier's extension. -/
+structure Assume where
+  span : Nat × Nat
+  issue : String
+  line : Nat
+
 /-- The rules' information about one unit: its bounded callbacks, and the
 number of its parameters, the last of the graph's inputs. -/
 structure Unit where
   bounds : List Bound
   /-- The calls of the unit to functions with effect parameters. -/
   calls : List QCall := []
+  /-- The unit's unsafe assumes. -/
+  assumes : List Assume := []
   /-- The unit's nodes as the pass gives them: expression, context width,
   source span. -/
   sites : List SinglePass.LayerSite := []
@@ -218,12 +229,33 @@ def atCall (c : QCall) (args : List Tm) : Option CallEff := do
   let roots := es.filterMap fun (a, key, _) => if key == .reach then some a else none
   pure { fresh := [], bound, otherwise := c.otherwise, roots, keys := c.keys }
 
+/-- The fact an assumed equality states, in the knowledge's link forms, at
+the call's context: `y === x.f` the read link `y = x.f`, `x === y` an alias
+link; none for any other expression. -/
+def linkOf : Tm → Option HeapLinks.Link
+  | .arith .eq (.var a) (.readAt f (.var b)) | .arith .eq (.readAt f (.var b)) (.var a) =>
+    some { cell := b, value := a, field := f }
+  | .arith .eq (.var a) (.var b) => some { cell := a, value := b, alias := true }
+  | _ => none
+
+/-- The fact an unsafe assume adds at this step: the step evaluates an
+assume's equality (its nodes' spans are all spans of the unit's assumes),
+which `linkOf` represents; the link past the step's result. -/
+def assumed (u : Unit) (spans : List (Option (Nat × Nat))) (t : Tm) : Option HeapLinks.Link :=
+  if !spans.isEmpty && spans.all (fun sp => sp.any fun sp => u.assumes.any (·.span == sp)) then
+    (linkOf t).map fun l => { l with cell := l.cell + 1, value := l.value + 1 }
+  else none
+
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
 def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) (j : Sequent ι) (k : Knowledge) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) : CheckResult ι Knowledge :=
   let r := base.run j k e codes sums
+  let spansHere := u.sites.filterMap fun (t, w, sp) => if t == j.term && w == j.context.length then some sp else none
+  match assumed u spansHere j.term with
+  | some l => r.map fun out => { out with links := (out.links ++ [l]).eraseDups }
+  | none =>
   match j.term with
   | .invoke (.var s) _ args =>
     let d := j.context.length
@@ -251,9 +283,10 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
   | _ => r
 
 /-- **The assumption the prototype rests on**: the facts the layer keeps
-at a call of a bounded callback parameter survive the call. Its premise is
-the layer's run, which decides "allocated in the body" from the allocation's
-separation fact and the bound from the side file. -/
+at a call of a bounded callback parameter survive the call, and the fact an
+unsafe assume states holds after its call. Its premise is the layer's run,
+which decides "allocated in the body" from the allocation's separation fact,
+the bound from the side file, and an assume's fact from its expression. -/
 axiom paperKeptFactsSurvive {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (u : Unit) (base : Checker G images) :
     ∀ {j k e out codes sums}, (run u base j k e codes sums).value = some out →
@@ -368,6 +401,19 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
     let c : QCall := { span, entries, otherwise, keys := keys.eraseDups }
     let u := (out.get? caller).getD { bounds := [], params := 0 }
     out := out.insert caller { u with calls := u.calls ++ [c] }
+  -- Each unit's unsafe assumes whose form the side script read.
+  let assumes ← match side.getObjVal? "assumes" with
+    | .ok a => a.getArr?
+    | .error _ => pure #[]
+  for a in assumes do
+    if (a.getObjValAs? Bool "ok").toOption != some true then continue
+    let caller ← (← a.getObjVal? "caller").getStr?
+    let span ← a.getObjVal? "span"
+    let span : Nat × Nat := (← (← span.getArrVal? 0).getNat?, ← (← span.getArrVal? 1).getNat?)
+    let issue ← (← a.getObjVal? "issue").getStr?
+    let line ← (← a.getObjVal? "line").getNat?
+    let u := (out.get? caller).getD { bounds := [], params := 0 }
+    out := out.insert caller { u with assumes := u.assumes ++ [{ span, issue, line }] }
   return out
 
 end PaperRules
@@ -406,9 +452,15 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
         let applies := (p.fr.group i).any fun j => match p.fr.units[j]? with
           | some (fn, _, _) => units.contains fn.name
           | none => false
+        -- The unsafe assumes the group's units rely on, by issue and line.
+        let assumes := (p.fr.group i).flatMap fun j => match p.fr.units[j]? with
+          | some (fn, _, _) => ((units.get? fn.name).map (·.assumes)).getD []
+          | none => []
+        let assumesJson := Json.arr (assumes.map fun a => Json.str s!"{a.issue} at line {a.line}").toArray
         match verdict with
         | .ok _ => IO.println (Json.compress (Json.mkObj (if applies
-            then [("unit", unit), ("acceptedUnderPaperRules", true), ("assumed", "paperKeptFactsSurvive")]
+            then [("unit", unit), ("acceptedUnderPaperRules", true), ("assumed", "paperKeptFactsSurvive"),
+                  ("assumes", assumesJson)]
             else [("unit", unit), ("accepted", true)])))
         | .error reason => IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", (reason.take 400).toString)]))
     return 0
