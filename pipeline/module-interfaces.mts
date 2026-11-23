@@ -138,17 +138,41 @@ export const fileWorkerProtocol: WorkerProtocol = {
   partOf: (answer: string): string => decodeVerdictLine(answer.trim()).unit,
 };
 
-/** The importer's check by units: the file worker (`--file-worker 8`) at
- * its modules' interfaces, or at ordinary contracts where it reads no
- * module, of the units `names` selects (comma-separated, `""` every unit)
- * and those their verdicts rest on. The worker prepares the file once and
- * checks its units one after another, each unit's result an entry of its
- * own and each with its own limit, so a unit over its limit costs only its
- * own verdict and its dependents' (`invokeWorker`). The module interfaces
- * are those the selected units' code reaches. Where the module-interface
- * stages fail (a timeout, a refusal), the checks at ordinary contracts
- * stand, with that failure: a unit accepted there is accepted with no
- * stronger module fact. */
+/** A unit member's name as a selection names it: a function's name, or
+ * `:init` for the module's initialization (mirrors `Json.memberName`). */
+const selectionMemberName = (member: string): string =>
+  member === "init" ? ":init" : (member.split("@")[0] ?? member);
+
+/** The selection names of units in `attempt` that were semantically refused at
+ * ordinary contracts, or `null` where preparation or a worker part failed
+ * operationally so retrying at module interfaces cannot help. */
+function refusedSelectionNames(attempt: WorkerRun): string[] | null {
+  const { preparation } = attempt;
+  if ((preparation.execution !== "executed" && preparation.execution !== "replayed") || preparation.status !== 0)
+    return null;
+  const names: string[] = [];
+  for (const part of attempt.parts) {
+    if (part.execution === "failed" && part.error?.message.startsWith("memory limit") !== true)
+      return null;
+    if (part.execution !== "executed" && part.execution !== "replayed") continue;
+    const verdict = decodeVerdictLine(part.stdout.trim());
+    if ("accepted" in verdict && verdict.accepted) continue;
+    for (const member of verdict.members) names.push(selectionMemberName(member));
+  }
+  return [...new Set(names)];
+}
+
+/** The importer's check by units: the file worker (`--file-worker 8`) of the
+ * units `names` selects (comma-separated, `""` every unit) and those their
+ * verdicts rest on. The worker prepares the file once and checks its units
+ * one after another, each unit's result an entry of its own and each with its
+ * own limit, so a unit over its limit costs only its own verdict and its
+ * dependents' (`invokeWorker`). Unless own-module publication or forced
+ * proposals are requested, the file is checked at ordinary import contracts
+ * first; module interfaces are prepared only for the modules reached by units
+ * semantically refused there, and where those stages fail (a timeout, a
+ * refusal), the checks at ordinary contracts stand with that failure: a unit
+ * accepted there is accepted with no stronger module fact. */
 export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions,
     hasModules: boolean = array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0): CheckedUnits {
   mkdirSync(options.work, { recursive: true });
@@ -159,18 +183,24 @@ export function verifyByUnits(fragment: string, key: string, names: string, opti
       fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);
   const ordinary = join(options.work, "ordinary-interfaces.json");
   writeFileSync(ordinary, canonical({ modules: [] }));
-  // A file that reads no module needs no interface; one that does is
-  // checked at its modules' interfaces, and at ordinary contracts only
-  // where they are not established.
   if (!hasModules) return { run: check(ordinary), interfaceFailure: null };
+  // Mirror `verifyWithInterfaces`: check at ordinary contracts first unless
+  // explicit own-module publication or forced proposals require interfaces.
+  const attempt = options.ownModule === undefined && options.force.length === 0 ? check(ordinary) : undefined;
+  let interfaceNames = names;
+  if (attempt !== undefined) {
+    const refused = refusedSelectionNames(attempt);
+    if (refused === null || refused.length === 0) return { run: attempt, interfaceFailure: null };
+    interfaceNames = refused.join(",");
+  }
   let interfaces: PreparedInterfaces;
   try {
-    interfaces = prepareInterfaces(fragment, { ...options, names });
+    interfaces = prepareInterfaces(fragment, { ...options, names: interfaceNames });
   } catch (error) {
-    return { run: check(ordinary), interfaceFailure: error instanceof Error ? error.message : String(error) };
+    return { run: attempt ?? check(ordinary), interfaceFailure: error instanceof Error ? error.message : String(error) };
   }
   if (array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
-    return { run: check(ordinary), interfaceFailure: null };
+    return { run: attempt ?? check(ordinary), interfaceFailure: null };
   return { run: check(interfaces.path), interfaceFailure: null };
 }
 

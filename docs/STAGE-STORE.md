@@ -212,9 +212,11 @@ establishes an entry and how an importer binds one are
 A check (`pipeline/verify-source.mts`, the case runner and every caller
 through it) runs the parse stage, then the file's `pass` stage, a
 [worker stage](#worker-stages) (`--file-worker 8`), and the interface stages
-it needs (`verifyByUnits`): for a file that reads no module, the file's
-stage at ordinary contracts (no module interface); for one that does, the
-interface stages, then the file's stage at their interfaces. The worker
+it needs (`verifyByUnits`): the file's stage runs at ordinary import
+contracts first; where every selected unit is accepted, no interface stage
+runs, and where some units are semantically refused, the interface stages
+run for the modules those refused units reach, followed by the file's stage
+at those interfaces. The worker
 prepares the file once and checks its selected units one after another;
 each unit's result is an entry of its own, and a unit over its limit is that
 unit's refusal, a timeout, and its dependents'. Where the interface stages

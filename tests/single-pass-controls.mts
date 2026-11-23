@@ -2807,6 +2807,10 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   const after = runAt(changed, null);
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
+  const ordinaryOnly = runAt(join(root, "pipeline", "examples", "value-imports.ts"), resolve(root, "pipeline/imports-project"));
+  assert.equal(ordinaryOnly.outcome.status, "verified", "value-imports verifies at ordinary import contracts");
+  assert.ok(!ordinaryOnly.records.some((r) => r.stage === "interface-plan" || r.stage === "module-interface"),
+    "value-imports skips interface-plan and module-interface when ordinary contracts suffice");
   say("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
     "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; after an eviction " +
     "every stage executes to the same outcome; a changed source executes its stages");
