@@ -278,10 +278,13 @@ const step: Signature = stepOf(binder);
  * same parameter and gives the fresh array of what the step yields.
  *
  * Each runs no client code. Creating a step allocates it: the empty
- * footprint. A step, and a spread, which steps to the end, write only the
- * iterator's own position and, for a match iterator, its clone's
- * `lastIndex`, each a number, and allocate what they yield:
- * `{value: any, spine: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
+ * footprint, with `freshObject` for the kinds whose `GetIterator` creates a
+ * fresh iterator (`freshIteratorKinds`). A step of those kinds changes only
+ * the iterator's own internal state (`receiverFields`); a step of any other
+ * kind (and a spread, which steps to the end) writes only the iterator's own
+ * position and, for a match iterator, its clone's `lastIndex`, each a number,
+ * and allocates what it yields: `{value: any, spine: keep}`
+ * (SOURCE-CONTRACTS.md, "Native footprints").
  * `view` gives a host collection's reading view at arguments,
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
@@ -321,9 +324,12 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
   const changesValues = footprintEffect({ value: "any", spine: "keep" });
+  const freshIterator = !spread && kinds.every(k => freshIteratorKinds.has(k));
+  const createEffect = freshIterator ? footprintEffect(emptyFootprint, { freshObject: true }) : emptyEffect;
+  const stepEffect = freshIterator ? footprintEffect(emptyFootprint, { receiverFields: true }) : changesValues;
   const type: Signature = spread
     ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
-    : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect };
+    : { ...fn([param], { ...stepOf(element), effect: stepEffect }), effect: createEffect };
   // Creating a step allocates it and a spread writes only what it allocates
   // and the position of an iterator it creates: each kind within row (b),
   // `onThrow` as the stated effects bound a throw (`throwBound`).
@@ -331,6 +337,15 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
     ? kinds.map(k => iterationSpecs.get(k)).join("; ") : "", throwBound(signatureEffects(type))), signatureEffects(type));
   return { name, typeParams, type };
 }
+
+/** Iteration kinds whose `GetIterator` allocates a fresh iterator object and
+ * whose step updates only that iterator's own internal state
+ * (SOURCE-CONTRACTS.md, "Native footprints"). Excludes `%Iterate:Iterator%`
+ * (returns `this`, the existing iterator) and `%Iterate:RegExpString%`
+ * (returns `this` and steps its private cloned regex's `lastIndex`). */
+const freshIteratorKinds: ReadonlySet<string> = new Set([
+  iterateName, iterateStringName, iterateSetName, iterateMapName, iterateSegmentsName,
+]);
 
 /** The section of the specification each iteration kind's step follows,
  * against which its trust fields are checked (`builtin-trust.mts`). */
@@ -350,8 +365,10 @@ const iterationSpecs: ReadonlyMap<string, string> = new Map([
  * steps whichever iterator GetIterator gives, each one its kind's, so the
  * union intrinsic takes the union of the kinds' parameters, each kind's
  * binders apart, and steps what the value is as that kind's intrinsic does,
- * yielding the union of their elements; none has a `return`. Its step states
- * the weakest of the kinds' effects, `{value: any, spine: keep}`. */
+ * yielding the union of their elements; none has a `return`. Where every kind
+ * is in `freshIteratorKinds`, creation states `freshObject` and the step
+ * `receiverFields`; otherwise creation states the empty footprint and the
+ * step `{value: any, spine: keep}`. */
 export const unionIterationName = (kinds: readonly string[]): string => kinds.join("|");
 /** The kinds of a union's iteration, or `undefined` for one kind's. */
 export function unionIterationKinds(name: string): string[] | undefined {
