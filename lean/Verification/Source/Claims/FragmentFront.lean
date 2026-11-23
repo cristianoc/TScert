@@ -688,24 +688,50 @@ def interfaceNeeds (sc : ImportScope) : Except String (List ModuleNeed) := do
     let names ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
     return { module := m, names, reads := (moduleReads sc m ("init" :: names)).toOption.getD [] }
 
-/-- Discover only modules reached by the importer, then close over each
-complete module's reads. Selection changes the requested components, never
-the candidates or inputs of a component check. -/
+/-- Discover only the `(module, function)` pairs reached from the importer's
+selected units, closing transitively over each requested function's own reads
+(`moduleReads`). Explicit `own` roots request every function of their module.
+Each module's requested names are deduplicated and sorted canonically. -/
 def requestedInterfaceNeeds (sc : ImportScope) (ast : Json) (names : Option (List String))
     («given» fixed own : List String := []) : Except String (List ModuleNeed) := do
   let roots ← importerReads sc ast names given fixed
-  let mut pending := (own ++ roots.map (·.location)).eraseDups
-  let mut needs : List ModuleNeed := []
-  for _ in sc.modules do
-    if pending.isEmpty then break
-    let batch := sc.modules.filter fun m => pending.contains m.location &&
-      !needs.any (·.module.location == m.location)
-    pending := []
-    for m in batch do
+  let mut needed : Std.HashMap String (List String) := {}
+  for r in roots do
+    let cur := needed.getD r.location []
+    if !cur.contains r.name then needed := needed.insert r.location (cur ++ [r.name])
+  for loc in own do
+    if let some m := sc.modules.find? (·.location == loc) then
       let ns ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
-      let reads := (moduleReads sc m ("init" :: ns)).toOption.getD []
+      let cur := needed.getD loc []
+      needed := needed.insert loc (cur ++ ns).eraseDups
+  let mut processed : Std.HashMap String (List String) := {}
+  let mut readsByMod : Std.HashMap String (List FragmentRead) := {}
+  let maxSteps := sc.modules.foldl (fun acc m =>
+    acc + ((jArr m.document "functions").toOption.getD []).length + 1) 1
+  for _ in [0:maxSteps] do
+    let mut changed := false
+    for m in sc.modules do
+      let want := needed.getD m.location []
+      let done := processed.getD m.location []
+      let fresh := want.filter fun n => !done.contains n
+      if !fresh.isEmpty then
+        changed := true
+        let newReads := (moduleReads sc m fresh).toOption.getD []
+        let prevReads := readsByMod.getD m.location []
+        readsByMod := readsByMod.insert m.location (prevReads ++ newReads).eraseDups
+        for r in newReads do
+          if r.location != m.location then
+            let cur := needed.getD r.location []
+            if !cur.contains r.name then
+              needed := needed.insert r.location (cur ++ [r.name])
+        processed := processed.insert m.location (done ++ fresh)
+    if !changed then break
+  let mut needs : List ModuleNeed := []
+  for m in sc.modules do
+    let ns := (needed.getD m.location []).eraseDups.mergeSort (· ≤ ·)
+    if own.contains m.location || !ns.isEmpty then
+      let reads := (readsByMod.getD m.location []).eraseDups
       needs := needs ++ [{ module := m, names := ns, reads }]
-      pending := (pending ++ reads.map (·.location)).eraseDups
   return needs
 
 /-- The SCC DAG in dependency order; lexicographic module identities break

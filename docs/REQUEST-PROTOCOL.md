@@ -76,7 +76,7 @@ verifier --lower-control-flow       <ast.json>
 - `--module-interface-plan` discovers the component DAG of the module graph
   for a selection (function names and explicit own-module roots) and prints
   it; `--module-interface` checks one component's request
-  (`{modules, dependencies, force, fuel, mode}`) and prints its closed
+  (`{modules, names, dependencies, force, fuel, mode}`) and prints its closed
   interfaces ([certified imports](SOURCE-CONTRACTS.md#certified-imports)).
 - `--lower-control-flow` prints the execution graphs Lean builds from the
   Fragment (`SourceFlow.document`,

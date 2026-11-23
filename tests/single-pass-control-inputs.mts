@@ -251,7 +251,8 @@ export function interfaceControls(fragment: string, scratch: string, log: (line:
     assert.notDeepEqual(forced.records.map((r) => r.record.key), first.records.map((r) => r.record.key));
     log("forced proposals: separate component keys");
 
-    // A normalized own-file run reaches the same complete component request.
+    // A normalized own-file run publishes every function of its module, while
+    // an importer run scopes each module component to the functions it reaches.
     const source = parsed(fragment);
     const own = record(list(source.modules)[0]);
     assert.deepEqual(own.absent, []);
@@ -263,10 +264,14 @@ export function interfaceControls(fragment: string, scratch: string, log: (line:
     writeFileSync(ownModule, JSON.stringify(own));
     writeFileSync(ownPath, JSON.stringify(ownAst));
     const ownResult = prepare(ownPath, { ...options, ownModule, work: join(work, "own") });
-    assert.deepEqual(ownResult.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
-      first.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));
-    assert.equal(readFileSync(ownResult.path, "utf8"), original);
-    log("own-file normalization: complete component keys and results equal imported path");
+    const establishedNames = (file: string): string[] =>
+      list(parsed(file).modules).flatMap((m) => list(record(m).entries).map(record)
+        .filter((e) => e.established !== null).map((e) => String(e.name))).sort();
+    const firstNames = establishedNames(first.path);
+    const ownNames = establishedNames(ownResult.path);
+    assert(firstNames.length > 0 && ownNames.length >= firstNames.length);
+    for (const n of firstNames) assert(ownNames.includes(n));
+    log("own-file normalization: own publication covers every imported entry");
 
     const reversed = parsed(fragment);
     reversed.modules = [...list(reversed.modules)].reverse();
@@ -278,17 +283,25 @@ export function interfaceControls(fragment: string, scratch: string, log: (line:
     assert.equal(readFileSync(reordered.path, "utf8"), original);
     log("importer module ordering: identical canonical component requests and results");
 
-    // Root selection cannot manufacture a partial canonical interface.
+    // Root selection scopes module-interface requests to reached functions;
+    // explicit own publication retains the complete module key.
     const noRoots = prepare(fragment, { ...options, names: "%absent-interface-control",
       work: join(work, "no-roots") });
     assert.deepEqual(parsed(noRoots.path), { modules: [] });
     assert(noRoots.records.every((r) => r.record.stage === "interface-plan"));
+    const firstFnName = String(record(list(source.functions)[0]).name);
+    const selectedOne = prepare(fragment, { ...options, names: firstFnName,
+      work: join(work, "selected-one") });
+    const selectedOneNames = establishedNames(selectedOne.path);
+    assert(selectedOneNames.length > 0 && selectedOneNames.length < firstNames.length);
+    assert.notDeepEqual(selectedOne.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
+      first.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));
     const selectedOwn = prepare(ownPath, { ...options, names: "%absent-interface-control",
       ownModule, work: join(work, "selected-own") });
     assert.equal(readFileSync(selectedOwn.path, "utf8"), readFileSync(ownResult.path, "utf8"));
     assert.deepEqual(selectedOwn.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
       ownResult.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));
-    log("selected roots: no unrelated component; own publication retains complete canonical keys");
+    log("selected roots: function-scoped module requests; own publication retains complete canonical keys");
 
     // Forced executions also publish: timing text must not make one exact
     // importer request produce two different stored payloads.
