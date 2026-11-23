@@ -244,6 +244,9 @@ import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
 import Verification.Source.Claims.CallbackAcceptedWalk
 import Verification.Source.Claims.CallbackAdaptation
+import Verification.Source.Claims.CallbackAdaptationSound
+import Verification.Source.Claims.CallbackPathClosure
+import Verification.Semantics.SupportKept
 import Verification.Source.Claims.CallbackAllocationSites
 import Verification.Source.Claims.CallbackAllocationSpines
 import Verification.Source.Claims.CallbackCallPositions

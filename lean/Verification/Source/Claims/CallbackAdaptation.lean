@@ -1,4 +1,5 @@
 import Verification.Source.Claims.CallbackInterfaceCheck
+import Verification.Source.Claims.CallbackPathClosure
 
 /-! The rules Adapt and FreshRead of the inferred callback preservation note,
 on the experimental consumer path. Adapt checks a closure literal whose
@@ -9,12 +10,6 @@ namespace Verification.SourceClaimJson.CallbackAdaptation
 open ControlFlow ProgramTyping RequestJson SourceElaboration LabelStore
 open CallbackOrigins CallbackPreservation CallbackEffectInference CallbackInterfaceCheck
 open Footprints CallEffects PositiveGraphs PositiveCertificates
-
-/-- The join of two optional footprints, as closure inference joins visits. -/
-def joinFootprint (old new : Option Footprint) : Option Footprint :=
-  match old, new with
-  | none, a | a, none => a
-  | some a, some b => some ((a ++ b).eraseDups)
 
 /-- A call in closure code of the closure's own entry slot `callee`.
 `operands` are the entry roots of its receiver and fixed arguments. -/
@@ -51,8 +46,16 @@ def reliedAt (firstCapture : Nat) (facts : List GraphCode.ArgumentPathTracking.F
     return ⟨pos, (recv :: fixed).map (entryRoot facts)⟩
   | _ => none
 
+/-- The local summary of a recorded visit under Adapt: empty on both exits
+for a relied call, the step summary otherwise. -/
+def adaptedFrame (G : NormalGraph ι) (facts : Array (List GraphCode.ArgumentPathTracking.Fact))
+    (firstCapture : Nat) (node : Node) (claim : CertificateProducer.PointClaim ι) (record : SinglePass.VisitRecord) : Summary :=
+  match reliedAt firstCapture (facts.getD record.label []) node.expression with
+  | some _ => ⟨some [], some []⟩
+  | none => stepFrame G facts node claim record
+
 /-- `inferChecked` with the summary of every relied call replaced by the
-empty footprint on both exits. -/
+empty footprint on both exits, and the relied calls of the visits. -/
 def inferAdapted (G : NormalGraph ι) (q : CodeRequest ι) (records : Array SinglePass.VisitRecord) :
     Except String (Summary × List Relied) := do
   let nodes := GraphCode.program q.entry.exprs q.entry.conts
@@ -62,21 +65,11 @@ def inferAdapted (G : NormalGraph ι) (q : CodeRequest ι) (records : Array Sing
   let entries := q.claims.map fun c => ({ sequent := some ⟨c.context, .undef, c.type⟩, edges := [] } : NodeEvidence ι)
   let facts := certifiedRootTable nodes q.entry.start inputs.length (regionTable nodes entries q.entry.start origins) |>.toArray
   let firstCapture := q.entry.arity + frameOffset q.entry.spine
-  let ns := nodes.toArray
-  let claims := q.claims.toArray
-  let (locals, relied) ← records.foldlM (init := (Array.replicate ns.size none, ([] : List Relied)))
-    fun (acc, relied) record => do
-      let some node := ns[record.label]? | throw "closure effect record has no graph node"
-      let some claim := claims[record.label]? | throw "closure effect record has no point claim"
-      let here := facts.getD record.label []
-      let (frame, relied) := match reliedAt firstCapture here node.expression with
-        | some call => ((⟨some [], some []⟩ : Summary), call :: relied)
-        | none => (step G node claim here record.certificate, relied)
-      let combined := match acc.getD record.label none with
-        | none => frame
-        | some old => ⟨joinFootprint old.normal frame.normal, joinFootprint old.exceptional frame.exceptional⟩
-      return (acc.setIfInBounds record.label (some combined), relied)
-  return (← composeChecked nodes q.entry.start locals, relied.eraseDups)
+  let locals ← localSummaries (adaptedFrame G facts firstCapture) nodes.toArray q.claims.toArray records
+  let relied := records.toList.filterMap fun record => do
+    let node ← nodes.toArray[record.label]?
+    reliedAt firstCapture (facts.getD record.label []) node.expression
+  return (← composeChecked nodes q.entry.start locals, relied.reverse.eraseDups)
 
 end
 
@@ -132,23 +125,14 @@ def adaptedClosure {ι : Type} [DecidableEq ι] (codes : Array (AdaptedCode ι))
   let .allocated label ← originOf slots argument | none
   let node ← nodes[label]?
   let .makeAt (.graph arity exprs conts start captures _ rest _) _ _ := node.expression | none
+  let callback ← closure (codes.map fun c => (⟨c.entry, c.summary⟩ : CheckedCode ι)) nodes origins inputs slots
+    callRoots argument
   let rows := codes.filter fun c =>
     c.entry.arity == arity && c.entry.start == start && c.entry.exprs == exprs && c.entry.conts == conts &&
       captures.length == c.entry.captures.length && c.entry.spine.isSome == rest
   let first ← rows[0]?
   let restSlots := if first.entry.spine.isSome then 1 else 0
   let firstCapture := arity + frameOffset first.entry.spine
-  let effects := rows.foldl (fun (acc : CallEffects.Exits Footprint) code =>
-    ⟨(acc.normal ++ code.summary.normal.getD []).eraseDups,
-      (acc.exceptional ++ code.summary.exceptional.getD []).eraseDups⟩) ⟨[], []⟩
-  let actuals := fun slot => do
-    if slot < restSlots then none
-    else if slot < firstCapture then
-      let some (root, []) := callRoots[slot - restSlots]?.join | none
-      some root
-    else
-      let cap ← captures[slot - firstCapture]?
-      originOf (origins.at label) cap >>= identity inputs
   let callerRoot := fun (entry : Option (Nat × List String)) => do
     let (pos, path) ← entry
     if pos < restSlots then none
@@ -164,30 +148,7 @@ def adaptedClosure {ι : Type} [DecidableEq ι] (codes : Array (AdaptedCode ι))
     let .input q ← originOf (origins.at label) cap | none
     guard (forwarding.contains q)
     return (q, call.operands.map callerRoot)
-  return (⟨effects, actuals⟩, rows.any (·.handles), relied)
-
-/-- A field location holds a value, so a field region restricted to the
-value category still contains it. -/
-def fieldRegion : Region → Region
-  | .inCls r c => if c.value then fieldRegion r else .inCls r c
-  | r => r
-
-/-- The field regions a path is read through, at each of its prefixes. -/
-def pathFieldsKept (support : Footprint) (x : Nat) (p : List String) : Bool :=
-  (List.range p.length).all fun n =>
-    let pre := p.take n
-    let k := PropKey.str p[n]!
-    support.any fun (r, c) => c == .keep &&
-      (fieldRegion r == (if pre.isEmpty then .field x k else .path x pre k) ||
-        fieldRegion r == (if pre.isEmpty then .fields x else .pathFields x pre))
-
-/-- Path-closed: every path a region reads goes through fields the support keeps. -/
-def pathClosed (support : Footprint) : Bool :=
-  let rec closed : Region → Bool
-    | .path x p _ | .pathFields x p | .pathCells x p | .spine x p => pathFieldsKept support x p
-    | .inCls r _ => closed r
-    | _ => true
-  support.all fun (r, _) => closed r
+  return (callback, rows.any (·.handles), relied)
 
 /-- Allocation labels exposed on some path to each label: an exposing
 node's allocations reach every label its successors reach. -/
@@ -269,11 +230,17 @@ def checkDemand {σ ι : Type} [Labels ι] [StoreView σ ι]
     -- throw ends the closure with a throw unless the closure handles it.
     let afterNormal := (normal ++ exceptional).eraseDups
     let afterThrow := if handles then afterNormal else exceptional
-    if !pathClosed afterNormal then
+    -- The closure keeps the whole support between relied calls, read at the
+    -- caller's slots, through fields it keeps.
+    let both := (demand.support.normal ++ demand.support.exceptional).eraseDups
+    let some whole := project toCaller both
+      | throw s!"Adapt at node {label}: the requirement of {producer.name} cannot be read at the call"
+    if !CallbackPathClosure.pathClosed whole then
       throw s!"Adapt at node {label}: the requirement of {producer.name} reads a path through a field it does not keep"
     let adaptedCallbacks := fun parameter =>
       if parameter == demand.parameter then some cb else callbacks parameter
-    if !demand.check toCaller adaptedCallbacks evidence then
+    let strong : Demand := { demand with support := ⟨both, both⟩ }
+    if !strong.check toCaller adaptedCallbacks evidence then
       throw s!"Adapt at node {label}: the closure passed to {producer.name} changes a location its requirement keeps"
     return relied.map fun (q, operands) => ⟨q, ⟨afterNormal, afterThrow⟩, operands⟩
 

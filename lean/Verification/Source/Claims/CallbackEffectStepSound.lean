@@ -7,8 +7,9 @@ namespace Verification.SourceClaimJson.CallbackEffectInference
 open ControlFlow CertificateProducer GraphCode Footprints ProgramTyping PositiveGraphs PositiveRules
 open CallEffects HeapObservations ExpressionEffects ProgramCertificates PositiveCertificates RequestJson
 
-def StepExtends (result : Option Footprint) (prior : Footprint) (entry : Env) (initial after : Heap) : Prop :=
-  ∃ writes, result = some writes ∧ Footprints.Post (prior ++ writes).eraseDups entry initial after
+def StepExtends (result : Option Footprint) (prior : Footprint) (entry : Env) (initial before after : Heap) : Prop :=
+  ∃ writes, result = some writes ∧ Footprints.Post (prior ++ writes).eraseDups entry initial after ∧
+    Footprints.KeepsAt writes entry initial before after
 
 private theorem prior_only {prior : Footprint} {entry : Env} {initial before : Heap}
     (history : Footprints.Post prior entry initial before) :
@@ -27,7 +28,7 @@ private theorem fieldWrite_step_extends {ι : Type} [DecidableEq ι] {G : Normal
     (factsOK : ArgumentPathTracking.Holds facts ρ entry initial)
     (budget : k < n) (run : Steps k before (instantiate 0 ρ node.expression) after t)
     (ends : match exit with | .normal => isVal t = true | .exceptional => ∃ v, Raises t v) :
-    StepExtends ((step G node pt facts q).get exit) prior entry initial after := by
+    StepExtends ((step G node pt facts q).get exit) prior entry initial before after := by
   have actual := fieldWriteStep_sound write env heap safe
   cases exit with
   | normal =>
@@ -38,13 +39,14 @@ private theorem fieldWrite_step_extends {ι : Type} [DecidableEq ι] {G : Normal
       | true =>
         have no := noReturn_sound (R := fun _ _ => False) hb safe
         exact (returnsPost_of_safePost no k after t budget run ends).elim
-    refine ⟨_, ?_, rebaseStep_post (slots := some) history localPost factsOK (by intro a b h; cases h; rfl) (Footprints.HeapOk.categories heap)⟩
+    refine ⟨_, ?_, rebaseStep_post (slots := some) history localPost factsOK (by intro a b h; cases h; rfl) (Footprints.HeapOk.categories heap),
+      rebaseStep_keeps (slots := some) localPost factsOK (by intro a b h; cases h; rfl) (Footprints.HeapOk.categories heap)⟩
     simp [step,scope,write,ne,Exits.get]
   | exceptional =>
     obtain ⟨v,raised⟩ := ends
     have same := raisesPost_of_safePostExc actual k after t v budget run raised
     subst after
-    exact ⟨[], by simp [step,scope,write,Exits.get], prior_only history⟩
+    exact ⟨[], by simp [step,scope,write,Exits.get], prior_only history, Footprints.KeepsAt.same _ _ _ _⟩
 
 
 private theorem selected_step_extends {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
@@ -69,7 +71,7 @@ private theorem selected_step_extends {ι : Type} [DecidableEq ι] [Hashable ι]
     (budget : k < n) (run : Steps k before (instantiate 0 ρ node.expression) after t)
     (ends : match exit with | .normal => isVal t = true | .exceptional => ∃ v, Raises t v) :
     StepExtends ((step G node pt facts (SinglePass.stepCertificate G images codes sums fresh pt node K d)).get exit)
-      prior entry initial after := by
+      prior entry initial before after := by
   have dc := deriv
   simp only [SinglePass.stepDerivChecked, Bool.and_eq_true, beq_iff_eq] at dc
   obtain ⟨⟨hterm,hctx⟩,tree⟩ := dc
@@ -96,7 +98,10 @@ private theorem selected_step_extends {ι : Type} [DecidableEq ι] [Hashable ι]
   have rebased := rebaseStep_post history localPost factsOK
     (slots := PromiseCalls.actualSlot node.expression) (fun _ _ ha => PromiseCalls.actualSlot_sound ha ρ)
     (Footprints.HeapOk.categories heap)
-  refine ⟨_, ?_, rebased⟩
+  have keeps := rebaseStep_keeps (entry := entry) (initial := initial) localPost factsOK
+    (slots := PromiseCalls.actualSlot node.expression) (fun _ _ ha => PromiseCalls.actualSlot_sound ha ρ)
+    (Footprints.HeapOk.categories heap)
+  refine ⟨_, ?_, rebased, keeps⟩
   cases exit <;> try specialize live rfl
   all_goals simp [step,SinglePass.stepCertificate,SinglePass.selectedSummaries,scope,nonwrite,inspection,
     inhabited,live,grades,operands,selected,deriv,arity,Exits.get,Thunk.get]
@@ -128,10 +133,12 @@ private theorem general_frame {ι : Type} [DecidableEq ι] {G : NormalGraph ι} 
       (callEnv (receiverOf (instantiate 0 ρ node.expression)) (actualsOf (instantiate 0 ρ node.expression))) before after)
     (history : Footprints.Post prior entry initial before) (cats : HeapCategories before)
     (factsOK : ArgumentPathTracking.Holds facts ρ entry initial) :
-    StepExtends ((step G node pt facts q).get exit) prior entry initial after := by
+    StepExtends ((step G node pt facts q).get exit) prior entry initial before after := by
   have rebased := rebaseStep_post history localPost factsOK
     (slots := PromiseCalls.actualSlot node.expression) (fun _ _ ha => PromiseCalls.actualSlot_sound ha ρ) cats
-  refine ⟨_, ?_, rebased⟩
+  have keeps := rebaseStep_keeps (entry := entry) (initial := initial) localPost factsOK
+    (slots := PromiseCalls.actualSlot node.expression) (fun _ _ ha => PromiseCalls.actualSlot_sound ha ρ) cats
+  refine ⟨_, ?_, rebased, keeps⟩
   cases exit <;> simp only [Exits.get] at headFrame <;> try specialize live rfl
   all_goals simp [step,scope,nonwrite,live,headFrame,Exits.get]
 
@@ -151,9 +158,9 @@ theorem stepCertificate_extends {ι : Type} [DecidableEq ι] [Hashable ι] [Inst
     (budget : k < n) (run : Steps k before (instantiate 0 ρ node.expression) after t)
     (ends : match exit with | .normal => isVal t = true | .exceptional => ∃ v, Raises t v) :
     StepExtends ((step G node pt facts (SinglePass.stepCertificate G images codes sums fresh pt node K d)).get exit)
-      prior entry initial after := by
+      prior entry initial before after := by
   let q := SinglePass.stepCertificate G images codes sums fresh pt node K d
-  change StepExtends ((step G node pt facts q).get exit) prior entry initial after
+  change StepExtends ((step G node pt facts q).get exit) prior entry initial before after
   have topPost (ρ : Env) : Footprints.Post Closed.top.fp ρ before after :=
     Closed.post_iff.mpr (Closed.holds_iff.mp (Closed.holds_top.mpr (stepsLength run)))
   cases hscope : q.scope with
@@ -162,7 +169,7 @@ theorem stepCertificate_extends {ι : Type} [DecidableEq ι] [Hashable ι] [Inst
       Closed.post_iff.mpr (Closed.holds_iff.mp (Closed.holds_top.mpr (Nat.le_trans history.1 (stepsLength run))))
     exact ⟨Closed.top.fp, by cases exit <;> simp [step,hscope,Exits.get], full.mono (cl := fun _ _ => none)
       (Footprint.le_of_subset fun _ he => List.mem_eraseDups.mpr (List.mem_append_right _ he))
-      (by intro _ _ _ _ miss; contradiction)⟩
+      (by intro _ _ _ _ miss; contradiction), Footprints.KeepsAt.closed (Footprints.HeapOk.categories heap) (topPost entry)⟩
   | true =>
     cases hw : fieldWriteStep G pt.context node.expression with
     | some p =>

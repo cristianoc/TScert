@@ -373,7 +373,7 @@ private theorem rowFold_mem {ι : Type} (rows : List (CheckedCode ι)) (acc : Ex
         cases exit <;> simpa [Exits.get] using Or.inr (a := e ∈ _) included
       · exact .inr ⟨row, rest, included⟩
 
-private def literalActuals (inputs arity : Nat) (rest : Bool) (caps : List Tm) (slots : Slots)
+def literalActuals (inputs arity : Nat) (rest : Bool) (caps : List Tm) (slots : Slots)
     (roots : List (Option (Nat × List String))) (slot : Nat) : Option Nat := do
   let restSlots := if rest then 1 else 0
   if slot < restSlots then none
@@ -386,7 +386,7 @@ private def literalActuals (inputs arity : Nat) (rest : Bool) (caps : List Tm) (
 
 /-- The effect of every checked row matching this literal is included in
 the exact callback returned by the source checker, independently on each exit. -/
-private theorem closure_row_spec {ι : Type} [DecidableEq ι] {codes : Array (CheckedCode ι)}
+theorem closure_row_spec {ι : Type} [DecidableEq ι] {codes : Array (CheckedCode ι)}
     {nodes : Array Node} {origins inputs slots callRoots argument label}
     {node : Node} {row : CheckedCode ι} {captures kind component fields values}
     {cb : Callback} (picked : closure codes nodes origins inputs slots callRoots argument = some cb)
@@ -423,7 +423,7 @@ private theorem envOf_tail {pre tail : List Tm} {i} (h : pre.length ≤ i) :
     envOf (pre ++ tail) .nul i = envOf tail .nul (i-pre.length) := by
   simp only [envOf,List.getD_eq_getElem?_getD,List.getElem?_append_right h]
 
-private theorem literalActuals_sound {inputs arity : Nat} {rest : Bool} {caps : List Tm} {slots : Slots}
+theorem literalActuals_sound {inputs arity : Nat} {rest : Bool} {caps : List Tm} {slots : Slots}
     {roots : List (Option (Nat × List String))} {dst : Env} {recv self : Tm} {args : List Tm}
     {pre : List Tm} {allocation : Env}
     (layout : pre.length = (if rest then 1 else 0))
@@ -480,7 +480,7 @@ def invocationArguments (d : Demand) (toCaller : RootMap) : List (Option (Nat ×
     let (root, outerPath) ← toCaller slot
     return (root, outerPath ++ path)
 
-private theorem invocationArguments_sound {d : Demand} {toCaller : RootMap} {actual dst : Env}
+theorem invocationArguments_sound {d : Demand} {toCaller : RootMap} {actual dst : Env}
     {before : Heap} {recv : Tm} {args : List Tm}
     (rootsOK : RealizesRoots toCaller actual dst before)
     (invocation : ∀ p x, d.actualRoots[p]? = some (some (x, [])) → actual x = callEnv recv args p)

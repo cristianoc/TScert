@@ -134,10 +134,10 @@ theorem boundedRecordedExitSound_of_reachedVisits {ι : Type} [DecidableEq ι] [
       v.env v.know v.adm v.heap v.safe hp facts v.budget steps ends
   have prefixPost : Footprints.Post Closed.top.fp entry initial h :=
       Closed.post_iff.mpr (Closed.holds_iff.mp (Closed.holds_top.mpr (prefixLength reached)))
-  obtain ⟨w,hw,_⟩ := extend _ prefixPost
-  refine ⟨record,v.member,rfl,pt,w,hpt,hw,?_⟩
+  obtain ⟨w,hw,_,keeps⟩ := extend _ prefixPost
+  refine ⟨record,v.member,rfl,pt,w,hpt,hw,?_,keeps⟩
   intro prior hp
-  obtain ⟨other,ho,post⟩ := extend _ hp
+  obtain ⟨other,ho,post,-⟩ := extend _ hp
   cases hw.symm.trans ho
   exact post
 

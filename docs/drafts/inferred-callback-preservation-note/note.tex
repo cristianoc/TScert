@@ -767,7 +767,7 @@ by the empty footprint on both exits.
   c.\mathsf{capture}(k)=\mathsf{input}(q)\qquad q\;\mathsf{marked}\\
   \forall e.\ \proj_{\pi_F}(S^e)=T^e\qquad
   U=\du(T^{\norm}\mathbin{+\!+}T^{\exc})\ \text{is path-closed}\\
-  \forall e.\ T^e\respects_{K_F}\ren_\sigma(E_{\setminus k}^e)}
+  \forall e.\ U\respects_{K_F}\ren_\sigma(E_{\setminus k}^e)}
  {\pi_F;K_F\vdash d\leadsto(q,U,U_c,A_k)}
 \]
 
@@ -777,8 +777,13 @@ entry slot of $c$ that $\sigma$ maps to a public input of $F$, and
 $\absent$ otherwise. A support $T$ is \emph{path-closed} when, for each
 of its regions rooted at $(x,p\mathbin{+\!+}[f]\mathbin{+\!+}p')$, the field
 region $(x,p)\cdot f$, or that region restricted to the value category
-of locations, is in $T$ with \keep. The premise on $E_{\setminus k}$
-is \ruleName{Use} for every step of $c$ that is not a relied call. The
+of locations, is in $T$ with \keep, and, for a region of element cells,
+$T$ keeps every spine (the region $\mathsf{all}$ or the class of array
+and view spines, with \keep). Both $T^e$ and $U$ are read at the
+caller's slots. The premise on $E_{\setminus k}$ is \ruleName{Use} of
+the whole support $U$, on both exits, for every step of $c$ that is not
+a relied call: a step before a relied call keeps the fields through which
+the relied call's support is read, whichever exit the run then takes. The
 conclusion is a forwarded demand on $q$, which $F$ publishes as
 \ruleName{Forward} does.
 
@@ -815,23 +820,33 @@ demand, and \code{collectAdapted} is checked against it. Its push into
 \code{walked} meets the path-rooted region of the next subsection, and
 the check refuses it. \status{source regression}
 
-\begin{conjecture}[Soundness of \ruleName{Adapt}]
-Assume the premises of \ruleName{Adapt}, a separation query $K_F$
-sound at every prestate of a step of $c$, and a value of $q$ that keeps
-$T$ from the dispatch to the return of each of its invocations. Then
-every execution of $c$ keeps $T^{\norm}$ on normal return and
-$T^{\exc}$ on a throw.
-\end{conjecture}
+\begin{theorem}[Soundness of \ruleName{Adapt}]
+Assume the premises of \ruleName{Adapt}, a separation query $K_F$ sound
+at the heap where $c$ is invoked, and a value of $q$ whose invocations
+from $c$ keep $U$ from dispatch to normal return and $U_c$ from dispatch
+to a throw. Then every completed execution of $c$ keeps $T^{\norm}$ on
+normal return and $T^{\exc}$ on a throw, from the heap where $c$ is
+invoked.
+\end{theorem}
 
-The argument splits an execution of $c$ at its relied calls. A segment
-between relied calls satisfies $\ren_\sigma(E_{\setminus k})$
-(\lean{composeChecked\_execution} on the modified local table), and
-\lean{respect\_sound} gives $T$ over it. A relied call keeps $T$ by
-assumption. Path-closure makes every region of $T$ denote the same
-locations at the start of each segment, since each segment keeps the
-fields its paths read; supports with \keep\ then compose across the
-segments. The composition lemma for path-closed supports is not yet
-stated in Lean.
+\emph{Proof} (\lean{checked\_literal\_adapt\_supported},
+\code{Source/Claims/CallbackAdaptationSound.lean}). Every support and
+every region of an effect is read at the heap $h_0$ where $c$ is invoked.
+The invariant at each state of the run is that $U$ is kept from $h_0$.
+A step that is not a relied call has a local summary, its frame rebased to
+$c$'s entry. Every location the step changes that is in a region of $U$ at
+$h_0$ has kept its class since $h_0$ (a change other than \code{any}
+keeps the class), so it is in one of the step's rebased regions read at
+$h_0$, and the premise on $E_{\setminus k}$ bounds its change
+(\lean{step\_keeps}, \code{Semantics/SupportKept.lean}). A relied call
+keeps its support from its prestate, and path-closure of $U$ carries a
+support kept since $h_0$ across it (\lean{supported\_trans\_of\_pathClosed},
+\code{Source/Claims/CallbackPathClosure.lean}). The flow certificate
+composes the invariant over the graph, with $T^e$ at each exit $e$
+(\lean{inferAdapted\_keeps\_bounded}). The query $K_F$ is used only at
+$h_0$. The theorem takes the soundness of the closure's recorded visits as
+a premise, as \lean{checked\_literal\_execution\_supported} does for
+\ruleName{Use}; the relied-call premise is a hypothesis.
 
 \subsection{Separating a fresh allocation from a value read}
 
@@ -1208,8 +1223,8 @@ Closure effects &
   \lean{closure}, \lean{argumentRoots}, \lean{separation}, \lean{writeInterface} \\
 \ruleName{Adapt} and \ruleName{FreshRead} &
   \lean{CallbackAdaptation.inferAdapted}, \lean{adaptedClosure},
-  \lean{pathClosed}, \lean{exposedBefore}, \lean{freshReads},
-  \lean{checkDemand} \\
+  \lean{CallbackPathClosure.pathClosed}, \lean{exposedBefore}, \lean{freshReads},
+  \lean{checkDemand}; \lean{checked\_literal\_adapt\_supported} \\
 Publication and source verdict &
   \code{Source/RequestCli.lean}: \lean{produceModuleCallback},
   \lean{PreparedFile.callbackInterface}, \lean{PreparedFile.check} \\

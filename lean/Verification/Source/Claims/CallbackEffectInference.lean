@@ -2,6 +2,7 @@ import Verification.Source.Claims.CallbackRootPaths
 import Verification.Source.Claims.PassProposals
 import Verification.Source.Claims.CallbackPreservation
 import Verification.Source.Claims.CallbackEffectFlow
+import Verification.Semantics.SupportKept
 
 /-! Experimental location-sensitive closure effect proposals. The ordinary
 pass checks the code first. This analysis reads its step certificates and
@@ -88,6 +89,25 @@ theorem composeChecked_execution_bounded {P start locals out ρ₀ h₀ h' s' n}
     subst out
     exact checkFlow_execution_bounded valid sound run exit v done
 
+/-- The composed summary of `composeChecked` bounds the same runs. -/
+theorem composeChecked_keeps_bounded {P start locals out ρ₀ h₀ h' s' n admit inside atExit}
+    (hc : composeChecked P start locals = .ok out)
+    (sound : BoundedLocalKeeps P start locals ρ₀ h₀ n admit inside atExit)
+    (mono : ∀ {a b : Footprint}, (∀ e ∈ a, e ∈ b) → admit b → admit a)
+    (initial : inside h₀)
+    (run : Execution P n h₀ (.at start ρ₀) h' s') (exit : Completion) (v : Val)
+    (done : s' = (match exit with | .normal => .done v | .exceptional => .raised v)) :
+    ∃ bound, out.get exit = some bound ∧ (admit bound → atExit exit h') := by
+  unfold composeChecked at hc
+  cases hp : proposeFlow P start locals with
+  | none => simp [hp, throw] at hc
+  | some pair =>
+    obtain ⟨entries,result⟩ := pair
+    cases valid : checkFlow P start locals entries result <;>
+      simp [hp, valid, throw, pure, Except.pure] at hc
+    subst out
+    exact checkFlow_keeps_bounded valid sound mono initial run exit v done
+
 private def rebaseStep (facts : List GraphCode.ArgumentPathTracking.Fact)
     (slots : Nat → Option Nat) (frame : Footprint) : Footprint :=
   let link := fun p => do
@@ -116,6 +136,25 @@ def step (G : NormalGraph ι) (node : Node) (claim : PointClaim ι)
     return ⟨normal.map fun _ => rebaseStep facts some (ExpressionEffects.fieldWriteFrame receiver key), some []⟩
   | none => return ⟨normal, some (rebaseStep facts slots frames.exceptional)⟩
 
+/-- The step summary of a recorded visit, read with the argument-path facts
+of its label. -/
+def stepFrame (G : NormalGraph ι) (facts : Array (List GraphCode.ArgumentPathTracking.Fact)) (node : Node)
+    (claim : PointClaim ι) (record : SinglePass.VisitRecord) : Summary :=
+  step G node claim (facts.getD record.label []) record.certificate
+
+/-- Join the local summary of each recorded visit at its label. -/
+def localSummaries (frameOf : Node → PointClaim ι → SinglePass.VisitRecord → Summary)
+    (ns : Array Node) (claims : Array (PointClaim ι)) (records : Array SinglePass.VisitRecord) :
+    Except String (Array (Option Summary)) :=
+  records.foldlM (init := Array.replicate ns.size none) fun acc record => do
+    let some node := ns[record.label]? | throw "closure effect record has no graph node"
+    let some claim := claims[record.label]? | throw "closure effect record has no point claim"
+    let frame := frameOf node claim record
+    let combined := match acc.getD record.label none with
+      | none => frame
+      | some old => ⟨join old.normal frame.normal, join old.exceptional frame.exceptional⟩
+    return acc.setIfInBounds record.label (some combined)
+
 /-- Infer effects in closure entry slots. The code frame places the receiver
 and ordinary arguments before the captures. Two different captures retain
 two positions, even if a caller passes aliases for them. -/
@@ -126,16 +165,7 @@ def inferChecked (G : NormalGraph ι) (q : CodeRequest ι) (records : Array Sing
     ({ position := slot, path := [] } : ArgumentSpineRegion)
   let entries := q.claims.map fun c => ({ sequent := some ⟨c.context, .undef, c.type⟩, edges := [] } : NodeEvidence ι)
   let facts := certifiedRootTable nodes q.entry.start inputs.length (regionTable nodes entries q.entry.start origins) |>.toArray
-  let ns := nodes.toArray
-  let claims := q.claims.toArray
-  let locals ← records.foldlM (init := Array.replicate ns.size none) fun acc record => do
-    let some node := ns[record.label]? | throw "closure effect record has no graph node"
-    let some claim := claims[record.label]? | throw "closure effect record has no point claim"
-    let frame := step G node claim (facts.getD record.label []) record.certificate
-    let combined := match acc.getD record.label none with
-      | none => frame
-      | some old => ⟨join old.normal frame.normal, join old.exceptional frame.exceptional⟩
-    return acc.setIfInBounds record.label (some combined)
+  let locals ← localSummaries (stepFrame G facts) nodes.toArray q.claims.toArray records
   composeChecked nodes q.entry.start locals
 
 end
@@ -249,13 +279,42 @@ theorem rebaseStep_post {facts : List GraphCode.ArgumentPathTracking.Fact} {slot
     (Footprint.le_of_subset fun _ he => List.mem_eraseDups.mpr he)
     (by intro _ _ _ _ h; contradiction)
 
+/-- The rebased step summary keeps every support it respects, read at the
+closure entry, across the step: no prior footprint is needed. -/
+theorem rebaseStep_keeps {facts : List GraphCode.ArgumentPathTracking.Fact} {slots : Nat → Option Nat}
+    {frame : Footprint} {entry node actual : Env} {initial before after : Heap}
+    (localPost : Post frame actual before after)
+    (factsOK : Holds facts node entry initial)
+    (slotsOK : ∀ i j, slots i = some j → actual i = node j)
+    (categories : HeapCategories before) :
+    KeepsAt (rebaseStep facts slots frame) entry initial before after := by
+  let link := fun i => do
+    let j ← slots i
+    let f ← facts.find? (fun (f : GraphCode.ArgumentPathTracking.Fact) => f.slot == j)
+    pure (f.region.position, f.region.path)
+  let ev : RebaseEvidence := { link, agree := fun _ _ => false }
+  have valid : RebaseOk ev actual entry initial before := by
+    refine ⟨?_, by intros; contradiction, by intros; contradiction, categories⟩
+    intro i x q hx
+    cases hi : slots i with
+    | none => simp [ev,link,hi] at hx
+    | some j =>
+      cases hf : facts.find? (·.slot == j) with
+      | none => simp [ev,link,hi,hf] at hx
+      | some f =>
+        simp [ev,link,hi,hf] at hx
+        obtain ⟨rfl,rfl⟩ := hx
+        have slotEq : f.slot = j := by simpa using List.find?_some hf
+        simpa [slotEq, slotsOK _ _ hi] using factsOK f (List.mem_of_find?_eq_some hf)
+  exact KeepsAt.of_rebase valid localPost
+
 end Verification.SourceClaimJson.CallbackEffectInference
 
 namespace Verification.SourceClaimJson.CallbackEffectInference
 open ControlFlow GraphCode Footprints ProgramTyping RequestJson SourceElaboration
 open PositiveGraphs CallEffects CertificateProducer HeapObservations
 
-private def CoversWrites (locals : Array (Option Summary)) (l : Nat) (exit : Completion)
+def CoversWrites (locals : Array (Option Summary)) (l : Nat) (exit : Completion)
     (writes : Footprint) : Prop :=
   ∃ s bound, locals.getD l none = some s ∧ s.get exit = some bound ∧ ∀ e ∈ writes, e ∈ bound
 
@@ -266,17 +325,17 @@ private theorem join_covers {a b : Option Footprint} {w : Footprint}
   · cases b <;> simp [join] <;> grind
   · cases a <;> simp [join] <;> grind
 
-private theorem recordFold_covers {ι : Type} (G : NormalGraph ι)
-    (ns : Array Node) (claims : Array (PointClaim ι)) (facts : Array (List ArgumentPathTracking.Fact))
+theorem recordFold_covers {ι : Type} (frameOf : Node → PointClaim ι → SinglePass.VisitRecord → Summary)
+    (ns : Array Node) (claims : Array (PointClaim ι))
     (records : List SinglePass.VisitRecord) (acc final : Array (Option Summary))
     (size : acc.size = ns.size) (l : Nat) (exit : Completion) (w : Footprint)
     (source : CoversWrites acc l exit w ∨ ∃ r ∈ records, r.label = l ∧
       ∃ node claim, ns[l]? = some node ∧ claims[l]? = some claim ∧
-        (step G node claim (facts.getD l []) r.certificate).get exit = some w)
+        (frameOf node claim r).get exit = some w)
     (folded : records.foldlM (m := Except String) (fun acc r => do
       let some node := ns[r.label]? | throw "closure effect record has no graph node"
       let some claim := claims[r.label]? | throw "closure effect record has no point claim"
-      let s := step G node claim (facts.getD r.label []) r.certificate
+      let s := frameOf node claim r
       let merged := match acc.getD r.label none with
         | none => s
         | some old => ⟨join old.normal s.normal, join old.exceptional s.exceptional⟩
@@ -303,7 +362,7 @@ private theorem recordFold_covers {ι : Type} (G : NormalGraph ι)
             simp only [CoversWrites, Array.getD_eq_getD_getElem?, Array.getElem?_setIfInBounds,
               ite_eq_left inside]
             rw [← Array.getD_eq_getD_getElem?, ho]
-            obtain ⟨b,hj,hs⟩ := join_covers (b := (step G node claim (facts.getD head.label []) head.certificate).get exit) (.inl hb)
+            obtain ⟨b,hj,hs⟩ := join_covers (b := (frameOf node claim head).get exit) (.inl hb)
             exact ⟨_,b,rfl,by cases exit <;> simpa only [Exits.get, Array.getD_eq_getD_getElem?] using hj, fun e he => hs e (sub e he)⟩
           · exact ⟨old,bound,by simpa [Array.getD_eq_getD_getElem?, Array.getElem?_setIfInBounds, eq] using ho,hb,sub⟩
         · rcases List.mem_cons.mp hr with rfl | rest
@@ -352,7 +411,8 @@ def BoundedRecordedExitSound {ι : Type} (G : NormalGraph ι) (q : CodeRequest �
       | .normal => isVal t = true | .exceptional => ∃ v, Raises t v) →
     ∃ r ∈ records.toList, r.label = l ∧ ∃ claim w, q.claims[l]? = some claim ∧
       (step G node claim (facts.getD l []) r.certificate).get exit = some w ∧
-      ∀ prior : Footprint, Post prior entry initial h → Post (prior ++ w).eraseDups entry initial h'
+      (∀ prior : Footprint, Post prior entry initial h → Post (prior ++ w).eraseDups entry initial h') ∧
+      KeepsAt w entry initial h h'
 
 /-- Sound recorded visits suffice for the actual inferred closure summary.
 Repeated visits to a label may use different local bounds on either exit. -/
@@ -364,7 +424,7 @@ theorem inferChecked_execution {ι : Type} {G : NormalGraph ι} {q : CodeRequest
       (.at q.entry.start entry) final state) (exit : Completion) (v : Val)
     (done : state = (match exit with | .normal => .done v | .exceptional => .raised v)) :
     ∃ bound, out.get exit = some bound ∧ Post bound entry initial final := by
-  unfold inferChecked at checked
+  unfold inferChecked localSummaries at checked
   dsimp only at checked
   generalize hf : Array.foldlM (m := Except String) (β := Array (Option Summary)) _ _ records = result at checked
   cases result with
@@ -374,8 +434,9 @@ theorem inferChecked_execution {ι : Type} {G : NormalGraph ι} {q : CodeRequest
     intro l node h ρ k reached hn j h' t steps ex ends
     obtain ⟨r,hr,hl,c,w,hc,hw,extendPost⟩ := sound reached hn steps ex ends
     rw [← Array.foldlM_toList] at hf
-    obtain ⟨s,b,hs,hb,sub⟩ := recordFold_covers G _ _ _ records.toList _ locals (by simp)
-      l ex w (.inr ⟨r,hr,hl,node,c,by simpa using hn,by simpa using hc,hw⟩) hf
+    subst hl
+    obtain ⟨s,b,hs,hb,sub⟩ := recordFold_covers (stepFrame G _) _ _ records.toList _ locals (by simp)
+      r.label ex w (.inr ⟨r,hr,rfl,node,c,by simpa using hn,by simpa using hc,by unfold stepFrame; exact hw⟩) hf
     refine ⟨s,b,hs,hb,fun prior post => (extendPost prior post).mono (cl := fun _ _ => none)
       (Footprint.le_of_subset ?_) (by intro _ _ _ _ miss; contradiction)⟩
     intro e member
@@ -392,7 +453,7 @@ theorem inferChecked_execution_bounded {ι : Type} {G : NormalGraph ι} {q : Cod
       (.at q.entry.start entry) final state) (exit : Completion) (v : Val)
     (done : state = (match exit with | .normal => .done v | .exceptional => .raised v)) :
     ∃ bound, out.get exit = some bound ∧ Post bound entry initial final := by
-  unfold inferChecked at checked
+  unfold inferChecked localSummaries at checked
   dsimp only at checked
   generalize hf : Array.foldlM (m := Except String) (β := Array (Option Summary)) _ _ records = result at checked
   cases result with
@@ -400,10 +461,11 @@ theorem inferChecked_execution_bounded {ι : Type} {G : NormalGraph ι} {q : Cod
   | ok locals =>
     apply composeChecked_execution_bounded checked _ run exit v done
     intro l node h ρ k reached hn j h' t steps room ex ends
-    obtain ⟨r,hr,hl,c,w,hc,hw,extendPost⟩ := sound reached hn steps room ex ends
+    obtain ⟨r,hr,hl,c,w,hc,hw,extendPost,-⟩ := sound reached hn steps room ex ends
     rw [← Array.foldlM_toList] at hf
-    obtain ⟨s,b,hs,hb,sub⟩ := recordFold_covers G _ _ _ records.toList _ locals (by simp)
-      l ex w (.inr ⟨r,hr,hl,node,c,by simpa using hn,by simpa using hc,hw⟩) hf
+    subst hl
+    obtain ⟨s,b,hs,hb,sub⟩ := recordFold_covers (stepFrame G _) _ _ records.toList _ locals (by simp)
+      r.label ex w (.inr ⟨r,hr,rfl,node,c,by simpa using hn,by simpa using hc,by unfold stepFrame; exact hw⟩) hf
     refine ⟨s,b,hs,hb,fun prior post => (extendPost prior post).mono (cl := fun _ _ => none)
       (Footprint.le_of_subset ?_) (by intro _ _ _ _ miss; contradiction)⟩
     intro e member
