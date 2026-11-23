@@ -1,7 +1,7 @@
 // An interface's `extends` clause is an application with its bound: `any`
 // is read as `unknown`, no `string`.
 interface I<T extends string> {
-  a: number;
+  a: number | T;
 }
 interface J extends I<any> {}
 export function f(x: J): number {
