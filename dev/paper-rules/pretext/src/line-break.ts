@@ -311,7 +311,9 @@ export function walkPreparedLinesRaw<E extends AtMost<'{ "prepared.**": "keep", 
   const segmentCount = prepared.widths.length
   while (true) {
     let startSegmentIndex = cursor.segmentIndex
-    while (startSegmentIndex < segmentCount && consumesAtLineStart(segmentFlags[startSegmentIndex] ?? missing())) {
+    // PAPER: guard removed. The read is refused with or without the visit: the handle states no
+    // relation between segmentFlags.length and widths.length, and the stepper no bound on the cursor.
+    while (startSegmentIndex < segmentCount && consumesAtLineStart(segmentFlags[startSegmentIndex]!)) {
       startSegmentIndex++
     }
     if (startSegmentIndex >= segmentCount) return stats.lineCount
