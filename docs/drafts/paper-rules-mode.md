@@ -144,6 +144,49 @@ respects the bound `{xs.spine: keep}`: the fresh `visited` is apart from
 call is refused. `sumAndAlias` is safe under Node (its `push` throws at the
 maximal length), so it is a refusal of a safe program, not a negative case.
 
+## The prototype
+
+A proved mode needs an arrow whose effect is a variable, and the frame
+cannot state "within the bound and no change to storage allocated since
+entry": that needs a region the entry state reads (`Region.mem` has 266
+uses in 33 files) or a bound in the exit schema (199 uses in 22 files). So
+the rules run first in a prototype, which reuses the whole pass:
+
+- **The hook.** `SinglePass.PassChecker.extended` runs a checker a caller
+  supplies, threaded as `layer : Option PassLayer := none` through
+  `passGroupMode8`. The ordinary verifier passes none; `CheckerScope` has no
+  case for it, so `mode8Accepted_sound` and its premise are unchanged.
+- **The layer**, in `lean/PaperRulesPrototype.lean`, the root of the
+  `paper-rules-prototype` executable outside the `Verification` library. At
+  a call of a parameter bound by an effect variable it adds back each fact
+  the ordinary layers dropped whose support's every pair is kept by the
+  bound or lies in an object the body allocated (read from the separation
+  fact the allocation records). Its soundness is the one axiom
+  `paperKeptFactsSurvive`.
+- **The side file.** `dev/paper-annotations.mts` reads the bounds and the
+  instances from the source. The ordinary front end is unchanged, so an
+  effect is written as a string literal type holding the literal, for
+  example `AtMost<'{ "xs[*]": "keep", "else": "any" }'>` and
+  `walk<'{ "visited[*]": "extend" }'>`: the ordinary reader refuses an
+  object type with keys such as `"xs[*]"` in a type argument.
+- **Inst** is decided by the side script: an instance's root is a caller's
+  local, which a checker does not see by name. A `const` local initialised
+  by an object or array literal and never assigned is apart from the
+  bound's root. This decision is outside Lean.
+
+`node dev/paper-rules.mts dev/paper-rules/walk.ts --project dev/paper-rules`
+prints, on the walk of the paper:
+
+```text
+ordinary: unverified: reject: … evidence search failed …
+prototype: walk: accepted under the paper's rules (assumes paperKeptFactsSurvive)
+prototype: sumAndTrace: accepted
+prototype: sumAndAlias: refused: the instance changes visited[*] by extend; the bound allows xs[*]: keep
+```
+
+With an empty side file the prototype refuses `walk` as the ordinary
+verifier does. Declared reach (`"x.**"`) is not read yet.
+
 ## What this duplicates
 
 - **Effects and their action.** The paper's effect with `else: keep` is
