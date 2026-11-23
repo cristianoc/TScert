@@ -15,8 +15,11 @@ the process it follows is AGENTS.md, "Experimental rules: a lighter process".
 - The ordinary stages build the request, as `make check` does.
 - `lean/PaperRulesPrototype.lean`, the `paper-rules-prototype` executable,
   runs the ordinary pass with one extra checker layer (Bound, Anch, the
-  meet, Inst's conclusion at walker calls). Its soundness is the axiom
-  `paperKeptFactsSurvive`; every verdict it supports names it.
+  meet, Inst's conclusion at walker calls). At every step but a call of a
+  slot, the layer's step and its normal effect are the ordinary checker's,
+  so such a step keeps the facts it does not name as in the ordinary pass.
+  Its soundness is the axiom `paperKeptFactsSurvive`; every verdict it
+  supports names it.
 - `dev/paper-rules.mts` drives the three and prints the ordinary verdict and
   the prototype's per unit.
 
@@ -54,6 +57,10 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   object the caller allocated: the walker refused, the same walker with the
   facts assumed after the call accepted naming #355, and one assuming too
   little refused.
+- `repro-365.ts`: issue #365, a cursor's grapheme index, which no clause
+  bounds by the length of its segment's list: the read refused, the same
+  read with both bounds assumed accepted naming #365, and one assuming only
+  the upper bound refused.
 - `assume-lib.ts`, `assume-importer.ts`: a module holding an assume, and its
   importer, which keeps its ordinary verdict under the prototype.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the

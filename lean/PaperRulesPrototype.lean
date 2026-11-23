@@ -303,11 +303,35 @@ axiom paperKeptFactsSurvive {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {i
         (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h')
         n W h (instantiate 0 ρ j.term)
 
-/-- The layer: a checker whose `run` is the rules' step. -/
+/-- The layer's step is the ordinary checker's at every term but a call of
+a slot. -/
+theorem run_eq_base {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
+    (base : Checker G images) {j : Sequent ι} {k e codes sums}
+    (h : ∀ s t args, j.term ≠ .invoke (.var s) t args) :
+    run u base j k e codes sums = base.run j k e codes sums := by
+  unfold run
+  split
+  · rename_i s t args heq; exact absurd heq (h s t args)
+  · rfl
+
+/-- The layer: a checker whose `run` is the rules' step, and whose normal
+effect is the ordinary checker's at every step it leaves to that checker. -/
 def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) : Checker G images where
   run := run u base
   sound := paperKeptFactsSurvive u base
+  normal := fun j k e codes sums => match j.term with
+    | .invoke (.var _) _ _ => Footprints.Closed.top
+    | _ => base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hrun hc hs ε ρ n W h henv hk hW hok hrefs hn
+    split at hn
+    · exact absurd hn Footprints.Closed.top_ne_empty
+    · rename_i hnot
+      have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums)
+        (fun s t args hj => hnot s t args hj)
+      rw [heq] at hrun
+      exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
 
 /-! ## The side file -/
 
