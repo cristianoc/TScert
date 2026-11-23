@@ -11,7 +11,7 @@ the process it follows is AGENTS.md, "Experimental rules: a lighter process".
 - `dev/paper-annotations.mts` reads a source's paper annotations into a side
   file: each function's effect variables and bounds (`AtMost<…>`), each
   call's instance (`f<'{…}'>(…)`), each callback's effect read from its
-  body, and the `paperAssume` calls.
+  body, and the `paperAssume` statements.
 - The ordinary stages build the request, as `make check` does.
 - `lean/PaperRulesPrototype.lean`, the `paper-rules-prototype` executable,
   runs the ordinary pass with one extra checker layer (Bound, Anch, the
@@ -50,6 +50,10 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 - `inst-effect.ts`: the caller's facts kept across a walker call.
 - `repro-351.ts`: the loop-head pattern of issue #351, fixed in the verifier
   by #353: accepted, with its two refused variants.
+- `repro-355.ts`: issue #355, a callback's call dropping the facts over an
+  object the caller allocated: the walker refused, the same walker with the
+  facts assumed after the call accepted naming #355, and one assuming too
+  little refused.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
   paper's rules, one per rule, each refused.
 - `review2.ts`, `review2-reexporter.ts`, `review2-reimporter.ts`,
@@ -70,12 +74,13 @@ the prototype's edits. Every edit is marked:
 - `// PAPER: annotation`: a bounds annotation (`@requires`, `@ensures`,
   `@invariant`, `Modifies`) added for the experiment;
 - `// PAPER: guard removed`: a `?? missing()` read restored to `x[k]!`;
-- `paperAssume(fact, "#N")`: an unsafe assumption of a fact the sound
-  verifier should establish, tracked by issue N. `paperAssume` is declared
-  in the file as a function with an empty body and `Modifies<{}, void>`, so
-  the ordinary verifier's call changes nothing; the prototype adds the fact
-  at the step that evaluates it (`y === x.f` a read link, `x === y` an alias
-  link) and names the issue in the verdict.
+- `paperAssume(fact, "#N");`: an unsafe assumption of a condition the
+  sound verifier should establish, tracked by issue N. `paperAssume` is
+  declared in the file as a function with an empty body and
+  `Modifies<{}, void>`, so the ordinary verifier's call changes nothing; the
+  prototype checks the statement as `if (!(fact)) throw "#N";`, so after it
+  the pass knows `fact` as on the branch of an `if` where it holds, and
+  names the issue in the verdict.
 
 The edits against the pin:
 

@@ -1040,12 +1040,16 @@ checker layer, whose soundness is the axiom \lean{paperKeptFactsSurvive},
 outside the Lean library.
 
 Where TScert's verifier loses a fact it should establish, the prototype
-states the fact with an unsafe assume \code{paperAssume(fact, "\#N")}: the
-layer adds the equality \code{fact} at the step that evaluates it, and the
-verdict names the issue \code{\#N} that tracks the verifier's extension.
-No assume is in use: the one gap it stood for, a local copy of a field
-losing its link to the field at a loop head (\#351), is fixed in the
-verifier.
+states the fact with an unsafe assume, the statement
+\code{paperAssume(fact, "\#N");}, whose \code{fact} is any condition. The
+prototype checks the statement as \code{if (!(fact)) throw "\#N";}, so
+after it the pass knows \code{fact} as it knows a condition on the branch
+where the condition holds. The program checked and the source agree
+wherever \code{fact} holds at the assume, which the assume asserts and no
+proof establishes; the verdict names the issue \code{\#N} that tracks the
+verifier's extension. One assume is in use: a call of a callback drops the
+facts over an object the caller allocated and never passed to it, which
+the callback cannot reach (\#355).
 
 \subsection{Where the prototype decides less}
 The prototype applies each rule of this paper, and decides less than the

@@ -64,12 +64,11 @@ structure QCall where
   span : Nat × Nat
   components : List ParamEff
 
-/-- An unsafe assume `paperAssume(a === b, "#n")`: the source span of its
-equality, the issue it names, and its line. At the step evaluating the
-equality the layer adds the fact it states, which the sound verifier should
-have established there; the issue tracks the verifier's extension. -/
+/-- An unsafe assume `paperAssume(fact, "#n");`: the issue it names and its
+line. The prototype checks the statement as `if (!(fact)) throw "#n";`
+(`assumedAst`), so past it the pass knows `fact` as on the branch where it
+holds; the issue tracks the verifier's extension. -/
 structure Assume where
-  span : Nat × Nat
   issue : String
   line : Nat
 
@@ -257,33 +256,12 @@ def atCall (c : QCall) (args : List Tm) : Option (List CallEff) :=
     let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
     pure { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es }
 
-/-- The fact an assumed equality states, in the knowledge's link forms, at
-the call's context: `y === x.f` the read link `y = x.f`, `x === y` an alias
-link; none for any other expression. -/
-def linkOf : Tm → Option HeapLinks.Link
-  | .arith .eq (.var a) (.readAt f (.var b)) | .arith .eq (.readAt f (.var b)) (.var a) =>
-    some { cell := b, value := a, field := f }
-  | .arith .eq (.var a) (.var b) => some { cell := a, value := b, alias := true }
-  | _ => none
-
-/-- The fact an unsafe assume adds at this step: the step evaluates an
-assume's equality (its nodes' spans are all spans of the unit's assumes),
-which `linkOf` represents; the link past the step's result. -/
-def assumed (u : Unit) (spans : List (Option (Nat × Nat))) (t : Tm) : Option HeapLinks.Link :=
-  if !spans.isEmpty && spans.all (fun sp => sp.any fun sp => u.assumes.any (·.span == sp)) then
-    (linkOf t).map fun l => { l with cell := l.cell + 1, value := l.value + 1 }
-  else none
-
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
 def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) (j : Sequent ι) (k : Knowledge) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) : CheckResult ι Knowledge :=
   let r := base.run j k e codes sums
-  let spansHere := u.sites.filterMap fun (t, w, sp) => if t == j.term && w == j.context.length then some sp else none
-  match assumed u spansHere j.term with
-  | some l => r.map fun out => { out with links := (out.links ++ [l]).eraseDups }
-  | none =>
   match j.term with
   | .invoke (.var s) _ args =>
     let d := j.context.length
@@ -311,10 +289,9 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
   | _ => r
 
 /-- **The assumption the prototype rests on**: the facts the layer keeps
-at a call of a bounded callback parameter survive the call, and the fact an
-unsafe assume states holds after its call. Its premise is the layer's run,
-which decides "allocated in the body" from the allocation's separation fact,
-the bound from the side file, and an assume's fact from its expression. -/
+at a call of a bounded callback parameter survive the call. Its premise is
+the layer's run, which decides "allocated in the body" from the
+allocation's separation fact and the bound from the side file. -/
 axiom paperKeptFactsSurvive {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (u : Unit) (base : Checker G images) :
     ∀ {j k e out codes sums}, (run u base j k e codes sums).value = some out →
@@ -434,13 +411,37 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
   for a in assumes do
     if (a.getObjValAs? Bool "ok").toOption != some true then continue
     let caller ← (← a.getObjVal? "caller").getStr?
-    let span ← a.getObjVal? "span"
-    let span : Nat × Nat := (← (← span.getArrVal? 0).getNat?, ← (← span.getArrVal? 1).getNat?)
     let issue ← (← a.getObjVal? "issue").getStr?
     let line ← (← a.getObjVal? "line").getNat?
     let u := (out.get? caller).getD { bounds := [], params := 0 }
-    out := out.insert caller { u with assumes := u.assumes ++ [{ span, issue, line }] }
+    out := out.insert caller { u with assumes := u.assumes ++ [{ issue, line }] }
   return out
+
+/-- The parsed file with each unsafe assume's statement
+`paperAssume(fact, "#n");` (an expression statement calling `paperAssume`
+with two arguments) replaced by `if (!(fact)) throw "#n";`: the pass
+lowers `fact` as a condition and learns from it on the branch where it
+holds, as from any `if`. Where `fact` holds, the two statements have the
+same normal continuation. -/
+partial def assumedAst : Lean.Json → Lean.Json
+  | .obj kvs =>
+    let j := Lean.Json.obj (kvs.map fun _ v => assumedAst v)
+    match j.getObjValAs? String "k", j.getObjVal? "e", j.getObjVal? "pos" with
+    | .ok "effect", .ok call, .ok pos =>
+      match call.getObjValAs? String "k", call.getObjVal? "callee", call.getObjVal? "args" with
+      | .ok "apply", .ok callee, .ok (.arr #[fact, issue]) =>
+        if (callee.getObjValAs? String "k").toOption == some "id" &&
+            (callee.getObjValAs? String "name").toOption == some "paperAssume" then
+          let factPos := (fact.getObjVal? "pos").toOption.getD pos
+          Lean.Json.mkObj [("k", "if"), ("pos", pos),
+            ("cond", Lean.Json.mkObj [("k", "not"), ("pos", factPos), ("e", fact)]),
+            ("then", Lean.Json.arr #[Lean.Json.mkObj [("k", "throw"), ("pos", pos), ("e", issue)]]),
+            ("else_", Lean.Json.null)]
+        else j
+      | _, _, _ => j
+    | _, _, _ => j
+  | .arr xs => .arr (xs.map assumedAst)
+  | j => j
 
 end PaperRules
 end Verification.HeapExpressionRules
@@ -498,7 +499,14 @@ def main (args : List String) : IO UInt32 := do
     let text ← IO.FS.readFile side
     match Json.parse text >>= HeapExpressionRules.PaperRules.unitsOf with
     | .error e => IO.eprintln s!"side file: {e}"; return 2
-    | .ok units => checkFile units ast key fuel interfaces
+    | .ok units =>
+      -- The parsed file with its unsafe assumes read as guards, beside it.
+      match Json.parse (← IO.FS.readFile ast) with
+      | .error e => IO.eprintln s!"parsed file: {e}"; return 2
+      | .ok parsed =>
+        let assumed := "fragment-assumed.json"
+        IO.FS.writeFile assumed (HeapExpressionRules.PaperRules.assumedAst parsed).compress
+        checkFile units assumed key fuel interfaces
   | _ =>
     IO.eprintln "usage: paper-rules-prototype <side.json> <ast.json> <interfaces.json> <file-key> <depth>"
     return 2
