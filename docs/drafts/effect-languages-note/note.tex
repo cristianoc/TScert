@@ -268,7 +268,7 @@ agrees with the heap before on every old location but the spine of
 $a$, which changes within $\extend$.
 \end{example}
 
-\begin{definition}[Support and respect]
+\begin{definition}[Support and respect]\label{def:support}
 A support for an assertion $F$ is an effect $S$ such that every
 admissible transition that changes each location of each
 $(r:\delta)\in S$ within $\delta$ keeps $F$. An effect $\Phi$
@@ -754,8 +754,12 @@ type in the reach declares the key $g$.
 \subsection{Constraints and quantified signatures}
 
 \begin{definition}[Constraint, signature]\label{def:constraint}
-A constraint is $\varepsilon\resp S$, with $S$ an effect of entries. It
-holds under $\theta$ at a state of $K$ when $\theta(\varepsilon)\resp_K S$.
+A constraint is $\varepsilon\resp S$, with $\varepsilon$ an effect
+variable and $S$ a set of entries $r:\delta$, read as a support
+(Definition~\ref{def:support}): each region $r$ of $S$ may change at most
+by its $\delta$. The constraint holds under $\theta$ at a state of $K$
+when $\theta(\varepsilon)\resp_K S$: every transition bounded by
+$\theta(\varepsilon)$ changes each location of each $r$ within $\delta$.
 A signature is
 \[
 \forall\vec\varepsilon.\ C\Rightarrow(\vec p)\to T\ [E\mid E^e]
