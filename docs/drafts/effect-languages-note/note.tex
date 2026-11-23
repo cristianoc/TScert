@@ -253,7 +253,9 @@ The next notions use a language only through Definition~\ref{def:language}.
 
 \begin{definition}[Effect and action]
 An effect over $\Lang$ is a finite set $\Phi$ of entries $r:\delta$,
-with $r\in\Reg_\Lang$ and $\delta\in\Delta$. Its action relates heaps:
+with $r\in\Reg_\Lang$ a region and $\delta\in\Delta$ a change.
+$\Eff_\Lang$, or $\Eff$ when $\Lang$ is fixed, is the set of effects
+over $\Lang$. Its action relates heaps:
 \[
 h\tr{\Phi}_\rho h'\iff h\tr{}_\rho h'\ \wedge\ \forall l<\len h.\
 \bigl(h'(l)=h(l)\ \vee\ \exists (r:\delta)\in\Phi.\ l\in\sem r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l))\bigr).
