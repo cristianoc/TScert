@@ -997,7 +997,7 @@ export function getLayoutEngine(userAgent: string): LayoutEngine | null {
 // inlined into the line counter and the simple stepper, and its plain line APIs ran
 // 11-18% slower. Apart, it takes 21 (Node 23, V8 12.9). Check with node --print-bytecode and
 // --trace-turbo-inlining (RESEARCH.md, JavaScript Engines).
-export function getEngineProfile(): EngineProfile {
+export function getEngineProfile(): Modifies<{ values: "init" }, EngineProfile> {   // PAPER: annotation
   return cachedEngineProfile ??= buildEngineProfile()
 }
 

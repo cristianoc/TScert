@@ -60,7 +60,9 @@
       "caller": "accepted",
       "outside": "refused",
       "badInst": "refused",
-      "callerUntold": "refused"
+      "callerTwoCalls": "accepted",
+      "touch": "accepted",
+      "callerTouched": "refused"
     }
   }
 }

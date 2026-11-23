@@ -510,6 +510,13 @@ def probeTrace (probe : Option Nat) (report : Nat → String) : List (Nat × Lis
 theorem probeTrace_nil (probe : Option Nat) (report : Nat → String) : probeTrace probe report = [] := by
   cases probe <;> rfl
 
+/-- The sites a supplied layer reads (`SinglePass.LayerSite`): each node's
+expression, its claim's context width and its source span. -/
+def layerSites {ι : Type} (program : ControlFlow.Program) (claims : List (CertificateProducer.PointClaim ι))
+    (sourceMap : RequestJson.SourceMap) : List SinglePass.LayerSite :=
+  program.zipIdx.map fun (node, l) =>
+    (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).map (·.pos))
+
 /-- **One member's single pass** (`SinglePass.run`), no certificate built:
 its plan through the exhaustive conversion (`FunctionPlan.certify`), the
 request's own conditions, each code request's run against the codes
@@ -692,7 +699,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
   -- Profiling: the pass run `repeats` times, the last run's result kept.
   for k in List.range (repeats - 1) do
     let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-      r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length) sumsAnswers #[] (debugNode + k)
+      r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers #[] (debugNode + k)
     if let .notHandled w := o then throw w
   let tracing := observe.map observedWhat == some "refusal"
   -- The regional checks (`regionalChecked`), made in the walk: the
@@ -718,18 +725,18 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
         | some rg => if rg.regions.isEmpty then "fallback" else "regions")
       (runDigests r line "main" (boundText bound regional)) (fun x => x.2.1.visited) fun _ =>
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-      r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length) sumsAnswers reference debugNode bound
+      r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
       (framed ++ probeTrace (framedProbeOf observe) fun L =>
         let framedAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) =>
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
-            cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length) sumsAnswers reference debugNode bound
+            cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
           | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
           | _ => []
         let runAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) (fr : List (Nat × List Footprints.Footprint))
             (ob : Option Nat) => (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
-            cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length) sumsAnswers reference debugNode bound
+            cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
         framedProbeReport runAt framedAt r.candidates L observed)
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
@@ -775,7 +782,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
         | .fallback => (none, some (regionalOf "footprintRegional" r.footprint [] r.onThrow))
         | .fallbackThenRegions => (none, regional)
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-        r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length) sumsAnswers #[] debugNode bound'
+        r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers #[] debugNode bound'
         givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe mainRun.route.lastWalk observed)
         false true regional' false framed).1.asRefusal with
       | .accepted => o
