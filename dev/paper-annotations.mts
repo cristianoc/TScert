@@ -6,7 +6,7 @@
 // none of this: `AtMost` is a local alias of `unknown` there.
 //   node dev/paper-annotations.mts file.ts
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 
@@ -70,7 +70,19 @@ function declaredKeys(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>
   if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
     const name = node.typeName.text;
     const decl = decls.get(name);
-    if (decl === undefined || seen.has(name)) return;
+    if (decl === undefined) {
+      // A typed array holds numbers and declares no field; `Array<T>` is `T[]`.
+      // Any other name this file does not declare may declare any key: the
+      // reach is then unknown ("*"), and no field is disjoint from it by key.
+      if (/^(?:Uint8|Uint8Clamped|Int8|Uint16|Int16|Uint32|Int32|Float32|Float64)Array$/.test(name)) return;
+      if (name === "Array" || name === "ReadonlyArray") {
+        for (const t of node.typeArguments ?? []) declaredKeys(t, decls, seen, out);
+        return;
+      }
+      out.add("*");
+      return;
+    }
+    if (seen.has(name)) return;
     seen.add(name);
     if (ts.isTypeAliasDeclaration(decl)) declaredKeys(decl.type, decls, seen, out);
     else if (ts.isInterfaceDeclaration(decl)) membersKeys(decl.members, decls, seen, out);
@@ -232,8 +244,8 @@ const pathText = (l: Loc): string => [l.root, ...l.path].join(".");
  * every value passed in from elsewhere. Anything else may overlap. */
 function disjoint(r: Loc, b: Loc, keys: Set<string>, fresh: Set<string>): boolean {
   if (fresh.has(r.root) && r.root !== b.root && pathText(b) !== r.root) return true;
-  if (b.kind === "reach") return r.kind === "field" && r.key !== null && !keys.has(r.key);
-  if (r.kind === "reach") return b.kind === "field" && b.key !== null && !keys.has(b.key);
+  if (b.kind === "reach") return r.kind === "field" && r.key !== null && !keys.has("*") && !keys.has(r.key);
+  if (r.kind === "reach") return b.kind === "field" && b.key !== null && !keys.has("*") && !keys.has(b.key);
   if (r.kind === "field" && b.kind === "field") return r.key !== b.key;
   if ((r.kind === "field" && b.kind === "spine") || (r.kind === "spine" && b.kind === "field")) return true;
   return false;
@@ -386,8 +398,9 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: stri
   return null;
 }
 
-export function annotations(path: string): { functions: Record<string, FunctionInfo>; calls: CallInfo[] } {
-  const tree = openText(path, readFileSync(path, "utf8"));
+/** A file's functions with their effect parameters, its function bodies and
+ * its type declarations. */
+function functionInfos(tree: ts.SourceFile): { functions: Record<string, FunctionInfo>; bodies: Map<string, ts.Node>; decls: Map<string, ts.Node> } {
   const functions: Record<string, FunctionInfo> = {};
   const bodies = new Map<string, ts.Node>();
   const decls = new Map<string, ts.Node>();
@@ -421,11 +434,46 @@ export function annotations(path: string): { functions: Record<string, FunctionI
     });
     functions[s.name.text] = { params, effectParams, bounded };
   }
+  return { functions, bodies, decls };
+}
+
+/** The file a relative import names: `./m.js` and `./m` read `./m.ts`. */
+function importedFile(from: string, spec: string): string | null {
+  if (!spec.startsWith(".")) return null;
+  return resolve(dirname(from), spec.replace(/\.(?:js|ts)$/, "") + ".ts");
+}
+
+export function annotations(path: string): { functions: Record<string, FunctionInfo>; calls: CallInfo[] } {
+  const tree = openText(path, readFileSync(path, "utf8"));
+  const { functions, bodies, decls } = functionInfos(tree);
+  // A callee imported by name from a relative module: its effect parameters
+  // are read from that module, so a call to it is checked as a local one is.
+  const imported = new Map<string, string>();
+  for (const s of tree.statements)
+    if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)) {
+      const file = importedFile(path, s.moduleSpecifier.text);
+      const named = s.importClause?.namedBindings;
+      if (file !== null && named && ts.isNamedImports(named))
+        for (const e of named.elements) if (!e.isTypeOnly) imported.set(e.name.text, file);
+    }
+  const loaded = new Map<string, Record<string, FunctionInfo>>();
+  const calleeOf = (name: string): FunctionInfo | undefined => {
+    const local = functions[name];
+    if (local !== undefined) return local;
+    const file = imported.get(name);
+    if (file === undefined) return undefined;
+    let fs = loaded.get(file);
+    if (fs === undefined) {
+      fs = functionInfos(openText(file, readFileSync(file, "utf8"))).functions;
+      loaded.set(file, fs);
+    }
+    return fs[name];
+  };
   const calls: CallInfo[] = [];
   for (const [caller, body] of bodies) {
     const visit = (n: ts.Node): undefined => {
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.typeArguments) {
-        const callee = functions[n.expression.text];
+        const callee = calleeOf(n.expression.text);
         if (callee && callee.effectParams.length > 0) {
           const instance: Record<string, Effect> = {};
           callee.effectParams.forEach((e, i) => {

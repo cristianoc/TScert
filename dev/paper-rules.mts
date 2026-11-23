@@ -10,7 +10,7 @@
 // The second form runs every file the expectations list, with their
 // directory as the project, and fails on any verdict that differs.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { check, sourceKey } from "../pipeline/verify-source.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
@@ -41,7 +41,11 @@ function run(file: string, project: string | undefined, quiet: boolean = false):
   const side = annotations(resolve(file));
   const sidePath = join(artifacts, "paper-side.json");
   writeFileSync(sidePath, JSON.stringify(side));
-  const out = execFileSync(prototype, [sidePath, "fragment.json", join("interfaces", "ordinary-interfaces.json"),
+  // The interfaces the ordinary check read: its imports' established module
+  // interfaces where it established them, ordinary contracts otherwise.
+  const established = join("interfaces", "interfaces.json");
+  const interfaces = existsSync(join(artifacts, established)) ? established : join("interfaces", "ordinary-interfaces.json");
+  const out = execFileSync(prototype, [sidePath, "fragment.json", interfaces,
     sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 300_000 });
   const failed = new Map(side.calls.filter((c) => !c.ok).map((c) => [c.caller, c.reason ?? "instance"]));
   for (const line of out.split("\n").filter((l) => l.startsWith("{"))) {
