@@ -1390,21 +1390,40 @@ def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α
 /-- The checker the pass runs: the proved layers (`Checker.ordinary`),
 whose `select` takes a derivation as given, so the pass checks the step's
 tree; or a qualified body's (`Checker.withSubtyping`), whose `select` is its
-`run` (`select_eq_run`). -/
+`run` (`select_eq_run`); or a caller-supplied checker (`extended`), whose
+`select` is its `run`. The verifier never constructs `extended`: the
+experimental prototype of `docs/drafts/paper-rules-mode.md` does, and no
+soundness theorem covers a run with it (`CheckerScope` has no case for it). -/
 inductive PassChecker (G : NormalGraph ι) (images : InstanceImageCheck G) where
   | ordinary
   | qualified (subtyping : BodySubtyping G)
       (ord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true)
+  | extended (checker : HeapExpressionRules.Checker G images)
 
 def PassChecker.checker {G : NormalGraph ι} {images : InstanceImageCheck G} :
     PassChecker G images → HeapExpressionRules.Checker G images
   | .ordinary => HeapExpressionRules.Checker.ordinary G images
   | .qualified s o => HeapExpressionRules.Checker.withSubtyping G images s o
+  | .extended c => { c with select := c.run }
 
 /-- Whether the checker's `select` checks the step itself. -/
 def PassChecker.selectChecks {G : NormalGraph ι} {images : InstanceImageCheck G} : PassChecker G images → Bool
   | .ordinary => false
   | .qualified .. => true
+  | .extended _ => true
+
+/-- A checker a caller supplies for a unit, by the unit's name and the
+number of its graph's inputs, over the ordinary checker: what
+`PassChecker.extended` runs. -/
+abbrev PassLayer := String → Nat → ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+  (images : InstanceImageCheck G), HeapExpressionRules.Checker G images → HeapExpressionRules.Checker G images
+
+/-- The pass checker of a unit: the ordinary one, or a supplied layer over it. -/
+def PassChecker.ofLayer {G : NormalGraph ι} {images : InstanceImageCheck G} (layer : Option PassLayer) (name : String)
+    (inputs : Nat) : PassChecker G images :=
+  match layer with
+  | none => .ordinary
+  | some L => .extended (L name inputs G images (HeapExpressionRules.Checker.ordinary G images))
 
 /-- **The start's written separation kept** in its given state
 (`startWritten`, `HeapSeparation.union`): each of its facts has a partner,

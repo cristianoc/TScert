@@ -256,9 +256,10 @@ its line, its refusal where refused, and its failure, the refusal's text
 located with `located` (`FilePlans.placeRefusal`), deferred: a settling
 run's failure is read only where it is the member's last. -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
-    (observe : Option String) (counting located : Bool) («given» : Option (Std.HashMap String Json)) (i : Nat) :
+    (observe : Option String) (counting located : Bool) («given» : Option (Std.HashMap String Json)) (i : Nat)
+    (layer : Option SinglePass.PassLayer := none) :
     String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk String) :=
-  match g.passMember fuel i compare debugNode repeats given observe counting with
+  match g.passMember fuel i compare debugNode repeats given observe counting (layer := layer) with
   | .ok m =>
     -- (deferred: only the settled run's failure is reported, `inferredStep`)
     let failure : Option (Thunk String) := match m.outcome with
@@ -434,7 +435,7 @@ next state from `inferredNextAll`, at most `4·h + 4` of a member with `h`
 statement entries holding candidates. -/
 def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.Candidate))
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
-    («given» : Option (Std.HashMap String Json)) (i : Nat) :
+    («given» : Option (Std.HashMap String Json)) (i : Nat) (layer : Option SinglePass.PassLayer := none) :
     Settled FilePlans (Option (Std.HashMap String Json))
       (String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk String)) :=
   let candidates : List (Nat × List HeapKnowledge.Candidate) := match f.plans[i]? with
@@ -443,7 +444,7 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
   let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.Candidate) => !c.2.isEmpty).length
   settleInferred
     (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
-      g.inferredRun fuel compare debugNode repeats observe counting located gv i)
+      g.inferredRun fuel compare debugNode repeats observe counting located gv i (layer := layer))
     (fun res => res.2.1)
     (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w)
     (4 * heads + 3) f given [] 0 0
@@ -470,7 +471,8 @@ or its refusal stands (`settleInferred`, `inferredNext`), at most `4·h + 4`
 of a member with `h` statement entries holding candidates; an observation
 of a node or an offset made on the settled state, its line added. -/
 def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fixed compare : Bool)
-    (debugNode repeats : Nat) (observe : Option String) (counting located : Bool) (acc : InferredAcc) (i : Nat) :
+    (debugNode repeats : Nat) (observe : Option String) (counting located : Bool) (acc : InferredAcc) (i : Nat)
+    (layer : Option SinglePass.PassLayer := none) :
     InferredAcc :=
   let observe' := settlingObservation observe
   let f := acc.plans
@@ -489,10 +491,10 @@ def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKn
     candidates.flatMap fun (l, as) =>
       s!"inferred heads: span at {l}: {span l}" :: s!"inferred heads: slots at {l}: {names l}" :: as.map fun a =>
         s!"inferred heads: at {l}: {candidateShown a}"
-  let s := f.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i
+  let s := f.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i (layer := layer)
   let observedLine : List String := match observe with
     | some w => if observedWhat w == "refusal" || w == "heads" then [] else
-      [(s.state.inferredRun fuel compare debugNode repeats observe counting located s.given i).1]
+      [(s.state.inferredRun fuel compare debugNode repeats observe counting located s.given i (layer := layer)).1]
     | none => []
   { plans := s.state, given := s.given, lines := acc.lines ++ shown ++ s.lines ++ [s.last.1] ++ observedLine,
     failed := acc.failed.orElse fun _ => s.last.2.2.map Thunk.get, dropped := acc.dropped + s.dropped, runs := acc.runs + s.runs }
@@ -506,9 +508,11 @@ the facts dropped and the runs made. -/
 def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
     (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fixed : Bool := false) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
+    (observe : Option String := none) (counting : Bool := false) (located : Bool := false)
+    (layer : Option SinglePass.PassLayer := none) :
     List String × Except String (List String) × Nat × Nat :=
-  let acc := group.foldl (FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located)
+  let acc := group.foldl (fun acc i => FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located acc i
+      (layer := layer))
     ⟨f, given, [], none, 0, 0⟩
   (acc.lines, (match acc.failed with
     | some reason => .error reason
@@ -525,13 +529,13 @@ def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String
     (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fuel : Nat) (group : List Nat)
     (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1)
     («given» : Option (Std.HashMap String Json) := none) (observe : Option String := none)
-    (counting : Bool := false) (located : Bool := false) :
+    (counting : Bool := false) (located : Bool := false) (layer : Option SinglePass.PassLayer := none) :
     List String × Except String (List String) × Nat × Nat :=
   if infer then
     let given := some (f.computedGiven (given.getD {}) (force.contains "head-inputs")
       (force.contains "head-implications") (force.find? (·.startsWith "head-region-")) group)
     (f.withFreshApart (force.contains "head-apart") group).passGroupInferred fuel group keep
-      (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located
+      (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located (layer := layer)
   else
     let r := f.passGroup fuel group compare debugNode repeats given observe counting located
     (r.1, r.2, 0, 0)

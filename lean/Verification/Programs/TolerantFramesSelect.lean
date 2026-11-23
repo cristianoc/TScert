@@ -414,6 +414,7 @@ for the ordinary checker, the qualified body's checker itself. -/
 @[nospecialize] def passRunChecker : SinglePass.PassChecker G images → Checker G images
   | .ordinary => passOrdinary G images
   | .qualified s o => Checker.withSubtyping G images s o
+  | .extended c => c
 
 /-- **The pass's tree check gives `passTreeOk` at the step's facts**, for the
 ordinary checker. -/
@@ -469,6 +470,7 @@ theorem pass_select_run {pc : SinglePass.PassChecker G images} {j : Sequent ι} 
   cases pc with
   | ordinary => exact select_run (hok rfl) hsel
   | qualified s o => exact hsel
+  | extended c => exact hsel
 
 /-- **The output the pass applies at a step over its own facts is its
 checker's `run`**: from the tree check (`passTreeCheck`) and `select` at the
