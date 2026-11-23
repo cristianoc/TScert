@@ -93,10 +93,10 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-350"><code>b04638889a6116ceaad46831d5fe1729ed63e986..pr-350</code></a><ul><li>1 commit</li><li>changes: 1 Tooling</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">tests</span></li></ul></li></ul></section>
-<h2 id="g-pr-350"><code>b04638889a6116ceaad46831d5fe1729ed63e986..pr-350</code></h2><article class="card" id="c-d53c073af"><header><div><div class="sha">d53c073af · Cristiano Calcagno · Nov 23, 11:04</div><h3>Skip cross-overload premise discovery for exact signature matches</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-350"><code>69a7347c6c51daf58b11d99ec549ce1ee8adba92..pr-350</code></a><ul><li>1 commit</li><li>changes: 1 Tooling</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-350"><code>69a7347c6c51daf58b11d99ec549ce1ee8adba92..pr-350</code></h2><article class="card" id="c-56d02e6a2"><header><div><div class="sha">56d02e6a2 · Cristiano Calcagno · Nov 23, 11:04</div><h3>Skip cross-overload premise discovery for exact signature matches</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>When a source signature list already contains the exact target overload (as MapConstructor does for the zero-argument overload read by newLedger in files.mts), comparing that target against the source's other overloads expands unrelated pairs and can hit table growth before the reflexive witness is checked.</p></div>
-<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">signature premise discovery</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">signaturePairs, restPairs, elemPairs, packPairs and restFixedPairs</span><span class="ln">compare every target signature against every source signature.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">signaturePairs, restPairs and elemPairs skip any target signature already</span><span class="ln">present in the source list, and clausePairs filters exact fixed and</span><span class="ln">variadic matches before packPairs and restFixedPairs across callables,</span><span class="ln">arrows, constructors, methods and schemes.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">signature premise discovery</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">signaturePairs, restPairs, elemPairs, packPairs and restFixedPairs</span><span class="ln">compare every target signature against every source signature, and</span><span class="ln">growTableFrom's empty-demand prune checks clauses with empty known-method</span><span class="ln">and arrow-evidence lists.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">signaturePairs, restPairs and elemPairs skip any target signature already</span><span class="ln">present in the source list, clausePairs filters exact fixed and variadic</span><span class="ln">matches before packPairs and restFixedPairs across callables, arrows,</span><span class="ln">constructors, methods and schemes, and growTableFrom's empty-demand prune</span><span class="ln">checks clauses with known and the row's own arrow evidence under Rel [].</span></pre></figure></div>
 <h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>exact-overload-discovery</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">exact constructor, callable and method overloads skip cross-overload discovery</span></summary><pre class="code"><span class="tk-c">// Exact overload matches across constructors, callables and methods: when a</span>
 <span class="tk-c">// source signature list already holds the target overload, premise discovery</span>
 <span class="tk-c">// skips comparing that target against the source's other overloads.</span>
@@ -115,10 +115,15 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   (tree: <span class="tk-t">Entry</span>, pairs: <span class="tk-k">readonly</span> (<span class="tk-k">readonly</span> [string, <span class="tk-t">Entry</span>])[]): <span class="tk-t">Entry</span>;
 }
 
-<span class="tk-k">interface</span> <span class="tk-t">OverloadedMethods</span> {
+<span class="tk-k">type</span> <span class="tk-t">OverloadedMethods</span> = {
   pick(x: number): number;
+} &amp; {
   pick(tree: <span class="tk-t">Entry</span>, pairs: <span class="tk-k">readonly</span> (<span class="tk-k">readonly</span> [string, <span class="tk-t">Entry</span>])[]): <span class="tk-t">Entry</span>;
-}
+};
+
+<span class="tk-k">type</span> <span class="tk-t">OverloadedMethodField</span> = {
+  <span class="tk-k">readonly</span> pick: <span class="tk-t">OverloadedFn</span>;
+};
 
 <span class="tk-k">export</span> <span class="tk-k">function</span> narrowCallable(f: <span class="tk-t">OverloadedFn</span>): (x: number) =&gt; number {
   <span class="tk-k">return</span> f;
@@ -128,12 +133,18 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   pick(x: number): number;
 } {
   <span class="tk-k">return</span> h;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> narrowMethodField(h: <span class="tk-t">OverloadedMethodField</span>): {
+  pick(x: number): number;
+} {
+  <span class="tk-k">return</span> h;
 }</pre></details></li></ul>
-<h4 class="change">Soundness</h4><div class="prose"><p>Premise discovery is search-only; the checked coverage judgments (checkArrowWith, RestCovers, CoversArrows) and their soundness proofs are unchanged.</p></div>
-<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.PositiveCertificates.signaturePairs · Verification.PositiveCertificates.restPairs · Verification.PositiveCertificates.elemPairs · Verification.PositiveCertificates.clausePairs</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">exact-overload-discovery</span></dd></dl>
-<details><summary>4 files changed, 55 insertions(+), 16 deletions(-)</summary><pre class="code"> lean/Verification/Types/PositiveCertificates.lean | 35 ++++++++++++-----------
+<h4 class="change">Soundness</h4><div class="prose"><p>Premise discovery and table pruning are search-only; the checked coverage judgments (checkArrowWith, RestCovers, CoversArrows) and their soundness proofs are unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.PositiveCertificates.signaturePairs · Verification.PositiveCertificates.restPairs · Verification.PositiveCertificates.elemPairs · Verification.PositiveCertificates.clausePairs · Verification.PositiveCertificates.growTableFrom</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">exact-overload-discovery</span></dd></dl>
+<details><summary>4 files changed, 73 insertions(+), 21 deletions(-)</summary><pre class="code"> lean/Verification/Types/PositiveCertificates.lean | 47 +++++++++++++----------
  pipeline/cases.mts                                |  1 +
- pipeline/examples/exact-overload-discovery.ts     | 32 +++++++++++++++++++++
+ pipeline/examples/exact-overload-discovery.ts     | 43 +++++++++++++++++++++
  tests/node-runs.mts                               |  3 ++</pre></details>
 </article>
 </main></body></html>
