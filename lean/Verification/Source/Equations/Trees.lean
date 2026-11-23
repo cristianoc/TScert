@@ -22,6 +22,27 @@ def mkBound (h : Nat) (args : List Union) (j : Nat) : Tree :=
 def normUnion (u : Union) : Union :=
   (u.mergeSort fun a b => compare a b != .gt).eraseDups
 
+/-- A hash set avoids repeated comparisons in wider sorted unions. Short
+unions use the list scan, and a union with at most one tree is already sorted. -/
+private def normUnionFast (u : Union) : Union :=
+  match u with
+  | [] | [_] => u
+  | _ =>
+    let sorted := u.mergeSort fun a b => compare a b != .gt
+    if sorted.length < 8 then sorted.eraseDups else Linear.dedupHash sorted
+
+@[csimp] theorem normUnion_eq_fast : @normUnion = @normUnionFast := by
+  funext u
+  cases u with
+  | nil => simp [normUnion, normUnionFast]
+  | cons t ts => cases ts with
+    | nil => simp [normUnion, normUnionFast, List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
+    | cons s ss =>
+      simp only [normUnionFast, normUnion]
+      split
+      · rfl
+      · exact (Linear.dedupHash_eq _).symm
+
 /-- `normUnion`, under a name the tree traversals below read. -/
 abbrev normUnionOf (u : Union) : Union := normUnion u
 
