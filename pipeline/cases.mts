@@ -2826,7 +2826,7 @@ export const cases: Case[] = [
     /source expression obligation at \[653,666\): evidence search failed: no derivation of its node-typing claim/),
   positive("store-apart-through-paths", "a fresh array spined in a record is apart from an array a parameter's field held when it was made; the loops' invariants state the separation over the field's path, unguarded and guarded by `shared === null`, and the edges into them entail each through the read link (ARITHMETIC.md, store-apart-links, guard-match)"),
   negative("invalid-store-apart-through-paths", "the unsafe neighbour: the record holds the parameter's own array, the call pops it and the read reads past it (run under Node: `undefined` at `number`, the sum `NaN`)",
-    /source incoming edge obligation at \[1126,1209\): evidence search failed: the edge from node 9 does not establish the claims at this point/),
+    /source incoming edge obligation at \[1126,1209\): evidence search failed: the edge from node \d+ does not establish the claims at this point\n(?:.*\n)*?obligation: The edge from «0» does not establish apart\(analysis\.flags, runs\.open\), which the next point requires\./),
   positive("merge-keeps-strongest-bound", "a merge after a conditional keeps the loop's test `mi < to` where both arms also state the head's `mi <= to`, so a nested loop's head carries it and the read after that loop is in bounds (SINGLE-PASS.md, the front's join of two arms)"),
   negative("invalid-merge-keeps-strongest-bound", "the unsafe neighbour: the loop runs to `mi = to`, and the read after the nested loop reads past the array (run under Node: `undefined.toFixed` throws)",
     /source expression obligation at \[678,684\): evidence search failed: no derivation of its node-typing claim/),
