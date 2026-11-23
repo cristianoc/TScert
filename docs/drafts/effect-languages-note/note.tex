@@ -670,12 +670,15 @@ capture is a variable, and so a rigid path.
 \subsection{Effect variables}
 
 \begin{definition}[Effect expressions]
-$\EVar$ is a set of effect variables $\varepsilon$. An effect
-expression is
+The syntax, with $r\in\Reg$ a region and $\delta\in\Delta$ a change:
 \[
-E::=\Phi\mid\varepsilon\mid E\cup E
+\begin{array}{rcll}
+\varepsilon &\in& \EVar & \text{effect variables, a countable set}\\
+\Phi &::=& \{r_1:\delta_1,\ \ldots,\ r_k:\delta_k\} & \text{effects of entries}\\
+E &::=& \Phi\mid\varepsilon\mid E\cup E & \text{effect expressions}
+\end{array}
 \]
-with $\Phi$ an effect of entries. An instantiation
+An instantiation
 $\theta:\EVar\rightharpoonup\Eff$ maps effect variables to effects of
 entries. $E[\theta]$ replaces each variable by its image. The action
 of $E$ under $\theta$ is the action of $E[\theta]$.
