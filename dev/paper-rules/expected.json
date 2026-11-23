@@ -141,17 +141,6 @@
       "classBound": "refused"
     }
   },
-  "repro-355.ts": {
-    "ordinary": "unverified",
-    "units": {
-      "step": "accepted",
-      "walk": "accepted",
-      "walkVisiting": "refused",
-      "paperAssume": "accepted",
-      "walkVisitingAssumed": "accepted",
-      "walkVisitingWeak": "refused"
-    }
-  },
   "repro-365.ts": {
     "ordinary": "unverified",
     "units": {

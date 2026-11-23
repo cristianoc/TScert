@@ -41,13 +41,12 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
 - **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
   based on `single-pass`).
 - **Issues for unsafe assumes**: each `paperAssume` names one.
-  cristianoc/TScert#355 (a callback's call drops the facts over a local
-  object) is in use in `dev/paper-rules/repro-355.ts` and the Pretext copy,
-  #365 (no clause bounds the cursor's grapheme index) in
+  cristianoc/TScert#365 (no clause bounds the cursor's grapheme index) in
   `dev/paper-rules/repro-365.ts` and the copy, and #367 (a bound lost at an
   `if` merge whose changing branch always exits next) in
   `dev/paper-rules/repro-367.ts` and the copy; in the copy also #356 (the
-  prepared handle's length invariant) and #364 (the handle's length across
+  prepared handle's length invariant), #355 (the complex walker's cursor
+  parameter across its visit) and #364 (the handle's length across
   the complex walker's visit); #351 (links at loop heads) was one, fixed by
   #353.
 
