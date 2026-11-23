@@ -1019,7 +1019,7 @@ function createOnlyItemLine(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): RichInlineLineRange {
+): Modifies<{}, RichInlineLineRange> {   // PAPER: annotation
   const { onlyItem } = flow
   const ended = endSegmentIndex >= flow.data.widths.length
   return {

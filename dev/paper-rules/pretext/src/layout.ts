@@ -198,7 +198,7 @@ function createLayoutLineRange(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): LayoutLineRange {
+): Modifies<{}, LayoutLineRange> {   // PAPER: annotation
   return {
     width: Math.max(0, width),
     start: {

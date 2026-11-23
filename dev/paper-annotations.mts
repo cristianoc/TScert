@@ -512,6 +512,8 @@ function effectWithin(eff: Effect, claim: Effect, keysOf: (root: string) => Set<
  * bound entry, and the instance's `else`, are within that `else`. A key this
  * check cannot parse is refused. */
 function instCheck(instance: Effect, bound: Effect, params: string[], args: string[], fresh: Set<string>): string | null {
+  // The empty effect is within every bound, whatever its arguments.
+  if (instance.entries.length === 0 && instance.else === "keep") return null;
   const actual = (key: string): string => {
     const at = params.indexOf(rootOf(key));
     return at < 0 ? key : (args[at] ?? "?") + restOf(key);
@@ -532,8 +534,15 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: stri
     if (bound.else !== "any" && !bs.some(([b]) => inside(l, b, keys)) && !le(c, bound.else))
       return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
   }
-  for (const [, d, text] of bs)
-    if (!le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
+  // The instance's `else` reaches the locations of a bound entry that no
+  // instance entry covers: the same location, or one inside an instance
+  // reach.
+  const covered = (b: Loc): boolean => instance.entries.some(([r]) => {
+    const l = locOf(r);
+    return l !== null && (l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b) || inside(b, l, keys));
+  });
+  for (const [b, d, text] of bs)
+    if (!covered(b) && !le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
   if (!le(instance.else, bound.else)) return `the instance's else ${instance.else} exceeds the bound's else ${bound.else}`;
   return null;
 }
@@ -623,16 +632,34 @@ export function annotations(path: string): { functions: Record<string, FunctionI
           issue: typeof form === "string" ? "" : form.issue,
           ok: typeof form !== "string", reason: typeof form === "string" ? form : null });
       }
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.typeArguments) {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
         const callee = calleeOf(n.expression.text);
         if (callee && callee.effectParams.length > 0) {
+          // The instance of each effect parameter: an effect written as the
+          // call's type argument; the calling function's own effect parameter
+          // (a forwarding call, θ(ε') = ε), whose bound stands for it; or,
+          // where every callback the parameter bounds receives `undefined` or
+          // is omitted, the empty effect, since no callback runs.
+          const outer = functions[caller];
           const instance: Record<string, Effect> = {};
+          const forwarded = new Set<string>();
+          const empty = new Set<string>();
           callee.effectParams.forEach((e, i) => {
             const arg = n.typeArguments?.[i];
             const eff = arg ? effectOf(arg) : null;
+            const variable = arg !== undefined && ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName)
+              ? outer?.effectParams.find((o) => o.name === arg.typeName.getText()) : undefined;
+            const none = callee.bounded.filter((b) => b.variable === e.name).every((b) => {
+              const a = n.arguments[b.index];
+              return a === undefined || unwrapExpr(a).kind === ts.SyntaxKind.UndefinedKeyword ||
+                ts.isIdentifier(unwrapExpr(a)) && unwrapExpr(a).getText() === "undefined";
+            });
             if (eff) instance[e.name] = eff;
+            else if (variable) { instance[e.name] = variable.bound; forwarded.add(e.name); }
+            else if (arg === undefined && none) { instance[e.name] = { entries: [], else: "keep" }; empty.add(e.name); }
           });
           const args = n.arguments.map((a) => ts.isIdentifier(a) || ts.isPropertyAccessExpression(a) ? a.getText() : "?");
+          const outerCallbacks = new Set((outer?.bounded ?? []).map((b) => b.param));
           let reason: string | null = null;
           for (const e of callee.effectParams) {
             const written = instance[e.name];
@@ -656,7 +683,26 @@ export function annotations(path: string): { functions: Record<string, FunctionI
               return out;
             };
             for (const b of callee.bounded.filter((x) => x.variable === e.name)) {
+              if (empty.has(e.name)) break;
               let arg: ts.Expression | undefined = n.arguments[b.index];
+              // A forwarded variable: the callback is the calling function's own
+              // bounded callback, or a closure whose only effect on old storage
+              // is calls of it (effect ε) besides fresh allocations.
+              if (forwarded.has(e.name)) {
+                const passed = arg === undefined ? undefined : unwrapExpr(arg);
+                if (passed !== undefined && ts.isIdentifier(passed) && outerCallbacks.has(passed.text)) continue;
+                if (passed === undefined || !(ts.isArrowFunction(passed) || ts.isFunctionExpression(passed))) {
+                  reason = `the callback passed for ${b.param} has no body visible here`;
+                  break;
+                }
+                const eff = closureEffect(passed, false, outerCallbacks);
+                reason = typeof eff === "string" ? eff
+                  : eff.entries.length > 0 || eff.else !== "keep"
+                    ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable does not allow`
+                    : null;
+                if (reason !== null) break;
+                continue;
+              }
               if (arg !== undefined && ts.isIdentifier(unwrapExpr(arg))) {
                 const d = declOf(unwrapExpr(arg).getText(), arg);
                 arg = d !== null && d.kind === "const" ? d.init : undefined;
@@ -674,8 +720,11 @@ export function annotations(path: string): { functions: Record<string, FunctionI
             reason = instCheck(inst, e.bound, callee.params, args, fresh);
             if (reason !== null) break;
           }
+          // The call's effect at the caller (Inst's conclusion) is within the
+          // bounds and the callee's own effect; an empty instance stands for
+          // its bound exactly.
           calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
-            params: callee.params, bounds: callee.effectParams.map((e) => e.bound),
+            params: callee.params, bounds: callee.effectParams.map((e) => empty.has(e.name) ? instance[e.name] ?? e.bound : e.bound),
             own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
         }
       }

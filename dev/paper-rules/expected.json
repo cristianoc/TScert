@@ -76,5 +76,16 @@
       "touch": "accepted",
       "sumViaCalls": "refused"
     }
+  },
+  "inst-forms.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walkLines": "accepted",
+      "countOnly": "accepted",
+      "walkRanges": "accepted",
+      "rangesCaller": "accepted",
+      "widerAdapter": "refused",
+      "countingAdapter": "refused"
+    }
   }
 }
