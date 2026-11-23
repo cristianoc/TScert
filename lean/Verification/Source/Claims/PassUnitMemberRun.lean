@@ -164,7 +164,7 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
         ensures := r.ensures, givenInputs := givenInputs, entrySeparation := r.entrySeparation, observe := none,
         tracing := false, observeEntry := false, regional := none }
       _ after hplanAt hq hdecl' hfp hot hfr hens hreg hcodes
-      ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ rfl rfl ⟨⟨counts, tr, ?_⟩, rfl⟩ hsok
+      ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ rfl rfl ⟨⟨counts, tr, ?_⟩, Or.inr rfl⟩ hsok
     unfold RunCall.result
     dsimp only
     exact hrun
@@ -215,7 +215,7 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
           reference := #[], debugNode := 1000000000, bound := codeBound', givenImplies := codeImplies,
           givenArgs := codeArgs, ensures := [], givenInputs := #[], entrySeparation := {}, observe := none,
           tracing := false, observeEntry := false, regional := none },
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨⟨cnt, tr, ?_⟩, rfl⟩⟩
+        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨⟨cnt, tr, ?_⟩, Or.inr rfl⟩⟩
       unfold RunCall.result
       dsimp only
       exact hrun
@@ -279,20 +279,35 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
       have hcodesEq : codes = GraphCode.admits (r.codes.map (·.entry)) := by simp only [codes, htable']
       have mk : ∀ k bnd rg, ∃ c : RunCall G I,
           MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary sumsAnswers ∧
-          c.bound = bnd ∧ c.regional = rg ∧ c.framed = fr ∧ c.result = walk k bnd rg := by
+          c.bound = bnd ∧ c.regional = rg ∧ (c.confinement.isSome ∨ c.framed = fr) ∧ c.result = walk k bnd rg := by
         intro k bnd rg
-        refine ⟨
-          { pool := pool, fuel := fuel, P := r.program, claims := r.claims, start := r.start, inputs := r.inputs,
-            goal := r.goal, assertions := r.assertions, cuts := r.cuts, candidates := r.candidates,
-            entryIndices := r.entryIndices, suggestions := [], known := e ++ rendered, codes := codes,
-            aliases := r.aliases, passChecker := .ordinary, answers := sumsAnswers, reference := reference, debugNode := debugNode,
-            bound := bnd, givenImplies := givenImplies, givenArgs := givenArgs, ensures := r.ensures,
-            givenInputs := givenInputs,
-            entrySeparation := r.entrySeparation, observe := SourceClaimJson.observedIn observe k observed, tracing := tracing, observeEntry := false,
-            regional := rg, framed := fr },
-          ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩, rfl, rfl, rfl,
-          by simp only [RunCall.result, walk, SinglePass.work, SinglePass.runRecorded, probeTrace_nil, List.append_nil,
-            SinglePass.PassChecker.ofLayer]⟩
+        let mkCall : List (Nat × List Footprints.Footprint) → Option LocalConfinement.Table → RunCall G I :=
+          fun fr' conf' =>
+            { pool := pool, fuel := fuel, P := r.program, claims := r.claims, start := r.start, inputs := r.inputs,
+              goal := r.goal, assertions := r.assertions, cuts := r.cuts, candidates := r.candidates,
+              entryIndices := r.entryIndices, suggestions := [], known := e ++ rendered, codes := codes,
+              aliases := r.aliases, passChecker := .ordinary, answers := sumsAnswers, reference := reference, debugNode := debugNode,
+              bound := bnd, givenImplies := givenImplies, givenArgs := givenArgs, ensures := r.ensures,
+              givenInputs := givenInputs,
+              entrySeparation := r.entrySeparation, observe := SourceClaimJson.observedIn observe k observed, tracing := tracing, observeEntry := false,
+              regional := rg, framed := fr', confinement := conf' }
+        have hmain : ∀ fr' conf', MainCall r (mkCall fr' conf') (GraphCode.admits (r.codes.map (·.entry))) .ordinary sumsAnswers :=
+          fun _ _ => ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩
+        have hwalk_eq : walk k bnd rg = SourceClaimJson.runWithConfinement
+            (fun fr' conf' => (mkCall fr' conf').result) fr []
+            (SourceClaimJson.proposeConfinement G r.program r.claims r.start fr) := by
+          simp only [walk, SinglePass.work, SinglePass.runRecorded, probeTrace_nil, mkCall, RunCall.result,
+            SinglePass.PassChecker.ofLayer]
+        rw [hwalk_eq]
+        unfold SourceClaimJson.runWithConfinement
+        cases hcf : SourceClaimJson.proposeConfinement G r.program r.claims r.start fr with
+        | none =>
+          exact ⟨mkCall fr none, hmain fr none, rfl, rfl, Or.inr rfl, by simp only [List.append_nil]⟩
+        | some conf =>
+          simp only [List.append_nil]
+          split
+          · exact ⟨mkCall fr none, hmain fr none, rfl, rfl, Or.inr rfl, rfl⟩
+          · exact ⟨mkCall conf.framed (some conf), hmain conf.framed (some conf), rfl, rfl, Or.inl rfl, rfl⟩
       have hrof : ∀ k Φ R ex, regionOf (some (regionalOf k Φ R ex)) = some (Φ, R, ex) := by
         intro k Φ R ex; simp only [regionOf, regionalOf, Option.map_some]
       have hspec : regionOf regional = regionalSpec r := by

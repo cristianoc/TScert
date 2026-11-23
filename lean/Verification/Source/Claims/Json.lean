@@ -517,6 +517,32 @@ def layerSites {ι : Type} (program : ControlFlow.Program) (claims : List (Certi
   program.zipIdx.map fun (node, l) =>
     (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).map (·.pos))
 
+/-- Propose a local-confinement table when no explicit `framed` list is given. -/
+def proposeConfinement {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (P : ControlFlow.Program)
+    (claims : List (CertificateProducer.PointClaim ι)) (start : Nat)
+    (framed : List (Nat × List Footprints.Footprint)) : Option LocalConfinement.Table :=
+  if framed.isEmpty then
+    let conf := LocalConfinement.propose G P claims start
+    if conf.framedNodes.isEmpty then none else some conf
+  else none
+
+/-- Run a single-pass runner under an optional proposed confinement table,
+falling back to the unframed run if `checkWalkConfinement` refuses the untrusted
+proposal. -/
+def runWithConfinement {ι A : Type}
+    (runWith : List (Nat × List Footprints.Footprint) → Option LocalConfinement.Table →
+      SinglePass.Outcome ι × SinglePass.Counts × A × SinglePass.Trace)
+    (framed probe : List (Nat × List Footprints.Footprint))
+    (conf? : Option LocalConfinement.Table) :
+    SinglePass.Outcome ι × SinglePass.Counts × A × SinglePass.Trace :=
+  match conf? with
+  | some conf =>
+    let res := runWith (conf.framed ++ probe) (some conf)
+    match res.1 with
+    | .refused "local confinement" none none => runWith (framed ++ probe) none
+    | _ => res
+  | none => runWith (framed ++ probe) none
+
 /-- **One member's single pass** (`SinglePass.run`), no certificate built:
 its plan through the exhaustive conversion (`FunctionPlan.certify`), the
 request's own conditions, each code request's run against the codes
@@ -724,10 +750,14 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
         | none => "direct"
         | some rg => if rg.regions.isEmpty then "fallback" else "regions")
       (runDigests r line "main" (boundText bound regional)) (fun x => x.2.1.visited) fun _ =>
-    SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-      r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
-      givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
-      (framed ++ probeTrace (framedProbeOf observe) fun L =>
+    runWithConfinement
+      (fun fr conf =>
+        SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
+          fr conf)
+      framed
+      (probeTrace (framedProbeOf observe) fun L =>
         let framedAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) =>
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
@@ -739,6 +769,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
         framedProbeReport runAt framedAt r.candidates L observed)
+      (proposeConfinement G r.program r.claims r.start framed)
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,

@@ -63,7 +63,7 @@ def MainCall {G : NormalGraph ι} {I : InstanceImageCheck G} (r : SourceRequest 
 those nodes. -/
 def _root_.Verification.TolerantFrames.Target.RunCall.AcceptsAt {G : NormalGraph ι} {I : InstanceImageCheck G}
     (c : RunCall G I) (after : Answered G) (fr : List (Nat × List Footprints.Footprint)) : Prop :=
-  c.AcceptsWalk after ∧ c.framed = fr
+  c.AcceptsWalk after ∧ (c.confinement.isSome ∨ c.framed = fr)
 
 /-- **The main graph accepted** as `passGroup` accepts it, its walks framing
 the nodes `fr`: directly, at its bound and stated regions; or, the bound

@@ -5,6 +5,7 @@ import Verification.Programs.TolerantFramesRegionalTyping
 import Verification.Programs.TolerantFramesRegionalReadback
 import Verification.Programs.TolerantFramesDriverSetup
 import Verification.Programs.TolerantFramesExitWidths
+import Verification.Programs.TolerantFramesConfined
 
 /-! # Tolerant frames: the single pass's graph theorem
 

@@ -148,6 +148,9 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   /-- The framed nodes with the supports their returns keep
   (`SinglePass.framedAt`); none by default. -/
   framed : List (Nat × List Footprints.Footprint) := []
+  /-- Checked local-object confinement table, when framing confined local
+  objects across arbitrary-effect calls; none by default. -/
+  confinement : Option LocalConfinement.Table := none
 
 /-- The call's result. -/
 def RunCall.result {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) :
@@ -155,7 +158,7 @@ def RunCall.result {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall 
   SinglePass.run G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional false c.framed
+    c.observeEntry c.regional false c.framed c.confinement
 
 /-- The call's walk accepted, leaving the answers `after`, its framed
 nodes' exits reading the facts their returns keep. -/
@@ -163,10 +166,11 @@ def RunCall.AcceptsWalk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Run
     Prop :=
   ∃ counts trace, c.result = (.accepted, counts, after, trace)
 
-/-- **The call accepted in the ordinary mode**, leaving the answers
-`after`: its walk accepted (`AcceptsWalk`) with no framed node. -/
+/-- **The call accepted**, leaving the answers `after`: its walk accepted
+(`AcceptsWalk`) either with a checked local-confinement table or with no
+framed node. -/
 def RunCall.Accepts {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) (after : Answered G) : Prop :=
-  c.AcceptsWalk after ∧ c.framed = []
+  c.AcceptsWalk after ∧ (c.confinement.isSome ∨ c.framed = [])
 
 /-- Whether the call frames the node `l` (`SinglePass.framedAt`). -/
 def RunCall.framedF {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) (l : Nat) : Bool :=
