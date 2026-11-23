@@ -140,5 +140,16 @@
       "withValueCaller": "accepted",
       "classBound": "refused"
     }
+  },
+  "repro-355.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "step": "accepted",
+      "walk": "accepted",
+      "walkVisiting": "refused",
+      "paperAssume": "accepted",
+      "walkVisitingAssumed": "accepted",
+      "walkVisitingWeak": "refused"
+    }
   }
 }

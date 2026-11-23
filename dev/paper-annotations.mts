@@ -61,33 +61,21 @@ interface CallInfo {
   params: string[]; bounds: Effect[]; own: Effect | string; span: [number, number];
 }
 
-/** An unsafe assume `paperAssume(a === b, "#n")`: the equality states a
- * fact the sound verifier should have established at the call, and the
- * issue tracks the verifier's extension. Its form is read here and its fact
- * added by the prototype's layer, under its axiom. */
+/** An unsafe assume `paperAssume(fact, "#n");`: the condition `fact` states
+ * what the sound verifier should have established there, and the issue
+ * tracks the verifier's extension. Its form is read here; the prototype
+ * checks the statement as `if (!(fact)) throw "#n";`. */
 interface AssumeInfo {
-  /** The span of the assumed equality, whose step the layer extends. */
-  caller: string; span: [number, number]; issue: string; line: number; ok: boolean; reason: string | null;
+  caller: string; issue: string; line: number; ok: boolean; reason: string | null;
 }
 
-/** Whether an operand of an assumed equality is one the layer represents:
- * a variable, or a field read of one. */
-function assumeOperand(e: ts.Expression): boolean {
-  const u = unwrapExpr(e);
-  return ts.isIdentifier(u) || (ts.isPropertyAccessExpression(u) && ts.isIdentifier(unwrapExpr(u.expression)));
-}
-
-/** An assume's form: `paperAssume(a === b, "#n")`, at most one operand a
- * field read; the reason otherwise. */
+/** An assume's form: the statement `paperAssume(fact, "#n");`; the reason
+ * otherwise. */
 function assumeForm(n: ts.CallExpression): { issue: string } | string {
   const [fact, issue] = n.arguments;
-  if (fact === undefined || issue === undefined || !ts.isStringLiteral(issue))
-    return "an assume is written paperAssume(fact, \"#issue\")";
-  const f = unwrapExpr(fact);
-  if (!ts.isBinaryExpression(f) || f.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
-      !assumeOperand(f.left) || !assumeOperand(f.right) ||
-      (ts.isPropertyAccessExpression(unwrapExpr(f.left)) && ts.isPropertyAccessExpression(unwrapExpr(f.right))))
-    return "an assumed fact is an equality of a variable and a variable or a field read of one";
+  if (fact === undefined || issue === undefined || n.arguments.length !== 2 || !ts.isStringLiteral(issue) ||
+      !ts.isExpressionStatement(n.parent))
+    return "an assume is the statement paperAssume(fact, \"#issue\");";
   return { issue: issue.text };
 }
 
@@ -1156,8 +1144,7 @@ export function annotations(path: string): {
     if (caller !== undefined && unit !== null && ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "paperAssume") {
       const form = assumeForm(n);
       const line = tree.getLineAndCharacterOfPosition(n.getStart()).line + 1;
-      const fact = n.arguments[0] ?? n;
-      assumes.push({ caller, span: [fact.getStart(), fact.getEnd()], line,
+      assumes.push({ caller, line,
         issue: typeof form === "string" ? "" : form.issue,
         ok: typeof form !== "string", reason: typeof form === "string" ? form : null });
     }

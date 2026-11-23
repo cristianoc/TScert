@@ -40,8 +40,9 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
 - **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
   based on `single-pass`).
 - **Issues for gaps of the sound verifier**: each `paperAssume` names one.
-  None is in use; cristianoc/TScert#351 (links at loop heads) was one, fixed
-  by #353.
+  cristianoc/TScert#355 (a callback's call drops the facts over a local
+  object) is in use in `dev/paper-rules/repro-355.ts`; #351 (links at loop
+  heads) was one, fixed by #353.
 
 ## Standing decisions (the owner's, 2026-11-23)
 
@@ -63,7 +64,7 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
 - **Low-risk premises.** Premises such as "allocated in the body" are decided in the
   layer under the axiom, without asking.
 - **Gaps of the sound verifier** are not worked around in the code. Write
-  `paperAssume(fact, "#N")` where the fact is lost, a self-contained repro,
+  `paperAssume(fact, "#N");` where the fact is lost, a self-contained repro,
   and an issue N for a PR that extends the verifier.
 - **Keep partial progress.** Annotations added for a guard that still can't
   come out stay if they break nothing. Guards come out one at a time, kept
