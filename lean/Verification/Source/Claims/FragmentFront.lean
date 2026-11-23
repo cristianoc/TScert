@@ -755,11 +755,43 @@ def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (establishe
       | .error _ => false
     | _, _, _ => false
   if atEntry.isEmpty then f else
+  -- Check each distinct `(location, name, A)` once, reusing one verified store
+  -- map per imported module table across all its imported functions and all
+  -- units in the file that capture them.
+  let checked : Std.HashMap (String × String × List (EquationStore.CheckedLabel f.F.equations f.F.primitive)) Bool := Id.run do
+    let mut results : Std.HashMap (String × String × List (EquationStore.CheckedLabel f.F.equations f.F.primitive)) Bool := {}
+    let mut byModule : Std.HashMap String (VerifiedImporterMap (EquationStore.CheckedLabel f.F.equations f.F.primitive)) := {}
+    for (p, j) in f.plans.zipIdx do
+      if p.isOk then
+        for (n, A) in f.captures j do
+          for r in atEntry do
+            if r.localName == n then
+              let key := (r.location, r.name, A)
+              if !results.contains key then
+                let mut ok := false
+                match tables.lookup r.location with
+                | none => pure ()
+                | some t =>
+                  match byModule.get? r.location with
+                  | some cached =>
+                    if checkImporterEntry t cached r.name A then
+                      ok := true
+                    else match SinglePass.work "rows: importer check" (f.fr.nameItem n) fun _ =>
+                        importerRowsMap f.F.store t r.name A with
+                      | some _ => ok := true
+                      | none => pure ()
+                  | none =>
+                    match SinglePass.work "rows: importer check" (f.fr.nameItem n) fun _ =>
+                        importerRowsMap f.F.store t r.name A with
+                    | some mp =>
+                      byModule := byModule.insert r.location mp
+                      ok := true
+                    | none => pure ()
+                results := results.insert key ok
+    return results
   { f with plans := f.plans.zipIdx.map fun (p, j) => p.bind fun plan =>
     match (f.captures j).find? fun (n, A) => atEntry.any fun r => r.localName == n &&
-        !(match tables.lookup r.location with
-          | some t => SinglePass.work "rows: importer check" (f.fr.nameItem n) fun _ => importerRowsAgree f.F.store t r.name A
-          | none => false) with
+        !(checked.getD (r.location, r.name, A) false) with
     | some (n, _) => .error s!"signature rows differ: the import '{n}', its module's interface rows refused by the store-map check"
     | none => .ok plan }
 
@@ -1019,15 +1051,22 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
     -- the store-map check relates the two (`moduleRowsAgree`).
     let candidates := entries.filterMap (·.toOption)
     let ifaces := candidates.filterMap fun e => (fm.slots.lookup e.1.2).map (e.1.2, ·)
-    let table := let (rows, ifs) := encodeRowTable fm.F.store ifaces; decodeRowTable rows ifs
+    let (rows, ifs, pos) := encodeRowTableWithMap fm.F.store ifaces
+    let table := decodeRowTable rows ifs
+    let tableOk := match table with
+      | .ok t => SinglePass.work "rows: publication check" (fileItem fm.fr.ast) fun _ =>
+          checkModuleTable fm.F.store t pos
+      | .error _ => false
     -- An entry is published where its function is laid out (`laidOut`):
     -- the cross-module theorem's step layouts are about those.
     let (laid, outsideD) := fm.laidOut
     let checked := candidates.map fun e => if !laid.contains e.1.2 then
         Except.error s!"{location}#{e.1.2}: not laid out: {((outsideD.find? (·.1 == e.1.2)).map (·.2)).getD ""}"
       else match fm.slots.lookup e.1.2, table with
-      | some I, .ok t => if SinglePass.work "rows: publication check" (fm.fr.nameItem e.1.2) fun _ =>
-          moduleRowsAgree fm.F.store t e.1.2 I then Except.ok e
+      | some I, .ok t =>
+        if (tableOk && checkModuleEntry t pos e.1.2 I) ||
+            (SinglePass.work "rows: publication check" (fm.fr.nameItem e.1.2) fun _ =>
+              moduleRowsAgree fm.F.store t e.1.2 I) then Except.ok e
         else .error s!"{location}#{e.1.2}: its interface rows refused by the store-map check"
       | none, _ => .error s!"{location}#{e.1.2}: no interface type"
       | _, .error w => .error s!"{location}#{e.1.2}: its interface rows: {w}"

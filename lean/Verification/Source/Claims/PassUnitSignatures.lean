@@ -142,4 +142,127 @@ theorem signatureAgrees_of_rows {e : Entry} (src : EntryRealized e) (t : RowTabl
         rw [hh] at hb
         exact ⟨r₂, rfl, hb.1.symm.trans hk₁, m₂.excOf_eq.symm.trans he₁⟩
 
+
+/-- **Signature agreement from the cached row-table checks** (proved): where
+the module checked its row-table map once (`checkModuleTable`) and the entry's
+roots (`checkModuleEntry`), or fell back to `moduleRowsAgree`, and the importer
+checked the read against a map verified by `importerRowsMap` (`checkImporterEntry`),
+or by `importerRowsMap` directly, the stores agree on the signature and on the
+built-in keys and exception family. -/
+theorem signatureAgrees_of_cached_rows {e : Entry} (src : EntryRealized e) (t : RowTable) (name : String)
+    {f : FilePlans} {A : List (Lab f)}
+    {pos : Std.HashMap (Lab src.fm) Nat}
+    (hm : (checkModuleTable src.fm.F.store t pos && checkModuleEntry t pos name (src.layout.iface src.unit)) = true ∨
+      moduleRowsAgree src.fm.F.store t name (src.layout.iface src.unit) = true)
+    (hi : (∃ name₀ A₀ m, importerRowsMap f.F.store t name₀ A₀ = some m ∧ checkImporterEntry t m name A = true) ∨
+      (importerRowsMap f.F.store t name A).isSome = true) :
+    SignatureAgrees src (graphOf f) A ∧
+      ∀ r, (graphOf src.fm).builtins = some r → ∃ r', (graphOf f).builtins = some r' ∧ r'.keys = r.keys ∧
+        PositiveRules.excOf (graphOf f) = PositiveRules.excOf (graphOf src.fm) := by
+  letI : Inhabited (Lab f) := ⟨Labels.nul⟩
+  have hc₁ : ∀ (S : List Nat) x, x ∈ id S ↔ x ∈ S := fun _ _ => Iff.rfl
+  have hc₂ : ∀ (S : List (Lab f)) x, x ∈ (S.mergeSort Labels.le).eraseDups ↔ x ∈ S := by
+    intro S x; simp only [List.mem_eraseDups, List.mem_mergeSort]
+  have hmod : ∃ Is mp₁, t.interfaces.lookup name = some Is ∧
+      StoreMaps.checkMap (graphOf src.fm) t.graph id mp₁ (src.layout.iface src.unit) Is = true := by
+    rcases hm with hfast | hslow
+    · simp only [Bool.and_eq_true, checkModuleTable, checkModuleEntry] at hfast
+      cases hl : t.interfaces.lookup name with
+      | none => rw [hl] at hfast; exact absurd hfast.2 (by simp)
+      | some Is =>
+        rw [hl] at hfast
+        exact ⟨Is, pos, rfl, StoreMaps.checkMap_of_body_roots hfast.1 hfast.2⟩
+    · unfold moduleRowsAgree at hslow
+      cases hl : t.interfaces.lookup name with
+      | none => rw [hl] at hslow; cases hslow
+      | some Is =>
+        rw [hl] at hslow
+        obtain ⟨mp₁, h₁⟩ := Option.isSome_iff_exists.mp hslow
+        unfold StoreMaps.matchStores at h₁
+        by_cases hc : StoreMaps.checkMap (graphOf src.fm) t.graph id
+            (StoreMaps.propose (graphOf src.fm) t.graph (matchFuel t.rows.size)
+              (StoreMaps.startPairs (graphOf src.fm) t.graph (src.layout.iface src.unit) Is) {})
+            (src.layout.iface src.unit) Is = true
+        · simp only [hc, ↓reduceIte, Option.some.injEq] at h₁
+          exact ⟨Is, mp₁, rfl, h₁ ▸ hc⟩
+        · simp only [hc, Bool.false_eq_true, ↓reduceIte, reduceCtorEq] at h₁
+  obtain ⟨Is, mp₁, hlookup, hcheck₁⟩ := hmod
+  obtain ⟨m₁, hD₁, hI₁⟩ := StoreMaps.checkMap_sound hc₁ (env_empty_agree (graphOf_env src.fm) rfl) hcheck₁
+  have himp : (∃ mp₂, StoreMaps.checkMap t.graph (graphOf f) (fun S => (S.mergeSort Labels.le).eraseDups) mp₂ Is A = true) ∨
+      (∃ mp₂, StoreMaps.checkMap (graphOf f) t.graph id mp₂ A Is = true) := by
+    rcases hi with ⟨name₀, A₀, m, hmap, hentry⟩ | hdirect
+    · unfold checkImporterEntry at hentry
+      rw [hlookup] at hentry
+      unfold importerRowsMap at hmap
+      cases hl₀ : t.interfaces.lookup name₀ with
+      | none => rw [hl₀] at hmap; cases hmap
+      | some I₀ =>
+        rw [hl₀] at hmap
+        dsimp only at hmap hentry
+        cases hf : StoreMaps.matchStores t.graph (StoreView.graph f.F.store) (fun S => (S.mergeSort Labels.le).eraseDups)
+            (matchFuel t.rows.size) I₀ A₀ with
+        | some mp =>
+          rw [hf] at hmap; cases hmap
+          exact Or.inl ⟨mp, StoreMaps.checkMap_of_body_roots (StoreMaps.checkMapBody_of_matchStores hf) hentry⟩
+        | none =>
+          rw [hf] at hmap
+          cases hb : StoreMaps.matchStores (StoreView.graph f.F.store) t.graph id (matchFuel t.rows.size) A₀ I₀ with
+          | none => rw [hb] at hmap; cases hmap
+          | some mp =>
+            rw [hb] at hmap; cases hmap
+            exact Or.inr ⟨mp, StoreMaps.checkMap_of_body_roots (StoreMaps.checkMapBody_of_matchStores hb) hentry⟩
+    · obtain ⟨m, hmap⟩ := Option.isSome_iff_exists.mp hdirect
+      unfold importerRowsMap at hmap
+      rw [hlookup] at hmap
+      dsimp only at hmap
+      cases hf : StoreMaps.matchStores t.graph (StoreView.graph f.F.store) (fun S => (S.mergeSort Labels.le).eraseDups)
+          (matchFuel t.rows.size) Is A with
+      | some mp =>
+        unfold StoreMaps.matchStores at hf
+        by_cases hc : StoreMaps.checkMap t.graph (StoreView.graph f.F.store) (fun S => (S.mergeSort Labels.le).eraseDups)
+            (StoreMaps.propose t.graph (StoreView.graph f.F.store) (matchFuel t.rows.size)
+              (StoreMaps.startPairs t.graph (StoreView.graph f.F.store) Is A) {}) Is A = true
+        · simp only [hc, ↓reduceIte, Option.some.injEq] at hf
+          exact Or.inl ⟨mp, hf ▸ hc⟩
+        · simp only [hc, Bool.false_eq_true, ↓reduceIte, reduceCtorEq] at hf
+      | none =>
+        rw [hf] at hmap
+        cases hb : StoreMaps.matchStores (StoreView.graph f.F.store) t.graph id (matchFuel t.rows.size) A Is with
+        | none => rw [hb] at hmap; cases hmap
+        | some mp =>
+          unfold StoreMaps.matchStores at hb
+          by_cases hc : StoreMaps.checkMap (StoreView.graph f.F.store) t.graph id
+              (StoreMaps.propose (StoreView.graph f.F.store) t.graph (matchFuel t.rows.size)
+                (StoreMaps.startPairs (StoreView.graph f.F.store) t.graph A Is) {}) A Is = true
+          · simp only [hc, ↓reduceIte, Option.some.injEq] at hb
+            exact Or.inr ⟨mp, hb ▸ hc⟩
+          · simp only [hc, Bool.false_eq_true, ↓reduceIte, reduceCtorEq] at hb
+  have hb_of : ∀ r, (graphOf src.fm).builtins = some r →
+      ∃ r₁, t.graph.builtins = some r₁ ∧ r₁.keys = r.keys ∧ PositiveRules.excOf t.graph = PositiveRules.excOf (graphOf src.fm) := by
+    intro r hr
+    have hb := m₁.builtins
+    rw [hr] at hb
+    cases ht : t.graph.builtins with
+    | none => rw [ht] at hb; exact absurd hb (by simp [StoreMaps.BuiltinsRel])
+    | some r₁ => rw [ht] at hb; exact ⟨r₁, rfl, hb.1, m₁.excOf_eq⟩
+  rcases himp with ⟨mp₂, hcheck₂⟩ | ⟨mp₂, hcheck₂⟩
+  · obtain ⟨m₂, hD₂, hI₂⟩ := StoreMaps.checkMap_sound hc₂ (env_empty_agree rfl (graphOf_env f)) hcheck₂
+    refine ⟨fun j V w hw => ?_, fun r hr => ?_⟩
+    · rw [m₂.meaning_eq_of_mem hD₂ hI₂, m₁.meaning_eq_of_mem hD₁ hI₁]; exact hw
+    · obtain ⟨r₁, ht, hk₁, he₁⟩ := hb_of r hr
+      have hb := m₂.builtins
+      rw [ht] at hb
+      cases hf' : (graphOf f).builtins with
+      | none => rw [hf'] at hb; exact absurd hb (by simp [StoreMaps.BuiltinsRel])
+      | some r₂ => rw [hf'] at hb; exact ⟨r₂, rfl, hb.1.trans hk₁, m₂.excOf_eq.trans he₁⟩
+  · obtain ⟨m₂, hD₂, hI₂⟩ := StoreMaps.checkMap_sound hc₁ (env_empty_agree (graphOf_env f) rfl) hcheck₂
+    refine ⟨fun j V w hw => ?_, fun r hr => ?_⟩
+    · rw [← m₂.meaning_eq_of_mem hD₂ hI₂, m₁.meaning_eq_of_mem hD₁ hI₁]; exact hw
+    · obtain ⟨r₁, ht, hk₁, he₁⟩ := hb_of r hr
+      have hb := m₂.builtins
+      rw [ht] at hb
+      cases hf' : (graphOf f).builtins with
+      | none => rw [hf'] at hb; exact absurd hb (by simp [StoreMaps.BuiltinsRel])
+      | some r₂ => rw [hf'] at hb; exact ⟨r₂, rfl, hb.1.symm.trans hk₁, m₂.excOf_eq.symm.trans he₁⟩
+
 end Verification.SourceClaimJson.PassUnit

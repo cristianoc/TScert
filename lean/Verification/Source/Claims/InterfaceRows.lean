@@ -68,8 +68,8 @@ def builtinsWire (b : Option (ArrayBuiltins Nat)) : Json :=
 the interface types `ifaces` reach, each label at its position in the
 region, as a wire table (`types`, `builtins`), and each interface type as
 positions in it. -/
-def encodeRowTable {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (ifaces : List (String × List ι)) :
-    Json × List (String × List Nat) :=
+def encodeRowTableWithMap {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (ifaces : List (String × List ι)) :
+    Json × List (String × List Nat) × Std.HashMap ι Nat :=
   let G := StoreView.graph T
   let region := rowRegion G (ifaces.flatMap (·.2))
   let pos : Std.HashMap ι Nat := region.zipIdx.foldl (fun m (l, n) => m.insert l n) {}
@@ -77,7 +77,12 @@ def encodeRowTable {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (ifaces
   let rows := region.toList.map fun l => (StoreView.row T l).map at_ (·.map at_)
   let builtins := G.builtins.map fun b => ({ proto := b.proto.map at_, unknown := b.unknown.map at_, keys := b.keys } :
     ArrayBuiltins Nat)
-  (Json.mkObj [("types", toJson rows), ("builtins", builtinsWire builtins)], ifaces.map fun (n, A) => (n, A.map at_))
+  (Json.mkObj [("types", toJson rows), ("builtins", builtinsWire builtins)], ifaces.map fun (n, A) => (n, A.map at_), pos)
+
+def encodeRowTable {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (ifaces : List (String × List ι)) :
+    Json × List (String × List Nat) :=
+  let (j, ifs, _) := encodeRowTableWithMap T ifaces
+  (j, ifs)
 
 /-- A table's rows on the wire. -/
 def RowTable.rowsWire (t : RowTable) : Json :=
@@ -117,6 +122,42 @@ def moduleRowsAgree {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t : R
   match t.interfaces.lookup name with
   | some A => (StoreMaps.matchStores (StoreView.graph T) t.graph id (matchFuel t.rows.size) I A).isSome
   | none => false
+
+/-- Check the root-independent body of the store map `pos` from `T` to the
+decoded table `t` once for the entire module. -/
+def checkModuleTable {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t : RowTable) (pos : Std.HashMap ι Nat) : Bool :=
+  StoreMaps.checkMapBody (StoreView.graph T) t.graph id pos
+
+/-- Check one entry's roots against an already-checked module map `pos`. -/
+def checkModuleEntry {ι : Type} [Labels ι] (t : RowTable) (pos : Std.HashMap ι Nat) (name : String) (I : List ι) : Bool :=
+  match t.interfaces.lookup name with
+  | some A => StoreMaps.checkMapRoots pos I A
+  | none => false
+
+/-- A verified importer store map for a decoded `RowTable`, either forward
+(`table → importer`) or backward (`importer → table`). -/
+abbrev VerifiedImporterMap (ι : Type) [BEq ι] [Hashable ι] := Sum (Std.HashMap Nat ι) (Std.HashMap ι Nat)
+
+/-- Check one read against an already-verified map for `t`, in O(|I|). -/
+def checkImporterEntry {ι : Type} [Labels ι] (t : RowTable) (m : VerifiedImporterMap ι) (name : String) (A : List ι) : Bool :=
+  have : Inhabited ι := ⟨Labels.nul⟩
+  match t.interfaces.lookup name, m with
+  | some I, .inl mp => StoreMaps.checkMapRoots mp I A
+  | some I, .inr mp => StoreMaps.checkMapRoots mp A I
+  | none, _ => false
+
+/-- Find and verify an importer store map for `(t, name, A)`, returning the
+verified map so later reads of the same module can reuse it. -/
+def importerRowsMap {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t : RowTable) (name : String) (A : List ι) :
+    Option (VerifiedImporterMap ι) :=
+  have : Inhabited ι := ⟨Labels.nul⟩
+  match t.interfaces.lookup name with
+  | some I =>
+    match StoreMaps.matchStores t.graph (StoreView.graph T) (fun S => (S.mergeSort Labels.le).eraseDups)
+        (matchFuel t.rows.size) I A with
+    | some mp => some (.inl mp)
+    | none => (StoreMaps.matchStores (StoreView.graph T) t.graph id (matchFuel t.rows.size) A I).map .inr
+  | none => none
 
 /-- **The importer's check of a read**: the store-map check from the
 table's type for the function to the type `A` the importer's store reads it
