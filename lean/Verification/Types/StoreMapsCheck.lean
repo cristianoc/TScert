@@ -71,56 +71,126 @@ clauses' skeletons. -/
 
 abbrev Shape := Option ParameterKind × Bool × Bool × List (Clause Nat)
 
-/-- The shapes of the members of a row's operands. -/
-@[nospecialize] def memberShapes {α : Type} (G : NormalGraph α) (i : α) : List Shape :=
-  (G.rows i).flatMap fun c => c.operands.flatMap (·.map (shapeKey G))
+/-- A discriminating structural fingerprint of a clause skeleton, equal for
+equal clause skeletons and separating distinct literals and field-key sets. -/
+def clausePrint : Clause Nat → UInt64
+  | .nul => 1
+  | .bool => 2
+  | .num => 3
+  | .undef => 4
+  | .top => 5
+  | .source => 6
+  | .str => 7
+  | .bigint => 8
+  | .symbol => 9
+  | .int => 10
+  | .boolLit b => mixHash 11 (hash b)
+  | .numLit b => mixHash 12 (hash b)
+  | .strLit s => mixHash 13 (hash s)
+  | .bigintLit v => mixHash 14 (hash v)
+  | .symbolLit id => mixHash 15 (hash id)
+  | .numIn bs => mixHash 16 (hash bs)
+  | .strIn ss => mixHash 17 (hash ss)
+  | c@(.refs a bs vs os _ _ _) =>
+    mixHash 18 (hash (a.map (·.1), bs.map (·.map (·.1)), vs.map (·.1), os.map (·.key), c.operands))
+  | c@(.dict a bs vs _ os _ _ _ _) =>
+    mixHash 19 (hash (a.map (·.1), bs.map (·.map (·.1)), vs.map (·.1), os.map (·.key), c.operands))
+  | c => mixHash 20 (hash c.operands)
 
-/-- A row's shape to depth two: its shape and its operands' members'
-shapes. -/
-@[nospecialize] def deepShape {α : Type} (G : NormalGraph α) (i : α) : Shape × List Shape :=
-  (shapeKey G i, memberShapes G i)
-
-/-- Two rows of one shape to depth two: the same shape, and their operands'
-members of the same shapes as sets (an operand's order is the store's). -/
-@[nospecialize] def sameDeepShape (d d' : Shape × List Shape) : Bool :=
-  decide (d'.1 = d.1) && d.2.all (fun x => d'.2.contains x) && d'.2.all (fun x => d.2.contains x)
-
-/-- A shape's fingerprint: whether it is a scheme or a meet and its
-clauses' operand sizes, equal for equal shapes. -/
+/-- A shape's fingerprint: equal for equal shapes. -/
 @[nospecialize] def shapePrint (d : Shape) : UInt64 :=
-  hash (d.2.1, d.2.2.1, d.2.2.2.map (·.operands))
+  hash (d.2.1, d.2.2.1, d.2.2.2.map clausePrint)
 
-/-- A deep shape's fingerprint: its shape's, and its members' shapes' as a
-sorted set, equal for two deep shapes `sameDeepShape` relates. -/
-@[nospecialize] def deepFingerprint (d : Shape × List Shape) : UInt64 :=
-  hash (shapePrint d.1, ((d.2.map shapePrint).mergeSort (· ≤ ·)).eraseReps)
+/-- A depth-two signature of a row, for untrusted union pairing:
+its fingerprint, its exact shape, and its distinct operand members' exact
+shapes bucketed by `shapePrint`. Equivalent to `sameDeepShape` while running
+in O(k) per comparison. -/
+structure DeepKey where
+  fp : UInt64
+  shape : Shape
+  prints : List UInt64
+  members : Std.HashMap UInt64 (List Shape)
 
-/-- Pairs of a union's members with an image union's: each member with the
-first unused image member of the same row shape to depth two. Each member's
-shape is computed once, and the image members are looked up among those of
-its fingerprint, in order. -/
+/-- Cache of `(shapeKey, shapePrint)` and `DeepKey` per label, threaded across
+one graph's proposal worklist so each label's shape, fingerprint and depth-two
+signature are computed at most once. Untrusted: only `checkMap` decides
+acceptance. -/
+structure ShapeCache (α : Type) [BEq α] [Hashable α] where
+  shapes : Std.HashMap α (Shape × UInt64) := {}
+  deeps : Std.HashMap α DeepKey := {}
+
+@[nospecialize] def getShape {α : Type} [BEq α] [Hashable α] (G : NormalGraph α)
+    (c : ShapeCache α) (i : α) : (Shape × UInt64) × ShapeCache α :=
+  match c.shapes.get? i with
+  | some s => (s, c)
+  | none =>
+    let s := shapeKey G i
+    let sp := (s, shapePrint s)
+    (sp, { c with shapes := c.shapes.insert i sp })
+
+@[nospecialize] def getDeep {α : Type} [BEq α] [Hashable α] (G : NormalGraph α)
+    (c : ShapeCache α) (i : α) : DeepKey × ShapeCache α :=
+  match c.deeps.get? i with
+  | some d => (d, c)
+  | none =>
+    let ((sh, shp), c) := getShape G c i
+    let distinct : Std.HashSet α := (G.rows i).foldl (fun acc cl =>
+      cl.operands.foldl (fun acc S => S.foldl (fun s l => s.insert l) acc) acc) {}
+    let (members, c) := distinct.fold (fun (acc : Std.HashMap UInt64 (List Shape) × ShapeCache α) l =>
+      let ((ls, p), c') := getShape G acc.2 l
+      let bucket := acc.1.getD p []
+      if bucket.contains ls then (acc.1, c')
+      else (acc.1.insert p (ls :: bucket), c')) ({}, c)
+    let prints := members.keys.mergeSort (· ≤ ·)
+    let key : DeepKey := { fp := hash (shp, prints), shape := sh, prints, members }
+    (key, { c with deeps := c.deeps.insert i key })
+
+@[nospecialize] def sameDeepKey (d d' : DeepKey) : Bool :=
+  d.fp == d'.fp && d.prints == d'.prints && decide (d.shape = d'.shape) &&
+    d.prints.all fun p =>
+      let b := d.members.getD p []
+      let b' := d'.members.getD p []
+      b.length == b'.length && b.all (fun s => b'.contains s) && b'.all (fun s => b.contains s)
+
+/-- Pairs of a union's unmapped members with an image union's, using cached
+depth-two keys: skips any member already mapped in `mp` so large shared unions
+(such as AST node unions) are paired once instead of on every field reference. -/
+@[nospecialize] def pairUnionCached (G : NormalGraph ι) (H : NormalGraph κ)
+    (mp : Std.HashMap ι κ) (cG : ShapeCache ι) (cH : ShapeCache κ) (S : List ι) (S' : List κ) :
+    List (ι × κ) × ShapeCache ι × ShapeCache κ :=
+  match S, S' with
+  | [j], [j'] => if mp.contains j then ([], cG, cH) else ([(j, j')], cG, cH)
+  | _, _ =>
+    let unmapped := S.filter fun j => !mp.contains j
+    if unmapped.isEmpty then ([], cG, cH)
+    else
+      let used : Std.HashSet κ := S.foldl (fun acc j =>
+        match mp.get? j with | some j' => acc.insert j' | none => acc) {}
+      let avail := S'.filter fun j' => !used.contains j'
+      let target := if avail.isEmpty then S' else avail
+      let (buckets, cH) := target.reverse.foldl (fun (acc : Std.HashMap UInt64 (List (κ × DeepKey)) × ShapeCache κ) j' =>
+        let (d, cH') := getDeep H acc.2 j'
+        (acc.1.insert d.fp ((j', d) :: acc.1.getD d.fp []), cH')) ({}, cH)
+      let (pairs, _, cG) := unmapped.foldl (fun (acc : List (ι × κ) × Std.HashMap UInt64 (List (κ × DeepKey)) × ShapeCache ι) j =>
+        let (d, cG') := getDeep G acc.2.2 j
+        let bucket := acc.2.1.getD d.fp []
+        match bucket.find? (fun (_, d') => sameDeepKey d d') with
+        | some (j', _) => ((j, j') :: acc.1, acc.2.1.insert d.fp (bucket.eraseP (·.1 == j')), cG')
+        | none => (acc.1, acc.2.1, cG')) ([], buckets, cG)
+      (pairs, cG, cH)
+
+/-- Pairs of a union's members with an image union's (stateless entry point). -/
 @[nospecialize] def pairUnion (G : NormalGraph ι) (H : NormalGraph κ) (S : List ι) (S' : List κ) :
     List (ι × κ) :=
-  match S, S' with
-  | [j], [j'] => [(j, j')]
-  | _, _ =>
-    let buckets : Std.HashMap UInt64 (List (κ × (Shape × List Shape))) :=
-      S'.reverse.foldl (fun m j' =>
-        let d := deepShape H j'
-        let k := deepFingerprint d
-        m.insert k ((j', d) :: m.getD k [])) {}
-    (S.foldl (fun (acc : List (ι × κ) × Std.HashMap UInt64 (List (κ × (Shape × List Shape)))) j =>
-      let d := deepShape G j
-      let k := deepFingerprint d
-      let bucket := acc.2.getD k []
-      match bucket.find? (fun (_, d') => sameDeepShape d d') with
-      | some (j', _) => ((j, j') :: acc.1, acc.2.insert k (bucket.eraseP (·.1 == j')))
-      | none => acc) ([], buckets)).1
+  (pairUnionCached G H {} {} {} S S').1
 
-/-- Pairs of related operand lists, position by position. -/
-@[nospecialize] def pairOps (G : NormalGraph ι) (H : NormalGraph κ) (ops : List (List ι))
-    (ops' : List (List κ)) : List (ι × κ) :=
-  (ops.zip ops').flatMap fun (S, S') => pairUnion G H S S'
+/-- Pairs of related operand lists, position by position, threading shape caches. -/
+@[nospecialize] def pairOpsCached (G : NormalGraph ι) (H : NormalGraph κ)
+    (mp : Std.HashMap ι κ) (cG : ShapeCache ι) (cH : ShapeCache κ) (ops : List (List ι)) (ops' : List (List κ)) :
+    List (ι × κ) × ShapeCache ι × ShapeCache κ :=
+  (ops.zip ops').foldl (fun (acc : List (ι × κ) × ShapeCache ι × ShapeCache κ) (S, S') =>
+    let (ps, cG', cH') := pairUnionCached G H mp acc.2.1 acc.2.2 S S'
+    (ps ++ acc.1, cG', cH')) ([], cG, cH)
 
 /-- A clause with its keyed conjunctions in key order (its fields, views,
 optional fields and methods, a dictionary's index views and cells), so two
@@ -141,42 +211,87 @@ where
 /-- Pairs of two clause lists' operands, each clause with the first image
 clause of its skeleton, or else of its skeleton in key order, their
 operands then paired in key order. -/
-@[nospecialize] def pairClauses (G : NormalGraph ι) (H : NormalGraph κ) (L : List (Clause (List ι)))
-    (L' : List (Clause (List κ))) : List (ι × κ) :=
-  L.flatMap fun c => match L'.find? (fun c' => decide (skeleton c' = skeleton c)) with
-    | some c' => pairOps G H c.operands c'.operands
-    | none => match L'.find? (fun c' => decide (skeleton (keyOrder c') = skeleton (keyOrder c))) with
-      | some c' => pairOps G H (keyOrder c).operands (keyOrder c').operands
-      | none => []
+@[nospecialize] def pairClausesCached (G : NormalGraph ι) (H : NormalGraph κ)
+    (mp : Std.HashMap ι κ) (cG : ShapeCache ι) (cH : ShapeCache κ) (L : List (Clause (List ι))) (L' : List (Clause (List κ))) :
+    List (ι × κ) × ShapeCache ι × ShapeCache κ :=
+  L.foldl (fun (acc : List (ι × κ) × ShapeCache ι × ShapeCache κ) c =>
+    let sk := skeleton c
+    match L'.find? (fun c' => decide (skeleton c' = sk)) with
+    | some c' =>
+      let (ps, cG', cH') := pairOpsCached G H mp acc.2.1 acc.2.2 c.operands c'.operands
+      (ps ++ acc.1, cG', cH')
+    | none =>
+      let ck := keyOrder c
+      let skk := skeleton ck
+      match L'.find? (fun c' => decide (skeleton (keyOrder c') = skk)) with
+      | some c' =>
+        let (ps, cG', cH') := pairOpsCached G H mp acc.2.1 acc.2.2 ck.operands (keyOrder c').operands
+        (ps ++ acc.1, cG', cH')
+      | none => acc) ([], cG, cH)
 
-/-- The pairs a label pair's rows give. -/
-@[nospecialize] def childPairs (G : NormalGraph ι) (H : NormalGraph κ) (i : ι) (i' : κ) : List (ι × κ) :=
-  let rows := pairClauses G H (G.rows i) (H.rows i')
-  let meets := match G.meets i, H.meets i' with
-    | some (p, cs), some (p', cs') => (p, p') :: pairClauses G H cs cs' ++
-        pairUnion G H (G.meetParams i) (H.meetParams i')
-    | _, _ => []
-  let schemes := match G.schemes i, H.schemes i' with
-    | some s, some s' => s.binders.zip s'.binders ++ (s.bounds.zip s'.bounds).map (fun (b, b') => (b.1, b'.1)) ++
-        pairOps G H (schemeOps s) (schemeOps s')
-    | _, _ => []
-  rows ++ meets ++ schemes
+/-- The pairs a label pair's rows give, threading shape caches and skipping
+already-mapped labels. -/
+@[nospecialize] def childPairsCached (G : NormalGraph ι) (H : NormalGraph κ)
+    (mp : Std.HashMap ι κ) (cG : ShapeCache ι) (cH : ShapeCache κ) (i : ι) (i' : κ) :
+    List (ι × κ) × ShapeCache ι × ShapeCache κ :=
+  let (rows, cG, cH) := pairClausesCached G H mp cG cH (G.rows i) (H.rows i')
+  let (meets, cG, cH) := match G.meets i, H.meets i' with
+    | some (p, cs), some (p', cs') =>
+      let (pcs, cG, cH) := pairClausesCached G H mp cG cH cs cs'
+      let (pm, cG, cH) := pairUnionCached G H mp cG cH (G.meetParams i) (H.meetParams i')
+      let head := if mp.contains p then [] else [(p, p')]
+      (head ++ pcs ++ pm, cG, cH)
+    | _, _ => ([], cG, cH)
+  let (schemes, cG, cH) := match G.schemes i, H.schemes i' with
+    | some s, some s' =>
+      let (po, cG, cH) := pairOpsCached G H mp cG cH (schemeOps s) (schemeOps s')
+      let raw := s.binders.zip s'.binders ++ (s.bounds.zip s'.bounds).map (fun (b, b') => (b.1, b'.1))
+      let bs := raw.filter fun p => !mp.contains p.1
+      (bs ++ po, cG, cH)
+    | _, _ => ([], cG, cH)
+  (rows ++ meets ++ schemes, cG, cH)
 
-/-- The proposal's worklist: each pair whose label is not yet mapped maps it
-and adds the pairs its rows give. -/
-@[nospecialize] def propose (G : NormalGraph ι) (H : NormalGraph κ) :
-    Nat → List (ι × κ) → Std.HashMap ι κ → Std.HashMap ι κ
-  | 0, _, mp => mp
-  | _ + 1, [], mp => mp
-  | fuel + 1, (i, i') :: rest, mp =>
-    if mp.contains i then propose G H fuel rest mp
-    else propose G H fuel (childPairs G H i i' ++ rest) (mp.insert i i')
+/-- Commit each unmapped pair in `pairs` into `mp` immediately and return the
+newly committed pairs to expand, so shared unions referenced by many rows are
+paired once instead of once per reference. -/
+@[nospecialize] def enqueuePairs (mp : Std.HashMap ι κ) (pairs : List (ι × κ)) :
+    Std.HashMap ι κ × List (ι × κ) :=
+  pairs.foldl (fun (acc : Std.HashMap ι κ × List (ι × κ)) p =>
+    if acc.1.contains p.1 then acc
+    else (acc.1.insert p.1 p.2, p :: acc.2)) (mp, [])
+
+@[nospecialize] def proposeGo (G : NormalGraph ι) (H : NormalGraph κ) :
+    Nat → List (ι × κ) → Std.HashMap ι κ → ShapeCache ι → ShapeCache κ → Std.HashMap ι κ
+  | _, [], mp, _, _ => mp
+  | 0, _, mp, _, _ => mp
+  | fuel + 1, (i, i') :: rest, mp, cG, cH =>
+    let (kids, cG', cH') := childPairsCached G H mp cG cH i i'
+    let (mp', added) := enqueuePairs mp kids
+    proposeGo G H fuel (added ++ rest) mp' cG' cH'
+
+/-- The proposal's worklist: commits each unmapped pair into `mp` on enqueue
+and expands its rows' pairs, caching row shapes per label. -/
+@[nospecialize] def propose (G : NormalGraph ι) (H : NormalGraph κ)
+    (fuel : Nat) (pairs : List (ι × κ)) (mp : Std.HashMap ι κ) : Std.HashMap ι κ :=
+  let (mp₀, init) := enqueuePairs mp pairs
+  proposeGo G H fuel init.reverse mp₀ {} {}
 
 /-! ## The check -/
 
 /-- Two lists of the same members. -/
 @[nospecialize] def sameB {α : Type} [DecidableEq α] (l l' : List α) : Bool :=
   l.all (fun x => decide (x ∈ l')) && l'.all fun x => decide (x ∈ l)
+
+@[nospecialize] def sameBFast {α : Type} [DecidableEq α] (l l' : List α) : Bool :=
+  if l == l' then true else sameB l l'
+
+@[csimp] theorem sameB_eq_fast : @sameB = @sameBFast := by
+  funext α de l l'
+  unfold sameBFast
+  by_cases h : l = l'
+  · subst h
+    simp [sameB]
+  · simp [beq_iff_eq, h]
 
 /-- **Two clauses alike up to the order of their conjunctions**, decided
 (`Reordered`). -/
@@ -216,27 +331,48 @@ theorem reorderedB_sound {α : Type} [DecidableEq α] {c c' : Clause α} (h : re
 section Check
 variable (G : NormalGraph ι) (H : NormalGraph κ) (φ : ι → κ) (inD : ι → Bool) (σ : List ι → List κ)
 
-/-- Two label lists of the same members, the first renamed. -/
+/-- Two label lists of the same members, the first renamed: O(|S| + |T|) via
+hash sets, with fast paths for empty and singleton unions. -/
 @[nospecialize] def sameMembersB (S : List ι) (T : List κ) : Bool :=
-  T.all (fun x => decide (x ∈ S.map φ)) && (S.map φ).all fun x => decide (x ∈ T)
+  match S, T with
+  | [], [] => true
+  | [a], [b] => φ a == b
+  | _, _ =>
+    let sMap := S.map φ
+    let sSet := Std.HashSet.ofList sMap
+    let tSet := Std.HashSet.ofList T
+    T.all sSet.contains && sMap.all tSet.contains
 
-/-- The operand map a clause pair is checked at: an operand to the image
-clause's first operand of its members renamed, else to `σ`'s. -/
-@[nospecialize] def pairOperand (c' : Clause (List κ)) (S : List ι) : List κ :=
-  (c'.operands.find? fun T => sameMembersB φ S T).getD (σ S)
+/-- Order- and duplicate-invariant hash of a list of labels as a set. -/
+@[nospecialize] def setHash (T : List κ) : UInt64 :=
+  (Std.HashSet.ofList T).fold (fun acc x => acc ^^^ hash x) 0
 
-/-- One clause and an image clause related: each operand, and the empty
-one, mapped (`pairOperand`) to a union of its members renamed, and the
-mapped clause the image clause up to the order of its conjunctions
-(`reorderedB`). -/
+/-- Indexed lookup of an operand in `c'.operands` matching `S.map φ`. -/
+@[nospecialize] def pairOperandIndexed (buckets : Std.HashMap UInt64 (List (List κ))) (S : List ι) : List κ :=
+  let key := (S.foldl (fun (acc : Std.HashSet κ) x => acc.insert (φ x)) {}).fold (fun acc x => acc ^^^ hash x) 0
+  ((buckets.getD key []).find? fun T => sameMembersB φ S T).getD (σ S)
+
+/-- One clause and an image clause related: tries direct `c.map σ` (exact or
+reordered) first in O(|c|), falling back to hash-bucketed operand matching
+only when an image operand's member order differs from `σ`'s. -/
 @[nospecialize] def clauseRelB (c : Clause (List ι)) (c' : Clause (List κ)) : Bool :=
-  ([] :: c.operands).all (fun S => sameMembersB φ S (pairOperand φ σ c' S)) &&
-    reorderedB (c.map (pairOperand φ σ c')) c'
+  let mapped := c.map σ
+  if mapped == c' || reorderedB mapped c' then true
+  else
+    let buckets : Std.HashMap UInt64 (List (List κ)) :=
+      c'.operands.reverse.foldl (fun m T =>
+        let k := setHash T
+        m.insert k (T :: m.getD k [])) {}
+    let pair := pairOperandIndexed φ σ buckets
+    ([] :: c.operands).all (fun S => sameMembersB φ S (pair S)) &&
+      reorderedB (c.map pair) c'
 
-/-- Two clause lists related both ways (`clauseRelB`). -/
+/-- Two clause lists related both ways (`clauseRelB`): checks aligned clauses
+in a single pass first, falling back to pairwise search otherwise. -/
 @[nospecialize] def rowsRelB (L : List (Clause (List ι))) (L' : List (Clause (List κ))) : Bool :=
-  L.all (fun c => L'.any fun c' => clauseRelB φ σ c c') &&
-    L'.all (fun c' => L.any fun c => clauseRelB φ σ c c')
+  (L.length == L'.length && (L.zip L').all fun p => clauseRelB φ σ p.1 p.2) ||
+  (L.all (fun c => L'.any fun c' => clauseRelB φ σ c c') &&
+    L'.all (fun c' => L.any fun c => clauseRelB φ σ c c'))
 
 @[nospecialize] def schemeOkB (i : ι) : Bool :=
   match G.schemes i, H.schemes (φ i) with
@@ -322,9 +458,11 @@ theorem bindsOf_eq_index (G : NormalGraph ι) (keys : List ι) (i : ι) :
   mp.keys.all (labelOkB G H φ inD (opOf canon mp) (fun k => inv.get? k) bind) &&
     builtinsOkB G H φ inD && I.all inD && sameMembersB φ I A
 
-/-- The same map check with a single index of its domain's scheme binders. -/
-@[nospecialize] def checkMapIndexed [Inhabited κ] (G : NormalGraph ι) (H : NormalGraph κ) (canon : List κ → List κ)
-    (mp : Std.HashMap ι κ) (I : List ι) (A : List κ) : Bool :=
+/-- The root-independent body of `checkMap`: checks every label of `mp`'s
+domain and the built-ins once, reusable across all root pairs `(I, A)`
+sharing the same store map `mp`. -/
+@[nospecialize] def checkMapBody [Inhabited κ] (G : NormalGraph ι) (H : NormalGraph κ) (canon : List κ → List κ)
+    (mp : Std.HashMap ι κ) : Bool :=
   let keys := mp.keys
   let binders := schemeBinders G keys
   let bind := fun i => G.params i || binders.contains i
@@ -332,13 +470,31 @@ theorem bindsOf_eq_index (G : NormalGraph ι) (keys : List ι) (i : ι) :
   let φ := mapOf mp
   let inD := fun i => mp.contains i
   keys.all (labelOkB G H φ inD (opOf canon mp) (fun k => inv.get? k) bind) &&
-    builtinsOkB G H φ inD && I.all inD && sameMembersB φ I A
+    builtinsOkB G H φ inD
+
+/-- The per-root check of `checkMap`: every label of `I` is mapped by `mp`
+and `I` renames to `A`'s members. -/
+@[nospecialize] def checkMapRoots [Inhabited κ] (mp : Std.HashMap ι κ) (I : List ι) (A : List κ) : Bool :=
+  I.all (fun i => mp.contains i) && sameMembersB (mapOf mp) I A
+
+/-- The same map check with a single index of its domain's scheme binders. -/
+@[nospecialize] def checkMapIndexed [Inhabited κ] (G : NormalGraph ι) (H : NormalGraph κ) (canon : List κ → List κ)
+    (mp : Std.HashMap ι κ) (I : List ι) (A : List κ) : Bool :=
+  checkMapBody G H canon mp && checkMapRoots mp I A
 
 @[csimp] theorem checkMap_eq_indexed : @checkMap = @checkMapIndexed := by
   funext ι κ de h de' h' inh G H canon mp I A
-  unfold checkMap checkMapIndexed
+  unfold checkMap checkMapIndexed checkMapBody checkMapRoots
   rw [show bindsOf G mp.keys = (fun i => G.params i || (schemeBinders G mp.keys).contains i) from
     funext (bindsOf_eq_index G mp.keys)]
+  simp only [Bool.and_assoc]
+
+theorem checkMap_of_body_roots [Inhabited κ] {G : NormalGraph ι} {H : NormalGraph κ} {canon : List κ → List κ}
+    {mp : Std.HashMap ι κ} {I : List ι} {A : List κ}
+    (hb : checkMapBody G H canon mp = true) (hr : checkMapRoots mp I A = true) :
+    checkMap G H canon mp I A = true := by
+  rw [checkMap_eq_indexed]
+  simp only [checkMapIndexed, hb, hr, Bool.and_true]
 
 /-- The proposal's first pairs: the roots', then the built-ins'. -/
 @[nospecialize] def startPairs (G : NormalGraph ι) (H : NormalGraph κ) (I : List ι) (A : List κ) : List (ι × κ) :=
@@ -358,34 +514,74 @@ returned where the check accepts it. -/
 section Sound
 variable {G : NormalGraph ι} {H : NormalGraph κ} {φ : ι → κ} {inD : ι → Bool} {σ : List ι → List κ}
 
-omit [DecidableEq ι] [Hashable ι] [Hashable κ] in
+omit [DecidableEq ι] [Hashable ι] in
 theorem sameMembersB_sound {S : List ι} {T : List κ} (h : sameMembersB φ S T = true) :
     ∀ x, x ∈ T ↔ x ∈ S.map φ := by
-  simp only [sameMembersB, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact fun x => ⟨h.1 x, h.2 x⟩
+  unfold sameMembersB at h
+  split at h
+  · simp
+  · simp only [beq_iff_eq] at h; subst h; simp
+  · simp only [Bool.and_eq_true, List.all_eq_true, Std.HashSet.contains_ofList, List.contains_iff_mem] at h
+    exact fun x => ⟨h.1 x, h.2 x⟩
 
-omit [DecidableEq ι] [Hashable ι] [Hashable κ] in
-/-- An accepted clause pair is related (proved): its operand map
-(`pairOperand`) agrees with `φ`, checked operand by operand. -/
-theorem clauseRelB_sound {c : Clause (List ι)} {c' : Clause (List κ)} (h : clauseRelB φ σ c c' = true) :
+theorem Reordered.refl {α : Type} (c : Clause α) : Reordered c c := by
+  cases c with
+  | refs a bs vs os ms ks st =>
+    exact ⟨a, bs, vs, os, ms, ks, st, rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl,
+      fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
+  | dict a bs vs ds os ms ks cs st =>
+    exact ⟨a, bs, vs, ds, os, ms, ks, cs, st, rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl,
+      fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
+  | _ => rfl
+
+omit [DecidableEq ι] [Hashable ι] in
+/-- An accepted clause pair is related (proved): either `c.map σ` relates
+directly (equal or reordered), or the hash-bucketed operand map agrees with
+`φ` operand by operand. -/
+theorem clauseRelB_sound (hσ : ∀ S x, x ∈ σ S ↔ x ∈ S.map φ) {c : Clause (List ι)} {c' : Clause (List κ)}
+    (h : clauseRelB φ σ c c' = true) :
     ClauseRel φ c c' := by
-  simp only [clauseRelB, Bool.and_eq_true, List.all_eq_true] at h
-  refine ⟨pairOperand φ σ c', fun S hS x => ?_, reorderedB_sound h.2⟩
-  have hS' : S ∈ [] :: c.operands := by
-    rcases hS with hS | rfl
-    · exact List.mem_cons_of_mem _ hS
-    · exact List.mem_cons_self
-  exact sameMembersB_sound (h.1 S hS') x
+  unfold clauseRelB at h
+  dsimp only at h
+  split at h
+  · rename_i hm
+    rcases Bool.or_eq_true_iff.mp hm with heq | hre
+    · exact ⟨σ, fun S _ x => hσ S x, beq_iff_eq.mp heq ▸ Reordered.refl c'⟩
+    · exact ⟨σ, fun S _ x => hσ S x, reorderedB_sound hre⟩
+  · simp only [Bool.and_eq_true, List.all_eq_true] at h
+    refine ⟨_, fun S hS x => ?_, reorderedB_sound h.2⟩
+    have hS' : S ∈ [] :: c.operands := by
+      rcases hS with hS | rfl
+      · exact List.mem_cons_of_mem _ hS
+      · exact List.mem_cons_self
+    exact sameMembersB_sound (h.1 S hS') x
 
-omit [DecidableEq ι] [Hashable ι] [Hashable κ] in
-theorem rowsRelB_sound {L : List (Clause (List ι))} {L' : List (Clause (List κ))}
+omit [DecidableEq ι] [Hashable ι] in
+theorem rowsRelB_sound (hσ : ∀ S x, x ∈ σ S ↔ x ∈ S.map φ) {L : List (Clause (List ι))} {L' : List (Clause (List κ))}
     (h : rowsRelB φ σ L L' = true) : RowsRel φ L L' := by
-  simp only [rowsRelB, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at h
-  refine ⟨fun c hc => ?_, fun c' hc' => ?_⟩
-  · obtain ⟨c', hc', he⟩ := h.1 c hc
-    exact ⟨c', hc', clauseRelB_sound he⟩
-  · obtain ⟨c, hc, he⟩ := h.2 c' hc'
-    exact ⟨c, hc, clauseRelB_sound he⟩
+  unfold rowsRelB at h
+  rcases Bool.or_eq_true_iff.mp h with hzip | hgen
+  · simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hzip
+    obtain ⟨hlen, hall⟩ := hzip
+    refine ⟨fun c hc => ?_, fun c' hc' => ?_⟩
+    · obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hc
+      have hi' : i < L'.length := hlen ▸ hi
+      have hmem : (L[i], L'[i]) ∈ L.zip L' := by
+        rw [List.mem_iff_getElem]
+        exact ⟨i, by rw [List.length_zip]; omega, by simp⟩
+      exact ⟨L'[i], List.getElem_mem hi', clauseRelB_sound hσ (hall _ hmem)⟩
+    · obtain ⟨i, hi', rfl⟩ := List.mem_iff_getElem.mp hc'
+      have hi : i < L.length := hlen.symm ▸ hi'
+      have hmem : (L[i], L'[i]) ∈ L.zip L' := by
+        rw [List.mem_iff_getElem]
+        exact ⟨i, by rw [List.length_zip]; omega, by simp⟩
+      exact ⟨L[i], List.getElem_mem hi, clauseRelB_sound hσ (hall _ hmem)⟩
+  · simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hgen
+    refine ⟨fun c hc => ?_, fun c' hc' => ?_⟩
+    · obtain ⟨c', hc', he⟩ := hgen.1 c hc
+      exact ⟨c', hc', clauseRelB_sound hσ he⟩
+    · obtain ⟨c, hc, he⟩ := hgen.2 c' hc'
+      exact ⟨c, hc, clauseRelB_sound hσ he⟩
 
 omit [DecidableEq ι] [Hashable ι] [DecidableEq κ] [Hashable κ] in
 theorem all_inD {L : List ι} (h : L.all inD = true) : ∀ j ∈ L, inD j = true := by
@@ -408,7 +604,7 @@ structure LabelFacts (G : NormalGraph ι) (H : NormalGraph κ) (φ : ι → κ) 
   invUnique : ∀ a, inv (φ i) = some a → a = i
   invBind : bind i = true → inv (φ i) = some i
 
-omit [Hashable ι] [Hashable κ] in
+omit [Hashable ι] in
 theorem labelOkB_sound (hσ : ∀ S x, x ∈ σ S ↔ x ∈ S.map φ) {inv : κ → Option ι} {bind : ι → Bool} {i : ι}
     (h : labelOkB G H φ inD σ inv bind i = true) : LabelFacts G H φ inD inv bind i := by
   simp only [labelOkB, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, Bool.not_eq_true'] at h
@@ -457,11 +653,11 @@ theorem labelOkB_sound (hσ : ∀ S x, x ∈ σ S ↔ x ∈ S.map φ) {inv : κ 
       obtain ⟨p', cs'⟩ := pc'
       rw [h'] at hm
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hm
-      exact ⟨cs', by rw [hm.1], rowsRelB_sound hm.2⟩
+      exact ⟨cs', by rw [hm.1], rowsRelB_sound hσ hm.2⟩
   · intro hp
     rcases hr with hr | hr
     · rw [hp] at hr; exact absurd hr (by simp)
-    · exact rowsRelB_sound hr
+    · exact rowsRelB_sound hσ hr
 
 end Sound
 
@@ -542,9 +738,24 @@ theorem checkMap_sound [Inhabited κ] {G : NormalGraph ι} {H : NormalGraph κ} 
       exact iff_of_true (H.domain.ordinary_allowed _ As hres) (G.domain.ordinary_allowed s As hres)
     env := fun p _ => henv p (φ p) }, all_inD hI, sameMembersB_sound hA⟩
 
+/-- An accepted `matchStores` result satisfies the root-independent body check
+(proved), so its returned map can be reused on other root pairs via
+`checkMap_of_body_roots`. -/
+theorem checkMapBody_of_matchStores [Inhabited κ] {G : NormalGraph ι} {H : NormalGraph κ}
+    {canon : List κ → List κ} {fuel : Nat} {I : List ι} {A : List κ} {mp : Std.HashMap ι κ}
+    (h : matchStores G H canon fuel I A = some mp) :
+    checkMapBody G H canon mp = true := by
+  unfold matchStores at h
+  by_cases hc : checkMap G H canon (propose G H fuel (startPairs G H I A) {}) I A = true
+  · simp only [hc, ↓reduceIte, Option.some.injEq] at h
+    rw [h, checkMap_eq_indexed] at hc
+    exact (Bool.and_eq_true _ _ |>.mp hc).1
+  · simp only [hc, Bool.false_eq_true, ↓reduceIte, reduceCtorEq] at h
+
 /-- **The store-map check is sound** (proved): where `matchStores` accepts,
 there is a store map from `G` to `H` whose region holds the root `I` and
 which renames it to a union of the members of `A`. -/
+
 theorem matchStores_sound [Inhabited κ] {G : NormalGraph ι} {H : NormalGraph κ} {canon : List κ → List κ}
     (hcanon : ∀ S x, x ∈ canon S ↔ x ∈ S) (henv : ∀ p q, H.env.1 q = G.env.1 p)
     {fuel : Nat} {I : List ι} {A : List κ} {mp : Std.HashMap ι κ}
