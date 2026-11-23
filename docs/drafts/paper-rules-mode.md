@@ -59,7 +59,10 @@ structure PaperRules (S : Semantics) : Prop where
   meet : MeetRule S
 ```
 
-The module states and proves nothing else. It holds no `sorry` and no
+`Semantics` is an interface that both the idealised model and TScert's
+calculus instantiate. Proving `PaperRules` for TScert's instance later
+turns `paperAccepted_sound` into an ordinary theorem with no premise. The
+module states and proves nothing else. It holds no `sorry` and no
 axiom, so it builds under `warningAsError` and passes the axiom checks
 unchanged. The rules of the paper that TScert already proves (Frame,
 Seq-Eff, Call, Fun) are not in it; the mode uses their existing theorems.
@@ -165,8 +168,3 @@ rules hold in the model before any verifier code depends on them.
 ## Decisions for the owner
 
 - **The flag's name and whether the census reports the mode's verdicts.**
-- **What `Semantics` abstracts.** Stating the rules over an interface that
-  both the model and TScert's calculus instantiate lets the same
-  `PaperRules` be proved for TScert later, which turns `paperAccepted_sound`
-  into an ordinary theorem. Stating them over the model alone is simpler
-  and leaves that step to a restatement.
