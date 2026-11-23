@@ -303,7 +303,8 @@ def FilePlans.withFreshApart (f : FilePlans) (force : Bool := false) (group : Li
   { f with plans := f.plans.zipIdx.map fun (p, i) => if !group.contains i then p else p.map (FunctionPlan.mapRequest fun r =>
       let extra := freshApartAt r force
       if extra.isEmpty then r else
-      let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.IndexAtom)) (l, as) =>
+      let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.HeadCandidate)) (l, as) =>
+        let as := as.map HeapKnowledge.HeadCandidate.index
         if cs.any (·.1 == l) then cs.map fun (l', bs) => if l' == l then (l', bs ++ as.filter (!bs.contains ·)) else (l', bs)
         else cs ++ [(l, as)]) r.candidates
       { r with candidates := cands }) }

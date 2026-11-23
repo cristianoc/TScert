@@ -22,7 +22,7 @@ theorem passUnitVerdict_safe_run
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
@@ -44,7 +44,7 @@ theorem passUnitVerdict_sound
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
@@ -74,7 +74,7 @@ theorem freshModuleVerdict_sound
     {depends : List (String × List String)} {f₀ : FilePlans}
     {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
     {incoming : Established} {tables : List (String × RowTable)}
-    {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
+    {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)}
     {i fuel : Nat} {located : Bool} {deps : List String}
     (hplanned : fragmentPlansCore m.module.document m.module.location budget (some m.names)
       forced force imported depends true true none true = .ok f₀)
@@ -123,7 +123,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
@@ -141,7 +141,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {depends : List (String × List String)} {f₀ : FilePlans}
     {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
     {incoming : Established} {tables : List (String × RowTable)}
-    {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
+    {infer : Bool} {keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)}
     {i fuel : Nat} {located : Bool} {deps : List String}
     (hplanned : fragmentPlansCore m.module.document m.module.location budget (some m.names)
       forced force imported depends true true none true = .ok f₀)

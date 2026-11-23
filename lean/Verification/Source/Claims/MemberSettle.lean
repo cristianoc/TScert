@@ -176,7 +176,7 @@ def FilePlans.computedGiven (f : FilePlans) («given» : Std.HashMap String Json
 /-- The given file's loop-head facts of plan `i` (`headFacts`), by label:
 the candidates no rerun drops. -/
 def FilePlans.givenAt (f : FilePlans) («given» : Std.HashMap String Json) (i : Nat) :
-    List (Nat × List HeapKnowledge.IndexAtom) :=
+    List (Nat × List HeapKnowledge.HeadCandidate) :=
   match f.plans[i]?, given.get? (f.fr.unitId i) with
   | some (.ok (.graph _ _ r)), some line =>
     headFactsFromJson r.sourceMap (r.start :: r.cuts) ((line.getObjVal? "headFacts").toOption.getD (Json.arr #[]))
@@ -188,8 +188,8 @@ inside the loop holding `l`'s, the walk carrying a head's facts past its
 loop) that state a fact of `drop` over the same bindings: each atom's slots
 carried by their descriptors from `l`'s context to the other head's, by
 label. -/
-def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) :
-    List (Nat × List HeapKnowledge.IndexAtom) :=
+def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.HeadCandidate) :
+    List (Nat × List HeapKnowledge.HeadCandidate) :=
   match f.plans[i]? with
   | some (.ok (.graph _ _ r)) =>
     let entryAt := fun (l : Nat) => ((r.sourceMap[l]?).bind id : Option RequestJson.SourceMapEntry)
@@ -212,8 +212,7 @@ def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.
           let σ := fun (s : Nat) => do
             let d ← e.context[s]?
             if !d.describes then none else e'.context.findIdx? (· == d)
-          let moved := drop.filterMap fun (a : HeapKnowledge.IndexAtom) => do
-            pure { a with fact := ← a.fact.mapM σ, cond := ← a.cond.mapM σ }
+          let moved := drop.filterMap (HeapKnowledge.HeadCandidate.rename σ)
           match moved.filter as.contains with
           | [] => none
           | ds => some (l', ds)
@@ -258,7 +257,7 @@ located with `located` (`FilePlans.placeRefusal`), deferred: a settling
 run's failure is read only where it is the member's last. -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (observe : Option String) (counting located : Bool) («given» : Option (Std.HashMap String Json)) (i : Nat) :
-    String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String) :=
+    String × Option (String × Option (Nat × List HeapKnowledge.HeadCandidate)) × Option (Thunk String) :=
   match g.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>
     -- (deferred: only the settled run's failure is reported, `inferredStep`)
@@ -296,8 +295,8 @@ candidates there among the lacking facts left out, the given file's
 (`protect`) kept, and the same facts at the heads that read that head's
 facts (`laterDrops`); a refusal lacking none of them stands. With `fixed` (an adversarial proposal forced)
 the forced fact is never left out, nor an implication or a regional table. -/
-def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.IndexAtom))
-    («given» : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
+def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.HeadCandidate))
+    («given» : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.HeadCandidate)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   if let some (l, which) := implicationAt w.1 then
     if fixed then none else do
@@ -319,11 +318,11 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
     let kept := (protect.filter (·.1 == l)).flatMap (·.2)
     -- (forced: the adversarial fact, a term at most `-1`, a spine or a
     -- region apart from itself or every element at most `-1`, kept)
-    let forced := fun (a : HeapKnowledge.IndexAtom) => fixed && match a.fact with
-      | .linear (.le [(_, 1)] (-1)) => true
-      | .spineApart a p b q => a == b && p == q
-      | .apart a b => a == b
-      | .every _ _ _ [.atom (.le [(.elem, 1)] (-1))] => true
+    let forced := fun (a : HeapKnowledge.HeadCandidate) => fixed && match a with
+      | .index ⟨.linear (.le [(_, 1)] (-1)), _, _⟩ => true
+      | .index ⟨.spineApart a p b q, _, _⟩ => a == b && p == q
+      | .index ⟨.apart a b, _, _⟩ => a == b
+      | .index ⟨.every _ _ _ [.atom (.le [(.elem, 1)] (-1))], _, _⟩ => true
       | _ => false
     let open_ := held.filter fun a => !kept.contains a && !forced a
     guard !open_.isEmpty
@@ -331,7 +330,7 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
     -- rerun leaves out (written, kept or forced) stands.
     let drop := open_.filter missing.contains
     guard !drop.isEmpty
-    let shown := fun (a : HeapKnowledge.IndexAtom) => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
+    let shown := fun (a : HeapKnowledge.HeadCandidate) => a.description.replace "\n" " " |>.replace "  " ""
     let f₁ := f.dropCandidates i l drop
     -- A fact an edge into a head refuses is left out at the heads that
     -- read that head's facts too (`laterDrops`: nested in its loop, or
@@ -348,8 +347,8 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
     pure (f₂, given, lines, dropped)
 
 /-- Plan `i` with the candidates `ds` names left out, head by head. -/
-def FilePlans.dropAll (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnowledge.IndexAtom)) : FilePlans :=
-  ds.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.IndexAtom) => g.dropCandidates i x.1 x.2) f
+def FilePlans.dropAll (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnowledge.HeadCandidate)) : FilePlans :=
+  ds.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.HeadCandidate) => g.dropCandidates i x.1 x.2) f
 
 /-- **A refusal's next state, every lacking proposal left out at once**:
 `inferredNext`'s, then the proposals the diagnosing walk over it finds
@@ -359,8 +358,8 @@ facts `protect` kept), those facts at the heads that read their head's
 left out. With `fixed` (an adversarial proposal forced),
 `inferredNext`'s alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
-    (protect : List (Nat × List HeapKnowledge.IndexAtom)) («given» : Option (Std.HashMap String Json)) (i : Nat)
-    (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
+    (protect : List (Nat × List HeapKnowledge.HeadCandidate)) («given» : Option (Std.HashMap String Json)) (i : Nat)
+    (w : String × Option (Nat × List HeapKnowledge.HeadCandidate)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   match f.inferredNext fixed protect given i w with
   | none => none
@@ -390,7 +389,7 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
       let kept := (protect.filter (·.1 == l')).flatMap (·.2)
       let ds := ds.filter (!kept.contains ·)
       if ds.isEmpty then none else some (l', ds)
-    let shown := fun (a : HeapKnowledge.IndexAtom) => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
+    let shown := fun (a : HeapKnowledge.HeadCandidate) => a.description.replace "\n" " " |>.replace "  " ""
     let lines := implied.map (fun (l, which) => s!"inferred heads: dropped at {l} (lacking): {implicationShown which}") ++
       found.flatMap (fun (l, ds) => ds.map fun a => s!"inferred heads: dropped at {l} (lacking): {shown a}") ++
       later.flatMap fun (l', ds) => ds.map fun a => s!"inferred heads: dropped at {l'} (later): {shown a}"
@@ -427,15 +426,15 @@ def settleInferred {S G R W : Type} (run : S → G → R) (refusal : R → Optio
 /-- Member `i`'s runs (`settleInferred`): each `inferredRun`, a refusal's
 next state from `inferredNextAll`, at most `4·h + 4` of a member with `h`
 statement entries holding candidates. -/
-def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
+def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate))
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
     («given» : Option (Std.HashMap String Json)) (i : Nat) :
     Settled FilePlans (Option (Std.HashMap String Json))
-      (String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String)) :=
-  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+      (String × Option (String × Option (Nat × List HeapKnowledge.HeadCandidate)) × Option (Thunk String)) :=
+  let candidates : List (Nat × List HeapKnowledge.HeadCandidate) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
-  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
+  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.HeadCandidate) => !c.2.isEmpty).length
   settleInferred
     (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
       g.inferredRun fuel compare debugNode repeats observe counting located gv i)
@@ -464,12 +463,12 @@ def settlingObservation (observe : Option String) : Option String :=
 or its refusal stands (`settleInferred`, `inferredNext`), at most `4·h + 4`
 of a member with `h` statement entries holding candidates; an observation
 of a node or an offset made on the settled state, its line added. -/
-def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed compare : Bool)
+def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)) (fixed compare : Bool)
     (debugNode repeats : Nat) (observe : Option String) (counting located : Bool) (acc : InferredAcc) (i : Nat) :
     InferredAcc :=
   let observe' := settlingObservation observe
   let f := acc.plans
-  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+  let candidates : List (Nat × List HeapKnowledge.HeadCandidate) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
   let shown : List String := if observe != some "heads" then [] else
@@ -483,7 +482,7 @@ def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKn
       | _ => none
     candidates.flatMap fun (l, as) =>
       s!"inferred heads: span at {l}: {span l}" :: s!"inferred heads: slots at {l}: {names l}" :: as.map fun a =>
-        s!"inferred heads: at {l}: {(reprStr a.fact).replace "\n" " " |>.replace "  " ""}"
+        s!"inferred heads: at {l}: {a.description.replace "\n" " " |>.replace "  " ""}"
   let s := f.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i
   let observedLine : List String := match observe with
     | some w => if observedWhat w == "refusal" || w == "heads" then [] else
@@ -499,7 +498,7 @@ over the member's plan, so its verdict is the pass's on the facts that run
 states: an accepted run needs no other. Beside the lines and the verdict,
 the facts dropped and the runs made. -/
 def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
-    (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed : Bool := false) (compare : Bool := false)
+    (keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)) (fixed : Bool := false) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
     List String × Except String (List String) × Nat × Nat :=
@@ -517,7 +516,7 @@ refuses them (`passGroupInferred`, the given file's facts `keep` kept);
 else the pass at the given lines (`passGroup`). Beside the lines and the
 verdict, the facts dropped and the runs made. -/
 def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String)
-    (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fuel : Nat) (group : List Nat)
+    (keep : Nat → List (Nat × List HeapKnowledge.HeadCandidate)) (fuel : Nat) (group : List Nat)
     (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1)
     («given» : Option (Std.HashMap String Json) := none) (observe : Option String := none)
     (counting : Bool := false) (located : Bool := false) :
@@ -547,6 +546,6 @@ def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   let fact : HeapKnowledge.IndexAtom :=
     { fact := .linear (.le [(HeapKnowledge.Term.value 0, 1), (HeapKnowledge.Term.value 0, -1)] (-1)) }
   { f with plans := f.plans.map fun p => p.map (FunctionPlan.mapRequest fun r =>
-      { r with candidates := (r.start, [fact]) :: r.candidates }) }
+      { r with candidates := (r.start, [.index fact]) :: r.candidates }) }
 
 end Verification.SourceClaimJson

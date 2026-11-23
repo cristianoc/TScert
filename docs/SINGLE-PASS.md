@@ -487,13 +487,15 @@ quantifies over ([the hypotheses](SINGLE-PASS-THEOREM.md#2-the-hypotheses)).
 
 ### Loop heads' proposals
 
-A loop head's candidates beyond its written assertion are the facts the
-front proposes for it from the fragment's statements
-(`HeadInference.proposals`), over source names: each is an entry claim at
-the loop's execution point, which the lowering records as the head's
-candidates, each naming only bindings in scope at the head and no early
-binding. The pass checks them on every edge into the head
-([loop heads](#4-loop-heads)).
+The source front proposes index facts over bindings in scope
+(`HeadInference.proposals`). Lowering also proposes heap read links for
+immutable locals initialized by reading a field of an in-scope object,
+including through object destructuring. The link says the local still
+holds what the field's read would return. An edge must establish that
+link using the same knowledge check as for other head facts.
+A write or a call may invalidate the link. An unestablished proposal is
+eligible to be dropped by the diagnosing walk below. See also
+[loop heads](#4-loop-heads).
 
 ### The diagnosing walk
 

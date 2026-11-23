@@ -84,6 +84,9 @@ structure ScopeBinding (ι : Type) where
   moduleCell : Option String := none
   /-- An administrative value saved from a named member path. -/
   witness : Option (String × List PropKey) := none
+  /-- The receiver and key of a field read that initialised this constant.
+  This is a proposal source. The scope alone establishes no heap link. -/
+  readOrigin : Option (Descriptor × PropKey) := none
   deriving Repr
 
 @[nospecialize] def held (d : Descriptor) : ScopeBinding ι := { source := d }
@@ -144,6 +147,14 @@ def memberPath : Fragment.Expr → Option (String × List PropKey)
     return (root, fields ++ [field])
   | _ => none
 
+/-- Propose links for immutable field copies whose original receivers are
+still in scope. The head's incoming edges must establish the relation. -/
+def readLinkCandidates (scope : List (ScopeBinding ι)) : HeapLinks.Links :=
+  scope.zipIdx.filterMap fun (binding, value) => do
+    let (receiver, field) ← binding.readOrigin
+    let cell ← sourceIndex scope receiver
+    pure { cell, value, field, optional := true }
+
 /-- A path's witness: its root a slot holding the value itself
 (`valueSlot`), which identifies one receiver across reads until a write
 rebinds it; a link from the root's slot, which every incoming edge checks,
@@ -200,7 +211,7 @@ private structure GraphFrame where
   /-- The index facts the producer supplies at each statement entry, apart
   from its assertion: candidates a search keeps where every edge into the
   entry establishes them. -/
-  candidates : Array (Nat × List HeapKnowledge.IndexAtom) := #[]
+  candidates : Array (Nat × List HeapKnowledge.HeadCandidate) := #[]
   /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- While a `try` body or handler is compiled: where a throw out of a node
@@ -605,7 +616,7 @@ def completeFlowEntry (reserved target : Target) : Compiler Unit :=
 def recordAssertion (target : Target) (knowledge : HeapKnowledge.Knowledge) : Compiler Unit :=
   updateBuilt fun s => { s with assertions := s.assertions.push (target.label,knowledge) }
 
-def recordCandidates (target : Target) (atoms : List HeapKnowledge.IndexAtom) : Compiler Unit :=
+def recordCandidates (target : Target) (atoms : List HeapKnowledge.HeadCandidate) : Compiler Unit :=
   updateBuilt fun s => { s with candidates := s.candidates.push (target.label,atoms) }
 
 def recordCut (target : Target) : Compiler Unit :=

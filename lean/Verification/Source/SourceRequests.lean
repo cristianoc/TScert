@@ -17,7 +17,7 @@ and its cuts. -/
 structure CodeSource where
   sourceMap : SourceMap := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
-  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  candidates : List (Nat × List HeapKnowledge.HeadCandidate) := []
   cuts : List Nat := []
 
 /-- A contract a unit's check read, recorded where the check reads it and
@@ -57,7 +57,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
   /-- The index facts the producer supplies at each statement entry: search
   only, kept at an entry where every edge into it establishes them. -/
-  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  candidates : List (Nat × List HeapKnowledge.HeadCandidate) := []
   /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- Labels the program mentions but no claim does: search hints only. -/

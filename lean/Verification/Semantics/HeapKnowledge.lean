@@ -40,6 +40,30 @@ structure Knowledge where
   indices : List IndexAtom := []
   deriving DecidableEq, Repr
 
+/-- A proposed loop-head fact. Links use the same heap assertion as links
+established by an ordinary property read. -/
+inductive HeadCandidate where
+  | index (fact : IndexAtom)
+  | link (read : HeapLinks.Link)
+  deriving DecidableEq, Repr, Hashable
+
+def HeadCandidate.index? : HeadCandidate → Option IndexAtom
+  | .index a => some a
+  | .link _ => none
+
+def HeadCandidate.link? : HeadCandidate → Option HeapLinks.Link
+  | .index _ => none
+  | .link g => some g
+
+/-- Read a proposal at the head's slots as ordinary checked knowledge. -/
+def Knowledge.withHeadCandidates (k : Knowledge) (candidates : List HeadCandidate) : Knowledge :=
+  { k with indices := k.indices ++ candidates.filterMap HeadCandidate.index?
+           links := k.links ++ candidates.filterMap HeadCandidate.link? }
+
+def HeadCandidate.description : HeadCandidate → String
+  | .index a => reprStr a.fact
+  | .link g => reprStr g
+
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
   ∀ f ∈ facts, f.contents.mem (ρ f.slot) = true
 
@@ -52,6 +76,13 @@ def IndexHolds (ε : EntryState) (as : List IndexAtom) (ρ : Env) (h : Heap) : P
 def Holds (k : Knowledge) (ε : EntryState) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧
     HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h ∧ IndexHolds ε k.indices ρ h
+
+/-- Adding proposals strengthens the asserted knowledge. -/
+theorem withHeadCandidates_holds {k : Knowledge} {cs : List HeadCandidate} {ρ : Env} {h : Heap}
+    (hk : Holds (k.withHeadCandidates cs) ε ρ h) : Holds k ε ρ h :=
+  ⟨hk.1, hk.2.1, fun g hg => hk.2.2.1 g (List.mem_append_left _ hg),
+    hk.2.2.2.1, hk.2.2.2.2.1,
+    fun a ha => hk.2.2.2.2.2 a (List.mem_append_left _ ha)⟩
 
 /-- The knowledge read at the entry state itself: each index fact without
 entry terms (`IndexFact.toNow`). -/
@@ -80,6 +111,11 @@ def mapIndex (f : Nat → Option Nat) (a : IndexAtom) : Option IndexAtom :=
   | some F, none => some { a with fact := F }
   | some F, some c => (f c).map fun c' => { a with fact := F, cond := some c' }
   | none, _ => none
+
+def HeadCandidate.rename (f : Nat → Option Nat) : HeadCandidate → Option HeadCandidate
+  | .index a => (mapIndex f a).map .index
+  | .link g => do
+    pure (.link { g with cell := ← f g.cell, value := ← f g.value })
 
 /-- Atoms renamed by a partial map, kept where every slot maps. -/
 def mapIndices (f : Nat → Option Nat) (as : List IndexAtom) : List IndexAtom :=

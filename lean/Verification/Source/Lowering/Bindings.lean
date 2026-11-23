@@ -49,8 +49,17 @@ nothing of, and is not fresh. -/
   let A ← exprType fc b.init
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
   let allocated ← allocates fc b.init
+  let G := SourceTypes.graph (← table)
+  let readOrigin := do
+    let .read _ field (.var _ name) := b.init | none
+    let i ← valueSlot scope name
+    let receiver ← scope[i]?
+    let T ← Γ[i]?
+    -- A view's length is computed from the spine, rather than read from a field.
+    guard (field != lengthKey || !lengthViewed G T)
+    pure (receiver.source, field)
   let bound : ScopeBinding Tree :=
-    { source := ⟨b.name,some pos⟩, allocated, apart := if allocated then some Γ else none }
+    { source := ⟨b.name,some pos⟩, allocated, apart := if allocated then some Γ else none, readOrigin }
   -- The condition as its tests run it: an equality with a claimed singleton
   -- is that singleton's tag test (`comparisonsExpr`), which
   -- `constantImplications` narrows by as the test's own edge does.
@@ -64,7 +73,6 @@ nothing of, and is not fresh. -/
   -- The value at the type its path states, where that is within the
   -- initializer's claim: a `false` arm of a condition is `false` there,
   -- which the constant's implications read (`meetImplications`).
-  let G := SourceTypes.graph (← table)
   withSelfConstant self (LoweringExecution.compileExprThenAt recursive fc scope Γ b.init fun Γ V =>
     let V := match V with
       | some V => if !V.isEmpty && V.all A.contains && BranchRefinement.onlyBoolean G A then V else A
@@ -113,12 +121,13 @@ nothing of, and is not fresh. -/
 @[nospecialize] partial def executeBindingPlan (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (original : List (ScopeBinding Tree)) (wanted scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (plan : SourceExecution.BindingPlan)
-    (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) : Compiler Target := do
+    (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target)
+    (savedReceiver : Option (String × Descriptor) := none) : Compiler Target := do
   let save := fun (source : Span) (value : SourceExecution.Saved) (T : Ty Tree)
-      (term : Tm) (next : SourceExecution.BindingPlan) => do
-    let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
+      (term : Tm) (next : SourceExecution.BindingPlan) (readOrigin : Option (Descriptor × PropKey)) => do
+    let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T, readOrigin }
     let next ← withExecutionType value.name T
-      (executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k)
+      (executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k savedReceiver)
     emitAt source term (.bind next) Γ T "pattern-read" (scope := scope)
   match plan with
   | .finish =>
@@ -134,24 +143,31 @@ nothing of, and is not fresh. -/
     let mapping := (next.mapping.getD (List.range wanted.length)).map (indices[·]!)
     emitAt (0,0) .nul (.effect ⟨next.label,some mapping⟩) Γ [Labels.nul] "binding-completion" (scope := scope)
   | .evaluate value plan next =>
+    -- Object destructuring first saves its receiver. Associate a saved
+    -- source binding with that receiver so a field read can name it later.
+    let savedReceiver := do
+      let .observe _ (.atom _ (.evaluate (.var _ name) _ _)) := plan | none
+      let receiver ← valueSlot scope name >>= (scope[·]?)
+      pure (value.name, receiver.source)
     LoweringExecution.executePlanTail recursive fc scope Γ plan fun scope' Δ _ => do
       let some T := Δ.head? | throw "internal binding plan: no evaluated value"
       let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
       withExecutionType value.name T
-        (executeBindingPlan recursive fc original wanted (bound::scope'.tail) Δ next k)
+        (executeBindingPlan recursive fc original wanted (bound::scope'.tail) Δ next k savedReceiver)
   | .bind name origin value next =>
     if name == "undefined" then throw "shadowing undefined is outside the fragment"
     if hasName wanted name then
       throw s!"duplicate or shadowing local declaration '{name}'"
     let (i,T) ← LoweringExecution.executionSaved scope Γ value
-    let bound := held ⟨name,some origin⟩
+    let bound : ScopeBinding Tree :=
+      { source := ⟨name,some origin⟩, readOrigin := scope[i]?.bind (·.readOrigin) }
     let wanted := bound :: wanted.filter (fun b => b.source.name != name)
-    let next ← executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k
+    let next ← executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k savedReceiver
     emitAt value.source (.var i) (.bind next) Γ T "pattern-binding" (scope := scope)
   | .input _ index value next =>
     let i := scope.length - original.length + 1 + index
     let some T := Γ[i]? | throw "internal binding plan: invalid parameter input"
-    save value.source value T (.var i) next
+    save value.source value T (.var i) next none
   | .readField source receiver field value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ receiver
     let G := SourceTypes.graph (← table)
@@ -162,29 +178,35 @@ nothing of, and is not fresh. -/
     let R ← claimAt fc source
     -- `length` through a view tests the object (`lenView`), as a member
     -- access does.
-    let read := if field == lengthKey && lengthViewed G T then lengthRead i else .readAt field (.var i)
-    save source value R read next
+    if field == lengthKey && lengthViewed G T then
+      save source value R (lengthRead i) next none
+    else
+      let readOrigin := do
+        let (saved, descriptor) ← savedReceiver
+        guard (saved == receiver.name)
+        pure (descriptor, field)
+      save source value R (.readAt field (.var i)) next readOrigin
   | .readPosition source array index value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ array
     let R ← tryCatch (positionRead (SourceTypes.graph (← table)) T index) fun reason => do
       throw (locatedRefusal (← table) source .bindingAnnotation reason)
-    save source value R (.elemAt (.readAt SourceTypes.spineField (.var i)) (.num (bitsOfNat index))) next
+    save source value R (.elemAt (.readAt SourceTypes.spineField (.var i)) (.num (bitsOfNat index))) next none
   | .objectRest source receiver drop value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ receiver
     let E ← groupType [] []
     let _ ← mergeType E (← boundOf T) (drop.map PropKey.str)
     let R ← claimAt fc source
-    save source value R (.merge (drop.map PropKey.str) (.makeAt .absent [] []) (.var i)) next
+    save source value R (.merge (drop.map PropKey.str) (.makeAt .absent [] []) (.var i)) next none
   | .arrayRest source array start slice value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ array
     if slice then
-      save source value (← claimAt fc source) (← sliceCall scope i start) next
+      save source value (← claimAt fc source) (← sliceCall scope i start) next none
     else
       let (spine,S,R) ← restArray fc T i start source
       let stored := held ⟨"",some source⟩ :: scope
       let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some R }
       let target ← withExecutionType value.name R
-        (executeBindingPlan recursive fc original wanted (bound::stored) (R::S::Γ) next k)
+        (executeBindingPlan recursive fc original wanted (bound::stored) (R::S::Γ) next k savedReceiver)
       let proto ← prototypeSlot stored
       let object ← emitAt source (arrayTerm proto) (.bind target) (S::Γ) R "pattern-rest" (scope := stored)
       emitAt source spine (.bind object) Γ S "pattern-rest" (scope := scope)
@@ -195,7 +217,7 @@ nothing of, and is not fresh. -/
     -- A proved defined value is retained without evaluating the default or
     -- asking for claims about its unreachable expressions.
     if decide (Answers G R .isUndef false) then
-      return ← save value.source result R (.var i) next
+      return ← save value.source result R (.var i) next (scope[i]?.bind (·.readOrigin))
     let present := BranchRefinement.tagSlice G R .isUndef false
     let absent := BranchRefinement.tagSlice G R .isUndef true
     -- A default that rebinds a slot continues on each arm with the frame
@@ -205,7 +227,7 @@ nothing of, and is not fresh. -/
       let continueAt := fun (A : Ty Tree) (Δ : List (Ty Tree)) =>
         let bound : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some A }
         withExecutionType result.name A
-          (executeBindingPlan recursive fc original wanted (bound::scope) (A::Δ) next k)
+          (executeBindingPlan recursive fc original wanted (bound::scope) (A::Δ) next k savedReceiver)
       let kept ← continueAt present Γ
       let presentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some present }
       let yes ← emitAt value.source (.var 0) (.bind ⟨kept.label, some ((kept.mapping.getD
@@ -227,7 +249,7 @@ nothing of, and is not fresh. -/
     let T := (present ++ D).eraseDups
     let resultBinding : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some T }
     let joined ← withExecutionType result.name T
-      (executeBindingPlan recursive fc original wanted (resultBinding::scope) (T::Γ) next k)
+      (executeBindingPlan recursive fc original wanted (resultBinding::scope) (T::Γ) next k savedReceiver)
     let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else j+1)
     let presentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some present }

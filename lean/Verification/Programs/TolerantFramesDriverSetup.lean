@@ -22,7 +22,7 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
   claimed : c.claims.toArray.size = c.P.toArray.size
   entry : SinglePass.entryRefusal G c.inputs c.claims c.start c.goal
     ((byLabel c.P.toArray.size c.assertions).getD c.start none)
-    (((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD [])
+    ((((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD []).filterMap HeapKnowledge.HeadCandidate.index?)
     ((c.givenImplies[c.start]?).getD []) ((c.givenArgs[c.start]?).getD []) ((c.givenInputs[c.start]?).getD [])
     c.entryIndices c.entrySeparation = none
   nodes : env.nodes = c.P.toArray
@@ -102,12 +102,12 @@ omit [Labels ι] in
 below `n`): a label other than a head has none, a head below `n` its
 written assertion with the claims' facts, at the start `startGiven`. -/
 theorem setupGiven_get (n start : Nat) (isHead : Array Bool) (stated : Array (Option HeapKnowledge.Knowledge))
-    (supplied : Array (Option (List HeapKnowledge.IndexAtom))) (entryIndices : List HeapKnowledge.IndexAtom)
+    (supplied : Array (Option (List HeapKnowledge.HeadCandidate))) (entryIndices : List HeapKnowledge.IndexAtom)
     (entrySeparation : HeapSeparation.Separation) (counts : SinglePass.Counts) (t : Nat) :
     (SinglePass.setupGiven n start isHead stated supplied entryIndices entrySeparation counts).1[t]! =
       if t < n ∧ isHead[t]! = true then
-        some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation ((supplied[t]!).getD [])
-          else { (stated[t]!).getD {} with indices := ((stated[t]!).getD {}).indices ++ (supplied[t]!).getD [] })
+        some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation (((supplied[t]!).getD []).filterMap HeapKnowledge.HeadCandidate.index?)
+          else ((stated[t]!).getD {}).withHeadCandidates ((supplied[t]!).getD []))
       else none := by
   unfold SinglePass.setupGiven
   -- The fold over `xs`, a sublist of the labels below `n` without repeats.
@@ -121,12 +121,12 @@ theorem setupGiven_get (n start : Nat) (isHead : Array Bool) (stated : Array (Op
           let counts := { acc.2 with
             givenWritten := acc.2.givenWritten + (SinglePass.atomsOf written).length
             givenClaims := acc.2.givenClaims + claimsFacts.length }
-          (acc.1.set! l (some (if l == start then SinglePass.startGiven stated[l]! entryIndices entrySeparation claimsFacts
-            else { written with indices := written.indices ++ claimsFacts })), counts)
+          (acc.1.set! l (some (if l == start then SinglePass.startGiven stated[l]! entryIndices entrySeparation (claimsFacts.filterMap HeapKnowledge.HeadCandidate.index?)
+            else written.withHeadCandidates claimsFacts)), counts)
         else acc) acc).1[t]! =
         if t ∈ xs ∧ isHead[t]! = true then
-          some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation ((supplied[t]!).getD [])
-            else { (stated[t]!).getD {} with indices := ((stated[t]!).getD {}).indices ++ (supplied[t]!).getD [] })
+          some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation (((supplied[t]!).getD []).filterMap HeapKnowledge.HeadCandidate.index?)
+            else ((stated[t]!).getD {}).withHeadCandidates ((supplied[t]!).getD []))
         else acc.1[t]! := by
     intro xs
     induction xs with
@@ -197,7 +197,7 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
     (by rw [hs.claims, hs.n]; exact hs.claimed) hs.claims (fun t ht => ?_) hs.codes hs.checker hs.bound hs.goal
     hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.merging hs.regional hs.startKept hs.framed
   · rw [hgiven, setupGiven_get, ite_eq_right (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
-  · refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD [], ?_, ?_⟩
+  · refine ⟨(((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD []).filterMap HeapKnowledge.HeadCandidate.index?, ?_, ?_⟩
     · have he := hs.entry
       rw [hs.givenImplies, hs.givenArgs, hs.givenInputs]
       unfold passStated

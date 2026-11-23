@@ -19,7 +19,7 @@ run, `droppable` the facts at a head that may be left out; none where the
 member has no main run (a qualified body, a code request not accepted, a
 request refused before its run). -/
 def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.HashMap String Json))
-    (droppable : Nat → List HeapKnowledge.IndexAtom) : List (Nat × SinglePass.LeftOut) :=
+    (droppable : Nat → List HeapKnowledge.HeadCandidate) : List (Nat × SinglePass.LeftOut) :=
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let answers : CertificateProducer.Answered G := {}

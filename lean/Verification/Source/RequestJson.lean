@@ -254,6 +254,11 @@ deriving instance ToJson for HeapSeparation.Separation
 deriving instance ToJson for CallEffects.ElemPred
 deriving instance ToJson for HeapKnowledge.ElemAtom
 deriving instance ToJson, FromJson for HeapKnowledge.IndexAtom
+instance : ToJson HeapKnowledge.HeadCandidate where
+  toJson
+    | .index a => toJson a
+    | .link g => Json.mkObj [("link", toJson g)]
+
 deriving instance ToJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for PointClaim
 deriving instance ToJson, FromJson for CodeEntry
@@ -709,7 +714,7 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
-    (candidates : List (Nat × List HeapKnowledge.IndexAtom))
+    (candidates : List (Nat × List HeapKnowledge.HeadCandidate))
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker G I := HeapExpressionRules.Checker.ordinary G I)
     (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none)
@@ -752,7 +757,7 @@ as for a unit. -/
 structure CodeHints where
   sourceMap : SourceMap := []
   requirements : List (Nat × HeapKnowledge.Knowledge) := []
-  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  candidates : List (Nat × List HeapKnowledge.HeadCandidate) := []
   cuts : List Nat := []
 
 /-- Render the retained validation outcome in the graph whose check exhausted. -/
@@ -782,7 +787,7 @@ checker `searchChecker`; the response is checked under the request's own
     (sourceMap : SourceMap := [])
     (searchLabels : Option (List ι) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := [])
+    (candidates : List (Nat × List HeapKnowledge.HeadCandidate) := [])
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))

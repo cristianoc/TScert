@@ -73,9 +73,9 @@ assertions, candidates and statement entries renumbered, and the new label
 of each kept node. -/
 def compactGraph (c : Compaction) (program : List Node) (claims : List (PointClaim Tree))
     (sourceMap : List (Option SourceMapEntry)) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (cuts : List Nat) (entry : Nat) :
+    (candidates : List (Nat × List HeapKnowledge.HeadCandidate)) (cuts : List Nat) (entry : Nat) :
     List Node × List (PointClaim Tree) × List (Option SourceMapEntry) × List (Nat × HeapKnowledge.Knowledge) ×
-      List (Nat × List HeapKnowledge.IndexAtom) × List Nat × (Nat → Nat) := Id.run do
+      List (Nat × List HeapKnowledge.HeadCandidate) × List Nat × (Nat → Nat) := Id.run do
   let P := program.toArray
   let C := claims.toArray
   let pinned : Std.HashSet Nat := ((entry :: cuts) ++ assertions.map (·.1) ++ candidates.map (·.1)).foldl

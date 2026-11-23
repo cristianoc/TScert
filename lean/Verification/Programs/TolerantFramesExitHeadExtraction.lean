@@ -221,7 +221,7 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
 /-- The structural part of a head's entry, separate from its edge checks. -/
 @[nospecialize] def HeadEntryContract (s : Site c r l hl) (t : Nat)
     (req : HeapKnowledge.Knowledge) : Prop :=
-  ∃ (written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom) (width fresh : Nat),
+  ∃ (written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.HeadCandidate) (width fresh : Nat),
     ((headEntry req false width fresh (List.range c.inputs.length) s.env.argName
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
       ((s.env.givenImplies[t]?).getD [])).1,
@@ -229,7 +229,7 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
       ((s.env.givenImplies[t]?).getD [])).2.1) ∈ r.w.incoming t ∧
     ((∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ε ρ h) ∧
-      req = { written with indices := written.indices ++ cf }) ∧
+      req = written.withHeadCandidates cf) ∧
     ∀ y ∈ List.range c.inputs.length, y < fresh
 
 /-- The trace identifies the head flag with the pass's flag. -/

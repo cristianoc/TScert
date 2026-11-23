@@ -167,10 +167,10 @@ theorem Site.env_eq (s : Site c r l hl) {t : Nat} {ht : r.w.visited t} (q : Site
   obtain ⟨σ1, hq⟩ := q.setup
   exact (Prod.mk.inj (Except.ok.inj (hs.symm.trans hq))).1
 
-/-- At a head other than the start, setup adds only the supplied index facts. -/
+/-- At a head other than the start, setup adds the supplied proposals. -/
 theorem Site.head_written (s : Site c r l hl) {t : Nat} {req : HeapKnowledge.Knowledge}
     (hg : s.env.given[t]! = some req) (ht : t ≠ c.start) :
-    ∃ cf, req = { (r.stated t).getD {} with indices := ((r.stated t).getD {}).indices ++ cf } := by
+    ∃ cf, req = ((r.stated t).getD {}).withHeadCandidates cf := by
   obtain ⟨σ0, hsetup⟩ := s.setup
   have h := setup_ok hsetup
   obtain ⟨counts, hgiven⟩ := h.given
@@ -230,7 +230,7 @@ theorem headEntryContract_of_checked (s : Site c r l hl) (checked : WalkChecked 
     (writtenCoherent : ∃ written cf,
       (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h →
         HeapKnowledge.Holds ((r.stated e.target.label).getD {}) ε ρ h) ∧
-      req = { written with indices := written.indices ++ cf }) :
+      req = written.withHeadCandidates cf) :
     HeadEntryContract s e.target.label req := by
   have hin := s.head_incoming hm hh
   have hne : r.w.incoming e.target.label ≠ [] := List.ne_nil_of_mem hin
@@ -272,7 +272,7 @@ theorem Site.start_given (s : Site c r l hl) {req : HeapKnowledge.Knowledge}
     (hg : s.env.given[c.start]! = some req) :
     req = { startWritten (r.stated c.start) c.entryIndices c.entrySeparation with
       indices := (startWritten (r.stated c.start) c.entryIndices c.entrySeparation).indices ++
-        ((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD [] } := by
+        (((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD []).filterMap HeapKnowledge.HeadCandidate.index? } := by
   obtain ⟨σ0, hs⟩ := s.setup
   have h := setup_ok hs
   obtain ⟨counts, hgiven⟩ := h.given
@@ -293,11 +293,14 @@ theorem Site.head_written_coherent (s : Site c r l hl) {t : Nat}
     (startWrittenSound : StartWrittenImpliesStated r) :
     ∃ written cf,
       (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ε ρ h) ∧
-      req = { written with indices := written.indices ++ cf } := by
+      req = written.withHeadCandidates cf := by
   by_cases ht : t = c.start
   · subst t
-    exact ⟨startWritten (r.stated c.start) c.entryIndices c.entrySeparation,
-      ((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD [], startWrittenSound, s.start_given hg⟩
+    refine ⟨startWritten (r.stated c.start) c.entryIndices c.entrySeparation,
+      ((((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD []).filterMap HeapKnowledge.HeadCandidate.index?).map HeapKnowledge.HeadCandidate.index, startWrittenSound, ?_⟩
+    rw [s.start_given hg]
+    simp [HeapKnowledge.Knowledge.withHeadCandidates, HeapKnowledge.HeadCandidate.index?,
+      HeapKnowledge.HeadCandidate.link?, Function.comp_def]
   · obtain ⟨cf, hcf⟩ := s.head_written hg ht
     exact ⟨_, cf, fun _ _ _ h => h, hcf⟩
 

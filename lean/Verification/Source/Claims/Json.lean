@@ -273,7 +273,7 @@ def regionalFromJson (n : Nat) (j : Json) : Except String (List String × Array 
 statement entries of `cuts` that start where the given one does and hold as
 many slots (a `for`'s head and its declarations' entry share a start): a
 graph lowered over other types numbers its nodes otherwise. -/
-def headFactsFromJson (sourceMap : SourceMap) (cuts : List Nat) (j : Json) : List (Nat × List HeapKnowledge.IndexAtom) :=
+def headFactsFromJson (sourceMap : SourceMap) (cuts : List Nat) (j : Json) : List (Nat × List HeapKnowledge.HeadCandidate) :=
   let startOf := fun (l : Nat) => ((sourceMap[l]?).bind id).map (·.pos.1)
   ((j.getArr?).toOption.getD #[]).toList.flatMap fun e => match do
       let start ← (e.getObjValAs? (Option Nat) "start").toOption
@@ -281,7 +281,7 @@ def headFactsFromJson (sourceMap : SourceMap) (cuts : List Nat) (j : Json) : Lis
       let atoms ← (e.getObjValAs? (List HeapKnowledge.IndexAtom) "atoms").toOption
       pure (start, width, atoms) with
     | some (start, width, atoms) =>
-      (cuts.filter fun l => startOf l == start && (((sourceMap[l]?).bind id).map (·.context.length)) == width).map (·, atoms)
+      (cuts.filter fun l => startOf l == start && (((sourceMap[l]?).bind id).map (·.context.length)) == width).map (·, atoms.map HeapKnowledge.HeadCandidate.index)
     | none => []
 
 /-- A member's counts, and where asked (`counting`) also as a JSON line. -/
@@ -464,9 +464,9 @@ the framed node's supports taken again (`framedAt`, with `framed`), as the
 member's run settles (`inferredNext`); each run's outcome and what it left
 out, and at `observed` the settled walk's entry and step facts. -/
 def framedProbeSettle {ι : Type}
-    (runAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
-    (framedAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint))
-    (cands₀ : List (Nat × List HeapKnowledge.IndexAtom)) (observed : Option Nat) (framed : Bool) : String := Id.run do
+    (runAt : List (Nat × List HeapKnowledge.HeadCandidate) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.HeadCandidate) → List (Nat × List Footprints.Footprint))
+    (cands₀ : List (Nat × List HeapKnowledge.HeadCandidate)) (observed : Option Nat) (framed : Bool) : String := Id.run do
   let mut cands := cands₀
   let mut lines : List String := []
   for _ in List.range 12 do
@@ -494,9 +494,9 @@ walk `runAt` once with node `L` framed keeping the produced support of each
 index fact on its entry (`framedAt`) and once with none, the facts a
 refused edge lacks, and each walk settled (`framedProbeSettle`). -/
 def framedProbeReport {ι : Type}
-    (runAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
-    (framedAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint))
-    (cands : List (Nat × List HeapKnowledge.IndexAtom)) (L : Nat) (observed : Option Nat) : String :=
+    (runAt : List (Nat × List HeapKnowledge.HeadCandidate) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.HeadCandidate) → List (Nat × List Footprints.Footprint))
+    (cands : List (Nat × List HeapKnowledge.HeadCandidate)) (L : Nat) (observed : Option Nat) : String :=
   let fr := framedAt cands
   s!"framed probe: node {L} keeps {fr.map fun (p : Nat × List Footprints.Footprint) => p.2.length} supports\n  ordinary walk: {runAt cands [] none}{outcomeLacks (runAt cands [] none)}\n  framed walk: {runAt cands fr none}{outcomeLacks (runAt cands fr none)}\n  settled ordinary:\n{framedProbeSettle runAt framedAt cands observed false}\n  settled framed:\n{framedProbeSettle runAt framedAt cands observed true}"
 
@@ -720,13 +720,13 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
       (framed ++ probeTrace (framedProbeOf observe) fun L =>
-        let framedAt := fun (cands : List (Nat × List HeapKnowledge.IndexAtom)) =>
+        let framedAt := fun (cands : List (Nat × List HeapKnowledge.HeadCandidate)) =>
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
           | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
           | _ => []
-        let runAt := fun (cands : List (Nat × List HeapKnowledge.IndexAtom)) (fr : List (Nat × List Footprints.Footprint))
+        let runAt := fun (cands : List (Nat × List HeapKnowledge.HeadCandidate)) (fr : List (Nat × List Footprints.Footprint))
             (ob : Option Nat) => (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
@@ -845,7 +845,7 @@ def callEffects {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ �
   fun l => (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
 
 /-- Plan `i`'s candidates at label `l` less `drop`. -/
-def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
+def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.HeadCandidate) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map (FunctionPlan.mapRequest fun r =>
       { r with candidates := r.candidates.map fun (l', as) =>
         if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }) }

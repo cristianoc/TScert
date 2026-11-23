@@ -448,7 +448,11 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     (!invariant.contains ·)
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !invariant.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], invariant⟩
-  if !candidates.isEmpty then recordCandidates reserved candidates
+  let readLinks := match node.action with
+    | .branch (.loop ..) _ _ | .iteratorStep .. => readLinkCandidates scope
+    | _ => []
+  let proposals := candidates.map HeapKnowledge.HeadCandidate.index ++ readLinks.map .link
+  if !proposals.isEmpty then recordCandidates reserved proposals
   recordCut reserved
   return ← jumpTo incoming reserved scope
 
