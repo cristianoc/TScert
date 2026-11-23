@@ -1,6 +1,6 @@
 {
   "src/line-break.ts": {
-    "ordinary": "unverified",
+    "ordinary": "verified",
     "units": {
       "breaksAfterKind": "accepted",
       "isDiscretionaryLineEnd": "accepted",
