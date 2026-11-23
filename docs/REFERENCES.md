@@ -126,15 +126,17 @@ states each of its notions as the note defines it is in
 
 ### The Effect languages paper
 
-*Effect languages: one set of effect rules, the language TScert has, and an
-extension for callbacks.* TScert working paper, 23 November 2026.
+*An effect language for TScert: effects as relations, bounds on callbacks,
+and the effects TScert has.* TScert working paper, 23 November 2026.
 [PDF](drafts/effect-languages-note/effect-languages.pdf) ·
 [LaTeX source](drafts/effect-languages-note/note.tex).
 
-The paper states the general effect rules over an effect language with
-four properties, describes the footprints as one such language, and
-proposes an extension with effect variables for Pretext's line walkers. It
-states the extension and its rules without implementation or proof.
+The paper proposes one effect language, in which an effect is a relation
+between heaps with an explicit change for uncovered locations, effect
+variables are bounded by effects, and every check is inclusion; it applies
+the language to Pretext's line walkers and maps TScert's footprints to a
+fragment of it. The language beyond that fragment has no implementation
+or proof.
 **Discussed in** [effect languages](drafts/effect-languages.md).
 
 
