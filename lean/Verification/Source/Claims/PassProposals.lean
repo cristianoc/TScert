@@ -371,7 +371,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.Ha
       SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
         main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg rg.isNone
-        (((proposeConfinement G r.program r.claims r.start []).map (·.framed)).getD []), codes)
+        (((proposeConfinement (f.fr.isInitialization i) G r.program r.claims r.start []).map (·.framed)).getD []), codes)
   -- (prepared once, where a walk needs it)
   let prepared := Thunk.mk prepared
   -- The direct route: the settling run's steps, else a walk with no bound.

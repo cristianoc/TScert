@@ -1772,6 +1772,10 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "invalid-module-cells-apart-call: the call writes the first cell, read past it at number[]");
   assert.equal(runExample("invalid-module-cell-stale", "stale()"), "s",
     "invalid-module-cell-stale: the call's write reaches the read TypeScript narrowed to number");
+  assert.equal(runExample("invalid-initialization-call-writes-cell", "typeof out"), "string",
+    "invalid-initialization-call-writes-cell: the initialization's call writes the cell TypeScript narrowed to number");
+  assert.equal(runExample("invalid-initialization-call-writes-constant", "typeof out"), "string",
+    "invalid-initialization-call-writes-constant: the initialization's call writes the field TypeScript narrowed to number");
   assert.equal(runExample("module-cell-saved-value", "saved()"), 0,
     "module-cell-saved-value: the constant keeps the value read before the write");
   assert.equal(runExample("blocker-module-assignment",

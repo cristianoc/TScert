@@ -83,7 +83,7 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Opti
       r.candidates r.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
       (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers bound
       main.implies main.args r.ensures main.inputs r.entrySeparation regional
-      (((proposeConfinement G r.program r.claims r.start []).map (·.framed)).getD [])
+      (((proposeConfinement (f.fr.isInitialization i) G r.program r.claims r.start []).map (·.framed)).getD [])
   | _ => []
 
 end Verification.SourceClaimJson

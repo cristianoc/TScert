@@ -167,6 +167,33 @@ checked step derivation `st.stepDeriv` and knowledge `st.stepK`:
   framed callback mentioning a holder, escaping write, unverified call) are
   refused.
 
+### The module's execution
+
+The theorems above are of one unit's run, its inputs given at its entry.
+The module's execution composes the units
+([module composition](../../WORK.md#module-composition)), and `Priv` stays
+unreachable there only where no input comes to hold an allocation of the
+unit other than by a step of the unit. The module's initialization
+(`Front.isInitialization`) allocates the module's cells and constants, and
+its inputs, the module's functions, close over them
+([module cells](../SOURCE-ELABORATION.md#module-cells)): a call to one may
+read and write every one. The initialization therefore proposes no table
+(`SourceClaimJson.proposeConfinement`), and its calls keep facts by their
+footprints alone. On
+
+```ts
+let m: number | string = 1;
+function setS(): void { m = "x"; }
+setS();
+export const out: number = m;
+```
+
+a table owning the cell `m` would frame `setS()` and keep `m.value = 1`,
+which Node refutes (`out` is `"x"`); with no table the call's footprint
+writes the cell and the binding is refused
+(`invalid-initialization-call-writes-cell`,
+`invalid-initialization-call-writes-constant`).
+
 ## What this duplicates
 
 | Modeled concern | Where the rest of the verifier models it | Relationship |
