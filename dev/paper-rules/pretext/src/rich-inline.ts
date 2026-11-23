@@ -369,6 +369,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
         if (normalizePreparedLineStart(own, start)) {   // PAPER: a block for the assume
           paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
+          const segmentAtLineStart = start.segmentIndex   // PAPER: a local copy for the assume
+          paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < own.widths.length, "#362")   // PAPER: unsafe assume until #362
           width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
         }
         width += item.extraWidth ?? 0
@@ -1241,12 +1243,16 @@ export function layoutNextRichInlineLineRange(
     return flow.onlyItem >= 0 ? createOnlyItemLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0) : createLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0)
   }
   const lineEnd: LayoutCursor = { segmentIndex: getSegmentIndex(flow, start), graphemeIndex: start.graphemeIndex }
+  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart, "#361")   // PAPER: unsafe assume until #361
   const data = flow.data   // PAPER: the handle through a local
   paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (!normalizePreparedLineStart(data, lineEnd)) return null
   const startSegmentIndex = lineEnd.segmentIndex
   const startGraphemeIndex = lineEnd.graphemeIndex
   paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
+  const segmentAtLineStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < data.widths.length, "#362")   // PAPER: unsafe assume until #362
   const width = stepPreparedLineGeometryFromStart(data, lineEnd, safeWidth)   // PAPER: the handle through a local
   if (width === null) return null
   return flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)

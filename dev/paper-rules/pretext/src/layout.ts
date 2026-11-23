@@ -303,6 +303,8 @@ function stepNextLine(
   const internal = getInternalPrepared(prepared)
   lineEnd.segmentIndex = start.segmentIndex
   lineEnd.graphemeIndex = start.graphemeIndex
+  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart, "#361")   // PAPER: unsafe assume until #361
   const started = normalizePreparedLineStart(internal, lineEnd)   // PAPER: the result through a local
   paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (!started) return null
@@ -310,6 +312,8 @@ function stepNextLine(
   lineStart.segmentIndex = lineEnd.segmentIndex
   lineStart.graphemeIndex = lineEnd.graphemeIndex
   paperAssume(internal.segmentFlags.length === internal.widths.length, "#356")   // PAPER: unsafe assume until #356
+  const segmentAtLineStart = lineEnd.segmentIndex   // PAPER: a local copy for the assume
+  paperAssume(Number.isSafeInteger(segmentAtLineStart) && 0 <= segmentAtLineStart && segmentAtLineStart < internal.widths.length, "#362")   // PAPER: unsafe assume until #362
   const width = stepPreparedLineGeometryFromStart(internal, lineEnd, maxWidth)
   paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return width === null ? null : Math.max(0, width)
