@@ -56,10 +56,6 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   enclosing it, or by a function run before it, refused.
 - `repro-351.ts`: the loop-head pattern of issue #351, fixed in the verifier
   by #353: accepted, with its two refused variants.
-- `repro-355.ts`: issue #355, a callback's call dropping the facts over an
-  object the caller allocated: the walker refused, the same walker with the
-  facts assumed after the call accepted naming #355, and one assuming too
-  little refused.
 - `repro-364.ts`: issue #364, a bounded walker whose loop needs loop-head
   settling (`lackingAt`): accepted once the diagnosing walk runs with the
   checker layer, with an unsafe unbounded variant refused.

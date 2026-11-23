@@ -336,8 +336,6 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
     stats.lineCount++
     if (width > stats.maxLineWidth) stats.maxLineWidth = width
     onLine?.(width, startSegmentIndex, startGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
-    const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
-    paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
   }
 }
 
@@ -1145,9 +1143,9 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
       if (lineWidth > stats.maxLineWidth) stats.maxLineWidth = lineWidth
     }
     onLine?.(lineWidth, lineStartSegmentIndex, lineStartGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
+    paperAssume(widths.length === segmentCount, "#364")   // PAPER: unsafe assume until #364
     const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
     paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
-    paperAssume(widths.length === segmentCount, "#364")   // PAPER: unsafe assume until #364
     // A single-line caller owns normalization of the following line.
     if (singleLine || !normalizePreparedLineStart(prepared, cursor)) break
   }

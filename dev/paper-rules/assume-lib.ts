@@ -1,6 +1,6 @@
 // A module holding an unsafe assume, imported by assume-importer.ts.
 
-// `paperAssume(fact, "#N");` is the prototype's unsafe assume (repro-355.ts).
+// `paperAssume(fact, "#N");` is the prototype's unsafe assume.
 function paperAssume(fact: boolean, issue: string): Modifies<{}, void> {}
 
 // Accepted by the prototype, naming #356; refused by the ordinary verifier.
