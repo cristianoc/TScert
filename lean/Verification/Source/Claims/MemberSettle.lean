@@ -367,7 +367,7 @@ left out. With `fixed` (an adversarial proposal forced),
 `inferredNext`'s alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
     (protect : List (Nat × List HeapKnowledge.Candidate)) («given» : Option (Std.HashMap String Json)) (i : Nat)
-    (w : String × Option (Nat × List HeapKnowledge.Candidate)) :
+    (w : String × Option (Nat × List HeapKnowledge.Candidate)) (layer : Option SinglePass.PassLayer := none) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   match f.inferredNext fixed protect given i w with
   | none => none
@@ -380,7 +380,7 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
       let kept := (protect.filter (·.1 == l)).flatMap (·.2)
       ((candidates.filter (·.1 == l)).flatMap (·.2)).filter (!kept.contains ·)
     let all := SinglePass.timedKind "inferred heads: diagnosing walk" fun _ =>
-      SinglePass.work "check: diagnosing walk" (f₁.fr.workItem i) fun _ => f₁.lackingAt fuel i g₁ droppable
+      SinglePass.work "check: diagnosing walk" (f₁.fr.workItem i) fun _ => f₁.lackingAt fuel i g₁ droppable (layer := layer)
     let lacking := all.filterMap fun
       | (l, .facts fs) => some (l, fs)
       | (_, .implication _) => none
@@ -446,7 +446,7 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
       g.inferredRun fuel compare debugNode repeats observe counting located gv i (layer := layer))
     (fun res => res.2.1)
-    (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w)
+    (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w (layer := layer))
     (4 * heads + 3) f given [] 0 0
 
 /-- The state `passGroupInferred` carries across a group's members: the

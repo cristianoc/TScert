@@ -19,12 +19,13 @@ run, `droppable` the facts at a head that may be left out; none where the
 member has no main run (a qualified body, a code request not accepted, a
 request refused before its run). -/
 def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.HashMap String Json))
-    (droppable : Nat → List HeapKnowledge.Candidate) : List (Nat × SinglePass.LeftOut) :=
+    (droppable : Nat → List HeapKnowledge.Candidate) (layer : Option SinglePass.PassLayer := none) :
+    List (Nat × SinglePass.LeftOut) :=
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let answers : CertificateProducer.Answered G := {}
   match f.plans[i]? with
-  | some (.ok (.graph _ _ r)) =>
+  | some (.ok (.graph name _ r)) =>
     if r.qualification.isSome then [] else
     let bounded := !(r.footprint == .top && !r.onThrow && !r.fresh) &&
       !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)
@@ -79,7 +80,8 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Opti
     SinglePass.runRecorded "diagnose" (if regional.isSome then "regions" else "direct")
       (runDigests r line "main" (boundText bound regional)) (fun _ => 0) fun _ =>
     SinglePass.lackingFacts G I droppable true pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
-      r.candidates r.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases .ordinary sumsAnswers bound
+      r.candidates r.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+      (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers bound
       main.implies main.args r.ensures main.inputs r.entrySeparation regional
   | _ => []
 

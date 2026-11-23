@@ -60,6 +60,9 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   object the caller allocated: the walker refused, the same walker with the
   facts assumed after the call accepted naming #355, and one assuming too
   little refused.
+- `repro-364.ts`: issue #364, a bounded walker whose loop needs loop-head
+  settling (`lackingAt`): accepted once the diagnosing walk runs with the
+  checker layer, with an unsafe unbounded variant refused.
 - `repro-365.ts`: issue #365, a cursor's grapheme index, which no clause
   bounds by the length of its segment's list: the read refused, the same
   read with both bounds assumed accepted naming #365, and one assuming only
