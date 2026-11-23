@@ -1049,8 +1049,9 @@ control("forged fragment: binder roles, an unguarded alias, written applications
     for (const level of dependent(fragment).scope) for (const b of level) b.bound = null;
   }), "a written scope", /a written application: the type argument for B's "T" .*does not establish its declared bound/);
   const relaxed = forgeDocument("invalid-computed-bound-typeof", "forged-written-bound", (fragment) => {
-    const entry = must(fragment.declarations.applications.find((a) => a.reference.name === "BoxOf"), "BoxOf<number>");
-    entry.bounds = entry.bounds.map(() => null);
+    const entries = fragment.declarations.applications.filter((a) => a.reference.name === "BoxOf");
+    assert(entries.length > 0, "BoxOf<number>");
+    for (const entry of entries) entry.bounds = entry.bounds.map(() => null);
   });
   // The bounds a written application is checked at are the document's
   // (the front end supplies every one): nulled, the application is

@@ -49,6 +49,10 @@ export type SweepContext = {
   /** The term of `node` read where it is written, a type parameter read as
    * `binder` names it (undefined for one not in scope). */
   read(node: TypeNode, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TypeTerm;
+  /** The kinds of the parameters of the declaration a written name applies
+   * (`parameterKinds`): no argument is read at one without type meaning,
+   * whose bound the declaration's meaning reads no assumption of. */
+  meaningless(name: ts.Identifier): readonly ParameterKind[];
   /** The reader of a declaration's bounds and defaults at the application
    * `use`: its type parameters read as the arguments' terms, a computed form
    * naming them as TypeScript computes it at `use` (`type-probe.mts`); a
@@ -310,9 +314,9 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     try {
       // Each argument, written or the default at the earlier ones; each
       // bound at all of them.
-      const written = args.map((arg): TypeTerm => ts.isInferTypeNode(arg)
+      const written = withoutMeaning(args, context.meaningless(name), (arg): TypeTerm => ts.isInferTypeNode(arg)
         ? { k: "binder", name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter), span: spanOf(arg) }
-        : context.read(arg, read));
+        : context.read(arg, read), (_arg, message) => { throw Error(message); });
       const terms = context.complete(first, written, node, name.text, parameter => {
         const bound = env.names.get(parameter);
         if (bound === undefined)
@@ -665,6 +669,107 @@ function withinTypeDeclaration(node: Node): boolean {
     if (ts.isInterfaceDeclaration(at) || isTypeAlias(at)) return true;
   return false;
 }
+
+/** What a declaration's type parameter is to the declaration's meaning:
+ * `"meaning"` where the meaning may read its argument; `"frame"` where the
+ * argument has no type meaning but stands at a frame, the `P` of the
+ * verifier's `Modifies<P, T>`, which the frame rule reads (a type parameter
+ * there states the frame changing every location, SOURCE-ELABORATION.md,
+ * "Stated effects"); `"none"` where the meaning reads nothing of it. */
+export type ParameterKind = "meaning" | "frame" | "none";
+
+/** The kinds of a declaration's type parameters, by position. Each
+ * occurrence of a parameter `X` in the declaration (an identifier spelled
+ * `X`, outside its own declaration and outside a signature's body) is a frame
+ * where it is, as a whole, the frame argument of `Modifies` (`frame`) or the
+ * argument at a `"frame"` parameter of the declaration it applies; it reads
+ * nothing where it is the argument at a `"none"` parameter; any other
+ * occurrence has a meaning. `X` is `"meaning"` where one occurrence has one,
+ * `"frame"` where one is a frame, `"none"` otherwise: `Modifies<P, T> = T`
+ * is `"frame"` at `P`, `type Visitor<E> = (i: number) => Modifies<E, void>`
+ * at `E`, and `type AtMost<P extends Footprint> = Footprint` is `"none"` at
+ * `P`. `parts` are the declaration's merged parts, or one generic
+ * signature; `targets` gives the parts of the declaration a written name
+ * applies, null for none read. Identifiers by spelling over-approximate
+ * where the meaning reads the parameter; a declaration reached again while
+ * its own kinds are computed has a meaning at every parameter. A reader
+ * reads an argument by its parameter's kind (`withoutMeaning`). */
+export function parameterKinds(parts: readonly Node[],
+    targets: (name: ts.Identifier) => Modifies<{ values: "any"; spines: "grow" }, readonly Node[] | null>,
+    frame: (applied: ts.TypeReferenceNode, position: number) => Modifies<{ values: "any"; spines: "grow" }, boolean>):
+    Modifies<{ values: "any"; spines: "grow" }, ParameterKind[]> {
+  const [first] = parts;
+  if (!first) return [];
+  const known = kinds.get(first);
+  if (known) return known;
+  const count = Math.max(0, ...parts.map(part => childParameters(part).length));
+  kinds.set(first, new Array<ParameterKind>(count).fill("meaning"));
+  const occurrence = (id: ts.Identifier): ParameterKind => {
+    const reference = id.parent;
+    if (!reference || !ts.isTypeReferenceNode(reference) || reference.typeName !== id || reference.typeArguments?.length)
+      return "meaning";
+    const applied = reference.parent;
+    if (!applied || !ts.isTypeReferenceNode(applied) || !ts.isIdentifier(applied.typeName)) return "meaning";
+    const position = (applied.typeArguments ?? []).findIndex(argument => argument === reference);
+    if (position < 0) return "meaning";
+    if (frame(applied, position)) return "frame";
+    const target = targets(applied.typeName);
+    return target ? parameterKinds(target, targets, frame)[position] ?? "meaning" : "meaning";
+  };
+  const kindIn = (part: Node, name: string): ParameterKind => {
+    let kind: ParameterKind = "none";
+    const visit = (node: Node): void => {
+      if (kind === "meaning" || (ts.isBlock(node) && node.parent === part)) return;
+      if (ts.isIdentifier(node) && node.text === name &&
+          !(node.parent && ts.isTypeParameterDeclaration(node.parent) && node.parent.name === node)) {
+        const found = occurrence(node);
+        if (found !== "none") kind = found;
+        return;
+      }
+      node.forEachChild(visit);
+    };
+    part.forEachChild(visit);
+    return kind;
+  };
+  const answer = Array.from({ length: count }, (_, index): ParameterKind => {
+    const found = parts.map(part => {
+      const parameter = childParameters(part)[index];
+      return parameter ? kindIn(part, parameter.name.text) : "none";
+    });
+    return found.includes("meaning") ? "meaning" : found.includes("frame") ? "frame" : "none";
+  });
+  kinds.set(first, answer);
+  return answer;
+}
+const kinds = new WeakMap<Node, ParameterKind[]>();
+
+/** The terms of an application's written arguments by their parameters'
+ * kinds (`parameterKinds`): each read by `read` at a parameter with a
+ * meaning; `never`, which every bound admits, at one without; and at a
+ * frame, `never` where the argument is a type parameter in scope, whose
+ * frame reads as changing every location, a refusal (`fail`) otherwise,
+ * since the frame a declaration reads at its parameter is not read at the
+ * application. A call's instance (`instance`) is a type parameter's
+ * argument: its frame reads as changing every location at every instance. */
+export function withoutMeaning(args: readonly TypeNode[], positions: readonly ParameterKind[],
+    read: (node: TypeNode, index: number) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>,
+    fail: (node: TypeNode, message: string) => never, instance: boolean = false):
+    Modifies<{ values: "any"; spines: "grow" }, TypeTerm[]> {
+  return args.map((arg, index): TypeTerm => {
+    const kind = positions[index] ?? "meaning";
+    if (kind === "meaning") return read(arg, index);
+    const never: TypeTerm = { k: "atom", name: "never", span: spanOf(arg) };
+    if (kind === "none" || instance) return never;
+    const variable = ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName) && !arg.typeArguments?.length &&
+      (term => term.k === "binder" || term.k === "parameter")(read(arg, index));
+    return variable ? never : fail(arg, FRAME_ARGUMENT);
+  });
+}
+
+/** The refusal of a frame argument other than a type parameter. */
+export const FRAME_ARGUMENT: string = "the argument at a parameter its declaration reads as a frame (`Modifies<P, T>`) is a " +
+  "type parameter in scope, whose frame changes every location: a frame written as a type literal is read at a " +
+  "signature's result only";
 
 /** A declaration's or signature's own type parameters. */
 function childParameters(node: Node): ts.TypeParameterDeclaration[] {

@@ -153,7 +153,7 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; sp
       args,
       ...(spreads.length ? { spreads } : {}),
       ...(node.typeArguments?.length
-        ? { typeArgs: node.typeArguments.map((t) => gate.typeOf(t, t)) }
+        ? { typeArgs: gate.typeArgumentsOf(node, (t) => t) }
         : {}),
     };
   }
@@ -556,7 +556,7 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; sp
         gate.globalIntrinsics.has(gate.span(made).join(":"))) {
       const call = gate.intrinsic(filling, gate.span(node), gate.span(filled.name),
         [gate.expr(made), ...node.arguments.map(a => gate.expr(a))]);
-      const typeArgs = made.typeArguments?.map((t) => gate.typeOf(t, made));
+      const typeArgs = gate.typeArgumentsOf(made, () => made);
       return call.k === "apply" && typeArgs?.length ? { ...call, typeArgs } : call;
     }
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
@@ -769,7 +769,7 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; sp
       });
       // Explicit type arguments instantiate the method's leading binders;
       // Lean checks the claimed instance against them.
-      const typeArgs = node.typeArguments?.map((t) => gate.typeOf(t, node));
+      const typeArgs = gate.typeArgumentsOf(node, () => node);
       return {
         k: "invoke",
         pos: gate.span(node),
@@ -792,7 +792,7 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; sp
     });
     // Explicit type arguments state the callee's instance; Lean checks the
     // claimed instance against them, as for a method call.
-    const typeArgs = node.typeArguments?.map((t) => gate.typeOf(t, node));
+    const typeArgs = gate.typeArgumentsOf(node, () => node);
     return {
       k: "apply",
       pos: gate.span(node),
@@ -1088,7 +1088,7 @@ export function chainLink(this: Gate,
     return gate.spreadOperand(arg);
   });
   const method = !node.questionDotToken && (object.k === "read" || object.k === "index");
-  const typeArgs = node.typeArguments?.map((t) => gate.typeOf(t, node));
+  const typeArgs = gate.typeArgumentsOf(node, () => node);
   if (typeArgs?.length && !method)
     gate.fail(node, "explicit type arguments are admitted on a method call only");
   if (method)

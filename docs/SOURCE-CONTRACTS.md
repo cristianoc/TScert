@@ -1630,6 +1630,8 @@ with $`\simeq_G`$ inclusion both ways by certified subtyping. Both rules only
 refuse: acceptance rests on the call's typing, so safety does not depend on
 them; they make a stated instance honoured. The instance's bounds are checked
 as for any call. A declaration's defaults for method binders are not read.
+An argument at a binder without type meaning is not read
+([arguments without type meaning](#arguments-without-type-meaning)).
 
 ## Classes
 
@@ -2938,6 +2940,59 @@ extends type with `infer`; a generic signature whose bound names another of
 its binders, which a scheme does not represent; an obligation whose
 comparison exhausts its budget; an argument outside the fragment, such as a
 string pattern.
+
+## Arguments without type meaning
+
+A type parameter $`X_i`$ of a declaration $`D`$ (an alias, an interface, a
+class, or one generic signature, whose body is not its type) is of one of
+three kinds. Each occurrence of $`X_i`$ in $`D`$ is a *frame* where it is,
+as a whole, the frame argument $`P`$ of the verifier's `Modifies<P, T>`
+or the argument at a frame parameter of the declaration it applies; it
+reads *nothing* where it is the argument at a parameter of no kind
+below; any other occurrence has a *meaning*. $`X_i`$ has a meaning where
+one occurrence has one, is a frame parameter where one occurrence is a
+frame, and has no type meaning otherwise. `Modifies<P, T> = T`
+([tools/resolvable.d.ts](../tools/resolvable.d.ts)) is a frame parameter
+at $`P`$: its argument carries no type for TypeScript but is the frame the
+[stated-effect rule](SOURCE-ELABORATION.md#stated-effects) reads. So
+`type Visitor<E> = (i: number) => Modifies<E, void>` is a frame parameter
+at $`E`$, and `type AtMost<P extends Footprint> = Footprint` has no type
+meaning at $`P`$. An occurrence is an identifier spelled as $`X_i`$, so
+the kinds over-approximate where the meaning reads the parameter; a
+declaration reached again while its own kinds are computed has a meaning
+at every parameter.
+
+Every reader of an application's arguments (the declaration reader at a
+reference in a declaration, the gate at a reference in the file it lowers,
+the completion of omitted arguments, the
+[written applications](#written-applications)' obligations, a contextual
+type's alias arguments, and a call's or a construction's
+[explicit type arguments](#explicit-type-arguments) at the callee's
+signature, where the callee's type states one) reads an argument by its
+parameter's kind (`parameterKinds` and `withoutMeaning`,
+`tools/written-applications.mts`):
+
+- at a parameter with a meaning, as written;
+- at one without type meaning, not at all: it puts $`\mathsf{never}`$,
+  which every bound admits and which the declaration's meaning (its
+  equation, bases, and other parameters' bounds and defaults) does not
+  read, so its bound obliges nothing;
+- at a frame parameter, a type parameter in scope is admitted and read as
+  $`\mathsf{never}`$: $`D`$ reads its frame as changing every location,
+  whatever the instance. Any other argument, a type literal among them,
+  and a default at a frame parameter are refused where they are written:
+  $`D`$ does not read the frame written there, and reading it as changing
+  every location would weaken the written contract
+  (`invalid-stated-effect-alias-frame`). A call's explicit instance at a
+  frame binder is its binder's instance, which the callee reads as
+  changing every location at every instance, and is not read.
+
+A walker
+`walk<E extends AtMost<{ "xs[*]": "keep"; else: "any" }>>(xs: number[], visit: Visitor<E>)`
+is so read at $`E\le\mathtt{AtMost}\langle\mathsf{never}\rangle`$, its
+parameter at $`\mathtt{Visitor}\langle\mathsf{never}\rangle`$, and the call
+`walk<{ "visited[*]": "extend" }>(xs, f)` at the instance
+$`\mathsf{never}`$ (`stated-effect-variable`).
 
 ## Index signatures
 
