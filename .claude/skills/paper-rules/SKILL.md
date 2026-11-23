@@ -39,7 +39,7 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
 - **The Pretext copy and its verdicts**: `dev/paper-rules/pretext/`.
 - **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
   based on `single-pass`).
-- **Issues for gaps of the sound verifier**: each `paperAssume` names one.
+- **Issues for unsafe assumes**: each `paperAssume` names one.
   cristianoc/TScert#355 (a callback's call drops the facts over a local
   object) is in use in `dev/paper-rules/repro-355.ts`; #351 (links at loop
   heads) was one, fixed by #353.
@@ -65,10 +65,17 @@ walkLines<'{ "lines[*]": "extend" }'>(p, w => p.widths.push(0))    // refused
   layer under the axiom, without asking.
 - **Gaps of the sound verifier** are not worked around in the code. Write
   `paperAssume(fact, "#N");` where the fact is lost, a self-contained repro,
-  and an issue N for a PR that extends the verifier.
-- **Keep partial progress.** Annotations added for a guard that still can't
-  come out stay if they break nothing. Guards come out one at a time, kept
-  only if every function of the file still passes.
+  and an issue N for a PR that extends the verifier. The issue N tracks
+  either a verifier extension or a proof the source does not yet give: an
+  invariant is stated, and wherever the source does not establish it, the
+  missing fact is assumed naming its issue; the assumes come out in later
+  steps.
+- **Keep partial progress.** An annotation added for a guard that still
+  can't come out stays, with an unsafe assume of its missing fact wherever
+  the source does not establish it. Guards come out one at a time, kept
+  only if every function of the file still passes, judged on the
+  prototype's verdict where an assume is involved. Progress is the number
+  of guards removed and the number of assumes left.
 - **Tests.** Every behaviour has positive and negative cases recorded in an
   expectation set; each negative says whether the program is unsafe or
   only unprovable.

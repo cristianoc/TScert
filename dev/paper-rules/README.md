@@ -74,8 +74,9 @@ the prototype's edits. Every edit is marked:
 - `// PAPER: annotation`: a bounds annotation (`@requires`, `@ensures`,
   `@invariant`, `Modifies`) added for the experiment;
 - `// PAPER: guard removed`: a `?? missing()` read restored to `x[k]!`;
-- `paperAssume(fact, "#N");`: an unsafe assumption of a condition the
-  sound verifier should establish, tracked by issue N. `paperAssume` is
+- `paperAssume(fact, "#N");`: an unsafe assumption of a condition, tracked
+  by issue N, which is either a verifier extension or a proof the source
+  does not yet give. `paperAssume` is
   declared in the file as a function with an empty body and
   `Modifies<{}, void>`, so the ordinary verifier's call changes nothing; the
   prototype checks the statement as `if (!(fact)) throw "#N";`, so after it
