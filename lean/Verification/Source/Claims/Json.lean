@@ -517,11 +517,22 @@ def layerSites {ι : Type} (program : ControlFlow.Program) (claims : List (Certi
   program.zipIdx.map fun (node, l) =>
     (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).map (·.pos))
 
-/-- Propose a local-confinement table when no explicit `framed` list is given. -/
-def proposeConfinement {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (P : ControlFlow.Program)
-    (claims : List (CertificateProducer.PointClaim ι)) (start : Nat)
+/-- Propose a local-confinement table when no explicit `framed` list is given
+and the unit's inputs hold none of its allocations in the module's execution
+(`inputsHoldAllocations` false). A checked table states that a location the
+unit allocates is unreachable from its inputs unless a step of the unit
+stores it there; the unit's theorem proves this of the unit's run, its
+inputs given at its entry. The module's execution composes the units
+([module composition](../../../../WORK.md#module-composition)) and keeps
+this only where no input comes to hold the unit's allocations otherwise.
+The module's initialization (`Front.isInitialization`) allocates the
+module's cells and constants, and its inputs, the module's functions,
+close over them: its calls may read and write every one, so it frames
+none. -/
+def proposeConfinement {ι : Type} [DecidableEq ι] (inputsHoldAllocations : Bool) (G : NormalGraph ι)
+    (P : ControlFlow.Program) (claims : List (CertificateProducer.PointClaim ι)) (start : Nat)
     (framed : List (Nat × List Footprints.Footprint)) : Option LocalConfinement.Table :=
-  if framed.isEmpty then
+  if framed.isEmpty && !inputsHoldAllocations then
     let conf := LocalConfinement.propose G P claims start
     if conf.framedNodes.isEmpty then none else some conf
   else none
@@ -769,7 +780,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
         framedProbeReport runAt framedAt r.candidates L observed)
-      (proposeConfinement G r.program r.claims r.start framed)
+      (proposeConfinement (f.fr.isInitialization i) G r.program r.claims r.start framed)
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,

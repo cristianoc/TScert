@@ -193,6 +193,15 @@ def Front.unitId (fr : Front) (i : Nat) : String :=
   | some (f, _, none) => s!"{f.name}@{f.namePos.1}"
   | none => ""
 
+/-- Whether unit `i` is the module's initialization: the unit whose inputs,
+the module's functions and classes, close in the module's execution over
+the bindings it allocates (its cells and its constants,
+[module cells](../../../../docs/SOURCE-ELABORATION.md#module-cells)). -/
+def Front.isInitialization (fr : Front) (i : Nat) : Bool :=
+  match fr.units[i]? with
+  | some (_, _, some _) => true
+  | _ => false
+
 /-- A source's item in the work table (`SinglePass.work`): the first twelve
 digits of its `sourceSha256`. -/
 def fileItem (ast : Json) : String := ((ast.getObjValAs? String "sourceSha256").toOption.getD "").take 12 |>.toString

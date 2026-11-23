@@ -295,12 +295,12 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
           fun _ _ => ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩
         have hwalk_eq : walk k bnd rg = SourceClaimJson.runWithConfinement
             (fun fr' conf' => (mkCall fr' conf').result) fr []
-            (SourceClaimJson.proposeConfinement G r.program r.claims r.start fr) := by
+            (SourceClaimJson.proposeConfinement (f.fr.isInitialization j) G r.program r.claims r.start fr) := by
           simp only [walk, SinglePass.work, SinglePass.runRecorded, probeTrace_nil, mkCall, RunCall.result,
             SinglePass.PassChecker.ofLayer]
         rw [hwalk_eq]
         unfold SourceClaimJson.runWithConfinement
-        cases hcf : SourceClaimJson.proposeConfinement G r.program r.claims r.start fr with
+        cases hcf : SourceClaimJson.proposeConfinement (f.fr.isInitialization j) G r.program r.claims r.start fr with
         | none =>
           exact ⟨mkCall fr none, hmain fr none, rfl, rfl, Or.inr rfl, by simp only [List.append_nil]⟩
         | some conf =>
