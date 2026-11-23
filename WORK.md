@@ -18,7 +18,7 @@ describes an item's design and evidence, not its progress.
 
 | Item | State | Closed when |
 | --- | --- | --- |
-| Pretext's walkers across their visitors | `walkPreparedLinesRaw` and `walkPreparedComplexLines` (`src/line-break.ts`) need facts over their handle kept across a visitor pretext does not analyze. An annotated producer (`InferPreserves`) and one caller in the same file verify under its published callback interface; an adapter forwarding a visitor through its own closure, a caller passing a parameter path, several producers or calls per caller, and an unannotated parameter are refused. Next: the route. | The walkers verify with all 51 bound sites in upstream form. |
+| Pretext's walkers across their visitors | `walkPreparedLinesRaw` and `walkPreparedComplexLines` (`src/line-break.ts`) need facts over their handle kept across a visitor pretext does not analyze. The visitor's effect is written as a bounded effect variable ([the effect language](docs/drafts/effect-languages.md), [the paper-rules skill](.claude/skills/paper-rules/SKILL.md)); the paper-rules prototype (`dev/paper-rules/`, on #347) accepts reduced walkers and their callers and refuses false claims, but in the Pretext copy no walker guard comes out yet: the handle's length invariant breaks 17 functions (calls passing no visitor or forwarding one, builders that don't establish it), a cursor received as a parameter is unbounded, and a callback's helper writes a `WeakMap` cache. Next: a call passing no visitor as the empty instance, and forwarding an effect variable. | The walkers verify with all 51 bound sites in upstream form. |
 
 ### Frames and facts across calls
 

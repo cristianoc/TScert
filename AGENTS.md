@@ -16,6 +16,12 @@ and how to resume it from nothing, in
 [the parity skill](.claude/skills/parity/SKILL.md); its state is one row of
 [WORK.md](WORK.md#status).
 
+The work on the effect language, its rules in Lean and the paper-rules
+prototype applied to Pretext's walkers is described in
+[the paper-rules skill](.claude/skills/paper-rules/SKILL.md); its state is
+the row "Pretext's walkers across their visitors" of
+[WORK.md](WORK.md#status).
+
 ## Commands
 
 ```sh
