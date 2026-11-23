@@ -2,12 +2,13 @@
 // instance is within its bound changes the heap at most by the bound and the
 // walker's own effect, read at the actual arguments, so the caller keeps the
 // facts the bound keeps (here, about the handle `p`).
-type AtMost<P> = unknown;
-type LineVisitor<E> = (width: number, start: number, end: number) => void;
+type Footprint = { [location: string]: "keep" | "init" | "scalar" | "extend" | "grow" | "any" | true };
+type AtMost<P extends Footprint> = Footprint;
+type LineVisitor<E extends Footprint> = (width: number, start: number, end: number) => Modifies<E, void>;
 type Prepared = { widths: number[]; flags: number[] };
 type Cursor = { segmentIndex: number };
 
-export function walkLines<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(
+export function walkLines<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: Prepared, onLine: LineVisitor<E>): number {
   const cursor: Cursor = { segmentIndex: 0 };
   let lines = 0;
@@ -27,7 +28,7 @@ export function walkLines<E extends AtMost<'{ "prepared.**": "keep", "else": "an
 export function caller(p: Prepared, i: number): number {
   if (p.flags.length !== p.widths.length) return 0;
   const lines: number[] = [];
-  walkLines<'{ "lines[*]": "extend" }'>(p, (w) => { lines.push(w); });
+  walkLines<{ "lines[*]": "extend" }>(p, (w) => { lines.push(w); });
   if (i < p.widths.length) return p.flags[i]!;
   return 0;
 }
@@ -38,7 +39,7 @@ export function caller(p: Prepared, i: number): number {
 export function outside(p: Prepared, q: number[], i: number): number {
   if (i >= q.length) return 0;
   const lines: number[] = [];
-  walkLines<'{ "lines[*]": "extend" }'>(p, (w) => { lines.push(w); });
+  walkLines<{ "lines[*]": "extend" }>(p, (w) => { lines.push(w); });
   return q[i]!;
 }
 
@@ -47,7 +48,7 @@ export function outside(p: Prepared, q: number[], i: number): number {
 /** @requires safeInteger(i) && 0 <= i */
 export function badInst(p: Prepared, i: number): number {
   if (p.flags.length !== p.widths.length) return 0;
-  walkLines<'{ "p.widths[*]": "extend" }'>(p, (w) => { p.widths.push(w); });
+  walkLines<{ "p.widths[*]": "extend" }>(p, (w) => { p.widths.push(w); });
   if (i < p.widths.length) return p.flags[i]!;
   return 0;
 }
@@ -61,8 +62,8 @@ export function callerTwoCalls(p: Prepared, i: number): number {
   if (p.flags.length !== p.widths.length) return 0;
   const lines: number[] = [];
   const marks: number[] = [];
-  walkLines<'{ "lines[*]": "extend" }'>(p, (w) => { lines.push(w); });
-  walkLines<'{ "marks[*]": "extend" }'>(p, (w) => { marks.push(w); });
+  walkLines<{ "lines[*]": "extend" }>(p, (w) => { lines.push(w); });
+  walkLines<{ "marks[*]": "extend" }>(p, (w) => { marks.push(w); });
   if (i < p.widths.length) return p.flags[i]!;
   return 0;
 }
@@ -79,7 +80,7 @@ function touch(p: Prepared, n: number): void {
 export function callerTouched(p: Prepared, i: number): number {
   if (p.flags.length !== p.widths.length) return 0;
   const lines: number[] = [];
-  walkLines<'{ "lines[*]": "extend" }'>(p, (w) => { lines.push(w); });
+  walkLines<{ "lines[*]": "extend" }>(p, (w) => { lines.push(w); });
   touch(p, 0);
   if (i < p.widths.length) return p.flags[i]!;
   return 0;

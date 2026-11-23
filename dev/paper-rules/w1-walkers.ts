@@ -1,13 +1,14 @@
 // Walkers the prototype must refuse in their own body: their bound is weaker
 // than what they rely on across the visit.
-type AtMost<P> = unknown;
-type LineVisitor<E> = (width: number, start: number, end: number) => void;
+type Footprint = { [location: string]: "keep" | "init" | "scalar" | "extend" | "grow" | "any" | true };
+type AtMost<P extends Footprint> = Footprint;
+type LineVisitor<E extends Footprint> = (width: number, start: number, end: number) => Modifies<E, void>;
 type Prepared = { widths: number[]; flags: number[] };
 
 // Negative, unsafe: the bound lets a visitor grow `widths` alone, which
 // breaks the equal lengths the read of `flags` relies on.
 /** @requires widths.length === flags.length */
-export function walkPair<E extends AtMost<'{ "widths[*]": "grow", "flags[*]": "grow", "else": "any" }'>>(
+export function walkPair<E extends AtMost<{ "widths[*]": "grow"; "flags[*]": "grow"; else: "any" }>>(
   widths: number[], flags: number[], onLine: LineVisitor<E>): number {
   const cursor = { i: 0 };
   let total = 0;
@@ -23,7 +24,7 @@ export function walkPair<E extends AtMost<'{ "widths[*]": "grow", "flags[*]": "g
 // Negative, unsafe: the bound keeps only the field `flags`, and the walker
 // reads `prepared.widths` after the visit, which a visitor the bound allows
 // may replace by a shorter array.
-export function walkField<E extends AtMost<'{ "prepared.flags": "keep", "else": "any" }'>>(
+export function walkField<E extends AtMost<{ "prepared.flags": "keep"; else: "any" }>>(
   prepared: Prepared, onLine: LineVisitor<E>): number {
   const cursor = { i: 0 };
   let total = 0;
@@ -37,7 +38,7 @@ export function walkField<E extends AtMost<'{ "prepared.flags": "keep", "else": 
 }
 
 // Positive control: the same walker with the bound keeping the reach.
-export function walkReach<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(
+export function walkReach<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: Prepared, onLine: LineVisitor<E>): number {
   const cursor = { i: 0 };
   let total = 0;

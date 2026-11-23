@@ -929,7 +929,7 @@ function findWholeLine(flow: InternalPreparedRichInline): InternalPreparedRichIn
   const data = flow.data   // PAPER: the handle through a local
   paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   // PAPER: the visitor's instance
-  const lineCount = walkPreparedLinesRaw<'{ "flow.wholeWidth": "any", "flow.wholeStart": "any", "flow.wholeEnd": "any" }'>(data, Number.POSITIVE_INFINITY, (width, startSegmentIndex, _startGraphemeIndex, endSegmentIndex) => {
+  const lineCount = walkPreparedLinesRaw<{ "flow.wholeWidth": "any"; "flow.wholeStart": "any"; "flow.wholeEnd": "any" }>(data, Number.POSITIVE_INFINITY, (width, startSegmentIndex, _startGraphemeIndex, endSegmentIndex) => {
     flow.wholeWidth = width
     flow.wholeStart = startSegmentIndex
     flow.wholeEnd = endSegmentIndex
@@ -1382,11 +1382,10 @@ export function materializeRichInlineLineRange(
 // any value and grow any array. Assumed, not checked outside pretext. Its type states it as
 // Modifies<{ values: "any"; spines: "grow" }, void>, which TypeScript reads as void.
 // PAPER: the client's effect is the effect variable E, bounded by the paragraph's reach.
-type AtMost<P> = P extends unknown ? unknown : unknown
-export function walkRichInlineLineRanges<E extends AtMost<'{ "prepared.**": "keep", "else": "any" }'>>(
+export function walkRichInlineLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: PreparedRichInline,
   maxWidth: number,
-  onLine: (line: RichInlineLineRange, effect?: E) => void,
+  onLine: (line: RichInlineLineRange) => Modifies<E, void>,   // PAPER
 ): number {
   const flow = getInternalPreparedRichInline(prepared)
   const safeWidth = Math.max(0, normalizeMaxWidth(maxWidth))

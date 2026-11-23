@@ -3,7 +3,9 @@
 // with their `AtMost<P>` bounds and the parameters whose types mention them,
 // and each call that writes an instance of such a parameter, with the check
 // of the instance against the bound (rule Inst). The ordinary front end reads
-// none of this: `AtMost` is a local alias of `unknown` there.
+// a bound's and an instance's effect as arguments without type meaning, and a
+// callback's `Modifies<E, T>` as changing every location
+// (docs/SOURCE-CONTRACTS.md, "Arguments without type meaning").
 //   node dev/paper-annotations.mts file.ts
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -79,33 +81,9 @@ function assumeForm(n: ts.CallExpression): { issue: string } | string {
   return { issue: issue.text };
 }
 
-/** The effect a string literal type `'{ "x[*]": "keep", "else": "any" }'`
- * holds as JSON. */
-function effectOfText(text: string): Effect | null {
-  let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch { return null; }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const entries: [string, Change][] = [];
-  let otherwise: Change = "keep";
-  let classes = false;
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string" || !isChange(value)) return null;
-    // A class key bounds every location of its class: the effect read here
-    // has no class regions, so it widens the `else` (each location is in one
-    // class, and a change on a class the other key names is within the max).
-    if (key === "values" || key === "spines") classes = true;
-    if (key === "else" || key === "values" || key === "spines") { if (!le(value, otherwise)) otherwise = value; }
-    else entries.push([key, value]);
-  }
-  return classes ? { entries, else: otherwise, classes } : { entries, else: otherwise };
-}
-
-/** The effect a type writes: a string literal type holding the paper's
- * literal as JSON (what the ordinary reader admits in a type argument), or
- * the literal itself, `{ "x[*]": "keep"; "else": "any" }`; null for any
- * other type. */
+/** The effect a type writes: the paper's literal as an object type,
+ * `{ "x[*]": "keep"; else: "any" }`; null for any other type. */
 function effectOf(node: ts.TypeNode): Effect | null {
-  if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) return effectOfText(node.literal.text);
   if (!ts.isTypeLiteralNode(node)) return null;
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
@@ -117,7 +95,10 @@ function effectOf(node: ts.TypeNode): Effect | null {
     const name = m.name;
     if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
         (name.text === "else" || name.text === "values" || name.text === "spines")) {
-      // A class key widens the `else`, as in `effectOfText`.
+      // A class key bounds every location of its class: the effect read
+      // here has no class regions, so it widens the `else` (each location is
+      // in one class, and a change on a class the other key names is within
+      // the max).
       if (name.text !== "else") classes = true;
       if (!le(literal.text, otherwise)) otherwise = literal.text;
     } else if (ts.isStringLiteral(name)) entries.push([name.text, literal.text]);
@@ -810,12 +791,8 @@ function anchored(instance: Effect, at: ts.Node): string | null {
 /** The effect variable a callback parameter's type gives its calls, null
 where the type mentions no effect variable, or the reason the prototype
 does not read it. Read is a function type, a local alias of one, or a union
-of one with `undefined` or `null`, whose effect is the variable alone: its
-result `Modifies<E, T>`, or a result with no `Modifies` and the variable
-only as a phantom (a parameter of type `E`, or an alias's type argument its
-function type uses no otherwise). A result `Modifies<[E, P], T>` makes the
-callback's effect `ε ∪ P`; the layer reads `ε` alone at the callback's
-calls, so a non-empty `P` is refused. */
+of one with `undefined` or `null`, whose result is `Modifies<E, T>`, `E` the
+variable, and whose parameters and `T` do not mention it. */
 function callbackVar(type: ts.TypeNode, vars: string[], decls: Map<string, ts.Node>): { variable: string } | string | null {
   const seen = new Set<string>();
   mentions(type, seen);
@@ -827,22 +804,15 @@ function callbackVar(type: ts.TypeNode, vars: string[], decls: Map<string, ts.No
   /** A function type whose effect is the variable `x` alone. */
   const arrow = (f: ts.FunctionTypeNode, x: string): string | null => {
     for (const p of f.parameters)
-      if (p.type !== undefined && mentionsName(p.type, x) && !isVar(p.type, x))
+      if (p.type !== undefined && mentionsName(p.type, x))
         return `the callback type uses its effect variable in the parameter ${p.name.getText()}`;
     const r = f.type;
     if (r === undefined) return "the callback type has no result type";
-    if (ts.isTypeReferenceNode(r) && ts.isIdentifier(r.typeName) && r.typeName.text === "Modifies") {
-      const [eff, result] = r.typeArguments ?? [];
-      if (eff === undefined || (result !== undefined && mentionsName(result, x))) return "the callback type's Modifies is not read";
-      if (isVar(eff, x)) return null;
-      if (ts.isTupleTypeNode(eff) && eff.elements.length === 2 && eff.elements[0] !== undefined && isVar(eff.elements[0], x)) {
-        const p = eff.elements[1] === undefined ? null : effectOf(eff.elements[1]);
-        if (p !== null && p.entries.length === 0 && p.else === "keep" && !p.classes) return null;
-        return `the callback's effect is ${x} with ${eff.elements[1]?.getText() ?? "?"}, which the layer does not read at its calls`;
-      }
-      return "the callback's stated effect is not its effect variable";
-    }
-    return mentionsName(r, x) ? "the callback type's result mentions its effect variable" : null;
+    if (!ts.isTypeReferenceNode(r) || !ts.isIdentifier(r.typeName) || r.typeName.text !== "Modifies")
+      return `the callback type states no effect Modifies<${x}, T>`;
+    const [eff, result] = r.typeArguments ?? [];
+    if (eff === undefined || (result !== undefined && mentionsName(result, x))) return "the callback type's Modifies is not read";
+    return isVar(eff, x) ? null : "the callback's stated effect is not its effect variable";
   };
   const members = ts.isUnionTypeNode(type)
     ? type.types.filter((t) => t.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword))
