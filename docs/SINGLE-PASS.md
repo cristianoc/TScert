@@ -136,7 +136,12 @@ one predecessor states where another holds a slot at a guard tag's value
 (`z === false || F`) where every predecessor's facts entail it
 (`indicesCheckWith`), as the join guards a spine separation: after `const b
 = i > from && f(xs[i - 1])`, `b === false || from < i`, which a test of `b`
-releases (`and-binding-fact`). Everywhere, one linear bound
+releases (`and-binding-fact`); and a fact over a name changed across the merge
+that one predecessor states is kept as a disjunction with a linear path
+condition over unchanged names that another states (`0 <= pending || start <=
+end`, `IndexFact.either`) where every predecessor entails it
+(`indicesCheckWith`), which a following branch contradicting the path condition
+releases (`HeapKnowledge.releaseEither`, `if-merge-guarded-bound`). Everywhere, one linear bound
 is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 

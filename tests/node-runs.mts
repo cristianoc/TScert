@@ -3404,4 +3404,10 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-local-callback-helper-escape"),
     "(() => { let first = true; return String(walkHelperEscape([1, 2], () => { if (first) { first = false; corruptEscaped(); } })); })()"), "NaN",
     "invalid-local-callback-helper-escape: callback mutates cursor leaked to module state by helper so xs[c.i] reads undefined");
+  assert.equal(runExample(ofKind("if-merge-guarded-bound", ["positive"]),
+    "JSON.stringify([lineEnd(1, 3, true, [0, 2, 1]), pureLinearGuard(1, 3, [0, 2, 1]), twoVarGuard(1, 3, 2, [0, 2, 1]), sameConjunctionGuard(1, 3, false, [0, 2, 1]), linearConjunctionGuard(1, 3, 2, [0, 2, 1])])"),
+    "[2,2,2,2,2]", "if-merge-guarded-bound: bounds preserved across guarded if-merge and following exit");
+  assert.equal(runExample(negative("invalid-if-merge-guarded-bound"),
+    "String(lineEndMismatch(1, 2, true, [10, 1, 20]))"),
+    "NaN", "invalid-if-merge-guarded-bound: pending === 0 passes pending > 0 with end = 0 < start, reading flags[-1]");
 }

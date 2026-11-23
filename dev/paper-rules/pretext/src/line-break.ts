@@ -945,7 +945,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
                 returnsFromHyphen = true
                 break decided
               }
-              paperAssume(lineStartSegmentIndex <= lineEndSegmentIndex, "#367")   // PAPER: unsafe assume until #367
               // Blink's retry halts the segment where that lets it fit, and the line ends after it,
               // but where the segment ends its item, whose mark stays halted while the line goes on.
               if (overflowLineEndTrims !== null && newFitW - (overflowLineEndTrims[i]!) <= fitLimit) {   // PAPER: guard removed

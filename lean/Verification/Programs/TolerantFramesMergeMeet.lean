@@ -277,9 +277,9 @@ theorem mergeVariants_length (preds : List State) (names : Array Nat) (renames :
     (hl : renames.length = preds.length) : (mergeVariants preds names renames).length = preds.length := by
   simp [mergeVariants, hl]
 
-theorem mergeDiffs_length (preds : List State) (renames : List (Std.HashMap Nat (List Nat)))
+theorem mergeDiffs_length (live : Std.HashSet Nat) (preds : List State) (renames : List (Std.HashMap Nat (List Nat)))
     (variants : List (Std.HashSet Atom)) (met0 : Store) (hl : renames.length = preds.length)
-    (hv : variants.length = preds.length) : (mergeDiffs preds renames variants met0).length = preds.length := by
+    (hv : variants.length = preds.length) : (mergeDiffs live preds renames variants met0).length = preds.length := by
   simp [mergeDiffs, hl, hv]
 
 /-- **The met store is well-formed** where every predecessor's is. -/
@@ -323,8 +323,8 @@ theorem OnPath.met0_ok (P : OnPath preds width fresh0 p ε ρ η h) :
 
 /-- **What `p` states beyond the met store holds** at the merge's
 valuation: its facts the met store lacks and its restatements. -/
-theorem OnPath.diffs_ok (P : OnPath preds width fresh0 p ε ρ η h) {met0 : Store} {d : List Atom}
-    (hd : (mergeDiffs preds (mRen preds width fresh0)
+theorem OnPath.diffs_ok (P : OnPath preds width fresh0 p ε ρ η h) {live : Std.HashSet Nat} {met0 : Store} {d : List Atom}
+    (hd : (mergeDiffs live preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0)[p]? = some d) :
     ∀ a ∈ d, AtomHolds ε a (mVal preds width fresh0 ρ η) h := by
   unfold mergeDiffs at hd

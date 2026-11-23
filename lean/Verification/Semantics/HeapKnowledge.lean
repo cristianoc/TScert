@@ -1884,59 +1884,155 @@ theorem pastClash_sound {as : List IndexAtom} {ρ h} (hc : pastClash as = true) 
     simp [intValue, SafeIntegers.safeIntOfBits_pastSafe] at hi
   · cases hm
 
+/-- The unconditional disjunctions in `as` (excluding `pastSafe` alternatives)
+sharing a slot with `F` (all of them where `F` names no slot). -/
+def eithersOf (as : List IndexAtom) (F : IndexFact) : List IndexAtom :=
+  let all := as.filter fun a => a.cond.isNone && match a.fact with
+    | .either _ (.pastSafe _) => false
+    | .either _ _ => true
+    | _ => false
+  if all.isEmpty then [] else
+  let fs := F.slots
+  if fs.isEmpty then all else
+  all.filter fun a => a.fact.slots.any fs.contains
+
+theorem eithersOf_sub {as : List IndexAtom} {F : IndexFact} {a : IndexAtom} (h : a ∈ eithersOf as F) : a ∈ as := by
+  unfold eithersOf at h
+  dsimp only at h
+  split at h
+  · cases h
+  · split at h
+    · exact (List.mem_filter.mp h).1
+    · exact (List.mem_filter.mp (List.mem_filter.mp h).1).1
+
+private theorem eval_negForm {v : Term → Int} :
+    ∀ (form : Linear.Form Term), Linear.Form.eval v (form.map fun (t, c) => (t, -c)) = -Linear.Form.eval v form
+  | [] => by simp [Linear.Form.eval]
+  | (t, c) :: rest => by
+    simp only [List.map_cons, Linear.Form.eval, eval_negForm rest]
+    have hmul : (-c) * v t = -(c * v t) := Int.neg_mul c (v t)
+    omega
+
+/-- Whether an arm `C` of a disjunction contradicts `as`: for a linear
+inequality or disequality, by checking its targeted negation over `as`
+(avoiding a whole-store contradiction search); otherwise by checking
+contradiction or `pastClash` over `as ++ [C]`. -/
+def armContradicts (check : List IndexAtom → IndexFact → Bool) (as : List IndexAtom) : IndexFact → Bool
+  | .linear (.le form d) => check as (.linear (.le (form.map fun (t, c) => (t, -c)) (-d - 1)))
+  | .linear (.ne form d) =>
+    check as (.linear (.le form d)) && check as (.linear (.le (form.map fun (t, c) => (t, -c)) (-d)))
+  | C => check (as ++ [{ fact := C }]) (.linear (.le [] (-1))) || pastClash (as ++ [{ fact := C }])
+
+theorem armContradicts_sound {check : List IndexAtom → IndexFact → Bool} {ρ : Env} {h : Heap}
+    (hcheck : ∀ as F, check as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h)
+    {as : List IndexAtom} {C : IndexFact} (hc : armContradicts check as C = true)
+    (ha : IndexHolds ε as ρ h) (hC : C.HoldsAt ε ρ h) : False := by
+  cases C with
+  | linear L =>
+    cases L with
+    | le form d =>
+      have hneg := (hcheck as _ hc ha).2
+      simp only [Linear.Fact.Holds, eval_negForm] at hneg
+      have hpos : Linear.Form.eval (termValuation ε ρ h) form ≤ d := hC.2
+      omega
+    | ne form d =>
+      obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.mp hc
+      have hle1 : Linear.Form.eval (termValuation ε ρ h) form ≤ d := (hcheck as _ h1 ha).2
+      have hle2 := (hcheck as _ h2 ha).2
+      simp only [Linear.Fact.Holds, eval_negForm] at hle2
+      have hne : Linear.Form.eval (termValuation ε ρ h) form ≠ d := hC.2
+      omega
+  | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _
+  | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ =>
+    have hext : IndexHolds ε (as ++ [{ fact := _ }]) ρ h := fun b hb hbcond =>
+      (List.mem_append.mp hb).elim (fun hb => ha b hb hbcond)
+        (fun hb => by simp only [List.mem_singleton] at hb; subst hb; exact hC)
+    rcases Bool.or_eq_true_iff.mp hc with hc | hp
+    · have bad := (hcheck _ (.linear (.le [] (-1))) hc hext).2
+      simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+    · exact pastClash_sound hp hext
+
+/-- Sequential case splitting over a queue `rem` of disjunctions in `as`:
+each step splits the head disjunction `a = A ∨ B`, checking each arm by
+targeted contradiction (`armContradicts`), direct entailment of `F`, or
+further splitting over `rest`. -/
+def caseEntailsAux (check : List IndexAtom → IndexFact → Bool) :
+    Nat → List IndexAtom → List IndexAtom → IndexFact → Bool
+  | 0, _, _, _ => false
+  | _, _, [], _ => false
+  | n + 1, as, a :: rest, F =>
+    match a.cond, a.fact with
+    | none, .either A B =>
+      let armOk (C : IndexFact) : Bool :=
+        armContradicts check as C ||
+        let as' := as ++ [{ fact := C }]
+        check as' F ||
+        let rC := match C with | .either _ _ => ({ fact := C } : IndexAtom) :: rest | _ => rest
+        caseEntailsAux check n as' rC F
+      armOk A && armOk B
+    | _, _ => false
+
+theorem caseEntailsAux_sound {check : List IndexAtom → IndexFact → Bool} {ρ : Env} {h : Heap}
+    (hcheck : ∀ as F, check as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h) :
+    ∀ n as rem F, (∀ a ∈ rem, a ∈ as) → caseEntailsAux check n as rem F = true →
+      IndexHolds ε as ρ h → F.HoldsAt ε ρ h := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ hf; simp [caseEntailsAux] at hf
+  | succ n ih =>
+    intro as rem F hsub hf ha
+    cases rem with
+    | nil => simp [caseEntailsAux] at hf
+    | cons a rest =>
+      simp only [caseEntailsAux] at hf
+      split at hf
+      · rename_i A B hc he
+        obtain ⟨hA, hB⟩ := Bool.and_eq_true_iff.mp hf
+        have hab := ha a (hsub a (List.mem_cons_self ..)) (fun b hb => by rw [hc] at hb; cases hb)
+        rw [he] at hab
+        have solveArm : ∀ C : IndexFact, C.HoldsAt ε ρ h →
+            (armContradicts check as C || (check (as ++ [{ fact := C }]) F ||
+              caseEntailsAux check n (as ++ [{ fact := C }])
+                (match C with | .either _ _ => ({ fact := C } : IndexAtom) :: rest | _ => rest) F)) = true →
+            F.HoldsAt ε ρ h := by
+          intro C hC hok
+          have hext : IndexHolds ε (as ++ [{ fact := C }]) ρ h := fun b hb hbcond =>
+            (List.mem_append.mp hb).elim (fun hb => ha b hb hbcond)
+              (fun hb => by simp only [List.mem_singleton] at hb; subst hb; exact hC)
+          rcases Bool.or_eq_true_iff.mp hok with hcon | h1
+          · exact (armContradicts_sound hcheck hcon ha hC).elim
+          · rcases Bool.or_eq_true_iff.mp h1 with hdir | hrec
+            · exact hcheck _ F hdir hext
+            · refine ih _ _ F ?_ hrec hext
+              intro b hb
+              split at hb
+              · rcases List.mem_cons.mp hb with rfl | hb
+                · exact List.mem_append_right _ (List.mem_singleton_self _)
+                · exact List.mem_append_left _ (hsub b (List.mem_cons_of_mem _ hb))
+              · exact List.mem_append_left _ (hsub b (List.mem_cons_of_mem _ hb))
+        rcases hab with hA' | hB'
+        · exact solveArm A hA' hA
+        · exact solveArm B hB' hB
+      · cases hf
+
 /-- Entailment by finite case splitting. Both arms of an unconditional
  disjunction must entail the target. Exhausting the fuel refuses the split. -/
-def caseEntails (check : List IndexAtom → IndexFact → Bool) : Nat → List IndexAtom → IndexFact → Bool
-  | 0, as, F => check as F || check as (.linear (.le [] (-1))) || pastClash as
-  | n + 1, as, F => caseEntails check 0 as F || as.any fun a => a.cond.isNone && match a.fact with
-    | .either _ (.pastSafe _) => false
-    | .either A B =>
-      caseEntails check n (as.erase a ++ [{ fact := A }]) F &&
-      caseEntails check n (as.erase a ++ [{ fact := B }]) F
-    | _ => false
+def caseEntails (check : List IndexAtom → IndexFact → Bool) (n : Nat) (as : List IndexAtom) (F : IndexFact) : Bool :=
+  check as F || check as (.linear (.le [] (-1))) || pastClash as || caseEntailsAux check n as (eithersOf as F) F
 
 theorem caseEntails_sound {check : List IndexAtom → IndexFact → Bool} {ρ : Env} {h : Heap}
     (hcheck : ∀ as F, check as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h) :
     ∀ n as F, caseEntails check n as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h := by
-  intro n
-  induction n with
-  | zero =>
-    intro as F hf ha
-    simp only [caseEntails] at hf
-    rcases Bool.or_eq_true_iff.mp hf with hf | hf
-    · rcases Bool.or_eq_true_iff.mp hf with hf | hf
-      · exact hcheck as F hf ha
-      · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
+  intro n as F hf ha
+  unfold caseEntails at hf
+  rcases Bool.or_eq_true_iff.mp hf with h0 | haux
+  · rcases Bool.or_eq_true_iff.mp h0 with h1 | hp
+    · rcases Bool.or_eq_true_iff.mp h1 with hdir | hcon
+      · exact hcheck as F hdir ha
+      · have bad := (hcheck as (.linear (.le [] (-1))) hcon ha).2
         simp [Linear.Fact.Holds, Linear.Form.eval] at bad
-    · exact (pastClash_sound hf ha).elim
-  | succ n ih =>
-    intro as F hf ha
-    simp only [caseEntails] at hf
-    rcases Bool.or_eq_true_iff.mp hf with hf | hf
-    · rcases Bool.or_eq_true_iff.mp hf with hf | hf
-      · rcases Bool.or_eq_true_iff.mp hf with hf | hf
-        · exact hcheck as F hf ha
-        · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
-          simp [Linear.Fact.Holds, Linear.Form.eval] at bad
-      · exact (pastClash_sound hf ha).elim
-    · obtain ⟨a, haa, ht⟩ := List.any_eq_true.mp hf
-      obtain ⟨hc, ht⟩ := Bool.and_eq_true_iff.mp ht
-      have hc : a.cond = none := Option.isNone_iff_eq_none.mp hc
-      split at ht
-      · cases ht
-      · rename_i A B _ he
-        obtain ⟨hA, hB⟩ := Bool.and_eq_true_iff.mp ht
-        have hab := ha a haa (fun b hb => by rw [hc] at hb; cases hb)
-        rw [he] at hab
-        have extend : ∀ C : IndexFact, C.HoldsAt ε ρ h → IndexHolds ε (as.erase a ++ [{ fact := C }]) ρ h := by
-          intro C hC b hb hbcond
-          rcases List.mem_append.mp hb with hb | hb
-          · exact ha b (List.mem_of_mem_erase hb) hbcond
-          · simp only [List.mem_singleton] at hb; subst hb; exact hC
-        rcases hab with hA' | hB'
-        · exact ih _ F hA (extend A hA')
-        · exact ih _ F hB (extend B hB')
-      · cases ht
+    · exact (pastClash_sound hp ha).elim
+  · exact caseEntailsAux_sound hcheck n as (eithersOf as F) F (fun _ h => eithersOf_sub h) haux ha
 
 /-- Two regions apart hold different spines. -/
 theorem regionsApart_spines {h : Heap} {u w : Val} (ha : RegionsApart h u w) :
@@ -3862,58 +3958,96 @@ theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds
     | ⟨.every _ _ _ _, _, _⟩, _, hm => simp at hm
 
 
-/-- An alternative whose other arm contradicts the known linear facts. -/
-def releaseEither (as : List IndexAtom) (a : IndexAtom) : List IndexAtom :=
+/-- Whether a linear fact contradicts a prepared linear context `K`, checked
+by its targeted negation over `F`'s variables rather than a whole-store
+contradiction search. -/
+def contradictsIn (K : Linear.Known Term) : IndexFact → Bool
+  | .linear (.le form d) => K.entails (.le (form.map fun (t, c) => (t, -c)) (-d - 1))
+  | .linear (.ne form d) =>
+    K.entails (.le form d) && K.entails (.le (form.map fun (t, c) => (t, -c)) (-d))
+  | _ => false
+
+theorem contradictsIn_sound {K : Linear.Known Term} {F : IndexFact} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (hc : contradictsIn K F = true) (hF : F.HoldsAt ε ρ h) : False := by
+  cases F with
+  | linear L =>
+    cases L with
+    | le form d =>
+      have hneg := Linear.Known.entails_sound hK hc
+      simp only [Linear.Fact.Holds, eval_negForm] at hneg
+      have hpos : Linear.Form.eval (termValuation ε ρ h) form ≤ d := hF.2
+      omega
+    | ne form d =>
+      obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.mp hc
+      have hle1 : Linear.Form.eval (termValuation ε ρ h) form ≤ d := Linear.Known.entails_sound hK h1
+      have hle2 := Linear.Known.entails_sound hK h2
+      simp only [Linear.Fact.Holds, eval_negForm] at hle2
+      have hne : Linear.Form.eval (termValuation ε ρ h) form ≠ d := hF.2
+      omega
+  | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _
+  | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => simp [contradictsIn] at hc
+
+/-- An alternative whose other arm contradicts the prepared linear facts `K`. -/
+def releaseEitherIn (K : Linear.Known Term) (a : IndexAtom) : List IndexAtom :=
   match a with
   | ⟨.either A B, none, _⟩ =>
-    (if entailsKnown (as ++ [{ fact := B }]) (.le [] (-1)) then [{ fact := A }] else []) ++
-    (if entailsKnown (as ++ [{ fact := A }]) (.le [] (-1)) then [{ fact := B }] else [])
+    (if contradictsIn K B then [{ fact := A }] else []) ++
+    (if contradictsIn K A then [{ fact := B }] else [])
   | _ => []
 
-theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h : Heap}
-    (ha : IndexHolds ε as ρ h) (hm : a ∈ as) : IndexHolds ε (releaseEither as a) ρ h := by
-  have bad (F : IndexFact) (hF : F.HoldsAt ε ρ h)
-      (hc : entailsKnown (as ++ [{ fact := F }]) (.le [] (-1)) = true) : False := by
-    have he : IndexHolds ε (as ++ [{ fact := F }]) ρ h := by
-      intro b hb hbcond
-      rcases List.mem_append.mp hb with hb | hb
-      · exact ha b hb hbcond
-      · simp only [List.mem_singleton] at hb; subst hb; exact hF
-    have contra := entailsKnown_sound he hc
-    simp [Linear.Fact.Holds, Linear.Form.eval] at contra
+theorem releaseEitherIn_holds {as : List IndexAtom} {K : Linear.Known Term} {a : IndexAtom} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) (hm : a ∈ as) :
+    IndexHolds ε (releaseEitherIn K a) ρ h := by
   match a with
   | ⟨.either A B, none, ng⟩ =>
     have hor := ha _ hm (fun b hb => by cases hb)
     intro b hb _
-    simp only [releaseEither, List.mem_append] at hb
+    simp only [releaseEitherIn, List.mem_append] at hb
     rcases hb with hb | hb
     · split at hb
       · rename_i hc
         simp only [List.mem_singleton] at hb; subst hb
-        exact hor.resolve_right (fun hB => bad B hB hc)
+        exact hor.resolve_right (fun hB => contradictsIn_sound hK hc hB)
       · cases hb
     · split at hb
       · rename_i hc
         simp only [List.mem_singleton] at hb; subst hb
-        exact hor.resolve_left (fun hA => bad A hA hc)
+        exact hor.resolve_left (fun hA => contradictsIn_sound hK hc hA)
       · cases hb
-  | ⟨.either _ _, some _, _⟩ => simp [releaseEither, IndexHolds]
+  | ⟨.either _ _, some _, _⟩ => simp [releaseEitherIn, IndexHolds]
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩ | ⟨.guarded _ _ _ _, _, _⟩
   | ⟨.element _ _ _, _, _⟩ | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩
-  | ⟨.spineApart _ _ _ _, _, _⟩ => simp [releaseEither, IndexHolds]
+  | ⟨.spineApart _ _ _ _, _, _⟩ => simp [releaseEitherIn, IndexHolds]
+
+/-- An alternative whose other arm contradicts the known linear facts. -/
+def releaseEither (as : List IndexAtom) (a : IndexAtom) : List IndexAtom :=
+  releaseEitherIn (Linear.Known.build (linearRaw as) (rangesRaw as)) a
+
+theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h : Heap}
+    (ha : IndexHolds ε as ρ h) (hm : a ∈ as) : IndexHolds ε (releaseEither as a) ρ h :=
+  releaseEitherIn_holds (Linear.Known.build_holds (linearRaw_holds ha) (rangesRaw_holds ha)) ha hm
 
 def withElements (k : Knowledge) : Knowledge :=
   let k := elementInstances k
-  { k with indices := k.indices ++ k.indices.flatMap (releaseEither k.indices) }
+  let hasEither := k.indices.any fun a => a.cond.isNone && match a.fact with | .either _ _ => true | _ => false
+  if !hasEither then k else
+  let K := Linear.Known.build (linearRaw k.indices) (rangesRaw k.indices)
+  { k with indices := k.indices ++ k.indices.flatMap (releaseEitherIn K) }
 
 theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
     Holds (withElements k) ε ρ h := by
   have hk := elementInstances_holds hk
-  refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
-  rcases List.mem_append.mp ha with ha | ha
-  · exact hk.2.2.2.2.2 a ha hc
-  · obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp ha
-    exact releaseEither_holds hk.2.2.2.2.2 hb a hm hc
+  unfold withElements
+  dsimp only
+  split
+  · exact hk
+  · refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+    rcases List.mem_append.mp ha with ha | ha
+    · exact hk.2.2.2.2.2 a ha hc
+    · obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp ha
+      exact releaseEitherIn_holds
+        (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (rangesRaw_holds hk.2.2.2.2.2))
+        hk.2.2.2.2.2 hb a hm hc
 
 end Verification.HeapKnowledge

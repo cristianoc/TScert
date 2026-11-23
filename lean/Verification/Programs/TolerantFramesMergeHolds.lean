@@ -39,23 +39,26 @@ fact `mergeGuarded` keeps, at slots, holds at the slot environment. Its
 tagged candidates are checked against every view (`indicesCheckWith`); its
 joined facts are `CertificateProducer.joinGuarded`'s, a search function. -/
 def GuardedHolds (preds : List State) (width fresh0 : Nat) (ε : HeapKnowledge.EntryState) (ρ : Env) (h : Heap) : Prop :=
+  let live := Std.HashSet.ofList (mNames preds width fresh0).toList
   let variants := mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)
   let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-  let diffs := mergeDiffs preds (mRen preds width fresh0) variants met0
+  let diffs := mergeDiffs live preds (mRen preds width fresh0) variants met0
   let views := mergeViews (mNames preds width fresh0).toList diffs met0
-  ∀ x ∈ mergeGuarded width (mNames preds width fresh0).toList met0 diffs views, HeapKnowledge.IndexHolds ε [x] ρ h
+  let met := mergeEntailed live diffs views (mergeBounds diffs met0)
+  ∀ x ∈ mergeGuarded width (mNames preds width fresh0).toList live (mRen preds width fresh0) met0 met diffs views,
+    HeapKnowledge.IndexHolds ε [x] ρ h
 
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 
 theorem OnPath.diffs_get (P : OnPath preds width fresh0 p ε ρ η h) :
-    let diffs := mergeDiffs preds (mRen preds width fresh0)
+    let diffs := mergeDiffs (Std.HashSet.ofList (mNames preds width fresh0).toList) preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))
       (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))
     ∃ hd : p < diffs.length, ∀ a ∈ diffs[p], AtomHolds ε a (mVal preds width fresh0 ρ η) h := by
   intro diffs
   have hl : p < diffs.length := by
-    rw [mergeDiffs_length _ _ _ _ (mergeSlots_inv _ width fresh0).len
+    rw [mergeDiffs_length _ _ _ _ _ (mergeSlots_inv _ width fresh0).len
       (mergeVariants_length _ _ _ (mergeSlots_inv _ width fresh0).len)]
     exact P.hp
   exact ⟨hl, P.diffs_ok (List.getElem?_eq_getElem hl)⟩
@@ -63,7 +66,7 @@ theorem OnPath.diffs_get (P : OnPath preds width fresh0 p ε ρ η h) :
 /-- **The weakest bounds hold** on the path. -/
 theorem OnPath.bounds_ok (P : OnPath preds width fresh0 p ε ρ η h) {met : Store}
     (hm : StoreOk ε met (mVal preds width fresh0 ρ η) h) :
-    StoreOk ε (mergeBounds (mergeDiffs preds (mRen preds width fresh0)
+    StoreOk ε (mergeBounds (mergeDiffs (Std.HashSet.ofList (mNames preds width fresh0).toList) preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))
       (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))) met) (mVal preds width fresh0 ρ η) h := by
   obtain ⟨hl, hd⟩ := P.diffs_get
@@ -77,7 +80,7 @@ theorem OnPath.bounds_ok (P : OnPath preds width fresh0 p ε ρ η h) {met : Sto
 
 theorem OnPath.view_ok (P : OnPath preds width fresh0 p ε ρ η h) :
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-    let diffs := mergeDiffs preds (mRen preds width fresh0)
+    let diffs := mergeDiffs (Std.HashSet.ofList (mNames preds width fresh0).toList) preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
     ∃ v ∈ mergeViews (mNames preds width fresh0).toList diffs met0,
       StoreOk ε v.store (mVal preds width fresh0 ρ η) h ∧
@@ -96,12 +99,15 @@ theorem OnPath.view_ok (P : OnPath preds width fresh0 p ε ρ η h) :
 with `GuardedHolds`. -/
 theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ε ρ η h) (hguard : GuardedHolds preds width fresh0 ε ρ h)
     {met : Store} (hm : StoreOk ε met (mVal preds width fresh0 ρ η) h) :
+    let live := Std.HashSet.ofList (mNames preds width fresh0).toList
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-    let diffs := mergeDiffs preds (mRen preds width fresh0)
+    let diffs := mergeDiffs live preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
+    let views := mergeViews (mNames preds width fresh0).toList diffs met0
+    let met1 := mergeEntailed live diffs views (mergeBounds diffs met0)
     StoreOk ε (mergeAddGuarded (mNames preds width fresh0).toList (mergeGuarded width (mNames preds width fresh0).toList
-      met0 diffs (mergeViews (mNames preds width fresh0).toList diffs met0)) met) (mVal preds width fresh0 ρ η) h := by
-  intro met0 diffs
+      live (mRen preds width fresh0) met0 met1 diffs views) met) (mVal preds width fresh0 ρ η) h := by
+  intro live met0 diffs views met1
   refine mergeAddGuarded_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h)
     (fun a => AtomHolds ε a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
   intro x hx a hr

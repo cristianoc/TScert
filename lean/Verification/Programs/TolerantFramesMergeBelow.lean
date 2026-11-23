@@ -210,13 +210,13 @@ theorem PredsBelow.met0 (B : PredsBelow preds width fresh0) (hne : preds ≠ [])
 
 /-- **Each predecessor's differences are below the counter**, over a met
 store whose facts are. -/
-theorem PredsBelow.diffs (B : PredsBelow preds width fresh0) (hne : preds ≠ []) {met0 : Store} :
-    ∀ d ∈ mergeDiffs preds (mRen preds width fresh0)
+theorem PredsBelow.diffs (B : PredsBelow preds width fresh0) (hne : preds ≠ []) {live : Std.HashSet Nat} {met0 : Store} :
+    ∀ d ∈ mergeDiffs live preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0,
       ∀ a ∈ d, AtomBelow (mNext preds width fresh0) a := by
   intro d hd
   obtain ⟨p, hp, rfl⟩ := List.getElem_of_mem hd
-  have hl := mergeDiffs_length preds (mRen preds width fresh0)
+  have hl := mergeDiffs_length live preds (mRen preds width fresh0)
     (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
     (mergeSlots_inv _ width fresh0).len (mergeVariants_length _ _ _ (mergeSlots_inv _ width fresh0).len)
   have hpp : p < preds.length := hl ▸ hp
@@ -225,7 +225,7 @@ theorem PredsBelow.diffs (B : PredsBelow preds width fresh0) (hne : preds ≠ []
     rw [mergeVariants_length _ _ _ (mergeSlots_inv _ width fresh0).len]; exact hpp
   have hdp := List.getElem?_eq_getElem hp
   revert hdp
-  generalize (mergeDiffs preds (mRen preds width fresh0)
+  generalize (mergeDiffs live preds (mRen preds width fresh0)
     (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0)[p] = d
   intro hdp
   unfold mergeDiffs at hdp
@@ -253,11 +253,12 @@ theorem PredsBelow.diffs (B : PredsBelow preds width fresh0) (hne : preds ≠ []
 theorem PredsBelow.store (B : PredsBelow preds width fresh0) (hne : preds ≠ []) :
     FactsBelow (mergeStore preds width (mNames preds width fresh0) (mRen preds width fresh0))
       (mNext preds width fresh0) := by
-  have hD := B.diffs hne (met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))
-  have hdl : 0 < (mergeDiffs preds (mRen preds width fresh0)
+  have hD := B.diffs hne (live := Std.HashSet.ofList (mNames preds width fresh0).toList)
+    (met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))
+  have hdl : 0 < (mergeDiffs (Std.HashSet.ofList (mNames preds width fresh0).toList) preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))
       (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))).length := by
-    rw [mergeDiffs_length _ _ _ _ (mergeSlots_inv _ width fresh0).len
+    rw [mergeDiffs_length _ _ _ _ _ (mergeSlots_inv _ width fresh0).len
       (mergeVariants_length _ _ _ (mergeSlots_inv _ width fresh0).len)]
     exact List.length_pos_iff.mpr hne
   unfold mergeStore
