@@ -693,7 +693,8 @@ export function sumAndAlias(xs: number[]): Modifies<{ "xs[*]": "extend" }, numbe
 }
 \end{lstlisting}
 
-\paragraph{\code{walk}.} Checked once, with $\varepsilon$ unknown and
+\subsection{\code{walk}}
+Checked once, with $\varepsilon$ unknown and
 the bound $\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}$
 in the evidence.
 \begin{enumerate}[leftmargin=1.5em]
@@ -718,7 +719,8 @@ by Conjecture~\ref{conj:anchored-rigid}. \ruleName{Fun} gives the stated
 \code{Modifies<E, number>}.
 \end{enumerate}
 
-\paragraph{\code{sumAndTrace}.} \ruleName{Fun} on \code{trace} gives
+\subsection{\code{sumAndTrace}}
+\ruleName{Fun} on \code{trace} gives
 $\{\mathit{visited}.\kw{spine}:\extend\}$ by \ruleName{Push}.
 \ruleName{Inst} with that instance, anchored since $\mathit{visited}$ is
 a \code{const}, needs it within $\keep$ on $xs.\kw{spine}$. By the rule
@@ -728,18 +730,21 @@ that of $xs$, and the instance's $\kw{else}$ is $\keep$. The call's
 effect is the spine of the fresh $\mathit{visited}$, which
 \ruleName{Fresh-Eff} removes: \code{Modifies<\{\}, number>}.
 
-\paragraph{\code{sumAndCount}.} The instance $\{\mathit{seen}.n:\any\}$
+\subsection{\code{sumAndCount}}
+The instance $\{\mathit{seen}.n:\any\}$
 is anchored, and a field location is no spine, so it is within $\keep$
 on $xs.\kw{spine}$. This caller's visitor writes a captured value,
 which no effect without variables can bound short of $\val$
 (Section~\ref{sec:l0}).
 
-\paragraph{\code{sumAndAlias}.} $\mathit{visited}$ and $xs$ read one
+\subsection{\code{sumAndAlias}}
+$\mathit{visited}$ and $xs$ read one
 array, so the instance $\{\mathit{visited}.\kw{spine}:\extend\}$ meets
 $xs.\kw{spine}$ with $\extend\not\sqsubseteq\keep$, and the call is
 refused.
 
-\paragraph{A weaker bound.} The fact $c.i<\len{xs}$ is stable under a
+\subsection{A weaker bound}
+The fact $c.i<\len{xs}$ is stable under a
 growth of $xs$. With
 \code{E extends AtMost<\{ "xs[*]": "grow"; else: "any" \}>}, the
 derivation of \code{walk} is the same, and \code{sumAndAlias} is
@@ -761,7 +766,8 @@ cursor it is given and storage rooted at module variables, and
 \code{getInternalPrepared}, \code{normalizeMaxWidth} and
 \code{createLayoutLineRange} change no old storage.
 
-\paragraph{W1 and W2: the walker's own cursor, and the handle passed on.}
+\subsection{W1 and W2: the walker's own cursor, and the handle passed on}
+
 \code{walkPreparedLinesRaw} allocates a cursor, steps it, and calls the
 visitor between steps:
 
@@ -831,7 +837,8 @@ The bound \code{segmentFlags[startSegmentIndex]} then follows from the
 cursor's invariant and the stepper's postcondition, which this paper
 does not state.
 
-\paragraph{W3: a visitor that writes the object holding the handle.}
+\subsection{W3: a visitor that writes the object holding the handle}
+
 \code{findWholeLine} walks \code{flow.data} and records the line in
 fields of \code{flow}:
 
@@ -862,7 +869,8 @@ is needed, though the capture reaches the handle. The call passes no
 call allocates. \code{findWholeLine}'s effect is $\Phi_3$, with the
 write after the walk within it.
 
-\paragraph{W4: an adapter that forwards the client's callback.} The
+\subsection{W4: an adapter that forwards the client's callback}
+The
 public walker quantifies over the client's effect and forwards it:
 
 \begin{lstlisting}[language=TypeScript]
@@ -901,7 +909,8 @@ of $p$, so the module carries the obligation that every
 \code{PreparedText} value is a \code{PreparedLineData}.
 \end{enumerate}
 
-\paragraph{W5: a collector with a helper.} \code{layoutWithLines}
+\subsection{W5: a collector with a helper}
+\code{layoutWithLines}
 appends each line to a fresh list:
 
 \begin{lstlisting}[language=TypeScript]
@@ -921,7 +930,8 @@ it is anchored and disjoint from the handle. The helper writes the
 module's grapheme caches, a \code{WeakMap} keyed by the handle, and the
 language has no region for the entries of a map.
 
-\paragraph{W6: the application's callback.} For a caller TScert
+\subsection{W6: the application's callback}
+For a caller TScert
 analyses, \ruleName{Inst} checks the bound of \code{walkLineRanges}.
 For a caller it does not analyse, the bound is assumed, as the
 precondition of an exported function is.
@@ -1003,11 +1013,13 @@ allows anything else. Neither assumption implies the other.
 
 \section{Status and limits}\label{sec:status}
 
-\paragraph{What is not done.} The language beyond $\Lang_0$ has no Lean
+\subsection{What is not done}
+The language beyond $\Lang_0$ has no Lean
 definition, no implementation and no proof. Conjectures 1--4 are not
 proved.
 
-\paragraph{Limits.}
+\subsection{Limits}
+
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Entries of a map] A \code{Map} or \code{WeakMap} entry is no
 region. W5 and the materializers' caches need one.
@@ -1027,7 +1039,8 @@ only where the callback's type states \code{onThrow}.
 environment, $\top$.
 \end{description}
 
-\paragraph{Relation to Inferred callback preservation.} The demand that
+\subsection{Relation to Inferred callback preservation}
+The demand that
 paper infers for a marked parameter is a bound
 $\varepsilon\sqsubseteq\Phi$ here, with $\Phi$'s $\kw{else}$ at $\any$,
 written in the signature. Its check of a caller's closure is
