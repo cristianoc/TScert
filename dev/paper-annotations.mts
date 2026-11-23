@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
+import { globalsOverlay } from "../tools/library-globals.mts";
+import type { CallEffect } from "../tools/declaration-types.mts";
 
 /** A change of the paper, in its order. */
 const changes = ["keep", "init", "scalar", "extend", "grow", "any"] as const;
@@ -32,11 +34,11 @@ interface FunctionInfo {
 /** A call of a function with effect parameters: the instance, whether it is
  * within the bounds (rule Inst), and what the layer needs to give the call
  * its effect at the caller: the callee's parameters, the bounds, its own
- * effect besides them, the call's arity, and whether no other call in the
- * caller's own body has that arity, so the layer can tell the call apart. */
+ * effect besides them, and the call's source span, by which the layer
+ * finds the call's node in the unit's source map. */
 interface CallInfo {
   caller: string; callee: string; instance: Record<string, Effect>; ok: boolean; reason: string | null;
-  params: string[]; bounds: Effect[]; own: Effect | string; arity: number; unique: boolean;
+  params: string[]; bounds: Effect[]; own: Effect | string; span: [number, number];
 }
 
 /** The effect a string literal type `'{ "x[*]": "keep", "else": "any" }'`
@@ -49,7 +51,10 @@ function effectOfText(text: string): Effect | null {
   let otherwise: Change = "keep";
   for (const [key, value] of Object.entries(parsed)) {
     if (typeof value !== "string" || !isChange(value)) return null;
-    if (key === "else") otherwise = value;
+    // A class key bounds every location of its class: the effect read here
+    // has no class regions, so it widens the `else` (each location is in one
+    // class, and a change on a class the other key names is within the max).
+    if (key === "else" || key === "values" || key === "spines") { if (!le(value, otherwise)) otherwise = value; }
     else entries.push([key, value]);
   }
   return { entries, else: otherwise };
@@ -69,8 +74,11 @@ function effectOf(node: ts.TypeNode): Effect | null {
     const literal = m.type.literal;
     if (!ts.isStringLiteral(literal) || !isChange(literal.text)) return null;
     const name = m.name;
-    if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) && name.text === "else") otherwise = literal.text;
-    else if (ts.isStringLiteral(name)) entries.push([name.text, literal.text]);
+    if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
+        (name.text === "else" || name.text === "values" || name.text === "spines")) {
+      // A class key widens the `else`, as in `effectOfText`.
+      if (!le(literal.text, otherwise)) otherwise = literal.text;
+    } else if (ts.isStringLiteral(name)) entries.push([name.text, literal.text]);
     else return null;
   }
   return { entries, else: otherwise };
@@ -281,6 +289,51 @@ function inside(r: Loc, b: Loc, keys: Set<string>): boolean {
   return r.kind === b.kind && r.key === b.key && pathText(r) === pathText(b);
 }
 
+/** The function declaration a name imported by name from a relative module
+ * names, read from that module. */
+const importedFiles = new Map<string, ts.SourceFile>();
+/** Whether a reviewed effect keeps every old location at a normal return:
+ * each entry of its normal frame at `keep` (an empty footprint). */
+const keepsHeap = (e: CallEffect): boolean => e.exits.normal.frame.every((f) => f.change === "keep");
+
+/** The functions whose effect is being read, so a recursive call is refused. */
+const reading = new Set<ts.Node>();
+function importedDecl(name: string, from: ts.Node): ts.FunctionDeclaration | undefined {
+  const sf = from.getSourceFile();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const named = st.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named) || !named.elements.some((e) => !e.isTypeOnly && e.name.text === name)) continue;
+    const file = importedFile(sf.fileName, st.moduleSpecifier.text);
+    if (file === null) return undefined;
+    let tree = importedFiles.get(file);
+    if (tree === undefined) { tree = openText(file, readFileSync(file, "utf8")); importedFiles.set(file, tree); }
+    for (const d of tree.statements) if (ts.isFunctionDeclaration(d) && d.name?.text === name && d.body) return d;
+  }
+  return undefined;
+}
+
+/** A function's effect parameters: its type parameters bounded by `AtMost`. */
+function effectVars(fn: FnNode): string[] {
+  return (fn.typeParameters ?? []).filter((tp) => {
+    const c = tp.constraint;
+    return c !== undefined && ts.isTypeReferenceNode(c) && ts.isIdentifier(c.typeName) && c.typeName.text === "AtMost";
+  }).map((tp) => tp.name.text);
+}
+
+/** The parameters of a function whose types mention one of its effect
+ * parameters: its bounded callbacks. */
+function boundedParams(fn: FnNode): Set<string> {
+  const vars = effectVars(fn);
+  const out = new Set<string>();
+  for (const p of fn.parameters) {
+    const seen = new Set<string>();
+    if (p.type) mentions(p.type, seen);
+    if (ts.isIdentifier(p.name) && vars.some((v) => seen.has(v))) out.add(p.name.text);
+  }
+  return out;
+}
+
 /** A closure's effect on its caller's storage, read from its body by the
  * paper's rules for steps (Section "Rules for steps"): a field write
  * `x.f = e` is `x.f: any` (Field-Write), and a compound write or an
@@ -327,7 +380,17 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
         (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
       write(n.operand, "scalar", n);
     else if (ts.isDeleteExpression(n)) write(n.expression, "any", n);
-    else if (ts.isNewExpression(n)) return fail(n, "constructs an object, whose effect is unknown");
+    else if (ts.isNewExpression(n)) {
+      // A construction of a library global (`new RangeError(…)`): a fresh
+      // object, and the reviewed construct effect of the overlay (rule
+      // Native); only an empty one is read here.
+      const c = unwrapExpr(n.expression);
+      const name = ts.isIdentifier(c) && declOf(c.text, c) === null && importedDecl(c.text, c) === undefined ? c.text : null;
+      const entries = name === null ? [] : globalsOverlay.filter((g) => g.global === name && g.member === undefined &&
+        (g.constructs === true || g.signature.startsWith("new ")));
+      if (entries.length === 0 || !entries.every((g) => g.effect !== undefined && keepsHeap(g.effect)))
+        return fail(n, "constructs an object whose reviewed effect may change old storage");
+    }
     else if (ts.isCallExpression(n)) {
       const callee = unwrapExpr(n.expression);
       if (ts.isPropertyAccessExpression(callee) && callee.name.text === "push") {
@@ -339,12 +402,27 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
         // variable's, which the caller's instance gives.
       } else if (ts.isIdentifier(callee)) {
         const d = declOf(callee.text, callee);
-        const result = d?.kind === "function" ? d.node.type : undefined;
+        const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
+        const result = decl?.type;
         const stated = result && ts.isTypeReferenceNode(result) && ts.isIdentifier(result.typeName) &&
           result.typeName.text === "Modifies" ? result.typeArguments?.[0] : undefined;
-        const eff = stated ? effectOf(stated) : null;
-        if (d?.kind !== "function" || eff === null) return fail(n, "calls a function whose effect is not stated");
-        const params = d.node.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
+        // A call of a function with effect parameters whose instances are the
+        // calling function's own effect parameters (a forwarding call): its
+        // effect is its own effect besides them, read from its body, and the
+        // forwarded variables, which the calling function's bound accounts for.
+        const outer = effectVars(fn);
+        const forwards = decl !== undefined && stated === undefined && effectVars(decl).length > 0 &&
+          (n.typeArguments ?? []).length === effectVars(decl).length &&
+          (n.typeArguments ?? []).every((t) => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text));
+        const eff = stated ? effectOf(stated)
+          : forwards && decl !== undefined && !reading.has(decl) ? (() => {
+            reading.add(decl);
+            const e = closureEffect(decl, true, boundedParams(decl));
+            reading.delete(decl);
+            return typeof e === "string" ? null : e;
+          })() : null;
+        if (decl === undefined || eff === null) return fail(n, "calls a function whose effect is not stated");
+        const params = decl.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
         for (const [k, c] of eff.entries) {
           const at = params.indexOf(rootOf(k));
           const arg = n.arguments[at];
@@ -353,6 +431,16 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
           if (!base.fresh) entries.push([keyOf(base, restOf(k)), c]);
         }
         if (!le(eff.else, otherwise)) otherwise = eff.else;
+      } else if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
+          declOf(callee.expression.text, callee) === null && importedDecl(callee.expression.text, callee) === undefined) {
+        // A member of a library global (`Math.max`): its effect is the
+        // reviewed one of the library-globals overlay (rule Native); a
+        // member whose reviewed effect keeps the heap changes nothing.
+        const global = callee.expression.text;
+        const member = callee.name.text;
+        const entries = globalsOverlay.filter((g) => g.global === global && g.member === member);
+        if (entries.length === 0 || !entries.every((g) => g.effect !== undefined && keepsHeap(g.effect)))
+          return fail(n, "calls a library member whose reviewed effect may change old storage");
       } else return fail(n, "calls a method whose effect is not stated");
     }
     n.forEachChild(visit);
@@ -547,20 +635,9 @@ export function annotations(path: string): { functions: Record<string, FunctionI
             reason = instCheck(inst, e.bound, callee.params, args, fresh);
             if (reason !== null) break;
           }
-          const arity = n.arguments.length;
-          // Calls of the caller's own body (nested functions are other
-          // units) with this arity: the layer tells this call apart by it.
-          let same = 0;
-          const countCalls = (m: ts.Node): undefined => {
-            if (m !== body && isFn(m)) return undefined;
-            if (ts.isCallExpression(m) && m.arguments.length === arity) same++;
-            m.forEachChild(countCalls);
-            return undefined;
-          };
-          countCalls(body);
           calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
             params: callee.params, bounds: callee.effectParams.map((e) => e.bound),
-            own: callee.own ?? "has no effect parameters", arity, unique: same === 1 });
+            own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
         }
       }
       n.forEachChild(visit);

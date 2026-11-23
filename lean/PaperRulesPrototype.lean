@@ -40,11 +40,12 @@ structure Bound where
 
 /-- A call of a function with effect parameters, whose instances are
 within their bounds (rule Inst, decided by the side file): the call's
-arity, the bounds' entries at the callee's parameters and their `else`
+source span, the bounds' entries at the callee's parameters and their `else`
 (the largest), the callee's own effect besides its effect variables at
 its parameters, and the keys of the reach entries. -/
 structure QCall where
-  arity : Nat
+  /-- The call's source span, which the unit's source map gives its node. -/
+  span : Nat × Nat
   entries : List (Nat × Key × Footprints.Change)
   otherwise : Footprints.Change
   keys : List String := []
@@ -53,9 +54,11 @@ structure QCall where
 number of its parameters, the last of the graph's inputs. -/
 structure Unit where
   bounds : List Bound
-  /-- The calls of the unit to functions with effect parameters that the
-  layer can tell apart by their arity. -/
+  /-- The calls of the unit to functions with effect parameters. -/
   calls : List QCall := []
+  /-- The unit's nodes as the pass gives them: expression, context width,
+  source span. -/
+  sites : List SinglePass.LayerSite := []
   params : Nat
   /-- The number of the graph's inputs, set when the pass supplies it. -/
   inputs : Nat := 0
@@ -133,6 +136,14 @@ def ownSlot : Footprints.Region → Option Nat
   | .inCls r _ => ownSlot r
   | _ => none
 
+/-- A change read at a region's category: on a spine, `init` and `scalar`
+are `keep`; on contents, `extend` and `grow` are `scalar`
+(`Change.onSpine`, `Change.onValue`). -/
+def atCategory : Footprints.Region → Footprints.Change → Footprints.Change
+  | .spine .., c => c.onSpine
+  | .inCls r _, c => atCategory r c
+  | _, c => c.onValue
+
 /-- **The pair rule**: the callback's effect `ε` is within `δ` on `r`
 (Definition "Order") when one of the two effects `ε` is included in is
 (the meet, rules Anch and Bound):
@@ -147,17 +158,27 @@ def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.F
     (reach : Footprints.Region → Bool) (e : Footprints.Region × Footprints.Change) : Bool :=
   (ownSlot e.1).any fresh.contains ||
     (Footprints.respects q [e] bound &&
-      (otherwise.le e.2 || reach e.1 || bound.any (unrestricted ·.1 == unrestricted e.1)))
+      ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (unrestricted ·.1 == unrestricted e.1)))
 
-/-- The facts of the call's entry an effect keeps, past the call's result:
-the effect given by its entries at the call's slots, its `else`, the roots
-and keys of its reach entries, and the slots of storage the effect leaves
-alone by Anch (none at a call whose effect is not an anchored variable). -/
-def keptBy (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footprints.Change)
-    (roots : List Nat) (keys : List String) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
+/-- An effect the layer reads at a call: its entries at the call's slots,
+its `else`, the roots and keys of its reach entries, and the slots of
+storage it leaves alone by Anch (none at a call whose effect is not an
+anchored variable). -/
+structure CallEff where
+  fresh : List Nat
+  bound : Footprints.Footprint
+  otherwise : Footprints.Change
+  roots : List Nat
+  keys : List String
+
+/-- The facts of the call's entry that every effect of `effs` keeps, past
+the call's result. A call is one of several candidates when the layer
+cannot tell them apart: the facts every candidate keeps survive whichever
+it is. -/
+def keptBy (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
-  let reach := inReach (reachSlots k keys roots) keys
-  let keeps := fun (S : Footprints.Footprint) => S.all (keepsPair q fresh bound otherwise reach)
+  let keeps := fun (S : Footprints.Footprint) => !effs.isEmpty && effs.all fun c =>
+    S.all (keepsPair q c.fresh c.bound c.otherwise (inReach (reachSlots k c.keys c.roots) c.keys))
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S
@@ -174,7 +195,7 @@ def keptBy (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footpr
 the variable, within the bound (Bound) and within `{old: any}` (Anch). -/
 def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
   let roots := b.entries.filterMap fun (p, key, _) => if key == .reach then some (slotOf u d p) else none
-  keptBy (freshSlots k) (boundAt u d b) b.otherwise roots b.keys stable k
+  keptBy [{ fresh := freshSlots k, bound := boundAt u d b, otherwise := b.otherwise, roots, keys := b.keys }] stable k
 
 /-- A region of a callee's parameter key at a caller's slot. -/
 def keyRegion (s : Nat) : Key → Option Footprints.Region
@@ -188,16 +209,14 @@ replaced by its instance, and each instance is within its bound, so the
 call's effect is within the bounds and the callee's own effect, read at the
 actual arguments' slots. No Anch: the instance may change the caller's own
 storage. Where an entry's parameter receives no slot, nothing is kept. -/
-def keptAtCall (c : QCall) (args : List Tm) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
+def atCall (c : QCall) (args : List Tm) : Option CallEff := do
   let slot := fun (p : Nat) => match args[p]? with
     | some (.var a) => some a
     | _ => none
-  let resolved := c.entries.map fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
-  if resolved.any Option.isNone then {} else
-  let es := resolved.filterMap id
+  let es ← c.entries.mapM fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
   let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
   let roots := es.filterMap fun (a, key, _) => if key == .reach then some a else none
-  keptBy [] bound c.otherwise roots c.keys stable k
+  pure { fresh := [], bound, otherwise := c.otherwise, roots, keys := c.keys }
 
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
@@ -217,15 +236,18 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     match u.bounds.find? (fun b => aliases (slotOf u d b.callback)) with
     | some b => add (kept u b (stableFirst G j.context) d k)
     | none =>
-      -- A call of a function with effect parameters: its callee is one of
-      -- the unit's inputs (a module value it reads), or a copy of one, and
-      -- the side file's call of that arity is the only call of it.
-      let input := fun (x : Nat) => x + u.inputs ≥ d
-      let callee := input s || k.links.any fun l => l.alias &&
-        ((l.cell == s && input l.value) || (l.value == s && input l.cell))
-      match (if callee then u.calls.find? (·.arity == args.length) else none) with
-      | some c => add (keptAtCall c args (stableFirst G j.context) k)
-      | none => r
+      -- A call of a function with effect parameters, identified by its
+      -- source span: the spans of the unit's nodes whose expression and
+      -- context width are this step's, each the span of a side-file call,
+      -- and all of them one call. Where the nodes give no span, or two
+      -- calls, nothing is added.
+      let spans := u.sites.filterMap fun (t, w, sp) => if t == j.term && w == d then some sp else none
+      -- Nodes with equal terms and context widths are one site to the
+      -- layer: it keeps what every call at such a node keeps.
+      let effs := spans.map fun sp => sp.bind fun sp => (u.calls.find? (·.span == sp)).bind (atCall · args)
+      match effs.mapM id with
+      | some (c :: cs) => add (keptBy (c :: cs) (stableFirst G j.context) k)
+      | _ => r
   | _ => r
 
 /-- **The assumption the prototype rests on**: the facts the layer keeps
@@ -300,20 +322,20 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
         | .error _ => pure []
       bounds := bounds ++ [{ callback := index, entries, otherwise, keys : Bound }]
     if !bounds.isEmpty then out := out.insert name { bounds, params := params.length }
-  -- Each caller's calls the layer can tell apart: instances within their
-  -- bounds, the callee's own effect read, the only call of its arity.
+  -- Each caller's calls with instances within their bounds and the
+  -- callee's own effect read, by source span.
   let calls ← (← side.getObjVal? "calls").getArr?
   for call in calls do
     let caller ← (← call.getObjVal? "caller").getStr?
     let ok := (call.getObjValAs? Bool "ok").toOption == some true
-    let unique := (call.getObjValAs? Bool "unique").toOption == some true
     let own := call.getObjVal? "own"
-    if !ok || !unique then continue
+    if !ok then continue
     let .ok ownEff := own | continue
     if (ownEff.getStr?).isOk then continue
     let params ← (← call.getObjVal? "params").getArr?
     let params ← params.toList.mapM (·.getStr?)
-    let arity ← (← call.getObjVal? "arity").getNat?
+    let span ← call.getObjVal? "span"
+    let span : Nat × Nat := (← (← span.getArrVal? 0).getNat?, ← (← span.getArrVal? 1).getNat?)
     let read : Json → Except String (List (Nat × Key × Footprints.Change) × Footprints.Change × List String) :=
       fun eff => do
       let entries ← (← eff.getObjVal? "entries").getArr?
@@ -343,7 +365,7 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
         keys := keys ++ ks
       | .error _ => readable := false
     if !readable then continue
-    let c : QCall := { arity, entries, otherwise, keys := keys.eraseDups }
+    let c : QCall := { span, entries, otherwise, keys := keys.eraseDups }
     let u := (out.get? caller).getD { bounds := [], params := 0 }
     out := out.insert caller { u with calls := u.calls ++ [c] }
   return out
@@ -356,8 +378,8 @@ open Verification Lean
 /-- The layer of a unit, by its name: the rules' checker where the side
 file bounds one of its callbacks, the ordinary checker otherwise. -/
 def layerOf (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) : SinglePass.PassLayer :=
-  fun name inputs _ _ _ _ _ _ base => match units.get? name with
-    | some u => HeapExpressionRules.PaperRules.layer { u with inputs } base
+  fun name inputs sites _ _ _ _ _ _ base => match units.get? name with
+    | some u => HeapExpressionRules.PaperRules.layer { u with inputs, sites } base
     | none => base
 
 /-- Each selected unit's group checked by the pass with the layer; a verdict

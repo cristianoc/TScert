@@ -125,7 +125,7 @@ type InternalLineVisitor<E> = (
   effect?: E,
 ) => void
 
-function breaksAfterKind(kind: number): boolean {
+function breaksAfterKind(kind: number): Modifies<{}, boolean> {   // PAPER: annotation
   return (1 << kind & BREAK_AFTER_KINDS) !== 0
 }
 
@@ -155,7 +155,7 @@ export function isDiscretionaryLineEnd(
 // tall, though nothing else is on it: where nothing follows it, where a hard break does, and
 // where the word after it doesn't fit beside it and goes down whole, as from any line that has a
 // break (walkPreparedComplexLines has where a line ends before one).
-function consumesAtLineStart(flags: number): boolean {
+function consumesAtLineStart(flags: number): Modifies<{}, boolean> {   // PAPER: annotation
   const kind = flags & KIND_BITS
   return kind === SPACE || kind === SOFT_HYPHEN || (flags & DROPPED) !== 0
 }
@@ -169,7 +169,7 @@ function consumesAtLineStart(flags: number): boolean {
 // whole app units (EngineProfile's tabsInAppUnits), so a tab exactly the minimum from its
 // stop takes it, as many do: in Arial and Helvetica a space is half a `0`. Canvas sums come
 // within float error of such a tie.
-function getTabAdvance(position: number, tabStopAdvance: number, minimumAdvance: number, appUnits: boolean): number {
+function getTabAdvance(position: number, tabStopAdvance: number, minimumAdvance: number, appUnits: boolean): Modifies<{}, number> {   // PAPER: annotation
   if (appUnits) {
     const stop = Math.round(tabStopAdvance * 60)
     if (stop <= 0) return 0
@@ -195,7 +195,7 @@ function getTabAdvance(position: number, tabStopAdvance: number, minimumAdvance:
 // (lineStartExtras): the other half is the end edge, which follows the item's text on the line.
 // Where the paragraph's items differ in letter spacing, a tab's width holds the gap after it, as
 // every segment's holds its own (src/rich-inline.ts); else it is 0.
-export function getItemTabAdvance(prepared: PreparedLineData, items: ParagraphSegmentData, index: number, lineWidth: number, appUnits: boolean): number {
+export function getItemTabAdvance(prepared: PreparedLineData, items: ParagraphSegmentData, index: number, lineWidth: number, appUnits: boolean): Modifies<{}, number> {   // PAPER: annotation
   const stopAdvance = items.tabStopAdvances === null ? prepared.tabStopAdvance : (items.tabStopAdvances[index] ?? missing())
   const minimumAdvance = items.minimumTabAdvances === null ? prepared.minimumTabAdvance : (items.minimumTabAdvances[index] ?? missing())
   const endEdge = items.insideExtras === null ? 0 : (items.insideExtras[index] ?? missing()) / 2
@@ -210,7 +210,7 @@ function getTerminalLetterSpacing(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): number {
+): Modifies<{}, number> {   // PAPER: annotation
   const { letterSpacing, segmentFlags } = prepared
   if (letterSpacing === 0) return 0
 
@@ -259,7 +259,7 @@ export function normalizeMaxWidth(maxWidth: number): number {
 export function normalizePreparedLineStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
-): boolean {
+): Modifies<{ "cursor.*": "scalar" }, boolean> {   // PAPER: annotation
   const { segmentFlags } = prepared
   const segmentCount = prepared.widths.length
   let segmentIndex = cursor.segmentIndex
@@ -431,7 +431,7 @@ function countSteppedLines(prepared: PreparedLineData, maxWidth: number): number
 // spaces and tabs (nsLineBreaker.cpp:323, :586) and doesn't hang a tab, so where the white space
 // runs into a tab, Firefox moves all of it to the next line with the tab. The walker asks once
 // per run, so a long run costs one pass.
-function staysAfterObject(segmentFlags: Uint8Array, segmentCount: number, start: number, hangingKinds: number): boolean {
+function staysAfterObject(segmentFlags: Uint8Array, segmentCount: number, start: number, hangingKinds: number): Modifies<{}, boolean> {   // PAPER: annotation
   let after = start + 1
   while (after < segmentCount && (1 << ((segmentFlags[after] ?? missing()) & KIND_BITS) & hangingKinds) !== 0) after++
   return after === segmentCount || ((segmentFlags[after] ?? missing()) & KIND_BITS) !== TAB
@@ -451,7 +451,7 @@ function returnsFromUnfitHyphen(
   breakWidth: number,
   fitLimit: number,
   endKeepsJoin: boolean,
-): boolean {
+): Modifies<{}, boolean> {   // PAPER: annotation
   const { discretionaryHyphenContexts, segmentFlags } = prepared
   const softHyphenIndex = breakSegmentIndex - 1
   if (softHyphenIndex < lineStartSegmentIndex || ((segmentFlags[softHyphenIndex] ?? missing()) & KIND_BITS) !== SOFT_HYPHEN || breakWidth <= fitLimit) return false
@@ -1110,7 +1110,7 @@ function stepPreparedSimpleLineGeometry(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,
-): number {
+): Modifies<{ values: "init"; "cursor.*": "scalar" }, number> {   // PAPER: annotation
   const { widths, segmentFlags, breakableFitAdvances, lineStartExtras, lineEndTrims, overflowLineEndTrims } = prepared
   const engineProfile = getEngineProfile()
   // A negative width lays out as 0, as in the complex walker.

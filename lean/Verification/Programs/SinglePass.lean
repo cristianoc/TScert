@@ -1412,18 +1412,24 @@ def PassChecker.selectChecks {G : NormalGraph ι} {images : InstanceImageCheck G
   | .qualified .. => true
   | .extended _ => true
 
-/-- A checker a caller supplies for a unit, by the unit's name and the
-number of its graph's inputs, over the ordinary checker: what
+/-- A node of a unit's graph as a supplied layer sees it: its expression,
+the width of its claim's context, and the source span its source map gives
+it, where it gives one. -/
+abbrev LayerSite := Tm × Nat × Option (Nat × Nat)
+
+/-- A checker a caller supplies for a unit, by the unit's name, the number
+of its graph's inputs and its nodes' sites, over the ordinary checker: what
 `PassChecker.extended` runs. -/
-abbrev PassLayer := String → Nat → ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
-  (images : InstanceImageCheck G), HeapExpressionRules.Checker G images → HeapExpressionRules.Checker G images
+abbrev PassLayer := String → Nat → List LayerSite → ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
+  (G : NormalGraph ι) (images : InstanceImageCheck G), HeapExpressionRules.Checker G images →
+  HeapExpressionRules.Checker G images
 
 /-- The pass checker of a unit: the ordinary one, or a supplied layer over it. -/
 def PassChecker.ofLayer {G : NormalGraph ι} {images : InstanceImageCheck G} (layer : Option PassLayer) (name : String)
-    (inputs : Nat) : PassChecker G images :=
+    (inputs : Nat) (sites : List LayerSite := []) : PassChecker G images :=
   match layer with
   | none => .ordinary
-  | some L => .extended (L name inputs G images (HeapExpressionRules.Checker.ordinary G images))
+  | some L => .extended (L name inputs sites G images (HeapExpressionRules.Checker.ordinary G images))
 
 /-- **The start's written separation kept** in its given state
 (`startWritten`, `HeapSeparation.union`): each of its facts has a partner,
