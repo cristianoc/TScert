@@ -155,7 +155,7 @@ theorem RestProofs_reassign (q : CallEffects.RestArrow (List ι)) (c : CallEffec
 /-- A generic closure's capture check reads the graph's rows only. -/
 theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
     capturesFree (reassign G η) s Cs = capturesFree G s Cs := by
-  simp only [capturesFree, captureDomain, captureFree, readsFrom_reassign, freeMapOf_reassign]
+  simp only [capturesFree, captureDomain, readsFrom_reassign, freeMapOf_reassign]
   rfl
 
 theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool) (kind : Invoke) (arity : Nat)

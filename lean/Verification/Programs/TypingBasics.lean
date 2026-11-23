@@ -443,9 +443,11 @@ def captureFree [DecidableEq ι] (G : NormalGraph ι) (Cs : List (Ty ι)) : Free
 /-- No capture type reads a binder of the scheme `s`: the computed free rows
 are checked (`FreeOk`) and exclude them. -/
 def capturesFree [DecidableEq ι] (G : NormalGraph ι) (s : SchemeRow ι) (Cs : List (Ty ι)) : Bool :=
-  FreeOk G (captureDomain G Cs) (captureFree G Cs) &&
+  let D := captureDomain G Cs
+  let V := freeMapOf G D closureFuel []
+  FreeOk G D V &&
     Cs.all fun C => C.all fun l =>
-      decide (l ∈ captureDomain G Cs ∧ ∀ p ∈ fv (captureFree G Cs) l, p ∉ s.binders)
+      decide (l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders)
 
 theorem capturesFree_sound [DecidableEq ι] {G : NormalGraph ι} {s : SchemeRow ι} {Cs : List (Ty ι)}
     (h : capturesFree G s Cs = true) :
