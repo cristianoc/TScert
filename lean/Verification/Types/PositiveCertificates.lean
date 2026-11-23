@@ -1070,28 +1070,29 @@ The checker, not this search strategy, defines the rules. -/
         (fun p => checkArrowWith G R L S q p)
 
 /-- The pairs one signature list's coverage of another compares: each target
-signature against each source one, position by position (receivers,
-parameters contravariantly, results covariantly), and each part of a target
-parameter's union against the source's parameter, as arrow coverage splits
-it. -/
-@[nospecialize] def signaturePairs (source target : List (Arrow (List ι))) :
+signature not already in the source against each source one, position by
+position (receivers, parameters contravariantly, results covariantly), and each
+part of a target parameter's union against the source's parameter, as arrow
+coverage splits it. A target signature equal to a source one is covered by
+reflexivity and demands no pairs. -/
+@[nospecialize] def signaturePairs [DecidableEq ι] (source target : List (Arrow (List ι))) :
     List (List ι × List ι) :=
-  target.flatMap fun t => source.flatMap fun s =>
+  target.flatMap fun t => if source.contains t then [] else source.flatMap fun s =>
     (t.receiver, s.receiver) :: (s.result, t.result) :: (t.arguments.zip s.arguments).flatMap fun (q, p) =>
       (q, p) :: q.map fun l => ([l], p)
 
 /-- The same, for variadic signatures: fixed parameters, rest and result. -/
-@[nospecialize] def restPairs (source target : List (RestArrow (List ι))) :
+@[nospecialize] def restPairs [DecidableEq ι] (source target : List (RestArrow (List ι))) :
     List (List ι × List ι) :=
-  target.flatMap fun t => source.flatMap fun s =>
+  target.flatMap fun t => if source.contains t then [] else source.flatMap fun s =>
     (t.receiver, s.receiver) :: (t.arguments.2, s.arguments.2) :: (s.result, t.result) :: t.arguments.1.zip s.arguments.1
 
 /-- The pairs a variadic signature's coverage reads past the source's fixed
 parameters: each further target parameter against the source rest's
-element. -/
-@[nospecialize] def elemPairs (G : NormalGraph ι) (source target : List (RestArrow (List ι))) :
+element, skipping target signatures already in the source. -/
+@[nospecialize] def elemPairs [DecidableEq ι] (G : NormalGraph ι) (source target : List (RestArrow (List ι))) :
     List (List ι × List ι) :=
-  target.flatMap fun t => source.flatMap fun s => match PositiveRules.restElem G s.arguments.2 with
+  target.flatMap fun t => if source.contains t then [] else source.flatMap fun s => match PositiveRules.restElem G s.arguments.2 with
     | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
     | none => []
 
@@ -1174,18 +1175,20 @@ and the target's receivers, its signatures against the target's schemes'). -/
       ((iy ++ cellViews cy).flatMap fun y => (ix ++ cellViews cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
       (cy.flatMap fun y => os.map fun o => (y.2.2, o.type))
   | .arrs L S, .arrs M T | .callable _ _ L S _, .arrs M T =>
-    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
-      restFixedPairs G S M
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++
+      packPairs G L (T.filter fun q => !S.contains q) ++
+      restFixedPairs G S (M.filter fun q => !L.contains q)
   | .callable a bs L S ms, .callable c ds M T ns =>
     recordPairs G known self (Stored.views (a :: bs).flatten) [] [] ms (Stored.views (c :: ds).flatten) [] [] ns ++
-    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
-      restFixedPairs G S M
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++
+      packPairs G L (T.filter fun q => !S.contains q) ++
+      restFixedPairs G S (M.filter fun q => !L.contains q)
   | .ctors L S a bs vs, .ctors M T c ds ws =>
     let fixed (p : MethodArrow (List ι)) : Arrow (List ι) := p.withReceiver []
     let rest (p : MethodRestArrow (List ι)) : RestArrow (List ι) := p.withReceiver []
     recordPairs G known self (Stored.views (a :: bs).flatten) vs [] [] (Stored.views (c :: ds).flatten) ws [] [] ++
     signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
-      packPairs G (L.map fixed) (T.map rest)
+      packPairs G (L.map fixed) ((T.filter fun q => !S.contains q).map rest)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>
     (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
       let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
@@ -1435,11 +1438,13 @@ computed once, when the row is inserted. -/
       -- form, which is only needed when the row reaches one of those tests.
       let split := Thunk.mk fun _ => source.flatMap splitClause
       let reached := reachedPairsFrom G images known p t source
-      if reached.isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          split.get.all fun a => t.own.has G a || t.clauses.any (fun b =>
-            checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
-            (a.elements != [a] && a.elements.all fun e => t.clauses.any fun b =>
-              checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
+      if reached.isEmpty && (p.1 ++ p.2).all G.plain then
+        let es := rowArrows G images.sub (fun X Y => decide (Rel [] X Y)) [p]
+        if !(SameKind G p.1 p.2 &&
+            split.get.all fun a => t.own.has G a || t.clauses.any (fun b =>
+              checkClauseWith G images.sub (Rel []) known es p.1 a b) ||
+              (a.elements != [a] && a.elements.all fun e => t.clauses.any fun b =>
+                checkClauseWith G images.sub (Rel []) known es p.1 e b)) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw .growth
       -- A row no valid closed family covers (`structurallyHopelessIn`) is not

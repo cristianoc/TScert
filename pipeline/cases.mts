@@ -804,6 +804,7 @@ export const cases: Case[] = [
   negative("invalid-generic-function-type-bound", "a module function read as a value keeps its binder's bound: a scheme over every type is not met", /source expression obligation at \[345,349\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-generic-closure-field", "a generic closure's omitted result is its body's: a constant does not meet the identity scheme", /source expression obligation at \[295,317\): evidence search failed: no derivation of its node-typing claim/),
   positive("generic-constructor-type", "a generic constructor type is a scheme of construct signatures: generic classes read as values meet it, a plain construct signature beside"),
+  positive("exact-overload-discovery", "overloaded constructors, callables and methods with an exact target overload skip cross-overload premise discovery"),
   negative("invalid-generic-constructor-type", "a class constructing Box<T> at every T does not meet a constructor of Box<number> at every T", /source expression obligation at \[365,368\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-generic-constructor-as-function", "a class value has construct code only: it does not meet a generic function type",
     /source expression obligation at \[260,263\): evidence search failed: no derivation of its binding-annotation claim/),
