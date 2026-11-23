@@ -1,17 +1,17 @@
-# Effect languages
+# An effect language for TScert
 
 [Read the paper (PDF)](effect-languages-note/effect-languages.pdf) ·
 [LaTeX source](effect-languages-note/note.tex)
 
-In the paper, an effect states how every old location may change, through an
+The paper proposes one effect language for TScert. An effect is a
+relation between the heap before a step and the heap after it, with an
 explicit `else` for the locations its entries do not cover, so the facts a
-step must preserve are effects too and every check is inclusion. The paper
-states the effect rules once, over any effect language with four
-properties, and describes TScert's footprints as one such language,
-$`\mathcal L_0`$. It then proposes $`\mathcal L_1`$, which adds regions at
-a closure's captures, effect variables bounded by effects, anchored
-effects and reach through declared keys, and derives Pretext's line-walker
-patterns in it. $`\mathcal L_1`$ has no implementation and no proof.
+step must preserve are effects too and every check is inclusion. The
+language has regions at a closure's captures, effect variables bounded by
+effects, and reach through declared keys; the paper derives Pretext's
+line-walker patterns in it. TScert's footprints today are a fragment,
+$`\mathcal L_0`$, which a section maps to the language. The language
+beyond $`\mathcal L_0`$ has no implementation and no proof.
 
 ## The existing mechanism this extends
 
