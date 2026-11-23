@@ -175,8 +175,13 @@ the rules run first in a prototype, which reuses the whole pass:
   ([SOURCE-CONTRACTS.md](../SOURCE-CONTRACTS.md#arguments-without-type-meaning)).
 - **Inst** is decided by the side script: an instance's root is a caller's
   local, which a checker does not see by name. A `const` local initialised
-  by an object or array literal and never assigned is apart from the
-  bound's root. This decision is outside Lean.
+  by an object or array literal is apart from the bound's root where no
+  reference able to run before the call (one preceding it, in its
+  arguments, in a nested function, or in a loop enclosing the call and not
+  the declaration) stores, passes or returns it. The pass's separation
+  facts state an allocated object's own locations apart from older ones,
+  and nothing about the reach of a parameter after a store, which
+  `"p.**"` needs. This decision is outside Lean.
 
 `node dev/paper-rules.mts dev/paper-rules/walk.ts --project dev/paper-rules`
 prints, on the walk of the paper:

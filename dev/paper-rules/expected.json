@@ -174,5 +174,16 @@
     "units": {
       "twice": "accepted"
     }
+  },
+  "fresh-at-call.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walkLines": "accepted",
+      "returnedAfter": "accepted",
+      "storedAfter": "accepted",
+      "storedBefore": "refused",
+      "storedInLoop": "refused",
+      "storedByHoisted": "refused"
+    }
   }
 }

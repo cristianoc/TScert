@@ -1094,8 +1094,12 @@ before the pass, with each argument's \code{const} aliases resolved: a
 field, a spine and cells are disjoint, as are fields at different keys
 and a field whose key no type of a closed reach declares. An own location
 of an object the caller allocates (a \code{const} of its body initialised
-by a literal, never stored, passed or returned) is disjoint from an own
-location and from the reach of a parameter the caller never assigns.
+by a literal) is disjoint from an own location and from the reach of a
+parameter the caller never assigns, where no reference able to run before
+the call stores, passes or returns it: every reference other than the
+object of a member access counts that precedes the call, lies in its
+arguments, in a nested function or in a loop enclosing the call and not
+the declaration.
 \item \textbf{Anchoring.} An instance is decided anchored where its
 $\kw{else}$ is $\keep$, it has no class key, and each key is a field, the
 fields or the spine of a \code{const} or of a parameter its function never

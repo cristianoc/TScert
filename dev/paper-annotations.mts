@@ -316,13 +316,34 @@ function assignedIn(name: string, fn: ts.Node): boolean {
   return found;
 }
 
-/** Whether an object a `const` holds may be reached from other storage:
-some reference to the binding (or to a `const` alias of it) is other than
-the object of a member access (`x.f`, `x[i]`, `x.push(…)`), so it may be
-stored, passed or returned. */
-function escapes(decl: ts.VariableDeclaration, scope: ts.Node): boolean {
+/** The nearest function or class enclosing a node: the code that runs
+when it runs. */
+function runnerOf(n: ts.Node): ts.Node | null {
+  for (let m: ts.Node | undefined = n.parent; m; m = m.parent)
+    if (ts.isFunctionLikeDeclaration(m) || ts.isClassDeclaration(m) || ts.isClassExpression(m)) return m;
+  return null;
+}
+
+/** Whether an object a `const` holds may be reached from other storage when
+a call runs: some reference to the binding (or to a `const` alias of it)
+other than the object of a member access (`x.f`, `x[i]`, `x.push(…)`),
+which may store, pass or return it, can run before the call. Such a
+reference precedes the call, lies in the call's arguments, lies in a
+function or class nested in the code that runs the call (which may run at
+any time), or lies in a loop enclosing the call and not the declaration
+(which runs it before a later iteration's call). Where the call itself runs
+in other code than the declaration, every such reference counts. */
+function escapesBefore(decl: ts.VariableDeclaration, call: ts.Node, scope: ts.Node): boolean {
   if (!ts.isIdentifier(decl.name)) return true;
   const name = decl.name.text;
+  const runner = runnerOf(decl);
+  const anywhere = runnerOf(call) !== runner;
+  const loops: ts.Node[] = [];
+  for (let m: ts.Node | undefined = call.parent; m && m !== runner; m = m.parent)
+    if ((ts.isForStatement(m) || ts.isForInStatement(m) || ts.isForOfStatement(m) || ts.isWhileStatement(m) ||
+        ts.isDoStatement(m)) && !within(decl, m.statement)) loops.push(m);
+  const before = (n: ts.Node): boolean => anywhere || n.getStart() < call.getStart() || within(n, call) ||
+    runnerOf(n) !== runner || loops.some((l) => within(n, l));
   let out = false;
   const visit = (n: ts.Node): undefined => {
     if (out) return undefined;
@@ -333,8 +354,8 @@ function escapes(decl: ts.VariableDeclaration, scope: ts.Node): boolean {
         const member = p !== undefined && (ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n;
         const alias = p !== undefined && ts.isVariableDeclaration(p) && p.initializer === n &&
           (p.parent.flags & ts.NodeFlags.Const) !== 0;
-        if (alias) { if (escapes(p, scope)) out = true; }
-        else if (!member) out = true;
+        if (alias) { if (escapesBefore(p, call, scope)) out = true; }
+        else if (!member && before(n)) out = true;
       }
     }
     n.forEachChild(visit);
@@ -346,30 +367,32 @@ function escapes(decl: ts.VariableDeclaration, scope: ts.Node): boolean {
 
 /** A key's root resolved at a call: the key with its root replaced by the
 path an alias holds, and whether its root is an object the calling
-function allocated: a `const` of its body initialised by an object or
-array literal, never stored, passed or returned (Rule Alloc of Tolerant
-frames gives its separation); null where the root resolves to nothing this
-script reads. */
-function normalizeKey(key: string, at: ts.Node, unit: ts.Node | null): { key: string; fresh: boolean } | null {
+function allocated and no reference lets reach other storage before the
+call: a `const` of its body initialised by an object or array literal
+(Rule Alloc of Tolerant frames gives its separation from every location
+older than it); null where the root resolves to nothing this script
+reads. */
+function normalizeKey(key: string, call: ts.Node, unit: ts.Node | null): { key: string; fresh: boolean } | null {
   const root = rootOf(key);
-  const d = declOf(root, at);
+  const d = declOf(root, call);
   if (d === null || d.kind === "function") return null;
   if (d.kind === "const" && isPathExpr(d.init)) {
     const inner = d.init === undefined ? null : resolveAt(d.init);
     if (inner === null) return null;
     const head = [inner.root, ...inner.path].join(".");
-    const fresh = inner.path.length === 0 && freshAt(inner.root, d.init ?? at, unit);
+    const fresh = inner.path.length === 0 && freshAt(inner.root, d.init ?? call, call, unit);
     return { key: head + restOf(key), fresh };
   }
-  return { key, fresh: freshAt(root, at, unit) };
+  return { key, fresh: freshAt(root, call, call, unit) };
 }
 
 /** Whether a variable, read at a node, holds an object the unit allocated
-in its body and never let escape. */
-function freshAt(name: string, at: ts.Node, unit: ts.Node | null): boolean {
+in its body that no reference able to run before the call lets reach other
+storage. */
+function freshAt(name: string, at: ts.Node, call: ts.Node, unit: ts.Node | null): boolean {
   const d = declOf(name, at);
   if (unit === null || d === null || d.kind !== "const" || !isAllocation(d.init) || !within(d.at, unit)) return false;
-  return ts.isVariableDeclaration(d.at) && !escapes(d.at, unit);
+  return ts.isVariableDeclaration(d.at) && !escapesBefore(d.at, call, unit);
 }
 
 function resolveAt(e: ts.Expression): { root: string; path: string[] } | null {
@@ -416,8 +439,9 @@ keys differ whatever objects they are on (disjointness by key); a field
 whose key no type in a closed reach declares lies outside it; and an own
 location (a field or the spine, at the empty path) of an object the caller
 allocated is apart from an own location of a parameter the caller never
-assigns, and, where the object never escapes, from the parameter's reach
-(rule Alloc of Tolerant frames). Anything else may overlap. `acc` is the
+assigns, and, where no reference lets the object reach other storage
+before the call, from the parameter's reach (rule Alloc of Tolerant
+frames). Anything else may overlap. `acc` is the
 reach's access paths where one of them is a reach. */
 function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<string>): boolean {
   const ownOf = (l: Loc): boolean => l.path.length === 0 && (l.kind === "field" || l.kind === "fields" || l.kind === "spine");

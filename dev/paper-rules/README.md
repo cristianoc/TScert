@@ -51,6 +51,9 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 - `claims.ts`: a caller's claim about its callback, checked against the
   callback's body.
 - `inst-effect.ts`: the caller's facts kept across a walker call.
+- `fresh-at-call.ts`: an instance's root the caller allocates, returned or
+  stored after the call, accepted; stored before it, after it in a loop
+  enclosing it, or by a function run before it, refused.
 - `repro-351.ts`: the loop-head pattern of issue #351, fixed in the verifier
   by #353: accepted, with its two refused variants.
 - `repro-355.ts`: issue #355, a callback's call dropping the facts over an
