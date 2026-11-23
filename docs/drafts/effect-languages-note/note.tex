@@ -753,7 +753,7 @@ type in the reach declares the key $g$.
 
 \subsection{Constraints and quantified signatures}
 
-\begin{definition}[Constraint, signature]
+\begin{definition}[Constraint, signature]\label{def:constraint}
 A constraint is $\varepsilon\resp S$, with $S$ an effect of entries. It
 holds under $\theta$ at a state of $K$ when $\theta(\varepsilon)\resp_K S$.
 A signature is
@@ -852,6 +852,38 @@ written & meaning\\
 TypeScript reads \code{Modifies<P, T>} as \code{T} and never reads
 \code{P}. So the instantiation is written at the call: TypeScript
 cannot infer it.
+
+\begin{definition}[The annotation \code{Respects}]\label{def:respects}
+\code{Respects<S>} is a proposed declaration beside \code{Modifies}.
+TypeScript reads it as \code{unknown}, so every type meets it as a
+bound. It is written only as the bound of a type parameter of a
+signature, \code{<E extends Respects<S>>}. Its argument $S$ is a type
+literal with the keys of \code{Modifies}, each a region at a change, and
+it denotes the effect $S$ of those entries. The annotation states the
+constraint $\varepsilon\resp S$ of the signature
+(Definition~\ref{def:constraint}), with $\varepsilon$ the effect
+variable that \code{E} names: every effect substituted for \code{E} at a
+call changes each location of each region $r$ of $S$, read at that
+call, within the change that $S$ gives $r$. It may change any other
+location. Inside the function the constraint is assumed
+(\ruleName{Var-Resp}); at each call it is checked (\ruleName{Inst}).
+\end{definition}
+
+\begin{example}
+\code{walk<E extends Respects<\{ "xs[*]": "keep" \}>>} admits every
+visitor that leaves the spine of \code{xs} unchanged. The effect
+$\{\mathit{visited}.\kw{spine}:\extend\}$ meets the constraint where
+$\mathit{visited}$ is an array allocated after \code{xs}, and fails it
+where $\mathit{visited}$ is \code{xs}. With \code{"grow"} in place of
+\code{"keep"}, a visitor that appends to \code{xs} meets it too.
+\end{example}
+
+\noindent
+\code{Modifies<P, T>} and \code{Respects<S>} read their entries in
+opposite directions. In \code{Modifies}, $P$ lists what may change, and
+every location it omits keeps its contents. In \code{Respects}, $S$
+lists what must be kept within a change, and every location it omits
+may change.
 
 \begin{conjecture}[$\Lang_1$ is an effect language]
 $\Lang_1$, with the decisions of $\Lang_0$, disjointness by keys, and
