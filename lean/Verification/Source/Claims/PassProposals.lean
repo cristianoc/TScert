@@ -461,15 +461,15 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
   let group := f.fr.group i
   let given := some (f.computedGiven {} false false none group)
   let f := f.withFreshApart false group
-  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+  let candidates : List (Nat × List HeapKnowledge.Candidate) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
-  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
+  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.Candidate) => !c.2.isEmpty).length
   let s := settleInferred
     (fun (g : FilePlans) gv => SinglePass.work "propose: settling run" (f.fr.workItem i) fun _ =>
       match g.passMember fuel i false 1000000000 1 gv none false true with
       | .ok m =>
-        let why : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) := match m.outcome with
+        let why : Option (String × Option (Nat × List HeapKnowledge.Candidate)) := match m.outcome with
           | .refused w lacks _ => some (w, lacks)
           | _ => none
         -- The main graph's walk with no bound, where the run made it
@@ -484,10 +484,10 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
                   else some none) else none
             | none => none
           else none
-        ((why, walked) : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
+        ((why, walked) : Option (String × Option (Nat × List HeapKnowledge.Candidate)) ×
           Option (Option (Array SinglePass.VisitRecord × Nat)))
       | .error _ => (none, none))
-    (fun (res : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
+    (fun (res : Option (String × Option (Nat × List HeapKnowledge.Candidate)) ×
           Option (Option (Array SinglePass.VisitRecord × Nat))) => res.1)
     (fun (g : FilePlans) gv w => g.inferredNextAll fuel false [] gv i w)
     (4 * heads + 3) f given [] 0 0

@@ -121,6 +121,7 @@ export const forcedProposals: readonly ForcedProposal[] = [
   { file: "quantified-freshness-builder", unit: "build@303", force: "head-apart", positive: true },
   { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-called", positive: true },
   { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-eliminated", positive: true },
+  { file: "loop-head-read-links", unit: "sumVia@301", force: "head-links", positive: true },
   // One program point's proposal forced (`point@<start>-<end>`, its source span): the first of its
   // type's members, else `true` (`false` for `true`); the walk goes on with the computed type.
   // A parameter read in `&&`'s right operand, `v` of `Number.isSafeInteger(v)`: refused at the edge into

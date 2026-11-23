@@ -102,12 +102,12 @@ omit [Labels ι] in
 below `n`): a label other than a head has none, a head below `n` its
 written assertion with the claims' facts, at the start `startGiven`. -/
 theorem setupGiven_get (n start : Nat) (isHead : Array Bool) (stated : Array (Option HeapKnowledge.Knowledge))
-    (supplied : Array (Option (List HeapKnowledge.IndexAtom))) (entryIndices : List HeapKnowledge.IndexAtom)
+    (supplied : Array (Option (List HeapKnowledge.Candidate))) (entryIndices : List HeapKnowledge.IndexAtom)
     (entrySeparation : HeapSeparation.Separation) (counts : SinglePass.Counts) (t : Nat) :
     (SinglePass.setupGiven n start isHead stated supplied entryIndices entrySeparation counts).1[t]! =
       if t < n ∧ isHead[t]! = true then
         some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation ((supplied[t]!).getD [])
-          else { (stated[t]!).getD {} with indices := ((stated[t]!).getD {}).indices ++ (supplied[t]!).getD [] })
+          else HeapKnowledge.withCandidates ((stated[t]!).getD {}) ((supplied[t]!).getD []))
       else none := by
   unfold SinglePass.setupGiven
   -- The fold over `xs`, a sublist of the labels below `n` without repeats.
@@ -122,11 +122,11 @@ theorem setupGiven_get (n start : Nat) (isHead : Array Bool) (stated : Array (Op
             givenWritten := acc.2.givenWritten + (SinglePass.atomsOf written).length
             givenClaims := acc.2.givenClaims + claimsFacts.length }
           (acc.1.set! l (some (if l == start then SinglePass.startGiven stated[l]! entryIndices entrySeparation claimsFacts
-            else { written with indices := written.indices ++ claimsFacts })), counts)
+            else HeapKnowledge.withCandidates written claimsFacts)), counts)
         else acc) acc).1[t]! =
         if t ∈ xs ∧ isHead[t]! = true then
           some (if t == start then SinglePass.startGiven stated[t]! entryIndices entrySeparation ((supplied[t]!).getD [])
-            else { (stated[t]!).getD {} with indices := ((stated[t]!).getD {}).indices ++ (supplied[t]!).getD [] })
+            else HeapKnowledge.withCandidates ((stated[t]!).getD {}) ((supplied[t]!).getD []))
         else acc.1[t]! := by
     intro xs
     induction xs with

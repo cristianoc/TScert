@@ -90,7 +90,7 @@ past the start names, the entry meeting the inputs, the separation and the
 index facts: the start's typed assertion holds at the entry values. -/
 theorem start_entered_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List (Ty ι)}
     {ctx : Nat → List (Ty ι)} {claims : List (CertificateProducer.PointClaim ι)} {start : Nat}
-    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.IndexAtom}
+    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied : List HeapKnowledge.Candidate}
     {givenImplies : List (PromiseCalls.Implication ι)} {givenArgs : List Nat} {givenInputs : List (Nat × Nat)}
     {entryIndices : List HeapKnowledge.IndexAtom} {entrySeparation : HeapSeparation.Separation} {fresh : Nat}
     (hacc : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs

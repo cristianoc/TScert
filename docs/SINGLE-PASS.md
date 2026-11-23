@@ -597,6 +597,13 @@ prepared.widths.length` give `segmentCount = segmentFlags.length`).
 term of each such fact at most `-1`: `cursor-invariant-after-writing-call`
 `countMarked`, accepted unforced, is refused at an edge into its loop's
 head.
+A local copy of a field (`const xs = h.xs`, `const { xs } = h`, or an alias of
+the copy) proposes its read link at each loop head it crosses (`Fact.readLink`,
+`entryLinks`, `HeapKnowledge.Candidate.link`), kept by the edge check and
+settle loop where every edge into the head preserves the field
+(`loop-head-read-links`). `--force-proposals head-links` also states the object
+its own field's value: `loop-head-read-links` `sumVia`, accepted unforced, is
+refused at an edge into its loop's head.
 `--force-proposals head-ensures` also states each term of the binding a call's
 postcondition names at most `-1`: `assignment-call-postcondition`
 `sumBreaks`, accepted unforced, is refused at an edge into its loop's

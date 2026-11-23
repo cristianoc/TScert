@@ -28,6 +28,27 @@ structure IndexAtom where
   negated : Bool := false
   deriving DecidableEq, Repr, Hashable
 
+/-- A candidate fact at a statement entry: an index atom or a read link.
+Kept where every incoming edge establishes it, left out otherwise; acceptance
+does not require it. -/
+inductive Candidate where
+  | index (a : IndexAtom)
+  | link (g : HeapLinks.Link)
+  deriving DecidableEq, Repr, Hashable
+
+/-- The index atoms among candidates. -/
+def Candidate.indices (cs : List Candidate) : List IndexAtom :=
+  cs.filterMap fun | .index a => some a | .link _ => none
+
+/-- The links among candidates. -/
+def Candidate.links (cs : List Candidate) : HeapLinks.Links :=
+  cs.filterMap fun | .link g => some g | .index _ => none
+
+/-- A candidate renamed by a partial map, where it maps every slot the candidate names. -/
+def Candidate.mapM (f : Nat → Option Nat) : Candidate → Option Candidate
+  | .index a => do pure (.index { a with fact := ← a.fact.mapM f, cond := ← a.cond.mapM f })
+  | .link g => do pure (.link { g with cell := ← f g.cell, value := ← f g.value })
+
 structure Knowledge where
   cells : Facts := []
   values : Facts := []
@@ -39,6 +60,10 @@ structure Knowledge where
   /-- The index facts (`IndexAtom`). -/
   indices : List IndexAtom := []
   deriving DecidableEq, Repr
+
+/-- A knowledge with candidates added: their index atoms and their links. -/
+def withCandidates (k : Knowledge) (cs : List Candidate) : Knowledge :=
+  { k with indices := k.indices ++ Candidate.indices cs, links := k.links ++ Candidate.links cs }
 
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
   ∀ f ∈ facts, f.contents.mem (ρ f.slot) = true
@@ -52,6 +77,12 @@ def IndexHolds (ε : EntryState) (as : List IndexAtom) (ρ : Env) (h : Heap) : P
 def Holds (k : Knowledge) (ε : EntryState) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧
     HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h ∧ IndexHolds ε k.indices ρ h
+
+/-- A knowledge's facts hold where those of the knowledge with candidates added hold. -/
+theorem holds_of_withCandidates {k : Knowledge} {cs : List Candidate} {ρ : Env} {h : Heap}
+    (hk : Holds (withCandidates k cs) ε ρ h) : Holds k ε ρ h :=
+  ⟨hk.1, hk.2.1, fun g hg => hk.2.2.1 g (List.mem_append_left _ hg),
+   hk.2.2.2.1, hk.2.2.2.2.1, fun a ha => hk.2.2.2.2.2 a (List.mem_append_left _ ha)⟩
 
 /-- The knowledge read at the entry state itself: each index fact without
 entry terms (`IndexFact.toNow`). -/

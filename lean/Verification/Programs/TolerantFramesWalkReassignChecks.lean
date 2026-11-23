@@ -213,7 +213,7 @@ theorem edgeStoreOf_reassign (Γ : List (Ty ι)) (entryStore store : Store) (nam
 omit [Hashable ι] [Instantiates ι] in
 /-- The unit's entry check at a reassigned graph. -/
 theorem entryRefusal_reassign (inputs : List (Ty ι)) (claims : List (PointClaim ι)) (start : Nat)
-    (goal : ControlFlow.Goal ι) (written : Option HeapKnowledge.Knowledge) (supplied : List HeapKnowledge.IndexAtom)
+    (goal : ControlFlow.Goal ι) (written : Option HeapKnowledge.Knowledge) (supplied : List HeapKnowledge.Candidate)
     (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
     (entryIndices : List HeapKnowledge.IndexAtom) (entrySeparation : HeapSeparation.Separation) :
     entryRefusal (reassign G η) inputs claims start goal written supplied givenImplies givenArgs givenInputs entryIndices

@@ -96,7 +96,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
     (Exit.ofNode n.node)[i]? = some (Exit.normal t pushed observed promote) →
     r.given t.label = true → ∃ ysE : List (PromiseCalls.Yield ι),
       ysE = n.ys ∧
-      ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
+      ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
         (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
         HeadExitChecked H (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated l n.node n.c n.entry s.sdK.st

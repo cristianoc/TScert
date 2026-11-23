@@ -254,7 +254,7 @@ array apart from it, `IndexWrites.writeAtoms`), as `IndexFact.apart`. With
 `force` (`--force-proposals head-apart`), each such side also stated apart from
 itself, the adversarial pair the pass's edge check refuses. -/
 def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := false) :
-    List (Nat × List HeapKnowledge.IndexAtom) := Id.run do
+    List (Nat × List HeapKnowledge.Candidate) := Id.run do
   let G := RequestJson.graph r.toRequest
   let P := r.program
   let ctxOf := fun (l : Nat) => ((r.claims[l]?).map (·.context)).getD []
@@ -292,7 +292,7 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
     let ps := ps.eraseDups
     let ps := ps ++ (if force then (ps.map (·.1)).eraseDups.map fun a => (a, a) else [])
     if ps.isEmpty then none else
-    some (h, ps.map fun (a, b) => ({ fact := .apart a b } : HeapKnowledge.IndexAtom))
+    some (h, ps.map fun (a, b) => HeapKnowledge.Candidate.index { fact := .apart a b })
 
 end
 
@@ -303,7 +303,7 @@ def FilePlans.withFreshApart (f : FilePlans) (force : Bool := false) (group : Li
   { f with plans := f.plans.zipIdx.map fun (p, i) => if !group.contains i then p else p.map (FunctionPlan.mapRequest fun r =>
       let extra := freshApartAt r force
       if extra.isEmpty then r else
-      let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.IndexAtom)) (l, as) =>
+      let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.Candidate)) (l, as) =>
         if cs.any (·.1 == l) then cs.map fun (l', bs) => if l' == l then (l', bs ++ as.filter (!bs.contains ·)) else (l', bs)
         else cs ++ [(l, as)]) r.candidates
       { r with candidates := cands }) }

@@ -125,17 +125,17 @@ head's given facts are the written assertion with the claims' index facts
 (`SinglePass.run`, `given`), and the edge establishes them
 (`HeadEstablishes.facts`, from `headEstablishes_of_edge`). -/
 theorem assertsAt_of_head {G : NormalGraph ι} {stated : Nat → Option HeapKnowledge.Knowledge} {t : Nat}
-    {written : HeapKnowledge.Knowledge} {cf : List HeapKnowledge.IndexAtom}
+    {written : HeapKnowledge.Knowledge} {cf : List HeapKnowledge.Candidate}
     {gimp : List (PromiseCalls.Implication ι)} {startNames : List Nat} {argName : Option Nat}
     {argSlots : List Nat} {inputSlots : List (Nat × Nat)} {ρ' : Env} {s : IndexedHeap}
     (hw : (stated t).getD {} = written)
-    (hest : HeadEstablishes G { written with indices := written.indices ++ cf } gimp startNames argName argSlots
+    (hest : HeadEstablishes G (HeapKnowledge.withCandidates written cf) gimp startNames argName argSlots
       inputSlots ε ρ' s) :
     AssertsAt ε stated t ρ' s := by
   intro req hr
   rw [hr] at hw
   subst hw
-  exact holds_of_indices_append hest.facts
+  exact HeapKnowledge.holds_of_withCandidates hest.facts
 
 omit [Hashable ι] in
 /-- **The start's written assertion holds at an entry meeting the inputs**:
@@ -143,7 +143,7 @@ the entry check (`entryRefusal`) accepting, its entailment of the written
 and supplied facts (`entryRefusal_ok`, `entryKnows_sound`). -/
 theorem assertsAt_start {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : List (PointClaim ι)} {start : Nat}
     {goal : ControlFlow.Goal ι} {stated : Nat → Option HeapKnowledge.Knowledge}
-    {supplied : List HeapKnowledge.IndexAtom} {givenImplies : List (PromiseCalls.Implication ι)}
+    {supplied : List HeapKnowledge.Candidate} {givenImplies : List (PromiseCalls.Implication ι)}
     {givenArgs : List Nat} {givenInputs : List (Nat × Nat)} {entryIndices : List HeapKnowledge.IndexAtom}
     {entrySeparation : HeapSeparation.Separation}
     (hacc : SinglePass.entryRefusal G inputs claims start goal (stated start) supplied givenImplies givenArgs
@@ -153,7 +153,7 @@ theorem assertsAt_start {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : L
   intro req hr
   have hk := ControlFlow.entryKnows_sound (entryRefusal_ok hacc).2.2.2.2.2 he hs hi
   rw [hr] at hk
-  exact holds_of_indices_append hk
+  exact HeapKnowledge.holds_of_withCandidates hk
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- **A normal exit delivers the target's written assertion with its

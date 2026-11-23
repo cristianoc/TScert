@@ -36,7 +36,7 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
       («given» t.label = false →
         NonHeadExitChecked G images w ctx stated edgesIn l node c entry st ys ysA ysE here outFresh i t pushed observed
           promote) ∧
-      («given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
+      («given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
         (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
         HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here i t pushed observed promote req
