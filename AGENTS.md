@@ -282,6 +282,11 @@ mode reads, and the tests the change touches.
   Work that reaches the ordinary verdict follows the process above.
 - **A rule changed by a pattern is a result**, recorded in the commit's
   record with the program that showed the need.
+- **The prototype may assume what the proved mode would prove.** The
+  prototype executable, outside the `Verification` library and its axiom
+  checks, may declare one named axiom: that the facts its checker layer
+  keeps at a call survive the call. Every verdict it supports names the
+  axiom, and no theorem of the library depends on it.
 
 ### Engineering trade-offs
 
