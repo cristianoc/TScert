@@ -243,10 +243,8 @@ export function materializeLineRange(
 // It, measureLineStats(), measureNaturalWidth() and layoutNextLineRange() return
 // widths and cursors and no text, from the line-break data layout() reads, so they
 // take a prepare() handle as well (RESEARCH.md, Decisions Log, 2026-10-06).
-// contract on callers: onLine changes no typed array and shortens no array; it may change
-// any value and grow any array. Assumed, not checked outside pretext. Its type states it as
-// Modifies<{ values: "any"; spines: "grow" }, void>, which TypeScript reads as void.
-// PAPER: the client's effect is the effect variable E, bounded by the handle's reach.
+// PAPER: onLine's effect is the effect variable E: a caller states it as the instance, and
+// the bound requires it to keep every location the handle reaches and allows any other change.
 export function walkLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(
   prepared: PreparedText,
   maxWidth: number,
