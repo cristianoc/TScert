@@ -298,15 +298,24 @@ type PreparedLineData = {
   breakableFitAdvances: (number[] | null)[]
 }
 \end{lstlisting}
-Its access paths are $\epsilon$, $.\mathit{widths}$,
-$.\mathit{segmentFlags}$, $.\mathit{breakableFitAdvances}$ and
-$.\mathit{breakableFitAdvances}[\ast]$. So, for
-\code{prepared: PreparedLineData},
-$\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ contains the three
-fields of \code{prepared}, the spine and cells of \code{widths}, the view
-spine and elements of \code{segmentFlags}, the spine and cells of
-\code{breakableFitAdvances}, and the spine and cells of each inner array.
-A key the handle carries at run time beyond its type, such as a field
+For \code{prepared: PreparedLineData}, the reach
+$\reach{\mathit{prepared}}{\mathit{PreparedLineData}}$ is these
+locations, one group per access path:
+\begin{itemize}[leftmargin=1.5em]
+\item $\epsilon$: the three field locations of the handle object, which
+hold the references to its three arrays;
+\item $.\mathit{widths}$: the spine of the \code{widths} array, which
+records its length and its element locations, and those element
+locations, which hold the numbers;
+\item $.\mathit{segmentFlags}$: the view spine of the typed array and
+its elements, which hold the bytes;
+\item $.\mathit{breakableFitAdvances}$: the spine of the outer array and
+its element locations, each holding \code{null} or a reference to an
+inner array;
+\item $.\mathit{breakableFitAdvances}[\ast]$: for each inner array, its
+spine and its element locations, which hold the numbers.
+\end{itemize}
+A field the handle object carries at run time beyond its type, such as
 \code{wholeWidth}, is not in the reach.
 \end{example}
 
