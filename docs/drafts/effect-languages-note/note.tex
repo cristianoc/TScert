@@ -279,7 +279,7 @@ The access paths of a type $T$ are the suffixes it admits:
 \mathit{Acc}(T)=\{\epsilon\}\ \cup\ \{.f\,a\mid f\text{ a key }T\text{ declares},\ a\in\mathit{Acc}(T_f)\}\ \cup\ \{[\ast]\,a\mid T=U[\,],\ a\in\mathit{Acc}(U)\},
 \]
 with $T_f$ the declared type of the field $f$, and the access paths of
-each member for a union type. With $T_a$ the type an access path $a$
+each member for a union or an intersection type. With $T_a$ the type an access path $a$
 reaches,
 \[
 \reach\pi T\ =\ \bigcup_{a\in\mathit{Acc}(T)}\Bigl(\{\pi a.f\mid f\text{ a key }T_a\text{ declares}\}\cup\{\pi a.\kw{spine},\ \pi a.\kw{cells}\}\Bigr).
@@ -1087,9 +1087,16 @@ anchored.
 written at the call or held by a \code{const}, or, for a forwarded
 variable, a callback parameter of that variable or a closure whose only
 effect on old storage is calls of such parameters. A closure's effect is
-read from its steps: field and element writes, \code{push}, calls of
-functions with a stated effect or forwarding their variables, and natives
-whose audited row keeps the heap. Any other call refuses the closure.
+read from the steps of its parameters' defaults and its body: field and
+element writes, \code{push}, calls of functions with a stated effect or
+forwarding their variables, and natives whose audited row keeps the heap.
+Any other call refuses the closure. \ruleName{Push} applies where the
+receiver is declared an array: a variable bound to an array literal, or a
+path whose declared type is closed and, at the path, an array and nothing
+else; \code{push} of any other value is an unknown call. A write of a
+named member of an array (its \code{length}), or of \code{length} where
+the object is not declared to be no array, is a step no rule gives an
+effect, and refuses the closure.
 \ruleName{Field-Write-Scalar} is decided by the operator: an increment
 and an arithmetic compound assignment, whose operands strict TypeScript
 admits only as numbers or bigints; every other write is
@@ -1100,6 +1107,19 @@ whose result is \code{Modifies<E, T>} or states no effect, the variable
 appearing only as a phantom parameter. A callback typed with an effect
 besides the variable ($\varepsilon\cup P$, $P$ not empty) refuses its
 function.
+\item \textbf{Bounds.} A bound is read where it is an effect literal
+whose keys are those of \textbf{Keys}. A bound not read, a bound with a
+class key (\code{values}, \code{spines}) and a callback type not read
+refuse the function and every call of it.
+\item \textbf{Own effect.} A function's own effect is read from its
+parameters' defaults and its body, its callbacks' calls left to their
+variables: a call whose callee is the callback parameter itself. A
+callback called through a \code{const} alias is an unknown call, and a
+parameter the function assigns names no key: either leaves the own effect
+not read, and a call of the function then keeps none of the caller's
+facts.
+\item \textbf{Instances.} An instance is the type argument at its effect
+parameter's position among all the function's type parameters.
 \item \textbf{Bound's second premise.} The prototype decides it for a
 field and a spine at a parameter, one location at every state, and for a
 reach where the function's own effect, read from its body without its
@@ -1108,8 +1128,26 @@ or may change a reach of its bound, is refused.
 \item \textbf{Every call.} A signature holds for every call. The prototype
 checks \ruleName{Inst} at each call in a function declaration of the files
 it reads, and refuses a quantified function referenced otherwise in its
-file or in a file of its directory that imports it: as a value, or by a
-call outside every function declaration.
+file or in a file of its project (under the nearest directory holding a
+\code{tsconfig.json}) that imports it by a relative path, directly or
+through re-exports: as a value, or by a call outside every function
+declaration. A module naming one that exports it as a namespace refuses
+it too.
+\item \textbf{Arguments.} The layer reads a call's effect at its
+arguments where each is a variable of the step; an entry at a parameter
+whose argument is any other term keeps nothing.
+\item \textbf{Sites.} The layer finds a call's instance by the source
+spans of the nodes whose term and context width are the step's; nodes
+equal in both are one site, which keeps only what every call at such a
+node keeps.
+\item \textbf{Region equality.} A location lies in a bound's entry where
+the two regions are equal as written: the same location written two ways
+(a field and the one-step path to it) is not decided equal.
+\item \textbf{Changes by category.} A change is compared at a location
+after it is read at the location's category, as \emph{Footprints}'
+relations read it (\lean{Change.onSpine}, \lean{Change.onValue}): on a
+spine $\init$ and $\scalar$ are $\keep$, on a value $\extend$ and $\grow$
+are $\scalar$. An $\kw{else}$ is read so at each location it reaches.
 \item \textbf{Exceptional exits.} The prototype reads no \code{onThrow}.
 \end{itemize}
 At a call the prototype reads the call's effect with the bound in place
