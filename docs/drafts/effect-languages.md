@@ -3,10 +3,13 @@
 [Read the paper (PDF)](effect-languages-note/effect-languages.pdf) ·
 [LaTeX source](effect-languages-note/note.tex)
 
-The paper states the effect rules once, over any effect language with four
+In the paper, an effect states how every old location may change, through an
+explicit `else` for the locations its entries do not cover, so the facts a
+step must preserve are effects too and every check is inclusion. The paper
+states the effect rules once, over any effect language with four
 properties, and describes TScert's footprints as one such language,
 $`\mathcal L_0`$. It then proposes $`\mathcal L_1`$, which adds regions at
-a closure's captures, effect variables bounded by a support, anchored
+a closure's captures, effect variables bounded by effects, anchored
 effects and reach through declared keys, and derives Pretext's line-walker
 patterns in it. $`\mathcal L_1`$ has no implementation and no proof.
 
@@ -42,24 +45,25 @@ export function walk(xs: number[], visit: Visitor): number {
 }
 ```
 
-the fact `c.i < xs.length` has support `{c.i: keep, xs.spine: grow}`. At
-`visit(c.i)`, `Φ = {values: any, spines: grow}`. The pair `(c.i: keep)`
-and the entry `(values: any)` fail both alternatives, so the fact is
-dropped and `walk` is refused at `xs[c.i]`.
+the fact `c.i < xs.length` survives every step bounded by
+`{c.i: keep, xs.spine: grow; else: any}`. At `visit(c.i)`,
+`Φ = {values: any, spines: grow}`. The entry `values: any` covers `c.i`,
+so `Φ` is not included in that effect, the fact is dropped and `walk` is
+refused at `xs[c.i]`.
 
 **The proposed change.** A signature quantifies over its callback's effect
-and bounds it by a support: `walk<E extends Respects<{ "xs[*]": "keep" }>>(xs, visit: Visitor<E>): Modifies<E, number>`.
-At the visit, `Φ = E`. A pair whose region the constraint covers meets the
-first alternative through the constraint (rule Var-Resp). A pair whose
-region the body allocated is disjoint from `E`, since `E` ranges over
-effects anchored at the call of `walk` (rule Fresh-Anch). Each caller
-writes its closure's effect, rooted at its captures, and proves the
-constraint at the call with the same respect check (rule Inst).
+and bounds it by an effect:
+`walk<E extends AtMost<{ "xs[*]": "keep"; else: "any" }>>(xs, visit: Visitor<E>): Modifies<E, number>`.
+At the visit, `Φ = E`. Inside `walk`, `E` is included in its bound (rule
+Bound) and in `{old: any}`, the locations that existed at the call (rule
+Anch), so in their meet. Each caller writes its closure's effect, rooted at
+its captures, and proves the bound at the call by the same inclusion (rule
+Inst).
 
-**Example, through the change.** At `visit(c.i)`, `(c.i: keep)` is
-disjoint from `E` by Fresh-Anch, and `(xs.spine: grow)` holds by
-Var-Resp, since the constraint keeps `xs.spine`. The read is in bounds. In
-`sumAndTrace`, `E := {visited.spine: extend}` meets the constraint because
+**Example, through the change.** At `visit(c.i)`, the meet keeps `c.i`,
+which is not `old`, and keeps the spine of `xs`, so it is included in
+`{c.i: keep, xs.spine: grow; else: any}` and the read is in bounds. In
+`sumAndTrace`, `E := {visited.spine: extend}` is within the bound because
 the fresh `visited` is apart from `xs`. In `sumAndAlias`, `visited` is
 `xs`, and the call is refused.
 
@@ -68,12 +72,13 @@ the fresh `visited` is apart from `xs`. In `sumAndAlias`, `visited` is
 - **Effects and their action** are `Footprints.Post` over the regions of
   `Footprints.Region`; the extension adds region forms and effect
   variables, and keeps the action.
-- **Respect and separation** are `Footprints.respects` and the separation
-  query; the constraint check at a call is that check, and disjointness by
-  keys is `Footprints.Region.apart_of_keys`.
+- **Inclusion and separation** are `Footprints.respects` and the
+  separation query: an effect with `else: keep` (`Post`) included in one
+  with `else: any` (`Supported`); the bound check at a call is that check,
+  and disjointness by keys is `Footprints.Region.apart_of_keys`.
 - **Rigidity and rebasing** are the note's; anchoring is a property of an
   effect's regions that the rigid paths establish.
 - **Closure effects** are checked by the existing function rule, at
   parameters and captures. The inferred demand of
   [pull request 338](https://github.com/cristianoc/TScert/pull/338) is a
-  written constraint here, and its caller check is rule Inst.
+  written bound here, and its caller check is rule Inst.
