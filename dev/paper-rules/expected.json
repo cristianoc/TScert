@@ -120,5 +120,28 @@
     "units": {
       "init": "accepted"
     }
+  },
+  "review2.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "walk": "accepted",
+      "lengthWrite": "refused",
+      "lengthByKey": "refused",
+      "pushObject": "refused",
+      "unreadBound": "refused",
+      "unreadBoundCaller": "refused",
+      "unreadCallback": "refused",
+      "unreadCallbackCaller": "refused",
+      "reassigned": "accepted",
+      "reassignedCaller": "refused",
+      "defaultWrite": "refused",
+      "shadowed": "accepted",
+      "shadowedCaller": "refused",
+      "walkRe": "refused",
+      "walkFar": "refused",
+      "withValue": "accepted",
+      "withValueCaller": "accepted",
+      "classBound": "refused"
+    }
   }
 }

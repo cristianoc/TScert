@@ -51,6 +51,12 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 - `repro-351.ts`: the loop-head pattern of issue #351.
 - `review.ts`, `review-importer.ts`: counterexamples to decisions beyond the
   paper's rules, one per rule, each refused.
+- `review2.ts`, `review2-reexporter.ts`, `review2-reimporter.ts`,
+  `review2-dir/far.ts`: the second review's counterexamples (a write of an
+  array's `length`, `push` of no array, a bound or callback type not read,
+  a reassigned parameter, a parameter default, a shadowed callback, calls
+  through a re-export or from another directory, a class key in a bound),
+  each refused, and an instance after an ordinary type parameter, accepted.
 
 ## The Pretext copy
 

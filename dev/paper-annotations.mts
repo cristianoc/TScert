@@ -6,7 +6,7 @@
 // none of this: `AtMost` is a local alias of `unknown` there.
 //   node dev/paper-annotations.mts file.ts
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { globalsOverlay } from "../tools/library-globals.mts";
@@ -38,12 +38,18 @@ interface EffectParam { name: string; bound: Effect }
  * writes of its body other than its bounded callbacks' calls, keyed by its
  * parameters), or the reason it is not read. */
 interface FunctionInfo {
+  /** Its type parameters in order: an instance is the type argument at its
+  effect parameter's position. */
+  typeParams: string[];
   params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[];
   own?: Effect | string;
-  /** Why the function's own verdict cannot rest on its bounds: its
-  callback's type is not read, or its own steps are not shown to keep the
+  /** Why the function's own verdict cannot rest on its bounds: a bound or
+  a callback's type is not read, or its own steps are not shown to keep the
   regions its bounds read (rule Bound's second premise). */
   refusal?: string;
+  /** Why its signature is not read: a bound or a callback's type. A call
+  of it is then refused too, since its calls' effects are not bounded. */
+  unread?: string;
 }
 /** A call of a function with effect parameters: the instance, whether it is
  * within the bounds (rule Inst), and what the layer needs to give the call
@@ -305,8 +311,11 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   const local = closure !== null && (d.kind === "param" ? d.owner === closure || within(d.owner, closure) : within(d.at, closure));
   // A function's own parameter is a root of its own effect (`paramRoots`);
   // a closure's parameter names no caller's storage.
+  // A parameter its function assigns names, after the assignment, other
+  // storage than its argument: no key of an effect read here.
   if (d.kind === "param")
-    return local && !(paramRoots && d.owner === closure) ? null : { fresh: false, root: e.text, path: [] };
+    return (local && !(paramRoots && d.owner === closure)) || (closure !== null && assignedIn(e.text, d.owner)) ? null
+      : { fresh: false, root: e.text, path: [] };
   if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots);
   if (local) return d.kind === "const" && isAllocation(d.init) ? { fresh: true } : null;
   return { fresh: false, root: e.text, path: [] };
@@ -522,12 +531,14 @@ function boundedParams(fn: FnNode): Set<string> {
  * `x.f: scalar` (Field-Write-Scalar: strict TypeScript admits only number
  * and bigint operands there, and the fragment refuses `any`); an element
  * write `x[i] = e` is `x[*]: grow, x[#]: any`, the spine and the cells
- * (Elem-Write); `x.push(…)` is
+ * (Elem-Write); `x.push(…)` of an `x` declared an array is
  * `x[*]: extend` (Push); a call of a function declared with a result
  * `Modifies<P, T>` is `P` at its arguments (Call). Storage the closure
- * allocates is no part of it (Fresh-Eff). Any other step that may write (an
- * assignment to a captured binding, another call, `delete` of an unnamed
- * location, `new`) cannot be bounded here: the result names it. */
+ * allocates is no part of it (Fresh-Eff). The steps read are those of its
+ * parameters' defaults and of its body. Any other step that may write (an
+ * assignment to a captured binding or to a named member of an array,
+ * another call, `delete` of an unnamed location, `new`) cannot be bounded
+ * here: the result names it. */
 /** The compound assignments whose old and new contents are numbers or
 bigints in strict TypeScript. */
 const arithmetic = new Set<ts.SyntaxKind>([
@@ -537,7 +548,47 @@ const arithmetic = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.AmpersandEqualsToken, ts.SyntaxKind.BarEqualsToken, ts.SyntaxKind.CaretEqualsToken,
 ]);
 
-function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySet<string> = new Set()): Effect | string {
+/** The bounded callback parameters of a function, whose calls a closure's
+effect leaves to the effect variable: the names and the function owning
+them, so a call is skipped only where its callee resolves to one of them. */
+interface Skip { owner: ts.Node | null; names: ReadonlySet<string> }
+const noSkip: Skip = { owner: null, names: new Set() };
+
+/** The type declarations of a file, read once per file. */
+const typeDeclsOf = new Map<ts.SourceFile, Map<string, ts.Node>>();
+function typeDecls(sf: ts.SourceFile): Map<string, ts.Node> {
+  let m = typeDeclsOf.get(sf);
+  if (m === undefined) {
+    m = new Map();
+    for (const s of sf.statements) if (ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s)) m.set(s.name.text, s);
+    typeDeclsOf.set(sf, m);
+  }
+  return m;
+}
+
+/** Whether a location expression's value is an array by its declaration: a
+root bound to an array literal, or a root whose declared type is closed and,
+at the path, an array and nothing else (`Acc(T)`). */
+function isArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
+  const d = declOf(r.root, at);
+  if (d === null || d.kind === "function") return false;
+  if (r.path.length === 0 && d.kind !== "param" && d.type === undefined) return isArrayLiteral(d.init);
+  const acc = accOf(d.type, typeDecls(at.getSourceFile()));
+  const e = acc.paths.get(r.path.join("."));
+  return !acc.open && e !== undefined && e.array && e.keys.size === 0;
+}
+/** Whether a location expression's value is no array by its declaration:
+its declared type is closed and, at the path, declares keys and no array. */
+function declaredNoArray(r: { root: string; path: string[] }, at: ts.Node): boolean {
+  const d = declOf(r.root, at);
+  if (d === null || d.kind === "function") return false;
+  const acc = accOf(d.type, typeDecls(at.getSourceFile()));
+  const e = acc.paths.get(r.path.join("."));
+  return d.type !== undefined && !acc.open && e !== undefined && !e.array;
+}
+const isArrayLiteral = (e: ts.Expression | undefined): boolean => e !== undefined && ts.isArrayLiteralExpression(unwrapExpr(e));
+
+function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noSkip): Effect | string {
   if (fn.body === undefined) return "has no body";
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
@@ -550,8 +601,18 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
       const base = resolve_(t.expression, fn, 0, paramRoots);
       if (base === null) return fail(at, "writes a location no key of the instance can name");
       if (base.fresh) return undefined;
-      if (ts.isPropertyAccessExpression(t)) entries.push([keyOf(base, "." + t.name.text), change]);
-      else entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]);
+      // A key written as a string literal (`x["f"]`) names the field `f`.
+      const arg = ts.isElementAccessExpression(t) ? unwrapExpr(t.argumentExpression) : undefined;
+      const name = ts.isPropertyAccessExpression(t) ? t.name.text
+        : arg !== undefined && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) ? arg.text : null;
+      if (name === null) { entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]); return undefined; }
+      // Field-Write is a rule for a field of an object; a named member of an
+      // array (its `length`, which is its spine) is a step no rule gives an
+      // effect, and so is a write of `length` where the object is not
+      // declared to be no array.
+      if (isArrayAt(base, at)) return fail(at, "writes a named member of an array, a step no rule gives an effect");
+      if (name === "length" && !declaredNoArray(base, at)) return fail(at, "writes the length of a value not declared to be no array, a step no rule gives an effect");
+      entries.push([keyOf(base, "." + name), change]);
       return undefined;
     }
     if (ts.isIdentifier(t)) {
@@ -585,11 +646,22 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
     }
     else if (ts.isCallExpression(n)) {
       const callee = unwrapExpr(n.expression);
+      const skipped = ts.isIdentifier(callee) && skip.names.has(callee.text) && (() => {
+        const d = declOf(callee.text, callee);
+        return d !== null && d.kind === "param" && d.owner === skip.owner;
+      })();
       if (ts.isPropertyAccessExpression(callee) && callee.name.text === "push") {
+        // Rule Push: `push` of an array, by its declaration; a member named
+        // `push` of any other object is an unknown method.
         const base = resolve_(callee.expression, fn, 0, paramRoots);
         if (base === null) return fail(n, "pushes onto an array no key of the instance can name");
+        const receiver = unwrapExpr(callee.expression);
+        const array = base.fresh
+          ? ts.isIdentifier(receiver) && (() => { const d = declOf(receiver.text, receiver); return d !== null && d.kind === "const" && isArrayLiteral(d.init); })()
+          : isArrayAt(base, n);
+        if (!array) return fail(n, "calls push of a value not declared an array, a method whose effect is not stated");
         if (!base.fresh) entries.push([keyOf(base, "[*]"), "extend"]);
-      } else if (ts.isIdentifier(callee) && skip.has(callee.text)) {
+      } else if (skipped) {
         // A call of a bounded callback parameter: its effect is the effect
         // variable's, which the caller's instance gives.
       } else if (ts.isIdentifier(callee)) {
@@ -603,13 +675,13 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
         // effect is its own effect besides them, read from its body, and the
         // forwarded variables, which the calling function's bound accounts for.
         const outer = effectVars(fn);
-        const forwards = decl !== undefined && stated === undefined && effectVars(decl).length > 0 &&
-          (n.typeArguments ?? []).length === effectVars(decl).length &&
-          (n.typeArguments ?? []).every((t) => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text));
+        const positions = decl === undefined ? [] : (decl.typeParameters ?? []).flatMap((tp, i) => effectVars(decl).includes(tp.name.text) ? [i] : []);
+        const forwards = decl !== undefined && stated === undefined && positions.length > 0 &&
+          positions.every((i) => { const t = n.typeArguments?.[i]; return t !== undefined && ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text); });
         const eff = stated ? effectOf(stated)
           : forwards && decl !== undefined && !reading.has(decl) ? (() => {
             reading.add(decl);
-            const e = closureEffect(decl, true, boundedParams(decl));
+            const e = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
             reading.delete(decl);
             return typeof e === "string" ? null : e;
           })() : null;
@@ -642,6 +714,8 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: ReadonlySe
     n.forEachChild(visit);
     return undefined;
   };
+  // A parameter's default is a step of the function, evaluated at its call.
+  for (const p of fn.parameters) visit(p);
   visit(fn.body);
   return error ?? { entries, else: otherwise };
 }
@@ -819,12 +893,17 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     if (!ts.isFunctionDeclaration(s) || !s.name || !s.body) continue;
     bodies.set(s.name.text, s.body);
     const effectParams: EffectParam[] = [];
+    let unread: string | undefined;
     for (const tp of s.typeParameters ?? []) {
       const c = tp.constraint;
       if (c && ts.isTypeReferenceNode(c) && ts.isIdentifier(c.typeName) && c.typeName.text === "AtMost") {
         const arg = c.typeArguments?.[0];
         const bound = arg ? effectOf(arg) : null;
-        if (bound) effectParams.push({ name: tp.name.text, bound });
+        // A bound not read leaves its variable's callbacks unbounded; a class
+        // key's region (every value, every spine) is not read in a bound.
+        if (bound === null) unread ??= `the bound of ${tp.name.text} is not read`;
+        else if (bound.classes) unread ??= `the bound of ${tp.name.text} has a class key (values, spines), which the prototype does not read in a bound`;
+        else effectParams.push({ name: tp.name.text, bound });
       }
     }
     const params = s.parameters.map((p) => ts.isIdentifier(p.name) ? p.name.text : "");
@@ -838,14 +917,15 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
       }
       if (Object.keys(reach).length > 0) e.bound.reach = reach;
     }
-    let refusal: string | undefined;
     const bounded: FunctionInfo["bounded"] = [];
     s.parameters.forEach((p, index) => {
-      const form = p.type === undefined ? null : callbackVar(p.type, effectParams.map((e) => e.name), decls);
-      if (typeof form === "string") refusal ??= `${params[index] ?? ""}: ${form}`;
-      else if (form !== null) bounded.push({ param: params[index] ?? "", index, variable: form.variable });
+      const form = p.type === undefined ? null : callbackVar(p.type, effectVars(s), decls);
+      if (typeof form === "string") unread ??= `${params[index] ?? ""}: ${form}`;
+      else if (form !== null && effectParams.some((e) => e.name === form.variable))
+        bounded.push({ param: params[index] ?? "", index, variable: form.variable });
     });
-    const own = effectParams.length === 0 ? undefined : closureEffect(s, true, boundedParams(s));
+    let refusal = unread;
+    const own = effectVars(s).length === 0 ? undefined : closureEffect(s, true, { owner: s, names: boundedParams(s) });
     // Rule Bound's second premise: the regions of each bound read at a
     // callback's call are those read at the function's entry. A field or
     // the spine of a parameter is one location at every state. A reach is
@@ -862,9 +942,10 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
           : instCheck(own, keeps, params, params, new Set(), new Set());
         if (why !== null) { refusal = `rule Bound's second premise for ${e.name}: ${why}`; break; }
       }
-    const info: FunctionInfo = { params, effectParams, bounded };
+    const info: FunctionInfo = { typeParams: (s.typeParameters ?? []).map((tp) => tp.name.text), params, effectParams, bounded };
     if (own !== undefined) info.own = own;
     if (refusal !== undefined) info.refusal = refusal;
+    if (unread !== undefined) info.unread = unread;
     functions[s.name.text] = info;
   }
   return { functions, bodies, decls };
@@ -874,6 +955,65 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
 function importedFile(from: string, spec: string): string | null {
   if (!spec.startsWith(".")) return null;
   return resolve(dirname(from), spec.replace(/\.(?:js|ts)$/, "") + ".ts");
+}
+
+/** The source files of a source's project: every `.ts` file, declaration
+files aside, under the nearest directory holding a `tsconfig.json`, outside
+`node_modules`. */
+function projectFiles(file: string): string[] {
+  let root = dirname(file);
+  for (let d = root; ; d = dirname(d)) {
+    if (existsSync(join(d, "tsconfig.json"))) { root = d; break; }
+    if (dirname(d) === d) break;
+  }
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".ts") && !e.name.endsWith(".d.ts")) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** The function declaration a module's export of a name stands for: a
+top-level function of that name, or what an `export … from`, an
+`export *` or a local `export { … }` of an imported name re-exports;
+null where none is found. */
+function exportedFrom(file: string, name: string, depth: number = 0): { file: string; name: string } | null {
+  if (depth > 16 || !existsSync(file)) return null;
+  const t = treeOf(file);
+  for (const st of t.statements)
+    if (ts.isFunctionDeclaration(st) && st.name?.text === name && st.body) return { file, name };
+  for (const st of t.statements) {
+    if (!ts.isExportDeclaration(st) || st.isTypeOnly) continue;
+    const spec = st.moduleSpecifier;
+    const target = spec !== undefined && ts.isStringLiteral(spec) ? importedFile(file, spec.text) : null;
+    if (spec !== undefined && target === null) continue;
+    if (st.exportClause === undefined) {
+      const r = target === null ? null : exportedFrom(target, name, depth + 1);
+      if (r !== null) return r;
+      continue;
+    }
+    if (!ts.isNamedExports(st.exportClause)) continue;
+    for (const e of st.exportClause.elements) {
+      if (e.isTypeOnly || e.name.text !== name) continue;
+      const local = e.propertyName?.getText() ?? e.name.text;
+      if (target !== null) return exportedFrom(target, local, depth + 1);
+      for (const im of t.statements) {
+        if (!ts.isImportDeclaration(im) || !ts.isStringLiteral(im.moduleSpecifier)) continue;
+        const named = im.importClause?.namedBindings;
+        const from = importedFile(file, im.moduleSpecifier.text);
+        if (from === null || !named || !ts.isNamedImports(named)) continue;
+        for (const ie of named.elements)
+          if (!ie.isTypeOnly && ie.name.text === local) return exportedFrom(from, ie.propertyName?.getText() ?? local, depth + 1);
+      }
+    }
+  }
+  return null;
 }
 
 /** A file's tree, parsed once. */
@@ -929,8 +1069,9 @@ export function annotations(path: string): {
 } {
   const tree = treeOf(path);
   const { functions, decls } = functionInfos(tree);
-  // A callee imported by name from a relative module: its effect parameters
-  // are read from that module, so a call to it is checked as a local one is.
+  // A callee imported by name from a relative module, directly or through
+  // re-exports: its effect parameters are read from the module declaring
+  // it, so a call to it is checked as a local one is.
   const imported = new Map<string, { file: string; name: string }>();
   for (const s of tree.statements)
     if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)) {
@@ -945,44 +1086,68 @@ export function annotations(path: string): {
     const d = declOf(name, at);
     if (d !== null) return d.kind === "function" && d.node.parent !== undefined && ts.isSourceFile(d.node.parent) ? functions[name] : undefined;
     const imp = imported.get(name);
-    if (imp === undefined) return undefined;
-    let fs = loaded.get(imp.file);
+    const found = imp === undefined ? null : exportedFrom(imp.file, imp.name);
+    if (found === null) return undefined;
+    let fs = loaded.get(found.file);
     if (fs === undefined) {
-      fs = existsSync(imp.file) ? functionInfos(treeOf(imp.file)).functions : {};
-      loaded.set(imp.file, fs);
+      fs = functionInfos(treeOf(found.file)).functions;
+      loaded.set(found.file, fs);
     }
-    return fs[imp.name];
+    return fs[found.name];
   };
   const calls: CallInfo[] = [];
   const assumes: AssumeInfo[] = [];
   const refusals: { unit: string; reason: string }[] = [];
   for (const [name, f] of Object.entries(functions)) if (f.refusal !== undefined) refusals.push({ unit: name, reason: f.refusal });
   // Every reference to this file's quantified functions, here and in the
-  // files of its directory that import them, is a call some unit checks.
-  const quantified = new Map(Object.entries(functions).filter(([, f]) => f.effectParams.length > 0).map(([n]) => [n, n]));
+  // files of its project that import them, directly or through re-exports,
+  // is a call some unit checks.
+  const quantified = new Map(Object.entries(functions).filter(([, f]) => f.effectParams.length > 0 || f.unread !== undefined)
+    .map(([n]) => [n, n]));
   const isLocal = (n: ts.Identifier): boolean => {
     const d = declOf(n.text, n);
     return d !== null && d.kind === "function" && d.node.parent !== undefined && ts.isSourceFile(d.node.parent);
   };
   const unchecked = uncheckedReferences(tree, quantified, isLocal);
-  for (const f of readdirSync(dirname(path))) {
-    const other = resolve(dirname(path), f);
-    if (!f.endsWith(".ts") || f.endsWith(".d.ts") || other === resolve(path)) continue;
-    const t = treeOf(other);
-    const names = new Map<string, string>();
-    for (const s of t.statements)
-      if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier) && importedFile(other, s.moduleSpecifier.text) === resolve(path)) {
-        const named = s.importClause?.namedBindings;
-        if (named && ts.isNamespaceImport(named) && quantified.size > 0)
-          for (const q of quantified.keys()) unchecked.push({ name: q, reason: `${f} imports the module as a namespace, whose calls the prototype does not check` });
-        if (named && ts.isNamedImports(named))
-          for (const e of named.elements) {
-            const exported = e.propertyName?.getText() ?? e.name.text;
-            if (!e.isTypeOnly && quantified.has(exported)) names.set(e.name.text, exported);
+  const self = resolve(path);
+  const project = projectFiles(self).filter((f) => f !== self);
+  // The modules that export something of this file: it, and every module
+  // re-exporting from one of them.
+  const exporting = new Set([self]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const other of project) {
+      if (exporting.has(other)) continue;
+      const reexports = treeOf(other).statements.some((st) => {
+        const spec = ts.isExportDeclaration(st) ? st.moduleSpecifier
+          : ts.isImportDeclaration(st) && st.moduleSpecifier !== undefined ? st.moduleSpecifier : undefined;
+        if (spec === undefined || !ts.isStringLiteral(spec) || !exporting.has(importedFile(other, spec.text) ?? "")) return false;
+        return ts.isExportDeclaration(st) || treeOf(other).statements.some((x) => ts.isExportDeclaration(x) && x.moduleSpecifier === undefined);
+      });
+      if (reexports) { exporting.add(other); grew = true; }
+    }
+  }
+  if (quantified.size > 0)
+    for (const other of project) {
+      const t = treeOf(other);
+      const f = other.slice(dirname(self).length + 1);
+      const names = new Map<string, string>();
+      for (const st of t.statements) {
+        const spec = ts.isImportDeclaration(st) || ts.isExportDeclaration(st) ? st.moduleSpecifier : undefined;
+        if (spec === undefined || !ts.isStringLiteral(spec)) continue;
+        const target = importedFile(other, spec.text);
+        if (target === null || !exporting.has(target)) continue;
+        const clause = ts.isImportDeclaration(st) ? st.importClause?.namedBindings : ts.isExportDeclaration(st) ? st.exportClause : undefined;
+        if (clause !== undefined && (ts.isNamespaceImport(clause) || ts.isNamespaceExport(clause)))
+          for (const q of quantified.keys()) unchecked.push({ name: q, reason: `${f} names a module exporting ${q} as a namespace, whose calls the prototype does not check` });
+        if (ts.isImportDeclaration(st) && clause !== undefined && ts.isNamedImports(clause))
+          for (const e of clause.elements) {
+            const found = e.isTypeOnly ? null : exportedFrom(target, e.propertyName?.getText() ?? e.name.text);
+            if (found !== null && found.file === self && quantified.has(found.name)) names.set(e.name.text, found.name);
           }
       }
-    if (names.size > 0) unchecked.push(...uncheckedReferences(t, names, (n) => declOf(n.text, n) === null));
-  }
+      if (names.size > 0) unchecked.push(...uncheckedReferences(t, names, (n) => declOf(n.text, n) === null));
+    }
   for (const u of unchecked) refusals.push({ unit: u.name, reason: u.reason });
 
   const visit = (n: ts.Node): undefined => {
@@ -998,7 +1163,11 @@ export function annotations(path: string): {
     }
     if (caller !== undefined && unit !== null && ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
       const callee = calleeOf(n.expression.text, n.expression);
-      if (callee && callee.effectParams.length > 0) {
+      if (callee && callee.unread !== undefined)
+        calls.push({ caller, callee: n.expression.text, instance: {}, ok: false,
+          reason: `${n.expression.text}'s signature is not read (${callee.unread}), so its calls' effects are not bounded`,
+          params: callee.params, bounds: [], own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
+      else if (callee && callee.effectParams.length > 0) {
         // The instance of each effect parameter: an effect written as the
         // call's type argument; the calling function's own effect parameter
         // (a forwarding call, θ(ε') = ε), whose bound stands for it; or,
@@ -1009,8 +1178,8 @@ export function annotations(path: string): {
         const forwarded = new Map<string, string>();
         const empty = new Set<string>();
         let reason: string | null = null;
-        callee.effectParams.forEach((e, i) => {
-          const arg = n.typeArguments?.[i];
+        callee.effectParams.forEach((e) => {
+          const arg = n.typeArguments?.[callee.typeParams.indexOf(e.name)];
           const eff = arg ? effectOf(arg) : null;
           const variable = arg !== undefined && ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName)
             ? outer?.effectParams.find((o) => o.name === arg.typeName.getText()) : undefined;
@@ -1066,7 +1235,7 @@ export function annotations(path: string): {
                 reason = `the callback passed for ${b.param} is neither a callback of ${outerVar} nor a closure`;
                 break;
               }
-              const eff = closureEffect(passed, false, own);
+              const eff = closureEffect(passed, false, { owner: unit, names: own });
               reason = typeof eff === "string" ? eff
                 : eff.entries.length > 0 || eff.else !== "keep"
                   ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable ${outerVar} does not allow`
