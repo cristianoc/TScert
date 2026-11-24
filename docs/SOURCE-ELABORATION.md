@@ -4111,11 +4111,12 @@ A written signature's result annotation may state the signature's effect:
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which TypeScript reads
 as `T`. A reference is a statement where TypeScript binds its name to that
 declaration, never by its spelling: an alias of the repository's file, or of
-a file each of whose statements is one of that file's, as written but for
-its type parameters' bounds (the census's copy of `tools/` holds one, and a
-checked project may keep one written at an earlier version, whose `P` admits
-fewer changes): a bound restricts only what TypeScript admits, and the
-verifier reads $`P`$ itself. $`P`$ is a type parameter in scope, or a
+a file each of whose statements is one of that file's, token for token but
+for its layout (whitespace, line comments, a trailing comma) and its type
+parameters' bounds (the census's copy of `tools/` holds one, and a checked
+project may keep one written at an earlier version, whose `P` admits fewer
+changes; case `stated-effect-verifier-copy`): layout is not read, a bound
+restricts only what TypeScript admits, and the verifier reads $`P`$ itself. $`P`$ is a type parameter in scope, or a
 type literal written in place. A type parameter $`E`$, a binder of an
 enclosing signature or a parameter of the declaration the statement is
 written in, states the frame changing every location, values and spines at

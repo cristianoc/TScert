@@ -2537,6 +2537,8 @@ export const cases: Case[] = [
     /`-\?` over an optional field whose type may hold undefined as a type parameter/),
   { ...positive("mapped-required-exact-optional", "`Required` over an optional field whose type holds `undefined`, with `exactOptionalPropertyTypes`: the field's type kept, written in place, through an alias, at a named type and at a type parameter"),
     project: "pipeline/exact-optional-project" },
+  { ...positive("stated-effect-verifier-copy", "a callback's stated `Modifies`, declared by a project's copy of the verifier's declarations in another layout with the bound erased: the statement is read, and `map` over a dense array stays dense"),
+    project: "pipeline/verifier-copy-project" },
   { ...negative("invalid-mapped-required-exact-optional", "with `exactOptionalPropertyTypes`, `Required<{ b?: string | undefined }>` keeps `undefined` in its field: not returned at `string`", /source expression obligation at \[222,225\): evidence search failed: no derivation of its return-contract claim/), project: "pipeline/exact-optional-project" },
   negative("invalid-mapped-readonly-index-write", "`Readonly` makes a number index readonly: the record is not returned at a writable index",
     /no derivation of its return-contract claim/),
