@@ -517,6 +517,114 @@ def layerSites {ι : Type} (program : ControlFlow.Program) (claims : List (Certi
   program.zipIdx.map fun (node, l) =>
     (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).map (·.pos))
 
+/-- Locate the unique creation node `l_mk` (`Tm.makeFn (.graph ...)`) of `entry`
+and follow straight-line `.bind` / `.effect` edges to the enclosing call node
+`l_call` (`Tm.invoke (.var _) _ args`) receiving the closure directly as an
+argument, returning `(l_mk, l_call, argIndex, captureSlotsAtCall)`. -/
+@[nospecialize] def findClosureCall {ι : Type} (program : ControlFlow.Program)
+    (entry : ProgramTyping.CodeEntry ι) : Option (Nat × Nat × Nat × List (Option Nat)) :=
+  let matchesMk := program.zipIdx.filterMap fun (node, l) =>
+    match node.expression with
+    | .makeFn (.graph arity exprs conts start capTerms _ _ _) _ =>
+      if arity == entry.arity && exprs == entry.exprs &&
+          conts == entry.conts && start == entry.start then
+        (capTerms.mapM fun | Tm.var s => some s | _ => none).map (l, ·)
+      else none
+    | _ => none
+  match matchesMk with
+  | [(l_mk, capSlots)] =>
+    let stepBind (m : Option (List Nat)) (s : Nat) : Option Nat :=
+      match m with
+      | none => some (s + 1)
+      | some slots => slots.idxOf? (s + 1)
+    let stepBindResult (m : Option (List Nat)) : Option Nat :=
+      match m with
+      | none => some 0
+      | some slots => slots.idxOf? 0
+    let stepEffect (m : Option (List Nat)) (s : Nat) : Option Nat :=
+      match m with
+      | none => some s
+      | some slots => slots.idxOf? s
+    let rec walk (fuel : Nat) (l : Nat) (cbSlot : Nat) (caps : List (Option Nat)) :
+        Option (Nat × Nat × List (Option Nat)) :=
+      match fuel with
+      | 0 => none
+      | fuel' + 1 =>
+        match program[l]? with
+        | none => none
+        | some node =>
+          let found := match node.expression with
+            | .invoke (.var _) _ args => (args.idxOf? (Tm.var cbSlot)).map fun argIdx => (l, argIdx, caps)
+            | _ => none
+          match found with
+          | some res => some res
+          | none =>
+            match node.continuation with
+            | .bind t =>
+              match stepBind t.mapping cbSlot with
+              | some cbSlot' => walk fuel' t.label cbSlot' (caps.map fun (o : Option Nat) => o.bind (stepBind t.mapping))
+              | none => none
+            | .effect t =>
+              match stepEffect t.mapping cbSlot with
+              | some cbSlot' => walk fuel' t.label cbSlot' (caps.map fun (o : Option Nat) => o.bind (stepEffect t.mapping))
+              | none => none
+            | _ => none
+    match program[l_mk]? with
+    | some (mkNode : Node) =>
+      match mkNode.continuation with
+      | .bind t =>
+        match stepBindResult t.mapping with
+        | some cb0 =>
+          let caps0 := capSlots.map (stepBind t.mapping)
+          (walk 32 t.label cb0 caps0).map fun (l_call, argIdx, caps) => (l_mk, l_call, argIdx, caps)
+        | none => none
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- Extra entry facts for a closure code request from a supplied layer
+(`PassLayer.closureFacts`), reducing definitionally to `base` when `layer` is
+`none` (so the ordinary verifier and `mode8Accepted_sound` are unchanged). -/
+@[nospecialize] def codeEntryWithLayer {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
+    (layer : Option SinglePass.PassLayer) (G : NormalGraph ι) (I : PositiveCertificates.InstanceImageCheck G)
+    (pool : List (Ty ι)) (fuel : Nat) (name : String) (r : SourceElaboration.SourceRequest σ ι)
+    (known : List (ProgramCertificates.Evidence ι)) (table : List (ProgramTyping.CodeEntry ι))
+    (sumsAnswers : CertificateProducer.Answered G) (givenImplies : Array (List (PromiseCalls.Implication ι)))
+    (givenArgs : Array (List Nat)) (givenInputs : Array (List (Nat × Nat)))
+    (entry : ProgramTyping.CodeEntry ι) (base : List HeapKnowledge.IndexAtom) :
+    List HeapKnowledge.IndexAtom :=
+  match layer with
+  | none => base
+  | some L =>
+    match findClosureCall r.program entry with
+    | none => base
+    | some (l_mk, l_call, argIndex, captureSlots) =>
+      let closureSpan := ((r.sourceMap[l_mk]?).bind id).map (·.pos)
+      let callSpan := ((r.sourceMap[l_call]?).bind id).map (·.pos)
+      if !L.wantsClosure name closureSpan callSpan then base else
+      let sites := layerSites r.program r.claims r.sourceMap
+      let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal
+        r.assertions r.cuts r.candidates r.entryIndices [] known (GraphCode.admits (table ++ [entry]))
+        r.aliases (SinglePass.PassChecker.ofLayer (some L) name r.inputs.length sites) sumsAnswers
+        #[] 1000000000 none givenImplies givenArgs r.ensures givenInputs r.entrySeparation
+        (some l_call) false true
+      match o, r.program[l_call]?, r.claims[l_call]? with
+      | .observed ob, some callNode, some callClaim =>
+        let site : SinglePass.ClosureSite ι := {
+          unitName := name
+          unitInputs := r.inputs.length
+          closureSpan
+          callSpan
+          callTerm := callNode.expression
+          callContext := callClaim.context
+          callKnowledge := ob.before
+          captureSlots
+          argIndex
+          captureOffset := ProgramTyping.frameOffset entry.spine + entry.arity
+        }
+        base ++ L.closureFacts G site
+      | _, _, _ => base
+
 /-- Propose a local-confinement table when no explicit `framed` list is given
 and the unit's inputs hold none of its allocations in the module's execution
 (`inputsHoldAllocations` false). A checked table states that a location the
@@ -680,7 +788,9 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
     let (o, _, a, _) := SinglePass.runRecorded "code" "direct"
         (runDigests r line s!"code {ci}" (boundText codeBound none)) (fun x => x.2.1.visited) fun _ =>
       SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
-      hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+      hints.cuts hints.candidates
+      (codeEntryWithLayer layer G I pool fuel name r (e ++ rendered) table sumsAnswers givenImplies givenArgs givenInputs q.entry rq.entryIndices)
+      [] (e ++ rendered) (GraphCode.admits table) r.aliases
       .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
     -- A code run makes no observation (it is given none): any outcome
     -- but acceptance is the code's located refusal.
@@ -692,7 +802,9 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
       -- over its names and those it lacks, as for the unit's own graph.
       let record := if observe.map observedWhat != some "refusal" then "" else
         let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
-          hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+          hints.cuts hints.candidates
+          (codeEntryWithLayer layer G I pool fuel name r (e ++ rendered) table sumsAnswers givenImplies givenArgs givenInputs q.entry rq.entryIndices)
+          [] (e ++ rendered) (GraphCode.admits table) r.aliases
           .ordinary a #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
           (some 1000000000) true
         let l := trace.node

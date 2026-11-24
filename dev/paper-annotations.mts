@@ -57,6 +57,9 @@ interface FunctionInfo {
    * `Effects<{ "@state": "any" }, T>`), used to frame calls to it via rule
    * Confined. */
   stated?: Effect;
+  /** Bounded callback parameters verified never to escape this function's
+   * dynamic extent (rule Callback-Inv). */
+  nonEscaping?: string[];
   /** Why the function's own verdict cannot rest on its bounds: a bound or
   a callback's type is not read, or its own steps are not shown to keep the
   regions its bounds read (rule Bound's second premise). */
@@ -73,6 +76,7 @@ interface FunctionInfo {
 interface CallInfo {
   caller: string; callee: string; instance: Record<string, Effect>; ok: boolean; reason: string | null;
   params: string[]; bounds: Effect[]; callerParams?: string[]; callerBounds?: Effect[]; own: Effect | string; span: [number, number];
+  scopedCallbacks?: { span: [number, number]; paramIndex: number }[];
 }
 
 /** An unsafe assume `paperAssume(fact, "#n");`: the condition `fact` states
@@ -1509,15 +1513,36 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
             if (why !== null) return fail(n, `calls ${callee.text} whose stated Effects failed verification (${why})`);
           }
           // A call of a function with effect parameters whose instances are the
-          // calling function's own effect parameters (or joins `[E, P]`): its
-          // effect is its own effect besides them, read from its body, and the
-          // forwarded variables, which the calling function's bound accounts for.
+          // calling function's own effect parameters (or joins `[E, P]`), or
+          // omitted where every callback parameter bounded by that effect
+          // variable receives `undefined` or is omitted: its effect is its own
+          // effect besides them, read from its body, and any forwarded variables,
+          // which the calling function's bound accounts for.
           const outer = effectVars(fn);
           const positions = decl === undefined ? [] : (decl.typeParameters ?? []).flatMap((tp, i) => effectVars(decl).includes(tp.name.text) ? [i] : []);
+          const isOmittedOrUndef = (a: ts.Expression | undefined): boolean =>
+            a === undefined || unwrapExpr(a).kind === ts.SyntaxKind.UndefinedKeyword ||
+            (ts.isIdentifier(unwrapExpr(a)) && unwrapExpr(a).getText() === "undefined");
+          const declBoundedBy = (eName: string): number[] => {
+            if (decl === undefined) return [];
+            const idxs: number[] = [];
+            decl.parameters.forEach((p, idx) => {
+              if (p.type === undefined) return;
+              const seen = new Set<string>();
+              mentions(p.type, seen);
+              if (seen.has(eName)) idxs.push(idx);
+            });
+            return idxs;
+          };
           const forwards = decl !== undefined && st === null && positions.length > 0 &&
             positions.every((i) => {
               const t = n.typeArguments?.[i];
-              if (t === undefined) return false;
+              if (t === undefined) {
+                const eName = decl.typeParameters?.[i]?.name.text;
+                if (eName === undefined) return false;
+                const bIdxs = declBoundedBy(eName);
+                return bIdxs.length > 0 && bIdxs.every((idx) => isOmittedOrUndef(n.arguments[idx]));
+              }
               if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text)) return true;
               const jp = joinParts(t);
               if (jp !== null) {
@@ -1543,6 +1568,10 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
             const at = params.indexOf(rootOf(k));
             const arg = n.arguments[at];
             const paramDecl = decl.parameters[at];
+            if (arg !== undefined && isPrimitiveLiteral(arg)) {
+              // Primitive literal (e.g. `null`, `undefined`, number, string): no heap locations.
+              continue;
+            }
             if (arg === undefined && paramDecl !== undefined && isFreshContainerAlloc(paramDecl.initializer)) {
               // Omitted parameter with fresh allocation default (e.g. `stats = { ... }`): own locations are fresh.
               const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
@@ -1764,6 +1793,80 @@ function callbackVar(type: ts.TypeNode, vars: string[], decls: Map<string, ts.No
   return `the callback type ${f.getText()} is not read`;
 }
 
+/** Whether bounded callback parameter `paramName` of `decl` never escapes
+ * `decl`'s dynamic extent (rule Callback-Inv): every value-position reference
+ * in `decl` is either a direct call (`cb(...)` / `cb?.(...)`), a pure
+ * nullish/truthiness test (`!cb`, `typeof cb`, `cb === undefined`, `if (cb)`,
+ * `cb ? ... : ...`, left operand of `cb && ...`), or forwarded directly as an
+ * argument to a non-escaping parameter of a local/imported function
+ * declaration. Nested closures capturing `paramName`, assignments, field/array
+ * stores, returns, throws, and calls to unverified callees are all refused. */
+function nonEscapingCallback(decl: ts.FunctionDeclaration, paramName: string, visiting: Set<string> = new Set()): boolean {
+  if (decl.body === undefined) return false;
+  const key = `${decl.getSourceFile().fileName}:${decl.pos}:${paramName}`;
+  if (visiting.has(key)) return true;
+  visiting.add(key);
+  let ok = true;
+  const checkRef = (id: ts.Identifier): boolean => {
+    const cur = climbWrappers(id);
+    const p = cur.parent;
+    if (p === undefined) return false;
+    if (ts.isCallExpression(p) && p.expression === cur) return true;
+    if (ts.isPrefixUnaryExpression(p) && p.operator === ts.SyntaxKind.ExclamationToken) return true;
+    if (ts.isTypeOfExpression(p)) return true;
+    if (ts.isIfStatement(p) && p.expression === cur) return true;
+    if (ts.isConditionalExpression(p) && p.condition === cur) return true;
+    if (ts.isBinaryExpression(p)) {
+      const op = p.operatorToken.kind;
+      if (op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+          op === ts.SyntaxKind.EqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken)
+        return true;
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken && p.left === cur) return true;
+    }
+    if (ts.isCallExpression(p)) {
+      const argIdx = p.arguments.findIndex((a) => a === cur);
+      if (argIdx >= 0 && !p.arguments.slice(0, argIdx).some(ts.isSpreadElement)) {
+        const callee = unwrapExpr(p.expression);
+        if (ts.isIdentifier(callee)) {
+          const d = declOf(callee.text, callee);
+          const target = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
+          const targetParam = target?.parameters[argIdx];
+          if (target !== undefined && targetParam !== undefined && ts.isIdentifier(targetParam.name) &&
+              targetParam.dotDotDotToken === undefined && targetParam.initializer === undefined)
+            return nonEscapingCallback(target, targetParam.name.text, visiting);
+        }
+      }
+    }
+    return false;
+  };
+  const walk = (n: ts.Node): undefined => {
+    if (!ok) return undefined;
+    if (n !== decl && isFn(n)) {
+      const checkNested = (m: ts.Node): undefined => {
+        if (!ok) return undefined;
+        if (ts.isIdentifier(m) && m.text === paramName && isValueReference(m)) {
+          const d = declOf(m.text, m);
+          if (d !== null && d.kind === "param" && d.owner === decl) ok = false;
+        }
+        m.forEachChild(checkNested);
+        return undefined;
+      };
+      checkNested(n);
+      return undefined;
+    }
+    if (ts.isIdentifier(n) && n.text === paramName && isValueReference(n)) {
+      const d = declOf(n.text, n);
+      if (d !== null && d.kind === "param" && d.owner === decl && !checkRef(n)) ok = false;
+    }
+    n.forEachChild(walk);
+    return undefined;
+  };
+  for (const p of decl.parameters) if (p.initializer !== undefined) walk(p.initializer);
+  walk(decl.body);
+  visiting.delete(key);
+  return ok;
+}
+
 /** A file's functions with their effect parameters, its function bodies and
  * its type declarations. A function with a bound whose reach its own steps
  * may change, or whose callback's type is not read, is refused
@@ -1846,9 +1949,12 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
           : instCheck(own, keeps, params, params, new Set(), new Set());
         if (why !== null) { refusal = `rule Bound's second premise for ${e.name}: ${why}`; break; }
       }
+    const nonEscaping = refusal !== undefined || bounded.length === 0 ? []
+      : bounded.map((b) => b.param).filter((name) => name !== "" && nonEscapingCallback(s, name));
     const info: FunctionInfo = { typeParams: (s.typeParameters ?? []).map((tp) => tp.name.text), params, effectParams, bounded };
     if (own !== undefined) info.own = own;
     if (stated !== undefined) info.stated = stated;
+    if (nonEscaping.length > 0) info.nonEscaping = nonEscaping;
     if (refusal !== undefined) info.refusal = refusal;
     if (unread !== undefined) info.unread = unread;
     functions[s.name.text] = info;
@@ -2238,9 +2344,22 @@ export function annotations(path: string): {
             calleeBounds.push(e.bound);
           }
         }
+        // Inline closures passed directly to verified non-escaping bounded
+        // callback parameters of `callee` (rule Callback-Inv).
+        const scopedCallbacks: { span: [number, number]; paramIndex: number }[] = [];
+        if (reason === null && callee.refusal === undefined && callee.nonEscaping !== undefined) {
+          for (const b of callee.bounded) {
+            if (!callee.nonEscaping.includes(b.param)) continue;
+            const rawArg = n.arguments[b.index];
+            const passed = rawArg === undefined ? undefined : unwrapExpr(rawArg);
+            if (passed !== undefined && (ts.isArrowFunction(passed) || ts.isFunctionExpression(passed)))
+              scopedCallbacks.push({ span: [passed.getStart(), passed.getEnd()], paramIndex: b.index });
+          }
+        }
         calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
           params: callee.params, bounds: calleeBounds,
           ...(callerBounds.length > 0 ? { callerParams: callerParamList, callerBounds } : {}),
+          ...(scopedCallbacks.length > 0 ? { scopedCallbacks } : {}),
           own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
       } else if (callee && callee.stated !== undefined && callee.refusal === undefined) {
         // A call to a monomorphic function with a verified `Effects<P, T>`

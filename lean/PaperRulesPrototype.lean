@@ -73,6 +73,8 @@ structure QCall where
   span : Nat × Nat
   components : List ParamEff
   callerComponents : List ParamEff := []
+  /-- Non-escaping scoped inline callbacks passed at this call: `(closureSpan, paramIndex)`. -/
+  scopedCallbacks : List ((Nat × Nat) × Nat) := []
 
 /-- An unsafe assume `paperAssume(fact, "#n");`: the issue it names and its
 line. The prototype checks the statement of the checked file as
@@ -488,7 +490,16 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
         | some cs => pure cs
         | none => continue
       | _, _ => pure []
-    let c : QCall := { span, components, callerComponents }
+    let scopedCallbacks ← match call.getObjVal? "scopedCallbacks" with
+      | .ok sc =>
+        let arr ← sc.getArr?
+        arr.toList.mapM fun item => do
+          let sp ← item.getObjVal? "span"
+          let span : Nat × Nat := (← (← sp.getArrVal? 0).getNat?, ← (← sp.getArrVal? 1).getNat?)
+          let paramIndex ← (← item.getObjVal? "paramIndex").getNat?
+          pure (span, paramIndex)
+      | .error _ => pure []
+    let c : QCall := { span, components, callerComponents, scopedCallbacks }
     let u := (out.get? caller).getD { bounds := [], params := 0 }
     out := out.insert caller { u with calls := u.calls ++ [c] }
   -- Each unit's unsafe assumes whose form the side script read.
@@ -538,17 +549,74 @@ def assumedFile : Lean.Json → Lean.Json
   | .obj kvs => .obj (kvs.map fun k v => if k == "modules" then v else assumedAst v)
   | j => assumedAst j
 
+/-- Whether `name` has a verified non-escaping scoped callback at
+`(closureSpan, callSpan)`. -/
+def wantsClosure (units : Std.HashMap String Unit) (name : String)
+    (closureSpan callSpan : Option (Nat × Nat)) : Bool :=
+  match units.get? name, closureSpan, callSpan with
+  | some u, some clSp, some caSp =>
+    u.calls.any fun c => c.span == caSp && c.scopedCallbacks.any fun (sp, _) => sp == clSp
+  | _, _, _ => false
+
+/-- **Rule Callback-Inv** (scoped callback invariant): at a call `H(..., cb)` to a
+quantified function whose callback parameter does not escape, every caller fact
+holding at the call whose support is kept by every component of the call's effect
+(`own(H)` and `cb`'s instance/bound) and whose slots all resolve (modulo alias
+links) to captures of `cb` holds at every invocation of `cb`, and is supplied on
+entry to `cb`'s code graph. -/
+def closureFacts (units : Std.HashMap String Unit) {ι : Type} [DecidableEq ι] [Hashable ι]
+    [CertificateProducer.Instantiates ι] (G : NormalGraph ι) (site : SinglePass.ClosureSite ι) :
+    List HeapKnowledge.IndexAtom :=
+  match units.get? site.unitName, site.closureSpan, site.callSpan, site.callTerm with
+  | some u, some clSp, some caSp, .invoke (.var _) _ args =>
+    let matching := u.calls.filter fun c =>
+      c.span == caSp && c.scopedCallbacks.any fun (sp, pi) => sp == clSp && pi == site.argIndex
+    let u' := { u with inputs := site.unitInputs }
+    let d := site.callContext.length
+    match (matching.mapM (atCall u' d · args)).map List.flatten with
+    | some (e0 :: es) =>
+      let effs := e0 :: es
+      let k := site.callKnowledge
+      let q := Footprints.knowledgeQuery k
+      let sameSlot := fun (x y : Nat) => x == y || (HeapLinks.aliases k.links x).contains y
+      let stable := stableFirst G site.callContext
+      let keeps := fun (S : Footprints.Footprint) => effs.all fun ce =>
+        S.all (keepsPair q sameSlot ce.fresh ce.bound ce.otherwise (inReach (reachPairs k ce.roots)) ce.modChange)
+      let remap := fun (x : Nat) =>
+        site.captureSlots.zipIdx.findSome? fun (capOpt, idx) =>
+          capOpt.bind fun s => if sameSlot x s then some (site.captureOffset + idx) else none
+      k.indices.filterMap fun a =>
+        if !a.fact.entrySlots.isEmpty then none
+        else
+          let survives := a.fact.envOnly || match a.fact.support? (.ofFirst stable) with
+            | some S => keeps S
+            | none => false
+          if !survives then none
+          else
+            let cond' : Option (Option Nat) := match a.cond with
+              | none => some none
+              | some c => (remap c).map some
+            match a.fact.mapM remap, cond' with
+            | some f, some c => some { a with fact := f, cond := c }
+            | _, _ => none
+    | _ => []
+  | _, _, _, _ => []
+
 end PaperRules
 end Verification.HeapExpressionRules
 
 open Verification Lean
 
 /-- The layer of a unit, by its name: the rules' checker where the side
-file bounds one of its callbacks, the ordinary checker otherwise. -/
-def layerOf (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) : SinglePass.PassLayer :=
-  fun name inputs sites _ _ _ _ _ _ base => match units.get? name with
+file bounds one of its callbacks, the ordinary checker otherwise; plus
+scoped callback invariant facts (`Callback-Inv`) for non-escaping inline
+callbacks. -/
+def layerOf (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) : SinglePass.PassLayer where
+  checker := fun name inputs sites _ _ _ _ _ _ base => match units.get? name with
     | some u => HeapExpressionRules.PaperRules.layer { u with inputs, sites } base
     | none => base
+  wantsClosure := HeapExpressionRules.PaperRules.wantsClosure units
+  closureFacts := HeapExpressionRules.PaperRules.closureFacts units
 
 /-- Each selected unit's group checked by the pass with the layer; a verdict
 line per unit, accepted ones naming the assumption. -/

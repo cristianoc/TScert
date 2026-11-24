@@ -752,9 +752,28 @@ theorem confined_rule (C : ModuleRegion) : ConfinedRule (semantics C) := by
         rw [bnd_any h hr l hm]
         exact le_any _
 
-/-- **The idealised model meets all five paper rules**, for any universe `C` of
+theorem callbackInv_rule (C : ModuleRegion) : CallbackInvRule (semantics C) := by
+  intro Φ_own Φ_cb Ψ P h₀ h hp₀ hpres hstab hwOwn haOwn hwCb haCb hsteps
+  suffices ∀ h₁ h₂, Semantics.Steps (semantics C) Φ_own Φ_cb h₁ h₂ →
+      Reaches h₀ h₁ → Same Ψ h₀ h₁ → P h₁ → P h₂ from
+    this h₀ h hsteps (Nat.le_refl _) (fun _ _ => rfl) hp₀
+  intro h₁ h₂ hst
+  induction hst with
+  | refl => intro _ _ hp; exact hp
+  | @step a b _ hab _ ih =>
+    intro hr hs hp
+    have hactΨ : Act Ψ a b := by
+      rcases hab with hown | hcb
+      · exact bound_rule C Φ_own Ψ h₀ a hwOwn hr haOwn hs b hown
+      · exact bound_rule C Φ_cb Ψ h₀ a hwCb hr haCb hs b hcb
+    have hr' : Reaches h₀ b := Nat.le_trans hr hactΨ.1
+    have hstab' : Same Ψ a b := hstab a b hactΨ
+    have hs' : Same Ψ h₀ b := fun l hlt => (hstab' l (Nat.lt_of_lt_of_le hlt hr)).trans (hs l hlt)
+    exact ih hr' hs' (hpres a b hp hactΨ)
+
+/-- **The idealised model meets all six paper rules**, for any universe `C` of
 confined module regions. -/
 theorem model_rules (C : ModuleRegion) : PaperRules (semantics C) :=
-  ⟨bound_rule C, anch_rule C, meet_rule C, inst_rule C, confined_rule C⟩
+  ⟨bound_rule C, anch_rule C, meet_rule C, inst_rule C, confined_rule C, callbackInv_rule C⟩
 
 end Verification.Paper.EffectLanguage.Model

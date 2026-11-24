@@ -345,7 +345,7 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
 // segment starts the next one, a zero-width space too (stepPreparedSimpleLineGeometry).
 // The full walker costs three to five times as much per segment, so one walker for
 // all text was rejected (RESEARCH.md, Decisions Log, 2026-09-24).
-export function countPreparedLines(prepared: PreparedLineData, maxWidth: number): number {
+export function countPreparedLines(prepared: PreparedLineData, maxWidth: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   // The loop takes no overflow trims, which the stepper takes for a line's first segment.
   if (!prepared.simpleLineWalkFastPath || prepared.overflowLineEndTrims !== null) {
     return prepared.simpleLineCountFastPath ? countSteppedLines(prepared, maxWidth) : walkPreparedLinesRaw(prepared, maxWidth)
@@ -414,7 +414,7 @@ export function countPreparedLines(prepared: PreparedLineData, maxWidth: number)
 // Chrome's count of all other text once the check had ever held, and the line APIs
 // keep the full walker for this text, since the stepper's widths can differ from
 // its in the last bits (RESEARCH.md, Keeping Work Bounded).
-function countSteppedLines(prepared: PreparedLineData, maxWidth: number): number {
+function countSteppedLines(prepared: PreparedLineData, maxWidth: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   const { segmentFlags } = prepared
   const segmentCount = prepared.widths.length
   const cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
@@ -1247,7 +1247,7 @@ export function stepPreparedLineGeometryFromStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,
-): number | null {
+): Effects<{ "@state": "any"; "cursor.segmentIndex": "any"; "cursor.graphemeIndex": "any" }, number | null> {   // PAPER: annotation
   if (prepared.simpleLineWalkFastPath) return stepPreparedSimpleLineGeometry(prepared, cursor, maxWidth)
   return walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)
 }

@@ -101,6 +101,14 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   negative controls refusing an unbounded callback, a forwarded parameter or
   reassigned `let` cursor, a `Join` mutating the fresh cursor, and a nested
   path through a fresh wrapper.
+- `callback-inv.ts`: rule `Callback-Inv` (scoped callback invariants) and
+  monomorphic `Effects<P, T>` framing over quantified walkers with omitted
+  callbacks and `null` optional arguments: positive cases for
+  `layoutWithLines`- and `walkRichInlineLineRanges`-shaped visitor closures
+  capturing invariant-bearing handles plus `countLines`/`stepLine` framing;
+  negative controls refusing mutation before the call, a walker mutating the
+  handle before calling the visitor, a walker escaping the visitor into module
+  state, a self-mutating visitor, and an aliased closure mutated before calling.
 
 ## The Pretext copy
 
