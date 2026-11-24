@@ -14,6 +14,16 @@ import { cases } from "../pipeline/cases.mts";
 assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum([1], 0, 2, false)"))),
   "a disjunct bounding the index by a value past the length reads past it");
 assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
+assert.equal(runExample("invalid-call-keeps-unreached-paths", 'f({ tag: { k: "id" } })'), "pat",
+  "flip changes the narrowed field k");
+assert.equal(runExample("invalid-call-alias-reaches-path", '(() => { const d = { tag: { k: "id" } }; return f(d, d.tag); })()'), "pat",
+  "flip(t) changes d.tag.k through the alias t");
+assert.equal(runExample("invalid-loop-call-reaches-path", '(() => { const d = { tag: { k: "id" } }; return f(d, [d.tag]); })()'), "pat",
+  "the loop's flip(t) changes d.tag.k through the element t");
+assert.equal(runExample("invalid-cell-contents-across-calls", 'closed(["x"])'), true,
+  "visit assigns the captured refused");
+assert.equal(runExample("invalid-module-cell-call-raises", "moduleClosed()"), true, "raise sets the module cell flag");
+assert.equal(runExample("invalid-loop-call-through-call", "g(1)"), true, "raise.call sets the module cell flag");
 assert.ok(Number.isNaN(Number(runExample("invalid-invariant-field-dropped-by-call", "walk([1, 2], { i: 0 })"))),
   "a call moving the cursor's field below 0 reads xs[-1]");
 assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-cursor-given", "walk([1, 2, 3], (c) => { c.i = 5; })"))),

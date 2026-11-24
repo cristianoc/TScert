@@ -1125,9 +1125,10 @@ def cellsDeclared (w : Walk) (e : Env) : Env :=
   { e with vars := e.vars.map fun (n, A) =>
       if e.inCell n then (n, (e.decl.lookup n).getD A) else (n, A) }
 
-/-- Whether a value write reaching `x` may change the cell holding `n`: any
-write, a call whose frame does not keep it (`frameKeepsCell`), the
-assignment of another binding no cell. -/
+/-- Whether a value write reaching `x` may change the cell holding `n`: a
+write of an unknown key, a write of the field `n` (a cell's location is its
+key's, as a path's field is: `Region.keysApart`), a call whose frame does
+not keep it (`frameKeepsCell`); the assignment of another binding no cell. -/
 def reachesCell (x : PathEnd) (n : String) : Bool := match x with
   | .all => true
   | .frame Φ => !frameKeepsCell Φ n
@@ -1143,13 +1144,13 @@ def cellsReached (w : Walk) (xs : List PathEnd) (e : Env) : Env :=
       if e.inCell n && xs.any (reachesCell · n) then (n, (e.decl.lookup n).getD A) else (n, A) }
 
 /-- The environment at the head of a loop over the statements `ss`
-(`loopHead`), each binding held in a cell at its declared type where `ss`
-make a call: a call may run code assigning a cell (a function literal
-sharing it, a module function), of a frame the head is walked before (a
-safe approximation of the calls whose frame may change a value). -/
+(`loopHead`), each binding held in a cell at its declared type unless every
+statement of `ss` is quiet (`quietStmt`, as for the paths kept at a loop's
+head): a call or a write may change a cell, of a frame the head is walked
+before (a safe approximation of the steps whose frame reaches it). -/
 def loopEntry (w : Walk) (env : Env) (ss : List Stmt) : Env :=
   let h := loopHead env ss
-  if ss.any (!·.callees.isEmpty) then cellsDeclared w h else h
+  if ss.all quietStmt then h else cellsDeclared w h
 
 /-- Each binding held in a cell whose contract names a type parameter (a
 binder's row, `T` or a bounded `T ⊓ B`) at its contract: a test states no
@@ -3880,7 +3881,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _, _, _ => pure e1
     return (r, e1)
   | .write _ fld recv rhs =>
-    wrote .any (if fld == lengthKey then .any else .keep)
+    -- (a write of a field reaches the locations of its key, as it ends the
+    -- paths through it)
+    wrote .any (if fld == lengthKey then .any else .keep) (.field fld)
     let (O, e1) ← expr env recv
     -- The reference `recv.fld`, as the read gives it.
     let mut D : Option (Ty Tree) := none
@@ -4122,6 +4125,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     | t =>
       match t with
       | .index _ _ _ (.lit _ (.vnum _)) => wrote .any .grow
+      | .read _ fld _ => wrote (reach := .field fld)
       | _ => wrote
     let (L, e1) ← expr env target
     let (R, e2) ← match rhs with
@@ -4150,7 +4154,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         let O := (memberPath recv).bind fun (n, path) =>
           if path.isEmpty then env.vars.lookup n else env.paths.lookup (n, path)
         let G ← StateT.lift graphNow
-        wrote .any (if O.any (fun O => ExpressionEffects.sourceField G (PositiveRules.expand G O) fld) then .keep else .any)
+        wrote .any (if O.any (fun O => ExpressionEffects.sourceField G (PositiveRules.expand G O) fld) then .keep else .any) (.field fld)
       | _ => wrote
     let (L, e1) ← expr env target
     let D := match target with
