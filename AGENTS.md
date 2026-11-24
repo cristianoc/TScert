@@ -298,6 +298,13 @@ mode reads, and the tests the change touches.
   checks, may declare one named axiom: that the facts its checker layer
   keeps at a call survive the call. Every verdict it supports names the
   axiom, and no theorem of the library depends on it.
+- **Keep the prototype ready to unify with the proved pass.** Follow the
+  [unification guardrails](.claude/skills/paper-rules/SKILL.md#unification-guardrails):
+  keep `lean/PaperRulesPrototype.lean` a thin `SinglePass.PassLayer` for the
+  four paper rules and `paperAssume`, land general reasoning fixes in the
+  proved `SinglePass` pass, introduce new region forms in
+  `Footprints.Region` and `Model.lean` first, and keep declared reach
+  `Acc(T)` purely type-directed.
 
 ### Engineering trade-offs
 
