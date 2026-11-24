@@ -488,7 +488,7 @@ function returnsFromUnfitHyphen(
 // PAPER: annotation
 /** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
  *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex */
-function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else: "any" }>>(   // PAPER
+function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cursor.segmentIndex": "keep"; "cursor.graphemeIndex": "keep"; else: "any" }>>(   // PAPER
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,
@@ -1142,9 +1142,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; else
       if (lineWidth > stats.maxLineWidth) stats.maxLineWidth = lineWidth
     }
     onLine?.(lineWidth, lineStartSegmentIndex, lineStartGraphemeIndex, cursor.segmentIndex, cursor.graphemeIndex)
-    paperAssume(widths.length === segmentCount, "#364")   // PAPER: unsafe assume until #364
-    const segmentAfterVisit = cursor.segmentIndex   // PAPER: a local copy for the assume
-    paperAssume(Number.isSafeInteger(segmentAfterVisit) && 0 <= segmentAfterVisit, "#355")   // PAPER: unsafe assume until #355
     // A single-line caller owns normalization of the following line.
     if (singleLine || !normalizePreparedLineStart(prepared, cursor)) break
   }

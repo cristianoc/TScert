@@ -218,5 +218,23 @@
       "callPureWithState": "refused",
       "init": "accepted"
     }
+  },
+  "cursor-and-confined.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "getProfile": "accepted",
+      "normalizeCursor": "accepted",
+      "walkDestructuredConfined": "accepted",
+      "walkDestructuredUnbounded": "refused",
+      "walkCursor": "accepted",
+      "walkCursorUnbounded": "refused",
+      "outerForwardFresh": "accepted",
+      "outerForwardParam": "refused",
+      "outerForwardLet": "refused",
+      "outerForwardJoinMutates": "refused",
+      "walkNested": "accepted",
+      "outerForwardNested": "refused",
+      "init": "accepted"
+    }
   }
 }

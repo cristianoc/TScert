@@ -1011,13 +1011,22 @@ structure NearState where
   kept : Std.HashSet Atom
   out : Array IndexAtom
 
+/-- Whether an index fact contributes to linear entailment (`HeapKnowledge.knownOf`,
+`HeapKnowledge.termDefined`): linear inequalities, safe-integer atoms, and
+length atoms. Non-linear atoms (disjunctions, guarded facts, quantified facts,
+separations) are ignored by linear entailment and must not consume the
+`linearNear` budget. -/
+def isLinearRelevant : HeapKnowledge.IndexFact → Bool
+  | .linear _ | .int _ | .length _ _ => true
+  | _ => false
+
 /-- One fact read at a frontier name: kept where it is an unconditional
-index fact not kept yet and fewer than `limit` are listed; its names put on
-the next frontier, where it is linear, if not seen yet. -/
+linear-relevant index fact not kept yet and fewer than `limit` are listed; its
+names put on the next frontier, where it is linear, if not seen yet. -/
 def nearStep (limit : Nat) (st : NearState) (a : Atom) : NearState :=
   match a with
   | .index i =>
-    if i.cond.isNone && !st.kept.contains a && st.out.size < limit then
+    if i.cond.isNone && isLinearRelevant i.fact && !st.kept.contains a && st.out.size < limit then
       let st := { st with kept := st.kept.insert a, out := st.out.push i }
       match i.fact with
       | .linear _ => a.names.foldl (fun (st : NearState) y =>
