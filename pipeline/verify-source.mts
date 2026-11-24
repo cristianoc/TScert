@@ -1175,6 +1175,10 @@ function factOf(f: StatedFact): IndexFact {
     const e = f.every;
     return { every: { slot: e.slot, path: [...e.path], stop: term(e.stop), body: e.body.map(body) } };
   }
+  if ("atIndex" in f) {
+    const e = f.atIndex;
+    return { atIndex: { slot: e.slot, path: [...e.path], index: term(e.index), guard: e.guard, body: body(e.body) } };
+  }
   if ("spineApart" in f) return { spineApart: { ...f.spineApart, path: [...f.spineApart.path], otherPath: [...f.spineApart.otherPath] } };
   // (the others hold positions and flags alone)
   return f;
@@ -1197,6 +1201,7 @@ function regionText(r: Region): string {
   if ("path" in r) return `${pathText(r.path.x, r.path.fields)}.${regionKey(r.path.key)}`;
   if ("pathFields" in r) return `${pathText(r.pathFields.x, r.pathFields.fields)}.*`;
   if ("pathCells" in r) return `${pathText(r.pathCells.x, r.pathCells.fields)}[*]`;
+  if ("elemSpines" in r) return `${pathText(r.elemSpines.x, r.elemSpines.fields)}[*] spines`;
   return `${pathText(r.spine.x, r.spine.fields)} spine`;
 }
 

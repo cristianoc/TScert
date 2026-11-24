@@ -144,7 +144,7 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
     | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .link _ => a.names
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
     (diffs.flatMap fun d => d.flatMap fun a => match a with
@@ -185,7 +185,8 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
       let slots := a.fact.slots.eraseDups
       views.all fun ps =>
         let p0 := (SinglePass.materialize ps width slots false).1
-        let p := { p0 with indices := p0.indices.filter fun x => x == a || match x.fact with | .either _ _ => false | _ => true }
+        let p := { p0 with indices := p0.indices.filter fun x =>
+          x == a || match x.fact with | .either _ _ => a.fact.hasAtIndex && x.fact.hasAtIndex | _ => true }
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
           p.indices [a] none
   guarded0 ++ disjoined

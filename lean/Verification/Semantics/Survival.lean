@@ -422,6 +422,19 @@ def Bound.scalar : Bound → Bool
   | .project _ _ => false
   | _ => true
 
+/-- Whether an indexed-element body's variable is supported by `atIndexSupport`:
+index, scalar element, direct element array/view/string length, or a free term. -/
+def Bound.atIndexSupported : Bound → Bool
+  | .index | .elem | .free _ => true
+  | .project .length [] | .project .view [] | .project .strLength [] => true
+  | .offset _ | .project _ _ => false
+
+/-- Whether an indexed-element body reads the element's array spine length. -/
+def bodyUsesElemLength (body : LinearClause Bound) : Bool :=
+  body.vars.any fun
+    | .project .length [] => true
+    | _ => false
+
 /-- The supports of a quantified body's terms, at `keep`. -/
 def bodySupport (c : ReadContext) (body : List (LinearClause Bound)) : Footprint :=
   body.flatMap fun F => F.vars.flatMap fun b => match b with
@@ -456,6 +469,17 @@ def everySupport (c : ReadContext) (s : Nat) (p : List String) (stop : Term) (bo
     Footprint :=
   pathReads c s .grow [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body
 
+/-- The support of an indexed-element fact whose body variables meet
+`Bound.atIndexSupported`: the array's path at `grow`, its spine at `keep`, its
+element cells at `init` (when unguarded; `keep` when guarded, since a guard may
+read `null` or `undefined`), the index term and body free terms at `keep`, and
+the elements' spines at `keep` when the body reads the element's array length. -/
+def atIndexSupport (c : ReadContext) (s : Nat) (p : List String) (idx : Term) (guard : Option GuardTag)
+    (body : LinearClause Bound) : Footprint :=
+  pathReads c s .grow [] p ++ [(.spine s p, .keep), (.pathCells s p, if guard.isNone then .init else .keep)] ++
+    idx.support c .keep ++ bodySupport c [body] ++
+    (if bodyUsesElemLength body then [(.elemSpines s p, .keep)] else [])
+
 /-- **Finite evidence of an index fact's support**: the form of the fact
 the support is computed for, and, for a disjunction and a guarded fact, the
 supports of the parts with their evidence. -/
@@ -471,6 +495,7 @@ inductive FactSupport where
   | apart
   | element
   | every
+  | atIndex
   deriving Repr
 
 /-- **The check of an index fact's support by evidence**: the footprint is
@@ -488,6 +513,8 @@ def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSuppor
   | .element _ x _, S, .element => S == elementSupport x
   | .every s p stop body, S, .every =>
     body.all (fun F => F.vars.all Bound.scalar) && S == everySupport c s p stop body
+  | .atIndex s p idx guard body, S, .atIndex =>
+    body.vars.all Bound.atIndexSupported && S == atIndexSupport c s p idx guard body
   | _, _, _ => false
 
 /-- **A checked support supports its fact** in its context. -/
@@ -626,6 +653,111 @@ theorem FactSupport.check_sound (c : ReadContext) :
           exact ⟨F, hF, .free t, hb, he⟩
         obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
         rw [h3 rfl] at h1; exact h1
+  | atIndex s p idx guard body =>
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
+    obtain ⟨hsup, rfl⟩ := hS
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
+    have hpre := supported_left hs
+    have helen := supported_right hs
+    have hpath := supported_left (supported_left (supported_left hpre))
+    have hspcells := supported_right (supported_left (supported_left hpre))
+    have hidx := supported_right (supported_left hpre)
+    have hbody := supported_right hpre
+    have hcell : ∀ w st ls (i l : Nat) v, readPath h (ρ s) p = some w → elementsOf w = some st →
+        h[st]?.bind spineEntries = some ls → ls[i]? = some (some l) → h[l]? = some v →
+        (guard.isNone = true → Footprints.nullish v = false) → h'[l]? = some v := by
+      intro w st ls i l v hw he hls hli hv hnn
+      have hmem : (Region.pathCells s p).mem ρ h l = true := by
+        have ho : some l ∈ entriesAt h (some st) := by
+          simp only [entriesAt, hls, Option.getD_some]
+          exact List.mem_of_getElem? hli
+        simpa [Region.mem, hw, List.contains_iff_mem] using elementsOf_entries_sub he ho
+      obtain ⟨v', hv', hk⟩ := hspcells (.pathCells s p, if guard.isNone then .init else .keep) (by simp) l _ hmem hv
+      cases hg : guard.isNone with
+      | false =>
+        simp only [hg, Bool.false_eq_true, ite_false, Change.Holds] at hk
+        rw [hv', hk]
+      | true =>
+        simp only [hg, ite_true, Change.Holds] at hk
+        rcases hk with rfl | hinit
+        · exact hv'
+        · have := hinit.1; rw [hnn hg] at this; cases this
+    have hw_obj : ∀ w st, readPath h (ρ s) p = some w → elementsOf w = some st → isObj w = true := by
+      intro w st _ he; cases w <;> simp_all [elementsOf, isObj]
+    refine IndexFact.atIndex_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_) (fun z hz => ?_)
+      (fun g hg w st ls i l v hw he hls hli hv _ => hcell w st ls i l v hw he hls hli hv (by simp [hg]))
+      (fun w st ls hw he hls i b hb z hz => ?_)
+    · obtain ⟨w0, st0, -, -, hw0, he0, -⟩ := hF
+      have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
+      subst hww
+      exact pathReads_sound hc p [] hpath (keeps_obj (by decide) (hw_obj _ st0 hw0 he0)) rfl rfl hw0
+    · obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
+      have hm : (Region.spine s p).mem ρ h st = true := by simp [Region.mem, hw, he]
+      obtain ⟨v', hv', hk⟩ := hspcells (.spine s p, .keep) (by simp) st _ hm hu
+      simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
+    · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hidx hz
+      rw [h3 rfl] at h1; exact h1
+    · have hbs := List.all_eq_true.mp hsup b hb
+      cases b with
+      | index => exact hz
+      | elem =>
+        simp only [boundValue, elementInt] at hz ⊢
+        split at hz
+        · rename_i l hli
+          obtain ⟨v, hv, hi⟩ := Option.bind_eq_some_iff.mp hz
+          have hnn : Footprints.nullish v = false := by cases v with | nul | undef => simp [intValue] at hi | _ => rfl
+          rw [hcell w st ls i l v hw he hls hli hv (fun _ => hnn), Option.bind_some]; exact hi
+        · cases hz
+      | offset _ => simp [Bound.atIndexSupported] at hbs
+      | project k q =>
+        cases q with
+        | cons _ _ => simp [Bound.atIndexSupported] at hbs
+        | nil =>
+          cases k with
+          | value => simp [Bound.atIndexSupported] at hbs
+          | view | strLength =>
+            simp only [boundValue] at hz ⊢
+            split at hz
+            · rename_i l hli
+              obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hz
+              have hnn : Footprints.nullish v = false := by
+                cases v with
+                | nul | undef => simp [termValue, termAt, readPath, kindValue, viewLengthOf, strLengthOf] at ht
+                | _ => rfl
+              rw [hcell w st ls i l v hw he hls hli hv (fun _ => hnn), Option.bind_some]
+              exact ht
+            · cases hz
+          | length =>
+            have huse : bodyUsesElemLength body = true := by
+              simp only [bodyUsesElemLength, List.any_eq_true]
+              exact ⟨.project .length [], hb, rfl⟩
+            simp only [boundValue] at hz ⊢
+            split at hz
+            · rename_i l hli
+              obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hz
+              simp only [termValue, termAt, Bool.false_eq_true, ite_false, readPath, Option.bind_some, kindValue] at ht ⊢
+              obtain ⟨s1, ls1, hs1, hls1, rfl, hmax⟩ := lengthOf_spine ht
+              have hnn : Footprints.nullish v = false := by
+                cases v with | nul | undef => cases hs1 | _ => rfl
+              rw [hcell w st ls i l v hw he hls hli hv (fun _ => hnn), Option.bind_some]
+              have hmem : (Region.elemSpines s p).mem ρ h s1 = true := by
+                have ho : some l ∈ entriesAt h (some st) := by
+                  simp only [entriesAt, hls, Option.getD_some]
+                  exact List.mem_of_getElem? hli
+                have hsc : some l ∈ spineCells h w := elementsOf_entries_sub he ho
+                simp only [Region.mem, hw, List.any_eq_true]
+                exact ⟨some l, hsc, by simp [hv, elementsOf_spine hs1]⟩
+              obtain ⟨u', hu', hk⟩ := helen (.elemSpines s p, .keep) (by simp [huse]) s1 _ hmem hls1
+              simp only [Change.Holds] at hk
+              exact lengthOf_of_spine hs1 (by rw [hu', hk]) hmax
+            · cases hz
+      | free t =>
+        have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he' => by
+          simp only [bodySupport, List.mem_flatMap, List.mem_singleton]
+          exact ⟨body, rfl, .free t, hb, he'⟩
+        obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
+        rw [h3 rfl] at h1; exact h1
 
 /-- **The support of an index fact, with its evidence**, where one is
 produced: nothing for a fact of slots' values alone; a length its spine at
@@ -654,6 +786,8 @@ def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext)
   | .apart a b => some (apartSupport a b, .apart)
   | .every s p stop body =>
     if body.all (fun F => F.vars.all Bound.scalar) then some (everySupport c s p stop body, .every) else none
+  | .atIndex s p idx guard body =>
+    if body.vars.all Bound.atIndexSupported then some (atIndexSupport c s p idx guard body, .atIndex) else none
   | .element _ x _ => some (elementSupport x, .element)
 
 /-- **The support of an index fact**, where one is produced: the footprint
@@ -688,6 +822,14 @@ theorem IndexFact.produceSupport_check (c : ReadContext) :
     · rename_i hsc
       cases h
       simp [FactSupport.check, hsc]
+    · cases h
+  | atIndex s p idx guard body =>
+    intro S ev h
+    simp only [IndexFact.produceSupport] at h
+    split at h
+    · rename_i hsup
+      cases h
+      simp [FactSupport.check, hsup]
     · cases h
   | _ => intro S ev h; cases h; simp [FactSupport.check]
 

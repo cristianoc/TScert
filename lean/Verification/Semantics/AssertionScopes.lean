@@ -26,6 +26,7 @@ def Region.rename (σ : Nat → Nat) : Region → Region
   | .pathFields x p => .pathFields (σ x) p
   | .pathCells x p => .pathCells (σ x) p
   | .spine x p => .spine (σ x) p
+  | .elemSpines x p => .elemSpines (σ x) p
 
 theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
     ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by
@@ -45,7 +46,7 @@ def Path.var (x : Nat) : Path := ⟨x, []⟩
 
 /-- The slots a region reads its roots at. -/
 def regionRoots : Region → List Nat
-  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => [x]
+  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ | .elemSpines x _ => [x]
   | .cls _ | .all => []
 
 /-- An effect reading runtime slots below `n` alone. -/

@@ -47,16 +47,13 @@ def deltaAdd (s : Store) (pairs : List (Atom × Atom)) (out : HeapKnowledge.Know
   return (s, added)
 
 /-- `applyDelta`'s third loop: each added linear fact over a read's name also
-over the read's path. -/
+over the read's path, and each added linear or singly guarded linear fact over
+an element read's projection (or length) also as `atIndex`. -/
 def deltaRestate (s : Store) (added : List HeapKnowledge.IndexAtom) : Store := Id.run do
   let mut s := s
   for x in added do
     for v in x.fact.slots do
-      let reads := (s.about v).filterMap fun b => match b with
-        | .link g => if !g.alias && g.value == v then some g else none
-        | _ => none
-      if !reads.isEmpty then
-        for y in HeapKnowledge.restateReads reads (· == v) [x] do s := s.add (.index y)
+      s := SinglePass.restateAddedAtIndex (SinglePass.restateAddedReads s x v) x v
   return s
 
 /-- `applyDelta` is its three loops in order. -/
@@ -143,6 +140,106 @@ theorem deltaAdd_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowled
 /-- **The restatement loop adds holding facts**: a linear fact restated over
 a read's path (`HeapKnowledge.restateReads_holds`), the read links being the
 store's. -/
+theorem restateAddedReads_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Nat} {η : Env} {h : Heap}
+    (hs : StoreOk ε s η h) (hx : HeapKnowledge.IndexHolds ε [x] η h) :
+    StoreOk ε (SinglePass.restateAddedReads s x v) η h := by
+  unfold SinglePass.restateAddedReads
+  simp only [Id.run]
+  split
+  · exact hs
+  · have hl : HeapLinks.Holds ((s.about v).filterMap fun b => match b with
+        | .link g => if (!g.alias && g.value == v) = true then some g else none
+        | _ => none) η h := by
+      intro g hg
+      obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+      split at hbg
+      · split at hbg
+        · cases hbg; exact hs _ (about_storeAll hb) g (List.mem_singleton_self _)
+        · cases hbg
+      · cases hbg
+    have hy := HeapKnowledge.restateReads_holds (dropped := (· == v)) hl hx
+    refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs ?_
+      (fun _ h => h)
+    intro y hyl w hw
+    exact add_ok hw fun z hz hc => by simp only [List.mem_singleton] at hz; subst hz; exact hy z hyl hc
+
+theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Nat} {η : Env} {h : Heap}
+    (hs : StoreOk ε s η h) (hx : HeapKnowledge.IndexHolds ε [x] η h) :
+    StoreOk ε (SinglePass.restateAddedAtIndex s x v) η h := by
+  unfold SinglePass.restateAddedAtIndex
+  simp only [Id.run]
+  split
+  · exact hs
+  · split
+    all_goals first
+      | exact hs
+      | (refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs ?_
+           (fun _ h => h)
+         intro r _ w hw
+         split
+         · split
+           · have hlinks : HeapLinks.Holds (((w.about r).filterMap fun b => match b with
+                 | .index a => if a.cond.isNone then match a.fact with
+                     | .element r' _ _ => if r' == r then some a else none
+                     | _ => none
+                   else none
+                 | _ => none).flatMap fun a => match a.fact with
+                 | .element _ arr _ => (w.about arr).filterMap fun b => match b with
+                     | .link g => if !g.alias && g.value == arr then some g else none
+                     | _ => none
+                 | _ => []) η h := by
+               intro g hg
+               obtain ⟨a, -, hg⟩ := List.mem_flatMap.mp hg
+               split at hg
+               · obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+                 split at hbg
+                 · split at hbg
+                   · cases hbg; exact hw _ (about_storeAll hb) g (List.mem_singleton_self _)
+                   · cases hbg
+                 · cases hbg
+               · cases hg
+             have hatoms : HeapKnowledge.IndexHolds ε (((w.about r).filterMap fun b => match b with
+                 | .index a => if a.cond.isNone then match a.fact with
+                     | .element r' _ _ => if r' == r then some a else none
+                     | _ => none
+                   else none
+                 | _ => none) ++ ((w.about r).filterMap fun b => match b with
+                 | .index a => if a.cond.isNone then match a.fact with
+                     | .length r' _ => if r' == r then some a else none
+                     | _ => none
+                   else none
+                 | _ => none) ++ [x]) η h := by
+               intro y hy hc
+               rcases List.mem_append.mp hy with hy | hy
+               · rcases List.mem_append.mp hy with hy | hy
+                 · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                   split at hby
+                   · split at hby
+                     · split at hby
+                       · split at hby
+                         · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                         · cases hby
+                       · cases hby
+                     · cases hby
+                   · cases hby
+                 · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                   split at hby
+                   · split at hby
+                     · split at hby
+                       · split at hby
+                         · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                         · cases hby
+                       · cases hby
+                     · cases hby
+                   · cases hby
+               · exact hx y hy hc
+             have hy := fun d => HeapKnowledge.restateAtIndex_holds (dropped := d) hlinks hatoms
+             refine forIn_inv _ _ _ (fun t => StoreOk ε t η h) hw ?_
+             intro y hyl z hz
+             exact add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy _ a hyl hc
+           · exact hw
+         · exact hw)
+
 theorem deltaRestate_ok {s : Store} {added : List HeapKnowledge.IndexAtom} {η : Env} {h : Heap}
     (hs : StoreOk ε s η h) (hadd : HeapKnowledge.IndexHolds ε added η h) : StoreOk ε (deltaRestate s added) η h := by
   unfold deltaRestate
@@ -150,29 +247,11 @@ theorem deltaRestate_ok {s : Store} {added : List HeapKnowledge.IndexAtom} {η :
   refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) added s _ (fun t => StoreOk ε t η h) _ hs ?_
     (fun _ h => h)
   intro x hx t ht
+  have hx1 : HeapKnowledge.IndexHolds ε [x] η h := fun y hy hc => by
+    simp only [List.mem_singleton] at hy; subst hy; exact hadd y hx hc
   show StoreOk ε (forIn (m := Id) x.fact.slots t _) η h
-  refine forIn_inv _ _ _ (fun t => StoreOk ε t η h) ht ?_
-  intro v _ u hu
-  split
-  · rename_i hne
-    show StoreOk ε (forIn (m := Id) _ u _) η h
-    have hl : HeapLinks.Holds ((u.about v).filterMap fun b => match b with
-        | .link g => if (!g.alias && g.value == v) = true then some g else none
-        | _ => none) η h := by
-      intro g hg
-      obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
-      split at hbg
-      · split at hbg
-        · cases hbg; exact hu _ (about_storeAll hb) g (List.mem_singleton_self _)
-        · cases hbg
-      · cases hbg
-    have hx1 : HeapKnowledge.IndexHolds ε [x] η h := fun y hy hc => by
-      simp only [List.mem_singleton] at hy; subst hy; exact hadd y hx hc
-    have hy := HeapKnowledge.restateReads_holds (dropped := (· == v)) hl hx1
-    refine forIn_inv _ _ _ (fun t => StoreOk ε t η h) hu ?_
-    intro y hyl w hw
-    exact add_ok hw fun z hz hc => by simp only [List.mem_singleton] at hz; subst hz; exact hy z hyl hc
-  · exact hu
+  exact forIn_inv _ _ _ (fun t => StoreOk ε t η h) ht fun v _ u hu =>
+    restateAddedAtIndex_ok (restateAddedReads_ok hu hx1) hx1
 
 /-- **A step's delta keeps the store's facts holding**: where the facts the
 removal loop keeps hold at `η`, the output holds at the pushed slots `ρ'`

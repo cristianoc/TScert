@@ -120,6 +120,7 @@ export type IndexFact = { index: { slot: number } } | { length: { array: number;
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
+  { atIndex: { slot: number; path: string[]; index: LinearTerm; guard: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse" | null; body: BodyFormula } } |
   { apart: { slot: number; other: number } } |
   { same: { slot: number; other: number } } |
   { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
@@ -612,11 +613,7 @@ function indexFact(f: Json | undefined): IndexFact {
     const e = record(record(f,["element"]).element,["value","array","index"]);
     return { element: { value: nat(e.value), array: nat(e.array), index: nat(e.index) } };
   }
-  if ("every" in f) {
-    const e = record(record(f,["every"]).every,["slot","path","stop","body"]);
-    const path = e.path;
-    if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
-    if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
+  if ("every" in f || "atIndex" in f) {
     const bodyFormula = (b: Json): BodyFormula => {
       if (typeof b === "object" && b !== null && !Array.isArray(b) && "either" in b) {
         const e = record(record(b,["either"]).either,["left","right"]);
@@ -633,9 +630,23 @@ function indexFact(f: Json | undefined): IndexFact {
       });
       return { form, bound, ne };
     };
-    const body = e.body.map(bodyFormula);
-    return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
-      stop: linearTerm(e.stop), body } };
+    if ("every" in f) {
+      const e = record(record(f,["every"]).every,["slot","path","stop","body"]);
+      const path = e.path;
+      if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
+      if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
+      const body = e.body.map(bodyFormula);
+      return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
+        stop: linearTerm(e.stop), body } };
+    }
+    const e = record(record(f,["atIndex"]).atIndex,["slot","path","index","guard","body"]);
+    const path = e.path;
+    if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("an indexed-element fact's path");
+    if (e.guard !== null && e.guard !== "null" && e.guard !== "undefined" && e.guard !== "true" && e.guard !== "false" &&
+        e.guard !== "notNull" && e.guard !== "notUndefined" && e.guard !== "notTrue" && e.guard !== "notFalse")
+      throw Error("an indexed-element fact's guard");
+    return { atIndex: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
+      index: linearTerm(e.index), guard: e.guard, body: bodyFormula(e.body) } };
   }
   if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
   else if ("length" in f) {

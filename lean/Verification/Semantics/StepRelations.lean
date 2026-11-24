@@ -661,6 +661,10 @@ def fact : IndexFact → List IndexFact
     match P.slot s with
     | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
     | none => []
+  | .atIndex s p idx guard body =>
+    if P.absentSlot s || P.absent idx then [falsum] else
+    if idx.atEntry || body.vars.any (fun | .free t => t.atEntry | _ => false) then []
+    else ((IndexFact.atIndex s p idx guard body).mapM P.slot).toList
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
   | F@(.element _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) | F@(.same _ _) =>
     if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
@@ -1119,6 +1123,34 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
       obtain ⟨C0, hC0, hC⟩ := List.mem_flatMap.mp hC
       exact P.clause_holds hs (hall i (by omega) C0 hC0) C hC
     · cases hD
+  | atIndex s p idx guard body =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    obtain ⟨w, sto, ls, i, hw, hsto, hls, hi, hlt, hrest⟩ := hF
+    split at hD
+    · rename_i habs
+      rcases Bool.or_eq_true_iff.mp habs with ha | ha
+      · rw [hs.absentSlot s ha] at hw
+        cases p with
+        | nil =>
+          simp only [readPath, Option.some.injEq] at hw
+          subst hw
+          simp [elementsOf] at hsto
+        | cons f q => simp [readPath] at hw
+      · rw [hs.absent idx ha] at hi; cases hi
+    split at hD
+    · cases hD
+    · rename_i hne
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, List.any_eq_true, not_exists, not_and] at hne
+      have hentry : (IndexFact.atIndex s p idx guard body).entrySlots = [] := by
+        simp only [IndexFact.entrySlots, List.append_eq_nil_iff, List.flatMap_eq_nil_iff]
+        refine ⟨by simp [Term.entrySlots, hne.1], fun b hb => ?_⟩
+        cases b with
+        | free t =>
+          have ht : t.atEntry = false := hne.2 (.free t) hb
+          simp [Term.entrySlots, ht]
+        | _ => rfl
+      exact hmapped hentry ⟨w, sto, ls, i, hw, hsto, hls, hi, hlt, hrest⟩ hD
   | _ =>
     intro hF D hD
     simp only [Composer.fact] at hD

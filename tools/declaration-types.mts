@@ -37,7 +37,8 @@ export type Region =
   | { readonly path: { readonly x: number; readonly fields: readonly string[]; readonly key: Key } }
   | { readonly pathFields: { readonly x: number; readonly fields: readonly string[] } }
   | { readonly pathCells: { readonly x: number; readonly fields: readonly string[] } }
-  | { readonly spine: { readonly x: number; readonly fields: readonly string[] } };
+  | { readonly spine: { readonly x: number; readonly fields: readonly string[] } }
+  | { readonly elemSpines: { readonly x: number; readonly fields: readonly string[] } };
 /** A frame: the regions an exit may change, each with its change
  * (`Footprints.Footprint`). */
 export type Frame = readonly { readonly region: Region; readonly change: Change }[];
@@ -150,6 +151,8 @@ export type IndexFact =
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
       readonly body: readonly BodyFact[] } }
+  | { readonly atIndex: { readonly slot: number; readonly path: readonly string[]; readonly index: LinearTerm;
+      readonly guard: GuardTag | null; readonly body: BodyFact } }
   | { readonly apart: { readonly slot: number; readonly other: number } }
   | { readonly same: { readonly slot: number; readonly other: number } }
   | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;

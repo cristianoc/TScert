@@ -581,6 +581,67 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain 
     return out
   (ofAtoms (pairs.map (·.2) ++ extra ++ aliasLinks) d, pairs, table)
 
+/-- Restate an added linear fact over a read's path (`HeapKnowledge.restateReads`). -/
+def restateAddedReads (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : Store := Id.run do
+  let reads := (s.about v).filterMap fun b => match b with
+    | .link g => if !g.alias && g.value == v then some g else none
+    | _ => none
+  if reads.isEmpty then return s
+  let mut s := s
+  for y in HeapKnowledge.restateReads reads (· == v) [x] do s := s.add (.index y)
+  return s
+
+/-- Whether an unconditional linear or singly guarded linear fact accesses a
+projection (a length, view or field) on `r`, or a length slot of `r`. -/
+def mentionsElemProj (r : Nat) (lens : List HeapKnowledge.IndexAtom) (F : HeapKnowledge.IndexFact) : Bool :=
+  let lenSlots := lens.filterMap fun a => match a.fact with | .length _ n => some n | _ => none
+  let hit (t : HeapKnowledge.Term) : Bool :=
+    (!t.atEntry && t.slot == r && (t.kind != .value || !t.path.isEmpty)) ||
+    (!t.atEntry && t.kind == .value && t.path.isEmpty && lenSlots.contains t.slot)
+  match F with
+  | .linear L => L.vars.any hit
+  | .guarded s [] _ (.linear L) => s == r && L.vars.any hit
+  | _ => false
+
+/-- Restate an added linear or singly guarded linear fact over an element read's
+projection (or length slot) as `atIndex` (`HeapKnowledge.restateAtIndex`). -/
+def restateAddedAtIndex (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : Store := Id.run do
+  if !x.cond.isNone then return s
+  match x.fact with
+  | .linear _ | .guarded _ [] _ (.linear _) =>
+    let elemSlots := v :: (s.about v).filterMap fun b => match b with
+      | .index ⟨.length r n, none, _⟩ => if n == v then some r else none
+      | _ => none
+    let mut s := s
+    for r in elemSlots do
+      let elems := (s.about r).filterMap fun b => match b with
+        | .index a => if a.cond.isNone then match a.fact with
+            | .element r' _ _ => if r' == r then some a else none
+            | _ => none
+          else none
+        | _ => none
+      if !elems.isEmpty then
+        let lens := (s.about r).filterMap fun b => match b with
+          | .index a => if a.cond.isNone then match a.fact with
+              | .length r' _ => if r' == r then some a else none
+              | _ => none
+            else none
+          | _ => none
+        if mentionsElemProj r lens x.fact then
+          let arrReads := elems.flatMap fun a => match a.fact with
+            | .element _ arr _ => (s.about arr).filterMap fun b => match b with
+                | .link g => if !g.alias && g.value == arr then some g else none
+                | _ => none
+            | _ => []
+          let dropped : Nat → Bool := fun w =>
+            w == r ||
+            lens.any (fun a => match a.fact with | .length _ n => n == w | _ => false) ||
+            arrReads.any (·.value == w)
+          for y in HeapKnowledge.restateAtIndex arrReads dropped (elems ++ lens ++ [x]) do
+            s := s.add (.index y)
+    return s
+  | _ => return s
+
 /-- A step's delta applied: the facts of `pairs` (store fact, image) whose
 image `out` lost removed, `out`'s facts not already images added, renamed
 by `back`. `shift`: `out` is over the pushed slots. -/
@@ -602,15 +663,13 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
         if !trivial then s := s.add a
         if let .index x := a then added := x :: added
   -- A linear fact over a name a read gives, also stated over the read's
-  -- path (`HeapKnowledge.restateReads`): the form a later step keeps where
-  -- it drops the read's name.
+  -- path (`restateAddedReads`), and a linear or singly guarded linear fact
+  -- over an element read's projection, also stated as `atIndex`
+  -- (`restateAddedAtIndex`): the forms a later step keeps where it drops
+  -- the read's name.
   for x in added do
     for v in x.fact.slots do
-      let reads := (s.about v).filterMap fun b => match b with
-        | .link g => if !g.alias && g.value == v then some g else none
-        | _ => none
-      if !reads.isEmpty then
-        for y in HeapKnowledge.restateReads reads (· == v) [x] do s := s.add (.index y)
+      s := restateAddedAtIndex (restateAddedReads s x v) x v
   return s
 
 instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
@@ -1537,7 +1596,7 @@ disjunction's arm is read where that arm holds, and one beneath a guard on
 the result where the result fails it, neither a condition of the start's
 state. -/
 def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.IndexFact × Bool)
-  | F@(.linear _) | F@(.every _ _ _ _) =>
+  | F@(.linear _) | F@(.every _ _ _ _) | F@(.atIndex _ _ _ _ _) =>
     F.entryTerms.flatMap fun t => (HeapKnowledge.IndexFact.identity t).map fun I => ([I], true)
   | .either A B => (startIdentities A ++ startIdentities B).map fun (c, _) => (c, false)
   | .guarded 0 _ _ B => (startIdentities B).map fun (c, _) => (c, false)
@@ -1976,6 +2035,7 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
   let mut seen : Std.HashSet Atom := {}
   let mut existing : List HeapKnowledge.IndexAtom := []
   let mut rawGuards : List (Atom × Linear.Fact HeapKnowledge.Term) := []
+  let mut phiGuards : List (Atom × Linear.Fact HeapKnowledge.Term) := []
   let mut rawBodies : List (Atom × HeapKnowledge.IndexFact) := []
   for d in diffs do
     for a in d do
@@ -1989,12 +2049,17 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
           | .linear L =>
             if a.names.any phiNames.contains then
               rawBodies := (a, F) :: rawBodies
+              let singlePhi := a.names.all phiNames.contains &&
+                match L with | .le [(_, _)] _ | .ne [(_, _)] _ => true | _ => false
+              if singlePhi then phiGuards := (a, L) :: phiGuards
             else
               rawGuards := (a, L) :: rawGuards
+          | .atIndex .. =>
+            rawBodies := (a, F) :: rawBodies
           | _ =>
             if a.names.any phiNames.contains then
               rawBodies := (a, F) :: rawBodies
-  if rawGuards.isEmpty || rawBodies.isEmpty then return existing
+  if (rawGuards.isEmpty && phiGuards.isEmpty) || rawBodies.isEmpty then return existing
   let linMask (a : Atom) (L : Linear.Fact HeapKnowledge.Term) : List Bool :=
     views.map fun (qs : State) =>
       (qs.store.holds a || HeapKnowledge.entailsKnown (qs.store.linearNear a.names) L) &&
@@ -2002,7 +2067,16 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
   let guards := rawGuards.filterMap fun (a, L) =>
     let m := linMask a L
     if m.all id || m.all (!·) then none else some (a, L, m)
-  if guards.isEmpty then return existing
+  let hasPhiAtIndex := rawBodies.any fun (ba, F) =>
+    (match F with | .atIndex .. => true | _ => false) && ba.names.any phiNames.contains
+  let pGuards := if !hasPhiAtIndex then [] else
+    phiGuards.filterMap fun (a, L) =>
+      if rawBodies.any (fun (ba, F) => (match F with | .atIndex .. => true | _ => false) &&
+          ba.names.any phiNames.contains && a.names.any ba.names.contains) then
+        let m := linMask a L
+        if m.all id || m.all (!·) then none else some (a, L, m)
+      else none
+  if guards.isEmpty && pGuards.isEmpty then return existing
   let bodies := rawBodies.filterMap fun (a, F) =>
     let m := match F with
       | .linear L => linMask a L
@@ -2020,6 +2094,12 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
             HeapKnowledge.entailsKnown (near ++ negLinear bL) gL
           | _ => false
         if !taut then
+          out := { fact := .either (.linear gL) bF } :: out
+  for (ga, gL, gM) in pGuards do
+    for (ba, bF, bM) in bodies do
+      if (match bF with | .atIndex .. => true | _ => false) &&
+          ba.names.any phiNames.contains && ga.names.any ba.names.contains then
+        if (gM.zip bM).all (fun (x, y) => x || y) then
           out := { fact := .either (.linear gL) bF } :: out
   return out
 
@@ -2151,7 +2231,7 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
     | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .link _ => a.names
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
     (diffs.flatMap fun d => d.flatMap fun a => match a with
@@ -2192,7 +2272,8 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
       let slots := a.fact.slots.eraseDups
       views.all fun ps =>
         let p0 := (materialize ps width slots false).1
-        let p := { p0 with indices := p0.indices.filter fun x => x == a || match x.fact with | .either _ _ => false | _ => true }
+        let p := { p0 with indices := p0.indices.filter fun x =>
+          x == a || match x.fact with | .either _ _ => a.fact.hasAtIndex && x.fact.hasAtIndex | _ => true }
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
           p.indices [a] none
   let guarded := guarded0 ++ disjoined

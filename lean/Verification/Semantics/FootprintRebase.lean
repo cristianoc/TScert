@@ -249,6 +249,7 @@ def rebase (ev : RebaseEvidence) : Region → List Region
   | .spine s p => match ev.path s p with
     | some (x, q) => [.spine x q]
     | none => [.cls .spines]
+  | .elemSpines _ _ => [.cls .spines]
 
 def rebaseAll (ev : RebaseEvidence) (Ψ : Footprint) : Footprint :=
   Ψ.flatMap fun e => (rebase ev e.1).map (·, e.2)
@@ -379,6 +380,8 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       split at hm
       · rename_i v hv; rw [hk.path he hv]; exact hm
       · cases hm
+  | elemSpines s p =>
+    simpa [rebase, Region.cats] using cats_back hp hk.categories hl hm
 
 /-- **Composition at the step's positions.** An entry frame so far, a step's
 frame at its own positions and heap, the rebasing evidence, and an inclusion

@@ -1,14 +1,16 @@
 // Issue #365.
 // A cursor inside a segment indexes that segment's per-grapheme list: its
-// grapheme index is below the length of the list at its segment index. No
-// clause states it: the clause language bounds a path by the length of a
-// path, and the list is an element of an array at another path's value.
+// grapheme index is below the length of the list at its segment index. An
+// indexed-element clause bounds `c.graphemeIndex` by the length of the array
+// read at `h.advances[c.segmentIndex]`.
 
 type Cursor = { segmentIndex: number; graphemeIndex: number };
 type Handle = { advances: (number[] | null)[] };
 
-// Refused (unprovable): nothing bounds c.graphemeIndex by the list's length.
-/** @requires safeInteger(c.segmentIndex) && 0 <= c.segmentIndex && c.segmentIndex < h.advances.length */
+// Verified by the ordinary verifier using the indexed-element length clause.
+/** @requires safeInteger(c.segmentIndex) && 0 <= c.segmentIndex && c.segmentIndex < h.advances.length
+ *  @requires safeInteger(c.graphemeIndex) && 0 <= c.graphemeIndex
+ *  @requires h.advances[c.segmentIndex] === null || c.graphemeIndex < h.advances[c.segmentIndex].length */
 export function startAdvance(h: Handle, c: Cursor): number {
   const advances = h.advances[c.segmentIndex];
   if (advances === undefined || advances === null) return 0;

@@ -8,9 +8,10 @@ the JavaScript is the same with and without it.
 
 JSDoc tags whose text is a clause of
 [the clause language](ARITHMETIC.md#the-clause-language): `safeInteger(p)`,
-linear comparisons over integers, paths `x.f` and lengths `p.length`, `&&`,
-`||` and `!`, guards such as `p === null || …` or `p !== null || …` (testing
-`null`, `undefined`, `true`, or `false`), a closing quantified atom
+linear comparisons over integers, paths `x.f`, lengths `p.length`, indexed
+elements `p[q]` and their lengths `p[q].length`, `&&`,
+`||` and `!`, guards such as `p === null || …`, `p !== null || …`, and
+`p[q] === null || …` (testing `null`, `undefined`, `true`, or `false`), a closing quantified atom
 `forall i in xs: …`, and `p !== q` of two arrays, whose spines differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
 lists what each tag may name.
 
@@ -44,6 +45,21 @@ function widthAt(widths: number[], ends: number[], k: number): number {
 ```ts
 /** @requires flags !== runs.openBrackets */
 function measure(flags: number[], runs: Runs): number { … }
+```
+
+An indexed-element clause bounds a term by a property or length of an array
+element at another path's index
+([indexed-element clauses](ARITHMETIC.md#indexed-element-clauses)):
+
+```ts
+/** @requires safeInteger(c.segmentIndex) && 0 <= c.segmentIndex && c.segmentIndex < h.advances.length
+ *  @requires safeInteger(c.graphemeIndex) && 0 <= c.graphemeIndex
+ *  @requires h.advances[c.segmentIndex] === null || c.graphemeIndex < h.advances[c.segmentIndex].length */
+function startAdvance(h: Handle, c: Cursor): number {
+  const advances = h.advances[c.segmentIndex];
+  if (advances === undefined || advances === null) return 0;
+  return advances[c.graphemeIndex]!;
+}
 ```
 
 ### `@ensures C`

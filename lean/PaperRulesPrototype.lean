@@ -107,7 +107,7 @@ def slotOf (u : Unit) (d p : Nat) : Nat := d - u.inputs + p
 
 /-- The slot a region is rooted at, where it is rooted at one. -/
 def rootSlot : Footprints.Region → Option Nat
-  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => some x
+  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ | .elemSpines x _ => some x
   | .cls _ | .all => none
 
 /-- The slots holding an object the function's body allocated and never
@@ -170,6 +170,7 @@ def inReach (pairs : List (Nat × List AccPath × List String)) : Footprints.Reg
   | .spine x p => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a ++ p && e.array
   | .cells x => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a && e.array
   | .pathCells x p => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a ++ p && e.array
+  | .elemSpines x p => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a ++ p ++ ["[*]"] && e.array
   | .fields _ | .pathFields _ _ | .cls _ | .all => false
 
 /-- The slot whose object's own location a region names: a field, the
@@ -184,7 +185,7 @@ def ownSlot : Footprints.Region → Option Nat
 are `keep`; on contents, `extend` and `grow` are `scalar`
 (`Change.onSpine`, `Change.onValue`). -/
 def atCategory : Footprints.Region → Footprints.Change → Footprints.Change
-  | .spine .., c => c.onSpine
+  | .spine .., c | .elemSpines .., c => c.onSpine
   | _, c => c.onValue
 
 /-- Whether a support region may overlap confined module-private state
