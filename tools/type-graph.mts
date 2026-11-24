@@ -309,10 +309,11 @@ const grammar: { readonly [name: string]: Shape } = {
     bound: { record: { array: "nat", index: "nat", strict: "bool" } }, int: { record: { slot: "nat" } },
     pastSafe: { record: { slot: "nat" } }, linear: { record: { fact: linear(termShape) } },
     either: { record: { left: { ref: "fact" }, right: { ref: "fact" } } },
-    guarded: { record: { slot: "nat", path: strings, tag: { names: ["null", "undefined", "true", "false"] }, body: { ref: "fact" } } },
+    guarded: { record: { slot: "nat", path: strings, tag: { names: ["null", "undefined", "true", "false", "notNull", "notUndefined", "notTrue", "notFalse"] }, body: { ref: "fact" } } },
     element: { record: { value: "nat", array: "nat", index: "nat" } },
     every: { record: { slot: "nat", path: strings, stop: termShape, body: { list: { ref: "clause" } } } },
     apart: { record: { slot: "nat", other: "nat" } },
+    same: { record: { slot: "nat", other: "nat" } },
     spineApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
   kinds: { list: { names: elementKindOrder } },
   post: { union: {

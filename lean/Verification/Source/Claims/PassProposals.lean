@@ -28,6 +28,7 @@ structure StandIn where
   name : String
   summary : SourceElaboration.ClassSummary := ⟨some .top, some .top⟩
   resultFootprint : Footprints.Closed := .top
+  returnAlias : Option Nat := none
 
 /-- **A stand-in in today's effect format**: its summary's projection
 (`ClassSummary.project`, an upper bound at each exit), where a plan's
@@ -44,8 +45,9 @@ def StandIn.onThrow (s : StandIn) : Bool := s.summary.format.2
 
 /-- The stand-in of today's format: the summary of a closed footprint and a
 throw bound (`ClassSummary.ofFormat`). -/
-def StandIn.ofFormat (name : String) (c : Footprints.Closed) (t : Bool) (r : Footprints.Closed := .top) : StandIn :=
-  ⟨name, SourceElaboration.ClassSummary.ofFormat c t, r⟩
+def StandIn.ofFormat (name : String) (c : Footprints.Closed) (t : Bool) (r : Footprints.Closed := .top)
+    (retAlias : Option Nat := none) : StandIn :=
+  ⟨name, SourceElaboration.ClassSummary.ofFormat c t, r, retAlias⟩
 
 /-- The stand-ins of a file: for the file's functions and for its imports. -/
 structure StandIns where
@@ -179,6 +181,7 @@ visited. -/
 structure Established where
   summary : SourceElaboration.ClassSummary
   result : Closed
+  returnAlias : Option Nat := none
   visits : Nat
 
 /-- The labels of a file's plans. -/
@@ -186,12 +189,14 @@ abbrev Label (f : FilePlans) : Type := EquationStore.CheckedLabel f.F.equations 
 
 /-- What the direct route reads of a member's visited steps (`directRead`):
 its body's summary composed over the graph (`composeGraph`), none where the
-composition does not settle; the returned values' functions' footprint, and
-whether any return was visited. -/
+composition does not settle; the returned values' functions' footprint,
+whether any return was visited, and any call position returned unchanged at
+every reachable return. -/
 structure DirectRead where
   summary : Option SourceElaboration.ClassSummary
   result : Closed
   returns : Bool
+  returnAlias : Option Nat := none
 
 /-- **A step's local summary from its visit's certificate**
 (`SinglePass.StepCertificate`): at each exit, the meet of the closed bounds
@@ -269,10 +274,11 @@ local summaries (`localSummary`) composed over the graph (`composeGraph`);
 at each return the returned value's checked type's footprint (the join of
 its signatures', `top` for a value of no function type). -/
 def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι)) (start : Nat)
-    (records : Array SinglePass.VisitRecord) : DirectRead := Id.run do
+    (records : Array SinglePass.VisitRecord) (paramCount : Nat) (receiverless eligible : Bool) : DirectRead := Id.run do
   let n := nodes.size
   let mut result : Closed := keepAll
   let mut returns := false
+  let mut retAliases : Option (List Nat) := none
   for r in records do
     let l := r.label
     if l ≥ n then continue
@@ -287,8 +293,14 @@ def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (Point
         | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
           ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.changeBound
         | _ => .top)
+      if eligible && !(ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·)) then
+        let own := r.returnAliases.filter (· < paramCount)
+        retAliases := match retAliases with
+          | none => some own
+          | some prev => some (prev.filter own.contains)
+  let returnAlias := retAliases.bind fun qs => qs.head?.map fun q => if receiverless then q + 1 else q
   let locals := localsOf n (records.toList.map fun r => (r.label, unreturning G claimed r.label (localSummary r.certificate)))
-  return ⟨composeGraph nodes start locals, result, returns⟩
+  return ⟨composeGraph nodes start locals, result, returns, returnAlias⟩
 
 end
 
@@ -312,7 +324,12 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.Ha
   let answers : CertificateProducer.Answered G := {}
   let some (.ok plan) := f.plans[i]? | return none
   let .ok (.graph _ _ r) := plan.certify | return none
-  if r.qualification.isSome || r.async then return some ⟨⟨some .top, some .top⟩, .top, 0⟩
+  if r.qualification.isSome || r.async then return some ⟨⟨some .top, some .top⟩, .top, none, 0⟩
+  let (paramCount, receiverless, aliasEligible) := match f.fr.units[i]? with
+    | some (fn, tps, none) =>
+      (fn.params.length, !r.receiver,
+        tps.isEmpty && !fn.async && !fn.convertsReceiver && fn.guard.isNone && !fn.params.any (·.rest))
+    | _ => (0, true, false)
   let nodes := r.program.toArray
   let claimed := r.claims.toArray
   let n := nodes.size
@@ -376,12 +393,13 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.Ha
   let prepared := Thunk.mk prepared
   -- The direct route: the settling run's steps, else a walk with no bound.
   let (read, visits) ← match grades with
-    | some gs => pure (SinglePass.work "propose: direct read" (f.fr.workItem i) fun _ => directRead G nodes claimed r.start gs, visitsA)
+    | some gs => pure (SinglePass.work "propose: direct read" (f.fr.workItem i) fun _ =>
+        directRead G nodes claimed r.start gs paramCount receiverless aliasEligible, visitsA)
     | none =>
       let some (walk, codes) := prepared.get | return none
       let .ok (σ, reach) := walk none | return none
       if σ.walk.visited < reach then return none
-      pure (directRead G nodes claimed r.start σ.walk.visits, σ.walk.visited)
+      pure (directRead G nodes claimed r.start σ.walk.visits paramCount receiverless aliasEligible, σ.walk.visited)
   let normal := read.summary.bind (·.normal)
   -- The regional route: the walk under the regional fallback at `top`, run
   -- where the direct route's footprint is more than keep/keep (no footprint
@@ -438,7 +456,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) («given» : Option (Std.Ha
     | some a, none => a
     | none, some b => b
     | none, none => topS
-  return some ⟨S, if read.returns then read.result else .top, visits + visitsB⟩
+  return some ⟨S, if read.returns then read.result else .top, read.returnAlias, visits + visitsB⟩
 
 /-- A plan's request at `top` with no throw bound: its walk unbounded. -/
 def openAt (f : FilePlans) (i : Nat) : FilePlans :=
@@ -528,7 +546,7 @@ def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
   let reached := (((fp.fr.group j).flatMap fp.fr.reach).filterMap fun k =>
     (fp.fr.units[k]?).map (·.1.name)).eraseDups
   let read := (reads.filter (reached.contains ·.name)).map fun s =>
-    (s.name, reprStr s.summary, reprStr s.resultFootprint)
+    (s.name, reprStr s.summary, reprStr s.resultFootprint, s.returnAlias)
   let members := (fp.fr.group j).map fun k =>
     let unit := (fp.fr.units[k]?).map fun (g, _, c) => (g.name, g.namePos, c.isSome)
     match fp.plans[k]? with
@@ -599,10 +617,10 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       | some j =>
         let key := inputDigest fp j (reads own)
         match memo.get? key with
-        | some got => (got.map fun (S, R, v) => ⟨S, R, v⟩, memo)
+        | some got => (got.map fun (S, R, ra, v) => ⟨S, R, ra, v⟩, memo)
         | none =>
           let got := settledInterface fp proposalDepth j
-          (got, memo.insert key (got.map fun e => (e.summary, e.result, e.visits)))
+          (got, memo.insert key (got.map fun e => (e.summary, e.result, e.returnAlias, e.visits)))
   -- A written effect fixes `summary` to `S`; `establish` can only contribute a
   -- returned function's footprint, which `resultWithFootprint` rejects unless
   -- `f.ret` is a function type whose signatures state no effect.
@@ -638,7 +656,7 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
   (r.map fun got =>
     let R := if force.contains "results" then keepAll else got.result
     let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
-    { name := f.name, summary := got.summary, resultFootprint := R },
+    { name := f.name, summary := got.summary, resultFootprint := R, returnAlias := got.returnAlias },
     memo)
 
 /-- The functions a wanted unit reaches, callees first: each after every
@@ -688,7 +706,7 @@ def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : Li
     (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := [])
     (memo : ProposalMemo := {}) : List StandIn × ProposalMemo :=
   let (out, memo) := proposalsOf fr wanted standIns force prior planOf known memo
-  (out.filterMap (·.2) |>.filter fun s => s.footprint != .top || s.resultFootprint != .top, memo)
+  (out.filterMap (·.2) |>.filter fun s => s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome, memo)
 
 end PassProposals
 

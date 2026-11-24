@@ -134,7 +134,7 @@ def Front.elaborateSome {ω : Type} (fr : Front) (wanted : Std.HashSet Nat) (ret
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
 /-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceElaboration.ClassSummary × Footprints.Closed × Nat))
+abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceElaboration.ClassSummary × Footprints.Closed × Option Nat × Nat))
 
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/

@@ -117,10 +117,11 @@ export type IndexFact = { index: { slot: number } } | { length: { array: number;
   { pastSafe: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, Integer][]; bound: Integer } } | { ne: { form: [LinearTerm, Integer][]; bound: Integer } } } } |
   { either: { left: IndexFact; right: IndexFact } } |
-  { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
+  { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
   { apart: { slot: number; other: number } } |
+  { same: { slot: number; other: number } } |
   { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
 /** An integer of a linear fact, its bound or a coefficient: a safe integer,
  * or past that range the decimal digits the writer states it by. */
@@ -586,13 +587,18 @@ function indexFact(f: Json | undefined): IndexFact {
     const g = record(record(f,["guarded"]).guarded,["slot","path","tag","body"]);
     const path = g.path;
     if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a guard's path");
-    if (g.tag !== "null" && g.tag !== "undefined" && g.tag !== "true" && g.tag !== "false") throw Error("a guard's tag");
+    if (g.tag !== "null" && g.tag !== "undefined" && g.tag !== "true" && g.tag !== "false" &&
+        g.tag !== "notNull" && g.tag !== "notUndefined" && g.tag !== "notTrue" && g.tag !== "notFalse") throw Error("a guard's tag");
     return { guarded: { slot: nat(g.slot), path: path.filter((x: Json): x is string => typeof x === "string"), tag: g.tag,
       body: indexFact(g.body) } };
   }
   if ("apart" in f) {
     const r = record(record(f,["apart"]).apart,["slot","other"]);
     return { apart: { slot: nat(r.slot), other: nat(r.other) } };
+  }
+  if ("same" in f) {
+    const r = record(record(f,["same"]).same,["slot","other"]);
+    return { same: { slot: nat(r.slot), other: nat(r.other) } };
   }
   if ("spineApart" in f) {
     const r = record(record(f,["spineApart"]).spineApart,["slot","path","other","otherPath"]);

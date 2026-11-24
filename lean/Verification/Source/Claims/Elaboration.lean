@@ -37,15 +37,15 @@ footprint. -/
 abbrev QualifiedEffect := EffectJson.StatedEffect × Footprints.Closed
 
 def QualifiedEffect.ofClosed (fp : Footprints.Closed) (onThrow : Bool)
-    (ret : Footprints.Closed := .top) : QualifiedEffect :=
-  (⟨fp, onThrow, false, []⟩, ret)
+    (ret : Footprints.Closed := .top) (retAlias : Option Nat := none) : QualifiedEffect :=
+  (⟨fp, onThrow, false, [], retAlias⟩, ret)
 
 /-- The entry effect a module function publishes, matching `ordinarySlots`. -/
 def publishedEffect (f : Fragment.Fn) (c : Function Tree) : QualifiedEffect :=
   let stated : EffectJson.StatedEffect := match f.stated with
-    | some s => if !s.regions.isEmpty then ⟨s.closed, s.onThrow, false, s.regions⟩
-      else ⟨c.footprint, c.onThrow, s.fresh, []⟩
-    | none => ⟨c.footprint, c.onThrow, false, []⟩
+    | some s => if !s.regions.isEmpty then ⟨s.closed, s.onThrow, false, s.regions, c.returnAlias⟩
+      else ⟨c.footprint, c.onThrow, s.fresh, [], c.returnAlias⟩
+    | none => ⟨c.footprint, c.onThrow, false, [], c.returnAlias⟩
   (stated, c.resultFootprint)
 
 /-- An import a certified unit stands for, read as the unit's module reads
@@ -65,7 +65,7 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (q : QualifiedEffect
   let params : List Fragment.Param := receiver ++ a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
   let ret ← resultWithFootprint T (graphClaim a.result) result
   moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.schema.normal.facts⟩
-    s.closed s.onThrow s.fresh s.regions
+    s.closed s.onThrow s.fresh s.regions s.retAlias
 
 /-- Whether a declaration's module is one with a body, whose functions a
 module check certifies: a source file, not a declaration file. -/
@@ -317,11 +317,12 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
   let slotOf (u : Fragment.Fn) : Except String Json := do
     let r ← returning u
     let c := claimOf u
+    let retAlias := c.bind (·.returnAlias)
     match u.stated.bind fun (s : EffectJson.StatedEffect) => if s.regions.isEmpty then none else some s with
-    | some s => moduleArrow r s.closed s.onThrow false s.regions
+    | some s => moduleArrow r s.closed s.onThrow false s.regions retAlias
     | none =>
       let fresh := u.stated.any (·.fresh : EffectJson.StatedEffect → Bool)
-      moduleArrow r ((c.map (·.footprint)).getD .top) ((c.map (·.onThrow)).getD false) fresh
+      moduleArrow r ((c.map (·.footprint)).getD .top) ((c.map (·.onThrow)).getD false) fresh [] retAlias
   names.filterMap fun name => do
     let units := ordinary.filter (·.name == name)
     let g ← units.head?
@@ -467,7 +468,7 @@ def fileFront (ast claims : Json) (fileKey : String)
         throw "the module initialization's binders are not its generic classes'"
       -- Nothing calls the initialization unit with a receiver.
       pure [(⟨"", span, [], undefinedType, init, false, none, false, none, [], []⟩, binders,
-        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, .top, c.arrows⟩)]
+        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, .top, none, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
   let initOrder := if initUnit.isEmpty then none else match checkInitializationOrder d.types all init with
     | .ok () => none

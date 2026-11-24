@@ -130,6 +130,10 @@ structure Function (ι : Type) where
   declaration returns (`resultWithFootprint`), which its unit's returns
   certify. -/
   resultFootprint : Footprints.Closed := .top
+  /-- Call position `p` (`0` for `this`, `i + 1` for the `i`-th parameter)
+  proposed by the pass to be returned unchanged at every reachable return
+  (`IndexFact.same 0 (p + 1)`), which its unit's returns certify. -/
+  returnAlias : Option Nat := none
   /-- At a flow node's entry, the execution points of the nodes reachable
   from it, computed where first read; `none` where the lowering states none. -/
   reachable : Option (Thunk (List String)) := none

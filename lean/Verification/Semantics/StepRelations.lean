@@ -653,7 +653,7 @@ def fact : IndexFact → List IndexFact
     else if G.vars.any (·.atEntry) then P.linear G else ((IndexFact.linear G).mapM P.slot).toList
   | .either A B => (fact A).flatMap fun a => (fact B).filterMap (orFacts a)
   | .guarded s p tag B => if P.absentSlot s then
-      (if p.isEmpty then (if tag = .undef then [] else fact B) else [falsum])
+      (if p.isEmpty then (if tag.holdsUndef then [] else fact B) else [falsum])
     else match P.slot s with
     | some s' => (fact B).map (.guarded s' p tag)
     | none => []
@@ -662,7 +662,7 @@ def fact : IndexFact → List IndexFact
     | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
     | none => []
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
-  | F@(.element _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) =>
+  | F@(.element _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) | F@(.same _ _) =>
     if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
 
 end Composer
@@ -1087,8 +1087,7 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
         split at hD
         · cases hD
         · rename_i htag
-          refine ih (hor.resolve_left fun he => htag ?_) D hD
-          cases tag <;> first | rfl | (simp only [GuardTag.val] at he; cases he)
+          refine ih (hor.resolve_left (GuardTag.not_holds_undef (by simpa using htag))) D hD
       · cases p with
         | nil => simp at *
         | cons f q => simp [readGuard] at hv

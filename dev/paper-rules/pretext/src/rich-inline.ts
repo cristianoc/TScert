@@ -129,6 +129,7 @@ export type RichInlineStats = {
   maxLineWidth: number
 }
 
+/** @invariant this.data.segmentFlags.length === this.data.widths.length */
 type InternalPreparedRichInline = {
   // The paragraph's handle, which the text walkers lay out. A paragraph of one text item that isn't
   // atomic and has no extraWidth is that text's own handle, as prepareWithSegments() makes it. Its
@@ -218,6 +219,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     paperAssume(measured.segmentFlags.length === measured.widths.length, "#356")   // PAPER: unsafe assume until #356
     const data: PreparedSegments = { ...measured, segments }
     const itemSegments: number[] = []
+    /** @invariant data.segmentFlags.length === data.widths.length && data.widths !== itemSegments */   // PAPER: annotation
     for (let index = 0; index <= items.length; index++) itemSegments.push(index <= onlyIndex ? 0 : data.segmentFlags.length)
     return findWholeLine({
       data, onlyItem: onlyIndex, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems: null, gapSegments: null, plainWidths: false,
@@ -923,7 +925,6 @@ function setEmptyObjectFacts(
 // of lines).
 function findWholeLine(flow: InternalPreparedRichInline): InternalPreparedRichInline {
   const data = flow.data   // PAPER: the handle through a local
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   // PAPER: the visitor's instance
   const lineCount = walkPreparedLinesRaw<{ "flow.wholeWidth": "any"; "flow.wholeStart": "any"; "flow.wholeEnd": "any" }>(data, Number.POSITIVE_INFINITY, (width, startSegmentIndex, _startGraphemeIndex, endSegmentIndex) => {
     flow.wholeWidth = width
@@ -1091,7 +1092,6 @@ function createLine(
   const itemEndHalts = items.itemEndHalts
   const fragments: RichInlineFragmentRange[] = []
   const lastSegmentIndex = endGraphemeIndex > 0 ? endSegmentIndex : endSegmentIndex - 1
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   const firstPartWidth = startSegmentIndex <= lastSegmentIndex && (startGraphemeIndex > 0 || startSegmentIndex === endSegmentIndex)
     ? getPartWidth(data, startSegmentIndex, startGraphemeIndex, startSegmentIndex < endSegmentIndex ? -1 : endGraphemeIndex, true) : 0
   const lastPartWidth = endGraphemeIndex > 0 && endSegmentIndex > startSegmentIndex ? getPartWidth(data, endSegmentIndex, 0, endGraphemeIndex, false) : 0
@@ -1133,6 +1133,7 @@ function createLine(
       lineW += (widths[i] ?? missing())
     }
   } else {
+    /** @invariant data.segmentFlags.length === data.widths.length && data.widths !== fragments */   // PAPER: annotation
     for (let i = startSegmentIndex; i <= lastSegmentIndex; i++) {
       if (i === to) {
         if (fragment !== null) fragment.occupiedWidth = occupiedWidth
@@ -1170,7 +1171,6 @@ function createLine(
       let w: number
       if ((i > startSegmentIndex || startGraphemeIndex === 0) && i < endSegmentIndex) {
         const startExtra = i === startSegmentIndex && lineStartExtras !== null ? (lineStartExtras[i] ?? missing()) : 0
-        paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
         w = startExtra + (((segmentFlags[i] ?? missing()) & KIND_BITS) !== TAB ? (widths[i] ?? missing()) : getItemTabAdvance(data, items, i, lineW + startExtra, tabsInAppUnits))
         if (letterSpacing !== 0 && ((segmentFlags[i] ?? missing()) & SPACED) !== 0) w += letterSpacing
       } else {
@@ -1242,11 +1242,11 @@ export function layoutNextRichInlineLineRange(
   const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
   if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
   const data = flow.data   // PAPER: the handle through a local
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (!normalizePreparedLineStart(data, lineEnd)) return null
   const startSegmentIndex = lineEnd.segmentIndex
   const startGraphemeIndex = lineEnd.graphemeIndex
   const width = stepPreparedLineGeometryFromStart(data, lineEnd, safeWidth)   // PAPER: the handle through a local
+  paperAssume(flow.data.segmentFlags.length === flow.data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (width === null) return null
   return flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
     : createLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
@@ -1256,7 +1256,7 @@ export function layoutNextRichInlineLineRange(
 // at `itemStart`, from the offset in the paragraph's text each unit comes from, where they aren't
 // one stretch of it: Gecko removes a line feed between two ideographs, and white space after a bidi
 // control that follows white space. Else null.
-function getSourceUnits(offsets: Int32Array, from: number, to: number, itemStart: number): number[] | null {
+function getSourceUnits(offsets: Int32Array, from: number, to: number, itemStart: number): Effects<{}, number[] | null> {   // PAPER: annotation
   if (to <= from || (offsets[to - 1] ?? missing()) - (offsets[from] ?? missing()) === to - 1 - from) return null
   const units: number[] = []
   for (let unit = from; unit < to; unit++) units.push((offsets[unit] ?? missing()) - itemStart)
@@ -1282,12 +1282,13 @@ const textSources = new WeakMap<InternalPreparedRichInline, TextSources>()
 
 // Per segment of a paragraph that is one text's handle, where its text starts and ends in the
 // item's.
-function findSegmentSources(flow: InternalPreparedRichInline): TextSources {
+function findSegmentSources(flow: InternalPreparedRichInline): Effects<{ "flow.sourceStarts": "any"; "flow.sourceEnds": "any"; "flow.sourceUnits": "any"; "@state": "any" }, TextSources> {   // PAPER: annotation
   const { segments } = flow.data
   const offsets = alignToSource(flow.text, segments.join(''), getEngineProfile().lineBreakScan)
   const sourceStarts: number[] = []
   const sourceEnds: number[] = []
   const sourceUnits: (number[] | null)[] = []
+  /** @invariant flow.data.segmentFlags.length === flow.data.widths.length && flow.data.widths !== sourceStarts && flow.data.widths !== sourceEnds && flow.data.widths !== sourceUnits */   // PAPER: annotation
   for (let i = 0, at = 0; i < segments.length; at += (segments[i++] ?? missing()).length) {
     const end = (offsets[at + (segments[i] ?? missing()).length - 1] ?? missing()) + 1
     sourceStarts.push(offsets[at] ?? missing())
@@ -1328,6 +1329,7 @@ export function materializeRichInlineLineRange(
   const lineEndSegmentIndex = getSegmentIndex(flow, line.end)
   const fragments: RichInlineFragment[] = []
 
+  /** @invariant prepared.data.segmentFlags.length === prepared.data.widths.length && data.segmentFlags.length === data.widths.length && data.widths !== fragments && prepared.data.widths !== fragments */   // PAPER: annotation
   for (let i = 0; i < line.fragments.length; i++) {
     const fragment = line.fragments[i]!
     const first = itemSegments[fragment.itemIndex]
@@ -1342,13 +1344,10 @@ export function materializeRichInlineLineRange(
     // Only the fragment a line ends with shows the hyphen of a soft hyphen it ends at.
     const endsLine = i === line.fragments.length - 1 && endSegmentIndex === lineEndSegmentIndex && endGraphemeIndex === line.end.graphemeIndex
     let sourceStart = startSegmentIndex < itemEnd ? (sourceStarts[startSegmentIndex] ?? missing()) : startSegmentIndex > first ? ((sourceEnds ?? missing())[startSegmentIndex - 1] ?? missing()) : 0
-    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (startGraphemeIndex > 0 && startSegmentIndex < itemEnd) sourceStart = getSourceOffset(sourceStarts, sourceUnits, startSegmentIndex, getGraphemeStart(data, startSegmentIndex, startGraphemeIndex))
     let sourceEnd = sourceStart
-    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if (endGraphemeIndex > 0) sourceEnd = getSourceOffset(sourceStarts, sourceUnits, endSegmentIndex, getGraphemeStart(data, endSegmentIndex, endGraphemeIndex) - 1) + 1
     else if (endSegmentIndex > startSegmentIndex) sourceEnd = (sourceEnds ?? missing())[endSegmentIndex - 1] ?? missing()
-    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     const materialized: InternalRichInlineFragment = {
       itemIndex: fragment.itemIndex,
       text: endsLine ? buildLineTextFromRange(data, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
@@ -1385,8 +1384,8 @@ export function walkRichInlineLineRanges<E extends AtMost<{ "prepared.**": "keep
     return 1
   }
   const data = flow.data   // PAPER: the handle through a local
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   return walkPreparedLinesRaw<Join<E, { "@state": "any" }>>(data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E with confined module state
+    paperAssume(flow.data.segmentFlags.length === flow.data.widths.length, "#356")   // PAPER: unsafe assume until #356
     onLine(flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
       : createLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex))
   })
@@ -1401,7 +1400,6 @@ export function measureRichInlineStats(
   if (fitsWhole(flow, safeWidth)) return { lineCount: 1, maxLineWidth: Math.max(0, flow.wholeWidth ?? missing()) }
   const stats = { lineCount: 0, maxLineWidth: 0 }
   const data = flow.data   // PAPER: the handle through a local
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   walkPreparedLinesRaw(data, safeWidth, undefined, stats)
   return stats
 }

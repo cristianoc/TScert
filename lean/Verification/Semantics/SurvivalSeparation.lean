@@ -29,24 +29,28 @@ starts at that slot: there it reads no object, so it selects no location. -/
 def factSeps (ls : HeapLinks.Links) : IndexFact → List SepFact
   | .spineApart a p b q => [.spines (a, p) (b, q)]
   | .apart a b => [.arrays (a, []) (b, [])]
-  | .guarded g [] _ B => (factSeps ls B).filter fun e => match e.sites with
+  | .guarded g [] t B => if t.isPositive then (factSeps ls B).filter fun e => match e.sites with
     | some (a, b) => (HeapLinks.aliases ls g).contains a.1 || (HeapLinks.aliases ls g).contains b.1
     | none => false
+    else []
   | _ => []
 
-/-- A guard's tag is no object: a path from it reads the tag itself. -/
-private theorem tag_reads {t : GuardTag} {h : Heap} {p : List String} {u : Val}
-    (hu : readPath h t.val p = some u) : u = t.val := by
+/-- A positive guard's tag is no object: a path from a value meeting it reads that value itself. -/
+private theorem tag_reads {t : GuardTag} {h : Heap} {p : List String} {v u : Val}
+    (hp : t.isPositive = true) (ht : t.holds v) (hu : readPath h v p = some u) : u = v := by
   cases p with
   | nil => simp only [readPath, Option.some.injEq] at hu; exact hu.symm
-  | cons f q => cases t <;> simp [GuardTag.val, readPath] at hu
+  | cons f q =>
+    cases t <;> simp_all [GuardTag.isPositive, GuardTag.holds, readPath]
 
-private theorem tag_spine (t : GuardTag) : spineOf t.val = none := by
-  cases t <;> simp [GuardTag.val, spineOf, fieldsOf]
+private theorem tag_spine {t : GuardTag} {v : Val} (hp : t.isPositive = true) (ht : t.holds v) :
+    spineOf v = none := by
+  cases t <;> simp_all [GuardTag.isPositive, GuardTag.holds, spineOf, fieldsOf]
 
-private theorem tag_array {t : GuardTag} {h : Heap} {l : Nat} (ha : ArrayPart h t.val l) : False := by
+private theorem tag_array {t : GuardTag} {h : Heap} {v : Val} {l : Nat}
+    (hp : t.isPositive = true) (ht : t.holds v) (ha : ArrayPart h v l) : False := by
   rcases ha with ha | ha <;> cases t <;>
-    simp [GuardTag.val, elementsOf, spineCells, entriesAt, descriptorSpine, fieldsOf] at ha
+    simp_all [GuardTag.isPositive, GuardTag.holds, elementsOf, spineCells, entriesAt, descriptorSpine, fieldsOf]
 
 theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h) :
     ∀ (F : IndexFact), F.HoldsAt ε ρ h → ∀ e ∈ factSeps ls F, e.Holds ρ h := by
@@ -74,30 +78,34 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
     cases p with
     | cons _ _ => simp [factSeps] at he
     | nil =>
-      simp only [factSeps, List.mem_filter] at he
-      obtain ⟨he, hroot⟩ := he
-      obtain ⟨v, hv, hor⟩ := hF
-      simp only [readGuard, Option.some.injEq] at hv
-      rcases hor with htag | hB
-      · have tagAt : ∀ {z : Nat}, z ∈ HeapLinks.aliases ls g → ∀ {q : List String} {u : Val},
-            readPath h (ρ z) q = some u → u = tag.val := by
-          intro z hz q u hu
-          rw [HeapLinks.aliases_eq hl hz, hv, htag] at hu; exact tag_reads hu
-        cases e with
-        | spines a b =>
-          simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
-          intro u w l hu hw hsu hsw
-          rcases hroot with hr | hr
-          · rw [tagAt hr hu, tag_spine] at hsu; cases hsu
-          · rw [tagAt hr hw, tag_spine] at hsw; cases hsw
-        | arrays a b =>
-          simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
-          intro u w l hu hw _ _ hul hwl
-          rcases hroot with hr | hr
-          · rw [tagAt hr hu] at hul; exact tag_array hul
-          · rw [tagAt hr hw] at hwl; exact tag_array hwl
-        | locs => simp [SepFact.sites] at hroot
-      · exact ih hB e he
+      simp only [factSeps] at he
+      split at he
+      · rename_i hpos
+        simp only [List.mem_filter] at he
+        obtain ⟨he, hroot⟩ := he
+        obtain ⟨v, hv, hor⟩ := hF
+        simp only [readGuard, Option.some.injEq] at hv
+        rcases hor with htag | hB
+        · have tagAt : ∀ {z : Nat}, z ∈ HeapLinks.aliases ls g → ∀ {q : List String} {u : Val},
+              readPath h (ρ z) q = some u → u = v := by
+            intro z hz q u hu
+            rw [HeapLinks.aliases_eq hl hz, hv] at hu; exact tag_reads hpos htag hu
+          cases e with
+          | spines a b =>
+            simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+            intro u w l hu hw hsu hsw
+            rcases hroot with hr | hr
+            · rw [tagAt hr hu, tag_spine hpos htag] at hsu; cases hsu
+            · rw [tagAt hr hw, tag_spine hpos htag] at hsw; cases hsw
+          | arrays a b =>
+            simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+            intro u w l hu hw _ _ hul hwl
+            rcases hroot with hr | hr
+            · rw [tagAt hr hu] at hul; exact tag_array hpos htag hul
+            · rw [tagAt hr hw] at hwl; exact tag_array hpos htag hwl
+          | locs => simp [SepFact.sites] at hroot
+        · exact ih hB e he
+      · cases he
   | _ => intro _ e he; simp [factSeps] at he
 
 /-- The separations of a state's unconditional facts. -/
@@ -299,7 +307,7 @@ private theorem produceSupport_envOnly (c : ReadContext) :
     ∀ (F : IndexFact), F.envOnly = true → ∃ ev, F.produceSupport c = some ([], ev) := by
   intro F
   induction F with
-  | index _ | int _ | pastSafe _ => intro _; exact ⟨_, rfl⟩
+  | index _ | int _ | pastSafe _ | same _ _ => intro _; exact ⟨_, rfl⟩
   | linear F =>
     intro hF
     have hv : ∀ t ∈ F.vars, t.envOnly = true := fun t ht =>

@@ -106,14 +106,23 @@ partial def Fact.text : Fact → String
   | .int n => s!"safeInteger({n})"
   | .readLink c v f => s!"{v} === {c}.{f}"
   | .apart gs a pa b pb =>
-    let tag := fun (t : HeapKnowledge.GuardTag) => match t with
-      | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
-    let guards := gs.map fun (g, p, t) => s!"{String.intercalate "." (g :: p)} === {tag t} || "
-    String.join guards ++ s!"{String.intercalate "." (a :: pa)} !== {String.intercalate "." (b :: pb)}"
+    let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
+      let path := String.intercalate "." (g :: p)
+      match t with
+      | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
+      | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
+      | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
+      | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
+    String.join (gs.map guardStr) ++ s!"{String.intercalate "." (a :: pa)} !== {String.intercalate "." (b :: pb)}"
   | .guarded gs l =>
-    let tag := fun (t : HeapKnowledge.GuardTag) => match t with
-      | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
-    String.join (gs.map fun (g, p, t) => s!"{String.intercalate "." (g :: p)} === {tag t} || ") ++ Fact.text (.lin l)
+    let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
+      let path := String.intercalate "." (g :: p)
+      match t with
+      | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
+      | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
+      | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
+      | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
+    String.join (gs.map guardStr) ++ Fact.text (.lin l)
   | .lin l =>
     let term := fun ((n, p, k) : Key) =>
       let path := String.intercalate "." (n :: p)

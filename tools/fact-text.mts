@@ -94,11 +94,14 @@ export function indexFact(f: IndexFact, name: Namer): string | null {
     return `(${indexFact(f.either.left, name) ?? "true"}) || (${indexFact(f.either.right, name) ?? "true"})`;
   if ("guarded" in f) {
     const g = f.guarded;
-    return `${pathText(g.slot, g.path, name)} !== ${g.tag} → ${indexFact(g.body, name) ?? "true"}`;
+    const cond = g.tag === "notNull" ? "=== null" : g.tag === "notUndefined" ? "=== undefined"
+      : g.tag === "notTrue" ? "=== true" : g.tag === "notFalse" ? "=== false" : `!== ${g.tag}`;
+    return `${pathText(g.slot, g.path, name)} ${cond} → ${indexFact(g.body, name) ?? "true"}`;
   }
   if ("element" in f)
     return `${name(f.element.value)} === ${asOperand(name(f.element.array))}[${name(f.element.index)}]`;
   if ("apart" in f) return `apart(${name(f.apart.slot)}, ${name(f.apart.other)})`;
+  if ("same" in f) return `${name(f.same.slot)} === ${name(f.same.other)}`;
   if ("spineApart" in f) {
     const a = f.spineApart;
     return `apart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;

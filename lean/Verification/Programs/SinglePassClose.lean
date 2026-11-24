@@ -53,14 +53,15 @@ check and record at `b` are those with no bound. -/
 theorem stepCheck_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
     (b : Option RunBound) (d : Array Bool) (l : Nat) (entry : State)
     (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
+    (retAliases : Unit → List Nat)
     (hnone : env.bound = none)
     (hok : boundOk G images env.codes b d l env.nodes[l]! env.claimed[l]! entry sums stepK deriv = true) :
     stepCheck G images (env.rebound b d) l entry sums stepK deriv
-        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) =
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) retAliases =
       stepCheck G images env l entry sums stepK deriv
-        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) := by
-  have h1 := stepCheck_fst G images (env.rebound b d) l entry sums stepK deriv
-  have h2 := stepCheck_fst G images env l entry sums stepK deriv
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) retAliases := by
+  have h1 := stepCheck_fst G images (env.rebound b d) l entry sums stepK deriv retAliases
+  have h2 := stepCheck_fst G images env l entry sums stepK deriv retAliases
   simp only [WalkEnv.rebound] at h1
   rw [hok] at h1
   rw [hnone] at h2
@@ -93,7 +94,9 @@ theorem visitStep_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (
     obtain ⟨ms, st, stats, a⟩ := x
     have h1 := hok ms st stats a hs
     have h3 := stepCheck_rebound G images env b d l en.entry a.summaries.toList st.stepK
-      (derivOf env.claimed[l]! env.nodes[l]! st) hnone h1
+      (derivOf env.claimed[l]! env.nodes[l]! st)
+      (fun _ => returnAliasesAt G env.claimed[l]! env.nodes[l]! en.entry st.store st.result env.startNames)
+      hnone h1
     simp only [WalkEnv.rebound] at h3 ⊢
     simp only [h3]
     rfl
@@ -195,7 +198,8 @@ theorem visitStep_record (G : NormalGraph ι) (images : InstanceImageCheck G) (e
       sd.record = (stepCheck G images env l en.entry sd.steppedAnswers.summaries.toList sd.st.stepK
         (derivOf env.claimed[l]! env.nodes[l]! sd.st)
         (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]! en.entry
-          sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st))).2 := by
+          sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st))
+        (fun _ => returnAliasesAt G env.claimed[l]! env.nodes[l]! en.entry sd.st.store sd.st.result env.startNames)).2 := by
   unfold visitStep at h
   split at h
   · cases h
@@ -297,12 +301,13 @@ theorem driveAdmits_of_records (G : NormalGraph ι) (images : InstanceImageCheck
           have hmem : VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! en.entry
               sd.steppedAnswers.summaries.toList sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)
               (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]!
-                en.entry sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) ∈ σf.walk.visits := by
+                en.entry sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st))
+              (returnAliasesAt G env.claimed[l]! env.nodes[l]! en.entry sd.st.store sd.st.result env.startNames) ∈ σf.walk.visits := by
             rw [hm, hp, hrec]
             simp only [stepCheck, hg, ite_true, pushRecord, VisitRecord.of]
             exact Array.mem_append_left _ (Array.mem_push_self)
           unfold recordsAdmit at hall
-          rw [boundOk_eq_admits]
+          rw [boundOk_eq_admits (returnAliases := returnAliasesAt G env.claimed[l]! env.nodes[l]! en.entry sd.st.store sd.st.result env.startNames)]
           exact (Array.all_eq_true_iff_forall_mem.mp hall) _ hmem
         · exact ih σ' σf h hall
 
@@ -529,13 +534,13 @@ step's result is the ungraded one's with its record, by `stepCheck_fst`. -/
 theorem visitStep_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
     (σ : WalkState ι G) (l : Nat) (en : Entered ι) :
     (visitStep G images env σ l en).map StepDone.unrecorded = visitStep G images env.ungraded σ.unrecorded l en := by
-  have hc : ∀ entry sums stepK deriv,
+  have hc : ∀ entry sums stepK deriv (ra : Unit → List Nat),
       stepCheck G images env.ungraded l entry sums stepK deriv
           (outFreshOf G images env.ungraded.codes sums env.ungraded.claimed[l]! env.ungraded.nodes[l]! entry stepK
-            deriv) =
+            deriv) ra =
         ((stepCheck G images env l entry sums stepK deriv
-          (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv)).1, none) := by
-    intro entry sums stepK deriv
+          (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) ra).1, none) := by
+    intro entry sums stepK deriv ra
     rw [stepCheck_fst]
     unfold stepCheck
     simp only [WalkEnv.ungraded, Bool.false_eq_true, ite_false] <;> rfl

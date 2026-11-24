@@ -146,9 +146,9 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
   const prepared = prepareInternal(text, font, segments, options)
   // Each segment's kind by name, from its flags.
   const kinds: SegmentBreakKind[] = []
+  /** @invariant prepared.segmentFlags.length === prepared.widths.length && prepared.widths !== kinds */
   for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
   const result = { ...prepared, segments, kinds }   // PAPER: the result through a local
-  paperAssume(result.segmentFlags.length === result.widths.length, "#356")   // PAPER: unsafe assume until #356
   return result
 }
 
@@ -200,7 +200,6 @@ function createLayoutLine(
       graphemeIndex: endGraphemeIndex,
     },
   }
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return line
 }
 
@@ -263,7 +262,6 @@ export function walkLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "
       ))
     },
   )
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return lineCount   // PAPER: the walker's result
 }
 
@@ -273,7 +271,6 @@ export function measureLineStats(
 ): LineStats {
   const stats = { lineCount: 0, maxLineWidth: 0 }
   walkPreparedLinesRaw(getInternalPrepared(prepared), normalizeMaxWidth(maxWidth), undefined, stats)
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return stats
 }
 
@@ -333,7 +330,6 @@ export function layoutNextLine(
     end.segmentIndex,
     end.graphemeIndex,
   )
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { text, width, start: lineStart, end }
 }
 
@@ -370,7 +366,6 @@ export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: nu
     },
   )
 
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { lineCount, height: lineCount * lineHeight, lines }
 }
 
