@@ -17,7 +17,7 @@ differences in the model's states and transitions themselves are listed in
 
 - **Class evidence.** A field of source-value type holds a value, not a spine,
   and a spine field of a `.list` type holds a spine, at every heap meeting the
-  world (proved: `valueClass_ok`, `storeClass_ok`); law (c) for footprints
+  world (proved: `valueClass_ok`, `spineClass_ok`); law (c) for footprints
   compared through that evidence then holds from every typed state (proved:
   `action_le_valueClass`).
 - **Rigid paths.** "A path through `@stable` fields is rigid": a field every
@@ -30,12 +30,11 @@ differences in the model's states and transitions themselves are listed in
 ## The atoms
 
 - **(Init)** $`a(|\pi|)\vdash\Box_{\{\mathsf{values}:\mathsf{init},\ \mathsf{spines}:\mathsf{keep}\}}\,a(|\pi|)`$
-  holds for every linear fact whose current terms are integers, array lengths
-  and view lengths at any paths, with no condition on the fields $`\pi`$
-  passes, its entry terms of any kind (proved: `init_box`, `init_path`): a
-  defined path read passes only fields holding objects, which
-  $`\mathsf{init}`$ keeps. A current string length at a path is outside it:
-  the model's kept-change test treats a string's location as altered.
+  holds for every linear fact whose current terms are integers, array lengths,
+  view lengths and string lengths at any paths, with no condition on the fields
+  $`\pi`$ passes, its entry terms of any kind (proved: `init_box`, `init_path`):
+  a defined path read passes only fields holding non-nullish values, which
+  $`\mathsf{init}`$ keeps.
 
 ## The rules
 

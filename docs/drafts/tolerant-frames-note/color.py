@@ -74,6 +74,7 @@ for n in ['rigid', 'fresh', 'old', 'dense', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
 rep(r'\newcommand{\val}{\kw{values}}', r'\newcommand{\val}{\reg{values}}')
 rep(r'\newcommand{\st}{\kw{spines}}', r'\newcommand{\st}{\reg{spines}}')
+rep(r'\newcommand{\vw}{\kw{views}}', r'\newcommand{\vw}{\reg{views}}')
 t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{spine}', r'\reg{spine}')
 rep(r'\newcommand{\code}[1]{\texttt{#1}}', r'\newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}')
 rep(r'\newcommand{\lean}[1]{\texttt{\small #1}}', r'\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}')
@@ -105,16 +106,17 @@ rep(r'\usepackage{tikz}', r'''\usepackage{tikz}
 \newcommand{\chg}[1]{\textcolor{chgc}{\mathsf{#1}}}
 \newcommand{\reg}[1]{\textcolor{regc}{\mathsf{#1}}}
 \newcommand{\asr}[1]{\textcolor{asrc}{\mathsf{#1}}}
-\newcommand{\rn}[1]{\textcolor{rulec}{\textsc{#1}}}
+\newcommand{\rn}[1]{\textcolor{rulec}{\textup{\textsc{#1}}}}
 \newcommand{\ck}[1]{\textcolor{ckc}{\textbf{#1}}}
 \newcommand{\cs}[1]{\textcolor{csc}{#1}}
 \newcommand{\cn}[1]{\textcolor{cnc}{#1}}
 \newcommand{\cann}[1]{\textcolor{asrc}{#1}}
 \newcommand{\ccm}[1]{\textcolor{ccmc}{#1}}
 \titleformat*{\section}{\Large\bfseries\sffamily\color{accent}}
+\titleformat*{\subsection}{\large\bfseries\sffamily\color{accent}}
 \titleformat{\paragraph}[runin]{\normalsize\bfseries\sffamily\color{accent}}{}{0pt}{}
 \setlist[description]{font=\normalfont\sffamily\bfseries\color{accent}}
-\renewcommand{\TirNameStyle}[1]{\textcolor{rulec}{\textsc{#1}}}
+\renewcommand{\TirNameStyle}[1]{\textcolor{rulec}{\textup{\textsc{#1}}}}
 \newcommand{\tfbox}[2]{\tcolorboxenvironment{#1}{enhanced,breakable,colback=#2,colframe=#2,boxrule=0pt,frame hidden,
   borderline west={2.5pt}{0pt}{accent},sharp corners,left=9pt,right=6pt,top=4pt,bottom=4pt,before skip=10pt,after skip=10pt}}''')
 rep(r'\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}',
