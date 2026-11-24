@@ -72,19 +72,18 @@ theorem storeAll_live {s : Store} (w : StoreWF s) {a : Atom} (ha : a ∈ storeAl
 theorem storeAll_canon {s : Store} (w : StoreWF s) {a : Atom} (ha : a ∈ storeAll s) : a.canon = a :=
   w.canonical a (storeAll_live w ha)
 
-/-- **A fact added raw keeps the store well-formed.** -/
-theorem addRaw_wf {s : Store} (w : StoreWF s) (a : Atom) : StoreWF (s.addRaw a) := by
-  unfold Store.addRaw
-  dsimp only
+/-- **A canonical fact inserted keeps the store well-formed.** -/
+theorem insert_wf {s : Store} (w : StoreWF s) {a : Atom} (hcan : a.canon = a) : StoreWF (s.insert a) := by
+  unfold Store.insert
   split
   · exact w
   · rename_i hc
-    have hnot : a.canon ∉ s.live := fun h => hc (Std.HashSet.contains_iff_mem.mpr h)
-    have hg := fun k => getD_foldl_insert (a.canon :: ·) a.canon.names.eraseDups s.byName k (nodup_eraseDups _)
+    have hnot : a ∉ s.live := fun h => hc (Std.HashSet.contains_iff_mem.mpr h)
+    have hg := fun k => getD_foldl_insert (a :: ·) a.names.eraseDups s.byName k (nodup_eraseDups _)
     refine ⟨?_, ?_, ?_, ?_⟩
     · intro x hx
       rcases Std.HashSet.mem_insert.mp hx with h | h
-      · rw [← beq_iff_eq.mp h]; exact canon_canon a
+      · rw [← beq_iff_eq.mp h]; exact hcan
       · exact w.canonical x h
     · intro n x hx
       dsimp only at hx
@@ -110,6 +109,17 @@ theorem addRaw_wf {s : Store} (w : StoreWF s) (a : Atom) : StoreWF (s.addRaw a) 
       split
       · exact List.nodup_cons.mpr ⟨fun h => hnot (w.indexed n _ h), w.nodup n⟩
       · exact w.nodup n
+
+/-- **A fact added raw keeps the store well-formed**: it inserts the fact's
+canonical form, or `Atom.bot`, canonical too. -/
+theorem addRaw_wf {s : Store} (w : StoreWF s) (a : Atom) : StoreWF (s.addRaw a) := by
+  unfold Store.addRaw
+  dsimp only
+  split
+  · exact w
+  · split
+    · exact insert_wf w rfl
+    · exact insert_wf w (canon_canon a)
 
 /-- **A fact removed keeps the store well-formed.** -/
 theorem remove_wf {s : Store} (w : StoreWF s) (a : Atom) : StoreWF (s.remove a) := by

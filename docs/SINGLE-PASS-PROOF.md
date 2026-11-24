@@ -717,9 +717,13 @@ Proved, per fact and per store operation:
   `atomHolds_rename`: a fact renamed by $`f`$ holds at $`\rho`$ where
   $`f\,x=i \Rightarrow \rho\,i=\eta\,x`$;
 - adding a holding fact and removing any fact keep every
-  fact of the store holding (`addRaw_ok`, `remove_ok`), a stronger bound
+  fact of the store holding (`insert_ok`, `addRaw_ok`, `remove_ok`), a
+  false constant holding nowhere (`contradiction_false`), a stronger bound
   replacing weaker ones (`addBound_ok`), a length fact added with the linear
-  facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`).
+  facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`);
+- `Atom.bot` holds nowhere (`atomHolds_bot`), so an impossible store holds
+  at no valuation (`storeOk_impossible`), nor a state over it
+  (`stateHolds_impossible`).
 
 ### The unit's entry
 
@@ -1049,7 +1053,7 @@ names below the counter (`FactsBelow`). Every cell is proved.
 
 | Operation | `StoreWF` | names, fresh below | facts below |
 | --- | --- | --- | --- |
-| `Store.addRaw`, `remove`, `addBound`, `add` | `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf` | unchanged | `addRaw_below`, `remove_below`, `addBound_below`, `add_below`, for a fact below |
+| `Store.insert`, `addRaw`, `remove`, `addBound`, `add` | `insert_wf` (of a canonical fact), `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf` | unchanged | `insert_below`, `addRaw_below`, `remove_below`, `addBound_below`, `add_below`, for a fact below |
 | `applyDelta` | `applyDelta_wf` | slot 0 the result name | `applyDelta_below`, where `back` renames below the counter (`BackBelow`) |
 | `Store.dropHeap` | `dropHeap_cover` | unchanged | `dropHeap_below` |
 | `Store.drop` | `drop_wf` | unchanged | `drop_below` (the eliminations name their inputs' names: `eliminateIndices_named`) |

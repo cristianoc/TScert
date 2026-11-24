@@ -275,7 +275,68 @@ theorem storeOk_of {s' : Store} {η : Env} {h : Heap}
   · exact hk x hx
   · exact hv x hx
 
-/-- A fact added raw keeps the store's facts holding, where it holds. -/
+/-- A fact inserted keeps the store's facts holding, where it holds. -/
+theorem insert_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (ha : AtomHolds ε a η h) : StoreOk ε (s.insert a) η h := by
+  unfold Store.insert
+  split
+  · exact hs
+  · refine storeOk_of (fun x hx => ?_) (vals_foldl _ _ (fun m n hm x hx => ?_) _ _
+      (fun y hy => hs y (List.mem_append_right _ hy)))
+    · rcases keys_insert _ _ _ hx with rfl | hx
+      · exact ha
+      · exact hs x (List.mem_append_left _ hx)
+    · rcases vals_insert _ _ _ _ hx with hx | hx
+      · rcases List.mem_cons.mp hx with rfl | hx
+        · exact ha
+        · exact hm x (findD_vals _ _ _ hx)
+      · exact hm x hx
+
+/-- **`Atom.bot` holds nowhere**: its form is empty, of value 0, and `0 ≤ -1`
+is false. -/
+theorem atomHolds_bot {η : Env} {h : Heap} : ¬ AtomHolds ε Atom.bot η h := by
+  intro hb
+  have := hb _ (List.mem_singleton_self _) (fun _ hc => by cases hc)
+  have h2 := this.2
+  simp only [Linear.Fact.Holds, Linear.Form.eval] at h2
+  omega
+
+/-- **A false constant holds nowhere**: its form normalizes to no term, so
+its value is 0 at every valuation (`Linear.eval_normalize`), and `0 ≤ d` with
+`d < 0`, or `0 ≠ 0`, is false. -/
+theorem contradiction_false {a : Atom} (hc : a.contradiction = true) {η : Env} {h : Heap} :
+    ¬ AtomHolds ε a η h := by
+  intro ha
+  match a, hc with
+  | .index ⟨.linear (.le F d), none, neg⟩, hc =>
+    simp only [Atom.contradiction, Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at hc
+    have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
+    simp only [Linear.Fact.Holds] at this
+    rw [← Linear.eval_normalize, hc.2] at this
+    simp only [Linear.Form.eval] at this
+    omega
+  | .index ⟨.linear (.ne F d), none, neg⟩, hc =>
+    simp only [Atom.contradiction, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hc
+    have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
+    simp only [Linear.Fact.Holds] at this
+    rw [← Linear.eval_normalize, hc.2] at this
+    simp only [Linear.Form.eval] at this
+    exact this hc.1.symm
+
+/-- **An impossible store holds nowhere**: it holds `Atom.bot`. -/
+theorem storeOk_impossible {s : Store} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (hi : s.impossible = true) : False :=
+  atomHolds_bot (hs _ (toList_storeAll (by rw [toList_eq, mem_keysOf]; exact Std.HashSet.contains_iff_mem.mp hi)))
+
+/-- **A state whose store is impossible holds nowhere.** -/
+theorem stateHolds_impossible {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {st : State}
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : Verification.TolerantFrames.IndexedHeap}
+    (hS : StateHolds G st I start ε ρ m s) (hi : st.store.impossible = true) : False := by
+  obtain ⟨_, _, hN, _⟩ := hS
+  exact storeOk_impossible hN hi
+
+/-- A fact added raw keeps the store's facts holding, where it holds: a
+true constant is not added, a false one cannot hold. -/
 theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
     (ha : AtomHolds ε a η h) : StoreOk ε (s.addRaw a) η h := by
   have hc : AtomHolds ε a.canon η h := atomHolds_canon.mpr ha
@@ -283,16 +344,9 @@ theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε 
   dsimp only
   split
   · exact hs
-  · refine storeOk_of (fun x hx => ?_) (vals_foldl _ _ (fun m n hm x hx => ?_) _ _
-      (fun y hy => hs y (List.mem_append_right _ hy)))
-    · rcases keys_insert _ _ _ hx with rfl | hx
-      · exact hc
-      · exact hs x (List.mem_append_left _ hx)
-    · rcases vals_insert _ _ _ _ hx with hx | hx
-      · rcases List.mem_cons.mp hx with rfl | hx
-        · exact hc
-        · exact hm x (findD_vals _ _ _ hx)
-      · exact hm x hx
+  · split
+    · rename_i hk; exact (contradiction_false hk hc).elim
+    · exact insert_ok hs hc
 
 /-- A fact removed keeps the store's facts holding. -/
 theorem remove_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
