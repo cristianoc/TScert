@@ -93,10 +93,11 @@ construction, at a term whose reads are not listed, and under spine
 regions. An edge into a node other than a loop head drops the names its
 target's slots hold that are connected to no slot the target reads, nor to
 an input's entry value (which a return's postcondition and promise read),
-through the facts `Store.drop` does not restate: read links, both ways,
-and conditional facts (`deadNames`, `Store.pathNames`). `Store.drop` is
-the step every edge applies to the names the mapping drops; dropping a name
-is a weakening (`drop_ok`).
+through the facts over two or more names `Store.drop` does not restate on
+the names it keeps: every fact but an unconditional linear or length fact,
+an alias link and a separation fact (`deadNames`,
+`Store.connectedNames`). `Store.drop` is the step every edge applies to
+the names the mapping drops; dropping a name is a weakening (`drop_ok`).
 
 Beside the store, a state carries the implications its edges establish
 (`PromiseCalls.Implication`: where the test holds `true`, the target has

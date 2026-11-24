@@ -2142,12 +2142,16 @@ structure LiveSlots where
   deriving Inhabited
 
 /-- The names the store `s` connects to the names `roots`, transitively,
-the roots included, through the facts `Store.drop` does not restate on
-the names it keeps: both names of a read link (`o.f ↦ y` states the facts
-of the path `o.f` over `y`, and those of `y` over the path), and every name
-of a conditional fact (`[if c] F` holds of its names where the Boolean `c`
-is `true`). -/
-def Store.pathNames (s : Store) (roots : List Nat) : Std.HashSet Nat := Id.run do
+the roots included, through every fact over two or more names that
+`Store.drop` does not restate on the names it keeps. `Store.drop` restates
+an unconditional linear or length fact (eliminating the dropped names), an
+alias link (on the kept name it relates) and a separation fact (on the kept
+partners); every other fact naming a dropped name leaves with it: a read
+link (`o.f ↦ y` states the facts of the path `o.f` over `y`, and those of
+`y` over the path), a conditional fact (`[if c] F`), an index fact of
+another kind (an `every` fact bounded by a name, an element fact) and an
+element fact. -/
+def Store.connectedNames (s : Store) (roots : List Nat) : Std.HashSet Nat := Id.run do
   let mut seen : Std.HashSet Nat := roots.foldl (·.insert ·) {}
   let mut frontier := roots
   for _ in [0:s.size + 1] do
@@ -2156,10 +2160,12 @@ def Store.pathNames (s : Store) (roots : List Nat) : Std.HashSet Nat := Id.run d
     for o in frontier do
       for a in s.about o do
         let reached : List Nat := match a with
-          | .link g => if g.alias then [] else [g.cell, g.value]
-          | .index x => if x.cond.isSome then a.names else []
-          | .elem e => if e.cond.isSome then a.names else []
-          | _ => []
+          | .link g => if g.alias then [] else a.names
+          | .index x => match x.cond, x.fact with
+            | none, .linear _ | none, .length .. => []
+            | _, _ => a.names
+          | .elem _ => a.names
+          | .cell _ | .value _ | .sep _ => []
         for x in reached do
           if !seen.contains x then
             seen := seen.insert x
@@ -2169,13 +2175,14 @@ def Store.pathNames (s : Store) (roots : List Nat) : Std.HashSet Nat := Id.run d
 
 /-- The names a target's slots `targetNames` hold that the target does not
 read (`live`): connected to no slot it reads, nor to the names it keeps,
-through the read links of the store `s` (`Store.pathNames`). -/
+through the facts of the store `s` that `Store.drop` does not restate
+(`Store.connectedNames`). -/
 def deadNames (targetNames : List Nat) (live : LiveSlots) (s : Store) : List Nat :=
   match live.slots with
   | none => []
   | some L =>
     let roots := live.keep ++ (targetNames.zipIdx.filter fun (_, j) => L.contains j).map (·.1)
-    let held := s.pathNames roots
+    let held := s.connectedNames roots
     (targetNames.filter (!held.contains ·)).eraseDups
 
 /-- What an edge into a node other than a loop head carries, from the
