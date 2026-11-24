@@ -534,6 +534,7 @@ export const cases: Case[] = [
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
   { ...negative("contextual-constructor-assign-result", "A contextual constructor type cannot supply an instance reference.",
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
+  positive("call-argument-at-parameter", "an argument is walked at its parameter's type: a construction leaving its binders unbound takes them from the parameter, as at an annotated binding"),
   positive("blocker-contextual-generic-closure", "an arrow and a function expression written without type parameters at a field whose type is a generic signature take that signature's type parameter as their own, as TypeScript gives it them: each is checked at its binder and then at the signature"),
   gap("contextual-generic-closure-bounded-refused", "a closure at a generic signature whose type parameter is bounded: the closure's scheme states no bound for the parameter it takes", "unsupported", "source",
     /^gate: TypeScript gives this closure its context's type parameter R, whose bound or default the closure's scheme does not state \(line 8, col 40\)(?:\n|$)/),

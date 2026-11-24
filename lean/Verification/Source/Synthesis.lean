@@ -4609,7 +4609,7 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
   match c with
   | .ok c =>
     let c ← if (← get).generalCalls.contains at_ then StateT.lift (generalArrayCallee c As) else pure c
-    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
+    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh (atParameters := true)
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
     return .error m
@@ -4648,10 +4648,13 @@ arguments, one pass): the signature the actuals' count and the walked
 actuals' types select; each binder from the receiver and the walked
 actuals (`matchBinder`); then each callback walked with its parameters at
 the selected signature's, under those binders, its result binding what
-remains; each literal actual at the parameter's shape (`fit`). The callee's
-type at the call and the call's result. -/
+remains; each literal actual at the parameter's shape (`fit`); where
+`atParameters` (a call the source writes, whose arguments it states), each
+actual its parameter does not admit walked again at the parameter. The
+callee's type at the call and the call's result. -/
 partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) : W (Except String (Ty Tree × Ty Tree)) := do
+    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) (atParameters : Bool := false) :
+    W (Except String (Ty Tree × Ty Tree)) := do
   let T ← StateT.lift table
   let G := SourceTypes.graph T
   let n := args.length
@@ -5012,7 +5015,29 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if let .var _ n := x then
         offerUse n (sub P)
         offerClass n (sub P)
-      As := As.set i (← fit (sub P) x A)
+      -- An actual whose walked type its parameter does not admit is walked
+      -- again with the parameter's type expected, as an annotated binding's
+      -- initializer is (TypeScript's contextual typing of an argument): a
+      -- construction or a call reads the binders its actuals leave unbound
+      -- off it (`new Map()` at `Map<string, number>`). The parameter is read
+      -- at the instance, where it names none of the call's binders. The
+      -- walk's environment is discarded (the actual's own walk gave the
+      -- call's), and so is the walk where its type is still not admitted.
+      let P' := sub P
+      let Tc ← StateT.lift table
+      let A ← if !atParameters || c.binders.any (fun b => P'.any (occurs b)) || A.any (within Tc · P') then pure A else do
+        let w0 ← get
+        let (A', _) ← expr env x (some P')
+        let Tc ← StateT.lift table
+        if A'.any (within Tc · P') then
+          -- (the call's own instance, change and fresh result, which the
+          -- actual's walk would otherwise state)
+          modify fun w => { w with changedValues := w0.changedValues, lastFresh := w0.lastFresh, lastInstance := w0.lastInstance, lastResolution := w0.lastResolution }
+          pure A'
+        else
+          set w0
+          pure A
+      As := As.set i (← fit P' x A)
   -- A finite record supplies no index candidate to a dictionary parameter. With no other candidate or declared bound,
   -- that binder defaults to unknown: its unnamed
   -- own values are unconstrained, not the union of its named fields.
