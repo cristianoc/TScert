@@ -109,6 +109,15 @@ assert.ok(Number.isNaN(Number(runExample("invalid-indexed-element-length",
 assert.ok(Number.isNaN(Number(runExample("invalid-indexed-element-caller",
   "uncheckedCaller({ advances: [[10, 20]] }, 0, 2)"))),
   "calling without checking graphemeIndex < advances[seg].length reads undefined and produces NaN");
+assert.ok(Number.isNaN(Number(runExample("invalid-fresh-call-spine-apart",
+  "growThroughAlias({ flags: new Uint8Array([1, 2]), widths: [1, 2] })"))),
+  "writing past the end through a non-fresh alias grows widths past flags and reads undefined");
+assert.ok(Number.isNaN(Number(runExample("invalid-dense-append-write-grows-spines",
+  "appendAndRead([1, 2], [1, 2])"))),
+  "writing at ys.length grows ys past zs and reads undefined");
+assert.ok(Number.isNaN(Number(runExample("invalid-typed-array-subarray-clamped",
+  "readClamped(new Uint8Array([1, 2]), 5)"))),
+  "subarray(0, 5) on a length-2 view clamps to length 2 and reading [4] returns undefined");
 
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.

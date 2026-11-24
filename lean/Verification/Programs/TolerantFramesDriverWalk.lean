@@ -84,7 +84,7 @@ def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Ru
   SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional false c.framed
+    c.observeEntry c.regional false c.framed c.givenFresh
 
 /-- The walk of a call (`SinglePass.runWalk` over its arguments). -/
 def RunCall.walk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
@@ -92,7 +92,7 @@ def RunCall.walk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Run
   SinglePass.runWalk G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional false c.framed
+    c.observeEntry c.regional false c.framed c.givenFresh
 
 /-- **An accepted call's walk**: either it stopped with an accepted
 outcome, or it returned a record that visited at least the nodes the start

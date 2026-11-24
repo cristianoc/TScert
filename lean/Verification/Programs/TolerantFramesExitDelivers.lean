@@ -265,11 +265,11 @@ its incoming. -/
 structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (w : Walk ι)
     (startNames : List Nat) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge)
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
-    (ys ysE : List (PromiseCalls.Yield ι)) (here : Bool) (i : Nat) (t : Target) (pushed : Bool)
+    (ys ysE : List (PromiseCalls.Yield ι)) (here outFresh : Bool) (i : Nat) (t : Target) (pushed : Bool)
     (observed : Option BranchRefinement.Observation) (promote : Option Bool)
     (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
-    (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat) : Prop where
+    (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat) : Prop where
   typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
     ExitTyped G images (exitCtx c pushed) (ctx t.label) t observed
       (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
@@ -285,14 +285,17 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
     (normalNames entry st pushed)[PointClaims.slot t.mapping p.1]? = startNames[p.2]?
   args : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ j ∈ argSlots,
     (normalNames entry st pushed)[PointClaims.slot t.mapping j]? = argName
+  fresh : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ j ∈ freshSlots,
+    ((normalNames entry st pushed)[PointClaims.slot t.mapping j]?).any
+      (if pushed && outFresh && !entry.fresh.contains st.result then st.result :: entry.fresh else entry.fresh).contains = true
   query : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (HeapKnowledge.withTypedLinks G (exitCtx c pushed) (ControlFlow.withTypedCells G (exitCtx c pushed) req t.mapping
         (materialize { names := normalNames entry st pushed, store := exitStore G c entry st pushed observed promote }
           (exitWidth c pushed) (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1))
       req t.mapping = true
-  entered : ((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
-    (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈ w.incoming t.label
+  entered : ((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp freshSlots).1,
+    (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp freshSlots).2.1) ∈ w.incoming t.label
   written : (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ε ρ h) ∧
     req = HeapKnowledge.withCandidates written cf
 
@@ -301,15 +304,15 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
 theorem HeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
     {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
-    {ys ysE : List (PromiseCalls.Yield ι)} {here : Bool} {i : Nat} {t : Target} {pushed : Bool}
+    {ys ysE : List (PromiseCalls.Yield ι)} {here outFresh : Bool} {i : Nat} {t : Target} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
     {req written : HeapKnowledge.Knowledge} {cf : List HeapKnowledge.Candidate}
     {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat} {argSlots : List Nat}
-    {inputSlots : List (Nat × Nat)} {hwidth hfresh : Nat}
-    (hc : HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here i t pushed observed promote
-      req written cf gimp argName argSlots inputSlots hwidth hfresh) (η : MixedAssignment ι) :
+    {inputSlots : List (Nat × Nat)} {freshSlots : List Nat} {hwidth hfresh : Nat}
+    (hc : HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here outFresh i t pushed observed promote
+      req written cf gimp argName argSlots inputSlots freshSlots hwidth hfresh) (η : MixedAssignment ι) :
     HeadExitChecked (PositiveRules.reassign G η) (images.reassign η) w startNames ctx stated l node c entry st ys ysE
-      here i t pushed observed promote req written cf gimp argName argSlots inputSlots hwidth hfresh where
+      here outFresh i t pushed observed promote req written cf gimp argName argSlots inputSlots freshSlots hwidth hfresh where
   typed hv := (hc.typed hv).reassign η
   implied hv x hx := by
     obtain ⟨y, hy, h1, h2, h3⟩ := hc.implied hv x hx
@@ -319,6 +322,7 @@ theorem HeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImageChe
     · exact .inr ⟨Answered.reassign a η, by rw [subtypeUsing_reassign]; exact ha⟩
   inputs := hc.inputs
   args := hc.args
+  fresh := hc.fresh
   query hv := (headQuery_reassign G η _ _ req _ t.mapping).trans (hc.query hv)
   entered := hc.entered
   written := hc.written
@@ -337,10 +341,10 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
     {req written : HeapKnowledge.Knowledge} {cf : List HeapKnowledge.Candidate}
     {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat} {argSlots : List Nat}
-    {inputSlots : List (Nat × Nat)} {hwidth hfresh : Nat}
+    {inputSlots : List (Nat × Nat)} {freshSlots : List Nat} {hwidth hfresh : Nat}
     (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
-    (hc : HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here i t pushed observed promote
-      req written cf gimp argName argSlots inputSlots hwidth hfresh)
+    (hc : HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here outFresh i t pushed observed promote
+      req written cf gimp argName argSlots inputSlots freshSlots hwidth hfresh)
     (hgiven : given t.label = true)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true)
     (hsub : SubtypeAnswersSound G images)
@@ -353,7 +357,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   have hYE := hE ρ m s' v hF
-  obtain ⟨hS, _, hout, -⟩ := hF
+  obtain ⟨hS, _, hout, hfr⟩ := hF
   obtain ⟨hpo, hpp⟩ := ofNode_flags (List.mem_of_getElem? hm)
   cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed with
   | true => exact (vacuous_false (C := c.context) hvac hhere hpo he ho).elim
@@ -362,7 +366,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   cases n with
   | zero => exact absurd pos (Nat.lt_irrefl 0)
   | succ n =>
-  simp only at he hout ⊢
+  simp only at he hout hfr ⊢
   obtain ⟨η, hn, -⟩ := id hS
   have hnames : SlotsNamed entry.names ρ η := slotsNamed_tail hn
   have hshv : ShapeOk v node.continuation := nodeShape_of hshape (he.2 0 _ rfl)
@@ -393,6 +397,29 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   have htc := (hc.typed hvac).env hsub hΓ hko hr houtL hh ho'
   have hSe := edgeStore_normal (Γ := exitCtx c pushed) (width := c.context.length)
     (stateHolds_freshImpl (pushed := pushed) (s := ⟨n + 1, W, h, pos, adm, hh⟩) hS (fun _ => hYE)) ho hpo hpp heo
+  have hfreshEdge : ∀ j ∈ freshSlots, FreshAt m ((if pushed then push v ρ else ρ) (PointClaims.slot t.mapping j)) := by
+    intro j hj
+    have hfj := hc.fresh hvac j hj
+    cases hget : (normalNames entry st pushed)[PointClaims.slot t.mapping j]? with
+    | none => simp [hget] at hfj
+    | some y =>
+      rw [hget, Option.any_some] at hfj
+      obtain ⟨ηe, hne, -, -, hfe, -⟩ := hSe
+      have heq : (if pushed then push v ρ else ρ) (PointClaims.slot t.mapping j) = ηe y := by
+        apply hne
+        cases pushed <;> simpa [normalNames] using hget
+      rw [heq]
+      split at hfj
+      · rename_i hcond
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hcond
+        obtain ⟨⟨hp, hoF⟩, hnotin⟩ := hcond
+        rcases List.mem_cons.mp (List.contains_iff_mem.mp hfj) with rfl | hmem
+        · subst hp
+          have h0 : (push v ρ) 0 = ηe st.result := hne 0 st.result (by simp)
+          rw [← h0]
+          exact hfr hoF (by simpa [List.contains_iff_mem] using hnotin)
+        · exact hfe y hmem
+      · exact hfe y (List.contains_iff_mem.mp hfj)
   have hest := headEstablishes_of_edge hSe hΓ htc (hc.query hvac)
     (fun x hx => by
       obtain ⟨y, hy, h1, h2, h3⟩ := hc.implied hvac x hx
@@ -400,7 +427,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
       rcases h3 with h3 | ⟨a, ha⟩
       · rw [h3]; exact fun _ _ _ hv => hv
       · exact hsub _ _ a ha)
-    (hc.inputs hvac) (hc.args hvac)
+    (hc.inputs hvac) (hc.args hvac) hfreshEdge
   refine ⟨⟨⟨⟨_, hc.entered, ?_⟩, htc⟩, ?_⟩, fun hg => absurd (hg.symm.trans hgiven) (by decide)⟩
   · exact (headEntry_holds hnd hlt hargs hest).1
   · obtain ⟨hw, hreq⟩ := hc.written
@@ -465,7 +492,7 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
         (handlerStore G c TT entry st x) (w.implies l)).2, t.mapping)
   head : «given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
-    (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
+    (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat),
     ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ y ∈ gimp, ∃ z ∈ w.implies l,
       (x :: entry.names)[PointClaims.slot t.mapping y.test]? = some z.test ∧
       (x :: entry.names)[PointClaims.slot t.mapping y.target]? = some z.target ∧
@@ -474,14 +501,16 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
       (x :: entry.names)[PointClaims.slot t.mapping p.1]? = startNames[p.2]?) ∧
     ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ j ∈ argSlots,
       (x :: entry.names)[PointClaims.slot t.mapping j]? = argName) ∧
+    ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ j ∈ freshSlots,
+      ((x :: entry.names)[PointClaims.slot t.mapping j]?).any entry.fresh.contains = true) ∧
     ((here || ControlFlow.unsatisfiable G [TT]) = false →
       KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
         (HeapKnowledge.withTypedLinks G (handlerCtx c TT) (ControlFlow.withTypedCells G (handlerCtx c TT) req t.mapping
           (materialize { names := x :: entry.names, store := handlerStore G c TT entry st x } (c.context.length + 1)
             (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1))
         req t.mapping = true) ∧
-    (((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
-      (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈
+    (((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp freshSlots).1,
+      (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp freshSlots).2.1) ∈
         w.incoming t.label) ∧
     ((∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ε ρ h) ∧
       req = HeapKnowledge.withCandidates written cf) ∧
@@ -552,8 +581,18 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
       joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen).mem heh hn'
         (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg' hlen⟩
   | true =>
-    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent,
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, himp, hin, harg, hfr, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg
+    have hfreshEdge : ∀ j ∈ freshSlots, FreshAt m ((push e ρ) (PointClaims.slot t.mapping j)) := by
+      intro j hj
+      have hfj := hfr hvac j hj
+      cases hget : (x :: entry.names)[PointClaims.slot t.mapping j]? with
+      | none => simp [hget] at hfj
+      | some y =>
+        rw [hget, Option.any_some] at hfj
+        obtain ⟨ηe, hne, -, -, hfe, -⟩ := hSe
+        rw [hne _ _ hget]
+        exact hfe y (List.contains_iff_mem.mp hfj)
     have hest := headEstablishes_of_edge hSe heh htc (hq hvac)
       (fun y hy => by
         obtain ⟨z, hz, h1, h2, h3⟩ := himp hvac y hy
@@ -561,7 +600,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
         rcases h3 with h3 | ⟨a, ha⟩
         · rw [h3]; exact fun _ _ _ hv => hv
         · exact hsub _ _ a ha)
-      (hin hvac) (harg hvac)
+      (hin hvac) (harg hvac) hfreshEdge
     refine ⟨⟨⟨⟨_, hent, ?_⟩, htc⟩, ?_⟩, fun hg' => absurd (hg'.symm.trans hg) (by decide)⟩
     · exact (headEntry_holds hnd hlt hargs hest).1
     · obtain ⟨hw, hreq⟩ := hwr
@@ -604,9 +643,9 @@ theorem HandlerExitChecked.reassign {G : NormalGraph ι} {images : InstanceImage
   pushedIn := hc.pushedIn
   merged := hc.merged
   head hg := by
-    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent,
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, himp, hin, harg, hfr, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg
-    refine ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, fun hv y hy => ?_, hin, harg,
+    refine ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, fun hv y hy => ?_, hin, harg, hfr,
       fun hv => (headQuery_reassign G η _ _ req _ t.mapping).trans (hq hv), hent, hwr, hlt, hargs⟩
     obtain ⟨z, hz, h1, h2, h3⟩ := himp hv y hy
     refine ⟨z, hz, h1, h2, ?_⟩

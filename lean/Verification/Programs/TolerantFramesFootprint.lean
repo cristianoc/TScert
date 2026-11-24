@@ -35,7 +35,8 @@ open ProgramTyping PositiveCertificates ProgramCertificates PositiveGraphs Posit
 `kS` (`stepK`). -/
 def passWrites (G : NormalGraph ι) (Γ : List (Ty ι)) (kS : HeapKnowledge.Knowledge) (Φ : Footprints.Closed)
     (t : Tm) : Bool :=
-  ExpressionEffects.writeWithin G Γ Φ t || ExpressionEffects.initWriteWithin G Γ kS Φ t
+  ExpressionEffects.writeWithin G Γ Φ t || ExpressionEffects.initWriteWithin G Γ kS Φ t ||
+    ExpressionEffects.denseWriteWithin G Γ kS Φ t
 
 /-- The pass's check of the step's derivation `d` where its signature bounds
 the step (`derivChecked` in `SinglePass.footprintCheck`): claimed at the
@@ -77,9 +78,10 @@ theorem passWrites_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {kS : HeapKnow
     (hkS : HeapKnowledge.Holds kS ε ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
     SafePostExc (excOf G) T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
   simp only [passWrites, Bool.or_eq_true] at hc
-  rcases hc with hc | hc
+  rcases hc with (hc | hc) | hc
   · exact ExpressionEffects.write_within_exc hc he hh hs
   · exact ExpressionEffects.init_write_within_exc hc he hh hkS hs
+  · exact ExpressionEffects.dense_write_within_exc hc he hh hkS hs
 
 /-- A selected call's `within` bounds the heap by `Φ` on the locations
 below `b`: its grade, the closed bound of its frame below the mark, is below

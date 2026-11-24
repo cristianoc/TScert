@@ -208,6 +208,8 @@ export class Gate {
   standardFresh: boolean = false;
   /** The file names the verifier's `SafeInt` (`resolvable.d.ts`). */
   standardSafeInt: boolean = false;
+  /** The file names the verifier's `Dense` (`resolvable.d.ts`). */
+  standardDense: boolean = false;
   qualificationHeader: boolean = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -263,7 +265,7 @@ export class Gate {
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
-  readonly keyTypes: Map<string, TypeTerm | null> = new Map();
+  readonly keyTypes: Map<string, Answered<TypeTerm | null>> = new Map();
   /** Mapped types over `keyof` in the file's annotations, by span: their
    * members as TypeScript resolves them, or null. */
   readonly mappedMembers: Map<string, readonly MappedMember[] | null> = new Map();
@@ -751,6 +753,9 @@ export class Gate {
       // `SafeInt`, likewise.
       safeInt: node => this.standardSafeInt && ts.isIdentifier(node.typeName) && node.typeName.text === "SafeInt" &&
         !this.hasTypeParam("SafeInt") && !this.blockTypeAt(node) && !this.declaredTypes.has("SafeInt"),
+      // `Dense`, likewise.
+      dense: node => this.standardDense && ts.isIdentifier(node.typeName) && node.typeName.text === "Dense" &&
+        !this.hasTypeParam("Dense") && !this.blockTypeAt(node) && !this.declaredTypes.has("Dense"),
       associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text) &&
           !this.blockTypeAt(node)
         ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
@@ -955,8 +960,10 @@ export class Gate {
   }
 
   keyType(node: Node): Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null> {
-    const term = this.keyTypes.get(this.span(node).join(":"));
-    return term ? this.settled(term, node) : null;
+    const answer = this.keyTypes.get(this.span(node).join(":"));
+    if (!answer) return null;
+    if (!answer.ok) return this.fail(node, answer.refused);
+    return answer.value ? this.settled(answer.value, node) : null;
   }
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
@@ -2109,6 +2116,18 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findLengthReads);
   };
   if (!carriesContext) scan(findLengthReads);
+  // Two-argument calls `e.subarray(begin, end)`: TypeScript's type of the
+  // receiver decides whether `%ByteSubarray%` handles it.
+  const subarrayCallNodes: Node[] = [];
+  const findSubarrayCalls = (node: Node): void => {
+    if (ts.isCallExpression(node) && !node.questionDotToken && !node.typeArguments?.length &&
+        node.arguments.length === 2 && !node.arguments.some(arg => ts.isSpreadElement(arg)) &&
+        ts.isPropertyAccessExpression(node.expression) && !node.expression.questionDotToken &&
+        ts.isIdentifier(node.expression.name) && node.expression.name.text === "subarray")
+      subarrayCallNodes.push(node);
+    node.forEachChild(findSubarrayCalls);
+  };
+  if (!carriesContext) scan(findSubarrayCalls);
   // Reads `e.k` at a key some `"k" in o` test of the file writes, other than
   // a write's target and a call's callee, at a key no member of
   // `Object.prototype` names: TypeScript's type of the object decides
@@ -2485,6 +2504,7 @@ function lowerFile(file: string, carriesContext: boolean,
         memberWrites: memberWriteNodes.map(node => gate.span(node)),
         memberReads: memberReadNodes.map(node => gate.span(node)),
         lengthReads: lengthReadNodes.map(node => gate.span(node)),
+        subarrayCalls: subarrayCallNodes.map(node => gate.span(node)),
         byteRead: ([start, end], intrinsic) => gate.byteReads.set(`${start}:${end}`, intrinsic),
         hostMember: ([start, end], intrinsic) => gate.hostMembers.set(`${start}:${end}`, intrinsic),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
@@ -2544,6 +2564,7 @@ function lowerFile(file: string, carriesContext: boolean,
         within: () => { gate.standardWithin = true; },
         fresh: () => { gate.standardFresh = true; },
         safeInt: () => { gate.standardSafeInt = true; },
+        dense: () => { gate.standardDense = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);

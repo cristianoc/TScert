@@ -1461,11 +1461,46 @@ theorem lowerStar_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLink
 (`lowerStar`, as far as the links reach). -/
 def lowerByLinks (reads : List (Nat × String × Nat)) (t : Term) : Term := lowerStar reads t.path.length t
 
+/-- Lower a spine separation (or a guarded spine separation) through read links:
+each array path lowered toward its end (`lowerRoot`). -/
+def lowerSpineApartFact (reads : List (Nat × String × Nat)) : IndexFact → Option IndexFact
+  | .spineApart a p b q =>
+    let ra := lowerRoot reads a p
+    let rb := lowerRoot reads b q
+    if ra != (a, p) || rb != (b, q) then
+      some (.spineApart ra.1 ra.2 rb.1 rb.2)
+    else none
+  | .guarded s p t B =>
+    (lowerSpineApartFact reads B).map (.guarded s p t)
+  | _ => none
+
+theorem lowerSpineApartFact_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) :
+    ∀ {F G : IndexFact}, lowerSpineApartFact reads F = some G → F.HoldsAt ε ρ h → G.HoldsAt ε ρ h
+  | .spineApart a p b q, G, hfg, hF => by
+    simp only [lowerSpineApartFact] at hfg
+    split at hfg
+    · cases hfg
+      obtain ⟨va, vb, hva, hvb, hne⟩ := hF
+      exact ⟨va, vb, lowerRoot_path hl hr hva, lowerRoot_path hl hr hvb, hne⟩
+    · cases hfg
+  | .guarded s p t B, G, hfg, hF => by
+    simp only [lowerSpineApartFact] at hfg
+    obtain ⟨B', hB', rfl⟩ := Option.map_eq_some_iff.mp hfg
+    obtain ⟨v, hv, hor⟩ := hF
+    exact ⟨v, hv, hor.imp id (lowerSpineApartFact_holds hl hr hB')⟩
+  | .index _, _, hfg, _ | .length _ _, _, hfg, _ | .bound _ _ _, _, hfg, _
+  | .int _, _, hfg, _ | .pastSafe _, _, hfg, _ | .linear _, _, hfg, _
+  | .either _ _, _, hfg, _ | .element _ _ _, _, hfg, _ | .every _ _ _ _, _, hfg, _
+  | .atIndex _ _ _ _ _, _, hfg, _ | .apart _ _, _, hfg, _ | .same _ _, _, hfg, _ => by
+    simp [lowerSpineApartFact] at hfg
+
 /-- **Facts read modulo the read links.** Each linear atom naming a term
 some read link restates (`lowerByLinks`) is restated with every term so
 restated; a quantified atom's array, bound and body through one read
-(`readEvery`): what the knowledge states of a path it states of the value a
-link holds for it, whenever the fact entered the knowledge. -/
+(`readEvery`); a spine separation or guarded spine separation through one
+read (`lowerSpineApartFact`): what the knowledge states of a path it states of
+the value a link holds for it, whenever the fact entered the knowledge. -/
 def lowerAtoms (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
   let reads := bridgeReads ls
   if reads.isEmpty then [] else
@@ -1474,6 +1509,7 @@ def lowerAtoms (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
         some { a with fact := .linear (renameFact (lowerByLinks reads) F) } else none
     | .every .. => readEvery reads a
     | .atIndex .. | .either .. => readAtIndex reads a
+    | .spineApart .. | .guarded .. => (lowerSpineApartFact reads a.fact).map fun f => { a with fact := f }
     | _ => none
 
 theorem lowerAtoms_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h}
@@ -1505,6 +1541,10 @@ theorem lowerAtoms_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h}
       exact lowerAtIndexFact_holds hl hr hf (he b hb hc)
     · obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hab
       exact lowerAtIndexFact_holds hl hr hf (he b hb hc)
+    · obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hab
+      exact lowerSpineApartFact_holds hl hr hf (he b hb hc)
+    · obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hab
+      exact lowerSpineApartFact_holds hl hr hf (he b hb hc)
     · cases hab
 
 /-- Whether a linear atom names a term with a nonempty path. -/
@@ -1968,10 +2008,40 @@ theorem releasePast_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ
     · cases hm
   · cases hm
 
+/-- The bodies of every unconditional guarded atom in `as` whose guard has tag
+`t` at a path `lg` restates to the same target as `(s, p)`. -/
+def sameGuardBodies (lg : Nat → List String → Nat × List String) (as : List IndexAtom)
+    (s : Nat) (p : List String) (t : GuardTag) : List IndexAtom :=
+  let goal := lg s p
+  as.filterMap fun a => match a.cond, a.fact with
+    | none, .guarded s' p' t' B' => if t' == t && lg s' p' == goal then some { fact := B' } else none
+    | _, _ => none
+
+theorem sameGuardBodies_mem {lg : Nat → List String → Nat × List String} {as : List IndexAtom}
+    {s : Nat} {p : List String} {t : GuardTag} {ρ h}
+    (hlg : ∀ s p, readGuard h (ρ (lg s p).1) (lg s p).2 = readGuard h (ρ s) p)
+    (ha : IndexHolds ε as ρ h) {b : IndexAtom} (hb : b ∈ sameGuardBodies lg as s p t) :
+    ∃ v, readGuard h (ρ s) p = some v ∧ (t.holds v ∨ b.fact.HoldsAt ε ρ h) := by
+  simp only [sameGuardBodies, List.mem_filterMap] at hb
+  obtain ⟨a, haa, hm⟩ := hb
+  split at hm
+  · rename_i s' p' t' B' hcond hfa
+    split at hm
+    · rename_i hmatch
+      cases hm
+      simp only [Bool.and_eq_true, beq_iff_eq] at hmatch
+      obtain ⟨rfl, hpath⟩ := hmatch
+      have hat := ha a haa fun c hc => by rw [hcond] at hc; cases hc
+      rw [hfa] at hat
+      obtain ⟨v, hv, hor⟩ := hat
+      exact ⟨v, by rw [← hlg s p, ← hpath, hlg]; exact hv, hor⟩
+    · cases hm
+  · cases hm
+
 /-- Whether atoms `as` entail a fact, its terms and guard paths restated by
 `lt` and `lg`: a linear fact as `linearEntailed` reads one; a guarded fact
-where an unconditional atom states a guard of the same tag at a path
-restated alike, and the body follows from the atoms and that atom's body; or
+where unconditional atoms state guards of the same tag at paths restated alike,
+and the body follows from the atoms together with all those atoms' bodies; or
 where its guard's path, restated toward its end by `ld`, reads a slot alone,
 and its body follows; or where `tags` states the guard's path, or its
 restatement, reads the tag's value. -/
@@ -1988,9 +2058,8 @@ def guardEntails (lt : Term → Term) (lg ld : Nat → List String → Nat × Li
     | none => false
   | as, .guarded s p t B =>
     tags s p t || tags (ld s p).1 (ld s p).2 t ||
-    (as.any fun a => a.cond.isNone && match a.fact with
-      | .guarded s' p' t' B' => t' == t && lg s' p' == lg s p && guardEntails lt lg ld tags base (as ++ [{ fact := B' }]) B
-      | _ => false) ||
+    (let same := sameGuardBodies lg as s p t;
+      !same.isEmpty && guardEntails lt lg ld tags base (as ++ same) B) ||
     ((ld s p).2.isEmpty && guardEntails lt lg ld tags base as B)
   | as, .int k => intSlot as k
   | as, .pastSafe k => as.any fun a => a.cond.isNone && a.fact == .pastSafe k
@@ -2045,28 +2114,23 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
     · cases hf
   | guarded s p t B ih =>
     intro as hf ha
-    simp only [guardEntails, Bool.or_eq_true, Bool.and_eq_true, List.isEmpty_iff] at hf
-    rcases hf with ((ht | htl) | hpool) | ⟨hp, hB⟩
+    simp only [guardEntails, Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true',
+      List.isEmpty_eq_false_iff, List.isEmpty_iff] at hf
+    rcases hf with ((ht | htl) | ⟨hne, hB⟩) | ⟨hp, hB⟩
     · obtain ⟨v, hv, htv⟩ := htags s p t ht
       exact ⟨v, hv, .inl htv⟩
     · obtain ⟨v, hv, htv⟩ := htags _ _ t htl
       exact ⟨v, by rw [← hld s p]; exact hv, .inl htv⟩
-    · obtain ⟨a, haa, hm⟩ := List.any_eq_true.mp hpool
-      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-      obtain ⟨hcond, hm⟩ := hm
-      split at hm
-      · rename_i s' p' t' B' hfa
-        simp only [Bool.and_eq_true, beq_iff_eq] at hm
-        obtain ⟨⟨rfl, hpath⟩, hB⟩ := hm
-        have hat := ha a haa fun b hb => by rw [hcond] at hb; cases hb
-        rw [hfa] at hat
-        obtain ⟨v, hv, hor⟩ := hat
-        have hread : readGuard h (ρ s) p = some v := by rw [← hlg s p, ← hpath, hlg]; exact hv
-        refine ⟨v, hread, hor.imp id fun hB' => ih (as ++ [{ fact := B' }]) hB fun b hb hc => ?_⟩
+    · obtain ⟨w, hw⟩ := List.exists_mem_of_ne_nil _ hne
+      obtain ⟨v, hread, -⟩ := sameGuardBodies_mem hlg ha hw
+      by_cases htv : t.holds v
+      · exact ⟨v, hread, .inl htv⟩
+      · refine ⟨v, hread, .inr (ih _ hB fun b hb hc => ?_)⟩
         rcases List.mem_append.mp hb with hb | hb
         · exact ha b hb hc
-        · simp only [List.mem_singleton] at hb; subst hb; exact hB'
-      · cases hm
+        · obtain ⟨v', hread', hor'⟩ := sameGuardBodies_mem hlg ha hb
+          rw [hread] at hread'; cases hread'
+          exact hor'.resolve_left htv
     · refine ⟨ρ (ld s p).1, ?_, .inr (ih as hB ha)⟩
       rw [← hld s p, hp]; rfl
   | int k =>
@@ -2773,13 +2837,73 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
     | _ => rw [hfa] at hm; simp at hm
   | _ => simp [atIndexFollows] at hf
 
-/-- Precomputed read/guard bridges and released atoms shared across target
-atoms in `indicesCheckWith`. -/
+/-- Precomputed complementary guard pairs `(s, p, t, pos, neg)` in `as` where
+both `t` (positive) and `t.complement` appear as unconditional guards at the
+same `lg`-restated path, deduplicated by `(lg s p, t)`. Empty in one scan when
+no negative-tag guard appears in `as`. -/
+def compGuardPairs (lg : Nat → List String → Nat × List String) (as : List IndexAtom) :
+    List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom) :=
+  let negKeys := as.filterMap fun a => match a.cond, a.fact with
+    | none, .guarded s p t _ => if !t.isPositive then some (lg s p, t.complement) else none
+    | _, _ => none
+  if negKeys.isEmpty then [] else
+  let rec go (seen : List ((Nat × List String) × GuardTag)) :
+      List IndexAtom → List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom)
+    | [] => []
+    | a :: rest => match a.cond, a.fact with
+      | none, .guarded s p t _ =>
+        let key := (lg s p, t)
+        if t.isPositive && negKeys.contains key && !seen.contains key then
+          let pos := sameGuardBodies lg as s p t
+          let neg := sameGuardBodies lg as s p t.complement
+          if !pos.isEmpty && !neg.isEmpty then
+            (s, p, t, pos, neg) :: go (key :: seen) rest
+          else go (key :: seen) rest
+        else go seen rest
+      | _, _ => go seen rest
+  go [] as
+
+theorem compGuardPairs_mem {lg : Nat → List String → Nat × List String} {as : List IndexAtom}
+    {s : Nat} {p : List String} {t : GuardTag} {pos neg : List IndexAtom}
+    (hm : (s, p, t, pos, neg) ∈ compGuardPairs lg as) :
+    (∃ a ∈ as, a.cond = none ∧ ∃ B0, a.fact = .guarded s p t B0) ∧
+    pos = sameGuardBodies lg as s p t ∧ neg = sameGuardBodies lg as s p t.complement := by
+  unfold compGuardPairs at hm
+  dsimp only at hm
+  split at hm
+  · cases hm
+  · have hgo : ∀ (negKeys seen : List ((Nat × List String) × GuardTag)) (xs : List IndexAtom),
+        (∀ x ∈ xs, x ∈ as) → (s, p, t, pos, neg) ∈ compGuardPairs.go lg as negKeys seen xs →
+        (∃ a ∈ as, a.cond = none ∧ ∃ B0, a.fact = .guarded s p t B0) ∧
+        pos = sameGuardBodies lg as s p t ∧ neg = sameGuardBodies lg as s p t.complement := by
+      intro negKeys seen xs
+      induction xs generalizing seen with
+      | nil => intro _ h; cases h
+      | cons a rest ih =>
+        intro hsub h
+        simp only [compGuardPairs.go] at h
+        split at h
+        · rename_i s' p' t' B0 hcond hfa
+          split at h
+          · split at h
+            · rcases List.mem_cons.mp h with heq | hrest
+              · simp only [Prod.mk.injEq] at heq
+                obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := heq
+                exact ⟨⟨a, hsub a (List.mem_cons_self ..), hcond, B0, hfa⟩, rfl, rfl⟩
+              · exact ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) hrest
+            · exact ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) h
+          · exact ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) h
+        · exact ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) h
+    exact hgo _ [] as (fun _ h => h) hm
+
+/-- Precomputed read/guard bridges, released atoms, and deduplicated
+complementary guard pairs shared across target atoms in `indicesCheckWith`. -/
 structure GuardPrep where
   lt : Term → Term
   lg : Nat → List String → Nat × List String
   ld : Nat → List String → Nat × List String
   aug : List IndexAtom
+  compPairs : List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom)
 
 def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag → Bool)
     (a : List IndexAtom) : GuardPrep :=
@@ -2793,15 +2917,59 @@ def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag �
     then releasePast a else []
   let guarded := if a.any (fun x => match x.fact with | .guarded .. => true | _ => false)
     then (releaseGuarded tags ld a).filter (!a.contains ·) else []
-  { lt, lg, ld, aug := a ++ past ++ guarded }
+  let aug := a ++ past ++ guarded
+  { lt, lg, ld, aug, compPairs := compGuardPairs lg aug }
+
+/-- Complementary-guard elimination using the precomputed deduplicated pairs
+`compGuardPairs lg as`: every value read at the guard's path fails either `t`
+or `t.complement`, so if both body sets entail `F`, `F` holds. -/
+def complementaryGuardElim
+    (pairs : List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom))
+    (check : List IndexAtom → IndexFact → Bool) (as : List IndexAtom) (F : IndexFact) : Bool :=
+  pairs.any fun (_, _, _, pos, neg) => check (as ++ pos) F && check (as ++ neg) F
+
+theorem complementaryGuardElim_sound {lg : Nat → List String → Nat × List String}
+    {check : List IndexAtom → IndexFact → Bool} {ρ : Env} {h : Heap}
+    (hlg : ∀ s p, readGuard h (ρ (lg s p).1) (lg s p).2 = readGuard h (ρ s) p)
+    (hcheck : ∀ as F, check as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h)
+    {as : List IndexAtom} {F : IndexFact}
+    (hf : complementaryGuardElim (compGuardPairs lg as) check as F = true) (ha : IndexHolds ε as ρ h) :
+    F.HoldsAt ε ρ h := by
+  simp only [complementaryGuardElim, List.any_eq_true, Bool.and_eq_true] at hf
+  obtain ⟨⟨s, p, t, pos, neg⟩, hmem, hpos, hneg⟩ := hf
+  obtain ⟨⟨a, haa, hcond, B0, hfa⟩, rfl, rfl⟩ := compGuardPairs_mem hmem
+  have hat := ha a haa fun c hc => by rw [hcond] at hc; cases hc
+  rw [hfa] at hat
+  obtain ⟨v, hv, -⟩ := hat
+  by_cases htv : t.holds v
+  · have hnotc : ¬ t.complement.holds v := by
+      cases t <;> simp_all [GuardTag.complement, GuardTag.holds]
+    have hext : IndexHolds ε (as ++ sameGuardBodies lg as s p t.complement) ρ h := by
+      intro b hb hbc
+      rcases List.mem_append.mp hb with hb | hb
+      · exact ha b hb hbc
+      · obtain ⟨v', hv', hor⟩ := sameGuardBodies_mem hlg ha hb
+        rw [hv] at hv'; cases hv'
+        exact hor.resolve_left hnotc
+    exact hcheck _ F hneg hext
+  · have hext : IndexHolds ε (as ++ sameGuardBodies lg as s p t) ρ h := by
+      intro b hb hbc
+      rcases List.mem_append.mp hb with hb | hb
+      · exact ha b hb hbc
+      · obtain ⟨v', hv', hor⟩ := sameGuardBodies_mem hlg ha hb
+        rw [hv] at hv'; cases hv'
+        exact hor.resolve_left htv
+    exact hcheck _ F hpos hext
 
 def guardFollowsWith (gp : GuardPrep) (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLinks.Links)
     (tags : Nat → List String → GuardTag → Bool) (a : List IndexAtom) (t : IndexAtom) : Bool :=
   t.cond.isNone && match t.fact with
-  | .guarded .. | .either .. | .linear .. | .atIndex .. => match t.fact.mapM (fun y => some (pickSlot M m a y)) with
+  | .guarded .. | .either .. | .linear .. | .atIndex .. | .spineApart .. =>
+    match t.fact.mapM (fun y => some (pickSlot M m a y)) with
     | some F =>
-      caseEntails (guardEntails gp.lt gp.lg gp.ld tags
-        (fun as F => baseFollows M ls as F || atIndexFollows M ls gp.lt gp.lg gp.ld tags as F)) 8 gp.aug F
+      let check := guardEntails gp.lt gp.lg gp.ld tags
+        (fun as F => baseFollows M ls as F || atIndexFollows M ls gp.lt gp.lg gp.ld tags as F)
+      caseEntails check 8 gp.aug F || complementaryGuardElim gp.compPairs check gp.aug F
     | none => false
   | _ => false
 
@@ -2850,11 +3018,13 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
           readGuard h (ρ s) p := liftGuard_eq hl hr _
       have hld : ∀ s p, readGuard h (ρ ((guardPrep ls tags a).ld s p).1) ((guardPrep ls tags a).ld s p).2 =
           readGuard h (ρ s) p := lowerGuard_eq hl hr _
-      have hF' := caseEntails_sound
-        (fun as F => guardEntails_sound hlt hlg hld htags (fun as F hb ha =>
-          (Bool.or_eq_true_iff.mp hb).elim (fun h1 => baseFollows_sound hM hl h1 ha)
-            (fun h2 => atIndexFollows_sound hM hl hlt hlg hld htags h2 ha)) F as)
-        8 (guardPrep ls tags a).aug F hf (guardPrep_aug_holds hl htags ha)
+      have hcheck := fun as F => guardEntails_sound hlt hlg hld htags (fun as F hb ha =>
+        (Bool.or_eq_true_iff.mp hb).elim (fun h1 => baseFollows_sound hM hl h1 ha)
+          (fun h2 => atIndexFollows_sound hM hl hlt hlg hld htags h2 ha)) F as
+      have haug := guardPrep_aug_holds hl htags ha
+      have hF' : F.HoldsAt ε ρ h := (Bool.or_eq_true_iff.mp hf).elim
+        (fun h1 => caseEntails_sound hcheck 8 (guardPrep ls tags a).aug F h1 haug)
+        (fun h2 => complementaryGuardElim_sound hlg hcheck h2 haug)
       exact (IndexFact.holdsAt_mapM hF fun s _ y hy => by cases hy; exact pickSlot_eq hM s).mp hF'
     · cases hf
 

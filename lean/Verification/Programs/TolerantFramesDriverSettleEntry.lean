@@ -46,12 +46,12 @@ theorem visitStart_entered {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
     simp only [ite_true]
     unfold SinglePass.entryStart
     rw [hg]
-    simp only [hP.facts.startLabel, beq_self_eq_true, Bool.true_and, hctx,
+    simp only [SinglePass.headFreshAt, hP.facts.startLabel, beq_self_eq_true, ite_true, Bool.true_and, hctx,
       hP.facts.startNames, hP.facts.argName]
   · rw [hi, himp]
     unfold SinglePass.entryStart
     rw [hg]
-    simp only [hP.facts.startLabel, beq_self_eq_true, Bool.true_and, hctx,
+    simp only [SinglePass.headFreshAt, hP.facts.startLabel, beq_self_eq_true, ite_true, Bool.true_and, hctx,
       hP.facts.startNames, hP.facts.argName]
 
 /-- Zipping lists of equal length preserves the first list. -/

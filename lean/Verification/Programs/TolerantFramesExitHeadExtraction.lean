@@ -15,7 +15,7 @@ variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 /-- The parts of a head contract checked by `headExit`. -/
 structure HeadChecks (env : WalkEnv ι G I) (l : Nat) (t : Target) (tc : PointClaim ι)
     (Γ : List (Ty ι)) (names : List Nat) (store : Store) (pushed vacuous : Bool)
-    (carried : List (PromiseCalls.Implication ι)) (req : HeapKnowledge.Knowledge) : Prop where
+    (carried : List (PromiseCalls.Implication ι)) (freshOut : List Nat) (req : HeapKnowledge.Knowledge) : Prop where
   «given» : env.given[t.label]! = some req
   implied : vacuous = false → ∀ x ∈ (env.givenImplies[t.label]?).getD [], ∃ y ∈ carried,
     names[PointClaims.slot t.mapping x.test]? = some y.test ∧
@@ -25,6 +25,8 @@ structure HeadChecks (env : WalkEnv ι G I) (l : Nat) (t : Target) (tc : PointCl
     names[PointClaims.slot t.mapping p.1]? = env.startNames[p.2]?
   args : vacuous = false → ∀ j ∈ (env.givenArgs[t.label]?).getD [],
     names[PointClaims.slot t.mapping j]? = env.argName
+  fresh : vacuous = false → ∀ j ∈ headFreshAt env t.label,
+    (names[PointClaims.slot t.mapping j]?).any freshOut.contains = true
   query : vacuous = false → KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
     (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping
       (materialize { names, store }
@@ -34,9 +36,9 @@ structure HeadChecks (env : WalkEnv ι G I) (l : Nat) (t : Target) (tc : PointCl
 /-- The given contract exists even when the edge is vacuous. -/
 theorem headExit_contract {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
-    {carried : List (PromiseCalls.Implication ι)} {a b : ExitsDone ι G}
-    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried a = .ok b) :
-    ∃ req, HeadChecks env l t tc Γ names store pushed vacuous carried req := by
+    {carried : List (PromiseCalls.Implication ι)} {freshOut : List Nat} {a b : ExitsDone ι G}
+    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried freshOut a = .ok b) :
+    ∃ req, HeadChecks env l t tc Γ names store pushed vacuous carried freshOut req := by
   have hg : ∃ req, env.given[t.label]! = some req := by
     unfold headExit at h
     repeat' (first | split at h | extract_lets at h)
@@ -45,8 +47,8 @@ theorem headExit_contract {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Po
   obtain ⟨req, hr⟩ := hg
   have checked := fun (hv : vacuous = false) => headExit_checked (hv ▸ h)
   refine ⟨req, hr, fun hv => (checked hv).1, fun hv => (checked hv).2.1,
-    fun hv => (checked hv).2.2.1, fun hv => ?_⟩
-  obtain ⟨req', hr', hq⟩ := (checked hv).2.2.2
+    fun hv => (checked hv).2.2.1, fun hv => (checked hv).2.2.2.1, fun hv => ?_⟩
+  obtain ⟨req', hr', hq⟩ := (checked hv).2.2.2.2
   have he : req' = req := Option.some.inj (hr'.symm.trans hr)
   exact he ▸ hq
 
@@ -68,7 +70,8 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
       HeadChecks env l t tc (exitCtx env.claimed[l]! pushed) (normalNames en.entry sd.st pushed)
         (exitStore G env.claimed[l]! en.entry sd.st pushed observed promote) pushed
         (vacuousOf G en.here (env.claimed[l]!).type (exitCtx env.claimed[l]! pushed) pushed observed)
-        (en.implies ++ freshImplOf pushed false (b.yields.getD []) en.entry.names sd.st.result) req := by
+        (en.implies ++ freshImplOf pushed false (b.yields.getD []) en.entry.names sd.st.result)
+        (if pushed && sd.outFresh && !en.entry.fresh.contains sd.st.result then sd.st.result :: en.entry.fresh else en.entry.fresh) req := by
   unfold exitStep at h
   extract_lets ex first node c width entry st target push obs handler pushedNames tr a0 Γ names store unsatΓ vacuous Γe read Γr at h
   split at h
@@ -122,7 +125,7 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
       (env.isHead[t.label]! = true → ∃ req,
         HeadChecks env l t tc (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) (sd.thrown :: en.entry.names)
           (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown) true
-          (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) en.implies req) ∧
+          (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) en.implies en.entry.fresh req) ∧
       (env.isHead[t.label]! = false →
         (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false → ∀ req,
         env.stated[t.label]! = some req →
@@ -167,7 +170,8 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     rename_i a3 hc
     obtain ⟨req, hreq⟩ := headExit_contract hc
     refine ⟨fun _ => ⟨req, ?_⟩, fun hn => ?_⟩
-    · simpa only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, ite_true, List.append_nil,
+    · simpa only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, Bool.not_true, Bool.and_false,
+        Bool.false_and, Bool.false_eq_true, ite_true, ite_false, List.append_nil,
         Γ, c, names, entry, target, Exit.target, store, st, pushedNames, width, push, Exit.pushed, obs,
         Exit.observed, Exit.promote, vacuous, unsatΓ, handlerCtx, handlerStore] using hreq
     · exact Bool.noConfusion (hh.symm.trans hn)
@@ -224,10 +228,10 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
   ∃ (written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate) (width fresh : Nat),
     ((headEntry req false width fresh (List.range c.inputs.length) s.env.argName
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
-      ((s.env.givenImplies[t]?).getD [])).1,
+      ((s.env.givenImplies[t]?).getD []) (headFreshAt s.env t)).1,
      (headEntry req false width fresh (List.range c.inputs.length) s.env.argName
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
-      ((s.env.givenImplies[t]?).getD [])).2.1) ∈ r.w.incoming t ∧
+      ((s.env.givenImplies[t]?).getD []) (headFreshAt s.env t)).2.1) ∈ r.w.incoming t ∧
     ((∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ε ρ h) ∧
       req = HeapKnowledge.withCandidates written cf) ∧
     ∀ y ∈ List.range c.inputs.length, y < fresh
@@ -276,19 +280,22 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
     s.argumentInput
   have checked : HeadExitChecked G I r.w (List.range c.inputs.length) r.ctx r.stated l
       (r.node l hl).node (r.node l hl).c (r.node l hl).entry s.sdK.st
-      (r.node l hl).ys (b.yields.getD []) s.en.here i t pushed observed promote req written cf
+      (r.node l hl).ys (b.yields.getD []) s.en.here s.sd.outFresh i t pushed observed promote req written cf
       ((s.env.givenImplies[t.label]?).getD []) s.env.argName ((s.env.givenArgs[t.label]?).getD [])
-      ((s.env.givenInputs[t.label]?).getD []) width fresh := by
+      ((s.env.givenInputs[t.label]?).getD []) (headFreshAt s.env t.label) width fresh := by
     have hK : s.sdK = SinglePass.keptDone s.env l s.en s.sd := rfl
-    refine ⟨?_, ?_, ?_, ?_, ?_, entered, coherent⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, entered, coherent⟩
     · simpa only [hn, hc, he, hK, ← targetContext] using typed
     · simpa only [hc, he, hK, ← hi] using checks.implied
     · simpa only [hc, he, hK, ← hnames] using checks.inputs
     · simpa only [hc, he, hK] using checks.args
+    · have hf := checks.fresh
+      simp only [hc, he, hK, keptDone_outFresh] at hf ⊢
+      exact hf
     · simpa only [hc, he, hK, ← targetContext, exitWidth] using checks.query
   exact ⟨b.yields.getD [], s.source_eq hy, req, written, cf,
     (s.env.givenImplies[t.label]?).getD [], s.env.argName, (s.env.givenArgs[t.label]?).getD [],
-    (s.env.givenInputs[t.label]?).getD [], width, fresh, checked.reassign η, below, argumentInput⟩
+    (s.env.givenInputs[t.label]?).getD [], headFreshAt s.env t.label, width, fresh, checked.reassign η, below, argumentInput⟩
 
 /-- Handler records at the final walk, with the implications retained by transfer. -/
 @[nospecialize] def HandlerRecords (s : Site c r l hl) (t : Target) : Prop :=
@@ -344,11 +351,12 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
           List.mem_append, List.mem_singleton]
         exact .inr trivial, rfl⟩ hg _ checks.given
       refine ⟨req, written, cf, (s.env.givenImplies[t.label]?).getD [], s.env.argName,
-        (s.env.givenArgs[t.label]?).getD [], (s.env.givenInputs[t.label]?).getD [], width, fresh,
-        ?_, ?_, ?_, ?_, entered, coherent, below, s.argumentInput⟩
+        (s.env.givenArgs[t.label]?).getD [], (s.env.givenInputs[t.label]?).getD [], headFreshAt s.env t.label, width, fresh,
+        ?_, ?_, ?_, ?_, ?_, entered, coherent, below, s.argumentInput⟩
       · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hi] using checks.implied
       · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hnames] using checks.inputs
       · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.args
+      · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.fresh
       · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, ite_true] using checks.query
   exact checked.reassign η
 

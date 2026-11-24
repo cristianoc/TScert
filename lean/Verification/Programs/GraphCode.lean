@@ -1331,7 +1331,8 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 an element, or an initializing write of a field the node's knowledge states
 holds `null` or `undefined`. -/
 def writeWithinAt (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) : Bool :=
-  ExpressionEffects.writeWithin G (entry c) Φ t || ExpressionEffects.initWriteWithin G (entry c) (entryFacts G c) Φ t
+  ExpressionEffects.writeWithin G (entry c) Φ t || ExpressionEffects.initWriteWithin G (entry c) (entryFacts G c) Φ t ||
+    ExpressionEffects.denseWriteWithin G (entry c) (entryFacts G c) Φ t
 
 theorem writeWithinAt_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {c : NodeEvidence ι}
     {t : Tm} {T ρ n W h} (hc : writeWithinAt G Φ c t = true) (he : EnvOk G (entry c) ρ n W) (hh : HeapOk n W h)
@@ -1339,9 +1340,10 @@ theorem writeWithinAt_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprin
     HeapObservations.SafePostExc (excOf G) T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h
       (instantiate 0 ρ t) := by
   simp only [writeWithinAt, Bool.or_eq_true] at hc
-  rcases hc with hc | hc
+  rcases hc with (hc | hc) | hc
   · exact ExpressionEffects.write_within_exc hc he hh hs
   · exact ExpressionEffects.init_write_within_exc hc he hh hk hs
+  · exact ExpressionEffects.dense_write_within_exc hc he hh hk hs
 
 /-- **A node the bound check accepts is within the bound** on the locations
 below where the invocation started: an inspection, which preserves the heap,

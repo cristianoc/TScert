@@ -118,7 +118,7 @@ theorem setup_labels {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target
     (h : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional false c.framed = .ok p) :
+    c.observeEntry c.regional false c.framed c.givenFresh = .ok p) :
     (c.assertions.map (·.1)).eraseDups.length = c.assertions.length := by
   refine Classical.byContradiction fun hne => ?_
   have hb : ((c.assertions.map (·.1)).eraseDups.length != c.assertions.length) = true := by simp [hne]
@@ -137,12 +137,12 @@ theorem setup_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Targe
     ∃ p, SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
       c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
       c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-      c.observeEntry c.regional false c.framed = .ok p := by
+      c.observeEntry c.regional false c.framed c.givenFresh = .ok p := by
   unfold RunCall.walk SinglePass.runWalk at h
   cases hs : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
       c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
       c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-      c.observeEntry c.regional false c.framed with
+      c.observeEntry c.regional false c.framed c.givenFresh with
   | error e => rw [hs] at h; cases h
   | ok p => exact ⟨p, rfl⟩
 

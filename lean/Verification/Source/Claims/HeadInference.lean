@@ -476,6 +476,9 @@ structure Rules where
   /-- Each function's postcondition (`@ensures`) by its name: a call's
   facts of the binding it sets (`callEnsures`). -/
   ensuresOf : String → List HeapKnowledge.IndexFact := fun _ => []
+  /-- Whether a function's signatures all declare a fresh result (`Fresh<...>`):
+  a call's spine separation from existing array bindings and field paths. -/
+  freshOf : String → Bool := fun _ => false
   /-- Forced (`--force-proposals head-ensures`): each term of the binding a
   call's postcondition names also stated at most `-1` (`callEnsures`), the
   adversarial fact a loop head it reaches proposes and the pass's edge check
@@ -501,12 +504,17 @@ def Ctx.kill (ctx : Ctx) (ns : List String) : Ctx := ctx.filter fun f => !f.name
 resizing method's receiver (`push`, `pop`, `shift`, `unshift`, `splice`), of a
 written element's or field's receiver. A callee that resizes an array it is
 passed is the pass's to find: the proposal's edge check refuses it. -/
-def touched (es : List Expr) : List String :=
+def touched (es : List Expr) (inBounds : String → Expr → Bool := fun _ _ => false) : List String :=
   let root := fun (e : Expr) => (pathOf e).map (·.1) |>.toList
   es.flatMap fun
     | .invoke _ (.read _ (.str m) r) _ _ _ =>
       if ["push", "pop", "shift", "unshift", "splice", "fill", "copyWithin"].contains m then root r else []
-    | .elemWrite _ r _ _ | .indexWrite _ _ r _ _ | .write _ _ r _ => root r
+    | .elemWrite _ r idx _ | .indexWrite _ _ r idx _ =>
+      match pathOf r with
+      | some (n, []) => if inBounds n idx then [] else [n]
+      | some (n, _) => [n]
+      | none => []
+    | .write _ _ r _ => root r
     | .objectAssign _ t _ => root t
     | _ => []
 
@@ -516,7 +524,7 @@ array's length where no expression may resize it (`touched`); of a field
 path always, and a guarded fact where its linear fact does, whatever its
 guards' paths read: each is a proposal the pass checks at the head on
 every edge. -/
-partial def Fact.keptAcross (es : List Expr) : Fact → Bool
+partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Bool := fun _ _ => false) : Fact → Bool
   | .int _ => true
   | .readLink c _ f => !es.any fun
     | .write _ (.str g) o _ => g == f && match pathOf o with | some (r, []) => r == c | _ => true
@@ -528,9 +536,9 @@ partial def Fact.keptAcross (es : List Expr) : Fact → Bool
     | .write _ (.str f) _ _ => pa.contains f || pb.contains f
     | .objectAssign .. => !(pa.isEmpty && pb.isEmpty)
     | _ => false
-  | .guarded _ l => Fact.keptAcross es (.lin l)
+  | .guarded _ l => Fact.keptAcross es inBounds (.lin l)
   | .lin l =>
-    let t := touched es
+    let t := touched es inBounds
     l.terms.all fun ((n, p, k), _) =>
       if !p.isEmpty then true
       else match k with
@@ -542,7 +550,7 @@ partial def Fact.keptAcross (es : List Expr) : Fact → Bool
   -- the pass's to refuse).
   | .every a pa stop body =>
     es.all quiet || (pa.isEmpty && !es.any (fun | .elemWrite .. | .indexWrite .. => true | _ => false) &&
-      let t := touched es
+      let t := touched es inBounds
       let kept := fun ((n, p, k) : Key) => p.isEmpty && (k == .value || k == .strLength || !t.contains n)
       !t.contains a && kept stop && body.all fun (ts, _) => ts.all fun | (.term k, _) => kept k | _ => true)
 
@@ -581,9 +589,17 @@ def Ctx.unguarded (ctx : Ctx) (c : Expr) (pos : Bool) (forced : Bool := false) :
       (if rest.isEmpty then .lin l else .guarded rest l) :: false_
     | _ => []
 
-/-- The facts that survive expressions (`Fact.keptAcross`). -/
+/-- The facts that survive expressions (`Fact.keptAcross`), keeping an array's
+length across an element write whose index is bounded strictly below it. -/
 def Ctx.across (ctx : Ctx) (es : List Expr) : Ctx :=
-  if es.all quiet then ctx else ctx.filter (Fact.keptAcross es)
+  if es.all quiet then ctx else
+    let inBounds := fun (r : String) (idx : Expr) => match idx with
+      | .var _ i => ctx.any fun
+        | .lin ⟨ts, d⟩ => d ≤ -1 && ts.length == 2 &&
+            ts.contains ((i, [], .value), 1) && ts.contains ((r, [], .length), -1)
+        | _ => false
+      | _ => false
+    ctx.filter (Fact.keptAcross es inBounds)
 
 def Ctx.add (ctx : Ctx) (fs : List Fact) : Ctx := ctx ++ fs.filter (!ctx.contains ·)
 
@@ -709,19 +725,29 @@ def constructedLength (K : String → HeapKnowledge.Term.Kind) (x : String) : Ex
 
 /-- The separations a declaration of `x` states (`linear_facts.ml:sstatement`):
 an object literal's field holding a fresh empty array (`{ f: [] }`) apart from
-every array binding of `arrays` (an array binding's spine is never the fresh
-one); a copy (`const x = o`) each of `o`'s separations at `x`; a choice of `o`
-and `null` (`c ? o : null`) each guarded by `x === null`. -/
-def separations (arrays : List String) (ctx : Ctx) (x : String) : Expr → List Fact
+every array binding of `arrays`; a fresh array literal or fresh-returning call
+apart from every array binding of `arrays` and every field-rooted array length
+path in `ctx`; a copy (`const x = o`) each of `o`'s separations at `x`; a
+choice of `o` and `null` (`c ? o : null`) each guarded by `x === null`. -/
+def separations (arrays : List String) (freshOf : String → Bool) (ctx : Ctx) (x : String) : Expr → List Fact
   | .alloc _ names es =>
     (names.zip es).flatMap fun (k, e) => match k, e with
       | .str f, .arrayLit _ [] _ => (arrays.filter (· != x)).map fun a => Fact.apart [] x [f] a []
       | _, _ => []
+  | .arrayLit _ _ _ => freshAparts
+  | .call _ (.var _ f) _ _ _ => if freshOf f then freshAparts else []
   | .var _ o => copies o []
   | .ifBody _ _ (.var _ o) (.lit _ .vnull) | .ifBody _ _ (.lit _ .vnull) (.var _ o) => copies o [(x, [], .null)]
-  | .cast _ _ e => separations arrays ctx x e
+  | .cast _ _ e => separations arrays freshOf ctx x e
   | _ => []
 where
+  freshAparts : List Fact :=
+    let bare := (arrays.filter (· != x)).map fun a => Fact.apart [] x [] a []
+    let fieldPaths : List (String × List String) := (ctx.flatMap fun
+      | .lin l | .guarded _ l => l.terms.filterMap fun ((o, p, k), _) =>
+          if o != x && !p.isEmpty && k == .length then some (o, p) else none
+      | _ => []).eraseDups
+    bare ++ fieldPaths.map fun (o, p) => Fact.apart [] x [] o p
   copies (o : String) (guards : List (String × List String × HeapKnowledge.GuardTag)) : List Fact :=
     ctx.filterMap fun
       | .apart [] a pa b pb =>
@@ -1264,7 +1290,7 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
       callEnsures rules.ensuresOf x rules.falseEnsures init ++
       valueArms rules.kind rules.ensuresOf ctx x rules.falseEnsures init ++
       ctx.elemFacts rules.kind x init rules.falseElements)
-  if rules.separations then ctx := ctx.add (separations rules.arrays ctx x init)
+  if rules.separations then ctx := ctx.add (separations rules.arrays rules.freshOf ctx x init)
   -- (a read of a path: its quantified facts restated, `Fact.restate`;
   -- of the empty path, an alias `x = o` or a cast `o as T`, every
   -- fact of `o`'s paths)

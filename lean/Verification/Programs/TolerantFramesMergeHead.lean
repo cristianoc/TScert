@@ -26,11 +26,13 @@ input `(j, q)` names holds the entry value of `q`; a slot the promised input
 names holds the entry value of the start name the promised input is. -/
 structure HeadEstablishes (G : NormalGraph ι) (g : HeapKnowledge.Knowledge)
     (implies : List (PromiseCalls.Implication ι)) (startNames : List Nat) (argName : Option Nat)
-    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (ε : HeapKnowledge.EntryState) (ρ' : Env) (s : IndexedHeap) : Prop where
+    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (freshSlots : List Nat)
+    (ε : HeapKnowledge.EntryState) (ρ' : Env) (m : Nat) (s : IndexedHeap) : Prop where
   facts : HeapKnowledge.Holds g ε ρ' s.h
   implies : PromiseCalls.ImpliesOk G implies ρ' s.n s.W
   inputs : ∀ j q x, (j, q) ∈ inputSlots → startNames[q]? = some x → ρ' j = ε.env q
   arg : ∀ j a q, j ∈ argSlots → argName = some a → startNames[q]? = some a → ρ' j = ε.env q
+  fresh : ∀ j, j ∈ freshSlots → FreshAt m (ρ' j)
 
 /-- The head's valuation: a start name its entry value, any other name
 `fresh + i` the value of slot `i`. -/
@@ -58,11 +60,11 @@ theorem headVal_fresh {startNames : List Nat} {ρ' : Env} {fresh i : Nat} (hlt :
 the edge establishes the given inputs and the promised input. -/
 theorem headEntry_slots {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} {ρ' : Env} {s : IndexedHeap}
+    {implies : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} {ρ' : Env} {m : Nat} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ε ρ' s) :
-    SlotsNamed (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots freshSlots ε ρ' m s) :
+    SlotsNamed (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies freshSlots).1.names
       ρ' (headVal startNames ε ρ' fresh) := by
   intro i x hx
   simp only [SinglePass.headEntry, Bool.false_eq_true, ite_false, List.getElem?_map] at hx
@@ -90,22 +92,23 @@ theorem headEntry_slots {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
 /-- **(Head) A loop head's state holds where an edge establishes its given
 facts**: at a loop head other than the start, with distinct start names
 below the counter and the promised input a start name, where the edge
-establishes the head's given facts, implications, inputs and promised input
-at the head's environment `ρ'`, the head's state with its implications holds
-at `ρ'`, each start name holding its entry value; its store is well-formed. -/
+establishes the head's given facts, implications, inputs, promised input and
+fresh slots at the head's environment `ρ'`, the head's state with its
+implications holds at `ρ'`, each start name holding its entry value; its store
+is well-formed. -/
 theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} {ρ' : Env} {m : Nat} {s : IndexedHeap}
+    {implies : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} {ρ' : Env} {m : Nat} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ε ρ' s) :
-    StateHolds G (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1
-      (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).2.1
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots freshSlots ε ρ' m s) :
+    StateHolds G (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies freshSlots).1
+      (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies freshSlots).2.1
       startNames ε ρ' m s ∧
-    StoreWF (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.store := by
+    StoreWF (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies freshSlots).1.store := by
   have hsl := headEntry_slots (width := width) hnd hlt harg he
   have hst := headStore_ok
-    (f := fun i => (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names[i]?)
+    (f := fun i => (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies freshSlots).1.names[i]?)
     he.facts (fun i x hx => (hsl i x hx).symm)
   refine ⟨⟨headVal startNames ε ρ' fresh, hsl, hst.1, ?_, ⟨fun x hx => ?_, fun q x hq => headVal_start hnd hq⟩⟩,
     hst.2⟩
@@ -115,7 +118,10 @@ theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
     obtain ⟨a, ha, b, hb, rfl⟩ := hyx
     rw [← hsl _ _ hb]
     exact he.implies y hy (by rw [hsl _ _ ha]; exact htest)
-  · simp [SinglePass.headEntry] at hx
+  · simp only [SinglePass.headEntry, Bool.false_eq_true, ite_false, List.mem_filterMap] at hx
+    obtain ⟨j, hj, hxj⟩ := hx
+    rw [← hsl j x (by simpa [SinglePass.headEntry] using hxj)]
+    exact he.fresh j hj
 
 end Head
 

@@ -93,7 +93,7 @@ variable {ι : Type} [DecidableEq ι]
 
 
 /-- Whether the step reads every fact (`SinglePass.wholeStepOf`). -/
-def wholeOf : Tm → Bool := SinglePass.wholeStepOf
+def wholeOf (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm → Bool := SinglePass.wholeStepOf G Γ
 
 /-- The step's knowledge (`kE`, line 1226) over the facts `materialize`
 selects with `whole`. -/
@@ -106,7 +106,7 @@ def kOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) (ms 
 integers (`PromiseCalls.intRefine`). -/
 def ctxOfStep (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (t : Tm) :
     List (Ty ι) :=
-  PromiseCalls.intRefine G c.context (kOf G c entry ms (wholeOf t)).indices
+  PromiseCalls.intRefine G c.context (kOf G c entry ms (wholeOf G c.context t)).indices
 
 /-- The node's sequent, at the step's context. -/
 def jOf (G : NormalGraph ι) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat) : Sequent ι :=
@@ -140,17 +140,17 @@ def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : Pass
     (codes : CodeEntry ι → Bool) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat)
     (fresh : Nat) (effect : HeapExpressionRules.StepEvidence ι) (sums : List (ReadSummary ι))
     (st : Stepped ι) : Prop :=
-  ∃ out pre, (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums).value =
+  ∃ out pre, (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes sums).value =
       some out ∧
-    passTreeCheck pc (kOf G c entry ms (wholeOf node.expression)) codes sums effect = some pre ∧
+    passTreeCheck pc (kOf G c entry ms (wholeOf G c.context node.expression)) codes sums effect = some pre ∧
     st.result = (resultOf node.expression entry.names fresh).1 ∧ st.fresh = (resultOf node.expression entry.names fresh).2 ∧
     st.copied = false ∧ st.stepEffect = some effect ∧
-    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes sums ==
         Footprints.Closed.empty) = true →
-      st.store = applyDelta entry.store (materialize entry c.context.length ms (wholeOf node.expression)).2.1 out true
-        (passBack (materialize entry c.context.length ms (wholeOf node.expression)).2.2 entry.names st.result) ∧
-      st.stepK = kOf G c entry ms (wholeOf node.expression) ∧ st.stepOut = out) ∧
-    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+      st.store = applyDelta entry.store (materialize entry c.context.length ms (wholeOf G c.context node.expression)).2.1 out true
+        (passBack (materialize entry c.context.length ms (wholeOf G c.context node.expression)).2.2 entry.names st.result) ∧
+      st.stepK = kOf G c entry ms (wholeOf G c.context node.expression) ∧ st.stepOut = out) ∧
+    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes sums ==
         Footprints.Closed.empty) = false →
       ∃ out', passWholeCheck G images (kOf G c entry ms true) codes sums pre = true ∧
         (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms true) effect codes sums).value = some out' ∧
@@ -158,7 +158,7 @@ def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : Pass
           (materialize entry c.context.length ms true).2.1 out' true
           (passBack (materialize entry c.context.length ms true).2.2 entry.names st.result) ∧
         st.stepK = (if ctxOfStep G c entry ms node.expression == c.context then kOf G c entry ms true
-          else PromiseCalls.withInts (kOf G c entry ms true) (kOf G c entry ms (wholeOf node.expression))) ∧
+          else PromiseCalls.withInts (kOf G c entry ms true) (kOf G c entry ms (wholeOf G c.context node.expression))) ∧
         st.stepOut = out')
 
 /-- The tree the pass checks, as `checkedStep` computes it (line 1273–1275). -/

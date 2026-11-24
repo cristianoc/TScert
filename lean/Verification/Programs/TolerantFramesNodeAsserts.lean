@@ -127,10 +127,10 @@ head's given facts are the written assertion with the claims' index facts
 theorem assertsAt_of_head {G : NormalGraph ι} {stated : Nat → Option HeapKnowledge.Knowledge} {t : Nat}
     {written : HeapKnowledge.Knowledge} {cf : List HeapKnowledge.Candidate}
     {gimp : List (PromiseCalls.Implication ι)} {startNames : List Nat} {argName : Option Nat}
-    {argSlots : List Nat} {inputSlots : List (Nat × Nat)} {ρ' : Env} {s : IndexedHeap}
+    {argSlots : List Nat} {inputSlots : List (Nat × Nat)} {freshSlots : List Nat} {ρ' : Env} {m : Nat} {s : IndexedHeap}
     (hw : (stated t).getD {} = written)
     (hest : HeadEstablishes G (HeapKnowledge.withCandidates written cf) gimp startNames argName argSlots
-      inputSlots ε ρ' s) :
+      inputSlots freshSlots ε ρ' m s) :
     AssertsAt ε stated t ρ' s := by
   intro req hr
   rw [hr] at hw

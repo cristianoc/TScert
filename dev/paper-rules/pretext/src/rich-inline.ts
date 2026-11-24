@@ -176,11 +176,6 @@ const RICH_INLINE_START_CURSOR: RichInlineCursor = {
   graphemeIndex: 0,
 }
 
-// PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
-// `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
-// that changes nothing.
-function paperAssume(_fact: boolean, _issue: string): Modifies<{}, void> {}   // PAPER
-
 function getInternalPreparedRichInline(prepared: PreparedRichInline): InternalPreparedRichInline {
   return prepared
 }
@@ -216,7 +211,6 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     const analysis = analyzeText(only.text, profile, whiteSpace, wordBreak, language)
     const segments: string[] = []
     const measured = measureAnalysis(analysis, 0, analysis.flags.length, only.font, segments, readLetterSpacing(only.letterSpacing, profile), profile, language, true, null)
-    paperAssume(measured.segmentFlags.length === measured.widths.length, "#356")   // PAPER: unsafe assume until #356
     const data: PreparedSegments = { ...measured, segments }
     const itemSegments: number[] = []
     /** @invariant data.segmentFlags.length === data.widths.length && data.widths !== itemSegments */   // PAPER: annotation
@@ -291,10 +285,9 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   const count: SafeInt = analysis.flags.length
 
   // The paragraph's lists, which each item's measurement adds its segments to (measureAnalysis).
-  const widths: number[] = []
+  const widths: Dense<number[]> = []
   const flags = new Uint8Array(count + padded)
   const breakableFitAdvances: (number[] | null)[] = []
-  const lists: ParagraphLists = { widths, segmentFlags: flags, breakableFitAdvances }
   const segments: string[] = []
   const sourceStarts: number[] = []
   const sourceEnds: number[] = []
@@ -336,7 +329,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // Whether the paragraph holds an object of width 0.
   let hasEmptyObject = false
 
-  /** @invariant 0 <= from */
+  /** @invariant 0 <= from && widths !== breakableFitAdvances */   // PAPER: annotation
   for (let from: SafeInt = 0; from < count;) {
     // The item this segment starts in, and the segments that start in it.
     const offset = offsets[(analysis.starts[from] ?? missing())]
@@ -369,7 +362,6 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         const ownAnalysis = analyzeText(item.text, profile, 'normal', wordBreak, language)
         const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, null, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null)
         const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
-        paperAssume(own.segmentFlags.length === own.widths.length, "#356")   // PAPER: unsafe assume until #356
         if (normalizePreparedLineStart(own, start)) width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
         width += item.extraWidth ?? 0
         // The chip's text as a line of it paints it (buildLineTextFromRange).
@@ -503,6 +495,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     // what else measurement gives them, from the item's first segment.
     const itemAt = widths.length
     if (to > analysis.flags.length || to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('index')
+    const lists: ParagraphLists = { widths, segmentFlags: flags, breakableFitAdvances }
     const sub = measureAnalysis(analysis, from, to, item.font, null, letterSpacing, profile, language, true, lists)
     simple &&= sub.simpleLineCountFastPath
     if (readsItemFonts) {
@@ -673,21 +666,27 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   }
   const segmentCount = widths.length
   while (itemSegments.length <= items.length) itemSegments.push(segmentCount)
+  if (segmentCount > flags.length) throw new RangeError('index')
   const segmentFlags = segmentCount === flags.length ? flags : flags.subarray(0, segmentCount)
   // A paragraph whose lines return from an unfit hyphen marks every break the scan gives before
   // text, so its walk records each as the line's latest break (pendingBreakSegmentIndex in
   // walkPreparedComplexLines). The return itself reads no mark, as a text's doesn't; what the marks
   // still decide is where the Gecko profile ends a line that an object of width 0 sticks out of
   // (ENGINE_FOLLOWUPS.md, Rich-inline item edges).
-  if (marksReturnable || (discretionaryHyphenContexts !== null && !analysis.hasUnbroken)) for (let i = 0; i < segmentCount; i++) if (((segmentFlags[i] ?? missing()) & UNBROKEN) === 0) segmentFlags[i] = (segmentFlags[i] ?? missing()) | RETURNABLE
+  if (marksReturnable || (discretionaryHyphenContexts !== null && !analysis.hasUnbroken)) {
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+    for (let i = 0; i < segmentCount; i++) if (((segmentFlags[i] ?? missing()) & UNBROKEN) === 0) segmentFlags[i] = (segmentFlags[i] ?? missing()) | RETURNABLE
+  }
 
   const segmentItems = new Int32Array(segmentCount)
   const gapSegments = new Uint8Array(segmentCount)
+  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
   for (let index = 0; index < items.length; index++) {
     const firstSegment = itemSegments[index]
     if (firstSegment === undefined) throw new RangeError('missing value')
     const end = itemSegments[index + 1]
     if (end === undefined) throw new RangeError('missing value')
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
     for (let i = firstSegment; i < end; i++) {
       segmentItems[i] = index
       if ((i === firstSegment || i === end - 1) && ((segmentFlags[i] ?? missing()) & KIND_BITS) === SPACE && (segments[i] ?? missing()).length === 1) gapSegments[i] = 1
@@ -701,6 +700,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     segmentHyphenWidths = []
     segmentTabStopAdvances = []
     segmentMinimumTabAdvances = []
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
     for (let i = 0; i < segmentCount; i++) {
       const index = segmentItems[i]
       if (index === undefined) throw new RangeError('missing value')
@@ -715,6 +715,27 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     hyphenRooms: discretionaryHyphenContexts !== null && profile.unfitHyphenRetreat === 'reduced-width' ? getHyphenRooms(hyphenWidths, itemSegments, segmentItems) : null,
     insideExtras, fillExtras, openingEdges,
     emptyObjectSpaces: null, emptyObjectReturns: null, hangEnds: null,
+  }
+  // Each item is a text frame: a zero-width space after preserved spaces of its own item ends
+  // the run of them that hangs (ParagraphSegmentData, hangEnds).
+  if (preserve && profile.hangsSpacesPerTextFrame && source.includes('\u200B')) {
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+    for (let i = 1; i < segmentCount; i++) {
+      if (((segmentFlags[i] ?? missing()) & (KIND_BITS | DROPPED)) === ZERO_WIDTH_BREAK && ((segmentFlags[i - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && segmentItems[i] === segmentItems[i - 1]) {
+        ;(segmentData.hangEnds ??= new Uint8Array(segmentCount))[i] = 1
+      }
+    }
+  }
+
+  let onlyItem = -1
+  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+  for (let index = 0; index < items.length && !paddedOrObject; index++) {
+    if (itemSegments[index] === itemSegments[index + 1]) continue
+    if (onlyItem >= 0) {
+      onlyItem = -1
+      break
+    }
+    onlyItem = index
   }
   // The properties measureAnalysis() gives a text's handle, in its order, then the paragraph's own.
   const data: PreparedSegments = {
@@ -735,27 +756,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     items: segmentData,
     segments,
   }
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (hasEmptyObject && profile.emptyAtomicAlwaysFits) setEmptyObjectFacts(segmentData, data, items, itemSegments, segmentItems, source, starts)
-  // Each item is a text frame: a zero-width space after preserved spaces of its own item ends
-  // the run of them that hangs (ParagraphSegmentData, hangEnds).
-  if (preserve && profile.hangsSpacesPerTextFrame && source.includes('\u200B')) {
-    for (let i = 1; i < segmentCount; i++) {
-      if (((segmentFlags[i] ?? missing()) & (KIND_BITS | DROPPED)) === ZERO_WIDTH_BREAK && ((segmentFlags[i - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && segmentItems[i] === segmentItems[i - 1]) {
-        ;(segmentData.hangEnds ??= new Uint8Array(segmentCount))[i] = 1
-      }
-    }
-  }
-
-  let onlyItem = -1
-  for (let index = 0; index < items.length && !paddedOrObject; index++) {
-    if (itemSegments[index] === itemSegments[index + 1]) continue
-    if (onlyItem >= 0) {
-      onlyItem = -1
-      break
-    }
-    onlyItem = index
-  }
   const flow: InternalPreparedRichInline = {
     data, onlyItem, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems, gapSegments,
     plainWidths: data.letterSpacing === 0 && itemEndHalts === null && !(preserve && source.includes('\t')),
@@ -836,10 +837,11 @@ function setEmptyObjectFacts(
   segmentItems: Int32Array,
   source: string,
   starts: number[],
-): void {
+): Effects<{ "segmentData.emptyObjectSpaces": "any"; "segmentData.emptyObjectReturns": "any" }, void> {   // PAPER: annotation
   const { segmentFlags, widths, letterSpacing } = data
   const count = segmentFlags.length
-  const spaces = zeros(count)
+  const spaces: Dense<number[]> = []
+  for (let i = 0; i < count; i++) spaces.push(0)
   const returns = new Uint8Array(count)
   // The item whose white space ends the paragraph's text after other text of its own, or -1.
   let runStart = source.length
@@ -859,7 +861,6 @@ function setEmptyObjectFacts(
     const end = itemSegments[index + 1]
     if (end === undefined) throw new RangeError('missing value')
     if (first === end) continue
-    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     const kind = (segmentFlags[first] ?? missing()) & KIND_BITS
     const item = items[index]
     if (item === undefined) throw new RangeError('missing value')
@@ -869,15 +870,13 @@ function setEmptyObjectFacts(
         continue
       }
       let before = first - 1
-      /** @invariant data.segmentFlags.length === data.widths.length */   // PAPER: annotation
       while (before >= 0 && isSoftHyphenSegment(data, before)) before--
       const beforeKind = before < 0 ? TEXT : (segmentFlags[before] ?? missing()) & KIND_BITS
       let space = -1
       if (beforeKind === SPACE) space = segmentItems[before] === segmentItems[first - 1] ? (widths[before] ?? missing()) + (((segmentFlags[before] ?? missing()) & SPACED) !== 0 ? letterSpacing : 0) : 0
       else if (beforeKind === TAB || (beforeKind === PRESERVED_SPACE && segmentItems[before] !== segmentItems[before + 1])) space = 0
-      const spacesStore = spaces
-      if ((first & 0x7fffffff) !== first || first > spacesStore.length) throw new RangeError('index')
-      spacesStore[first] = space
+      if ((first & 0x7fffffff) !== first || first >= spaces.length) throw new RangeError('index')
+      spaces[first] = space
       const lastKind = first === 0 ? TEXT : (segmentFlags[first - 1] ?? missing()) & KIND_BITS
       if (!keeps && (space >= 0 || lastKind === OBJECT || lastKind === SOFT_HYPHEN)) returns[first] = 1
       continue
@@ -886,7 +885,6 @@ function setEmptyObjectFacts(
     let softHyphens = true
     let holdsSpace = false
     let establishesLine = false
-    /** @invariant data.segmentFlags.length === data.widths.length */   // PAPER: annotation
     for (let i = first; i < end; i++) {
       if (isSoftHyphenSegment(data, i)) continue
       softHyphens = false
@@ -894,14 +892,12 @@ function setEmptyObjectFacts(
       else establishesLine = true
     }
     if (softHyphens) continue
-    paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
     if ((item.extraWidth ?? 0) > 0 || (holdsSpace && !establishesLine)) keeps = false
     else if (kind === SPACE) keeps = true
     else keeps = (kind === ZERO_WIDTH_BREAK && !isSoftHyphenSegment(data, first)) || kind === HARD_BREAK || kind === PRESERVED_SPACE
   }
   segmentData.emptyObjectSpaces = spaces
   segmentData.emptyObjectReturns = returns
-  paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
 }
 
 // Finds the paragraph's line where nothing wraps it, which is taken without a walk at any width it

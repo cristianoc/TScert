@@ -106,7 +106,7 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
   split at h
   rename_i name' pos' r' heq
   cases heq
-  extract_lets bounded bound labels pool main givenImplies givenArgs givenInputs G' I' pool' observed regionalOf regional fallback claimAt place at h
+  extract_lets bounded bound labels pool main givenImplies givenArgs givenInputs givenFresh G' I' pool' observed regionalOf regional fallback claimAt place at h
   split at h
   · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; simp [MemberRun.accepted, MemberRun.before] at hacc
   rename_i hdecl
@@ -290,7 +290,7 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
               bound := bnd, givenImplies := givenImplies, givenArgs := givenArgs, ensures := r.ensures,
               givenInputs := givenInputs,
               entrySeparation := r.entrySeparation, observe := SourceClaimJson.observedIn observe k observed, tracing := tracing, observeEntry := false,
-              regional := rg, framed := fr', confinement := conf' }
+              regional := rg, framed := fr', confinement := conf', givenFresh := givenFresh }
         have hmain : ∀ fr' conf', MainCall r (mkCall fr' conf') (GraphCode.admits (r.codes.map (·.entry))) .ordinary sumsAnswers :=
           fun _ _ => ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩
         have hwalk_eq : walk k bnd rg = SourceClaimJson.runWithConfinement

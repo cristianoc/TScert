@@ -272,12 +272,22 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
           | _ => []
         | .error _ => []
       | none => []
+  let freshOf := fun (n : String) => match fr.units.find? (·.1.name == n) with
+    | some (g, _, _) => g.stated.any (·.fresh)
+    | none => match module.find? (·.1 == n) with
+      | some v => match runCompiler T [] (moduleValueType v) with
+        | .ok (A, r) => match PositiveRules.expand (SourceTypes.graph r.types) A with
+          | [.arrs L _] => !L.isEmpty && L.all (·.effect.schema.normal.freshResult)
+          | _ => false
+        | .error _ => false
+      | none => false
   let heads : Std.HashMap Nat (List HeadInference.Fact) :=
     (HeadInference.proposals
       { headRules force with
           kind := HeadInference.kindsOf f lengthKind
           arrays := HeadInference.arraysOf f lengthKind
-          ensuresOf := ensuresOf } f.body
+          ensuresOf := ensuresOf
+          freshOf := freshOf } f.body
       (if (headRules force).carried then HeadInference.entryOf f else [])).foldl (fun m (pos, fs) => m.insert pos fs) {}
   let early := (earlyNames f.body).eraseDups
   let headClaims (g : SourceFlow.Graph) (node : SourceFlow.Node) : List (Nat × List HeadInference.Fact) :=
@@ -294,18 +304,24 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
       -- binding it names whole, a value its type at the loop's entry makes
       -- an array, where the walk types it: no string, no null)
       let typed := (envMap.get? pos).getD []
-      let holdsArray := fun (n : String) => match typed.lookup n with
+      let holdsArray := fun (gs : List (String × List String × HeapKnowledge.GuardTag)) (n : String) =>
+        match typed.lookup n with
         | some (.ok A) =>
           let field := fun (fs : List (Stored (List Tree))) (vs : List (PropKey × List Tree)) (k : PropKey) =>
             ((Stored.views fs).lookup k <|> vs.lookup k).isSome
-          let cs := PositiveRules.expand (SourceTypes.graph T) A
+          let guardedNull := gs.any fun (g, p, t) => g == n && p.isEmpty && t == .null
+          let guardedUndef := gs.any fun (g, p, t) => g == n && p.isEmpty && t == .undef
+          let cs := (PositiveRules.expand (SourceTypes.graph T) A).filter fun
+            | .nul => !guardedNull
+            | .undef => !guardedUndef
+            | _ => true
           !cs.isEmpty && cs.all fun
             | .refs fs _ vs .. => field fs vs SourceTypes.spineField
             | .view .. => true
             | _ => false
         | _ => true
       let apartFits : HeadInference.Fact → Bool
-        | .apart _ a pa b pb => (!pa.isEmpty || holdsArray a) && (!pb.isEmpty || holdsArray b)
+        | .apart gs a pa b pb => (!pa.isEmpty || holdsArray gs a) && (!pb.isEmpty || holdsArray gs b)
         | _ => true
       -- (a read link names value bindings alone, no cell; for a field named
       -- `length`, skip when the receiver's type lowers `length` to a string,

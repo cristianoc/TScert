@@ -23,10 +23,10 @@ omit [Labels ι] in
 /-- A head's implications refer to its entry's names. -/
 theorem headEntry_impNames {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {args : List Nat} {inputs : List (Nat × Nat)}
-    {xs : List (PromiseCalls.Implication ι)} {y : PromiseCalls.Implication ι}
-    (h : y ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs).2.1) :
-    y.test ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs).1.names ∧
-    y.target ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs).1.names :=
+    {xs : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} {y : PromiseCalls.Implication ι}
+    (h : y ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs freshSlots).2.1) :
+    y.test ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs freshSlots).1.names ∧
+    y.target ∈ (SinglePass.headEntry g isStart width fresh startNames argName args inputs xs freshSlots).1.names :=
   renamedImplication_names h
 
 /-- A merge's implications refer to its merged names. -/

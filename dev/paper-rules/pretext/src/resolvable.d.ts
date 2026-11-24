@@ -26,6 +26,7 @@ type Modifies<
   P extends {
     values?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
     spines?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
+    views?: "keep" | "init" | "scalar" | "extend" | "grow" | "any";
     onThrow?: true;
     [location: string]:
       | "keep"
@@ -49,3 +50,8 @@ type Fresh<T> = T;
 // `number`; the verifier reads it as a type of its own, the clause `int`
 // (POSITIVE-TYPES.md, "The safe integers").
 type SafeInt = number;
+// `Dense<T>` marks an array type as having no holes (`presence: "dense"`):
+// every index below its length holds a present element. TypeScript reads it as
+// `T`; the verifier certifies density at every producer and uses it for
+// in-bounds writes that leave the spine unchanged.
+type Dense<T> = T;

@@ -1022,12 +1022,24 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
 
+/-- Whether slot `f` in `Γ` is a callable declaring a signature with a fresh
+array result (`ExitSchema.freshResult`). -/
+def freshCallee (G : NormalGraph ι) (Γ : List (Ty ι)) (f : Nat) : Bool :=
+  match Γ[f]? with
+  | some F => match PositiveRules.expand G F with
+    | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
+        L.any fun p => p.effect.schema.normal.freshResult
+    | _ => false
+  | none => false
+
 /-- Whether a step reads every fact in the store: constructions (whose view
-lengths may follow from facts their operands do not reach) and array object
-allocations (whose fresh spine is separated from existing field paths named in
-the store's index facts, `IndexWrites.freshSpineApart`). -/
-def wholeStepOf : Tm → Bool
+lengths may follow from facts their operands do not reach), calls to a
+fresh-array-returning callee (`PromiseCalls.freshCallSpineApart`), and array
+object allocations (whose fresh spine is separated from existing field paths
+named in the store's index facts, `IndexWrites.freshSpineApart`). -/
+def wholeStepOf (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm → Bool
   | .construct .. => true
+  | .invoke (.var f) _ _ => freshCallee G Γ f
   | .makeAt .absent [s, p] [.var 0, .var _] => s == arraySpineKey && p == CallArguments.protoField
   | .letE (.arrLit _) (.makeAt .absent [s, p] [.var 0, .var _]) =>
       s == arraySpineKey && p == CallArguments.protoField
@@ -1046,7 +1058,7 @@ refusal is printed. -/
 def stepPreconditionsAt (G : NormalGraph ι) (c : PointClaim ι) (node : Node) (entry : State) (ms : List Nat) :
     Option StepPreconditions := do
   let t := node.expression
-  let whole := wholeStepOf t
+  let whole := wholeStepOf G c.context t
   let facts := fun (_ : Unit) =>
     let (k, _, _) := materialize entry c.context.length ms whole
     KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
@@ -1719,7 +1731,8 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
   -- conjuncts beside `selectedWithinAt`).
   let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.stepDerivChecked G images codes sums c node stepK deriv
   let writes := fun (B : Footprints.Closed) => ExpressionEffects.writeWithin G c.context B node.expression ||
-    ExpressionEffects.initWriteWithin G c.context stepK B node.expression
+    ExpressionEffects.initWriteWithin G c.context stepK B node.expression ||
+    ExpressionEffects.denseWriteWithin G c.context stepK B node.expression
   let within := ExpressionEffects.check G c.context node.expression || writes Φ ||
     (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
     c.context.any (ExpressionEffects.emptyType G ·)
@@ -1745,7 +1758,8 @@ def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
     (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
     (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepGrades :=
   let writes := ExpressionEffects.writeGrades G c.context node.expression ++
-    ExpressionEffects.initWriteGrades G c.context stepK node.expression
+    ExpressionEffects.initWriteGrades G c.context stepK node.expression ++
+    ExpressionEffects.denseWriteGrades G c.context stepK node.expression
   let selected := GraphCode.selectedGrades F deriv
   let inspection := ExpressionEffects.check G c.context node.expression
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
@@ -1785,8 +1799,8 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
       (stepGrades G images codes sums F c node stepK deriv).admits Φ Ψ liveHandler ret outFresh
         node.continuation := by
   simp only [footprintCheck, stepGrades, StepGrades.admits, Thunk.get, ExpressionEffects.writeWithin_eq_grades,
-    ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades,
-    GraphCode.selectedThrowsWithinAt_eq_grades]
+    ExpressionEffects.initWriteWithin_eq_grades, ExpressionEffects.denseWriteWithin_eq_grades,
+    GraphCode.selectedWithinAt_eq_grades, GraphCode.selectedThrowsWithinAt_eq_grades]
   have hk : ∀ Φ : Footprints.Closed, (⟨.keep, .keep, .keep⟩ : Footprints.Closed).le Φ = true :=
     Footprints.Closed.empty_le
   generalize ExpressionEffects.check G c.context node.expression = a
@@ -1819,7 +1833,8 @@ def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes 
     (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
     (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepCertificate :=
   let writes := (ExpressionEffects.writeGrades G c.context node.expression ++
-    ExpressionEffects.initWriteGrades G c.context stepK node.expression).map
+    ExpressionEffects.initWriteGrades G c.context stepK node.expression ++
+    ExpressionEffects.denseWriteGrades G c.context stepK node.expression).map
       fun g => ({ frame := g.fp, ensures := [] } : CallEffects.ExitSpec)
   let selected := selectedSummaries deriv
   let inspection := ExpressionEffects.check G c.context node.expression
@@ -2247,9 +2262,13 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := timedKind "meet tagged" fun _ =>
-      let nullish := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
+      let nullishPos := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
         (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
           (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
+      let nullish := (nullishPos ++ nullishPos.filterMap fun (z, g) =>
+        if (g == .null || g == .undef) && projections.any (fun o => HeapKnowledge.guardTags o z [] g.complement) then
+          some (z, g.complement)
+        else none).eraseDups
       if nullish.isEmpty then [] else
       let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
@@ -2426,8 +2445,8 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     stats := { stats with copies := stats.copies + 1 }
     result := x
   | none =>
-    -- A construction or array object allocation reads every fact (`wholeStepOf`).
-    let wholeStep := wholeStepOf node.expression
+    -- A construction, fresh-returning call, or array object allocation reads every fact (`wholeStepOf`).
+    let wholeStep := wholeStepOf G c.context node.expression
     -- A test, a conditional or a read of a slot reads the facts over its
     -- names and their aliases; a step that may need an entailment over
     -- them also reads the linear facts they chain through.
@@ -2552,7 +2571,8 @@ states holds an input's entry value (`inputSlots`, `GraphCode.trackTable`'s
 pairs) or the promised input (`argSlots`) keeping that input's name; the
 implications it states, over those names; the next fresh name. -/
 def headEntry (g : Knowledge) (isStart : Bool) (width fresh : Nat) (startNames : List Nat) (argName : Option Nat)
-    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (implies : List (PromiseCalls.Implication ι)) :
+    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (implies : List (PromiseCalls.Implication ι))
+    (freshSlots : List Nat := []) :
     State × List (PromiseCalls.Implication ι) × Nat :=
   let base := if isStart then startNames.headD 0 else fresh
   let next := if isStart then fresh else fresh + width
@@ -2565,7 +2585,8 @@ def headEntry (g : Knowledge) (isStart : Bool) (width fresh : Nat) (startNames :
   let f := fun (i : Nat) => names[i]?
   let store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
     | some b => s.add b | none => s) {}
-  ({ names, store }, implies.filterMap (fun x => do pure ⟨← f x.test, ← f x.target, x.type⟩), next)
+  let freshNames := if isStart then [] else freshSlots.filterMap f
+  ({ names, store, fresh := freshNames }, implies.filterMap (fun x => do pure ⟨← f x.test, ← f x.target, x.type⟩), next)
 
 /-- What the walk records of one label: whether it was visited; the fresh
 counter on entry; its entry state and implications (after the head entry,
@@ -2720,6 +2741,12 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   grading : Bool
   /-- The framed nodes with the supports their returns keep (`framedAt`). -/
   framed : List (Nat × List Footprints.Footprint)
+  /-- The slots stated fresh at each loop head other than the start. -/
+  givenFresh : Array (List Nat) := #[]
+
+/-- The fresh slots a head other than the start states (always empty at the start). -/
+def headFreshAt {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat) : List Nat :=
+  if l == env.start then [] else (env.givenFresh[l]?).getD []
 
 /-- Under a bound whose exceptional exit is `⊤`, the region from which
 no normal return is possible (`GraphCode.inferDead`), refined from every
@@ -2791,11 +2818,12 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
     (stated «given» : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
-    (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Footprints.Footprint)) : WalkEnv ι G images :=
+    (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Footprints.Footprint))
+    (givenFresh : Array (List Nat) := #[]) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
     observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName,
-    grading, framed }
+    grading, framed, givenFresh }
 
 /-- The walk's setup over one graph: its checks (the claims' count, the
 loop heads' fuel, spine regions with an edge into the start, the entry's
@@ -2815,7 +2843,8 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := []) :
+    (framed : List (Nat × List Footprints.Footprint) := [])
+    (givenFresh : Array (List Nat) := #[]) :
     Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) :=
   let nodes := P.toArray
   let claimed := claims.toArray
@@ -2887,7 +2916,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
     .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
         ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
-        isHead reached startEntered stated given merging deadArr startNames argName grading framed,
+        isHead reached startEntered stated given merging deadArr startNames argName grading framed givenFresh,
       setupState n answers counts trace indeg queue startWidth)
 
 /-- A node's output facts as an edge reads them: the step's output `out`
@@ -2940,7 +2969,7 @@ def entryStart (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkE
   match env.given[l]! with
   | some g =>
     let (st, imp, fr) := headEntry g (l == env.start && !env.startEntered) width σ.fresh env.startNames env.argName
-      ((env.givenArgs[l]?).getD []) ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD [])
+      ((env.givenArgs[l]?).getD []) ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD []) (headFreshAt env l)
     { base := st, implies := imp, fresh := fr, merge := none, merged := none }
   | none => match σ.walk.incoming[l]! with
     | [s] => { base := s, implies := (σ.walk.incomingImpl[l]!).headD [], fresh := σ.fresh, merge := none, merged := none }
@@ -3128,6 +3157,7 @@ def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
   (match node.expression with
     | .var i => (entry.names[i]?).any entry.fresh.contains
     | _ => false) ||
+    GraphCode.ArgumentRegionGraph.allocSpine node.expression ||
     ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
       stepDerivChecked G images codes sums c node stepK deriv)
@@ -3816,7 +3846,7 @@ input's entry value or the promised input hold on it; the head's given state
 entailed on it. -/
 def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l exit : Nat)
     (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store) (pushed : Bool)
-    (vacuous : Bool) (carried : List (PromiseCalls.Implication ι)) (acc : ExitsDone ι G) :
+    (vacuous : Bool) (carried : List (PromiseCalls.Implication ι)) (freshOut : List Nat) (acc : ExitsDone ι G) :
     Except (WalkStop ι G) (ExitsDone ι G) :=
   let width := (env.claimed[l]!).context.length
   let edges := acc.edges.push { source := l, target := t, pushed, carried, meets := !vacuous }
@@ -3840,6 +3870,8 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
     let due := failing.map (fun j => (EdgeRequirement.promisedInput j, [j]))
     .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: the promised input" none
       (requirementDetail G env l exit t tc Γ names edgeStore due)) acc.counts answers acc.trace)
+  else if !vacuous && (headFreshAt env t.label).any (fun j => !(names[PointClaims.slot t.mapping j]?).any freshOut.contains) then
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: a fresh slot") acc.counts answers acc.trace)
   else
     -- The head's given state is entailed on every edge into it.
     match env.given[t.label]! with
@@ -3992,7 +4024,8 @@ def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
           (entry.names[y.target]?).map fun tgt => ⟨st.result, tgt, y.type⟩ else none)
       let record : ExitRecord ι := { index := exi.2, target := t, Γ, names, edgeStore, typed, head := false, Γe := none, carried := none }
       if env.isHead[t.label]! then
-        (headExit G images env l exi.2 t tc Γ names edgeStore pushed vacuous (en.implies ++ freshImpl) acc).map fun acc =>
+        (headExit G images env l exi.2 t tc Γ names edgeStore pushed vacuous (en.implies ++ freshImpl)
+          (if pushed && !isHandler && sd.outFresh && !entry.fresh.contains st.result then st.result :: entry.fresh else entry.fresh) acc).map fun acc =>
           { acc with exits := acc.exits.push { record with head := true } }
       else
         let Γe : Thunk (List (Ty ι)) := Thunk.mk fun _ => if isHandler then Γ else refinedContext G c node.continuation ysAll outAll.get first
@@ -4197,11 +4230,12 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := []) :
+    (framed : List (Nat × List Footprints.Footprint) := [])
+    (givenFresh : Array (List Nat) := #[]) :
     Except (WalkStop ι G) (WalkState ι G × Nat) := do
   let (env, σ0) ← setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
     suggestions known codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures
-    givenInputs entrySeparation observe tracing observeEntry regional grading framed
+    givenInputs entrySeparation observe tracing observeEntry regional grading framed givenFresh
   -- Each node enters the queue once: a fuel of the nodes and one never runs out.
   let σ ← drive (visit G images env) (env.n + 1) σ0
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
@@ -4245,10 +4279,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := [])
-    (confinement : Option LocalConfinement.Table := none) : Outcome ι × Counts × Answered G × Trace :=
+    (confinement : Option LocalConfinement.Table := none)
+    (givenFresh : Array (List Nat) := #[]) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
       codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
-      entrySeparation observe tracing observeEntry regional grading framed with
+      entrySeparation observe tracing observeEntry regional grading framed givenFresh with
   | .error stop => (stop.outcome.outcome, stop.counts, stop.answers, stop.trace)
   | .ok (σ, reachable) =>
     let counts := { σ.counts with reached := reachable, grades := σ.walk.visits }

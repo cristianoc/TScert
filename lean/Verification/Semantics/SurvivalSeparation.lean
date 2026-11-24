@@ -174,6 +174,165 @@ theorem knowledgeQuery_spines (k : Knowledge) {e : SepFact} (he : e ∈ knowledg
       SepFact.sites] using hm
   | locs => simp [SepFact.sites] at hm
 
+/-! ## Guarded separation queries and survival -/
+
+/-- The separations an unconditional fact states under slot guards `gs`
+assumed not to hold (`∀ (g, t) ∈ gs, ¬t.holds (ρ g)`): a spine separation,
+a region fact, a positively guarded separation on a path root, or any
+separation guarded by a slot guard in `gs`. -/
+def factSepsUnder (ls : HeapLinks.Links) (gs : List (Nat × GuardTag)) : IndexFact → List SepFact
+  | .spineApart a p b q => [.spines (a, p) (b, q)]
+  | .apart a b => [.arrays (a, []) (b, [])]
+  | .guarded g [] t B =>
+    if gs.contains (g, t) then factSepsUnder ls gs B
+    else if t.isPositive then (factSepsUnder ls gs B).filter fun e => match e.sites with
+      | some (a, b) => (HeapLinks.aliases ls g).contains a.1 || (HeapLinks.aliases ls g).contains b.1
+      | none => false
+    else []
+  | _ => []
+
+theorem factSepsUnder_holds {ls : HeapLinks.Links} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    ∀ (F : IndexFact), F.HoldsAt ε ρ h → ∀ e ∈ factSepsUnder ls gs F, e.Holds ρ h := by
+  intro F
+  induction F with
+  | spineApart a p b q =>
+    intro hF e he
+    simp only [factSepsUnder, List.mem_singleton] at he
+    subst he
+    obtain ⟨u, w, hu, hw, hne⟩ := hF
+    intro u' w' l hu' hw' hsu hsw
+    rw [hu] at hu'; cases hu'
+    rw [hw] at hw'; cases hw'
+    exact hne l l hsu hsw rfl
+  | apart a b =>
+    intro hF e he
+    simp only [factSepsUnder, List.mem_singleton] at he
+    subst he
+    intro u w l hu hw hpu hpw hul hwl
+    simp only [readPath, Option.some.injEq] at hu hw
+    subst hu; subst hw
+    exact regionsApart_arrays hF hpu hpw hul hwl
+  | guarded g p tag B ih =>
+    intro hF e he
+    cases p with
+    | cons _ _ => simp [factSepsUnder] at he
+    | nil =>
+      simp only [factSepsUnder] at he
+      obtain ⟨v, hv, hor⟩ := hF
+      simp only [readGuard, Option.some.injEq] at hv
+      split at he
+      · rename_i hmem
+        have hnt : ¬tag.holds (ρ g) := hgs (g, tag) (List.contains_iff_mem.mp hmem)
+        exact ih (hor.resolve_left (by rw [← hv]; exact hnt)) e he
+      · split at he
+        · rename_i hpos
+          simp only [List.mem_filter] at he
+          obtain ⟨he, hroot⟩ := he
+          rcases hor with htag | hB
+          · have tagAt : ∀ {z : Nat}, z ∈ HeapLinks.aliases ls g → ∀ {q : List String} {u : Val},
+                readPath h (ρ z) q = some u → u = v := by
+              intro z hz q u hu
+              rw [HeapLinks.aliases_eq hl hz, hv] at hu; exact tag_reads hpos htag hu
+            cases e with
+            | spines a b =>
+              simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+              intro u w l hu hw hsu hsw
+              rcases hroot with hr | hr
+              · rw [tagAt hr hu, tag_spine hpos htag] at hsu; cases hsu
+              · rw [tagAt hr hw, tag_spine hpos htag] at hsw; cases hsw
+            | arrays a b =>
+              simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+              intro u w l hu hw _ _ hul hwl
+              rcases hroot with hr | hr
+              · rw [tagAt hr hu] at hul; exact tag_array hpos htag hul
+              · rw [tagAt hr hw] at hwl; exact tag_array hpos htag hwl
+            | locs => simp [SepFact.sites] at hroot
+          · exact ih hB e he
+        · cases he
+  | _ => intro _ e he; simp [factSepsUnder] at he
+
+/-- The separations of a state's unconditional facts under discharged slot guards `gs`. -/
+def knowledgeSepsUnder (k : Knowledge) (gs : List (Nat × GuardTag)) : List SepFact :=
+  k.indices.flatMap fun a => if a.cond.isNone then factSepsUnder k.links gs a.fact else []
+
+theorem knowledgeSepsUnder_holds {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    ∀ e ∈ knowledgeSepsUnder k gs, e.Holds ρ h := by
+  intro e he
+  simp only [knowledgeSepsUnder, List.mem_flatMap] at he
+  obtain ⟨a, ha, he⟩ := he
+  split at he
+  · rename_i hn
+    have hF := hk.2.2.2.2.2 a ha fun b hb => by simp only [Option.isNone_iff_eq_none] at hn; rw [hn] at hb; cases hb
+    exact factSepsUnder_holds hk.2.2.1 hgs a.fact hF e he
+  · cases he
+
+/-- The separation evidence a state's knowledge holds under discharged slot guards `gs`. -/
+def knowledgeEvidenceUnder (k : Knowledge) (gs : List (Nat × GuardTag)) : SepEvidence :=
+  { links := k.links, facts := knowledgeSepsUnder k gs ++ separationFacts k.separation }
+
+theorem knowledgeEvidenceUnder_holds {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    (knowledgeEvidenceUnder k gs).Holds id ρ h := by
+  refine ⟨noClassEvidence_ok ρ h,
+    ⟨fun _ _ hc => by simp [knowledgeEvidenceUnder] at hc, fun _ _ hc => by simp [knowledgeEvidenceUnder] at hc⟩,
+    fun _ _ hij => hij, hk.2.2.1, fun e he => ?_⟩
+  simp only [knowledgeEvidenceUnder, List.mem_append] at he
+  rcases he with he | he
+  · exact knowledgeSepsUnder_holds hk hgs e he
+  · exact separationFacts_holds hk.2.2.2.1 e he
+
+/-- The query a state's knowledge answers under discharged slot guards `gs`. -/
+def knowledgeQueryUnder (k : Knowledge) (gs : List (Nat × GuardTag)) : SepQuery :=
+  (knowledgeEvidenceUnder k gs).query
+
+theorem knowledgeQueryUnder_sound {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    {n : Nat} {W : WorldT n} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    (knowledgeQueryUnder k gs).Sound ρ h :=
+  SepEvidence.query_sound (knowledgeEvidenceUnder_holds hk hgs) hok hρ
+
+/-- **Guarded survival check**: peels leading slot guards `(s, t)` into the
+separation query's discharged guards `gs`, then checks `F.keeps` under
+`knowledgeQueryUnder k gs`. -/
+def _root_.Verification.HeapKnowledge.IndexFact.keepsUnder (k : Knowledge) (c : ReadContext) (Φ : Footprint)
+    (gs : List (Nat × GuardTag)) : IndexFact → Bool
+  | .guarded s [] t B => B.keepsUnder k c Φ ((s, t) :: gs)
+  | F => F.keeps (knowledgeQueryUnder k gs) c Φ
+
+/-- **Guarded survival is sound**: a fact `keepsUnder` keeps holds after every
+transition within `Φ` meeting `c`, from a prestate where `k` holds. -/
+theorem IndexFact.keepsUnder_sound {k : Knowledge} {c : ReadContext} {Φ : Footprint} {ρ : Env} {h h' : Heap}
+    {n : Nat} {W : WorldT n} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hp : Post Φ ρ h h') (hc : c.Holds ρ h h') :
+    ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      (∀ g ∈ gs, ¬g.2.holds (ρ g.1)) →
+      F.keepsUnder k c Φ gs = true → F.HoldsAt ε ρ h → F.HoldsAt ε ρ h' := by
+  intro F
+  induction F with
+  | guarded s p t B ih =>
+    cases p with
+    | nil =>
+      intro gs hgs hkeep hF
+      obtain ⟨v, hv, hor⟩ := hF
+      simp only [readGuard, Option.some.injEq] at hv
+      subst hv
+      refine ⟨ρ s, rfl, ?_⟩
+      by_cases ht : t.holds (ρ s)
+      · exact .inl ht
+      · refine .inr (ih ((s, t) :: gs) ?_ hkeep (hor.resolve_left ht))
+        intro g hg
+        rcases List.mem_cons.mp hg with rfl | hg
+        · exact ht
+        · exact hgs g hg
+    | cons _ _ =>
+      intro gs hgs hkeep hF
+      exact IndexFact.keeps_sound hkeep (knowledgeQueryUnder_sound hk hok hρ hgs) hp hc hF
+  | _ =>
+    intro gs hgs hkeep hF
+    exact IndexFact.keeps_sound hkeep (knowledgeQueryUnder_sound hk hok hρ hgs) hp hc hF
+
 end Verification.Footprints
 
 namespace Verification.Footprints

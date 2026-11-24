@@ -37,8 +37,8 @@ theorem withWritten_below {req : Option HeapKnowledge.Knowledge} {e : SinglePass
 store (`add_wf`). -/
 theorem headEntry_wf {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fresh : Nat} {startNames : List Nat}
     {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} :
-    StoreWF (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies).1.store := by
+    {implies : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} :
+    StoreWF (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies freshSlots).1.store := by
   simp only [SinglePass.headEntry, SinglePass.timedKind]
   refine foldl_inv StoreWF _ _ _ storeWF_empty fun a _ st hst => ?_
   split
@@ -47,8 +47,8 @@ theorem headEntry_wf {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fresh
 
 theorem headEntry_names_length {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} :
-    (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies).1.names.length =
+    {implies : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} :
+    (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies freshSlots).1.names.length =
       width := by
   simp [SinglePass.headEntry]
 
@@ -86,7 +86,7 @@ theorem checkedStep_store {pool fuel suggestions index codes aliases pc undefTy 
     have hn' : ∀ x ∈ entry.names, x < st.fresh := fun x hx => Nat.lt_of_lt_of_le (hn x hx) hle
     have hs' := factsBelow_mono hs hle
     refine ⟨?_, ?_, hrl, hle⟩ <;> cases hp : (pc.checker.normal (jOf G c node entry ms)
-      (kOf G c entry ms (wholeOf node.expression)) effect codes a1.summaries.toList == Footprints.Closed.empty)
+      (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes a1.summaries.toList == Footprints.Closed.empty)
     · obtain ⟨out', -, -, hst, -⟩ := hwrit hp
       rw [hst]
       exact applyDelta_wf (dropHeap_cover w _).1 _ _ _ _
@@ -132,10 +132,10 @@ theorem entryStart_cases (env : SinglePass.WalkEnv ι G I) (σ : SinglePass.Walk
     (∃ g, env.given[l]! = some g ∧
       (SinglePass.entryStart G env σ l).base = (SinglePass.headEntry g (l == env.start && !env.startEntered)
         (env.claimed[l]!).context.length σ.fresh env.startNames env.argName ((env.givenArgs[l]?).getD [])
-        ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD [])).1 ∧
+        ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD []) (SinglePass.headFreshAt env l)).1 ∧
       (SinglePass.entryStart G env σ l).fresh = (SinglePass.headEntry g (l == env.start && !env.startEntered)
         (env.claimed[l]!).context.length σ.fresh env.startNames env.argName ((env.givenArgs[l]?).getD [])
-        ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD [])).2.2) ∨
+        ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD []) (SinglePass.headFreshAt env l)).2.2) ∨
     ((∃ q, σ.walk.incoming[l]! = [q] ∧ (SinglePass.entryStart G env σ l).base = q ∧
         (SinglePass.entryStart G env σ l).fresh = σ.fresh) ∨
       ((SinglePass.entryStart G env σ l).base = { names := [] } ∧ (SinglePass.entryStart G env σ l).fresh = σ.fresh) ∨

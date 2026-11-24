@@ -571,6 +571,12 @@ theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
   · rfl
 
 omit [DecidableEq ι] in
+theorem withEnsures_reassign (stable : Nat → String → Bool) (Γ : List (List ι)) (eff : CallEffects.Effect)
+    (t : Tm) (k0 k : HeapKnowledge.Knowledge) :
+    PromiseCalls.withEnsures stable (reassign G η) Γ eff t k0 k =
+      PromiseCalls.withEnsures stable G Γ eff t k0 k := rfl
+
+omit [DecidableEq ι] in
 theorem grownRegions_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :
     IndexWrites.grownRegions (reassign G η) Γ k t = IndexWrites.grownRegions G Γ k t := rfl
 
@@ -582,7 +588,7 @@ theorem ensuringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.ensuringCalls, ensuresCall_reassign, stableFirst_reassign]
   split
-  · simp only [CheckResult.map, grownRegions_reassign]
+  · simp only [CheckResult.map, grownRegions_reassign, withEnsures_reassign]
     rw [elementCalls_value_reassign]
   · exact elementCalls_value_reassign G η images j k e codes sums
 

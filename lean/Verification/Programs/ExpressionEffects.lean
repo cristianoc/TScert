@@ -2786,4 +2786,218 @@ theorem initWriteWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : 
     simp only [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
   · rfl
 
+/-! ### In-bounds element writes on dense spines
+
+When `a[j] = v` writes to a dense array (`ArrayPresence.dense`) at an index
+strictly below its length (`0 <= j < a.length`, entailed by the step's
+knowledge `k`), the position `j` already has an allocated element cell, so
+the write overwrites only that value cell and leaves every array spine
+unchanged (`⟨.any, .keep, .keep⟩`). -/
+
+/-- A dense spine type every position of which holds source values. -/
+def spineTyEveryDense (G : NormalGraph ι) (L : Ty ι) : Bool :=
+  match expand G L with
+  | [.list ⟨[], [], some A, _, .dense⟩ []] => sourceTy G A
+  | _ => false
+
+theorem spineTyEveryDense_at {G : NormalGraph ι} {L : Ty ι} (h : spineTyEveryDense G L = true) (idx : Nat) :
+    spineTy G L idx false = true := by
+  unfold spineTyEveryDense at h
+  split at h
+  · rename_i A ro hexp
+    simp [spineTy, hexp, positionTy, h]
+  · cases h
+
+/-- Every alternative is a record whose first invariant operand has the field
+`fld`, at a dense spine type `spineTyEveryDense` accepts in each. -/
+def spineFieldEveryDense (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) :
+    Bool :=
+  !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || spineTyEveryDense G p.2.2)
+    | none => false
+
+theorem spineFieldEveryDense_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : spineFieldEveryDense G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B s L, (fld, s, L) ∈ B ∧ spineTyEveryDense G L = true ∧
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+  simp only [spineFieldEveryDense, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c, hm, hc, -⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  cases c <;> simp only [HeapExpressionRules.clauseBagOperand] at hb
+  all_goals try contradiction
+  all_goals
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+      decide_eq_false_iff_not] at hb
+    obtain ⟨hany, hall⟩ := hb
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+    have hsrc : spineTyEveryDense G El = true := (hall _ hmem).resolve_left (by simp)
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
+
+/-- **An in-bounds element write on a dense array leaves its spine unchanged**
+(`ElemWritten i .keep`): because the array is dense and `idx < ls.length`, the
+slot already holds a cell location and the grow branch is unreachable. -/
+theorem elem_var_write_dense_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {i j k : Nat}
+    {Ref : Ty ι} {T : Fam} {ρ n W h} {fl : Nat} {ls0 : List (Option Nat)} {b0 : UInt64} {idx0 : Nat}
+    (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
+    (hst : spineFieldEveryDense G (expand G Ref) arraySpineKey = true)
+    (hsp0 : Footprints.spineOf (ρ i) = some fl) (hls0 : h[fl]? = some (.arr ls0))
+    (hb0 : ρ j = .num b0) (hidx0 : indexOfBits b0 = some idx0) (hlt : idx0 < ls0.length)
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ
+      (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k))))) :
+    SafePostExc Ξ T (fun h' _ => ElemWritten i .keep (ρ j) ρ h h') (fun h' => h' = h) n W h
+      (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))) := by
+  have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+  have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
+  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := spineFieldEveryDense_sound hst (he.2 i Ref hi)
+  obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+  obtain ⟨flds1, fl', cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+  cases hproj
+  have hsp : Footprints.spineOf (ρ i) = some fl' := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hl0] using hfd
+  have hflEq : fl' = fl := Option.some.inj (hsp.symm.trans hsp0)
+  subst fl'
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+  rw [hl0] at hs ⊢
+  generalize hvk : ρ k = v at hs hvv ⊢
+  cases n with
+  | zero => assumption
+  | succ n1 =>
+  obtain ⟨hrf, hs⟩ := hs
+  refine ⟨hrf, ?_⟩
+  rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, rfl⟩)
+  obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
+  refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
+  cases n1 with
+  | zero => assumption
+  | succ n2 =>
+  obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
+  rw [hfu] at hu0; cases hu0
+  have hmL : meaning G L 1 (trunc 1 (by omega) W) u := (hagree 1 (by omega) _ u).mp (hcu 1 (by omega))
+  have huv := (meaning_value hmL).1
+  obtain ⟨hrf, hs1⟩ := hs1
+  refine ⟨hrf, ?_⟩
+  rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, rfl⟩)
+  rw [hb0] at step2 hjv ⊢
+  obtain ⟨b, ls, hbe, rfl, hcase⟩ := elem_set_inv rfl huv hjv hvv step2
+  cases hbe
+  rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
+  · have hspine := spineTyEveryDense_at hevery idx0
+    unfold spineTy at hspine
+    split at hspine
+    case h_2 => contradiction
+    rename_i Tup hexp
+    have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hspine
+    obtain ⟨hpos, -⟩ := hspine
+    have hlk : ls[idx0]? = some (some l) := by
+      simp only [elemLoc, hidx0, Option.bind_some] at hl
+      cases hls : ls[idx0]? with
+      | none => simp [hls] at hl
+      | some o => cases o with
+        | none => simp [hls] at hl
+        | some l' => simp [hls] at hl; subst hl; rfl
+    split at hpos
+    case h_2 => contradiction
+    rename_i A hA
+    obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
+      (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
+    obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
+    obtain ⟨w, hw, hcw⟩ := hh.1.2 l c hc
+    have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
+    have hnarr : Footprints.isArr w = false := by
+      have := sourceTy_sound hpos hmA
+      cases w <;> simp_all [isSourceVal, Footprints.isArr]
+    exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back hfd (elem_present_written hsp hfu hlk hw hnarr
+      fun b' idx' hb' hi' => by cases hb'; rw [hidx0] at hi'; exact (Option.some.inj hi').symm) hs2⟩
+  · -- Contradiction: `ls0` is dense (`none ∉ ls0`) and `idx0 < ls0.length`, so `elemLoc ls0 b0 ≠ none`.
+    rw [hfu] at hls0; cases hls0
+    unfold spineTyEveryDense at hevery
+    split at hevery
+    case h_2 => contradiction
+    rename_i A ro hexp
+    have hlist := (represents_raw (show Represents G L (.list ⟨[], [], some A, ro, .dense⟩ []) from hexp) 1 _ _ hmL).1
+    obtain ⟨ls', heq, hpres, -⟩ := hlist
+    cases heq
+    have hdense : none ∉ ls0 := hpres 0 (by omega)
+    have hget : ls0[idx0]? = some (ls0[idx0]'hlt) := List.getElem?_eq_getElem hlt
+    cases hval : ls0[idx0]'hlt with
+    | none =>
+      exact False.elim (hdense (List.mem_of_getElem? (by rw [hget, hval])))
+    | some l =>
+      simp [elemLoc, hidx0, hget, hval] at hn
+
+/-- Whether `t` is an element write at a run-time index to a dense array whose
+index is entailed strictly below the array's length by `k`. -/
+def denseWriteStep (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (t : Tm) : Bool :=
+  match elemVarWriteSlots t with
+  | some (f, i, j, kVal) =>
+    decide (f = arraySpineKey) && decide (kVal < Γ.length) && decide (j < Γ.length) &&
+      (match Γ[i]? with
+      | some Ref => spineFieldEveryDense G (expand G Ref) f
+      | none => false) &&
+      HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags k) (HeapLinks.aliases k.links) k.links k.indices
+        [⟨.bound i j true, none, false⟩] none
+  | none => false
+
+/-- An in-bounds dense element write within `Φ`: `{value: any, spine: keep}`. -/
+def denseWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
+    (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  denseWriteStep G Γ k t && (⟨.any, .keep, .keep⟩ : Footprints.Closed).le Φ
+
+theorem dense_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {k : HeapKnowledge.Knowledge} {Φ : Footprints.Closed} {t : Tm} {T : Fam} {ρ n W h}
+    (hc : denseWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hk : HeapKnowledge.Holds k ε ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  simp only [denseWriteWithin, Bool.and_eq_true] at hc
+  obtain ⟨hstep, hle⟩ := hc
+  unfold denseWriteStep at hstep
+  split at hstep
+  case h_2 => cases hstep
+  rename_i f i j kVal hw
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hstep
+  obtain ⟨⟨⟨⟨rfl, hkVal⟩, hj⟩, hsel⟩, hbd⟩ := hstep
+  split at hsel
+  case h_2 => cases hsel
+  rename_i Ref hi
+  have hbound := HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound hk)
+    (fun _ _ hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1
+    hbd hk.2.2.2.2.2 ⟨.bound i j true, none, false⟩ (List.mem_singleton_self _) (fun b hb => by cases hb)
+  obtain ⟨fl, ls0, b0, idx0, hsp0, hls0, hb0, hidx0, hlt⟩ := hbound
+  have ht := elemVarWriteSlots_eq hw
+  rw [ht] at hs ⊢
+  have href : RefsOk W (ρ i) := by
+    have hr := hs.refs
+    simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, RefsOk, refs, List.mem_append] at hr
+    exact fun r hrm => hr r (.inl hrm)
+  exact SafePostExc.weaken
+    (fun _ _ hq => Footprints.Closed.Holds.mono hle (elemWriteFrame_closed hh href hq.1))
+    (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl _ h)
+    (elem_var_write_dense_core hkVal hj hi hsel hsp0 hls0 hb0 hidx0 (by simp at hlt; omega) he hh hs)
+
+/-- The grade an in-bounds dense element write grants (`denseWriteWithin`). -/
+def denseWriteGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :
+    List Footprints.Closed :=
+  grantIf (denseWriteStep G Γ k t) ⟨.any, .keep, .keep⟩
+
+/-- **An in-bounds dense element write's check is its grade below the bound** (proved). -/
+theorem denseWriteWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
+    (Φ : Footprints.Closed) (t : Tm) :
+    denseWriteWithin G Γ k Φ t = (denseWriteGrades G Γ k t).any (·.le Φ) := by
+  unfold denseWriteWithin denseWriteGrades
+  rw [grantIf_any]
+
 end Verification.ExpressionEffects

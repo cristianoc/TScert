@@ -533,10 +533,12 @@ def stepAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Kno
         (if indexed k b then [⟨.index (a + 1), some 0, false⟩] else [])
       | op =>
         (match boundAnswerOf op true with
-         | some q => if indexed k a then (lengthsOf k b).map fun x => ⟨.bound (x + 1) (a + 1) false, some 0, !q⟩ else []
+         | some q => if indexed k a then (lengthsOf k b).map fun x =>
+             ⟨.bound (x + 1) (a + 1) (IndexNumbers.strictBoundAnswer op true q), some 0, !q⟩ else []
          | none => []) ++
         (match boundAnswerOf op false with
-         | some q => if indexed k b then (lengthsOf k a).map fun x => ⟨.bound (x + 1) (b + 1) false, some 0, !q⟩ else []
+         | some q => if indexed k b then (lengthsOf k a).map fun x =>
+             ⟨.bound (x + 1) (b + 1) (IndexNumbers.strictBoundAnswer op false q), some 0, !q⟩ else []
          | none => [])
     else []
   | _ => []
@@ -663,8 +665,11 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
               have hu' := binop_relational hrel hu
               have hcq := hc rfl
               simp only [push, hu', Bool.not_not] at hcq
-              have hle := IndexNumbers.le_of_relation hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
-              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, by simpa using hle⟩
+              have hle : i + (if IndexNumbers.strictBoundAnswer op true q then 1 else 0) ≤ ls.length := by
+                cases hst : IndexNumbers.strictBoundAnswer op true q
+                · exact IndexNumbers.le_of_relation hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
+                · exact IndexNumbers.lt_of_relation hix hst (truthy_boolVal hcq)
+              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, hle⟩
             · cases hat
           · cases hat
         · split at hat
@@ -681,8 +686,11 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
               have hu' := binop_relational hrel hu
               have hcq := hc rfl
               simp only [push, hu', Bool.not_not] at hcq
-              have hle := IndexNumbers.le_of_relation_swap hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
-              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, by simpa using hle⟩
+              have hle : i + (if IndexNumbers.strictBoundAnswer op false q then 1 else 0) ≤ ls.length := by
+                cases hst : IndexNumbers.strictBoundAnswer op false q
+                · exact IndexNumbers.le_of_relation_swap hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
+                · exact IndexNumbers.lt_of_relation_swap hix hst (truthy_boolVal hcq)
+              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, hle⟩
             · cases hat
           · cases hat
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
@@ -2122,7 +2130,31 @@ theorem rawPartners_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledg
       exact ⟨hs, regionsApart_symm hat⟩
     · cases hm
 
-/-- Non-empty array-length paths `(s, p)` unconditionally defined by `k.indices` with `s < limit`. -/
+/-- Empty-path slots `(s, [])` named in a spine separation, including under
+guards, with `s < limit`: `readPath h (ρ s) []` is always defined (`some (ρ s)`). -/
+def guardedSpineSlots (limit : Nat) : IndexFact → List (Nat × List String)
+  | .spineApart s p o q =>
+    (if p.isEmpty && s < limit then [(s, [])] else []) ++
+    (if q.isEmpty && o < limit then [(o, [])] else [])
+  | .guarded _ _ _ B => guardedSpineSlots limit B
+  | _ => []
+
+theorem guardedSpineSlots_empty {limit : Nat} :
+    ∀ {F : IndexFact} {s p}, (s, p) ∈ guardedSpineSlots limit F → p = []
+  | .spineApart _ _ _ _, _, _, hm => by
+    simp only [guardedSpineSlots] at hm
+    rcases List.mem_append.mp hm with h1 | h2
+    · split at h1 <;> simp_all
+    · split at h2 <;> simp_all
+  | .guarded _ _ _ B, _, _, hm => guardedSpineSlots_empty (F := B) hm
+  | .index _, _, _, hm | .length _ _, _, _, hm | .bound _ _ _, _, _, hm
+  | .int _, _, _, hm | .pastSafe _, _, _, hm | .linear _, _, _, hm
+  | .either _ _, _, _, hm | .element _ _ _, _, _, hm | .every _ _ _ _, _, _, hm
+  | .atIndex _ _ _ _ _, _, _, hm | .apart _ _, _, _, hm | .same _ _, _, _, hm => by
+    simp [guardedSpineSlots] at hm
+
+/-- Array-length paths `(s, p)` unconditionally defined by `k.indices` with
+`s < limit`, plus empty-path slots named in guarded spine separations. -/
 def indexPaths (limit : Nat) (k : Knowledge) : List (Nat × List String) :=
   (k.indices.flatMap fun a =>
     if a.cond.isSome then []
@@ -2133,6 +2165,7 @@ def indexPaths (limit : Nat) (k : Knowledge) : List (Nat × List String) :=
           (if !p.isEmpty && s < limit then [(s, p)] else []) ++
           (if !q.isEmpty && o < limit then [(o, q)] else [])
       | .every s p _ _ => if !p.isEmpty && s < limit then [(s, p)] else []
+      | .guarded _ _ _ B => guardedSpineSlots limit B
       | _ => []).eraseDups
 
 /-- A fresh array at slot `0` has a spine apart from every existing path in `indexPaths`. -/
@@ -2201,7 +2234,7 @@ private theorem slotRole_some {key : PropKey} {o : Option Role} (h : SlotRole ke
   | none => cases h
   | some r => exact ⟨r, rfl⟩
 
-private theorem refsOk_readPath_extend {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
+theorem refsOk_readPath_extend {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
     (vs : List Val) : ∀ {p : List String} {v w : Val}, RefsOk W v → readPath (h ++ vs) v p = some w → RefsOk W w
   | [], _, _, hv, hr => by simp only [readPath, Option.some.injEq] at hr; exact hr ▸ hv
   | f :: q, v, w, hv, hr => by
@@ -2224,7 +2257,7 @@ private theorem refsOk_readPath_extend {n : Nat} {W : WorldT n} {h : Heap} (hh :
         exact refsOk_readPath_extend hh vs hsh.2 hr
     | _ => simp [readPath] at hr
 
-private theorem refsOk_spineOf_lt {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
+theorem refsOk_spineOf_lt {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
     {v : Val} {l : Nat} (hv : RefsOk W v) (hs : Footprints.spineOf v = some l) : l < h.length := by
   cases v with
   | objAt fs cd oid =>
@@ -2236,7 +2269,7 @@ private theorem refsOk_spineOf_lt {n : Nat} {W : WorldT n} {h : Heap} (hh : Heap
     omega
   | _ => simp [Footprints.spineOf, Footprints.fieldsOf] at hs
 
-private theorem indexPaths_defined {limit : Nat} {k : Knowledge} {ρ h s p}
+theorem indexPaths_defined {limit : Nat} {k : Knowledge} {ρ h s p}
     (hm : (s, p) ∈ indexPaths limit k) (hk : Holds k ε ρ h) :
     ∃ w, readPath h (ρ s) p = some w := by
   have hm' := List.mem_eraseDups.mp hm
@@ -2280,6 +2313,10 @@ private theorem indexPaths_defined {limit : Nat} {k : Knowledge} {ρ h s p}
       · simp only [List.mem_singleton, Prod.mk.injEq] at hfa
         obtain ⟨rfl, rfl⟩ := hfa; exact ⟨w, hw⟩
       · cases hfa
+    | guarded _ _ _ B =>
+      simp only [hof] at hfa
+      have hp := guardedSpineSlots_empty hfa
+      exact ⟨ρ s, by rw [hp]; rfl⟩
     | _ => simp only [hof] at hfa; cases hfa
 
 theorem freshSpineApart_holds {limit : Nat} {k : Knowledge} {ρ n W h} {u : Val} {vs : List Val} {lu : Nat}
@@ -3003,19 +3040,48 @@ def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : L
       (unconditionalLinear k.indices)))).map
     fun F => { fact := .linear F }
 
+/-- The slot guards `(s, tag)` appearing on unconditional guarded linear facts of `k`. -/
+def guardedLinearGuards (k : Knowledge) : List (Nat × GuardTag) :=
+  (k.indices.filterMap fun atom => match atom.cond, atom.fact with
+    | none, .guarded s [] tag (.linear _) => some (s, tag)
+    | _, _ => none).eraseDups
+
+/-- The linear facts holding in `k` when slot guard `(s, tag)` does not hold:
+all unconditional linear facts plus all linear facts guarded by `(s, tag)`. -/
+def linearUnderGuard (s : Nat) (tag : GuardTag) (k : Knowledge) : List (Linear.Fact Term) :=
+  unconditionalLinear k.indices ++ k.indices.filterMap fun atom => match atom.cond, atom.fact with
+    | none, .guarded s' [] tag' (.linear F) => if s' == s && tag' == tag then some F else none
+    | _, _ => none
+
+/-- The guarded facts a write at the length carries (`write-append`, under a
+slot guard `(s, tag)`): for each guard `(s, tag)` under which the entry facts
+entail `a.length <= i`, compose `lengthGrowth a 1` with `linearUnderGuard s tag k`
+and re-guard each resulting linear fact by `(s, tag)`. -/
+def guardedWriteCarried (a i : Nat) (first : Nat → String → Bool) (k : Knowledge) : List IndexAtom :=
+  (guardedLinearGuards k).flatMap fun (s, tag) =>
+    let fs := linearUnderGuard s tag k
+    if entailsKnown (fs.map fun F => { fact := .linear F }) (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
+      (compose (keptOf (Changes.ofClosed ⟨.any, .grow, .grow⟩) first) fs
+        ((lengthGrowth a 1).join (growth (grownOf (Changes.ofClosed ⟨.any, .grow, .grow⟩) first) fs))).map
+        fun F => { fact := .guarded s [] tag (.linear F) }
+    else []
+
 /-- The facts a write at a checked index states of its spine, at the entry's
 slots (`write-bound`, `write-append`): the index below the length; and, where
 the write grows the spines (`ExpressionEffects.elemWriteStep`) and the facts
-entail the index at least the length, the facts `writeCarried` composes. -/
+(unconditional or under a slot guard) entail the index at least the length,
+the facts `writeCarried` and `guardedWriteCarried` compose. -/
 def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) :
     List IndexAtom :=
   { fact := .bound a i true } ::
     ((if termDefined k.indices (Term.length a) then
         [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ++
-    let carried := writeCarried a (HeapExpressionRules.stableFirst G j.context) k
-    if !carried.isEmpty && (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
-        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then carried
-    else [])
+    (if (ExpressionEffects.elemWriteStep G j.context j.term).isSome then
+      (let carried := writeCarried a (HeapExpressionRules.stableFirst G j.context) k
+       if !carried.isEmpty && entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
+         carried else []) ++
+      guardedWriteCarried a i (HeapExpressionRules.stableFirst G j.context) k
+    else []))
 
 theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
@@ -3058,28 +3124,25 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             hiv, hlv, Option.getD_some]
           omega
       · cases hm
-  -- `write-append`: the composition with the length one longer.
+  -- `write-append`: the composition with the length one longer (unconditional and guarded).
   have happ : SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => IndexHolds ε (if !(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
-        (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
-        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
-          writeCarried a (HeapExpressionRules.stableFirst G j.context) k else []) ρ h')
+      (fun h' _ => IndexHolds ε (if (ExpressionEffects.elemWriteStep G j.context j.term).isSome then
+        (let carried := writeCarried a (HeapExpressionRules.stableFirst G j.context) k
+         if !carried.isEmpty && entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
+           carried else []) ++
+        guardedWriteCarried a i (HeapExpressionRules.stableFirst G j.context) k else []) ρ h')
       n W h (instantiate 0 ρ j.term) := by
-    by_cases hcond : (!(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
-        (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
-        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0)) = true
-    · rw [ite_eq_left hcond]
-      obtain ⟨⟨-, hws⟩, hent⟩ := Bool.and_eq_true_iff.mp hcond |>.imp_left Bool.and_eq_true_iff.mp
+    by_cases hws : (ExpressionEffects.elemWriteStep G j.context j.term).isSome = true
+    · rw [ite_eq_left hws]
       obtain ⟨wi, hwi⟩ := Option.isSome_iff_exists.mp hws
       have hgrow := HeapExpressionRules.stableFirst_frame he hw hh
         (ExpressionEffects.elemWriteStep_grow hwi he hh (HeapObservations.erase hst))
       refine weaken (fun h' _ hq => ?_) (safePost_and hst hgrow)
       obtain ⟨⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, -, hgr⟩, hch, hfirst⟩ := hq
-      -- The index at least the length, at the entry.
-      have hge := entailsKnown_sound hk.2.2.2.2.2 hent
       have hiv : termValuation ε ρ h (Term.value i) = idx := by
         simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
-      have hR : (lengthGrowth a 1).Holds ε ρ h ρ h' := lengthGrowth_holds fun m hm' => by
+      have hR_of : (Linear.Fact.Holds (termValuation ε ρ h) (.le [(Term.length a, 1), (Term.value i, -1)] 0)) →
+          (lengthGrowth a 1).Holds ε ρ h ρ h' := fun hge => lengthGrowth_holds fun m hm' => by
         simp only [termValue_length] at hm' ⊢
         obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_spine hm'
         rw [hs] at hs0; cases hs0
@@ -3093,10 +3156,64 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         rw [lengthOf_of_spine hs hl' hmax, hlen]
         simp
       intro atom hm _
-      obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
-      exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst)
-        (StepRelation.join_holds hR (growth_holds (grownOf_sound hch hfirst))) F hF
-    · rw [ite_eq_right hcond]
+      rcases List.mem_append.mp hm with hm | hm
+      · dsimp only at hm
+        split at hm
+        · rename_i hcond
+          obtain ⟨-, hent⟩ := Bool.and_eq_true_iff.mp hcond
+          have hR := hR_of (entailsKnown_sound hk.2.2.2.2.2 hent)
+          obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
+          exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst)
+            (StepRelation.join_holds hR (growth_holds (grownOf_sound hch hfirst))) F hF
+        · cases hm
+      · unfold guardedWriteCarried at hm
+        obtain ⟨⟨gs, tag⟩, -, hm⟩ := List.mem_flatMap.mp hm
+        dsimp only at hm
+        split at hm
+        · rename_i hent
+          obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
+          refine ⟨ρ gs, rfl, ?_⟩
+          by_cases htg : tag.holds (ρ gs)
+          · exact .inl htg
+          · have hfs : ∀ G' ∈ linearUnderGuard gs tag k,
+                (∀ t ∈ G'.vars, (termValue ε ρ h t).isSome = true) ∧ Linear.Fact.Holds (termValuation ε ρ h) G' := by
+              intro G' hG'
+              rcases List.mem_append.mp hG' with hG' | hG'
+              · exact unconditionalLinear_holds hk.2.2.2.2.2 G' hG'
+              · obtain ⟨a', ha', hmap⟩ := List.mem_filterMap.mp hG'
+                cases hcd' : a'.cond with
+                | some _ => simp [hcd'] at hmap
+                | none =>
+                  cases hft' : a'.fact with
+                  | guarded s' p' tag' B' =>
+                    cases p' with
+                    | cons _ _ => simp [hcd', hft'] at hmap
+                    | nil =>
+                      cases B' with
+                      | linear F' =>
+                        simp only [hcd', hft', Bool.and_eq_true, beq_iff_eq] at hmap
+                        split at hmap
+                        · rename_i heq
+                          cases hmap
+                          obtain ⟨rfl, rfl⟩ := heq
+                          have haH := hk.2.2.2.2.2 a' ha' (by simp [hcd'])
+                          rw [hft'] at haH
+                          obtain ⟨v', hv', hor'⟩ := haH
+                          simp only [readGuard, Option.some.injEq] at hv'
+                          subst hv'
+                          exact hor'.resolve_left htg
+                        · cases hmap
+                      | _ => simp [hcd', hft'] at hmap
+                  | _ => simp [hcd', hft'] at hmap
+            have hfsAtoms : IndexHolds ε ((linearUnderGuard gs tag k).map fun F' => { fact := .linear F' }) ρ h := by
+              intro a' ha' _
+              obtain ⟨G', hG', rfl⟩ := List.mem_map.mp ha'
+              exact hfs G' hG'
+            have hR := hR_of (entailsKnown_sound hfsAtoms hent)
+            exact .inr (compose_holds hfs (keptOf_sound hch hfirst)
+              (StepRelation.join_holds hR (growth_holds (grownOf_sound hch hfirst))) F hF)
+        · cases hm
+    · rw [ite_eq_right hws]
       exact weaken (fun _ _ _ => indexHolds_nil _ _) hst
   refine weaken (fun h' _ hq => ?_) (safePost_and hst happ)
   have hb0 := hbound h' hq.1
@@ -3319,6 +3436,143 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
           (ExpressionEffects.elemWriteStep_grow hi he hh (HeapObservations.erase hs)))
   · exact hs
 
+/-- The footprint of an element write at array slot `a`: `a`'s spine grows and
+`a`'s element cells may change; every other location is untouched. -/
+def writeFootprint (a : Nat) : Footprints.Footprint :=
+  [(.field a arraySpineKey, .grow), (.cells a, .any)]
+
+/-- The heap-reading index atoms of `k` kept by an element write at slot `a`
+under the tolerant frame (`Footprints.IndexFact.keeps`). -/
+def writeFrameAtoms (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : List IndexAtom :=
+  k.indices.filter fun atom => !atom.fact.envOnly &&
+    atom.fact.keepsUnder k (.ofFirst stable) (writeFootprint a) []
+
+/-- The read links of `k` kept by an element write at slot `a` under the
+tolerant frame (`Footprints.FactKind.link`), shifted past the step's result. -/
+def writeFrameLinks (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : HeapLinks.Links :=
+  (k.links.filter fun g => !g.alias && Footprints.respects (Footprints.knowledgeQuery k)
+    ((Footprints.FactKind.link g).supportIn (.ofFirst stable)) (writeFootprint a)).map
+    fun g => { g with cell := g.cell + 1, value := g.value + 1 }
+
+/-- `out` with the read links `ls` added. -/
+def withLinks (out : Knowledge) (ls : HeapLinks.Links) : Knowledge :=
+  { out with links := out.links ++ ls.filter (!out.links.contains ·) }
+
+theorem withLinks_sound {Ξ T : Fam} {out : Knowledge} {ls : HeapLinks.Links} {ρ n W h t}
+    (hl : SafePost Ξ T (fun h' u => HeapLinks.Holds ls (push u ρ) h') n W h t)
+    (ho : SafePost Ξ T (fun h' u => Holds out ε (push u ρ) h') n W h t) :
+    SafePost Ξ T (fun h' u => Holds (withLinks out ls) ε (push u ρ) h') n W h t :=
+  weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2.1, fun g hg =>
+    (List.mem_append.mp hg).elim (hq.1.2.2.1 g) (fun hg => hq.2 g (List.mem_filter.mp hg).1),
+    hq.1.2.2.2⟩) (safePost_and ho hl)
+
+/-- An element write on slot `a` satisfies `Footprints.Post (writeFootprint a)`. -/
+theorem elementWrite_footprint_post {Ξ T : Fam} {a : Nat} {ρ : Env} {n W h}
+    {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
+    {xs : List (Option Nat)} {b : UInt64} {value : Val}
+    (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arraySpineKey = some target)
+    (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T (fun h' _ => Footprints.Post (writeFootprint a) ρ h h') n W h
+      (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value)) := by
+  have htl : target < h.length := (List.getElem?_eq_some_iff.mp hxs).1
+  apply elementWrite_post hfield hxs hv _ _ hs
+  · intro cell hc
+    have hcm : some cell ∈ xs := by
+      unfold elemLoc at hc
+      cases hi : indexOfBits b with
+      | none => simp [hi] at hc
+      | some i =>
+        simp only [hi, Option.bind_some] at hc
+        cases hl : xs[i]? with
+        | none => simp [hl] at hc
+        | some o =>
+          simp only [hl, Option.bind_some] at hc
+          cases hc
+          exact List.mem_of_getElem? hl
+    refine ⟨by simp, fun l v hv' => ?_⟩
+    have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hv').1
+    by_cases hlt' : l = target
+    · subst hlt'
+      rw [hxs] at hv'; cases hv'
+      exact ⟨.arr xs, by rw [List.getElem?_set_self (by simpa using htl)], .inl rfl⟩
+    · by_cases hlc : l = cell
+      · subst hlc
+        refine ⟨value, ?_, .inr ⟨(.cells a, .any), by simp [writeFootprint], ?_, trivial⟩⟩
+        · rw [List.getElem?_set_ne (Ne.symm hlt'), List.getElem?_set_self hlt]
+        · simp [Footprints.Region.mem, Footprints.spineCells, Footprints.fieldsOf, Footprints.entriesAt,
+            spineEntries, hobj, hfield, hxs, hcm]
+      · refine ⟨v, ?_, .inl rfl⟩
+        rw [List.getElem?_set_ne (Ne.symm hlt'), List.getElem?_set_ne (Ne.symm hlc)]
+        exact hv'
+  · intro i hi _
+    have hilt := indexOfBits_lt hi
+    refine ⟨by simp, fun l v hv' => ?_⟩
+    have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hv').1
+    by_cases hlt' : l = target
+    · subst hlt'
+      rw [hxs] at hv'; cases hv'
+      refine ⟨.arr (placeAt xs i h.length), by rw [List.getElem?_set_self (by simp; omega)],
+        .inr ⟨(.field a arraySpineKey, .grow), by simp [writeFootprint], ?_, ?_⟩⟩
+      · simp [Footprints.Region.mem, Footprints.fieldsOf, hobj, hfield]
+      · exact .inr (.inl ⟨xs, _, rfl, rfl, fun m hd => ExpressionEffects.placeAt_dense hd,
+          fun x hx => (ExpressionEffects.placeAt_mem hx).imp id (fun e => by omega),
+          ⟨by rw [placeAt_length]; omega, fun hmax => by rw [placeAt_length]; omega⟩⟩)
+    · refine ⟨v, ?_, .inl rfl⟩
+      rw [List.getElem?_set_ne (Ne.symm hlt'), List.getElem?_append_left hlt]
+      exact hv'
+
+/-- A checked write at array slot `a` keeps both `writeFrameAtoms` and
+`writeFrameLinks` via the tolerant frame (`Footprints.Post (writeFootprint a)`). -/
+theorem boundedWriteFrame_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : RootsOk W ρ) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' u => IndexHolds ε (writeFrameAtoms (HeapExpressionRules.stableFirst G j.context) k a) ρ h' ∧
+        HeapLinks.Holds (writeFrameLinks (HeapExpressionRules.stableFirst G j.context) k a) (push u ρ) h')
+      n W h (instantiate 0 ρ j.term) := by
+  have hs := boundedWrite_sound hc he hk hw hh href
+  simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+  obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, -⟩ := hc
+  have hvl : v < j.context.length := by
+    split at htypes
+    · rename_i R' V hR' hV; exact (List.getElem?_eq_some_iff.mp hV).1
+    · cases htypes
+  obtain ⟨s, ls, b, idx, hs0, hl, hb, -, -⟩ := bounded_sound hbd hk
+  obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
+    cases hra : ρ a
+    case objAt => exact ⟨_, _, _, rfl⟩
+    all_goals rw [hra] at hs0; simp [Footprints.spineOf, Footprints.fieldsOf] at hs0
+  have hfl : flds.lookup arraySpineKey = some s := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hs0
+  have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
+  rw [boundedSlots_eq hslots] at hs ⊢
+  have hsafe := HeapObservations.erase hs
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
+  have hpost := HeapExpressionRules.stableFirst_frame he hw hh
+    (elementWrite_footprint_post hoi hfl hl hval hsafe)
+  refine weaken (fun h' u hq => ?_) hpost
+  obtain ⟨hp, hst⟩ := hq
+  have hqsound := Footprints.knowledgeQuery_sound hk hh hρ
+  have hctx := Footprints.ReadContext.ofFirst_holds hst
+  refine ⟨fun atom hm hcd => ?_, fun g hg => ?_⟩
+  · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp hm
+    simp only [Bool.and_eq_true] at hkeep
+    exact Footprints.IndexFact.keepsUnder_sound hk hh hρ hp hctx atom.fact [] (by simp) hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
+  · obtain ⟨g0, hg0, rfl⟩ := List.mem_map.mp hg
+    obtain ⟨hgm, hr⟩ := List.mem_filter.mp hg0
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hr
+    have hF : (Footprints.FactKind.link g0).Holds ρ h := fun g' hg' => by
+      rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g0 hgm
+    have hres := Footprints.frame_step (D := Footprints.heaps) (m := 0)
+      (Footprints.FactKind.supportsIn (.ofFirst (HeapExpressionRules.stableFirst G j.context)) (.link g0))
+      hr.2 hqsound hp trivial hctx hF g0 (List.mem_singleton_self _)
+    simpa [push] using hres
+
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
@@ -3534,19 +3788,21 @@ every other step is `base`'s. -/
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
+        pure (IndexWrites.withLinks (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
-          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms (stableFirst G j.context) k a ++ IndexWrites.atLengthAtoms G j k a i))
           (IndexWrites.writtenCells k (valuesAt G j.context k v)))
+          (IndexWrites.writeFrameLinks (stableFirst G j.context) k a))
       else failure
     | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
+        pure (IndexWrites.withLinks (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
-          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms (stableFirst G j.context) k a ++ IndexWrites.atLengthAtoms G j k a i))
           (IndexWrites.writtenCells k (valuesAt G j.context k v)))
+          (IndexWrites.writeFrameLinks (stableFirst G j.context) k a))
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
@@ -3555,10 +3811,15 @@ every other step is `base`'s. -/
     · split at hc
       · rename_i hck
         cases hc
+        have hfr := IndexWrites.boundedWriteFrame_sound hck he hk hw hh href hρ
+        apply IndexWrites.withLinks_sound (weaken (fun _ _ hq => hq.2) hfr)
         apply IndexWrites.withCells_sound (IndexWrites.boundedCells_sound hck he hk hw hh href)
-        apply IndexWrites.withWritten_sound (weaken (fun _ _ hq => indexHolds_append hq.1 hq.2)
-          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh href hρ)
-            (IndexWrites.atLengthAtoms_sound hck he hk hw hh href)))
+        apply IndexWrites.withWritten_sound
+          (weaken (fun _ _ hq => indexHolds_append (indexHolds_append hq.1.1 hq.1.2) hq.2)
+            (IndexWrites.safePost_and
+              (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh href hρ)
+                (weaken (fun _ _ hq => hq.1) hfr))
+              (IndexWrites.atLengthAtoms_sound hck he hk hw hh href)))
         split
         · rename_i hkeep
           exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh href

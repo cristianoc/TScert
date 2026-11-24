@@ -151,6 +151,8 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   /-- Checked local-object confinement table, when framing confined local
   objects across arbitrary-effect calls; none by default. -/
   confinement : Option LocalConfinement.Table := none
+  /-- The slots stated fresh at each loop head other than the start; empty by default. -/
+  givenFresh : Array (List Nat) := #[]
 
 /-- The call's result. -/
 def RunCall.result {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) :
@@ -158,7 +160,7 @@ def RunCall.result {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall 
   SinglePass.run G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional false c.framed c.confinement
+    c.observeEntry c.regional false c.framed c.confinement c.givenFresh
 
 /-- The call's walk accepted, leaving the answers `after`, its framed
 nodes' exits reading the facts their returns keep. -/

@@ -103,6 +103,15 @@ def spineSite : Region → Option (Nat × List String)
   | .field x k => if k == arraySpineKey then some (x, []) else none
   | _ => none
 
+/-- A site whose spine a region selects: a `[]` slot (`spineSite`) or a
+selected spine (`.spine x p`, which on a non-view is its `[]` slot and on a
+view selects a view spine, disjoint from every `[]` slot). -/
+def selectedSpineSite : Region → Option (Nat × List String)
+  | .path x p k => if k == arraySpineKey then some (x, p) else none
+  | .field x k => if k == arraySpineKey then some (x, []) else none
+  | .spine x p => some (x, p)
+  | _ => none
+
 theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
     ∀ {r : Region} {x : Nat} {p : List String}, spineSite r = some (x, p) → r.mem ρ h l = true →
       ∃ u, readPath h (ρ x) p = some u ∧ spineOf u = some l := by
@@ -134,6 +143,62 @@ theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
       exact ⟨_, rfl, by simpa [Region.mem, spineOf] using hm⟩
     · cases hs
   | _ => intro x p hs; simp [spineSite] at hs
+
+theorem spineSite_role {n : Nat} {W : WorldT n} {ρ : Env} {h : Heap} {l : Nat}
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) {r : Region} {x : Nat} {p : List String}
+    (hs : spineSite r = some (x, p)) (hm : r.mem ρ h l = true) :
+    roleAt W l = some (.spine .array) := by
+  obtain ⟨u, hu, hsp⟩ := spineSite_mem hs hm
+  have hsr := slotRole_of_refs (readPath_refs hok p (hρ x) hu) (k := arraySpineKey) (l := l) (by simpa [spineOf] using hsp)
+  rcases hr : roleAt W l with _ | role
+  · rw [hr] at hsr; cases hsr
+  · rw [hr] at hsr
+    cases role with
+    | spine f => cases f with
+      | array => rfl
+      | view => simp [SlotRole] at hsr
+    | _ => simp [SlotRole] at hsr
+
+theorem selectedSpineSite_array_mem {n : Nat} {W : WorldT n} {ρ : Env} {h : Heap} {l : Nat}
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) (hrole : roleAt W l = some (.spine .array)) :
+    ∀ {r : Region} {x : Nat} {p : List String}, selectedSpineSite r = some (x, p) → r.mem ρ h l = true →
+      ∃ u, readPath h (ρ x) p = some u ∧ spineOf u = some l := by
+  intro r
+  cases r with
+  | path y q k =>
+    intro x p hs hm
+    exact spineSite_mem (by simpa [selectedSpineSite, spineSite] using hs) hm
+  | field y k =>
+    intro x p hs hm
+    exact spineSite_mem (by simpa [selectedSpineSite, spineSite] using hs) hm
+  | spine y q =>
+    intro x p hs hm
+    simp only [selectedSpineSite, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨rfl, rfl⟩ := hs
+    simp only [Region.mem] at hm
+    split at hm
+    · rename_i u hu
+      have href := readPath_refs hok q (hρ y) hu
+      cases u with
+      | objAt fs c i =>
+        simp only [elementsOf, beq_iff_eq] at hm
+        cases hk : fs.lookup arraySpineKey with
+        | some s =>
+          rw [hk] at hm; cases hm
+          exact ⟨.objAt fs c i, hu, by simpa [spineOf, fieldsOf] using hk⟩
+        | none =>
+          rw [hk] at hm
+          cases c with
+          | view s f m =>
+            cases hm
+            have hmem : Ref.view l f m (fs.lookup arraySpineKey).isNone ∈ refs (.objAt fs (.view l f m) i) := by
+              simp [refs]
+            have hvr : roleAt W l = some (.spine (.view f m)) := (href _ hmem).2
+            rw [hrole] at hvr; cases hvr
+          | _ => simp at hm
+      | _ => simp [elementsOf] at hm
+    · cases hm
+  | _ => intro x p hs; simp [selectedSpineSite] at hs
 
 /-- The locations of the array a value is: the spine it selects and the
 cells its spines list (`Region.spine`, `Region.cells`). -/
@@ -377,10 +442,19 @@ theorem SepEvidence.bound_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {
 /-- Whether a fact separates `r` from `s`, its first site `r`'s and its
 second `s`'s, each read through the links. -/
 def SepEvidence.byFact (E : SepEvidence) (r s : Region) : SepFact → Bool
-  | .spines a b => match spineSite r, spineSite s with
-    | some x, some y => sameSite E.links (pathViews E.links x.1 x.2) (pathViews E.links a.1 a.2) &&
+  | .spines a b =>
+    let pair (x y : Nat × List String) : Bool :=
+      sameSite E.links (pathViews E.links x.1 x.2) (pathViews E.links a.1 a.2) &&
         sameSite E.links (pathViews E.links y.1 y.2) (pathViews E.links b.1 b.2)
-    | _, _ => false
+    match spineSite r, spineSite s with
+    | some x, some y => pair x y
+    | some x, none => match selectedSpineSite s with
+      | some y => pair x y
+      | none => false
+    | none, some y => match selectedSpineSite r with
+      | some x => pair x y
+      | none => false
+    | none, none => false
   | .arrays a b => match arraySite r, arraySite s with
     | some x, some y => sameSite E.links (pathViews E.links x.1 x.2) (pathViews E.links a.1 a.2) &&
         sameSite E.links (pathViews E.links y.1 y.2) (pathViews E.links b.1 b.2)
@@ -427,6 +501,26 @@ theorem SepEvidence.byFact_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} 
       obtain ⟨w, hw, hwl⟩ := spineSite_mem hy hs
       rw [sameSite_read hl hb.1] at hu; rw [sameSite_read hl hb.2] at hw
       exact hF u w l hu hw hul hwl
+    · rename_i x hx _
+      split at hb
+      · rename_i y hy
+        simp only [Bool.and_eq_true] at hb
+        obtain ⟨u, hu, hul⟩ := spineSite_mem hx hr
+        have hrole := spineSite_role hok hρ hx hr
+        obtain ⟨w, hw, hwl⟩ := selectedSpineSite_array_mem hok hρ hrole hy hs
+        rw [sameSite_read hl hb.1] at hu; rw [sameSite_read hl hb.2] at hw
+        exact hF u w l hu hw hul hwl
+      · cases hb
+    · rename_i y _ hy
+      split at hb
+      · rename_i x hx
+        simp only [Bool.and_eq_true] at hb
+        have hrole := spineSite_role hok hρ hy hs
+        obtain ⟨u, hu, hul⟩ := selectedSpineSite_array_mem hok hρ hrole hx hr
+        obtain ⟨w, hw, hwl⟩ := spineSite_mem hy hs
+        rw [sameSite_read hl hb.1] at hu; rw [sameSite_read hl hb.2] at hw
+        exact hF u w l hu hw hul hwl
+      · cases hb
     · cases hb
   | arrays a b =>
     simp only [SepEvidence.byFact] at hb

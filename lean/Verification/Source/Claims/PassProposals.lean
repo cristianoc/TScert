@@ -63,15 +63,15 @@ abbrev Closed := Verification.Footprints.Closed
 
 /-! ## The closed lattice -/
 
-/-- Every closed footprint stating one change for both spines
-(`Footprints.Closed.ofSpines`), each a change the closed footprint's wire
-names (`EffectJson`: `keep`, `init`, `scalar`, `extend`, `grow`, `any`), in an order
-extending the components' rank order: a footprint comes after every
-footprint below it. -/
+/-- Every normalized closed footprint (`Footprints.Closed.normal`), in an order
+extending the components' rank order: a footprint comes after every footprint
+below it. -/
 def ascending : List Closed :=
-  let cs := [Footprints.Change.keep, .init, .scalar, .extend, .grow, .any]
-  ((cs.flatMap fun v => cs.map fun s => Footprints.Closed.ofSpines v s).mergeSort fun a b =>
-    a.value.rank + a.spines.rank ≤ b.value.rank + b.spines.rank)
+  let vs := [Footprints.Change.keep, .init, .scalar, .any]
+  let as := [Footprints.Change.keep, .extend, .grow, .any]
+  let ws := [Footprints.Change.keep, .grow, .any]
+  ((vs.flatMap fun v => as.flatMap fun a => ws.map fun w => Footprints.Closed.mk v a w).mergeSort fun a b =>
+    a.value.rank + a.array.rank + a.view.rank ≤ b.value.rank + b.array.rank + b.view.rank)
 
 def keepAll : Closed := ⟨.keep, .keep, .keep⟩
 
@@ -245,7 +245,7 @@ def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option Sour
       | none => out := { out with exceptional := SourceElaboration.ClassSummary.alt out.exceptional X }
       return (entry, out)
     | _, _ => return (entry, out)
-  (graphWorklist graph transfer (fun state l => state.1.getD l none) (13 * n + 2) initial).map (·.2)
+  (graphWorklist graph transfer (fun state l => state.1.getD l none) (16 * n + 2) initial).map (·.2)
 
 /-- A step whose result type is empty never returns normally
 (`ExpressionEffects.emptyType`, the pass's `deadNode`): its normal exit is

@@ -745,6 +745,12 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; sp
     // which a static initializer has not yet.
     if (staticOwner !== undefined && !isStatic && gate.staticInitOf(target)?.cls === staticOwner)
       gate.fail(node, STATIC_INIT_CLASS);
+    // `b.subarray(begin, end)` of a view of bytes is `%ByteSubarray%(b, begin, end)`
+    // (`intrinsics.mts`), the intrinsic read at the member's name.
+    const byteSubarray = gate.byteReads.get(gate.span(node).join(":"));
+    if (byteSubarray !== undefined && ts.isPropertyAccessExpression(target))
+      return gate.intrinsic(byteSubarray, gate.span(node), gate.span(target.name),
+        [gate.expr(target.expression), ...node.arguments.map((arg) => gate.expr(arg))]);
     // `s.m(o, …)`, a string method dispatching to its object argument's
     // well-known-symbol method: `%Dispatch:m%(s, o, …)`, evaluated as
     // written (`regexp.mts`), the intrinsic read at the member's name.

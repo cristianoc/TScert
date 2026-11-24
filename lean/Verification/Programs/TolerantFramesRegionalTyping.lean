@@ -101,14 +101,14 @@ theorem stepChecked_safe {G : NormalGraph ι} {I : InstanceImageCheck G} {codes 
   · obtain ⟨out, pre, hsel, htree, _, _, _, _, hp, hn⟩ := ha
     have hs := (hsum r.sums).2
     by_cases hpres : (pc.checker.normal (jOf G r.c r.node r.entry r.ms)
-        (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes r.ans.summaries.toList ==
+        (kOf G r.c r.entry r.ms (wholeOf G r.c.context r.node.expression)) effect codes r.ans.summaries.toList ==
           Footprints.Closed.empty) = true
     · have hK := (hp hpres).2.1
       rw [hK] at hk
       exact erase (pass_select_sound (fun h => passTreeCheck_ok htree h) hsel hc hs
         (PromiseCalls.envOk_intRefine he hk.2.2.2.2.2) hk hw hh href hρ)
     · have hfalse : (pc.checker.normal (jOf G r.c r.node r.entry r.ms)
-          (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes r.ans.summaries.toList ==
+          (kOf G r.c r.entry r.ms (wholeOf G r.c.context r.node.expression)) effect codes r.ans.summaries.toList ==
             Footprints.Closed.empty) = false :=
         Bool.eq_false_iff.mpr hpres
       obtain ⟨out', hwhole, hsel', _, hK, _⟩ := hn hfalse
@@ -182,7 +182,7 @@ theorem visitStep_separation_partners {G : NormalGraph ι} {I : InstanceImageChe
   · rw [hk]; simp
   · obtain ⟨out, pre, _, _, _, _, _, _, hp, hn⟩ := ha
     by_cases hpres : (env.passChecker.checker.normal (jOf G env.claimed[l]! env.nodes[l]! en.entry ms)
-        (kOf G env.claimed[l]! en.entry ms (wholeOf (env.nodes[l]!).expression)) effect env.codes
+        (kOf G env.claimed[l]! en.entry ms (wholeOf G (env.claimed[l]!).context (env.nodes[l]!).expression)) effect env.codes
         a1.summaries.toList == Footprints.Closed.empty) = true
     · rw [(hp hpres).2.1]
       exact materialize_separation_partners _ _ _ _

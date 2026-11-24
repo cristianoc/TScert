@@ -72,8 +72,9 @@ theorem passOutFreshChecked_fresh {codes : CodeEntry ι → Bool} {sums : List (
     {k : Nat} {h' : Heap} {v : Tm}
     (hk : k < s.n) (hst : Steps k s.h (instantiate 0 ρ node.expression) h' v)
     (hv : isVal v = true) : FreshAt m v := by
-  rcases passOutFreshChecked_cases hf with hc | ⟨hcf, hdc⟩
+  rcases passOutFreshChecked_cases hf with hc | ha | ⟨hcf, hdc⟩
   · exact copyFresh hS he hwidth hc hst
+  · exact allocSpine_steps_fresh ha hm hst hv
   · exact callFresh_of_checked hcf hdc hcodes hsums hm he hkS href k h' v hk hst hv
 
 

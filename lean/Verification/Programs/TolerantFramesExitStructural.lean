@@ -66,9 +66,9 @@ theorem visitEntry_head_pair {env : WalkEnv ι G I} {σ : WalkState ι G} {t : N
     (hg : env.given[t]! = some req) (initial : (t == env.start && !env.startEntered) = false) :
     (en.entry, en.implies) =
       ((headEntry req false (env.claimed[t]!).context.length σ.fresh env.startNames env.argName
-        ((env.givenArgs[t]?).getD []) ((env.givenInputs[t]?).getD []) ((env.givenImplies[t]?).getD [])).1,
+        ((env.givenArgs[t]?).getD []) ((env.givenInputs[t]?).getD []) ((env.givenImplies[t]?).getD []) (headFreshAt env t)).1,
        (headEntry req false (env.claimed[t]!).context.length σ.fresh env.startNames env.argName
-        ((env.givenArgs[t]?).getD []) ((env.givenInputs[t]?).getD []) ((env.givenImplies[t]?).getD [])).2.1) := by
+        ((env.givenArgs[t]?).getD []) ((env.givenInputs[t]?).getD []) ((env.givenImplies[t]?).getD []) (headFreshAt env t)).2.1) := by
   obtain ⟨_, _, he, hi⟩ := visitEntry_merge h
   rw [he, hi]
   simp [withStated, hh, entryStart, hg, initial]
