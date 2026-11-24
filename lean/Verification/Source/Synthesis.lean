@@ -4769,6 +4769,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let outer := (← get).holes
   let contextual := hint.filter fun H => outer.any fun h => H.any (occurs h)
   let hint := if contextual.isSome then none else hint
+  -- An expected type naming a binder of an enclosing call still unbound (a
+  -- callback's result walked before its binder is read off it, `pending`)
+  -- states nothing of this call's value: no hint.
+  let pending := (← get).pending
+  let hint := hint.filter fun H => !pending.any fun b => H.any (occurs b)
   let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
     n ≤ a.arguments.length && (a.arguments.drop n).all (fun D => omissible G D || within T [Labels.undef] D)
   -- A union of callables (`armsCall`): one signature its arms meet.
