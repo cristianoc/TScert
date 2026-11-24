@@ -4,10 +4,11 @@ A walk of the single pass holds, at each node, the facts of its state; the
 cost of a unit is the sum over its nodes. On `tools/type-term.mts`
 (`typeTerm`), that sum reaches 4.75 GiB, above the census's 4 GiB stage
 limit, and the four files importing it lose their module interfaces. This
-draft states, for one small program, where the facts come from, and four
+draft states, for one small program, where the facts come from, and five
 changes, each a cause on its own: the lowering of a comparison, the names a
-walk keeps, the facts a store keeps, and how stores are held. Each change
-has its test and its measurement.
+walk keeps, the one form a fact over a read field takes, the facts a store
+keeps, and how stores are held. Each change has its test and its
+measurement.
 
 ## The example
 
@@ -627,7 +628,139 @@ already applies. Liveness is new, a function of the graph alone.
   that last reads it.
 - Every case pattern of the pass's reads, links and drops passes.
 
-## 3. A store holds no fact that says nothing, and no impossible state
+## 3. A path and the name its read link gives are one term
+
+### The existing mechanism this extends
+
+A read link `o.f ↦ v` (`HeapLinks.Link`, held by `HeapLinks.Holds`) states
+that the field `f` of the object named `o` holds the value named `v` in the
+current heap; `bridgeReads_term` (`HeapKnowledge.lean`) proves that a term
+rooted at `o` with `f` first denotes what the term rooted at `v` with the
+rest of the path does. The code moves facts between the two forms at five
+places, read from it:
+
+```
+applyDelta (SinglePass.lean)           -- after each step
+  add each output fact not among the step's inputs (Store.add)
+  for each added linear fact x, each name v of x a read link o.f ↦ v gives:
+    add x restated over o.f            (restateReads reads (· == v) [x])
+readFrame, writeOutput (HeapExpressionRules.lean)   -- a read's or a write's rule
+  withReadAtoms: each linear fact over the path o.f..., restated over v (readAtoms)
+                 each linear fact over a read's value v, restated over o.f (liftedEvery)
+expandLinks (KnowledgeExpand.lean)     -- every step's and check's knowledge
+  each value fact v ∈ S behind a link, as the cell fact o.f ∈ S (linkFacts)
+  each linear fact over a path, restated over the link's value (lowerAtoms)
+Store.drop (SinglePass.lean)           -- a name leaving
+  each linear fact over a dropped v, restated over o.f where every dropped
+  name of the fact has a read (restateReads, liftDropped), then eliminated
+bridgeOf (HeapKnowledge.lean)          -- an entailment check
+  both sides' terms lifted toward the paths (liftTerm)
+```
+
+`Store.add` inserts a fact as it is given. So a fact a rule states over the
+read's value is stored over the value and, by `applyDelta`, over each of
+its paths; a cell fact a rule's input derives (`linkFacts`) is stored beside
+the value fact it came from.
+
+### The example as it is
+
+Node 59 of the closure's walk (`kind3`, single-pass at `da5e4522e`) is
+`t14 = (t12 === t13)`, the correlated `choose`'s evaluation of
+`a.kind === b.kind`; its entry holds the links `n1.kind ↦ n12` and
+`n2.kind ↦ n13`. Its step adds 15 facts and holds 17:
+
+```
+[if n14]     ±(n12 − n13) ≤ 0   ±(n1.kind − n13) ≤ 0   ±(n12 − n2.kind) ≤ 0
+[unless n14] n12 − n13 ≠ 0      n1.kind − n13 ≠ 0      n12 − n2.kind ≠ 0
+cell n1.kind ∈ K   cell n2.kind ∈ K   n12 ∈ K   n13 ∈ K   int(n12)   int(n13)
+```
+
+with $`K = \{0, 1, 2, -0\}`$. The comparison's rule states the first column;
+`applyDelta` restates each fact through each read (the next two columns);
+the ternary at node 58 restates those again, giving the fourth form
+`n1.kind − n2.kind`. The cells come from `expandLinks`' `linkFacts` of the
+value facts its context gives, which the step's output carries. Over the
+closure's 67 nodes, 369 of the 1,535 facts held are linear facts over a
+path a live link names, and 127 are value facts a cell fact restates
+through a link (counted on the `TSCERT_DUMP` output).
+
+### The change
+
+**The store's form of a fact** (`Store.lowerAtom`, applied by `Store.add`):
+where the store holds a read link `o.f ↦ v`,
+
+- a linear fact's term rooted at `o` with path `f :: p` is the term rooted
+  at `v` with path `p`, as far as the links reach (`Store.lowerTerm`);
+- a cell fact `o.f ∈ S` is the value fact `v ∈ S`.
+
+Proved: `lowerTerm_eq` (from `bridgeReads_term`), `value_of_cell`,
+`lowerAtom_holds`; `add_ok` and `add_below` read them.
+
+**Each step reads both forms.** `applyDelta` no longer restates; the step's
+knowledge (`expandLinks`) restates each linear fact over a read's value
+toward the path it was read from (`restateReads`, proved by
+`restateReads_holds`) beside `lowerAtoms` and `linkFacts`, so a rule that
+keeps a fact over a path across a call or a write that drops the link
+(`linked-path-fact`, `map-insert-keeps-paths`) finds it.
+
+**A name leaving restates through its link.** `Store.drop` restates a
+dropped name's value fact as the cell fact of the field a read link from a
+kept name says it was read from (`Store.cellsOfDropped`, proved by
+`cellsOfDropped_ok`, from `cell_of_value`), and restates a linear fact's
+terms as far as the reads reach, leaving a term whose root no read gives
+for the elimination (`liftDropped`): from `t − n_old ≤ 1` and
+`−n_old ≤ 0`, where the write `c.i = t` gave the link `c.i ↦ t` and
+removed `c.i ↦ n_old`, dropping both names gives `−c.i ≤ −1`
+(`cursor-invariant-after-writing-call`, `local-callback-cursor`).
+
+A fact over a path the store held before its link was added keeps the
+path's form. Merges compare facts by form: after `a && b` reading
+`p.widths` in both arms and `p.segmentFlags` in one, restating the
+invariant `|p.segmentFlags| = |p.widths|` at each link gives
+`|p.segmentFlags| = |n_w|` in one predecessor and `|n_s| = |n_w|` in the
+other, and the meet loses it (`lazy-cache-keeps-facts`).
+
+### The example through the change
+
+Node 59's step adds 7 facts and holds 9:
+
+```
+[if n14]     ±(n12 − n13) ≤ 0
+[unless n14] n12 − n13 ≠ 0
+n12 ∈ K   n13 ∈ K   int(n12)   int(n13)
+```
+
+The rule's output carries the cell facts `linkFacts` derived; `Store.add`
+stores each as `n12 ∈ K`, already held. The branching comparison, node 55,
+holds 12 facts (29 before).
+
+### What this duplicates
+
+| Modelled here | Where the verifier models it | Relation |
+| --- | --- | --- |
+| A path and a link's value as one term | `lowerAtoms`, `liftTerm`, `bridgeReads_term` | read: `Store.lowerTerm` is `lowerByLinks` over the store's links, one read at a time |
+| A cell behind a link as the value | `valueBy`, `cellBy`, `linkFacts` | read: `value_of_cell` is `valueBy_mem`'s link case, `cell_of_value` `linkFacts_holds`'s |
+| Restating a dropped name | `restateReads` in `Store.drop`, `materialize` and `project` | the same function, its lift total |
+
+### Measurement
+
+`TSCERT_DUMP`, the closure's walk: 1,036 facts over 67 nodes at 3, 8 and 32
+members (1,535 before). Removed: the 369 linear facts over a linked path,
+and 127 value facts and the cell facts beside them. Two duplicates are
+other instances, left: `int(n)` beside a value set of safe integers, which
+implies it (118 facts: a value set implying an index fact, no read link),
+and a length atom's linear expansion beside `length(x) = n` (120 facts,
+`Store.add`'s `atomLinear`, kept for the call layers that keep or drop the
+linear form).
+
+### Tests
+
+- `field-and-link-value`: a precondition over `box.at` bounds `xs[i]` at the
+  read's name `i`, and a test over `i` meets a callee's precondition over
+  `box.at`; `invalid-field-and-link-value`, the field written between the
+  test and the call, is refused and reads past the array under Node.
+
+## 4. A store holds no fact that says nothing, and no impossible state
 
 ### The existing mechanism this extends
 
@@ -667,7 +800,7 @@ with a case for a step not run.
   head unchecked; `invalid-facts-possible-branch`, where the facts do not
   exclude the branch, is refused, and returns `NaN` under Node.
 
-## 4. Stores share what their nodes share
+## 5. Stores share what their nodes share
 
 ### The existing mechanism this extends
 
@@ -688,6 +821,6 @@ memory is measured.
 
 ## Order and measurement
 
-The changes land in the order 1, 2, 3, 4, each measured as the baseline
+The changes land in the order 1, 2, 4, 3, 5, each measured as the baseline
 was. Each is a separate commit series and states its measurement in its
 commit records.

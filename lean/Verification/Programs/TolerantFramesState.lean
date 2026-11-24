@@ -389,11 +389,166 @@ theorem foldl_addBound_ok {η : Env} {h : Heap} {c : Option Nat} {neg : Bool} :
   | F :: Fs, _, hs, hx => foldl_addBound_ok Fs _ (addBound_ok hs (hx F (List.mem_cons_self ..)))
       fun G hG => hx G (List.mem_cons_of_mem _ hG)
 
-/-- **A fact added (`Store.add`) keeps the store's facts holding**: a length
-fact also as the linear facts it means (`HeapKnowledge.atomLinear_holds`). -/
+/-! ## The store's form of a fact's terms -/
+
+/-- A read link the store names (`Store.readName`) is one of its facts. -/
+theorem readName_link {s : Store} {o v : Nat} {f : PropKey} (h : s.readName o f = some v) :
+    ∃ g, Atom.link g ∈ storeAll s ∧ g.alias = false ∧ g.cell = o ∧ g.field = f ∧ g.value = v := by
+  unfold Store.readName at h
+  obtain ⟨a, ha, hav⟩ := List.exists_of_findSome?_eq_some h
+  cases a with
+  | link g =>
+    simp only at hav
+    split at hav
+    · rename_i hc
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hc
+      cases hav
+      exact ⟨g, about_storeAll ha, hc.1.1, hc.1.2, hc.2, rfl⟩
+    · cases hav
+  | cell _ | value _ | elem _ | index _ | sep _ => cases hav
+
+/-- **A term in the store's form denotes what the term does** where the
+store's read links hold: each read it follows reads, from the object, the
+value the link names (`HeapKnowledge.bridgeReads_term`). -/
+theorem lowerTerm_eq {s : Store} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
+    ∀ n t, HeapKnowledge.termValue ε η h (s.lowerTerm n t) = HeapKnowledge.termValue ε η h t := by
+  intro n
+  induction n with
+  | zero => intro t; rfl
+  | succ n ih =>
+    intro t
+    obtain ⟨k, o, p, a⟩ := t
+    cases a with
+    | true => rfl
+    | false =>
+      cases p with
+      | nil => rfl
+      | cons f p =>
+        simp only [Store.lowerTerm, Bool.false_eq_true, ite_false]
+        split
+        · rename_i v hv
+          obtain ⟨g, hg, hal, hc, hf, hgv⟩ := readName_link hv
+          have hl : HeapLinks.Holds [g] η h := hs _ hg
+          have hm : (o, f, v) ∈ HeapKnowledge.bridgeReads [g] := by
+            simp [HeapKnowledge.bridgeReads, hal, hf, hc, hgv]
+          rw [ih]
+          exact (HeapKnowledge.bridgeReads_term hl hm k p).symm
+        · rfl
+
+/-- A term in the store's form names the term's slots or the value of one
+of the store's read links. -/
+theorem lowerTerm_slots {s : Store} :
+    ∀ n t, ∀ x ∈ (s.lowerTerm n t).slots, x ∈ t.slots ∨ ∃ g, Atom.link g ∈ storeAll s ∧ x = g.value := by
+  intro n
+  induction n with
+  | zero => intro t x hx; exact .inl hx
+  | succ n ih =>
+    intro t x hx
+    obtain ⟨k, o, p, a⟩ := t
+    cases a with
+    | true => exact .inl hx
+    | false =>
+      cases p with
+      | nil => exact .inl hx
+      | cons f p =>
+        simp only [Store.lowerTerm, Bool.false_eq_true, ite_false] at hx
+        split at hx
+        · rename_i v hv
+          obtain ⟨g, hg, -, -, -, hgv⟩ := readName_link hv
+          rcases ih _ x hx with hx | hx
+          · obtain ⟨-, rfl⟩ := HeapKnowledge.Term.mem_slots.mp hx
+            exact .inr ⟨g, hg, by simp [hgv]⟩
+          · exact .inr hx
+        · exact .inl hx
+
+/-- **A cell behind a read link is the link's value**: where the link
+`o.f ↦ v` holds and the cell fact `o.f ∈ S` does, `v ∈ S`. -/
+theorem value_of_cell {g : HeapLinks.Link} {F : HeapFacts.Fact} {η : Env} {h : Heap}
+    (hl : HeapLinks.Holds [g] η h) (ha : g.alias = false) (hc : g.cell = F.slot) (hf : g.field = F.field)
+    (hF : HeapFacts.Holds [F] η h) : HeapKnowledge.ValueHolds [{ slot := g.value, contents := F.contents }] η := by
+  obtain ⟨flds, c, oid, hcell, hr⟩ := HeapKnowledge.link_readGave ha hl
+  obtain ⟨flds', c', oid', u, hcell', hr', hm⟩ := hF F (List.mem_singleton_self _)
+  rw [← hc, hcell] at hcell'
+  cases hcell'
+  rw [← hf] at hr'
+  have hu := HeapFacts.ReadGave.unique hr hr'
+  intro x hx
+  simp only [List.mem_singleton] at hx
+  subst hx
+  simp only [hu]
+  exact hm
+
+/-- **A link's value is its cell's contents**: where the link `o.f ↦ v`
+holds and `v ∈ S`, the cell fact `o.f ∈ S` holds. -/
+theorem cell_of_value {g : HeapLinks.Link} {R : ValueSets.ValueSet} {η : Env} {h : Heap}
+    (hl : HeapLinks.Holds [g] η h) (ha : g.alias = false) (hv : R.mem (η g.value) = true) :
+    HeapFacts.Holds [{ slot := g.cell, contents := R, field := g.field }] η h := by
+  obtain ⟨flds, c, oid, hcell, hr⟩ := HeapKnowledge.link_readGave ha hl
+  intro x hx
+  simp only [List.mem_singleton] at hx
+  subst hx
+  exact ⟨flds, c, oid, η g.value, hcell, hr, hv⟩
+
+/-- **A fact in the store's form holds where the fact does** and the
+store's facts hold (`Store.lowerAtom`): a linear fact by `lowerTerm_eq`, a
+cell fact behind a read link by `value_of_cell`. -/
+theorem lowerAtom_holds {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (ha : AtomHolds ε a η h) : AtomHolds ε (s.lowerAtom a) η h := by
+  unfold Store.lowerAtom
+  split
+  · rename_i F c neg
+    split
+    · intro y hy hcond
+      simp only [List.mem_singleton] at hy
+      subst hy
+      have hb := ha _ (List.mem_singleton_self _) hcond
+      exact (HeapKnowledge.IndexFact.holdsAt_linear_mapVars (HeapKnowledge.renameFact_mapVars _ F)
+        fun x _ y hy => by cases hy; exact lowerTerm_eq hs _ x).mpr hb
+    · exact ha
+  · rename_i F
+    split
+    · rename_i v hv
+      obtain ⟨g, hg, hal, hc, hf, hgv⟩ := readName_link hv
+      subst hgv
+      exact value_of_cell (hs _ hg) hal hc hf ha
+    · exact ha
+  · exact ha
+
+/-- A fact in the store's form names the fact's names or the value of one of
+the store's read links. -/
+theorem lowerAtom_names {s : Store} {a : Atom} :
+    ∀ x ∈ (s.lowerAtom a).names, x ∈ a.names ∨ ∃ g, Atom.link g ∈ storeAll s ∧ x = g.value := by
+  intro x hx
+  unfold Store.lowerAtom at hx
+  split at hx
+  · rename_i F c neg
+    split at hx
+    · simp only [Atom.names, HeapKnowledge.IndexFact.slots, List.mem_append, List.mem_flatMap] at hx
+      rcases hx with ⟨t', ht', hx⟩ | hx
+      · have ht'' : t' ∈ (F.vars).map (fun t => s.lowerTerm t.path.length t) := by
+          cases F <;> simpa [HeapKnowledge.renameFact, Linear.Fact.vars] using ht'
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht''
+        rcases lowerTerm_slots _ t x hx with hx | hx
+        · exact .inl (by simp only [Atom.names, HeapKnowledge.IndexFact.slots, List.mem_append, List.mem_flatMap]
+                         exact .inl ⟨t, ht, hx⟩)
+        · exact .inr hx
+      · exact .inl (by simp [Atom.names, hx])
+    · exact .inl hx
+  · rename_i F
+    split at hx
+    · rename_i v hv
+      obtain ⟨g, hg, -, -, -, hgv⟩ := readName_link hv
+      simp only [Atom.names, List.mem_singleton] at hx
+      exact .inr ⟨g, hg, by rw [hx, hgv]⟩
+    · exact .inl hx
+  · exact .inl hx
+
+/-- **A fact added (`Store.add`) keeps the store's facts holding**: in the
+store's form of its terms (`lowerAtom_holds`), a length fact also as the
+linear facts it means (`HeapKnowledge.atomLinear_holds`). -/
 theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
     (ha : AtomHolds ε a η h) : StoreOk ε (s.add a) η h := by
-  have hc : AtomHolds ε a.canon η h := atomHolds_canon.mpr ha
+  have hc : AtomHolds ε (s.lowerAtom a).canon η h := atomHolds_canon.mpr (lowerAtom_holds hs ha)
   unfold Store.add
   dsimp only
   split
@@ -407,6 +562,36 @@ theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s �
         rw [heq] at hc
         exact HeapKnowledge.atomLinear_holds (hc _ (List.mem_singleton_self _) hcond) F hF
       exact foldl_addBound_ok _ _ hs hx
+    · exact hs
+
+/-- **A dropped name's value facts restated as cells hold** where the value
+facts and the read links do (`cell_of_value`). -/
+theorem cellsOfDropped_ok {s : Store} {dset : Std.HashSet Nat} {atoms : List Atom} {links : HeapLinks.Links}
+    {η : Env} {h : Heap} (hs : StoreOk ε s η h) (ha : ∀ a ∈ atoms, AtomHolds ε a η h)
+    (hl : HeapLinks.Holds links η h) : StoreOk ε (s.cellsOfDropped dset atoms links) η h := by
+  unfold Store.cellsOfDropped
+  induction atoms generalizing s with
+  | nil => exact hs
+  | cons a as ih =>
+    simp only [List.foldl_cons]
+    refine ih (ha := fun b hb => ha b (List.mem_cons_of_mem _ hb)) (hs := ?_)
+    split
+    · rename_i F
+      have hv : HeapKnowledge.ValueHolds [F] η := ha _ (List.mem_cons_self ..)
+      clear ih
+      induction links generalizing s with
+      | nil => exact hs
+      | cons g gs ihg =>
+        simp only [List.foldl_cons]
+        refine ihg (hl := fun x hx => hl x (List.mem_cons_of_mem _ hx)) (hs := ?_)
+        split
+        · rename_i hc
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hc
+          refine add_ok hs (cell_of_value (fun x hx => by rw [List.mem_singleton.mp hx]; exact hl g (List.mem_cons_self ..))
+            hc.1.1 ?_)
+          rw [hc.1.2]
+          exact hv F (List.mem_singleton_self _)
+        · exact hs
     · exact hs
 
 end Verification.TolerantFrames

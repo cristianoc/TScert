@@ -538,12 +538,16 @@ with `lengthRange` and `viewRange` (a string's length's too, `strRange_holds`); 
 restatement is `readAtoms` (proved: `readAtoms_holds`), and every check
 reads its knowledge with each linear and quantified atom restated by every
 read link toward the ends of its paths (`lowerAtoms`, as far as the links
-reach; proved: `lowerAtoms_holds`), so a fact a call's postcondition states of
+reach; proved: `lowerAtoms_holds`) and each linear atom over a read's value
+restated toward the path it was read from (`restateReads`; proved:
+`restateReads_holds`), so a fact a call's postcondition states of
 `lists.widths` is read of the local `widths` the link `lists.widths ≐ widths`
 relates to it, whenever either entered the knowledge (`linked-path-fact`,
 in `KnowledgeExpand.expandLinks`, with `released` for `guard-typed`), and
 `HeapExpressionRules.linkedOutput` (proved in `linkedRead_sound`); the
-dropped slot's is `restateReads` (proved: `restateReads_holds`). The steps
+dropped slot's is `restateReads` (proved: `restateReads_holds`). The single
+pass stores a fact over a path a read link names over the link's value
+([one state](SINGLE-PASS.md#2-one-state), `field-and-link-value`). The steps
 are a layer of `Checker.indexing` (`IndexWrites.linearAtoms`; proved:
 `IndexWrites.linearAtoms_holds`, from `SafeIntegers.add_safe`, `sub_safe`
 and `doubleOrder_safe`; Str-Length from `stringSlot_sound` and

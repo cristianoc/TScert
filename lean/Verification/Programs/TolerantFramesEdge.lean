@@ -128,8 +128,8 @@ theorem getD_self_ok {m : Std.HashMap Nat Nat} {η : Env} (hm : ∀ x y, m.get? 
 
 /-- **Dropping names keeps the store holding** at the same valuation: the
 removed facts leave, and each fact added (a separation with fewer partners,
-a fact restated through an alias link, a derived linear fact) holds where
-the store's facts do. -/
+a fact restated through an alias link, a value fact restated as its cell's,
+a derived linear fact) holds where the store's facts do. -/
 theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
     StoreOk ε (s.drop D) η h := by
   unfold Store.drop
@@ -166,7 +166,8 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk �
     · exact hb
   · intro b hb
     split
-    · refine storeOk_bind (storeOk_forIn _ _ _ hb ?_) fun c hc => storeOk_bind (storeOk_forIn _ _ _ hc ?_) fun d hd => hd
+    · refine storeOk_bind (storeOk_forIn _ _ _ hb ?_) fun c hc => storeOk_bind (storeOk_forIn _ _ _
+        (cellsOfDropped_ok hc hat (link_filterMap_holds hread)) ?_) fun d hd => hd
       · intro a ha c hc
         split
         · rename_i b hr
@@ -189,7 +190,8 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk �
             · exact HeapKnowledge.restateReads_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
           · exact HeapKnowledge.restateSpines_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
         · exact hc
-    · refine storeOk_bind (storeOk_forIn _ _ _ hb ?_) fun d hd => hd
+    · refine storeOk_bind (storeOk_forIn _ _ _ (cellsOfDropped_ok hb hat (link_filterMap_holds hread)) ?_)
+        fun d hd => hd
       intro x hx c hc
       split
       · refine add_ok hc fun y hy => ?_

@@ -91,11 +91,17 @@ theorem foldl_addBound_below {next : Nat} {c : Option Nat} {neg : Bool} :
       fun G hG => hx G (List.mem_cons_of_mem _ hG)
 
 /-- **Adding a fact whose names are below `next` keeps every stored fact's
-names below it** (`Store.add`): a length fact's linear facts name its two
-names. -/
+names below it** (`Store.add`): its form in the store names its names or a
+stored link's value (`lowerAtom_names`), and a length fact's linear facts
+name its two names. -/
 theorem add_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next) (ha : ∀ x ∈ a.names, x < next) :
     FactsBelow (s.add a) next := by
-  have hc : ∀ x ∈ a.canon.names, x < next := by rw [canon_names]; exact ha
+  have hc : ∀ x ∈ (s.lowerAtom a).canon.names, x < next := by
+    rw [canon_names]
+    intro x hx
+    rcases lowerAtom_names x hx with hx | ⟨g, hg, rfl⟩
+    · exact ha x hx
+    · exact hs _ hg _ (by simp [Atom.names])
   unfold Store.add
   dsimp only
   split

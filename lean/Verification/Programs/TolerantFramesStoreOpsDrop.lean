@@ -127,7 +127,8 @@ theorem sep_filter_holds {f : HeapSeparation.Fact} {keep : Nat × List PropKey �
 fact of `s` holds at `η` and `h`, every fact of `s.drop D` does. The removed
 facts leave; a separation fact keeps the partners outside `D`; a fact over a
 dropped name restated at the name an alias link relates it to holds by the
-link; the derived facts hold by `eliminateIndices_holds`, `restateReads_holds`
+link; a dropped name's value fact restated as its cell's by its read link
+(`cellsOfDropped_ok`); the derived facts hold by `eliminateIndices_holds`, `restateReads_holds`
 and `restateSpines_holds` over the facts naming `D` and their linear and link
 neighbours, all facts of `s`. -/
 theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
@@ -193,11 +194,11 @@ theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreO
       · exact hb
     · exact hb
   intro b hb
-  have hlast : ∀ b, StoreOk ε b η h → StoreOk ε (forIn derived b fun x r =>
+  have hlast : ∀ b, StoreOk ε b η h → StoreOk ε (forIn derived (b.cellsOfDropped dset atoms links) fun x r =>
       if (Atom.index x).names.all (fun x => !dset.contains x) = true then ForInStep.yield (r.add (Atom.index x))
       else ForInStep.yield r : Id Store) η h := by
     intro b hb
-    refine forIn_inv (P := fun st => StoreOk ε st η h) _ _ _ hb fun x hx b hb => ?_
+    refine forIn_inv (P := fun st => StoreOk ε st η h) _ _ _ (cellsOfDropped_ok hb hatoms hl) fun x hx b hb => ?_
     split
     · exact add_ok hb (fun y hy => (List.mem_singleton.mp hy) ▸ hd x hx)
     · exact hb
@@ -237,13 +238,13 @@ theorem drop_wf {s : Store} (w : StoreWF s) (D : List Nat) : StoreWF (s.drop D) 
         pure (ForInStep.yield (b'.add (Atom.index x))) else pure (ForInStep.yield b') : Id (ForInStep Store))).value :=
     fun _ _ x b' hb => by split; exact add_wf hb _; exact hb
   split
-  · refine id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ hb ?_) (fun b hb => id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ hb fun x _ b' hb' => hlast b hb x b' hb') (fun _ h => h))
+  · refine id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ hb ?_) (fun b hb => id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ (cellsOfDropped_wf hb _ _ _) fun x _ b' hb' => hlast b hb x b' hb') (fun _ h => h))
     intro a _ b hb
     split
     · split
       · exact add_wf hb _
       · exact hb
     · exact hb
-  · exact id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ hb fun x _ b' hb' => hlast b hb x b' hb') (fun _ h => h)
+  · exact id_bind_inv _ _ StoreWF StoreWF (forIn_inv (P := StoreWF) _ _ _ (cellsOfDropped_wf hb _ _ _) fun x _ b' hb' => hlast b hb x b' hb') (fun _ h => h)
 
 end Verification.TolerantFrames

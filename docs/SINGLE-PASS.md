@@ -67,9 +67,31 @@ output adds, and the facts of its input the output lost. A fact over a name
 no slot holds stays true (a binding never changes); where a step reads it,
 its linear facts are first restated through read links and eliminated
 (`HeapKnowledge.restateReads`, `eliminateIndices`, as an edge's projection
-does today). A linear fact a delta adds over a name a read link gives is
-also stated over the read's path (`restateReads`): a later step that drops
-the read's name keeps the path's fact.
+does today).
+
+A field path and the name a read link says it holds are one term. Where the
+store holds the read link `o.f ↦ v`, a fact over the path `o.f` is stored
+over `v` (`Store.lowerAtom`, which `Store.add` applies): a linear fact's
+terms rooted at `o` with `f` first are rooted at `v`, as far as the links
+reach (`Store.lowerTerm`), and a cell fact `o.f ∈ S` is the value fact
+`v ∈ S`. Each holds where the link and the fact do (`lowerAtom_holds`, from
+`bridgeReads_term` and `value_of_cell`). A step reads both forms: its
+knowledge restates each fact over a path toward the name a link gives
+(`lowerAtoms`), each fact over a read's name toward the path it was read
+from (`restateReads`), and each value fact behind a link as its cell's
+(`linkFacts`), all in `KnowledgeExpand.expandLinks`; the store keeps the
+one form its output's facts lower to. Where `v` leaves the store,
+`Store.drop` restates its facts through the link: a linear fact with each
+term rooted at a dropped name a read gives restated over the path, as far
+as the reads reach, the rest eliminated (`restateReads`, `liftDropped`),
+and a value fact as the cell fact of the field it was read from
+(`Store.cellsOfDropped`, `cell_of_value`).
+
+On `a.kind !== b.kind` (`n1` is `a`, `n12` the name read from `a.kind`), the
+comparison's facts are stored once, over the names: `n12 − n13 ≠ 0`, not
+also over `n1.kind − n13`, `n12 − n2.kind` and `n1.kind − n2.kind`, and the
+read's value set is `n12 ∈ {0, 1, 2, −0}`, not also the cell fact
+`a.kind ∈ {0, 1, 2, −0}`.
 
 A linear fact over no term is a constant. A true one (`0 ≤ d` with
 `d ≥ 0`, `0 ≠ d` with `d ≠ 0`) states nothing and is not added

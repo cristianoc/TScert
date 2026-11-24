@@ -46,14 +46,13 @@ def deltaAdd (s : Store) (pairs : List (Atom × Atom)) (out : HeapKnowledge.Know
         if let .index x := a then added := x :: added
   return (s, added)
 
-/-- `applyDelta`'s third loop: each added linear fact over a read's name also
-over the read's path, and each added linear or singly guarded linear fact over
-an element read's projection (or length) also as `atIndex`. -/
+/-- `applyDelta`'s third loop: each added linear or singly guarded linear fact
+over an element read's projection (or length) also as `atIndex`. -/
 def deltaRestate (s : Store) (added : List HeapKnowledge.IndexAtom) : Store := Id.run do
   let mut s := s
   for x in added do
     for v in x.fact.slots do
-      s := SinglePass.restateAddedAtIndex (SinglePass.restateAddedReads s x v) x v
+      s := SinglePass.restateAddedAtIndex s x v
   return s
 
 /-- `applyDelta` is its three loops in order. -/
@@ -136,32 +135,6 @@ theorem deltaAdd_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowled
       | cell _ | value _ | elem _ | sep _ => exact ⟨hadd, hi⟩
     · exact ⟨hr, hi⟩
   · exact ⟨hr, hi⟩
-
-/-- **The restatement loop adds holding facts**: a linear fact restated over
-a read's path (`HeapKnowledge.restateReads_holds`), the read links being the
-store's. -/
-theorem restateAddedReads_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Nat} {η : Env} {h : Heap}
-    (hs : StoreOk ε s η h) (hx : HeapKnowledge.IndexHolds ε [x] η h) :
-    StoreOk ε (SinglePass.restateAddedReads s x v) η h := by
-  unfold SinglePass.restateAddedReads
-  simp only [Id.run]
-  split
-  · exact hs
-  · have hl : HeapLinks.Holds ((s.about v).filterMap fun b => match b with
-        | .link g => if (!g.alias && g.value == v) = true then some g else none
-        | _ => none) η h := by
-      intro g hg
-      obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
-      split at hbg
-      · split at hbg
-        · cases hbg; exact hs _ (about_storeAll hb) g (List.mem_singleton_self _)
-        · cases hbg
-      · cases hbg
-    have hy := HeapKnowledge.restateReads_holds (dropped := (· == v)) hl hx
-    refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs ?_
-      (fun _ h => h)
-    intro y hyl w hw
-    exact add_ok hw fun z hz hc => by simp only [List.mem_singleton] at hz; subst hz; exact hy z hyl hc
 
 theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Nat} {η : Env} {h : Heap}
     (hs : StoreOk ε s η h) (hx : HeapKnowledge.IndexHolds ε [x] η h) :
@@ -403,7 +376,7 @@ theorem deltaRestate_ok {s : Store} {added : List HeapKnowledge.IndexAtom} {η :
     simp only [List.mem_singleton] at hy; subst hy; exact hadd y hx hc
   show StoreOk ε (forIn (m := Id) x.fact.slots t _) η h
   exact forIn_inv _ _ _ (fun t => StoreOk ε t η h) ht fun v _ u hu =>
-    restateAddedAtIndex_ok (restateAddedReads_ok hu hx1) hx1
+    restateAddedAtIndex_ok hu hx1
 
 /-- **A step's delta keeps the store's facts holding**: where the facts the
 removal loop keeps hold at `η`, the output holds at the pushed slots `ρ'`

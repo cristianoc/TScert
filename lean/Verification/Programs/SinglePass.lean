@@ -188,17 +188,6 @@ def Store.addBound (s : Store) (a : Atom) : Store :=
     else (same.foldl Store.remove s).addRaw a
   | none => s.addRaw a
 
-/-- A fact added (`addBound`); a length atom also as the linear facts it
-means (`HeapKnowledge.atomLinear`), the form the call layers keep or drop. -/
-def Store.add (s : Store) (a : Atom) : Store :=
-  let a := a.canon
-  if s.live.contains a then s else
-  let s := match a with
-    | .index ⟨f@(.length _ _), c, neg⟩ => (HeapKnowledge.atomLinear f).foldl (fun (s : Store) F =>
-        s.addBound (.index ⟨.linear F, c, neg⟩)) s
-    | _ => s
-  s.addBound a
-
 def Store.about (s : Store) (n : Nat) : List Atom := s.byName.getD n []
 
 /-- The name a read link of the store gives the field `f` of the object
@@ -208,6 +197,44 @@ def Store.readName (s : Store) (o : Nat) (f : PropKey) : Option Nat :=
   (s.about o).findSome? fun
     | .link g => if !g.alias && g.cell == o && g.field == f then some g.value else none
     | _ => none
+
+/-- A term over the names the store's read links give its path: where the
+store holds a read link `o.f ↦ v`, the term rooted at `o` with path `f :: p`
+is the term rooted at `v` with path `p`, at most `n` reads deep. A path and
+the name a read link says it holds are one term. -/
+def Store.lowerTerm (s : Store) : Nat → HeapKnowledge.Term → HeapKnowledge.Term
+  | 0, t => t
+  | n + 1, t => if t.atEntry then t else match t.path with
+    | f :: p => match s.readName t.slot (.str f) with
+      | some v => s.lowerTerm n (HeapKnowledge.Term.now t.kind v p)
+      | none => t
+    | [] => t
+
+/-- A fact in the store's one form of its terms: a linear fact with each
+term over the names the store's read links give its path
+(`Store.lowerTerm`); a cell fact `o.f ∈ S` where the store holds a read link
+`o.f ↦ v`, the value fact `v ∈ S`. Any other fact is its own form. -/
+def Store.lowerAtom (s : Store) : Atom → Atom
+  | .index ⟨.linear F, c, neg⟩ =>
+    if F.vars.any (fun t => !t.path.isEmpty) then
+      .index ⟨.linear (HeapKnowledge.renameFact (fun t => s.lowerTerm t.path.length t) F), c, neg⟩
+    else .index ⟨.linear F, c, neg⟩
+  | .cell F => match s.readName F.slot F.field with
+    | some v => .value { slot := v, contents := F.contents }
+    | none => .cell F
+  | a => a
+
+/-- A fact added (`addBound`) in the store's form of its terms
+(`Store.lowerAtom`); a length atom also as the linear facts it means
+(`HeapKnowledge.atomLinear`), the form the call layers keep or drop. -/
+def Store.add (s : Store) (a : Atom) : Store :=
+  let a := (s.lowerAtom a).canon
+  if s.live.contains a then s else
+  let s := match a with
+    | .index ⟨f@(.length _ _), c, neg⟩ => (HeapKnowledge.atomLinear f).foldl (fun (s : Store) F =>
+        s.addBound (.index ⟨.linear F, c, neg⟩)) s
+    | _ => s
+  s.addBound a
 
 def Store.size (s : Store) : Nat := s.live.size
 
@@ -655,16 +682,6 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain 
     return out
   (ofAtoms (pairs.map (·.2) ++ extra ++ aliasLinks) d, pairs, table)
 
-/-- Restate an added linear fact over a read's path (`HeapKnowledge.restateReads`). -/
-def restateAddedReads (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : Store := Id.run do
-  let reads := (s.about v).filterMap fun b => match b with
-    | .link g => if !g.alias && g.value == v then some g else none
-    | _ => none
-  if reads.isEmpty then return s
-  let mut s := s
-  for y in HeapKnowledge.restateReads reads (· == v) [x] do s := s.add (.index y)
-  return s
-
 /-- Whether an unconditional linear or singly guarded linear fact accesses a
 projection (a length, view, bitmask or field) on `r`, or a length/mask slot of `r`. -/
 def mentionsElemProj (r : Nat) (lens masks : List HeapKnowledge.IndexAtom) (F : HeapKnowledge.IndexFact) : Bool :=
@@ -797,14 +814,12 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
         let trivial := match a with | .link g => g.alias && g.cell == g.value | _ => false
         if !trivial then s := s.add a
         if let .index x := a then added := x :: added
-  -- A linear fact over a name a read gives, also stated over the read's
-  -- path (`restateAddedReads`), and a linear or singly guarded linear fact
-  -- over an element read's projection, also stated as `atIndex`
-  -- (`restateAddedAtIndex`): the forms a later step keeps where it drops
-  -- the read's name.
+  -- A linear or singly guarded linear fact over an element read's
+  -- projection, also stated as `atIndex` (`restateAddedAtIndex`): the form
+  -- a later step keeps where it drops the read's name.
   for x in added do
     for v in x.fact.slots do
-      s := restateAddedAtIndex (restateAddedReads s x v) x v
+      s := restateAddedAtIndex s x v
   return s
 
 instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
@@ -877,10 +892,22 @@ def droppedBy (names : List Nat) (m : PointClaims.Mapping) (target : List Nat) :
     if skipped.isEmpty then return []
     return (skipped.filter (!target.contains ·)).eraseDups
 
+/-- The value facts `atoms` states of the names `dset` drops, each restated
+as the cell fact of the field a read link of `links` from a kept name says
+it was read from (`HeapKnowledge.linkFacts`). -/
+def Store.cellsOfDropped (s : Store) (dset : Std.HashSet Nat) (atoms : List Atom) (links : HeapLinks.Links) :
+    Store :=
+  atoms.foldl (fun acc a => match a with
+    | .value F => links.foldl (fun acc g =>
+        if !g.alias && g.value == F.slot && !dset.contains g.cell then
+          acc.add (.cell { slot := g.cell, contents := F.contents, field := g.field })
+        else acc) acc
+    | _ => acc) s
+
 /-- The store without the names `D`, which no slot holds any longer: their
-facts restated through read links and eliminated from the linear facts
-(as an edge's projection does, `HeapKnowledge.project`), the facts naming
-them removed. -/
+facts restated through read links (a value fact as its cell's,
+`Store.cellsOfDropped`) and eliminated from the linear facts (as an edge's
+projection does, `HeapKnowledge.project`), the facts naming them removed. -/
 def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => Id.run do
   if D.isEmpty then return s
   let dset : Std.HashSet Nat := D.foldl (·.insert ·) {}
@@ -919,6 +946,7 @@ def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => I
     for a in atoms do
       if let some b := a.rename (fun x => some (keptAlias.getD x x)) then
         if b.names.all (!dset.contains ·) then s := s.add b
+  s := s.cellsOfDropped dset atoms links
   for x in derived do
     let a := Atom.index x
     if a.names.all (!dset.contains ·) then s := s.add a
