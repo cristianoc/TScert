@@ -86,6 +86,14 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   escaping nested interior, an exported container, a direct parameter write
   claiming `@state`, a `subarray` stored into a mutated cache, and `@state`
   under an `else: "keep"` bound.
+- `cursor-and-confined.ts`: preserving destructured handle read links across
+  verified `Effects<{ "@state": "any" }, T>` calls before a bounded-callback
+  loop (#364), alias-aware bound coverage for parameter cursor fields across
+  callbacks, and polymorphic forwarding discharging own-location bound entries
+  on a caller-allocated `const` object via `Anch` + `Meet` (#355), with
+  negative controls refusing an unbounded callback, a forwarded parameter or
+  reassigned `let` cursor, a `Join` mutating the fresh cursor, and a nested
+  path through a fresh wrapper.
 
 ## The Pretext copy
 

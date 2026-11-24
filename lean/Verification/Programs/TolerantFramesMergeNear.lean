@@ -39,7 +39,7 @@ theorem nearStep_ok {s : Store} {limit : Nat} {x : Nat} {a : Atom} (ha : a ∈ s
         simp only [Array.toList_push, List.mem_append, List.mem_singleton] at hj
         rcases hj with hj | rfl
         · exact hst j hj
-        · exact ⟨about_storeAll ha, hc.1.1⟩
+        · exact ⟨about_storeAll ha, hc.1.1.1⟩
       split
       · exact hnames _ _ hpush
       · exact hpush

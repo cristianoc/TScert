@@ -187,6 +187,19 @@ def mayOverlapModState : Footprints.Region → Bool
   | .field _ (.str "value") | .path _ [] (.str "value") => true
   | _ => false
 
+/-- Whether a support region `r` is covered by a bound entry's region `b`,
+modulo alias links (`sameSlot x y` when `x` and `y` denote the same object). -/
+def coveredByBound (sameSlot : Nat → Nat → Bool) (r b : Footprints.Region) : Bool :=
+  r == b || match r, b with
+  | .field x k, .field y k' | .field x k, .path y [] k'
+  | .path x [] k, .field y k' | .path x [] k, .path y [] k' => sameSlot x y && k == k'
+  | .spine x [], .path y [] k' => sameSlot x y && k' == arraySpineKey
+  | .spine x p, .spine y q => sameSlot x y && p == q
+  | .field x k, .fields y | .path x [] k, .fields y => sameSlot x y && k != arraySpineKey
+  | .fields x, .fields y | .pathFields x [], .fields y => sameSlot x y
+  | .cells x, .cells y | .pathCells x [], .cells y => sameSlot x y
+  | _, _ => false
+
 /-- **The pair rule**: the callback's effect `ε` is within `δ` on `r`
 (Definition "Order") when one of the two effects `ε` is included in is
 (the meet, rules Anch and Bound):
@@ -197,15 +210,16 @@ def mayOverlapModState : Footprints.Region → Bool
 - Bound: every bound entry not disjoint from `r` is within `δ` (the
   existing `respects`, with its separation query), any confined module-state
   entry `modChange` that may overlap `r` is within `δ`, and the bound's `else`
-  is within `δ` unless `r` lies in an entry: equal to an entry's region, or
-  in a reach entry's declared reach. -/
-def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footprints.Change)
+  is within `δ` unless `r` lies in an entry: covered by a bound entry's region
+  (up to alias links), or in a reach entry's declared reach. -/
+def keepsPair (q : Footprints.SepQuery) (sameSlot : Nat → Nat → Bool) (fresh : List Nat)
+    (bound : Footprints.Footprint) (otherwise : Footprints.Change)
     (reach : Footprints.Region → Bool) (modChange : Footprints.Change)
     (e : Footprints.Region × Footprints.Change) : Bool :=
-  (ownSlot e.1).any fresh.contains ||
+  (ownSlot e.1).any (fun s => fresh.any (sameSlot s)) ||
     (Footprints.respects q [e] bound &&
       (!mayOverlapModState e.1 || (atCategory e.1 modChange).le e.2) &&
-      ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (·.1 == e.1)))
+      ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (fun b => coveredByBound sameSlot e.1 b.1)))
 
 /-- An effect the layer reads at a call: its entries at the call's slots,
 its `else`, the roots of its reach entries with their access paths, the
@@ -225,8 +239,9 @@ the call's result. The effects are the components of one call's effect
 every one keeps survive. -/
 def keptBy (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
+  let sameSlot := fun (x y : Nat) => x == y || (HeapLinks.aliases k.links x).contains y
   let keeps := fun (S : Footprints.Footprint) => !effs.isEmpty && effs.all fun c =>
-    S.all (keepsPair q c.fresh c.bound c.otherwise (inReach (reachPairs k c.roots)) c.modChange)
+    S.all (keepsPair q sameSlot c.fresh c.bound c.otherwise (inReach (reachPairs k c.roots)) c.modChange)
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S

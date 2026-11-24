@@ -45,6 +45,10 @@ interface FunctionInfo {
   typeParams: string[];
   params: string[]; effectParams: EffectParam[]; bounded: { param: string; index: number; variable: string }[];
   own?: Effect | string;
+  /** Verified stated `Effects<P, T>` on a monomorphic function (e.g.
+   * `Effects<{ "@state": "any" }, T>`), used to frame calls to it via rule
+   * Confined. */
+  stated?: Effect;
   /** Why the function's own verdict cannot rest on its bounds: a bound or
   a callback's type is not read, or its own steps are not shown to keep the
   regions its bounds read (rule Bound's second premise). */
@@ -1605,7 +1609,7 @@ function effectWithin(eff: Effect, claim: Effect): string | null {
  * allocated, and `params` the caller's parameters it never assigns. A key
  * this check cannot parse is refused. */
 function instCheck(instance: Effect, bound: Effect, params: string[], args: (string | null)[], fresh: Set<string>,
-    callerParams: Set<string>): string | null {
+    callerParams: Set<string>, anchFresh: Set<string> = new Set()): string | null {
   // The empty effect is within every bound, whatever its arguments.
   if (instance.entries.length === 0 && instance.else === "keep") return null;
   const actual = (key: string): string | null => {
@@ -1615,6 +1619,11 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: (str
     const arg = args[at];
     return arg === null || arg === undefined ? null : arg + restOf(key);
   };
+  const ownOf = (l: Loc): boolean => l.path.length === 0 && (l.kind === "field" || l.kind === "fields" || l.kind === "spine");
+  // When forwarding an outer effect variable E, rule Anch + Meet guarantees
+  // that every anchored instance of E keeps every own location of any external
+  // object freshly allocated inside the caller (`anchFresh`).
+  const anchoredFresh = (b: Loc): boolean => anchFresh.has(b.root) && ownOf(b);
   const bs: [Loc, Change, string, Acc][] = [];
   for (const [b, d] of bound.entries) {
     const text = actual(b);
@@ -1630,15 +1639,15 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: (str
   }
   for (const [l, c, iacc, r] of is) {
     for (const [b, d, text, bacc] of bs)
-      if (!disjoint(l, b, l.kind === "reach" ? iacc : bacc, fresh, callerParams) && !le(c, d))
+      if (!anchoredFresh(b) && !disjoint(l, b, l.kind === "reach" ? iacc : bacc, fresh, callerParams) && !le(c, d))
         return `the instance changes ${r} by ${c}; the bound allows ${text}: ${d}`;
     if (bound.else !== "any" && !bs.some(([b, , , bacc]) => inside(l, b, bacc, iacc)) && !le(c, bound.else))
       return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
   }
   // The instance's `else` reaches the locations of a bound entry that no
   // instance entry covers: the same location, or one inside an instance
-  // reach.
-  const covered = (b: Loc, bacc: Acc): boolean => is.some(([l, , iacc]) =>
+  // reach, or an own location of a caller-allocated object kept by Anch.
+  const covered = (b: Loc, bacc: Acc): boolean => anchoredFresh(b) || is.some(([l, , iacc]) =>
     (l.kind === "reach" && b.kind === "reach" ? reachInside(b, bacc, l, iacc)
       : l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b)) || inside(b, l, iacc, bacc));
   for (const [b, d, text, bacc] of bs)
@@ -1766,9 +1775,11 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     // Verify any stated `Effects<P, T>` on this function against its body and
     // module confinement obligations (`OwnerConfined`).
     const st = statedEffect(s);
+    let stated: Effect | undefined;
     if (st !== null && st.checkBody && refusal === undefined) {
       const why = verifyStatedEffect(s, st.effect);
       if (why !== null) refusal = `stated Effects verification failed: ${why}`;
+      else stated = st.effect;
     }
     const own = effectVars(s).length === 0 ? undefined : closureEffect(s, true, { owner: s, names: boundedParams(s) });
     // Rule Bound's second premise: the regions of each bound read at a
@@ -1789,6 +1800,7 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
       }
     const info: FunctionInfo = { typeParams: (s.typeParameters ?? []).map((tp) => tp.name.text), params, effectParams, bounded };
     if (own !== undefined) info.own = own;
+    if (stated !== undefined) info.stated = stated;
     if (refusal !== undefined) info.refusal = refusal;
     if (unread !== undefined) info.unread = unread;
     functions[s.name.text] = info;
@@ -2130,7 +2142,18 @@ export function annotations(path: string): {
             if (reason !== null) break;
           }
           if (reason !== null) break;
-          reason = instCheck(inst, e.bound, callee.params, args, fresh, callerParams);
+          // When forwarding an outer effect variable E, rule Anch + Meet keeps
+          // every own location of any external `const` object allocated in the
+          // caller's body (`anchFresh`).
+          const anchFresh = new Set<string>();
+          if (forwarded.has(e.name)) {
+            for (const a of args) {
+              if (a === null || a.includes(".")) continue;
+              const d = declOf(a, n);
+              if (d !== null && d.kind === "const" && within(d.at, unit) && isAllocation(d.init)) anchFresh.add(a);
+            }
+          }
+          reason = instCheck(inst, e.bound, callee.params, args, fresh, callerParams, anchFresh);
           if (reason === null && extraNorm !== null)
             reason = instCheck(extraNorm.inst, e.bound, callee.params, args, extraNorm.fresh, callerParams);
         }
@@ -2140,6 +2163,12 @@ export function annotations(path: string): {
         calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
           params: callee.params, bounds: callee.effectParams.map((e) => empty.has(e.name) ? instance[e.name] ?? e.bound : e.bound),
           own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
+      } else if (callee && callee.stated !== undefined && callee.refusal === undefined) {
+        // A call to a monomorphic function with a verified `Effects<P, T>`
+        // (e.g. `Effects<{ "@state": "any" }, T>`): frame its caller's external
+        // facts and read links against `P` via rule Confined.
+        calls.push({ caller, callee: n.expression.text, instance: {}, ok: true, reason: null,
+          params: callee.params, bounds: [], own: callee.stated, span: [n.getStart(), n.getEnd()] });
       }
     }
     n.forEachChild(visit);

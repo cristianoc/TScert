@@ -756,8 +756,9 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
   \item \emph{Polymorphic forwarding:} inside an enclosing function
     quantifying $\varepsilon$, setting $\hat\theta(\varepsilon')=\varepsilon$
     is anchored under $C$, and its bound check reduces to showing the
-    caller's bound on $\varepsilon$ (read at $\vec x$) is included in
-    the callee's bound on $\varepsilon'$.
+    caller's bound on $\varepsilon$ (read at $\vec x$), combined with
+    \ruleName{Anch} and \ruleName{Meet} on own locations of caller-allocated
+    fresh objects, is included in the callee's bound on $\varepsilon'$.
   \item \emph{Forwarded join:} setting
     $\hat\theta(\varepsilon')=\varepsilon\sqcup\Phi$ (for instance
     $\varepsilon\sqcup\{\modstate{M}:\any\}$ when an adapter invokes a
@@ -1184,8 +1185,8 @@ Rule / feature & Conservative approximation in \code{paper-rules-prototype}\\
 \ruleName{Anch} & Decided only for own fields and spines of locally allocated objects (from allocation separation facts), not nested elements or paths through fields.\\
 Declared reach & Expands finite local and imported object/interface/array/union/intersection types (leaving generics, tuples, index signatures, and recursive types open); read at $\keep$ only, matched via pass read/alias links and reach inclusion ($\reach{\pi.f}{U}\subseteq\reach{\pi}{T}$).\\
 Region keys & Bounds and call effects accept parameter-rooted \code{p[*]}, \code{p[\#]}, \code{p.f}, \code{p.*}, \code{p.**}, and \code{"@state"} (no class keys in bounds, no arbitrary multi-hop paths, no structural region equality across different spellings).\\
-\ruleName{Inst} \& anchoring & Disjointness and anchoring are decided syntactically before the pass over \code{const} locals, unassigned parameters, and \code{"@state"} (fresh literal locals apart from parameter reaches if unescaped before the call; paths, reaches, and cells not decided anchored; joins \code{Join<E, P>} checked componentwise).\\
-\ruleName{Confined} & Checked locally per defining module: non-exported \code{let} cells never mutated through and non-exported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) that never escape; if a container's loaded values are mutated, every stored value must be fresh and never escape (refuses escaping containers, exported caches, or absorbed external references).\\
+\ruleName{Inst} \& anchoring & Disjointness and anchoring are decided syntactically before the pass over \code{const} locals, unassigned parameters, and \code{"@state"} (fresh literal locals apart from parameter reaches if unescaped before the call; forwarded effect variables discharge callee bound entries on own locations of caller-allocated \code{const} literals via \ruleName{Anch} and \ruleName{Meet}; paths, reaches, and cells not decided anchored; joins \code{Join<E, P>} checked componentwise).\\
+\ruleName{Confined} & Checked locally per defining module: non-exported \code{let} cells never mutated through and non-exported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) that never escape; if a container's loaded values are mutated, every stored value must be fresh and never escape (refuses escaping containers, exported caches, or absorbed external references); verified monomorphic \code{Effects<P, T>} calls are framed at their call sites against \code{P}.\\
 Closures \& callbacks & Callback types must carry a bare effect variable \code{Modifies<E, T>}. Closure effects are inferred from field/element writes, array \code{push}, fresh typed-array mutators, stated/forwarded calls, and pure natives/identity wrappers; stated \code{Effects<P, T>} signatures are checked coinductively against their bodies and module confinement.\\
 \ruleName{Bound} stability & Decided for single-location fields/spines at parameters, and for a reach only when the body's own effect (excluding callback calls) keeps the reach (using \code{"@state"} and explicit helper \code{Effects}); calls through aliased callback locals or reassigned parameters are not read.\\
 Call sites \& exits & Checks \ruleName{Inst} across function declarations in the project (refusing unanalysed value escapes of quantified functions); reads call arguments that are plain variables, paths, or pure identity wrappers; ignores \code{onThrow}; evaluates changes per location category (\lean{Change.onSpine}, \lean{Change.onValue}) and over-approximates instantiated calls using their bounds.\\
