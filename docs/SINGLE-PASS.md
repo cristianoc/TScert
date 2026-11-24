@@ -47,7 +47,12 @@ A binding is named once, where it is introduced: an input slot, a step's
 result, a fresh name at a cut, or at a merge whose predecessors give one slot
 different names. A read of a slot (`var i`) gives that slot's value, and its
 result keeps the slot's name (the copy rule, `HeapExpressionRules.copy`,
-states exactly this equality). An edge's slot map renames no fact: the
+states exactly this equality). A read of a field `f` of a slot holding the
+name `o`, where the store holds the read link `o.f ↦ y`, gives `y`: the link
+states that `o`'s field `f` holds `y` in the current heap, a write reaching
+it removes it, and a read is one deterministic step to the field's value
+(`SinglePass.resultName`; proved: `link_read_value`). Every other step's
+result is a fresh name. An edge's slot map renames no fact: the
 target's slot `i` holds the name of the source slot the map reads. A node's
 table from names to slots is built only for the names its step reads.
 

@@ -229,12 +229,12 @@ variable {ι : Type}
 
 /-- **The step keeps the names below the counter**: where the entry's names,
 start names and implications are below the counter `fresh` and the result
-is an entry name with the counter kept or the counter with the counter
+is below the counter with the counter kept or the counter with the counter
 advanced (`checkedStep_parts`), the state after the step is below the next
 counter, given its store's facts are (`hstore`, the delta's names). -/
 theorem namesBelow_step {entry : SinglePass.State} {store : Store} {I : List (PromiseCalls.Implication ι)}
     {start : List Nat} {fresh result next : Nat} (hnb : NamesBelow entry I start fresh)
-    (hres : (result ∈ entry.names ∧ next = fresh) ∨ (result = fresh ∧ next = fresh + 1))
+    (hres : (result < fresh ∧ next = fresh) ∨ (result = fresh ∧ next = fresh + 1))
     (hstore : ∀ a ∈ storeAll store, ∀ x ∈ a.names, x < next) :
     NamesBelow ⟨result :: entry.names, store, entry.fresh⟩ I start next := by
   have hle : fresh ≤ next := by rcases hres with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
@@ -242,7 +242,7 @@ theorem namesBelow_step {entry : SinglePass.State} {store : Store} {I : List (Pr
   refine ⟨fun x hx => ?_, hstore, h3, h4, h5⟩
   rcases List.mem_cons.mp hx with rfl | hx
   · rcases hres with ⟨hm, -⟩ | ⟨rfl, rfl⟩
-    · exact h1 _ hm
+    · exact Nat.lt_of_lt_of_le hm hle
     · omega
   · exact h1 x hx
 

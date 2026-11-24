@@ -53,7 +53,9 @@ theorem StepChecked.fresh_le {pc : PassChecker G I} {codes : CodeEntry ι → Bo
   rcases h with ⟨_, _, _, _, hf, _⟩ | ⟨_, _, _, ha, _⟩
   · exact Nat.le_of_eq hf.symm
   · obtain ⟨_, _, _, _, _, hf, _⟩ := ha
-    rcases resultOf_cases node.expression entry.names fresh with ⟨_, _, _, hr⟩ | ⟨_, hr⟩
+    rcases resultOf_cases node.expression entry.names entry.store fresh with
+      ⟨_, _, _, hr⟩ | ⟨_, _, _, _, _, _, hr⟩ | ⟨_, hr⟩
+    · exact Nat.le_of_eq (hf.trans hr).symm
     · exact Nat.le_of_eq (hf.trans hr).symm
     · rw [hf, hr]
       exact Nat.le_succ _

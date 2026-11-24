@@ -95,7 +95,8 @@ theorem checkedStep_fresh {pool fuel suggestions index codes aliases pc undefTy 
   rcases checkedStep_ok h with ⟨_, -, -, -, hfr, -⟩ | ⟨-, _, _, _, -, -, ⟨_, _, -, -, -, hfresh, -⟩, -⟩
   · omega
   · rw [hfresh]
-    rcases resultOf_cases node.expression entry.names fresh with ⟨_, -, -, hf⟩ | ⟨-, hf⟩ <;> omega
+    rcases resultOf_cases node.expression entry.names entry.store fresh with
+      ⟨_, -, -, hf⟩ | ⟨_, _, _, -, -, -, hf⟩ | ⟨-, hf⟩ <;> omega
 
 /-- **A node's entry's fresh counter is not below the walk's**: a head's
 given state takes fresh names past it, a merge's counter grows where the

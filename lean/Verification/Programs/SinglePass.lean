@@ -171,6 +171,14 @@ def Store.add (s : Store) (a : Atom) : Store :=
 
 def Store.about (s : Store) (n : Nat) : List Atom := s.byName.getD n []
 
+/-- The name a read link of the store gives the field `f` of the object
+named `o`: the value `y` of a read link `o.f ↦ y`, which states that `o`'s
+field `f` holds `y` in the current heap. -/
+def Store.readName (s : Store) (o : Nat) (f : PropKey) : Option Nat :=
+  (s.about o).findSome? fun
+    | .link g => if !g.alias && g.cell == o && g.field == f then some g.value else none
+    | _ => none
+
 def Store.size (s : Store) : Nat := s.live.size
 
 def Store.toList (s : Store) : List Atom := s.live.toList
@@ -2496,6 +2504,23 @@ structure StepStats where
   having found none. -/
   underivable : Bool := false
 
+/-- **The name of a step's result** and the next fresh name, from the
+names at the slots `names`, the store `s` and the next fresh name `fresh`:
+a read of a slot gives the slot's value, so its result keeps the slot's
+name; a read of the field `f` of a slot holding the name `o`, where the
+store holds a read link `o.f ↦ y`, gives the value that link states (the
+link holds in the current heap, and a read of `f` there gives `y`), so its
+result is `y`; any other result is the fresh name. -/
+def resultName (t : Tm) (names : List Nat) (s : Store) (fresh : Nat) : Nat × Nat :=
+  match t with
+  | .var i => match names[i]? with
+    | some x => (x, fresh)
+    | none => (fresh, fresh + 1)
+  | .readAt f (.var j) => match names[j]?.bind (s.readName · f) with
+    | some y => (y, fresh)
+    | none => (fresh, fresh + 1)
+  | _ => (fresh, fresh + 1)
+
 /-- A node's checked step: the result's name, the store after the step, the
 next fresh name, whether it is a copy, and the step's input and output
 knowledge at slots, its derivation and its evidence, read where an edge or a
@@ -2678,12 +2703,11 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     -- every fact the step is not handed, and the step's delta is applied to
     -- the whole store.
     let preserving := checker.normal j kE effect codes answers.summaries.toList == Footprints.Closed.empty
-    -- A slot's read is that slot's value: it keeps its name.
-    match node.expression, entry.names[(match node.expression with | .var i => i | _ => 0)]? with
-    | .var _, some x => result := x
-    | _, _ =>
-      result := fresh
-      fresh := fresh + 1
+    -- A slot's read keeps the slot's name; a field's read the name its
+    -- read link gives (`resultName`).
+    let named := resultName node.expression entry.names entry.store fresh
+    result := named.1
+    fresh := named.2
     stepK := kE
     stepOut := out
     stepDeriv := deriv
