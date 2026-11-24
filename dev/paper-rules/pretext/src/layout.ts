@@ -181,7 +181,7 @@ function createLayoutLine(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): LayoutLine {
+): Effects<{ "@state": "any" }, LayoutLine> {   // PAPER: annotation
   const line = {   // PAPER: the result through a local
     text: buildLineTextFromRange(
       prepared,
@@ -354,7 +354,7 @@ export function layoutNextLineRange(
 // resize hot path.
 export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): LayoutLinesResult {
   const lines: LayoutLine[] = []
-  const lineCount = walkPreparedLinesRaw<{ "lines[*]": "extend" }>(   // PAPER: the visitor's instance
+  const lineCount = walkPreparedLinesRaw<{ "lines[*]": "extend"; "@state": "any" }>(   // PAPER: the visitor's instance
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {

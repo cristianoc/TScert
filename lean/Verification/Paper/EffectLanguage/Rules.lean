@@ -17,10 +17,15 @@ A semantics gives the paper's notions their meaning:
 - `Same Φ s₀ s`: `Φ` allows at `s` what it allows at `s₀`, on the locations
   of `s₀`;
 - `Anchored Φ s₀`: `Φ` is an instance anchored at the call state `s₀`;
-- `old s₀`: the effect `{old: any}` of a call at `s₀`;
+- `old s₀`: the effect keeping every external location allocated since `s₀`
+  (`{old: any}` extended with confined module states);
 - `meet Φ Ψ`: the intersection of two effects;
 - `rename σ Φ`, `RenOk σ Φ`: an effect read at a call's arguments, and the
-  condition that the renaming reads each of its positions at the caller.
+  condition that the renaming reads each of its positions at the caller;
+- `Mod`, `modEff M`, `ModDisjoint M Φ s`: a confined module-state region
+  `M.@state`, its effect `{ M.@state : any; else : keep }`, and the
+  condition that `M.@state` is disjoint from every constrained entry of `Φ`
+  and permitted by `Φ`'s default.
 -/
 
 namespace Verification.Paper.EffectLanguage
@@ -30,6 +35,7 @@ structure Semantics where
   St : Type
   Eff : Type
   Ren : Type
+  Mod : Type
   Act : Eff → St → St → Prop
   Reaches : St → St → Prop
   Within : Eff → Eff → St → Prop
@@ -39,6 +45,8 @@ structure Semantics where
   meet : Eff → Eff → Eff
   rename : Ren → Eff → Eff
   RenOk : Ren → Eff → Prop
+  modEff : Mod → Eff
+  ModDisjoint : Mod → Eff → St → Prop
 
 namespace Semantics
 
@@ -56,8 +64,8 @@ def BoundRule (S : Semantics) : Prop :=
   ∀ θ Φ s₀ s, S.Within θ Φ s₀ → S.Reaches s₀ s → S.Anchored θ s₀ → S.Same Φ s₀ s →
     S.Incl θ Φ s
 
-/-- **Anch**: an instance anchored at a call changes only the locations
-that existed at the call. -/
+/-- **Anch**: an instance anchored at a call changes no external location
+allocated since the call. -/
 def AnchRule (S : Semantics) : Prop :=
   ∀ θ s₀ s, S.Anchored θ s₀ → S.Reaches s₀ s → S.Incl θ (S.old s₀) s
 
@@ -71,11 +79,20 @@ arguments. -/
 def InstRule (S : Semantics) : Prop :=
   ∀ σ E s s', S.RenOk σ E → S.Act E s s' → S.Act (S.rename σ E) s s'
 
+/-- **Confined** (module-private confined state `M.@state`): a confined
+module's state effect is anchored at every state (fresh-only growth never
+modifies external post-entry allocations) and lies within every effect whose
+constrained regions are disjoint from `M.@state` and whose default permits it. -/
+def ConfinedRule (S : Semantics) : Prop :=
+  ∀ M s₀, S.Anchored (S.modEff M) s₀ ∧
+    ∀ Φ, S.ModDisjoint M Φ s₀ → S.Within (S.modEff M) Φ s₀
+
 /-- The rules the experimental mode applies. -/
 structure PaperRules (S : Semantics) : Prop where
   bound : BoundRule S
   anch : AnchRule S
   meet : MeetRule S
   inst : InstRule S
+  confined : ConfinedRule S
 
 end Verification.Paper.EffectLanguage

@@ -982,7 +982,7 @@ export type LayoutEngine = 'blink' | 'webkit' | 'gecko'
 // beside Chromium's frozen AppleWebKit/537.36 token. WebKit froze 605.1.15, so
 // 537.36 names Blink only beside Chrome/ or Chromium/, which Samsung's TV web
 // views omit, and any other AppleWebKit/ version names WebKit.
-export function getLayoutEngine(userAgent: string): LayoutEngine | null {
+export function getLayoutEngine(userAgent: string): Effects<{}, LayoutEngine | null> {   // PAPER: annotation
   if (userAgent.includes('Firefox/')) return 'gecko'
   if (userAgent.includes('AppleWebKit/537.36')) {
     return userAgent.includes('Chrome/') || userAgent.includes('Chromium/') ? 'blink' : null
@@ -997,11 +997,11 @@ export function getLayoutEngine(userAgent: string): LayoutEngine | null {
 // inlined into the line counter and the simple stepper, and its plain line APIs ran
 // 11-18% slower. Apart, it takes 21 (Node 23, V8 12.9). Check with node --print-bytecode and
 // --trace-turbo-inlining (RESEARCH.md, JavaScript Engines).
-export function getEngineProfile(): Modifies<{ values: "init" }, EngineProfile> {   // PAPER: annotation
+export function getEngineProfile(): Modifies<{ values: "init" }, Effects<{ "@state": "any" }, EngineProfile>> {   // PAPER: annotation
   return cachedEngineProfile ??= buildEngineProfile()
 }
 
-function buildEngineProfile(): EngineProfile {
+function buildEngineProfile(): Effects<{}, EngineProfile> {   // PAPER: annotation
   // A navigator can lack a userAgent, as React Native's does, where lib.dom's type says it is a
   // string: such a runtime names no engine, like one with no navigator.
   const ua = typeof navigator === 'undefined' ? '' : (navigator as { readonly userAgent?: string }).userAgent ?? ''
