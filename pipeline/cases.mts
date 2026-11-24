@@ -544,6 +544,7 @@ export const cases: Case[] = [
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
   { ...negative("contextual-constructor-assign-result", "A contextual constructor type cannot supply an instance reference.",
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
+  positive("dictionary-literal-callback-field", "a function literal at a dictionary's key is walked at the index's value contract: its empty array made at the expected array"),
   positive("generic-call-in-callback-result", "a generic call in a callback's result takes no hint from the enclosing call's still unbound binder"),
   positive("cell-contents-across-calls", "a binding held in a cell is at its declared type at a loop head whose body may call or write and after a call that may change it: a literal assigning it, a module cell; it keeps its narrowing across a loop that calls nothing and a write of another key"),
   negative("invalid-cell-contents-across-calls", "calls of a literal assigning a captured `let` change its narrowed `false` (run under Node)",
