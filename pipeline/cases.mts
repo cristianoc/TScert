@@ -544,6 +544,7 @@ export const cases: Case[] = [
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
   { ...negative("contextual-constructor-assign-result", "A contextual constructor type cannot supply an instance reference.",
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
+  positive("closure-dispatched-member-call", "a function literal calling a member its receiver dispatches on by shape is stated at the lowered call's every arm, the object arm a call of an unknown callee"),
   positive("call-keeps-unreached-paths", "a call keeps the narrowed member paths its normal exit's frame leaves unchanged: `m.set` changes `m.size`, a stated `Modifies<{ \"o.n\": \"scalar\" }, void>` changes `o.n`, and `d.name` keeps its arm across both and across a loop calling `slots.add`"),
   negative("invalid-call-keeps-unreached-paths", "a call whose frame changes the narrowed field `k` ends its narrowing: the tag read after it may be `\"pat\"` (run under Node)",
     /source expression obligation at \[499,506\): evidence search failed: no derivation of its return-contract claim/),

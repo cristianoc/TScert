@@ -576,6 +576,31 @@ def readMembers (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Ty Tree :=
       | none => ProgramTyping.labelMembers G l
     | _ => ProgramTyping.labelMembers G l
 
+/-- The labels of a receiver a member read of `fld` dispatches on by
+shape, with the shape's test (`Plans.primitiveArms`): a primitive by its
+wrapper's, and, reading `toString`, a function by `Function.prototype`'s,
+as no function owns one. -/
+def shapeArms (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) (fld : PropKey) : List (Tree × Tag) :=
+  A.filterMap fun l => match shapeOf G l with
+    | some tag => some (l, tag)
+    | none =>
+      let isFunction := match PositiveRules.expand G [l] with
+        | [.arrs ..] | [.callable ..] | [.ctors ..] => true
+        | _ => false
+      if fld == "toString" && isFunction then some (l, .isFun) else none
+
+/-- Whether the lowered call of the member `fld` of a receiver of type `O`,
+the member's type `B` and its actuals `inert` (running no code), calls a
+member no contract states: a call the lowering dispatches on the
+receiver's shape (`Lowering.dispatchesCall`) ends in its object arm, a call
+of the member read off the receiver as a field (`Plans.dispatchCallTerm`),
+which where every label is answered by a shape's test (`Answers`) is the
+member of no object alternative. -/
+def objectArmUnstated (G : PositiveGraphs.NormalGraph Tree) (O B : Ty Tree) (fld : PropKey) (inert : Bool) : Bool :=
+  let tags := ((shapeArms G O fld).map (·.2)).eraseDups
+  Lowering.dispatchesCall G O B fld inert &&
+    O.all fun l => tags.any fun tag => decide (Answers G [l] tag true)
+
 /-- `o.f` of an `o` of type `A`: each primitive member by its prototype's
 field (a string's `length` a number), a function's `toString` by
 `Function.prototype`'s (`Plans.primitiveArms`), an array's `length` a
@@ -594,13 +619,12 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
     -- An empty intersection contributes no receiver. Drop it before
     -- partitioning dictionaries from the other object contracts.
     !(G.plain l && (PositiveRules.expand G [l]).isEmpty)
-  let (prims, objs) := A.partition fun l => (shapeOf G l).isSome
-  -- A function's `toString`: no function owns one, so its lookup reaches
-  -- `Function.prototype`'s (`Plans.primitiveArms`, Plans.lean:631-643).
-  let isFunction (l : Tree) : Bool := match PositiveRules.expand G [l] with
-    | [.arrs ..] | [.callable ..] | [.ctors ..] => true
-    | _ => false
-  let (funs, objs) := if fld == "toString" then objs.partition isFunction else ([], objs)
+  -- Each label dispatched on by shape at its prototype (`shapeArms`): a
+  -- function's `toString` at `Function.prototype`'s.
+  let arms := shapeArms G A fld
+  let objs := A.filter fun l => (arms.lookup l).isNone
+  let prims := arms.filterMap fun (l, tag) => if tag == .isFun then none else some l
+  let funs := arms.filterMap fun (l, tag) => if tag == .isFun then some l else none
   let mut out : Ty Tree := []
   for l in prims do
     let some tag := shapeOf G l | continue
@@ -4596,11 +4620,15 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .var _ n => anyFresh || fcs.contains n
       | _ => false
     let r ← called e2 c args As e.span exp receiverFresh
-    -- A function's `toString` call is lowered as a test of its receiver: a
-    -- function calls `Function.prototype`'s, any other value its own
-    -- (`Plans.primitiveArms`' `.isFun` arm, Plans.lean:631-643), a callee
-    -- the walk does not know; a declaration's footprint reads that call as a
-    -- call of an unknown callee.
+    -- A call dispatched on its receiver's shape is lowered as a test of
+    -- each shape, then the object arm (`Plans.dispatchCallTerm`): where that
+    -- arm calls a member no contract states (`objectArmUnstated`), the call
+    -- is also a call of an unknown callee, of the ordinary effect.
+    if let (.read .., true, some O, some f, .ok (B, _)) := (callee, spreads.isEmpty, O, fld, r) then
+      let inert := args.all fun | .var .. | .lit .. => true | _ => false
+      if objectArmUnstated (← StateT.lift graphNow) O B f inert then
+        meets (ClassSummary.ofEffect CallEffects.Effect.ordinary [])
+        modify fun w => { w with changedValues := true, changedFrame := CallEffects.Effect.ordinary.schema.normal.frame }
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
     let r ← record e ((·.2) <$> r)
