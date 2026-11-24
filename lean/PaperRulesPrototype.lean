@@ -1,3 +1,11 @@
+/- ============================================================================
+   PROTOTYPE ONLY — SCHEDULED FOR DELETION UPON UNIFICATION
+   Disposable experimental paper-rules executable (`docs/drafts/paper-rules-mode.md`).
+   Must NEVER be imported by `lean/Verification/` or `lean/Main.lean`
+   (enforced by `tests/prototype-isolation.mts`). Replaced upon unification by
+   proved rules instantiating `Verification.Paper.EffectLanguage.Rules.Semantics`.
+   ============================================================================ -/
+
 /- The experimental prototype of `docs/drafts/paper-rules-mode.md`: the
 verifier's single pass with one checker layer over the ordinary checker
 that applies the paper's rules Bound and Anch at a call of a callback

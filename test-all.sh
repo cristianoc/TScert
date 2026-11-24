@@ -240,6 +240,8 @@ run_test 30 "Diagnostic decoder" node tests/diagnostic.mts
 run_test 30 "Claim text of malformed input" node tests/claim-text.mts
 # tests/axiom-check-imports.mts checks that each axiom check imports every module of its part of the Lean library.
 run_test 30 "Axiom checks cover the library" node tests/axiom-check-imports.mts
+# tests/prototype-isolation.mts checks that tools/, pipeline/, and lean/Verification/ never import the disposable paper-rules prototype and that prototype entry files stay marked for deletion.
+run_test 30 "Paper-rules prototype stays isolated" node tests/prototype-isolation.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test 30 "Rule inventory" node tests/rule-inventory.mts
 # tests/contract-rows.mts checks that each overlay verify-source.mts --contracts names opens one trust row and that row names it.

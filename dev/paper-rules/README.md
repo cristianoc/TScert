@@ -1,5 +1,12 @@
 # The paper-rules prototype
 
+> **PROTOTYPE ONLY — SCHEDULED FOR DELETION UPON UNIFICATION.**
+> The scripts (`dev/paper-annotations.mts`, `dev/paper-rules.mts`) and
+> executable (`lean/PaperRulesPrototype.lean`) in this prototype are isolated
+> from `tools/`, `pipeline/`, and `lean/Verification/` (enforced by
+> `tests/prototype-isolation.mts`) and will be removed once the paper rules
+> are proved inside `SinglePass`.
+
 The prototype applies the rules of
 [An effect language for TScert](../../docs/drafts/effect-languages.md) to
 TypeScript sources, on top of the ordinary verifier. Its design and why it
