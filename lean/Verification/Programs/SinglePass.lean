@@ -129,11 +129,41 @@ def Atom.canon : Atom → Atom
   | .elem e => if e.cond.isNone && e.negated then .elem { e with negated := false } else .elem e
   | a => a
 
-def Store.addRaw (s : Store) (a : Atom) : Store :=
-  let a := a.canon
+/-- The fact `0 ≤ -1`, which holds at no environment: the one form a store
+keeps of a false constant. -/
+def Atom.bot : Atom := .index ⟨.linear (.le [] (-1)), none, false⟩
+
+/-- Whether a fact is a true constant: a linear fact over no term, `0 ≤ d`
+with `0 ≤ d` or `0 ≠ d` with `d ≠ 0`, under any condition. A form whose
+terms cancel is no constant: it states each of its terms defined. -/
+def Atom.trivial : Atom → Bool
+  | .index ⟨.linear (.le [] d), _, _⟩ => decide (0 ≤ d)
+  | .index ⟨.linear (.ne [] d), _, _⟩ => d != 0
+  | _ => false
+
+/-- Whether an unconditional fact is a false constant: a linear fact whose
+form normalizes to no term (`Linear.normalize`), `0 ≤ d` with `d < 0` or
+`0 ≠ 0`; it holds at no environment (`contradiction_false`). -/
+def Atom.contradiction : Atom → Bool
+  | .index ⟨.linear (.le F d), none, _⟩ => decide (d < 0) && (Linear.normalize F).isEmpty
+  | .index ⟨.linear (.ne F d), none, _⟩ => d == 0 && (Linear.normalize F).isEmpty
+  | _ => false
+
+/-- A fact inserted as it is: live, and listed under each of its names. -/
+def Store.insert (s : Store) (a : Atom) : Store :=
   if s.live.contains a then s else
   { live := s.live.insert a,
     byName := a.names.eraseDups.foldl (fun m n => m.insert n (a :: m.getD n [])) s.byName }
+
+/-- A fact added in its canonical form: a true constant (`Atom.trivial`) is
+not added, and a false one (`Atom.contradiction`) is added as `Atom.bot`. -/
+def Store.addRaw (s : Store) (a : Atom) : Store :=
+  let a := a.canon
+  if a.trivial then s else s.insert (if a.contradiction then .bot else a)
+
+/-- Whether the store holds `Atom.bot`: its facts hold at no environment
+(`storeOk_impossible`), so the state is one no execution reaches. -/
+def Store.impossible (s : Store) : Bool := s.live.contains .bot
 
 def Store.remove (s : Store) (a : Atom) : Store :=
   let a := a.canon

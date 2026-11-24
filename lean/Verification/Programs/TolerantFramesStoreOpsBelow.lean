@@ -21,6 +21,24 @@ theorem canon_names (a : Atom) : a.canon.names = a.names := by
   | elem e => simp only [Atom.canon]; split <;> rfl
   | cell _ | value _ | link _ | sep _ => rfl
 
+theorem insert_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next) (ha : ∀ x ∈ a.names, x < next) :
+    FactsBelow (s.insert a) next := by
+  unfold Store.insert
+  split
+  · exact hs
+  · intro y hy
+    rcases List.mem_append.mp hy with hy | hy
+    · rcases keys_insert _ _ _ hy with rfl | hy
+      · exact ha
+      · exact hs y (List.mem_append_left _ hy)
+    · refine vals_foldl (fun y => ∀ x ∈ y.names, x < next) _ (fun m n hm y hy => ?_) _ _
+        (fun y hy => hs y (List.mem_append_right _ hy)) y hy
+      rcases vals_insert _ _ _ _ hy with hy | hy
+      · rcases List.mem_cons.mp hy with rfl | hy
+        · exact ha
+        · exact hm y (findD_vals _ _ _ hy)
+      · exact hm y hy
+
 theorem addRaw_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next) (ha : ∀ x ∈ a.names, x < next) :
     FactsBelow (s.addRaw a) next := by
   have hc : ∀ x ∈ a.canon.names, x < next := by rw [canon_names]; exact ha
@@ -28,18 +46,9 @@ theorem addRaw_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next
   dsimp only
   split
   · exact hs
-  · intro y hy
-    rcases List.mem_append.mp hy with hy | hy
-    · rcases keys_insert _ _ _ hy with rfl | hy
-      · exact hc
-      · exact hs y (List.mem_append_left _ hy)
-    · refine vals_foldl (fun y => ∀ x ∈ y.names, x < next) _ (fun m n hm y hy => ?_) _ _
-        (fun y hy => hs y (List.mem_append_right _ hy)) y hy
-      rcases vals_insert _ _ _ _ hy with hy | hy
-      · rcases List.mem_cons.mp hy with rfl | hy
-        · exact hc
-        · exact hm y (findD_vals _ _ _ hy)
-      · exact hm y hy
+  · split
+    · exact insert_below hs (fun x hx => by simp [Atom.bot, Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars] at hx)
+    · exact insert_below hs hc
 
 theorem remove_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next) : FactsBelow (s.remove a) next := by
   unfold Store.remove

@@ -71,6 +71,15 @@ does today). A linear fact a delta adds over a name a read link gives is
 also stated over the read's path (`restateReads`): a later step that drops
 the read's name keeps the path's fact.
 
+A linear fact over no term is a constant. A true one (`0 ≤ d` with
+`d ≥ 0`, `0 ≠ d` with `d ≠ 0`) states nothing and is not added
+(`Atom.trivial`); a form whose terms cancel is no constant, since it
+states its terms defined. An unconditional fact whose form normalizes to no
+term with a false bound holds at no environment (`Atom.contradiction`,
+`contradiction_false`); the store keeps it as the one fact `0 ≤ -1`
+(`Atom.bot`), and a store holding that fact is impossible
+(`Store.impossible`, `storeOk_impossible`): no execution reaches its state.
+
 A name leaves the store at the first edge after its last read. The slots
 each node or a later node reads are computed once per walk, by one pass in
 reverse topological order over the graph without the edges into loop heads
