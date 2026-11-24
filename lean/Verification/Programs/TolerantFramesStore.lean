@@ -184,6 +184,28 @@ theorem add_wf {s : Store} (w : StoreWF s) (a : Atom) : StoreWF (s.add a) := by
     · exact foldl_addBound_wf _ _ w
     · exact w
 
+/-- **A dropped name's value facts restated as cells keep the store
+well-formed**: only additions. -/
+theorem cellsOfDropped_wf {s : Store} (w : StoreWF s) (dset : Std.HashSet Nat) (atoms : List Atom)
+    (links : HeapLinks.Links) : StoreWF (s.cellsOfDropped dset atoms links) := by
+  unfold Store.cellsOfDropped
+  induction atoms generalizing s with
+  | nil => exact w
+  | cons a as ih =>
+    simp only [List.foldl_cons]
+    refine ih ?_
+    split
+    · clear ih
+      induction links generalizing s with
+      | nil => exact w
+      | cons g gs ihg =>
+        simp only [List.foldl_cons]
+        refine ihg ?_
+        split
+        · exact add_wf w _
+        · exact w
+    · exact w
+
 /-! ## A removed fact leaves the store -/
 
 /-- A removal keeps only facts the store held. -/

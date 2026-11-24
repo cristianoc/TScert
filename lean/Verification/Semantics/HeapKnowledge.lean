@@ -4984,13 +4984,14 @@ theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
 
 /-- A term rooted at a dropped slot restated by reads toward a kept root:
 while its root is dropped, where a read gives the root's value as field `f`
-read from slot `c`, the term rooted at `c` with `f` before its path; none
-where no read reaches a kept root within `n` steps. -/
+read from slot `c`, the term rooted at `c` with `f` before its path, at most
+`n` reads; as far as the reads reach, a term whose root no read gives left
+rooted there for the elimination that follows. -/
 def liftDropped (dropped : Nat → Bool) (reads : List (Nat × String × Nat)) : Nat → Term → Option Term
-  | 0, t => if dropped t.slot && !t.atEntry then none else some t
+  | 0, t => some t
   | n + 1, t => if dropped t.slot && !t.atEntry then match reads.find? (·.2.2 == t.slot) with
       | some (c, f, _) => liftDropped dropped reads n (HeapKnowledge.Term.now t.kind c (f :: t.path))
-      | none => none
+      | none => some t
     else some t
 
 theorem liftDropped_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env} {h : Heap}
@@ -4998,7 +4999,7 @@ theorem liftDropped_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env
     ∀ n t t', liftDropped dropped reads n t = some t' → termValue ε ρ h t' = termValue ε ρ h t := by
   intro n
   induction n with
-  | zero => intro t t' ht; simp only [liftDropped] at ht; split at ht <;> simp_all
+  | zero => intro t t' ht; simp only [liftDropped, Option.some.injEq] at ht; subst ht; rfl
   | succ n ih =>
     intro t t' ht
     simp only [liftDropped] at ht
@@ -5013,7 +5014,7 @@ theorem liftDropped_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env
         rw [ih _ _ ht, bridgeReads_term hl hm, hv]
         obtain ⟨k0, s0, p0, a0⟩ := t
         simp only at hne; subst hne; rfl
-      · cases ht
+      · cases ht; rfl
     · cases ht; rfl
 
 /-- The linear facts of atoms naming a term rooted at a dropped slot,

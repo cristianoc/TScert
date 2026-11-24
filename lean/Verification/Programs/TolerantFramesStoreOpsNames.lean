@@ -437,7 +437,7 @@ theorem liftDropped_slot {dropped : Nat → Bool} {reads : List (Nat × String �
     ∀ n t t', liftDropped dropped reads n t = some t' → t' = t ∨ ∃ r ∈ reads, t'.slot = r.1 := by
   intro n
   induction n with
-  | zero => intro t t' h; simp only [liftDropped] at h; split at h <;> simp_all
+  | zero => intro t t' h; simp only [liftDropped, Option.some.injEq] at h; exact .inl h.symm
   | succ n ih =>
     intro t t' h
     simp only [liftDropped] at h
@@ -447,7 +447,7 @@ theorem liftDropped_slot {dropped : Nat → Bool} {reads : List (Nat × String �
         rcases ih _ _ h with h | h
         · subst h; exact .inr ⟨_, List.mem_of_find?_eq_some hfind, rfl⟩
         · exact .inr h
-      · cases h
+      · cases h; exact .inl rfl
     · cases h; exact .inl rfl
 
 theorem liftPath_slot {dropped : Nat → Bool} {reads : List (Nat × String × Nat)} :

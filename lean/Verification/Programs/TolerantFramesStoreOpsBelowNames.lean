@@ -83,10 +83,37 @@ theorem keptAliasOf_named {isOut : Nat → Bool} {links : HeapLinks.Links} (x : 
           · exact hacc x y hxy
         · exact hacc x y hxy
 
+/-- **A dropped name's value facts restated as cells name the links'
+cells**, below the counter where the links' names are. -/
+theorem cellsOfDropped_below {s : Store} {next : Nat} (hs : FactsBelow s next) {dset : Std.HashSet Nat}
+    {atoms : List Atom} {links : HeapLinks.Links} (hl : ∀ g ∈ links, AtomBelow next (.link g)) :
+    FactsBelow (s.cellsOfDropped dset atoms links) next := by
+  unfold Store.cellsOfDropped
+  induction atoms generalizing s with
+  | nil => exact hs
+  | cons a as ih =>
+    simp only [List.foldl_cons]
+    refine ih (hs := ?_)
+    split
+    · clear ih
+      induction links generalizing s with
+      | nil => exact hs
+      | cons g gs ihg =>
+        simp only [List.foldl_cons]
+        refine ihg (hl := fun x hx => hl x (List.mem_cons_of_mem _ hx)) (hs := ?_)
+        split
+        · refine add_below hs fun x hx => ?_
+          simp only [Atom.names, List.mem_singleton] at hx
+          subst hx
+          exact hl g (List.mem_cons_self ..) _ (by simp [Atom.names])
+        · exact hs
+    · exact hs
+
 /-- **Forgetting names keeps every fact's names below the counter**
 (`Store.drop`): the removed facts leave; a separation fact keeps fewer
-partners; a fact restated at an alias names a link's names; the derived
-facts name the names of the store's facts (`dropDerived_below`). -/
+partners; a fact restated at an alias names a link's names, as does a value
+fact restated as a cell's (`cellsOfDropped_below`); the derived facts name
+the names of the store's facts (`dropDerived_below`). -/
 theorem drop_below {s : Store} {D : List Nat} {next : Nat} (hs : FactsBelow s next) :
     FactsBelow (s.drop D) next := by
   unfold Store.drop SinglePass.timedKind
@@ -155,11 +182,11 @@ theorem drop_below {s : Store} {D : List Nat} {next : Nat} (hs : FactsBelow s ne
       · exact hb
     · exact hb
   intro b hb
-  have hlast : ∀ b, FactsBelow b next → FactsBelow (forIn derived b fun x r =>
+  have hlast : ∀ b, FactsBelow b next → FactsBelow (forIn derived (b.cellsOfDropped dset atoms links) fun x r =>
       if (Atom.index x).names.all (fun x => !dset.contains x) = true then ForInStep.yield (r.add (Atom.index x))
       else ForInStep.yield r : Id Store) next := by
     intro b hb
-    refine forIn_inv (P := fun st => FactsBelow st next) _ _ _ hb fun x hx b hb => ?_
+    refine forIn_inv (P := fun st => FactsBelow st next) _ _ _ (cellsOfDropped_below hb hl) fun x hx b hb => ?_
     split
     · exact add_below hb (hd x hx)
     · exact hb
@@ -216,29 +243,6 @@ theorem deltaAdd_below {s : Store} {next : Nat} (hs : FactsBelow s next) (pairs 
        rcases List.mem_cons.mp hx with rfl | hx
        · exact hab _ (by assumption)
        · exact hr.2 x hx)
-
-theorem restateAddedReads_below {s : Store} {next : Nat} (hs : FactsBelow s next)
-    {x : HeapKnowledge.IndexAtom} (hx : AtomBelow next (.index x)) (v : Nat) :
-    FactsBelow (SinglePass.restateAddedReads s x v) next := by
-  unfold SinglePass.restateAddedReads; simp only [Id.run]
-  split
-  · exact hs
-  · have hl : ∀ g ∈ (s.about v).filterMap (fun b => match b with
-        | .link g => if !g.alias && g.value == v then some g else none
-        | _ => none), AtomBelow next (.link g) := by
-      intro g hg
-      obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
-      split at hbg
-      · split at hbg
-        · cases hbg; exact hs _ (about_storeAll hb)
-        · cases hbg
-      · cases hbg
-    refine forIn_inv_bind (R := fun t => FactsBelow t next) _ s _ (fun t => FactsBelow t next) _ hs ?_ (fun _ h => h)
-    intro y hy w' hw
-    refine add_below hw fun z hz => ?_
-    rcases restateReads_named hy hz with h | h
-    · exact namedIn_below (fun a ha' => by rw [List.mem_singleton.mp ha']; exact hx) h
-    · exact linkNamed_below hl h
 
 theorem restateAddedAtIndex_below {s : Store} {next : Nat} (hs : FactsBelow s next)
     {x : HeapKnowledge.IndexAtom} (hx : AtomBelow next (.index x)) (v : Nat) :
@@ -475,7 +479,7 @@ theorem deltaRestate_below {s : Store} {next : Nat} (hs : FactsBelow s next) {ad
   intro x hx t ht
   show FactsBelow (forIn (m := Id) x.fact.slots t _) next
   exact forIn_inv _ _ _ (fun t => FactsBelow t next) ht fun v _ u hu =>
-    restateAddedAtIndex_below (restateAddedReads_below hu (ha x hx) v) (ha x hx) v
+    restateAddedAtIndex_below hu (ha x hx) v
 
 /-- **The delta keeps every fact's names below the counter** where `back`
 renames into names below it: the removal loop removes, the additions name

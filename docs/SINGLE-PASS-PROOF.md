@@ -719,8 +719,11 @@ Proved, per fact and per store operation:
 - adding a holding fact and removing any fact keep every
   fact of the store holding (`insert_ok`, `addRaw_ok`, `remove_ok`), a
   false constant holding nowhere (`contradiction_false`), a stronger bound
-  replacing weaker ones (`addBound_ok`), a length fact added with the linear
-  facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`);
+  replacing weaker ones (`addBound_ok`), a fact added in the store's form
+  of its terms, over the names the store's read links give its paths
+  (`lowerAtom_holds`, from `lowerTerm_eq` and `value_of_cell`), a length
+  fact with the linear facts it means (`add_ok`, from
+  `HeapKnowledge.atomLinear_holds`);
 - `Atom.bot` holds nowhere (`atomHolds_bot`), so an impossible store holds
   at no valuation (`storeOk_impossible`), nor a state over it
   (`stateHolds_impossible`).
@@ -789,18 +792,17 @@ every fact it returns is listed by `Store.about` of some name (proved:
 ### A step's delta
 
 Module `lean/Verification/Programs/TolerantFramesDelta.lean`. `applyDelta`
-is three loops (`applyDelta_eq`, by
+is two loops (`applyDelta_eq`, by
 definition): `deltaRemove` removes each handed fact whose image over the
-pushed slots the output lost, `deltaAdd` adds each output fact not among the
-images, renamed by `back`, and `deltaRestate` restates each added linear fact
-over a read's name over the read's path. The pass's `back` is `passBack`: slot 0 the result's name, a slot the table's
+pushed slots the output lost, and `deltaAdd` adds each output fact not among
+the images, renamed by `back`, each in the store's form of its terms
+(`Store.add`). The pass's `back` is `passBack`: slot 0 the result's name, a slot the table's
 inverse gives its name, else the slot's name. Proved:
 
 - `deltaRemove_sub`: the removal loop keeps only facts the store held;
   `deltaAdd_ok`: the facts added hold where the output holds at the pushed
-  slots $`\rho'`$ and $`\mathit{back}\ i = x \Rightarrow \eta'\,x=\rho'\,i`$;
-  `deltaRestate_ok`: the restated facts hold (`restateReads_holds`, the read
-  links being the store's);
+  slots $`\rho'`$ and $`\mathit{back}\ i = x \Rightarrow \eta'\,x=\rho'\,i`$
+  (`add_ok`);
 - (`applyDelta_ok`) where the facts the removal loop keeps hold at
   $`\eta'`$, every fact of the resulting store holds; (`applyDelta_preserving`)
   so where every fact of the store holds after the step;
@@ -1003,7 +1005,9 @@ Modules `lean/Verification/Programs/TolerantFramesEdge.lean`,
 An edge renames slots, never names, so every operation of an edge keeps the
 facts holding at the exit's valuation $`\eta`$. Proved:
 
-- `drop_ok`: `Store.drop` of any names keeps every fact holding;
+- `drop_ok`: `Store.drop` of any names keeps every fact holding, a dropped
+  name's value fact restated as its cell's through a read link included
+  (`cellsOfDropped_ok`, from `cell_of_value`);
 - `edgeStore_observed`, `edgeStore_promote`, `edgeBack_ok`: the
   observation's facts at slot 0 and a branch's promoted truthiness, added by
   the delta, keep the state holding;

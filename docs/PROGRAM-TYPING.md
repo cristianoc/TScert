@@ -4473,6 +4473,10 @@ The node's rules read $`k`$ through its **view** $`\mathsf{view}_\Gamma(k)`$
 - an alias link from each slot of a class to its least slot, and each read
   link $`c.f\mapsto v`$ as $`c'.f\mapsto v'`$ for every $`c'\in[c]`$ and
   $`v'\in[v]`$;
+- each index fact; a guard its context refutes released to its body
+  (`released`); and each linear fact restated by the read links both ways,
+  a term $`c.f.p`$ as $`v.p`$ (`lowerAtoms`) and a term rooted at $`v`$ as
+  $`c.f`$ followed by its path (`restateReads`);
 - the separation as stored.
 
 `expandLinks_holds` proves $`\mathrm{Holds}(k,\rho,h)\Rightarrow\mathrm{Holds}(\mathsf{view}_\Gamma(k),\rho,h)`$

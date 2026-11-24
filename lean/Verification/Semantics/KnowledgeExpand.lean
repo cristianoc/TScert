@@ -160,7 +160,8 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
       (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
   let rel := released ctx cs k.indices
   ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents), vs, ls, k.separation, k.elems,
-    k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel)⟩
+    k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel) ++
+      HeapKnowledge.restateReads ls (fun v => (HeapKnowledge.bridgeReads ls).any (·.2.2 == v)) (k.indices ++ rel)⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
     (hk : HeapKnowledge.Holds k ε ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ε ρ h := by
@@ -182,7 +183,9 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
   have hall : HeapKnowledge.IndexHolds ε (k.indices ++ released ctx (LinkClasses.closure k.links) k.indices) ρ h :=
     fun a ha hcond => (List.mem_append.mp ha).elim (fun ha => hk.2.2.2.2.2 a ha hcond) (fun ha => hrel a ha hcond)
   refine ⟨fun F hF => ?_, hv, hl, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => (List.mem_append.mp ha).elim
-    (fun ha => hall a ha hcond) (fun ha => HeapKnowledge.lowerAtoms_holds hl hall a ha hcond)⟩
+    (fun ha => (List.mem_append.mp ha).elim (fun ha => hall a ha hcond)
+      (fun ha => HeapKnowledge.lowerAtoms_holds hl hall a ha hcond))
+    (fun ha => HeapKnowledge.restateReads_holds hl hall a ha hcond)⟩
   rcases List.mem_append.mp hF with hF | hF
   · exact hk.1 F hF
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
