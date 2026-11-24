@@ -341,6 +341,12 @@ discharges ([review obligations](docs/SOURCE-CONTRACTS.md#review-obligations)):
   negative fixture.
 - **Coverage losses are results**, reported, never reclassified away.
 - **Never gain acceptance by increasing trust silently.**
+- **Keep the front end mechanical — no new front-end inference.** The TS front
+  end (`tools/`) and AST lowering (`lean/Verification/Source/Lowering/`) are
+  the unverified semantic definition mapping TypeScript to the calculus. Do not
+  infer unannotated postconditions, aliases, or flow facts heuristically on the
+  source AST and re-recognize them on the lowered CFG; compute inferred facts
+  once in proved Lean over `CodeEntry` / `SinglePass`.
 
 ## Conventions
 
