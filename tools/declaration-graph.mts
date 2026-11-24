@@ -36,7 +36,7 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, 
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
-import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, Region, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { FRAME_ARGUMENT, literal, parameterKinds, SweepError, withoutMeaning, writtenApplications, type Entity, type ParameterKind } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { withPromise, footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
@@ -6072,13 +6072,23 @@ function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node
  * region instead of binding and closing it (`Effect.drop`). */
 function effectUsesReceiver(effect: CallEffect | undefined): boolean {
   if (!effect) return false;
-  const uses0 = (r: CallEffect["exits"]["normal"]["frame"][number]["region"]): boolean =>
-    typeof r !== "string" && (("field" in r && r.field.x === 0) || ("fields" in r && r.fields.x === 0) ||
-      ("cells" in r && r.cells.x === 0) || ("path" in r && r.path.x === 0) ||
-      ("pathFields" in r && r.pathFields.x === 0) || ("pathCells" in r && r.pathCells.x === 0) ||
-      ("spine" in r && r.spine.x === 0));
-  return effect.exits.normal.frame.some(f => uses0(f.region)) ||
-    effect.exits.exceptional.frame.some(f => uses0(f.region));
+  return [...effect.exits.normal.frame, ...effect.exits.exceptional.frame].some(f => regionPosition(f.region) === 0);
+}
+
+/** The argument position a region is rooted at, by cases over every form of
+ * `Region`; a content class and every location are rooted at none. */
+function regionPosition(r: Region): number | null {
+  if (r === "all") return null;
+  if ("cls" in r) return null;
+  if ("field" in r) return r.field.x;
+  if ("fields" in r) return r.fields.x;
+  if ("cells" in r) return r.cells.x;
+  if ("path" in r) return r.path.x;
+  if ("pathFields" in r) return r.pathFields.x;
+  if ("pathCells" in r) return r.pathCells.x;
+  if ("spine" in r) return r.spine.x;
+  const unhandled: never = r;
+  return unhandled;
 }
 
 /** A standard library interface through its overlay entries
