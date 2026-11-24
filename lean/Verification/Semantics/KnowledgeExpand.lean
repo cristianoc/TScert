@@ -117,7 +117,7 @@ reads the tag, so the body holds. -/
 def released (ctx : Ctx) (cs : Partitions.Partition) (as : List IndexAtom) : List IndexAtom :=
   as.filterMap fun a => match a.fact with
     | .guarded s [] t B => match classCtxIn ctx cs s with
-      | some C => if C.mem t.val then none else some { a with fact := B }
+      | some C => if onlyTag C t.complement then some { a with fact := B } else none
       | none => none
     | _ => none
 
@@ -131,7 +131,6 @@ theorem released_holds {ctx : Ctx} {cs : Partitions.Partition} {as : List IndexA
     split at hab
     · rename_i C hC
       split at hab
-      · cases hab
       · rename_i hmem
         cases hab
         have hbF := he b hb hcond
@@ -139,9 +138,10 @@ theorem released_holds {ctx : Ctx} {cs : Partitions.Partition} {as : List IndexA
         obtain ⟨v, hv, hor⟩ := hbF
         simp only [readGuard, Option.some.injEq] at hv
         subst hv
-        rcases hor with heq | hB
-        · exact absurd (heq ▸ classCtxIn_mem hc (hs s) hC) hmem
+        rcases hor with htag | hB
+        · exact absurd htag (GuardTag.complement_not_holds (onlyTag_mem hmem (classCtxIn_mem hc (hs s) hC)))
         · exact hB
+      · cases hab
     · cases hab
   · cases hab
 

@@ -798,6 +798,17 @@ def resultWithFootprint (T : EquationStore.State) (ret : Json) (footprint : Foot
     return Json.mkObj [("top", toJson false), ("atoms", toJson [atom])]
   | _ => throw refusal
 
+/-- Appends a proposed return-alias fact `IndexFact.same 0 (p + 1)` to a
+function's postconditions when absent. Shared by `moduleArrow` and unit
+lowering so the declared signature and the unit's checked returns state the
+exact same postcondition list. -/
+def withReturnAlias (ens : List HeapKnowledge.IndexFact) (retAlias : Option Nat) : List HeapKnowledge.IndexFact :=
+  match retAlias with
+  | some p =>
+    let f := HeapKnowledge.IndexFact.same 0 (p + 1)
+    if ens.contains f then ens else ens ++ [f]
+  | none => ens
+
 /-- A module function's value as its callers see it: an ordinary function at
 its annotated parameters and result. A leading `this: T` parameter
 is its receiver, which every call passes (a plain call `undefined`), and no
@@ -807,7 +818,8 @@ a rest parameter is code that discards the actuals past its parameters, so it
 also meets its signature extended by a rest of `unknown` elements: the
 further actuals a caller writes may be any values. -/
 def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThrow : Bool := false)
-    (fresh : Bool := false) (regions : List Footprints.ArgumentSpineRegion := []) : Except String Json := do
+    (fresh : Bool := false) (regions : List Footprints.ArgumentSpineRegion := [])
+    (retAlias : Option Nat := none) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
     | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)
@@ -834,11 +846,14 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- discarding further actuals runs the same code, so it states the same.
   -- The precondition is every signature's: the code is checked
   -- assuming it, so a call establishes it whichever signature it takes.
-  -- Its postcondition too (`Fn.ensures`), which its unit certifies at each
-  -- return (`SourceRequests.ensuresResult`).
+  -- Its postcondition too (`Fn.ensures` plus any pass-proposed return alias
+  -- `withReturnAlias`), which its unit certifies at each return
+  -- (`SourceRequests.ensuresResult`).
+  let ensures := withReturnAlias g.ensures retAlias
+  let eff := CallEffects.Effect.ofStated footprint none onThrow fresh g.requires ensures regions
   let plain : List (String × Json) ←
-    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regions = [] then pure [] else
-      pure [("effect", ← EffectJson.effectJson (CallEffects.Effect.ofStated footprint none onThrow fresh g.requires g.ensures regions))]
+    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ ensures.isEmpty ∧ regions = [] then pure [] else
+      pure [("effect", ← EffectJson.effectJson eff)]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

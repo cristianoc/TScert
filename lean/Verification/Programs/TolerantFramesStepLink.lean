@@ -92,10 +92,8 @@ variable {ι : Type} [DecidableEq ι]
 /-! ## `checkedStep` read as its conditions -/
 
 
-/-- Whether the step reads every fact (`wholeStep`, line 1221). -/
-def wholeOf : Tm → Bool
-  | .construct .. => true
-  | _ => false
+/-- Whether the step reads every fact (`SinglePass.wholeStepOf`). -/
+def wholeOf : Tm → Bool := SinglePass.wholeStepOf
 
 /-- The step's knowledge (`kE`, line 1226) over the facts `materialize`
 selects with `whole`. -/

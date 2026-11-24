@@ -315,7 +315,8 @@ gives of the names it read. -/
   -- entry state, at the input slot that holds it on entry: the same frame
   -- change in both states (`IndexFact.pastReceiver`).
   let receiverInput := (f.params.head?.map (·.name == "this")).getD false
-  let some ensures := f.ensures.mapM (fun F => if receiverInput then some F else F.pastReceiver)
+  let fnEnsures := withReturnAlias f.ensures fc.returnAlias
+  let some ensures := fnEnsures.mapM (fun F => if receiverInput then some F else F.pastReceiver)
     | throw "a result fact names the receiver, which the function does not declare"
   -- The spines a stated frame excepts, each call position at the input slot
   -- that holds it on entry.

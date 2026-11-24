@@ -257,20 +257,65 @@ theorem readPath_extend {h : Heap} (vs : List Val) :
     | _ => simp [readPath] at hw
 
 /-- What a guard compares the value a path reads with (ARITHMETIC.md,
-"Guarded clauses"): `null` or `undefined`. -/
+"Guarded clauses"): equality or inequality against `null`, `undefined`,
+`true`, or `false`. -/
 inductive GuardTag where
   | null
   | undef
   | tru
   | fls
+  | notNull
+  | notUndef
+  | notTru
+  | notFls
   deriving DecidableEq, Repr, Hashable
 
-/-- The value a guard tag names. -/
-def GuardTag.val : GuardTag → Val
-  | .null => .nul
-  | .undef => .undef
-  | .tru => .tru
-  | .fls => .fls
+/-- The value a positive guard tag names, where it is positive. -/
+def GuardTag.val? : GuardTag → Option Val
+  | .null => some .nul
+  | .undef => some .undef
+  | .tru => some .tru
+  | .fls => some .fls
+  | .notNull | .notUndef | .notTru | .notFls => none
+
+/-- Whether a guard tag tests equality against one primitive tag (`===`). -/
+def GuardTag.isPositive : GuardTag → Bool
+  | .null | .undef | .tru | .fls => true
+  | .notNull | .notUndef | .notTru | .notFls => false
+
+/-- The complementary guard tag (`===` ↔ `!==`). -/
+def GuardTag.complement : GuardTag → GuardTag
+  | .null => .notNull
+  | .notNull => .null
+  | .undef => .notUndef
+  | .notUndef => .undef
+  | .tru => .notTru
+  | .notTru => .tru
+  | .fls => .notFls
+  | .notFls => .fls
+
+/-- Whether a value satisfies a guard tag. -/
+def GuardTag.holds : GuardTag → Val → Prop
+  | .null, v => v = .nul
+  | .undef, v => v = .undef
+  | .tru, v => v = .tru
+  | .fls, v => v = .fls
+  | .notNull, v => v ≠ .nul
+  | .notUndef, v => v ≠ .undef
+  | .notTru, v => v ≠ .tru
+  | .notFls, v => v ≠ .fls
+
+theorem GuardTag.complement_not_holds {t : GuardTag} {v : Val}
+    (hc : t.complement.holds v) : ¬ t.holds v := by
+  cases t <;> simp_all [GuardTag.complement, GuardTag.holds]
+
+/-- Whether `undefined` satisfies a guard tag. -/
+def GuardTag.holdsUndef : GuardTag → Bool
+  | .undef | .notNull | .notTru | .notFls => true
+  | .null | .tru | .fls | .notUndef => false
+
+theorem GuardTag.not_holds_undef {t : GuardTag} (h : t.holdsUndef = false) : ¬ t.holds .undef := by
+  cases t <;> simp_all [GuardTag.holdsUndef, GuardTag.holds]
 
 /-- The value a guard's path reads from a value: each step the read of a
 string key, the location's value where the object owns the key, `undefined`
@@ -960,6 +1005,7 @@ inductive IndexFact where
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (LinearClause Bound))
   | apart (slot other : Nat)
   | spineApart (slot : Nat) (path : List String) (other : Nat) (otherPath : List String)
+  | same (slot other : Nat)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -978,6 +1024,7 @@ def slots : IndexFact → List Nat
   | .every s _ stop body => s :: stop.slots ++ body.flatMap fun F => F.vars.flatMap Bound.slots
   | .apart a b => [a, b]
   | .spineApart a _ b _ => [a, b]
+  | .same a b => [a, b]
 
 /-- The slots of the entry environment a fact reads, by its entry terms. -/
 def entrySlots : IndexFact → List Nat
@@ -1036,6 +1083,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
     pure (.every (← f s) p (← stop.mapM f) (← mapBody f body))
   | .apart a b => do pure (.apart (← f a) (← f b))
   | .spineApart a p b q => do pure (.spineApart (← f a) p (← f b) q)
+  | .same a b => do pure (.same (← f a) (← f b))
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
@@ -1050,7 +1098,7 @@ def HoldsAt (ε : EntryState) : IndexFact → Env → Heap → Prop
   | .pastSafe k, ρ, _ => ρ k = .num SafeIntegers.pastSafeBits
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ε ρ h t).isSome) ∧ F.Holds (termValuation ε ρ h)
   | .either A B, ρ, h => A.HoldsAt ε ρ h ∨ B.HoldsAt ε ρ h
-  | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ε ρ h)
+  | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (t.holds v ∨ B.HoldsAt ε ρ h)
   | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]?.bind spineEntries = some ls ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
@@ -1059,6 +1107,7 @@ def HoldsAt (ε : EntryState) : IndexFact → Env → Heap → Prop
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ε ρ h ls i)
   | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
   | .spineApart a p b q, ρ, h => PathSpinesApart h (ρ a) p (ρ b) q
+  | .same a b, ρ, _ => ρ a = ρ b
 
 
 
@@ -1092,6 +1141,10 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     obtain ⟨a', ha, b', hb, rfl⟩ := hm
     simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
   | spineApart a p b q =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
+  | same a b =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨a', ha, b', hb, rfl⟩ := hm
     simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
@@ -1326,7 +1379,7 @@ def defines : IndexFact → List Term
   | .element _ _ k => [.value k]
   | .every _ _ stop _ => [stop]
   | .index _ | .bound _ _ _ | .pastSafe _ | .either _ _ | .guarded _ _ _ _ | .apart _ _
-  | .spineApart _ _ _ _ => []
+  | .spineApart _ _ _ _ | .same _ _ => []
 
 /-- **A fact that holds defines its terms** (proved, by every form): each
 term `defines` names denotes an integer wherever the fact holds. -/
@@ -1353,7 +1406,7 @@ theorem defines_holds {F : IndexFact} {ρ : Env} {h : Heap} (hF : F.HoldsAt ε �
     obtain ⟨w, sto, ls, n, -, -, -, hn, -⟩ := hF
     simp only [defines, List.mem_singleton] at ht; subst ht
     simp [hn]
-  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | apart _ _ | spineApart _ _ _ _ =>
+  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ =>
     simp [defines] at ht
 
 /-- A total renaming renames every fact. -/
@@ -1380,6 +1433,7 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
     exact ⟨.every (f s) p (Term.mapM' f stop) body', by simp only [mapM, hb, hst]; rfl⟩
   | .apart a b => ⟨_, rfl⟩
   | .spineApart a p b q => ⟨_, rfl⟩
+  | .same a b => ⟨_, rfl⟩
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -1395,6 +1449,7 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
   | either A B ihA ihB => exact hF.imp ihA ihB
   | apart a b => exact regionsApart_extend vs hF
   | spineApart a p b q => exact PathSpinesApart.extend vs hF
+  | same _ _ => exact hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
@@ -1460,6 +1515,9 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
   | spineApart a p b q =>
+    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
+    simp only [HoldsAt, hs.1, hs.2]
+  | same a b =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
   | guarded s p t B ih =>
@@ -1702,6 +1760,7 @@ theorem holdsAt_mapEntry {F F' : IndexFact} {g : Nat → Option Nat} {ε' : Entr
   | element v x k => cases hm; exact Iff.rfl
   | apart a b => cases hm; exact Iff.rfl
   | spineApart a p b q => cases hm; exact Iff.rfl
+  | same a b => cases hm; exact Iff.rfl
 
 /-- **A change of frame**: the fact with its current slots renamed by `f`
 (`mapM`) and its entry slots translated by `g` (`mapEntry`), each by its own
@@ -2416,6 +2475,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .element .. | .every .. => false
   | .apart .. => c.spine == .keep
   | .spineApart a p b q => guardKept first a p && guardKept first b q
+  | .same .. => true
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ε ρ h) :
@@ -2454,6 +2514,7 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, readPath_guardKept hf hk.1 hu, readPath_guardKept hf hk.2 hw, hne⟩
+  | same _ _ => exact hF
   | guarded s p t B ih =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF
@@ -2577,6 +2638,7 @@ theorem holdsAt_keptWith {c : Changes} {first : Nat → String → Bool} {F : In
   | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | apart _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | spineApart _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | same _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

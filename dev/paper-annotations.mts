@@ -64,7 +64,7 @@ interface FunctionInfo {
  * finds the call's node in the unit's source map. */
 interface CallInfo {
   caller: string; callee: string; instance: Record<string, Effect>; ok: boolean; reason: string | null;
-  params: string[]; bounds: Effect[]; own: Effect | string; span: [number, number];
+  params: string[]; bounds: Effect[]; callerParams?: string[]; callerBounds?: Effect[]; own: Effect | string; span: [number, number];
 }
 
 /** An unsafe assume `paperAssume(fact, "#n");`: the condition `fact` states
@@ -265,16 +265,26 @@ function mentions(node: ts.Node, out: Set<string>): void {
  * the name, or the nearest enclosing function whose parameter it is. */
 type Decl =
   | { kind: "param"; owner: ts.Node; type: ts.TypeNode | undefined }
-  | { kind: "const" | "let"; init: ts.Expression | undefined; type: ts.TypeNode | undefined; at: ts.Node }
+  | { kind: "const" | "let"; init: ts.Expression | undefined; type: ts.TypeNode | undefined; at: ts.Node; field?: string }
   | { kind: "function"; node: ts.FunctionDeclaration };
 
 function declIn(statements: readonly ts.Statement[], name: string): Decl | null {
   for (const st of statements) {
     if (ts.isVariableStatement(st)) {
       const list = st.declarationList;
-      for (const d of list.declarations)
+      const kind = (list.flags & ts.NodeFlags.Const) !== 0 ? "const" : "let";
+      for (const d of list.declarations) {
         if (ts.isIdentifier(d.name) && d.name.text === name)
-          return { kind: (list.flags & ts.NodeFlags.Const) !== 0 ? "const" : "let", init: d.initializer, type: d.type, at: d };
+          return { kind, init: d.initializer, type: d.type, at: d };
+        if (ts.isObjectBindingPattern(d.name))
+          for (const el of d.name.elements) {
+            if (el.dotDotDotToken !== undefined || el.initializer !== undefined) continue;
+            if (el.name === undefined || !ts.isIdentifier(el.name) || el.name.text !== name) continue;
+            const field = el.propertyName === undefined ? name
+              : ts.isIdentifier(el.propertyName) ? el.propertyName.text : undefined;
+            if (field !== undefined) return { kind, init: d.initializer, type: undefined, at: d, field };
+          }
+      }
     } else if (ts.isFunctionDeclaration(st) && st.name?.text === name) return { kind: "function", node: st };
   }
   return null;
@@ -476,6 +486,11 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
     return (local && !(paramRoots && d.owner === closure)) || (closure !== null && assignedIn(e.text, d.owner)) ? null
       : { fresh: false, root: e.text, path: [] };
   if (local && freshLocals?.has(d.at)) return { fresh: true };
+  if (d.kind === "const" && d.field !== undefined && isPathExpr(d.init)) {
+    const base = resolve_(d.init, closure, depth + 1, paramRoots, freshLocals);
+    if (base === null || base.fresh) return null;
+    return { fresh: false, root: base.root, path: [...base.path, d.field] };
+  }
   if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots, freshLocals);
   if (local) return d.kind === "const" && isFreshContainerAlloc(d.init) ? { fresh: true } : null;
   return { fresh: false, root: e.text, path: [] };
@@ -790,6 +805,16 @@ function isArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
   return !acc.open && e !== undefined && e.array && e.keys.size === 0;
+}
+/** Whether a location expression is declared a closed array of primitives
+ * (no object or nested-array element paths in its declared reach). */
+function isPrimitiveArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
+  const d = declOf(r.root, at);
+  if (d === null || d.kind === "function") return false;
+  const acc = accOf(d.type, at.getSourceFile());
+  const e = acc.paths.get(r.path.join("."));
+  return !acc.open && e !== undefined && e.array && e.keys.size === 0 &&
+    acc.paths.get([...r.path, "[*]"].join(".")) === undefined;
 }
 /** Whether a location expression's value is no array by its declaration:
 its declared type is closed and, at the path, declares keys and no array. */
@@ -1436,6 +1461,11 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
         // `TypedArray.prototype.subarray` allocates a view without mutating any heap location.
       } else if (ts.isPropertyAccessExpression(callee) && PURE_STRING_METHODS.has(callee.name.text)) {
         // Pure string methods (`charCodeAt`, `slice`, `includes`, etc.) mutate no heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "join" &&
+          (n.arguments.length === 0 || (n.arguments.length === 1 && n.arguments[0] !== undefined &&
+            ts.isStringLiteral(unwrapExpr(n.arguments[0])))) &&
+          (() => { const r = resolve_(callee.expression, fn, 0, paramRoots, freshVars); return r !== null && !r.fresh && isPrimitiveArrayAt(r, n); })()) {
+        // `Array.prototype.join` on a primitive array with a string-literal (or omitted) separator runs no user `toString`.
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "test" &&
           ts.isRegularExpressionLiteral(unwrapExpr(callee.expression)) &&
           !/[gy]/.test(unwrapExpr(callee.expression).getText().split("/").pop() ?? "")) {
@@ -1779,7 +1809,17 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     if (st !== null && st.checkBody && refusal === undefined) {
       const why = verifyStatedEffect(s, st.effect);
       if (why !== null) refusal = `stated Effects verification failed: ${why}`;
-      else stated = st.effect;
+      else {
+        const reach: Record<string, AccJson> = {};
+        for (const [k] of st.effect.entries) {
+          const l = locOf(k);
+          if (l?.kind !== "reach") continue;
+          const p = l.path.length === 0 ? s.parameters[params.indexOf(l.root)] : undefined;
+          reach[k] = accJson(accOf(p?.type, tree));
+        }
+        if (Object.keys(reach).length > 0) st.effect.reach = reach;
+        stated = st.effect;
+      }
     }
     const own = effectVars(s).length === 0 ? undefined : closureEffect(s, true, { owner: s, names: boundedParams(s) });
     // Rule Bound's second premise: the regions of each bound read at a
@@ -2070,8 +2110,15 @@ export function annotations(path: string): {
         const args = n.arguments.map((a) => argPath(a));
         // The caller's parameters it never assigns: their values and own
         // locations are apart from what the caller allocates.
-        const callerParams = new Set(unit.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "")
-          .filter((q) => q !== "" && !assignedIn(q, unit)));
+        const callerParamList = unit.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
+        const callerParams = new Set(callerParamList.filter((q) => q !== "" && !assignedIn(q, unit)));
+        const isCallerParamKey = (k: string): boolean => {
+          if (k === "@state") return true;
+          const r = rootOf(k);
+          if (!callerParams.has(r)) return false;
+          return k.endsWith(".**") || k.endsWith("[*]") || k.endsWith("[#]") || k.endsWith(".*") ||
+            k.split(".").length === 2;
+        };
         const normalizeEffect = (written: Effect): { inst: Effect; fresh: Set<string> } | string => {
           const fresh = new Set<string>();
           const entries: [string, Change][] = [];
@@ -2087,6 +2134,8 @@ export function annotations(path: string): {
           const inst: Effect = Object.keys(reach).length > 0 ? { entries, else: written.else, reach } : { entries, else: written.else };
           return { inst, fresh };
         };
+        const normalizedInst = new Map<string, Effect>();
+        const normalizedExtra = new Map<string, Effect>();
         for (const e of callee.effectParams) {
           if (reason !== null) break;
           const written = instance[e.name];
@@ -2096,9 +2145,11 @@ export function annotations(path: string): {
           const normRes = normalizeEffect(written);
           if (typeof normRes === "string") { reason = normRes; break; }
           const { inst, fresh } = normRes;
+          normalizedInst.set(e.name, inst);
           const extraRaw = forwardedExtra.get(e.name);
           const extraNorm = extraRaw === undefined ? null : normalizeEffect(extraRaw);
           if (typeof extraNorm === "string") { reason = extraNorm; break; }
+          if (extraNorm !== null) normalizedExtra.set(e.name, extraNorm.inst);
           for (const b of callee.bounded.filter((x) => x.variable === e.name)) {
             if (empty.has(e.name)) break;
             let arg: ts.Expression | undefined = n.arguments[b.index];
@@ -2158,10 +2209,30 @@ export function annotations(path: string): {
             reason = instCheck(extraNorm.inst, e.bound, callee.params, args, extraNorm.fresh, callerParams);
         }
         // The call's effect at the caller (Inst's conclusion) is within the
-        // bounds and the callee's own effect; an empty instance stands for
-        // its bound exactly.
+        // instances (or their bounds where an instance names caller locals or
+        // forwarded variables) and the callee's own effect; an empty instance
+        // stands for its bound exactly.
+        const calleeBounds: Effect[] = [];
+        const callerBounds: Effect[] = [];
+        for (const e of callee.effectParams) {
+          if (empty.has(e.name)) {
+            calleeBounds.push(instance[e.name] ?? e.bound);
+            continue;
+          }
+          const inst = normalizedInst.get(e.name);
+          const extra = normalizedExtra.get(e.name);
+          if (reason === null && inst !== undefined &&
+              inst.entries.every(([k]) => isCallerParamKey(k)) &&
+              (extra === undefined || extra.entries.every(([k]) => isCallerParamKey(k)))) {
+            callerBounds.push(inst);
+            if (extra !== undefined) callerBounds.push(extra);
+          } else {
+            calleeBounds.push(e.bound);
+          }
+        }
         calls.push({ caller, callee: n.expression.text, instance, ok: reason === null, reason,
-          params: callee.params, bounds: callee.effectParams.map((e) => empty.has(e.name) ? instance[e.name] ?? e.bound : e.bound),
+          params: callee.params, bounds: calleeBounds,
+          ...(callerBounds.length > 0 ? { callerParams: callerParamList, callerBounds } : {}),
           own: callee.own ?? "has no effect parameters", span: [n.getStart(), n.getEnd()] });
       } else if (callee && callee.stated !== undefined && callee.refusal === undefined) {
         // A call to a monomorphic function with a verified `Effects<P, T>`

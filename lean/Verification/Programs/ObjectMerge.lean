@@ -2119,4 +2119,90 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
       (bound.filter fun K => ix.all fun y => K.keeps y.1) (ix.map fun (K, T) => (K, .field, T))
   pure (if MergeClause G d ca cb dict then dict else record)
 
+/-! ### Field preservation across `Tm.merge` -/
+
+/-- Whether every clause of `B` never copies key `k` when `d` is dropped. -/
+@[nospecialize] def srcNever (G : NormalGraph ι) (B : List ι) (d : List PropKey) (k : PropKey) : Bool :=
+  G.plainTy B && (expand G B).all fun c => match srcOf c with
+    | some s => s.never d k
+    | none => false
+
+theorem srcNever_sound {G : NormalGraph ι} {B : List ι} {d : List PropKey} {k : PropKey}
+    (hn : srcNever G B d k = true) {n : Nat} {W : WorldT n} {h : Heap} {b : Val} {qs : List (PropKey × Tm)}
+    (hb : meaning G B n W b) (hq : ownData h b = some qs) :
+    (qs.filter fun e => !d.contains e.1).lookup k = none := by
+  simp only [srcNever, Bool.and_eq_true, List.all_eq_true] at hn
+  obtain ⟨c, hc, hsb⟩ := (expand_sem G B hn.1 n W b).mp hb
+  have hs := hn.2 c hc
+  cases hso : srcOf c with
+  | none => rw [hso] at hs; cases hs
+  | some s =>
+    rw [hso] at hs
+    unfold srcOf at hso
+    split at hso
+    · rename_i hempty
+      cases hso
+      obtain ⟨hq', -⟩ := emptyClause_ownData hempty hsb h
+      rw [hq'] at hq; cases hq; rfl
+    split at hso
+    · rename_i _ hstr
+      cases hso
+      have ⟨str, hstrEq⟩ : ∃ str, b = .str str := primKind_sound (k := .str) (by simpa [stringClause] using hstr) hsb.1
+      subst hstrEq
+      simp only [ownData, Option.some.injEq] at hq; subst hq
+      cases hv : ((firstKeys (stringData str)).filter fun e => !d.contains e.1).lookup k with
+      | none => rfl
+      | some v =>
+        obtain ⟨hi, hd, -⟩ := stringData_lookup hv
+        simp only [Src.never, Bool.or_eq_true, Bool.not_eq_true'] at hs
+        rcases hs with hd' | hi'
+        · rw [hd'] at hd; cases hd
+        · rw [hi'] at hi; cases hi
+    · split at hso
+      · rename_i ob hob
+        cases hso
+        obtain ⟨fb, oidb, rfl, hfb⟩ := objFacts_of_sem hob hsb
+        exact src_never hfb hq hs
+      · obtain ⟨ob, hob, rfl⟩ := Option.map_eq_some_iff.mp hso
+        obtain ⟨fb, code, oidb, rfl, hfb⟩ := codeFacts_of_sem hob hsb
+        exact src_never hfb hq hs
+
+theorem mergeParts_nodup {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) : (ps.map Prod.fst).Nodup := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  exact mergeData_nodup (ownAll_nodup hpa) ((ownData_nodup hqb).sublist (List.Sublist.map _ List.filter_sublist))
+
+theorem mergeParts_lookup_b {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) {fs : List (PropKey × Nat)} {cd : CallCode} {oid l : Nat} {v : Tm}
+    {k : PropKey} (hb : b = .objAt fs cd oid) (hk : copiedKey k = true) (hd : d.contains k = false)
+    (hl : fs.lookup k = some l) (hv : h[l]? = some v) (hval : isVal v = true) :
+    ps.lookup k = some v := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, _, qb, hqb, rfl⟩ := hp
+  rw [hb] at hqb
+  rw [lookup_mergeData, srcData_lookup hqb d k, hd, hk, hl]
+  simp [heapVal, hv, hval]
+
+theorem mergeParts_lookup_a {G : NormalGraph ι} {B : List ι} {d : List PropKey} {k : PropKey}
+    (hn : srcNever G B d k = true) {n : Nat} {W : WorldT n} {h : Heap} {a b : Val} {ps : List (PropKey × Tm)}
+    (hb : meaning G B n W b) (hp : mergeParts h d a b = some ps)
+    {fs : List (PropKey × Nat)} {cd : CallCode} {oid l : Nat} {v : Tm}
+    (ha : a = .objAt fs cd oid) (hsp : k ≠ arraySpineKey)
+    (hl : fs.lookup k = some l) (hv : h[l]? = some v) (hval : isVal v = true) :
+    ps.lookup k = some v := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  rw [lookup_mergeData, srcNever_sound hn hb hqb, Option.none_or]
+  rw [ha] at hpa
+  unfold ownAll at hpa
+  cases cd <;> simp only [reduceCtorEq] at hpa
+  split at hpa
+  · cases hpa
+  · simp only [Option.some.injEq] at hpa
+    subst hpa
+    rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun x => x != arraySpineKey) fs k]
+    have hne : (k != arraySpineKey) = true := by simpa using hsp
+    simp [hne, hl, heapVal, hv, hval]
+
 end Verification.ObjectMerge

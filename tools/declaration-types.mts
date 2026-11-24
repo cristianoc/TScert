@@ -151,6 +151,7 @@ export type IndexFact =
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
       readonly body: readonly BodyFact[] } }
   | { readonly apart: { readonly slot: number; readonly other: number } }
+  | { readonly same: { readonly slot: number; readonly other: number } }
   | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
@@ -162,7 +163,7 @@ export type BodyFact =
   | { readonly le: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } }
   | { readonly ne: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } };
 /** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */
-export type GuardTag = "null" | "undefined" | "true" | "false";
+export type GuardTag = "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
  * linear term and its coefficient. */
 export type LinearFact = LinearFactOf<LinearTerm>;

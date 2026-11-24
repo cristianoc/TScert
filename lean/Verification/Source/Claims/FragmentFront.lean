@@ -141,22 +141,22 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
   let primitives : List (PositiveGraphs.GraphRow Nat) := [.clauses [.nul], .clauses [.boolLit true],
     .clauses [.boolLit false], .clauses [.undef]]
   let functions := all.map fun (f, _) =>
-    let (footprint, onThrow, resultFootprint) := match standIns.functions.find? (·.name == f.name), f.stated with
-      | some s, _ => (s.footprint, s.onThrow, s.resultFootprint)
+    let (footprint, onThrow, resultFootprint, returnAlias) := match standIns.functions.find? (·.name == f.name), f.stated with
+      | some s, _ => (s.footprint, s.onThrow, s.resultFootprint, s.returnAlias)
       -- A statement with spine regions proposes `top`, the regional check
       -- of its own regions certifying the statement.
-      | none, some s => if s.regions.isEmpty then (s.closed, s.onThrow, Footprints.Closed.top)
-          else (.top, false, .top)
+      | none, some s => if s.regions.isEmpty then (s.closed, s.onThrow, Footprints.Closed.top, none)
+          else (.top, false, .top, none)
       -- Forced (`callees`): a function without a written footprint at
       -- keep/keep; (`throws`) bounding its throws too.
       | none, none =>
-        if force.contains "throws" then (⟨.keep, .keep, .keep⟩, true, .top)
-        else if force.contains "callees" then (⟨.keep, .keep, .keep⟩, false, .top) else (.top, false, .top)
+        if force.contains "throws" then (⟨.keep, .keep, .keep⟩, true, .top, none)
+        else if force.contains "callees" then (⟨.keep, .keep, .keep⟩, false, .top, none) else (.top, false, .top, none)
     Json.mkObj [("name", toJson f.name), ("namePos", toJson f.namePos),
       ("params", Json.arr (f.params.map fun p => Json.mkObj [("name", toJson p.name),
         ("type", annotated "a parameter's type"), ("current", Json.null)]).toArray),
       ("result", annotated "a result type"), ("entries", Json.arr #[]), ("expressions", Json.arr #[]),
-      ("contracts", Json.arr #[]), ("exits", toJson (EffectJson.classExits footprint onThrow)),
+      ("contracts", Json.arr #[]), ("exits", toJson (EffectJson.classExits footprint onThrow returnAlias)),
       ("resultExits", toJson (EffectJson.classExits resultFootprint false))]
   let empty := Json.mkObj [("entries", Json.arr #[]), ("expressions", Json.arr #[]), ("contracts", Json.arr #[])]
   EffectCodec.document (Json.mkObj ([("file", toJson fileKey), ("sourceSha256", ast.getObjValD "sourceSha256"),
@@ -505,7 +505,7 @@ their claims' and their slots', as `fragmentClaims` and `fileFront` state a
 stand-in's. -/
 def Front.withStandIns (fr : Front) (sis : List StandIn) : Front :=
   let d := { fr.d with functions := fr.d.functions.map fun c => match sis.find? (·.name == c.name) with
-    | some s => { c with footprint := s.footprint, onThrow := s.onThrow, resultFootprint := s.resultFootprint }
+    | some s => { c with footprint := s.footprint, onThrow := s.onThrow, resultFootprint := s.resultFootprint, returnAlias := s.returnAlias }
     | none => c }
   let ordinary := fr.units.filterMap fun (f, tps, c) => if tps.isEmpty && c.isNone then some f else none
   let slots := ordinarySlots d ordinary (sis.map (·.name))
@@ -519,7 +519,7 @@ footprints, as `fragmentClaims` states a stand-in's. -/
 def withStandIns (claims : Json) (sis : List StandIn) : Json :=
   claims.setObjVal! "functions" (Json.arr ((claims.getObjValAs? (Array Json) "functions").toOption.getD #[] |>.map fun j =>
     match sis.find? (some ·.name == (j.getObjValAs? String "name").toOption) with
-    | some s => (j.setObjVal! "exits" (toJson (EffectJson.classExits s.footprint s.onThrow))).setObjVal!
+    | some s => (j.setObjVal! "exits" (toJson (EffectJson.classExits s.footprint s.onThrow s.returnAlias))).setObjVal!
         "resultExits" (toJson (EffectJson.classExits s.resultFootprint false))
     | none => j))
 
@@ -566,7 +566,7 @@ def Front.statesMore (fr : Front) (n : String) : Bool :=
 /-- Whether the front's claims state a function of that name at more than
 the ordinary effect. -/
 def Front.proposes (fr : Front) (n : String) : Bool :=
-  fr.d.functions.any (fun c => c.name == n && (c.footprint, c.onThrow, c.resultFootprint) != (.top, false, .top)) ||
+  fr.d.functions.any (fun c => c.name == n && (c.footprint, c.onThrow, c.resultFootprint, c.returnAlias) != (.top, false, .top, none)) ||
     fr.statesMore n
 
 
@@ -591,7 +591,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
   -- establish.
-  let given := standIns.imports.map fun s => (s.name, QualifiedEffect.ofClosed s.footprint s.onThrow s.resultFootprint)
+  let given := standIns.imports.map fun s => (s.name, QualifiedEffect.ofClosed s.footprint s.onThrow s.resultFootprint s.returnAlias)
   let qualified := given ++ imported.filter fun q => !given.any (·.1 == q.1)
   let depends := depends.filter fun d => !given.any (·.1 == d.1)
   -- (`front`: the claims and front `fileFront` gave with no qualified read
@@ -618,7 +618,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let initWith (sis : List StandIn) : Front :=
     let affects := sis.any fun s => initReads.contains s.name &&
       fr.d.functions.any fun c => c.name == s.name &&
-        (c.footprint, c.onThrow, c.resultFootprint) != (s.footprint, s.onThrow, s.resultFootprint)
+        (c.footprint, c.onThrow, c.resultFootprint, c.returnAlias) != (s.footprint, s.onThrow, s.resultFootprint, s.returnAlias)
     if sis.isEmpty then frInit.get
     else if !affects then frInit.get.withStandIns sis
     else initTyped (fr.withStandIns sis)
@@ -1257,8 +1257,8 @@ def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option 
   (f.fr.group i).filterMap fun j => match f.fr.units[j]? with
     | some (g, _, none) => if g.async then none else
       some (g.name, (f.fr.d.functions.find? (·.name == g.name)).bind fun c =>
-        if c.footprint == .top && !c.onThrow && c.resultFootprint == .top then none
-        else some (StandIn.ofFormat g.name c.footprint c.onThrow c.resultFootprint))
+        if c.footprint == .top && !c.onThrow && c.resultFootprint == .top && c.returnAlias.isNone then none
+        else some (StandIn.ofFormat g.name c.footprint c.onThrow c.resultFootprint c.returnAlias))
     | _ => none
 
 /-- Importer planning from closed interfaces. No module is planned here. -/

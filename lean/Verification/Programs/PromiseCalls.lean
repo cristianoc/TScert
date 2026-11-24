@@ -3566,15 +3566,94 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
       exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
 
+/-- The alias links a call's return-alias postconditions (`IndexFact.same 0 (p + 1)`
+or `.same (p + 1) 0` in `eff.schema.normal.facts`) give: when a normal exit
+states `result = callPos p` and position `p` is a slot `a`, slot `0` (the
+result) aliases slot `a + 1`. -/
+def sameLinks (eff : Effect) (t : Tm) : HeapLinks.Links :=
+  match t with
+  | .invoke _ r args =>
+    eff.schema.normal.facts.filterMap fun F =>
+      let pos? : Option Nat := match F with
+        | .same 0 (p + 1) | .same (p + 1) 0 => some p
+        | _ => none
+      pos?.bind fun p =>
+        let slot? : Option Nat := match p with
+          | 0 => match r with | .var a => some a | _ => none
+          | k + 1 => match args[k]? with | some (.var a) => some a | _ => none
+        slot?.map fun a => ⟨0, a + 1, true, .str "", false⟩
+  | _ => []
+
+private theorem sameLinks_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
+    HeapLinks.Holds (sameLinks eff t) (push v ρ) h' := by
+  intro g hg
+  cases t with
+  | invoke f r args =>
+    simp only [sameLinks] at hg
+    obtain ⟨F, hF, hFm⟩ := List.mem_filterMap.mp hg
+    have hFholds : F.HoldsAt ⟨CallEffects.callEnv (instantiate 0 ρ r) (args.map (instantiate 0 ρ)), h⟩
+        (CallEffects.ensuresEnv v (instantiate 0 ρ r) (args.map (instantiate 0 ρ))) h' := by
+      have hinst : ExpressionEffects.receiverOf (instantiate 0 ρ (.invoke f r args)) = instantiate 0 ρ r ∧
+          ExpressionEffects.actualsOf (instantiate 0 ρ (.invoke f r args)) = args.map (instantiate 0 ρ) := by
+        simp [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, instantiateArgs_eq_map]
+      have := CallEffects.Effect.callPost_ensures hF hq
+      rwa [hinst.1, hinst.2] at this
+    have go : ∀ p, v = CallEffects.callEnv (instantiate 0 ρ r) (args.map (instantiate 0 ρ)) p →
+        ((match p with
+          | 0 => match r with | .var a => some a | _ => none
+          | k + 1 => match args[k]? with | some (.var a) => some a | _ => none).map
+          fun a => (⟨0, a + 1, true, .str "", false⟩ : HeapLinks.Link)) = some g →
+        HeapLinks.Holds [g] (push v ρ) h' := by
+      intro p hv hm
+      obtain ⟨a, ha, rfl⟩ := Option.map_eq_some_iff.mp hm
+      have hpa : CallEffects.callEnv (instantiate 0 ρ r) (args.map (instantiate 0 ρ)) p = ρ a := by
+        cases p with
+        | zero =>
+          cases r <;> simp at ha
+          subst ha; rfl
+        | succ k =>
+          dsimp only at ha
+          cases hak : args[k]? with
+          | none => simp [hak] at ha
+          | some tk =>
+            rw [hak] at ha
+            cases tk <;> simp at ha
+            subst ha
+            simp [CallEffects.callEnv, List.getD_eq_getElem?_getD, hak, instantiate]
+      intro g' hg'
+      simp only [List.mem_singleton] at hg'
+      subst hg'
+      simpa [push, hpa] using hv
+    cases F with
+    | same x y =>
+      cases x with
+      | zero =>
+        cases y with
+        | zero => simp at hFm
+        | succ p =>
+          simp only [HeapKnowledge.IndexFact.HoldsAt, CallEffects.ensuresEnv] at hFholds
+          exact go p hFholds hFm g (List.mem_singleton_self g)
+      | succ p =>
+        cases y with
+        | zero =>
+          simp only [HeapKnowledge.IndexFact.HoldsAt, CallEffects.ensuresEnv] at hFholds
+          exact go p hFholds.symm hFm g (List.mem_singleton_self g)
+        | succ _ => simp at hFm
+    | _ => simp at hFm
+  | _ => simp [sameLinks] at hg
+
 /-- Knowledge with a call's result-fact atoms added, the atoms, the cell
 facts and the read links of its entry `k0` its footprint keeps (`effectKept`,
-`frameCells`, `frameLinks`) and the quantified atoms its growth of its
-receiver's spine keeps or extends (`appendKept`), then the instances of
-quantified facts the element reads among them state (`withElements`). -/
+`frameCells`, `frameLinks`), any return-alias links (`sameLinks`), and the
+quantified atoms its growth of its receiver's spine keeps or extends
+(`appendKept`), then the instances of quantified facts the element reads among
+them state (`withElements`). -/
 def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  HeapKnowledge.withElements
+  HeapKnowledge.dischargeGuards <| HeapKnowledge.withElements
     { k with cells := k.cells ++ (frameCells stable eff t k0).filter (!k.cells.contains ·),
-             links := k.links ++ (frameLinks stable eff t k0).filter (!k.links.contains ·),
+             links := k.links ++ (frameLinks stable eff t k0).filter (!k.links.contains ·) ++ sameLinks eff t,
              indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
         writeKept eff t k0 ++ linearAppendKept n eff t k0 ++ ensuresComposed stable eff t k0 }
 
@@ -3584,12 +3663,14 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
     (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
-    HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
+    HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.dischargeGuards_holds <| HeapKnowledge.withElements_holds
   ⟨fun f hf => (List.mem_append.mp hf).elim (hk.1 f)
       (fun hf => frameCells_holds hk0 hok hρ hq hstable f (List.mem_filter.mp hf).1),
     hk.2.1,
-    fun g hg => (List.mem_append.mp hg).elim (hk.2.2.1 g)
-      (fun hg => frameLinks_holds hk0 hok hρ hq hstable g (List.mem_filter.mp hg).1),
+    fun g hg => (List.mem_append.mp hg).elim
+      (fun hg => (List.mem_append.mp hg).elim (hk.2.2.1 g)
+        (fun hg => frameLinks_holds hk0 hok hρ hq hstable g (List.mem_filter.mp hg).1))
+      (fun hg => sameLinks_holds hq g hg),
     hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
@@ -3651,7 +3732,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
       | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty then none else some eff
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (sameLinks eff j.term).isEmpty then none else some eff
       | none => none
     else none
   | _ => none
@@ -3668,7 +3749,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
     | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty then none
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (sameLinks eff j.term).isEmpty then none
       else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
           requiresTree G images k codes sums p) then some eff else none
     | none => none

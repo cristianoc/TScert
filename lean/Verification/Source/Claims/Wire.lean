@@ -327,6 +327,9 @@ structure Function (ι : Type) where
   /-- The footprint the producer proposes for the signatures of the function
   the declaration returns, which the unit's returns must certify. -/
   resultFootprint : Footprints.Closed
+  /-- Call position `p` proposed by the pass to be returned unchanged at every
+  reachable return (`IndexFact.same 0 (p + 1)`). -/
+  returnAlias : Option Nat := none
   /-- Omitted by a document whose closures each advertise one signature. -/
   arrows : Option (List (ArrowClaims ι)) := none
 
@@ -337,10 +340,11 @@ instance [FromJson ι] : FromJson (Function ι) where
   fromJson? j := do
     let name ← j.getObjValAs? String "name"
     let at_ := fun (field : String) (m : String) => s!"the claims of {name}: {field}: {m}"
-    let (footprint, onThrow) ← (do EffectJson.classOfExits (← fromJson? (← j.getObjVal? "exits"))).mapError (at_ "exits")
-    let (resultFootprint, resultThrow) ←
+    let (footprint, onThrow, returnAlias) ←
+      (do EffectJson.classOfExits (← fromJson? (← j.getObjVal? "exits"))).mapError (at_ "exits")
+    let (resultFootprint, resultThrow, resultAlias) ←
       (do EffectJson.classOfExits (← fromJson? (← j.getObjVal? "resultExits"))).mapError (at_ "resultExits")
-    if resultThrow then throw (at_ "resultExits" "a returned function's proposed exits bound no throw")
+    if resultThrow || resultAlias.isSome then throw (at_ "resultExits" "a returned function's proposed exits bound no throw")
     let arrows ← match j.getObjVal? "arrows" with
       | .ok a => some <$> fromJson? a
       | .error _ => pure none
@@ -350,7 +354,8 @@ instance [FromJson ι] : FromJson (Function ι) where
     let entries ← fromJson? (← j.getObjVal? "entries")
     let expressions ← fromJson? (← j.getObjVal? "expressions")
     let contracts ← fromJson? (← j.getObjVal? "contracts")
-    return ⟨name, namePos, params, result, entries, expressions, contracts, footprint, onThrow, resultFootprint, arrows⟩
+    return ⟨name, namePos, params, result, entries, expressions, contracts, footprint, onThrow, resultFootprint,
+      returnAlias, arrows⟩
 
 /-- Absence asserts nothing: a document whose closures each advertise one
 signature states no per-arrow claims, and no producer writes an empty list. -/
@@ -358,7 +363,7 @@ instance [ToJson ι] : ToJson (Function ι) where
   toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
     ("params", toJson f.params), ("result", toJson f.result),
     ("entries", toJson f.entries), ("expressions", toJson f.expressions),
-    ("contracts", toJson f.contracts), ("exits", toJson (EffectJson.classExits f.footprint f.onThrow)),
+    ("contracts", toJson f.contracts), ("exits", toJson (EffectJson.classExits f.footprint f.onThrow f.returnAlias)),
     ("resultExits", toJson (EffectJson.classExits f.resultFootprint false))] ++
     (match f.arrows with
      | none | some [] => []
@@ -444,6 +449,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     footprint := f.footprint
     onThrow := f.onThrow
     resultFootprint := f.resultFootprint
+    returnAlias := f.returnAlias
     arrowClaims := (f.arrows.getD []).map fun a => (a.pos, a.rows.map fun row =>
       { toPointData := pointData row.entries row.expressions
         points := pointTable row.entries row.expressions

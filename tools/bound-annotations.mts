@@ -323,13 +323,17 @@ class Parser {
     const x = this.peek();
     if (!x || x.k !== "name" || x.v === "safeInteger") return null;
     const path = this.variable();
-    if (!this.isOp("===")) return null;
+    const eq = this.isOp("===");
+    const ne = !eq && this.isOp("!==");
+    if (!eq && !ne) return null;
     this.at++;
     const v = this.take();
     if (!v || v.k !== "name" || (v.v !== "null" && v.v !== "undefined" && v.v !== "true" && v.v !== "false")) return null;
     if (!this.isOp("||")) return null;
     this.at++;
-    return { path, tag: v.v };
+    const tag: GuardTag = eq ? v.v
+      : v.v === "null" ? "notNull" : v.v === "undefined" ? "notUndefined" : v.v === "true" ? "notTrue" : "notFalse";
+    return { path, tag };
   }
   private atom(): Atom {
     const t = this.peek();
@@ -489,6 +493,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
   if ("spineApart" in f) return [f.spineApart.slot, f.spineApart.other];
   if ("apart" in f) return [f.apart.slot, f.apart.other];
+  if ("same" in f) return [f.same.slot, f.same.other];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }
@@ -592,7 +597,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       if (typeof ts === "string") throw new ClauseError(ts);
       return new Parser(ts).clause();
     });
-    if (parsed.flat().some(c => c.guards.some(g => g.tag === "undefined")) && params.some(q => q.name === "undefined"))
+    if (parsed.flat().some(c => c.guards.some(g => g.tag === "undefined" || g.tag === "notUndefined")) && params.some(q => q.name === "undefined"))
       throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
     const param = (name: string): ClauseParameter => {
       const p = params.find(q => q.name === name);
@@ -623,7 +628,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         return { p, path: fields };
       };
       const resolved = guards.map((g, i) => {
-        const { p, path: fields } = pathAt(i, g.path, g.tag === "undefined");
+        const { p, path: fields } = pathAt(i, g.path, g.tag === "undefined" || g.tag === "notUndefined");
         return { slot: p.position, path: fields, tag: g.tag };
       });
       const wrap = (f: IndexFact): IndexFact =>

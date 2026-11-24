@@ -64,6 +64,7 @@ structure QCall where
   /-- The call's source span, which the unit's source map gives its node. -/
   span : Nat × Nat
   components : List ParamEff
+  callerComponents : List ParamEff := []
 
 /-- An unsafe assume `paperAssume(fact, "#n");`: the issue it names and its
 line. The prototype checks the statement of the checked file as
@@ -280,16 +281,26 @@ effect, read at the actual arguments' slots: one component each. No Anch:
 the instance may change the caller's own storage. Confined module-state
 entries (`"@state"`) require no argument slot. Where a parameter-rooted
 entry's parameter receives no slot, nothing is kept. -/
-def atCall (c : QCall) (args : List Tm) : Option (List CallEff) :=
-  let slot := fun (p : Nat) => match args[p]? with
-    | some (.var a) => some a
-    | _ => none
-  c.components.mapM fun pe => do
+def atCall (u : Unit) (d : Nat) (c : QCall) (args : List Tm) : Option (List CallEff) := do
+  let entrySlot := fun (p : Nat) => match args[p]? with
+    | some (.var a) => some (some a)
+    | none | some .undef | some .nul | some .tru | some .fls
+    | some (.num _) | some (.str _) | some (.bigint _) | some (.sym _) => some none
+    | some _ => none
+  let calleeEffs ← c.components.mapM fun pe => do
     let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState
-    let es ← paramEntries.mapM fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
+    let esOpt ← paramEntries.mapM fun (p, key, ch) => (entrySlot p).map fun oa => oa.map fun a => (a, key, ch)
+    let es := esOpt.filterMap id
     let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
     pure { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es,
            modChange := modChangeOf pe.entries }
+  let callerEffs := c.callerComponents.map fun pe =>
+    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState
+    let es := paramEntries.map fun (p, key, ch) => (slotOf u d p, key, ch)
+    let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
+    { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es,
+      modChange := modChangeOf pe.entries : CallEff }
+  pure (calleeEffs ++ callerEffs)
 
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
@@ -317,7 +328,7 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       let spans := u.sites.filterMap fun (t, w, sp) => if t == j.term && w == d then some sp else none
       -- Nodes with equal terms and context widths are one site to the
       -- layer: it keeps what every call at such a node keeps.
-      let effs := spans.map fun sp => sp.bind fun sp => (u.calls.find? (·.span == sp)).bind (atCall · args)
+      let effs := spans.map fun sp => sp.bind fun sp => (u.calls.find? (·.span == sp)).bind (atCall u d · args)
       match (effs.mapM id).map List.flatten with
       | some (c :: cs) => add (keptBy (c :: cs) (stableFirst G j.context) k)
       | _ => r
@@ -461,7 +472,15 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
     let span : Nat × Nat := (← (← span.getArrVal? 0).getNat?, ← (← span.getArrVal? 1).getNat?)
     let bounds ← (← call.getObjVal? "bounds").getArr?
     let some components := (bounds.toList ++ [ownEff]).mapM (paramEff params) | continue
-    let c : QCall := { span, components }
+    let callerComponents ← match call.getObjVal? "callerBounds", call.getObjVal? "callerParams" with
+      | .ok cb, .ok cp =>
+        let cbs ← cb.getArr?
+        let cps ← (← cp.getArr?).toList.mapM (·.getStr?)
+        match cbs.toList.mapM (paramEff cps) with
+        | some cs => pure cs
+        | none => continue
+      | _, _ => pure []
+    let c : QCall := { span, components, callerComponents }
     let u := (out.get? caller).getD { bounds := [], params := 0 }
     out := out.insert caller { u with calls := u.calls ++ [c] }
   -- Each unit's unsafe assumes whose form the side script read.

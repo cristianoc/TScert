@@ -228,7 +228,7 @@ function classifySegmentBreakCode(code: number, whiteSpace: WhiteSpaceMode, scan
   return TEXT
 }
 
-export function isCollapsibleSpaceCode(code: number): boolean {
+export function isCollapsibleSpaceCode(code: number): Effects<{}, boolean> {   // PAPER: annotation
   return code === 0x20 || code === 0x09 || code === 0x0A || code === 0x0D || code === 0x0C
 }
 
@@ -633,7 +633,7 @@ function removeItemsSkippableSegmentBreaks(text: string, starts: number[], profi
 // with such a space starts at it. To Blink a CR is white space (Character::IsCollapsibleSpace,
 // platform/text/character.h:150-153), its run's first unit, and an FF is still a space in the
 // Blink and WebKit profiles.
-export function alignToSource(source: string, normalized: string, scan: AnalysisProfile['lineBreakScan']): Int32Array {
+export function alignToSource(source: string, normalized: string, scan: AnalysisProfile['lineBreakScan']): Effects<{}, Int32Array> {   // PAPER: annotation
   const offsets = new Int32Array(normalized.length)
   // The units no space comes from under `scan`, or -1.
   const cr = scan === 'blink' ? -1 : 0x0D

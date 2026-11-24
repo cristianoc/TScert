@@ -294,7 +294,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose spine's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -327,7 +327,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
-    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hm; cases hm
+    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their spine: read links
@@ -1784,7 +1784,7 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
 
 /-- Whether the linear facts bound a slot `i` by the length of the spine of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/
@@ -2122,22 +2122,41 @@ theorem rawPartners_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledg
       exact ⟨hs, regionsApart_symm hat⟩
     · cases hm
 
+/-- Non-empty array-length paths `(s, p)` unconditionally defined by `k.indices` with `s < limit`. -/
+def indexPaths (limit : Nat) (k : Knowledge) : List (Nat × List String) :=
+  (k.indices.flatMap fun a =>
+    if a.cond.isSome then []
+    else match a.fact with
+      | .linear F => F.vars.filterMap fun t =>
+          if !t.atEntry && !t.path.isEmpty && t.kind == .length && t.slot < limit then some (t.slot, t.path) else none
+      | .spineApart s p o q =>
+          (if !p.isEmpty && s < limit then [(s, p)] else []) ++
+          (if !q.isEmpty && o < limit then [(o, q)] else [])
+      | .every s p _ _ => if !p.isEmpty && s < limit then [(s, p)] else []
+      | _ => []).eraseDups
+
+/-- A fresh array at slot `0` has a spine apart from every existing path in `indexPaths`. -/
+def freshSpineApart (limit : Nat) (k : Knowledge) : List IndexAtom :=
+  (indexPaths limit k).map fun (s, p) => { fact := .spineApart 0 [] (s + 1) p }
+
 /-- The region facts an allocation states (`region-alloc`): a literal's
 spine, of slots, apart from every array slot; its combined object allocation
 likewise; and an array object holding the raw spine in slot 0, apart from
-every array slot the raw spine is known apart from. -/
+every array slot the raw spine is known apart from. Both array object
+allocations also separate their fresh spine from existing field paths named in
+the state's index facts. -/
 def regionAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .arrLit es => match slotVars es with
     | some is => if is.all (· < Γ.length) && decide (is.length ≤ maxArrayLength) then freshApart G Γ else []
     | none => []
   | .makeAt .absent [s, p] [.var 0, .var proto] =>
     if s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length) && spineSlot G Γ 0 then
-      (rawPartners G Γ k).map fun y => { fact := .apart 0 (y + 1) }
+      (rawPartners G Γ k).map (fun y => { fact := .apart 0 (y + 1) }) ++ freshSpineApart Γ.length k
     else []
   | .letE (.arrLit es) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
     if s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length + 1) &&
         appendSlots Γ.length es && decide (es.length ≤ maxArrayLength) then
-      freshApart G Γ
+      freshApart G Γ ++ freshSpineApart Γ.length k
     else []
   | _ => []
 
@@ -2167,9 +2186,120 @@ theorem freshApart_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h} {u 
   show RegionsApart (h ++ vs) u (ρ j)
   exact fresh_apart_slot hc he hh hu habove
 
+private theorem objRefs_slot_mem {fs : List (PropKey × Nat)} {oid : Nat} {k : PropKey} {l : Nat}
+    (hlk : fs.lookup k = some l) : Ref.slot k l ∈ objRefs fs oid := by
+  have hm := HeapKnowledge.lookup_mem' hlk
+  exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨(k, l), hm, rfl⟩)
+
+private theorem refs_obj_slot_mem {fs : List (PropKey × Nat)} {cd : CallCode} {oid : Nat} {k : PropKey} {l : Nat}
+    (hlk : fs.lookup k = some l) : Ref.slot k l ∈ refs (.objAt fs cd oid) := by
+  have hm := objRefs_slot_mem (oid := oid) hlk
+  cases cd <;> simp [refs, hm]
+
+private theorem slotRole_some {key : PropKey} {o : Option Role} (h : SlotRole key o) : ∃ r, o = some r := by
+  cases o with
+  | none => cases h
+  | some r => exact ⟨r, rfl⟩
+
+private theorem refsOk_readPath_extend {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
+    (vs : List Val) : ∀ {p : List String} {v w : Val}, RefsOk W v → readPath (h ++ vs) v p = some w → RefsOk W w
+  | [], _, _, hv, hr => by simp only [readPath, Option.some.injEq] at hr; exact hr ▸ hv
+  | f :: q, v, w, hv, hr => by
+    cases v with
+    | objAt fs cd oid =>
+      simp only [readPath] at hr
+      cases hlk : fs.lookup (.str f) with
+      | none => simp [hlk] at hr
+      | some l =>
+        simp only [hlk] at hr
+        have hsr : SlotRole (.str f) (roleAt W l) := hv _ (refs_obj_slot_mem hlk)
+        obtain ⟨r, hrw⟩ := slotRole_some hsr
+        have hlt : l < h.length := by
+          have := roleAt_lt hrw
+          have hlen : h.length = (entries W).length := by simpa using hh.1.1
+          omega
+        rw [List.getElem?_append_left hlt] at hr
+        obtain ⟨u, hu, hsh⟩ := hh.2 l r hrw
+        simp only [hu] at hr
+        exact refsOk_readPath_extend hh vs hsh.2 hr
+    | _ => simp [readPath] at hr
+
+private theorem refsOk_spineOf_lt {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h)
+    {v : Val} {l : Nat} (hv : RefsOk W v) (hs : Footprints.spineOf v = some l) : l < h.length := by
+  cases v with
+  | objAt fs cd oid =>
+    simp only [Footprints.spineOf, Footprints.fieldsOf] at hs
+    have hsr : SlotRole arraySpineKey (roleAt W l) := hv _ (refs_obj_slot_mem hs)
+    obtain ⟨r, hrw⟩ := slotRole_some hsr
+    have := roleAt_lt hrw
+    have hlen : h.length = (entries W).length := by simpa using hh.1.1
+    omega
+  | _ => simp [Footprints.spineOf, Footprints.fieldsOf] at hs
+
+private theorem indexPaths_defined {limit : Nat} {k : Knowledge} {ρ h s p}
+    (hm : (s, p) ∈ indexPaths limit k) (hk : Holds k ε ρ h) :
+    ∃ w, readPath h (ρ s) p = some w := by
+  have hm' := List.mem_eraseDups.mp hm
+  obtain ⟨a, ha, hfa⟩ := List.mem_flatMap.mp hm'
+  split at hfa
+  · cases hfa
+  · rename_i hnone
+    have hnone' : a.cond = none := by cases hc : a.cond <;> simp_all
+    have hF := hk.2.2.2.2.2 a ha fun b hb => by rw [hnone'] at hb; cases hb
+    cases hof : a.fact with
+    | linear F =>
+      rw [hof] at hfa hF
+      obtain ⟨t, ht, htm⟩ := List.mem_filterMap.mp hfa
+      split at htm
+      · rename_i hc
+        simp only [Option.some.injEq, Prod.mk.injEq] at htm
+        obtain ⟨rfl, rfl⟩ := htm
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+        obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
+        rw [termValue_now hc.1.1.1] at hz
+        obtain ⟨w, hw, -⟩ := Option.bind_eq_some_iff.mp hz
+        exact ⟨w, hw⟩
+      · cases htm
+    | spineApart s1 p1 s2 p2 =>
+      rw [hof] at hfa hF
+      obtain ⟨u, w, hu, hw, -⟩ := hF
+      rcases List.mem_append.mp hfa with h1 | h2
+      · split at h1
+        · simp only [List.mem_singleton, Prod.mk.injEq] at h1
+          obtain ⟨rfl, rfl⟩ := h1; exact ⟨u, hu⟩
+        · cases h1
+      · split at h2
+        · simp only [List.mem_singleton, Prod.mk.injEq] at h2
+          obtain ⟨rfl, rfl⟩ := h2; exact ⟨w, hw⟩
+        · cases h2
+    | every s1 p1 _ _ =>
+      simp only [hof] at hfa
+      rw [hof] at hF
+      obtain ⟨w, -, -, -, hw, -⟩ := hF
+      split at hfa
+      · simp only [List.mem_singleton, Prod.mk.injEq] at hfa
+        obtain ⟨rfl, rfl⟩ := hfa; exact ⟨w, hw⟩
+      · cases hfa
+    | _ => simp only [hof] at hfa; cases hfa
+
+theorem freshSpineApart_holds {limit : Nat} {k : Knowledge} {ρ n W h} {u : Val} {vs : List Val} {lu : Nat}
+    (hk : Holds k ε ρ h) (hh : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hsp : Footprints.spineOf u = some lu) (hge : h.length ≤ lu) :
+    IndexHolds ε (freshSpineApart limit k) (push u ρ) (h ++ vs) := by
+  intro a ha _
+  obtain ⟨⟨s, p⟩, hmem, rfl⟩ := List.mem_map.mp ha
+  dsimp only
+  obtain ⟨w, hw⟩ := indexPaths_defined hmem hk
+  have hw' : readPath (h ++ vs) (ρ s) p = some w := readPath_extend vs hw
+  refine ⟨u, w, rfl, hw', fun s1 s2 hs1 hs2 => ?_⟩
+  rw [hsp] at hs1; cases hs1
+  have hrb := refsOk_readPath_extend hh vs (hρ s) hw'
+  have hlt := refsOk_spineOf_lt hh hrb hs2
+  omega
+
 theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post}
     {ρ n W h t k}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h) (hρ : RootsOk W ρ)
     (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
     SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (regionAtoms G Γ k t) (push u ρ) h')
       n W h (instantiate 0 ρ t) := by
@@ -2234,26 +2364,32 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           · exact hval proto hproto) rfl) .refl
       refine weaken (fun heap u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
-      refine ⟨hq, fun a ha _ => ?_⟩
-      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp ha
-      obtain ⟨hcy, hap⟩ := rawPartners_sound hy hk
-      obtain ⟨st, ls, hst, hls, hlt, hbelow⟩ := arraySlot_region hcy he hh
-      obtain ⟨sa, xs, sb, ys, hra, hrb, hsep⟩ := hap
-      obtain ⟨e1, e2⟩ := regionOf_unique hra (.inl ⟨rfl, hcells⟩)
-      obtain ⟨e3, e4⟩ := regionOf_unique hrb (.inr ⟨st, rfl, hst, hls⟩)
-      rw [e1, e2, e3, e4] at hsep
-      have hlen : (h ++ [ρ 0, ρ proto] ++ [Tm.nul])[h.length]? = some (.arr cells) := by
-        simp [hcells]
-      refine ⟨some h.length, cells, some st, ls,
-        .inr ⟨h.length, rfl, by simp [push, Footprints.spineOf, Footprints.fieldsOf, slots], hlen⟩,
-        .inr ⟨st, rfl, hst, by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hls⟩,
-        fun l hl m hm => ?_⟩
-      rcases hl with hl | hl
-      · cases hl
-        rcases hm with hm | hm
-        · cases hm; omega
-        · have := hbelow m hm; omega
-      · exact hsep l (.inr hl) m hm
+      refine ⟨hq, fun a ha hcond => ?_⟩
+      rcases List.mem_append.mp ha with ha | ha
+      · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp ha
+        obtain ⟨hcy, hap⟩ := rawPartners_sound hy hk
+        obtain ⟨st, ls, hst, hls, hlt, hbelow⟩ := arraySlot_region hcy he hh
+        obtain ⟨sa, xs, sb, ys, hra, hrb, hsep⟩ := hap
+        obtain ⟨e1, e2⟩ := regionOf_unique hra (.inl ⟨rfl, hcells⟩)
+        obtain ⟨e3, e4⟩ := regionOf_unique hrb (.inr ⟨st, rfl, hst, hls⟩)
+        rw [e1, e2, e3, e4] at hsep
+        have hlen : (h ++ [ρ 0, ρ proto] ++ [Tm.nul])[h.length]? = some (.arr cells) := by
+          simp [hcells]
+        refine ⟨some h.length, cells, some st, ls,
+          .inr ⟨h.length, rfl, by simp [push, Footprints.spineOf, Footprints.fieldsOf, slots], hlen⟩,
+          .inr ⟨st, rfl, hst, by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hls⟩,
+          fun l hl m hm => ?_⟩
+        rcases hl with hl | hl
+        · cases hl
+          rcases hm with hm | hm
+          · cases hm; omega
+          · have := hbelow m hm; omega
+        · exact hsep l (.inr hl) m hm
+      · rw [List.append_assoc]
+        exact freshSpineApart_holds (ε := ε)
+          (u := .objAt (slots h.length [arraySpineKey, CallArguments.protoField]) .absent (h.length + 2))
+          (lu := h.length) hk hh hρ
+          (by simp [Footprints.spineOf, Footprints.fieldsOf, slots]) (Nat.le_refl _) a ha hcond
     · exact none_holds
   · rename_i es s p proto
     split
@@ -2303,7 +2439,17 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         rcases hl with hl | hl
         · cases hl; simp [heap]
         · exact elemSlots_above _ _ l hl)
-      simpa only [heap, List.append_assoc] using hf
+      have hsf := freshSpineApart_holds (ε := ε) (limit := Γ.length) (k := k)
+        (u := .objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2))
+        (vs := vs ++ [spine, (push spine ρ) proto] ++ [.nul]) (lu := heap.length) hk hh hρ
+        (by simp [Footprints.spineOf, Footprints.fieldsOf, slots]) (by simp [heap])
+      have hcomb : IndexHolds ε (freshApart G Γ ++ freshSpineApart Γ.length k)
+          (push (.objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
+          (h ++ (vs ++ [spine, (push spine ρ) proto] ++ [.nul])) := fun a ha hcond => by
+        rcases List.mem_append.mp ha with ha | ha
+        · exact hf a ha hcond
+        · exact hsf a ha hcond
+      simpa only [heap, List.append_assoc] using hcomb
     · exact none_holds
   · exact none_holds
 
@@ -3333,7 +3479,7 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     refine weaken (fun _ _ hr =>
       let hq := hr.1; ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
       hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_) hr.2⟩)
-      (IndexWrites.regionAtoms_holds he hk hh (IndexWrites.literalArrayAtoms_holds he hk hh hs))
+      (IndexWrites.regionAtoms_holds he hk hh hρ (IndexWrites.literalArrayAtoms_holds he hk hh hs))
     · split
       · exact hr.1.1.2.2.2.1
       · have hp := hr.1.2.2

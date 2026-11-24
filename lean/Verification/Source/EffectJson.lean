@@ -107,16 +107,19 @@ structure StatedEffect where
   onThrow : Bool
   fresh : Bool
   regions : List Footprints.ArgumentSpineRegion
+  retAlias : Option Nat := none
   deriving Repr, DecidableEq
 
-/-- **The exits a statement states** (`Exits.ofStated`). -/
+/-- **The exits a statement states** (`Exits.ofStated`), with any return-alias
+postcondition (`IndexFact.same 0 (p + 1)`) attached to the normal exit. -/
 def StatedEffect.exits (s : StatedEffect) : Exits ExitSchema :=
-  Exits.ofStated s.closed s.onThrow s.fresh [] s.regions
+  Exits.ofStated s.closed s.onThrow s.fresh
+    (match s.retAlias with | some p => [.same 0 (p + 1)] | none => []) s.regions
 
 /-- **The effect a statement states** (`Effect.ofStated`), with the
 precondition `pre` its declaration states and no promise. -/
 def StatedEffect.effect (s : StatedEffect) (pre : List HeapKnowledge.IndexFact := []) : Effect :=
-  Effect.ofStated s.closed none s.onThrow s.fresh pre [] s.regions
+  { Effect.ofStated s.closed none s.onThrow s.fresh pre [] s.regions with exits := s.exits }
 
 theorem StatedEffect.effect_exits (s : StatedEffect) (pre : List HeapKnowledge.IndexFact) :
     (s.effect pre).exits = s.exits := rfl
@@ -130,14 +133,17 @@ def spineRegionOf : Footprints.Region × Footprints.Change → Option Footprints
   | _ => none
 
 /-- **The statement whose exits these are**, where there is one: the normal
-frame's class bound and spine regions, the fresh result, and a throw within
-the frame where the exceptional exit is the normal frame and the frame is no
-`⊤`. A statement is exactly such exits (checked: the statement's exits are
-the exits read); others are refused. -/
+frame's class bound and spine regions, the fresh result, optional return-alias
+transport, and a throw within the frame where the exceptional exit is the normal
+frame and the frame is no `⊤`. A statement is exactly such exits (checked: the
+statement's exits are the exits read); others are refused. -/
 def StatedEffect.ofExits (x : Exits ExitSchema) : Except String StatedEffect :=
   let Φ := x.normal.frame
+  let retAlias := x.normal.facts.findSome? fun
+    | .same 0 (p + 1) => some p
+    | _ => none
   let s : StatedEffect := ⟨Φ.classBound, decide (x.exceptional = ⟨Φ, []⟩) && !decide (Φ = Parity.topEffect),
-    decide (Parity.FormulaF.operation (.freshSpine 0) ∈ x.normal.ensures), Φ.filterMap spineRegionOf⟩
+    decide (Parity.FormulaF.operation (.freshSpine 0) ∈ x.normal.ensures), Φ.filterMap spineRegionOf, retAlias⟩
   if s.exits = x then .ok s
   else .error "a statement states a closed frame with spine regions, a throw within it or none, and a fresh result"
 
@@ -154,21 +160,30 @@ without spine regions, `top` with them. -/
 def StatedEffect.footprint (s : StatedEffect) : Footprints.Closed :=
   if s.regions.isEmpty then s.closed else .top
 
-/-- **A claim's exits**: a closed frame on a normal return, and on a throw
+/-- **A claim's exits**: a closed frame on a normal return (with any proposed
+return-alias postcondition `IndexFact.same 0 (p + 1)`), and on a throw
 the same frame where `onThrow`, `⊤` otherwise (`Exits.ofClosed`). -/
-def classExits (c : Footprints.Closed) (onThrow : Bool) : Exits ExitSchema := Exits.ofClosed c onThrow
+def classExits (c : Footprints.Closed) (onThrow : Bool) (retAlias : Option Nat := none) : Exits ExitSchema :=
+  let x := Exits.ofClosed c onThrow
+  match retAlias with
+  | some p => { x with normal := { x.normal with
+      ensures := [.operation (.fact .after 0 (.same 0 (p + 1)))] } }
+  | none => x
 
-/-- **The closed frame and throw flag of a claim's exits**, where they are
-such exits (checked: `classExits` of the result is the exits read); a throw
-flag at the frame `⊤`, which states no exit of its own, reads as unset. -/
-def classOfExits (x : Exits ExitSchema) : Except String (Footprints.Closed × Bool) :=
+/-- **The closed frame, throw flag, and optional return-alias of a claim's exits**,
+where they are such exits (checked: `classExits` of the result is the exits read);
+a throw flag at the frame `⊤`, which states no exit of its own, reads as unset. -/
+def classOfExits (x : Exits ExitSchema) : Except String (Footprints.Closed × Bool × Option Nat) :=
   let c := x.normal.frame.classBound
-  let t := decide (x.exceptional = x.normal) && !decide (c = .top)
-  if classExits c t = x then .ok (c, t)
+  let retAlias := x.normal.facts.findSome? fun
+    | .same 0 (p + 1) => some p
+    | _ => none
+  let t := decide (x.exceptional = ⟨x.normal.frame, []⟩) && !decide (c = .top)
+  if classExits c t retAlias = x then .ok (c, t, retAlias)
   else .error "a claim states a closed frame, and a throw within it or none"
 
-theorem classOfExits_sound {x : Exits ExitSchema} {c : Footprints.Closed} {t : Bool}
-    (h : classOfExits x = .ok (c, t)) : classExits c t = x := by
+theorem classOfExits_sound {x : Exits ExitSchema} {c : Footprints.Closed} {t : Bool} {ra : Option Nat}
+    (h : classOfExits x = .ok (c, t, ra)) : classExits c t ra = x := by
   unfold classOfExits at h
   dsimp only at h
   split at h

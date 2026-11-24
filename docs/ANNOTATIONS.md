@@ -9,7 +9,8 @@ the JavaScript is the same with and without it.
 JSDoc tags whose text is a clause of
 [the clause language](ARITHMETIC.md#the-clause-language): `safeInteger(p)`,
 linear comparisons over integers, paths `x.f` and lengths `p.length`, `&&`,
-`||` and `!`, guards such as `p === null || …`, a closing quantified atom
+`||` and `!`, guards such as `p === null || …` or `p !== null || …` (testing
+`null`, `undefined`, `true`, or `false`), a closing quantified atom
 `forall i in xs: …`, and `p !== q` of two arrays, whose spines differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
 lists what each tag may name.
 

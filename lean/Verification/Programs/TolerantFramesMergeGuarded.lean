@@ -101,7 +101,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
       simp only [termValuation, heq t ht]
   | guarded s p t B ih =>
     intro ⟨w, hw, hB⟩
-    have hB' : w = t.val ∨ (B.lowerRead c f v).HoldsAt ε ρ h := hB.imp id (ih ·)
+    have hB' : t.holds w ∨ (B.lowerRead c f v).HoldsAt ε ρ h := hB.imp id (ih ·)
     cases p with
     | nil => exact ⟨w, hw, hB'⟩
     | cons g q =>
@@ -113,7 +113,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
         obtain ⟨rfl, rfl⟩ := hc
         exact ⟨w, by rw [← guardReads_read hl hm q]; exact hw, hB'⟩
       · exact ⟨w, hw, hB'⟩
-  | index | length | bound | int | pastSafe | either | element | every | apart | spineApart =>
+  | index | length | bound | int | pastSafe | either | element | every | apart | spineApart | same =>
     intro hB; exact hB
 
 /-- **The lowered guards hold** where the atoms and the links do. -/

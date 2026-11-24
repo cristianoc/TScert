@@ -1301,10 +1301,11 @@ handle's or the record's type, which these casts do not meet
 
 ## Guarded clauses
 
-A [precondition](#preconditions) or a [type invariant](#type-invariants) may
-start with **guards** ([the grammar](#the-clause-language)'s $`G`$), each a
-test that its path reads `null` or `undefined`; `undefined` names the
-primitive value. Each path after a guard is
+A [precondition](#preconditions), [postcondition](#postconditions), or
+[type invariant](#type-invariants) may start with **guards**
+([the grammar](#the-clause-language)'s $`G`$), each a test `p === t` or
+`p !== t` against `null`, `undefined`, `true`, or `false`; `undefined` names
+the primitive value. Each path after a guard is
 resolved where the guards before it fail: the type at a guarded prefix is its
 type without the tag's arm, and an optional field is read where `undefined`
 is excluded of it, or, at a guard's own path, where the guard tests

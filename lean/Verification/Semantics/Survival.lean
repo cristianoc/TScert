@@ -477,7 +477,7 @@ inductive FactSupport where
 the one the evidence's form gives the fact, the parts' checked by theirs; a
 quantified fact's body reads no element's fields. -/
 def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSupport → Bool
-  | .index _, S, .slots | .int _, S, .slots | .pastSafe _, S, .slots => S.isEmpty
+  | .index _, S, .slots | .int _, S, .slots | .pastSafe _, S, .slots | .same _ _, S, .slots => S.isEmpty
   | .length x _, S, .length => S == spineRead c x [] .keep
   | .bound x _ _, S, .bound => S == spineRead c x [] .grow
   | .linear F, S, .linear => S == linearSupport c F
@@ -496,7 +496,7 @@ theorem FactSupport.check_sound (c : ReadContext) :
       Supports c.Holds (F.HoldsAt ε) S := by
   intro F
   induction F with
-  | index k | int k | pastSafe k =>
+  | index k | int k | pastSafe k | same _ _ =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, List.isEmpty_iff, Bool.false_eq_true] at hS
     subst hS
@@ -639,7 +639,7 @@ body's terms; an element fact its spine and element cells at `keep`
 the note gives a term $`z[t].\vec f`$ no support. -/
 def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext) :
     IndexFact → Option (Footprint × FactSupport)
-  | .index _ | .int _ | .pastSafe _ => some ([], .slots)
+  | .index _ | .int _ | .pastSafe _ | .same _ _ => some ([], .slots)
   | .length x _ => some (spineRead c x [] .keep, .length)
   | .bound x _ _ => some (spineRead c x [] .grow, .bound)
   | .linear F => some (linearSupport c F, .linear)

@@ -473,10 +473,12 @@ def kindOf (j : Json) : Except String HeapKnowledge.Term.Kind := do
 
 def guardJ : GuardTag → Json
   | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
+  | .notNull => "notNull" | .notUndef => "notUndefined" | .notTru => "notTrue" | .notFls => "notFalse"
 
 def guardOf (j : Json) : Except String GuardTag := do
   match ← strOf j with
   | "null" => pure .null | "undefined" => pure .undef | "true" => pure .tru | "false" => pure .fls
+  | "notNull" => pure .notNull | "notUndefined" => pure .notUndef | "notTrue" => pure .notTru | "notFalse" => pure .notFls
   | g => throw s!"'{g}' is no guard tag"
 
 @[simp] theorem guardOf_guardJ (g : GuardTag) : guardOf (guardJ g) = .ok g := by cases g <;> rfl
@@ -897,6 +899,7 @@ def factJ : IndexFact → Json
   | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
   | .spineApart a p b q => tagged "spineApart"
       (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
+  | .same a b => tagged "same" (obj ["slot", "other"] [natJ a, natJ b])
 
 def factOf : Nat → Json → Except String IndexFact
   | 0, _ => .error "a fact nested beyond the limit"
@@ -942,6 +945,9 @@ def factOf : Nat → Json → Except String IndexFact
       let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "spineApart"
       pure (.spineApart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
         (← under "otherPath" (listOf strOf q)))
+    | "same" => do
+      let [a, b] ← fields v ["slot", "other"] | throw "same"
+      pure (.same (← under "slot" (natOf a)) (← under "other" (natOf b)))
     | _ => throw "no index fact"
 
 theorem factOf_factJ (F : IndexFact) : ∀ n, factDepth F ≤ n → factOf n (factJ F) = .ok F := by
@@ -1406,7 +1412,7 @@ private def sample : Effect :=
       .operation (.freshSpine 0)]⟩⟩,
     some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
     [.every 1 ["x"] (.now .length 1 ["x"]) [.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))],
-      .apart 1 2]⟩
+      .apart 1 2, .same 0 2]⟩
 
 -- An assertion-arena reference does not serialize, at any depth.
 #guard !serializable { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }

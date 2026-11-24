@@ -300,6 +300,7 @@ structure VisitRecord where
   certificate : StepCertificate
   grades : StepGrades
   outFresh : Bool
+  returnAliases : List Nat := []
 
 /-- What the pass counts. -/
 structure Counts where
@@ -962,6 +963,17 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
 
+/-- Whether a step reads every fact in the store: constructions (whose view
+lengths may follow from facts their operands do not reach) and array object
+allocations (whose fresh spine is separated from existing field paths named in
+the store's index facts, `IndexWrites.freshSpineApart`). -/
+def wholeStepOf : Tm → Bool
+  | .construct .. => true
+  | .makeAt .absent [s, p] [.var 0, .var _] => s == arraySpineKey && p == CallArguments.protoField
+  | .letE (.arrLit _) (.makeAt .absent [s, p] [.var 0, .var _]) =>
+      s == arraySpineKey && p == CallArguments.protoField
+  | _ => false
+
 /-- **A refused step's preconditions** at node `l`'s step from the state
 `entry` (its claim `c`, the slots `ms` its expression reads), over the
 facts the step reads (`materialize` and `expandLinks`, as `checkedStep`
@@ -975,7 +987,7 @@ refusal is printed. -/
 def stepPreconditionsAt (G : NormalGraph ι) (c : PointClaim ι) (node : Node) (entry : State) (ms : List Nat) :
     Option StepPreconditions := do
   let t := node.expression
-  let whole := match t with | .construct .. => true | _ => false
+  let whole := wholeStepOf t
   let facts := fun (_ : Unit) =>
     let (k, _, _) := materialize entry c.context.length ms whole
     KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
@@ -1509,7 +1521,7 @@ def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.Index
   | .guarded (s + 1) p tag B =>
     (startIdentities B).map fun (c, r) => (c ++ (c.getLast?.map (.guarded s p tag ·)).toList, r)
   | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .apart _ _
-  | .spineApart _ _ _ _ => []
+  | .spineApart _ _ _ _ | .same _ _ => []
 
 /-- The start's identity facts (`startIdentities`) for the postcondition
 `ens`: of each statement list, the first the entry facts entail
@@ -2310,9 +2322,8 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     stats := { stats with copies := stats.copies + 1 }
     result := x
   | none =>
-    -- A construction reads every fact: its result's facts (a typed array's
-    -- view length) follow from facts its operands' names do not reach.
-    let wholeStep := match node.expression with | .construct .. => true | _ => false
+    -- A construction or array object allocation reads every fact (`wholeStepOf`).
+    let wholeStep := wholeStepOf node.expression
     -- A test, a conditional or a read of a slot reads the facts over its
     -- names and their aliases; a step that may need an entailment over
     -- them also reads the linear facts they chain through.
@@ -3039,25 +3050,42 @@ def boundOk (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEn
           | none => false) ret
         (outFreshOf G images codes sums c node entry stepK deriv)
 
+/-- Input indices `q` whose entry value (`startNames[q]`) is aliased by the
+returned value `result` in `store` at a return node (`node.continuation == .ret`),
+using the same materialization and alias closure as `returnCheck`. -/
+def returnAliasesAt (G : NormalGraph ι) (c : PointClaim ι) (node : Node)
+    (entry : State) (store : Store) (result : Nat) (startNames : List Nat) : List Nat :=
+  if node.continuation != .ret then []
+  else if ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·) then []
+  else
+    let width := c.context.length
+    let tracked : List (Nat × Nat) := startNames.zipIdx.filterMap fun (nm, q) =>
+      (entry.names.idxOf? nm).map (·, q)
+    if tracked.isEmpty then [] else
+    let (k, _, _) := materialize { names := result :: entry.names, store } (width + 1) (0 :: tracked.map (·.1 + 1)) false
+    let al := HeapLinks.aliases k.links 0
+    tracked.filterMap fun (j, q) => if al.contains (j + 1) then some q else none
+
 /-- **A visit's record** at label `l`: its step's local certificate
 (`stepCertificate`) at the fresh slots, over the read summaries `sums` the
 step left, its facts `stepK` and its derivation `deriv`, the grades it
-projects to, and its result's freshness `outFresh`. -/
+projects to, its result's freshness `outFresh`, and any input indices the
+returned value aliases at a return node (`returnAliases`). -/
 def VisitRecord.of (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
-    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) : VisitRecord :=
+    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) (returnAliases : List Nat := []) : VisitRecord :=
   let q := stepCertificate G images codes sums (recvFresh node entry) c node stepK deriv
-  { label := l, certificate := q, grades := q.grades, outFresh }
+  { label := l, certificate := q, grades := q.grades, outFresh, returnAliases }
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **A record's grades are its certificate's projection**, the grades the
 step's rules grant (proved, `stepCertificate_grades`). -/
 theorem VisitRecord.of_grades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
-    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) :
-    (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).grades =
-        (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).certificate.grades ∧
-      (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).grades =
+    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) (returnAliases : List Nat := []) :
+    (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh returnAliases).grades =
+        (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh returnAliases).certificate.grades ∧
+      (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh returnAliases).grades =
         stepGrades G images codes sums (recvFresh node entry) c node stepK deriv :=
   ⟨rfl, stepCertificate_grades ..⟩
 
@@ -3098,12 +3126,13 @@ same read summaries, at the freshness `outFreshOf` computes over them;
 `footprintCheck_eq_admits`). -/
 theorem boundOk_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (B : RunBound) (deadArr : Array Bool) (l : Nat) (node : Node) (c : PointClaim ι)
-    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
+    (returnAliases : List Nat) :
     boundOk G images codes (some B) deadArr l node c entry sums stepK deriv =
       (VisitRecord.of G images codes l node c entry sums stepK deriv
-        (outFreshOf G images codes sums c node entry stepK deriv)).admitsAt G node c B deadArr := by
+        (outFreshOf G images codes sums c node entry stepK deriv) returnAliases).admitsAt G node c B deadArr := by
   obtain ⟨⟨Φ, Ψ⟩, ret⟩ := B
-  simp only [boundOk, VisitRecord.admitsAt, (VisitRecord.of_grades ..).2, footprintCheck_eq_admits]
+  simp only [boundOk, VisitRecord.admitsAt, (VisitRecord.of_grades (returnAliases := returnAliases) ..).2, footprintCheck_eq_admits]
   rfl
 
 /-- A step's yields checked (`checkedYields`) at the node's claim, the
@@ -3225,9 +3254,9 @@ is `boundOk` and nothing is recorded (`stepCheck_fst`: the check is
 `boundOk` either way). -/
 def stepCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
     (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
-    (outFresh : Bool) : Bool × Option VisitRecord :=
+    (outFresh : Bool) (retAliases : Unit → List Nat) : Bool × Option VisitRecord :=
   if env.grading then
-    let r := VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! entry sums stepK deriv outFresh
+    let r := VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! entry sums stepK deriv outFresh (retAliases ())
     (match env.bound with
       | none => true
       | some B => r.admitsAt G env.nodes[l]! env.claimed[l]! B env.deadArr, some r)
@@ -3237,15 +3266,16 @@ omit [Instantiates ι] in
 /-- **The check a visit makes is `boundOk`, grading or not** (proved, by
 `boundOk_eq_admits`), where the freshness given is the step's. -/
 theorem stepCheck_fst (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
-    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
+    (retAliases : Unit → List Nat) :
     (stepCheck G images env l entry sums stepK deriv
-        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv)).1 =
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) retAliases).1 =
       boundOk G images env.codes env.bound env.deadArr l env.nodes[l]! env.claimed[l]! entry sums stepK deriv := by
   unfold stepCheck
   split
   · cases hb : env.bound with
     | none => rfl
-    | some B => simp only [boundOk_eq_admits]
+    | some B => exact (boundOk_eq_admits G images env.codes B env.deadArr l env.nodes[l]! env.claimed[l]! entry sums stepK deriv (retAliases ())).symm
   · rfl
 
 /-- What a node's step gives its exits and its record: the answers it
@@ -3307,6 +3337,7 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       let sums := a.summaries.toList
       let outFresh := outFreshOf G images env.codes sums c node entry st.stepK deriv
       let checked := stepCheck G images env l entry sums st.stepK deriv outFresh
+        (fun _ => returnAliasesAt G c node entry st.store st.result env.startNames)
       let bounded := checked.1
       let record := checked.2
       if !bounded then .error (WalkStop.mk (.outsideBound l) counts a trace)
