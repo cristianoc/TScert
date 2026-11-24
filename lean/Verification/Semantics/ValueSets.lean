@@ -1,5 +1,6 @@
 import Verification.Semantics.HeapAtoms
 import Verification.Semantics.CanonicalLists
+import Std.Data.HashSet
 
 /-! Value sets: what a heap fact states of a value, one component per kind
 of value (heap-knowledge draft, §2). A primitive component is a set of
@@ -52,6 +53,28 @@ theorem mem_these (xs : List α) (x : α) : (these xs).mem x = xs.contains x := 
 theorem mem_join (l m : Lit α) (x : α) : (join l m).mem x = (l.mem x || m.mem x) := by
   cases l <;> cases m <;> simp [join, mem, Bool.or_comm] <;>
     (rename_i a b; cases decide (x ∈ a) <;> cases decide (x ∈ b) <;> rfl)
+
+/-- `join`, each membership test of a list answered by a hash set of it
+(`joinHash_eq`): linear in the lists' lengths where `join` is quadratic. -/
+def joinHash [Hashable α] : Lit α → Lit α → Lit α
+  | these a, these b => let s := Std.HashSet.ofList a; these (a ++ b.filter (!s.contains ·))
+  | these a, allBut b => let s := Std.HashSet.ofList a; allBut (b.filter (!s.contains ·))
+  | allBut a, these b => let s := Std.HashSet.ofList b; allBut (a.filter (!s.contains ·))
+  | allBut a, allBut b => let s := Std.HashSet.ofList b; allBut (a.filter (s.contains ·))
+
+theorem joinHash_eq [Hashable α] (l m : Lit α) : joinHash l m = join l m := by
+  cases l <;> cases m <;> simp [joinHash, join, Std.HashSet.contains_ofList]
+
+/-- `meet`, each membership test of a list answered by a hash set of it
+(`meetHash_eq`). -/
+def meetHash [Hashable α] : Lit α → Lit α → Lit α
+  | these a, these b => let s := Std.HashSet.ofList b; these (a.filter (s.contains ·))
+  | these a, allBut b => let s := Std.HashSet.ofList b; these (a.filter (!s.contains ·))
+  | allBut a, these b => let s := Std.HashSet.ofList a; these (b.filter (!s.contains ·))
+  | allBut a, allBut b => let s := Std.HashSet.ofList a; allBut (a ++ b.filter (!s.contains ·))
+
+theorem meetHash_eq [Hashable α] (l m : Lit α) : meetHash l m = meet l m := by
+  cases l <;> cases m <;> simp [meetHash, meet, Std.HashSet.contains_ofList]
 
 theorem mem_meet (l m : Lit α) (x : α) : (meet l m).mem x = (l.mem x && m.mem x) := by
   cases l <;> cases m <;> simp [meet, mem, Bool.and_comm] <;>
@@ -272,9 +295,25 @@ def join (a b : ValueSet) : ValueSet :=
   ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
     a.num.join b.num, a.str.join b.str, a.big.join b.big, a.obj.join b.obj⟩
 
+/-- `join`, its literal components joined by hashing (`Lit.joinHash`). -/
+def joinHash (a b : ValueSet) : ValueSet :=
+  ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
+    a.num.joinHash b.num, a.str.joinHash b.str, a.big.joinHash b.big, a.obj.join b.obj⟩
+
+@[csimp] theorem join_eq_hash : @join = @joinHash := by
+  funext a b; simp only [join, joinHash, Lit.joinHash_eq]
+
 def meet (a b : ValueSet) : ValueSet :=
   ⟨a.nul && b.nul, a.undef && b.undef, a.tru && b.tru, a.fls && b.fls, a.sym && b.sym, a.arr && b.arr,
     a.num.meet b.num, a.str.meet b.str, a.big.meet b.big, a.obj.meet b.obj⟩
+
+/-- `meet`, its literal components met by hashing (`Lit.meetHash`). -/
+def meetHash (a b : ValueSet) : ValueSet :=
+  ⟨a.nul && b.nul, a.undef && b.undef, a.tru && b.tru, a.fls && b.fls, a.sym && b.sym, a.arr && b.arr,
+    a.num.meetHash b.num, a.str.meetHash b.str, a.big.meetHash b.big, a.obj.meet b.obj⟩
+
+@[csimp] theorem meet_eq_hash : @meet = @meetHash := by
+  funext a b; simp only [meet, meetHash, Lit.meetHash_eq]
 
 def le (a b : ValueSet) : Bool :=
   (!a.nul || b.nul) && (!a.undef || b.undef) && (!a.tru || b.tru) && (!a.fls || b.fls) &&
