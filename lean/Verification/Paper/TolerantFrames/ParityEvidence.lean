@@ -628,7 +628,7 @@ def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : 
   ∀ η m s, Sat arena η m s K → ∀ l, l < s.h.length → r.mem η s.h l = true → r'.mem η s.h l = false
 
 /-- Finite evidence of disjointness under `K`: regions in class regions
-whose bounds hold no role class in common (`Region.bound`,
+whose bounds hold no location kind in common (`Region.bound`,
 `Region.cls_apart_of_bound`), each class by a witness; the
 spines of two paths a conjunct separates (`π # π'` or `apart`); the cells of
 two paths a conjunct states apart; and either of these in the other order. -/

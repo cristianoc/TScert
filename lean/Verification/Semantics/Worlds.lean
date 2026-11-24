@@ -5,9 +5,10 @@ import Verification.Semantics.SafeIntegers
 A **world** says what each location is *for*: each location has a **role**,
 fixed for its life, and a **contract**. The model of the note *Tolerant
 frames* (§§2–3) partitions a heap's locations by kind (field locations F,
-cells C, element cells E, spine locations S, identity locations I): the role
-refines the kind, and a location receives it when the typing rule that
-justifies its allocation extends the world (docs/drafts/location-kinds.md).
+cells C, element cells E, array and view spine locations S, identity
+locations I): the role refines the kind, and a location receives it when the
+typing rule that justifies its allocation extends the world
+(docs/drafts/location-kinds.md).
 
 A contract must be able to judge values against worlds, so worlds and
 contracts are mutually dependent. The circularity is broken by stratifying on
@@ -35,12 +36,27 @@ demands of its contents (`Shape`); `Semantics/Heaps.lean` relates a heap to a
 world by both.
 -/
 namespace Verification
-/-! ## Kinds and roles -/
+/-! ## Kinds, roles and categories
 
-/-- The five kinds of location. -/
+A location's **role** (`Role`) is fixed at its allocation and carries its
+parameters: a field's or cell's property key, or a spine's form (array spine
+or view spine of a fixed format and length). Dropping those parameters gives
+the six **kinds** (`Kind`, `Role.kind`): field, cell, element cell, array
+spine, view spine and identity. Grouping the non-spine kinds gives the three
+**categories** (`Category`, `Kind.category`, `Role.category`): value, array
+and view. A region's bound is a set of kinds (`KindSet`, `Region.bound` in
+`Semantics/RegionBounds.lean`). -/
+
+/-- The six kinds of location: field, cell, element cell, array spine, view
+spine and identity. -/
 inductive Kind where
-  | field | cell | elem | spine | identity
+  | field | cell | elem | arraySpine | viewSpine | identity
   deriving DecidableEq, Repr
+
+/-- Whether a kind is a spine kind: an array spine or a view spine. -/
+def Kind.isSpine : Kind → Bool
+  | .arraySpine | .viewSpine => true
+  | _ => false
 
 /-- The two forms of a spine location (the note *Tolerant frames*, §2,
 `array` and `view_N`): an array's spine, or a typed array's view
@@ -60,11 +76,14 @@ inductive Role where
   | identity
   deriving DecidableEq, Repr
 
+/-- A role's kind: property keys and a view spine's format and length are
+dropped. -/
 def Role.kind : Role → Kind
   | .field _ => .field
   | .cell _ => .cell
   | .elem => .elem
-  | .spine _ => .spine
+  | .spine .array => .arraySpine
+  | .spine (.view ..) => .viewSpine
   | .identity => .identity
 
 /-- A role's key: a field's or a cell's, none for an element cell, a spine or
@@ -76,60 +95,37 @@ def Role.key? : Role → Option PropKey
 /-- The three categories of a location (the note *Tolerant frames*, §3, the
 class regions): value locations (field, cell, element and identity
 locations), array spines and view spines. They partition the locations: a
-role has exactly one, fixed with the role. -/
+kind has exactly one, fixed with the role. -/
 inductive Category where
   | value
   | array
   | view
   deriving DecidableEq, Repr
 
-/-- A role's category, independent of the location's contents. -/
-def Role.category : Role → Category
-  | .spine .array => .array
-  | .spine (.view ..) => .view
-  | .field _ | .cell _ | .elem | .identity => .value
-
-/-- A spine location's category is a spine's: an array's or a view's. -/
-theorem Role.category_spine {r : Role} : r.kind = .spine ↔ r.category ≠ .value := by
-  cases r with
-  | spine f => cases f <;> simp [Role.kind, Role.category]
-  | _ => simp [Role.kind, Role.category]
-
-/-! ## Role classes
-
-A **role class** is a role without its parameters: field, cell, element
-cell, array spine, view spine, identity. It refines both the five kinds
-(`Role.kind`) and the three categories (`Role.category`). A region's bound
-is a set of role classes (`Region.bound`, `Semantics/RegionBounds.lean`). -/
-
-/-- The six classes of role. -/
-inductive RoleClass where
-  | field | cell | elem | arraySpine | viewSpine | identity
-  deriving DecidableEq, Repr
-
-/-- A role's class: a view spine's format and length are dropped. -/
-def Role.cls : Role → RoleClass
-  | .field _ => .field
-  | .cell _ => .cell
-  | .elem => .elem
-  | .spine .array => .arraySpine
-  | .spine (.view ..) => .viewSpine
-  | .identity => .identity
-
-/-- A role class's category. -/
-def RoleClass.category : RoleClass → Category
+/-- A kind's category. -/
+def Kind.category : Kind → Category
   | .arraySpine => .array
   | .viewSpine => .view
   | .field | .cell | .elem | .identity => .value
 
-/-- **A role's category is its class's.** -/
-@[simp] theorem Role.cls_category (r : Role) : r.cls.category = r.category := by
-  cases r with
-  | spine f => cases f <;> rfl
-  | _ => rfl
+/-- A role's category, independent of the location's contents. -/
+def Role.category (r : Role) : Category := r.kind.category
 
-/-- A set of role classes, one bit per class. -/
-structure RoleSet where
+/-- **A role's category is its kind's.** -/
+@[simp] theorem Role.kind_category (r : Role) : r.kind.category = r.category := rfl
+
+/-- A spine kind's category is a spine's: an array's or a view's. -/
+theorem Kind.isSpine_iff_category {k : Kind} : k.isSpine = true ↔ k.category ≠ .value := by
+  cases k <;> simp [Kind.isSpine, Kind.category]
+
+/-- A spine location's category is a spine's: an array's or a view's. -/
+theorem Role.category_spine {r : Role} : r.kind.isSpine = true ↔ r.category ≠ .value :=
+  Kind.isSpine_iff_category
+
+/-! ## Sets of kinds -/
+
+/-- A set of location kinds, one bit per kind. -/
+structure KindSet where
   field : Bool
   cell : Bool
   elem : Bool
@@ -138,8 +134,8 @@ structure RoleSet where
   identity : Bool
   deriving DecidableEq, Repr
 
-/-- Whether a set holds a class. -/
-def RoleSet.contains (s : RoleSet) : RoleClass → Bool
+/-- Whether a set holds a kind. -/
+def KindSet.contains (s : KindSet) : Kind → Bool
   | .field => s.field
   | .cell => s.cell
   | .elem => s.elem
@@ -147,57 +143,61 @@ def RoleSet.contains (s : RoleSet) : RoleClass → Bool
   | .viewSpine => s.viewSpine
   | .identity => s.identity
 
-/-- The classes in both sets. -/
-def RoleSet.inter (a b : RoleSet) : RoleSet :=
+/-- The kinds in both sets. -/
+def KindSet.inter (a b : KindSet) : KindSet :=
   ⟨a.field && b.field, a.cell && b.cell, a.elem && b.elem, a.arraySpine && b.arraySpine,
     a.viewSpine && b.viewSpine, a.identity && b.identity⟩
 
-/-- The classes in either set. -/
-def RoleSet.union (a b : RoleSet) : RoleSet :=
+/-- The kinds in either set. -/
+def KindSet.union (a b : KindSet) : KindSet :=
   ⟨a.field || b.field, a.cell || b.cell, a.elem || b.elem, a.arraySpine || b.arraySpine,
     a.viewSpine || b.viewSpine, a.identity || b.identity⟩
 
-/-- Whether a set holds no class. -/
-def RoleSet.isEmpty (s : RoleSet) : Bool :=
+/-- Whether a set holds no kind. -/
+def KindSet.isEmpty (s : KindSet) : Bool :=
   !(s.field || s.cell || s.elem || s.arraySpine || s.viewSpine || s.identity)
 
-/-- Every class. -/
-def RoleSet.all : RoleSet := ⟨true, true, true, true, true, true⟩
+/-- Every kind. -/
+def KindSet.all : KindSet := ⟨true, true, true, true, true, true⟩
 
-/-- The classes whose category a predicate on categories admits. -/
-def RoleSet.ofCategories (has : Category → Bool) : RoleSet :=
+/-- The kinds whose category a predicate on categories admits. -/
+def KindSet.ofCategories (has : Category → Bool) : KindSet :=
   ⟨has .value, has .value, has .value, has .array, has .view, has .value⟩
 
-@[simp] theorem RoleSet.contains_inter (a b : RoleSet) (c : RoleClass) :
-    (a.inter b).contains c = (a.contains c && b.contains c) := by
-  cases c <;> rfl
+@[simp] theorem KindSet.contains_inter (a b : KindSet) (k : Kind) :
+    (a.inter b).contains k = (a.contains k && b.contains k) := by
+  cases k <;> rfl
 
-@[simp] theorem RoleSet.contains_union (a b : RoleSet) (c : RoleClass) :
-    (a.union b).contains c = (a.contains c || b.contains c) := by
-  cases c <;> rfl
+@[simp] theorem KindSet.contains_union (a b : KindSet) (k : Kind) :
+    (a.union b).contains k = (a.contains k || b.contains k) := by
+  cases k <;> rfl
 
-@[simp] theorem RoleSet.contains_all (c : RoleClass) : RoleSet.all.contains c = true := by
-  cases c <;> rfl
+@[simp] theorem KindSet.contains_all (k : Kind) : KindSet.all.contains k = true := by
+  cases k <;> rfl
 
-@[simp] theorem RoleSet.contains_ofCategories (has : Category → Bool) (c : RoleClass) :
-    (RoleSet.ofCategories has).contains c = has c.category := by
-  cases c <;> rfl
+@[simp] theorem KindSet.contains_ofCategories (has : Category → Bool) (k : Kind) :
+    (KindSet.ofCategories has).contains k = has k.category := by
+  cases k <;> rfl
 
-/-- **A set is empty exactly when it holds no class.** -/
-theorem RoleSet.isEmpty_iff {s : RoleSet} : s.isEmpty = true ↔ ∀ c, s.contains c = false := by
+theorem KindSet.inter_comm (a b : KindSet) : a.inter b = b.inter a := by
+  rcases a with ⟨_, _, _, _, _, _⟩; rcases b with ⟨_, _, _, _, _, _⟩
+  simp [KindSet.inter, Bool.and_comm]
+
+/-- **A set is empty exactly when it holds no kind.** -/
+theorem KindSet.isEmpty_iff {s : KindSet} : s.isEmpty = true ↔ ∀ k, s.contains k = false := by
   rcases s with ⟨a, b, c, d, e, f⟩
   constructor
   · intro h x; cases a <;> cases b <;> cases c <;> cases d <;> cases e <;> cases f <;>
-      cases x <;> simp_all [RoleSet.isEmpty, RoleSet.contains]
+      cases x <;> simp_all [KindSet.isEmpty, KindSet.contains]
   · intro h
     have := h .field; have := h .cell; have := h .elem; have := h .arraySpine
     have := h .viewSpine; have := h .identity
-    simp_all [RoleSet.isEmpty, RoleSet.contains]
+    simp_all [KindSet.isEmpty, KindSet.contains]
 
-/-- **Sets with an empty intersection hold no class in common.** -/
-theorem RoleSet.inter_isEmpty {a b : RoleSet} (h : (a.inter b).isEmpty = true) {c : RoleClass}
-    (ha : a.contains c = true) : b.contains c = false := by
-  have := RoleSet.isEmpty_iff.mp h c
+/-- **Sets with an empty intersection hold no kind in common.** -/
+theorem KindSet.inter_isEmpty {a b : KindSet} (h : (a.inter b).isEmpty = true) {k : Kind}
+    (ha : a.contains k = true) : b.contains k = false := by
+  have := KindSet.isEmpty_iff.mp h k
   simpa [ha] using this
 
 /-! ## Kinded worlds -/
@@ -696,7 +696,7 @@ def spineEntries : Val → Option (List (Option Nat))
 role's category (`Cat`). -/
 theorem Cat.category {r : Role} {u : Val} (h : Cat r u) : contentsCategory u = r.category := by
   cases r with
-  | field _ | cell _ | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category]
+  | field _ | cell _ | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category, Role.kind, Kind.category]
   | identity => subst h; rfl
   | spine f =>
     cases f with

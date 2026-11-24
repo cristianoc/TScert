@@ -24,7 +24,9 @@ theorem counterheap_excluded {n : Nat} (W : WorldT n) :
   simp only [K, kindAt, Option.map_eq_some_iff] at h0
   obtain ⟨r, hr, hk⟩ := h0.1
   rw [hr] at h1
-  cases r <;> simp_all [SlotRole, Role.kind]
+  cases r with
+  | spine f => cases f <;> simp_all [Role.kind]
+  | _ => simp_all [SlotRole, Role.kind]
 
 /-- **The dangling-spine transition of the untyped model is
 excluded**: no kinded world, at any level, is satisfied by a heap of three

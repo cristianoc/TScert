@@ -365,19 +365,19 @@ def SepEvidence.Holds (E : SepEvidence) (μ : Nat → Nat) (ρ : Env) (h : Heap)
     HeapLinks.Holds E.links ρ h ∧ ∀ f ∈ E.facts, f.Holds ρ h
 
 /-- **A region's bound under the evidence**: a field's bound narrowed to
-the classes of the category its class evidence gives (`Region.bound`
+the kinds of the category its class evidence gives (`Region.bound`
 otherwise). -/
-def SepEvidence.bound (E : SepEvidence) : Region → RoleSet
+def SepEvidence.bound (E : SepEvidence) : Region → KindSet
   | .field x k => match E.cl x k with
-    | some c => (slotBound k).inter c.roles
+    | some c => (slotBound k).inter c.kinds
     | none => slotBound k
-  | .inCls r c => (E.bound r).inter c.roles
+  | .inCls r c => (E.bound r).inter c.kinds
   | r => r.bound
 
 theorem SepEvidence.bound_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {W : WorldT n} {h : Heap}
     {ρ : Env} (hE : E.Holds μ ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) :
     ∀ (r : Region) {l : Nat}, l < h.length → r.mem ρ h l = true →
-      ∃ role, roleAt W l = some role ∧ (E.bound r).contains role.cls = true := by
+      ∃ role, roleAt W l = some role ∧ (E.bound r).contains role.kind = true := by
   intro r
   induction r with
   | field x k =>
@@ -545,7 +545,7 @@ theorem SepEvidence.query_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {
   · obtain ⟨role, hrole, hb⟩ := E.bound_sound hE hok hρ r hl hr
     obtain ⟨role', hrole', hb'⟩ := E.bound_sound hE hok hρ s hl hs
     rw [hrole] at hrole'; cases hrole'
-    rw [RoleSet.inter_isEmpty hd hb] at hb'
+    rw [KindSet.inter_isEmpty hd hb] at hb'
     cases hb'
   · exact Region.apart_of_keys hok hρ hd hr hs
   · exact SepEvidence.fresh_sound hE hd hr hs
@@ -558,34 +558,30 @@ theorem SepEvidence.query_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {
 
 /-! ## The check answers every pair its parts answer -/
 
-theorem RoleSet.inter_comm (a b : RoleSet) : a.inter b = b.inter a := by
-  rcases a with ⟨_, _, _, _, _, _⟩; rcases b with ⟨_, _, _, _, _, _⟩
-  simp [RoleSet.inter, Bool.and_comm]
-
 /-- The check is symmetric. -/
 theorem SepEvidence.query_symm (E : SepEvidence) (r s : Region) :
     E.query.disjoint r s = E.query.disjoint s r := by
-  simp only [SepEvidence.query, RoleSet.inter_comm (E.bound r), Region.keysApart_symm r s]
+  simp only [SepEvidence.query, KindSet.inter_comm (E.bound r), Region.keysApart_symm r s]
   cases ((E.bound s).inter (E.bound r)).isEmpty <;> cases s.keysApart r <;> cases E.fresh r s <;>
     cases E.fresh s r <;> simp [Bool.or_comm]
 
 /-- A region's bound under the evidence is within its bound. -/
 theorem SepEvidence.bound_le (E : SepEvidence) :
-    ∀ (r : Region) (c : RoleClass), (E.bound r).contains c = true → r.bound.contains c = true := by
+    ∀ (r : Region) (k : Kind), (E.bound r).contains k = true → r.bound.contains k = true := by
   intro r
   induction r with
-  | field x k =>
-    intro c hc
-    simp only [SepEvidence.bound] at hc
-    split at hc
-    · simp only [RoleSet.contains_inter, Bool.and_eq_true] at hc; exact hc.1
-    · exact hc
+  | field x k' =>
+    intro k hk
+    simp only [SepEvidence.bound] at hk
+    split at hk
+    · simp only [KindSet.contains_inter, Bool.and_eq_true] at hk; exact hk.1
+    · exact hk
   | inCls r c' ih =>
-    intro c hc
-    simp only [SepEvidence.bound, RoleSet.contains_inter, Bool.and_eq_true] at hc
-    simp only [Region.bound, RoleSet.contains_inter, Bool.and_eq_true]
-    exact ⟨ih c hc.1, hc.2⟩
-  | _ => intro c hc; exact hc
+    intro k hk
+    simp only [SepEvidence.bound, KindSet.contains_inter, Bool.and_eq_true] at hk
+    simp only [Region.bound, KindSet.contains_inter, Bool.and_eq_true]
+    exact ⟨ih k hk.1, hk.2⟩
+  | _ => intro k hk; exact hk
 
 /-- **Every pair the bounds separate, the check separates**
 (`boundQuery`). -/
@@ -595,14 +591,14 @@ theorem SepEvidence.query_of_bound (E : SepEvidence) {r s : Region}
   rcases hd with hd | hd
   case inr => simp [SepEvidence.query, hd]
   have : ((E.bound r).inter (E.bound s)).isEmpty = true := by
-    refine RoleSet.isEmpty_iff.mpr fun c => ?_
-    have h0 := RoleSet.isEmpty_iff.mp hd c
-    simp only [RoleSet.contains_inter] at h0 ⊢
-    cases hr : (E.bound r).contains c
+    refine KindSet.isEmpty_iff.mpr fun k => ?_
+    have h0 := KindSet.isEmpty_iff.mp hd k
+    simp only [KindSet.contains_inter] at h0 ⊢
+    cases hr : (E.bound r).contains k
     · simp
-    · cases hs : (E.bound s).contains c
+    · cases hs : (E.bound s).contains k
       · simp
-      · simp [E.bound_le r c hr, E.bound_le s c hs] at h0
+      · simp [E.bound_le r k hr, E.bound_le s k hs] at h0
   simp [SepEvidence.query, this]
 
 /-- **A part of a region in a class is separated from whatever the region
@@ -610,16 +606,16 @@ is.** -/
 theorem SepEvidence.query_inCls_left (E : SepEvidence) {r s : Region} (c : Selector)
     (hd : E.query.disjoint r s = true) : E.query.disjoint (.inCls r c) s = true := by
   simp only [SepEvidence.query, Bool.or_eq_true] at hd ⊢
-  have hb : ∀ c', (E.bound (.inCls r c)).contains c' = true → (E.bound r).contains c' = true := by
-    intro c' h; simp only [SepEvidence.bound, RoleSet.contains_inter, Bool.and_eq_true] at h; exact h.1
+  have hb : ∀ k, (E.bound (.inCls r c)).contains k = true → (E.bound r).contains k = true := by
+    intro k h; simp only [SepEvidence.bound, KindSet.contains_inter, Bool.and_eq_true] at h; exact h.1
   rcases hd with (((hd | hd) | hd) | hd) | hd
   · left; left; left; left
-    refine RoleSet.isEmpty_iff.mpr fun c' => ?_
-    have h0 := RoleSet.isEmpty_iff.mp hd c'
-    simp only [RoleSet.contains_inter] at h0 ⊢
-    cases hr : (E.bound (.inCls r c)).contains c'
+    refine KindSet.isEmpty_iff.mpr fun k => ?_
+    have h0 := KindSet.isEmpty_iff.mp hd k
+    simp only [KindSet.contains_inter] at h0 ⊢
+    cases hr : (E.bound (.inCls r c)).contains k
     · simp
-    · simp only [hb c' hr, Bool.true_and] at h0; simp [h0]
+    · simp only [hb k hr, Bool.true_and] at h0; simp [h0]
   · left; left; left; right; simpa [Region.keysApart, Region.key?] using hd
   · left; left; right; simpa [SepEvidence.fresh, fieldSite] using hd
   · left; right; simpa [SepEvidence.fresh, fieldSite] using hd
@@ -629,20 +625,20 @@ theorem SepEvidence.query_inCls_left (E : SepEvidence) {r s : Region} (c : Selec
     cases f <;> simpa [SepEvidence.byFact, spineSite, arraySite, fieldSite] using hm
 
 /-- A field whose class evidence is a class disjoint from `c` is
-separated from every region bounded by `c`'s classes: `cls c`, the part of
+separated from every region bounded by `c`'s kinds: `cls c`, the part of
 a region in `c`, a module cell where `c` is the values. -/
 theorem SepEvidence.query_field_class (E : SepEvidence) {x : Nat} {k : PropKey} {c c' : Selector}
     (hc : E.cl x k = some c') (hd : c'.disjoint c = true) {s : Region}
-    (hs : ∀ cl, (E.bound s).contains cl = true → c.roles.contains cl = true) :
+    (hs : ∀ kd, (E.bound s).contains kd = true → c.kinds.contains kd = true) :
     E.query.disjoint (.field x k) s = true := by
-  have h0 := (Selector.roles_inter_isEmpty c' c).trans hd
+  have h0 := (Selector.kinds_inter_isEmpty c' c).trans hd
   have : ((E.bound (.field x k)).inter (E.bound s)).isEmpty = true := by
-    refine RoleSet.isEmpty_iff.mpr fun cl => ?_
-    have h1 := RoleSet.isEmpty_iff.mp h0 cl
-    simp only [SepEvidence.bound, hc, RoleSet.contains_inter] at h1 ⊢
-    cases h2 : (E.bound s).contains cl
+    refine KindSet.isEmpty_iff.mpr fun kd => ?_
+    have h1 := KindSet.isEmpty_iff.mp h0 kd
+    simp only [SepEvidence.bound, hc, KindSet.contains_inter] at h1 ⊢
+    cases h2 : (E.bound s).contains kd
     · simp
-    · simp only [hs cl h2, Bool.and_true] at h1; simp [h1]
+    · simp only [hs kd h2, Bool.and_true] at h1; simp [h1]
   simp [SepEvidence.query, this]
 
 /-- A fact the evidence lists separates its two sites. -/
@@ -701,17 +697,17 @@ theorem SepEvidence.query_spines (E : SepEvidence) {x y : Nat} {p : List String}
 theorem SepEvidence.query_pathCells_field (E : SepEvidence) (x : Nat) (p : List String) {y : Nat}
     {k : PropKey} (hc : E.cl y k = some .spines) : E.query.disjoint (.pathCells x p) (.field y k) = true := by
   have := (E.query_field_class (s := .pathCells x p) hc (c := .values) rfl
-    (fun cl h => by revert h; cases cl <;> simp [SepEvidence.bound, Region.bound, RoleSet.contains, RoleSet.elems,
-      Selector.roles, RoleSet.ofCategories, Selector.has]))
+    (fun kd h => by revert h; cases kd <;> simp [SepEvidence.bound, Region.bound, KindSet.contains, KindSet.elems,
+      Selector.kinds, KindSet.ofCategories, Selector.has]))
   rwa [E.query_symm]
 
 theorem SepEvidence.query_pathCells_cls (E : SepEvidence) (x : Nat) (p : List String) {c : Selector}
     (hd : Selector.values.disjoint c = true) : E.query.disjoint (.pathCells x p) (.cls c) = true := by
-  refine E.query_of_bound (boundQuery_of_isEmpty (RoleSet.isEmpty_iff.mpr fun cl => ?_))
+  refine E.query_of_bound (boundQuery_of_isEmpty (KindSet.isEmpty_iff.mpr fun kd => ?_))
   rcases c with ⟨v, a, w⟩
   simp only [Selector.disjoint, Selector.values] at hd
   cases v <;> simp at hd
-  cases cl <;> simp [Region.bound, RoleSet.contains, RoleSet.inter, RoleSet.elems, Selector.roles,
-    RoleSet.ofCategories, Selector.has]
+  cases kd <;> simp [Region.bound, KindSet.contains, KindSet.inter, KindSet.elems, Selector.kinds,
+    KindSet.ofCategories, Selector.has]
 
 end Verification.Footprints

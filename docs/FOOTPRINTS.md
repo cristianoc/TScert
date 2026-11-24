@@ -322,12 +322,12 @@ meeting its world, `HeapOk`, with valid roots, `RootsOk`
 (`SepEvidence.query_sound`). Two regions are disjoint
 
 - **by bounds**: the bounds of the two regions under the evidence hold no
-  role class in common. A region's bound (`Region.bound`) is a set of the
-  role classes field, cell, element cell, array spine, view spine and
-  identity holding the role of each of its allocated locations at a heap
+  kind in common. A region's bound (`Region.bound`) is a set of the
+  kinds field, cell, element cell, array spine, view spine and
+  identity holding the kind of each of its allocated locations at a heap
   meeting its world with valid roots (proved: `Region.bound_sound`,
   `Region.apart_of_bound`); a field's bound under the evidence is narrowed
-  to the classes of the category its class evidence gives
+  to the kinds of the category its class evidence gives
   (`SepEvidence.bound`). The bounds answer each pair of a region's part in
   one class and a class region of a disjoint selector
   (`boundQuery_inCls_cls`), and a field or cell against a spine or an
