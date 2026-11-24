@@ -42,13 +42,15 @@ structure Env where
   (`refine_field`'s `Value` root). -/
   cells : List String := []
 
-/-- What ends a narrowed member path: anything (a call that may change a
-value of the heap, a write of an unknown key), a write of a field the path
-reads, an assignment of its root. -/
+/-- What ends a narrowed member path: anything (a call of an unknown
+callee, a write of an unknown key), a write of a field the path reads, an
+assignment of its root, a call whose normal exit changes at most the
+frame `Φ`. -/
 inductive PathEnd where
   | all
   | field (k : PropKey)
   | root (n : String)
+  | frame (Φ : Footprints.Footprint)
 
 /-- A generic module function: its binders' names and its signature at
 given binder types, in claim form (`Instantiable.instantiate`). -/
@@ -240,8 +242,10 @@ structure Walk where
   freshConsts : List String := []
   lastFresh : Bool := false
   /-- Whether the last call may have changed a value of the heap (its
-  instance's footprint): the narrowed paths end there. -/
+  instance's footprint), and its normal exit's frame: the narrowed paths
+  it reaches end there. -/
   changedValues : Bool := false
+  changedFrame : Footprints.Footprint := []
   /-- The environments a `continue` of the innermost loop leaves with. -/
   continues : List Env := []
   /-- Each `return` walked so far, last first: its statement's span, its
@@ -292,12 +296,33 @@ abbrev W := StateT Walk Compiler
 /-- The walk records what ends narrowed paths. -/
 def ends (x : PathEnd) : W Unit := modify fun w => { w with pathEnds := x :: w.pathEnds }
 
+/-- The support of a narrowed member path `root.k₁…kₙ`: the locations it
+reads, each field `kⱼ` of the object `root.k₁…kⱼ₋₁` reads, none changed
+(the regions `path`, at the root's slot `0`; a prefix of a key no string
+names, every location). -/
+def pathSupport (path : List PropKey) : Footprints.Footprint :=
+  path.zipIdx.map fun (k, j) =>
+    let prefix_ := (path.take j).mapM fun | .str s => some s | .sym _ => none
+    (match prefix_ with
+      | some p => Footprints.Region.path 0 p k
+      | none => .all, .keep)
+
+/-- Whether a frame `Φ` leaves a narrowed member path's locations
+unchanged: `Φ` respects the path's support (`pathSupport`) under the
+query by bounds, the support relation the pass checks a fact against an
+effect by (`respects`). That query reads the regions' keys and location
+kinds alone, so the answer is the same at every slot the root and the
+callee's positions are held in. -/
+def frameKeeps (Φ : Footprints.Footprint) (path : List PropKey) : Bool :=
+  Footprints.respects Footprints.boundQuery (pathSupport path) Φ
+
 /-- The paths of `env` none of `xs` ends. -/
 def surviving (env : Env) (xs : List PathEnd) : List ((String × List PropKey) × Ty Tree) :=
   env.paths.filter fun ((root, path), _) => xs.all fun
     | .all => false
     | .field k => !path.contains k
     | .root n => n != root
+    | .frame Φ => frameKeeps Φ path
 
 /-- Sorted labels, retaining each label once in the sorted traversal. -/
 def norm (A : Ty Tree) : Ty Tree := Id.run do
@@ -2415,17 +2440,21 @@ partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) :
   let r ← StateT.lift (tryCatch (Except.ok <$> x) fun msg => pure (.error msg))
   record e r
 
-/-- The environment after a call: its narrowed paths end where the call may
-change a value of the heap, or where its callee is unknown, but those
-through stable members (`stablePath`). -/
+/-- The environment after a call: where the call may change a value of the
+heap, its narrowed paths end but those whose locations its normal exit's
+frame leaves unchanged (`frameKeeps`); where its callee is unknown, all
+end; either way those through stable members (`stablePath`) stay. -/
 partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W Env := do
   let w ← get
   if w.changedValues || r.toOption.isNone then
     -- A binding a function literal assigns is held in a cell the call may
     -- change: at its declared type again (`--force-proposals stale` keeps it).
     let reset := if w.force.contains "stale" then [] else w.closureAssigned
-    ends .all
-    let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) => stablePath env r p)
+    let x : PathEnd := if r.toOption.isNone then .all else .frame w.changedFrame
+    ends x
+    let unreached := surviving env [x]
+    let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) =>
+      if (unreached.lookup (r, p)).isSome then pure true else stablePath env r p)
     return { env with
       paths := kept
       vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
@@ -3043,7 +3072,7 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
   meets (ClassSummary.ofEffect inst.effect (if receiverFresh then [0] else []) returns)
   if !returns then return
   if ClassSummary.changesValues inst.effect.schema.normal.frame then
-    modify fun w => { w with changedValues := true }
+    modify fun w => { w with changedValues := true, changedFrame := inst.effect.schema.normal.frame }
   modify fun w => { w with lastFresh := inst.effect.schema.normal.freshResult }
 
 /-- A literal of no binders, rest or guard passed where the instance's
@@ -4405,7 +4434,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
         -- a call's instance is (`callChanges`).
         meets (ClassSummary.ofEffect eff [])
         if ClassSummary.changesValues eff.schema.normal.frame then
-          modify fun w => { w with changedValues := true }
+          modify fun w => { w with changedValues := true, changedFrame := eff.schema.normal.frame }
         pure (Except.ok R)
       | .error m => pure (Except.error m)
     let v ← record e r
