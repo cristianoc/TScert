@@ -72,7 +72,8 @@ verifier --lower-control-flow       <ast.json>
   `work.jsonl` in the working directory ([work](SINGLE-PASS.md#work)).
   `TSCERT_DUMP` prints, in every mode and for every walk the pass makes
   (a unit's, a closure's, a proposal's), each node's term and continuation,
-  the names at its slots, and the facts after its step marked `+` where the
+  the slots it or a later node reads (`reads:`, `all` for every slot), the
+  names at its slots, and the facts after its step marked `+` where the
   step added them and `-` where it dropped them
   (`SinglePass.walkText`, `DebugText`); a slot is `#i` and a name `nK`, and
   `[if nC]`/`[unless nC]` marks a fact holding where the Boolean `nC` is

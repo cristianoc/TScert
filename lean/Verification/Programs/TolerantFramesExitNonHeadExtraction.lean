@@ -50,7 +50,7 @@ theorem exitStep_nonHead_checked {env : WalkEnv ι G I} {l i : Nat} {en : Entere
       (outAllOf G c sd.st.stepOut) (i == 0)
     let carried := en.implies ++ freshImplOf pushed false ysE en.entry.names sd.st.result
     let transfer := edgeTransfer (normalNames en.entry sd.st pushed) t.mapping pushed false sd.outFresh
-      en.entry sd.st.result (exitStore G c en.entry sd.st pushed observed promote) carried
+      en.entry sd.st.result (exitStore G c en.entry sd.st pushed observed promote) carried (env.live[t.label]!)
     ∃ tc, env.claimed[t.label]? = some tc ∧
       (vacuousOf G en.here c.type (exitCtx c pushed) pushed observed = false →
         ExitTyped G I (exitCtx c pushed) tc.context t observed
@@ -87,7 +87,7 @@ theorem exitStep_nonHead_checked {env : WalkEnv ι G I} {l i : Nat} {en : Entere
   · cases h
   rename_i a3 ha
   let pair := edgeTransfer names target.mapping pushed' handler sd.outFresh entry st.result store
-    (en.implies ++ freshImpl)
+    (en.implies ++ freshImpl) (env.live[target.label]!)
   cases h
   have hy := assertionExit_yields ha
   have hv : vacuous = vacuousOf G en.here c.type (exitCtx c pushed) pushed observed := rfl
@@ -262,7 +262,7 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
         (r.node l hl).entry s.sdK.st.result
         (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote)
         (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
-          s.sdK.st.result)) := by
+          s.sdK.st.result) (s.env.live[t.label]!)) := by
     refine ⟨exitsWalk b, s.raw, passHeads c, hw, ?_, extension, ?_⟩
     · rw [← givenAgreement]; exact hg
     · simpa only [exitsWalk, hclaim, hentry, Site.sdK, keptDone_outFresh, ← himplies] using hp
@@ -276,13 +276,13 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
               (r.node l hl).entry s.sdK.st.result
               (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote)
               (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
-                s.sdK.st.result)).2, t.mapping) := by
+                s.sdK.st.result) (s.env.live[t.label]!)).2, t.mapping) := by
     intro htwo
     have hmem := hm (s.mergingOfIncoming checked t.label hg htwo)
     refine ⟨exitsWalk b, s.raw, hedges, extension, ?_⟩
     simpa only [exitsWalk, hclaim, hentry, Site.sdK, keptDone_outFresh, hnode, ← himplies, Site.ysA] using hmem
   exact ⟨b.yields.getD [], s.source_eq hsource,
-    (NonHeadExitChecked.mk typed asserted pushedIn merged).reassign η⟩
+    (NonHeadExitChecked.mk typed asserted ⟨_, pushedIn, merged⟩).reassign η⟩
 
 end ExitChecks
 end Verification.TolerantFrames

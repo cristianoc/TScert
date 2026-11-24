@@ -94,7 +94,7 @@ def exitPushed (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass.Ente
     else en.entry.names
   (SinglePass.edgeTransfer names ex.target.mapping ex.pushed ex.isHandler sd.outFresh en.entry sd.st.result
     (SinglePass.edgeStoreOf G Γ en.entry.store sd.st.store names (sd.st.result :: en.entry.names) c.context.length
-      ex.pushed ex.isHandler ex.observed ex.promote) implies).1
+      ex.pushed ex.isHandler ex.observed ex.promote) implies (env.live[ex.target.label]!)).1
 
 /-- **What one exit does to the walk's arrays** (`exitStep`): its target
 `x` has a claim; one edge recorded, to its target; into a head nothing

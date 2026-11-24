@@ -71,6 +71,24 @@ does today). A linear fact a delta adds over a name a read link gives is
 also stated over the read's path (`restateReads`): a later step that drops
 the read's name keeps the path's fact.
 
+A name leaves the store at the first edge after its last read. The slots
+each node or a later node reads are computed once per walk, by one pass in
+reverse topological order over the graph without the edges into loop heads
+(`SinglePass.liveSlots`): a node reads the slots its term mentions and
+those its written assertion states facts of; across an exit, the source
+slots the mapping reads for the target's slots read (into a loop head, the
+slots its given state, implications, promised input and inputs' entry
+values name, `headReads`), the slots whose type the edge changes, and an
+observed result. Every slot counts as read at a node with a handler, at a
+construction, at a term whose reads are not listed, and under spine
+regions. An edge into a node other than a loop head drops the names its
+target's slots hold that are connected to no slot the target reads, nor to
+an input's entry value (which a return's postcondition and promise read),
+through the facts `Store.drop` does not restate: read links, both ways,
+and conditional facts (`deadNames`, `Store.pathNames`). `Store.drop` is
+the step every edge applies to the names the mapping drops; dropping a name
+is a weakening (`drop_ok`).
+
 Beside the store, a state carries the implications its edges establish
 (`PromiseCalls.Implication`: where the test holds `true`, the target has
 the type), over names: a step's conditional yields, at a pushed edge, state

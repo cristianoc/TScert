@@ -38,10 +38,11 @@ theorem exitDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → L
     {m : Nat}
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (hmap : MapNamesSound (if pushed then result :: entry.names else entry.names) t.mapping)
+    {live : SinglePass.LiveSlots}
     (hrec : (edgeTransfer (if pushed then result :: entry.names else entry.names) t.mapping pushed false outFresh
       entry result (edgeStoreOf G (if pushed then A :: Γ else Γ) entry.store store
         (if pushed then result :: entry.names else entry.names) (result :: entry.names) width pushed false observed
-        promote) (I ++ freshImplOf pushed false ys entry.names result)) ∈ w.incoming t.label)
+        promote) (I ++ freshImplOf pushed false ys entry.names result) live) ∈ w.incoming t.label)
     (hY : ∀ ρ (s' : IndexedHeap) v, pushed = true → PromiseCalls.YieldsOk G ys ρ s'.n s'.W v)
     (hfo : ∀ v, pushed = true → outFresh = true → result ∉ entry.fresh → FreshAt m v)
     (htc : ∀ ρ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →
@@ -123,9 +124,10 @@ theorem handlerDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat �
     {start : List Nat}  {m : Nat}
     (w' : StoreWF entry.store) (hb : NamesBelow entry I start x)
     (hmap : MapNamesSound (x :: entry.names) t.mapping)
+    {live : SinglePass.LiveSlots}
     (hrec : (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry result
       (edgeStoreOf G (thrownTy :: Γ) entry.store store (x :: entry.names) (result :: entry.names) width true true
-        none none) (I ++ freshImplOf true true ys entry.names result)) ∈ w.incoming t.label)
+        none none) (I ++ freshImplOf true true ys entry.names result) live) ∈ w.incoming t.label)
     (htc : ∀ ρ (s' : IndexedHeap) e, EnvOk G (thrownTy :: Γ) (push e ρ) s'.n s'.W →
       EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (push e ρ)) s'.n s'.W)
     (hadm : ControlFlow.admitsAll G thrownTy = true)

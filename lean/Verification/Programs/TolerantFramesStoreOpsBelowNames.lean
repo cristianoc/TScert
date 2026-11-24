@@ -652,9 +652,9 @@ source's names, the edge's store, the entry's fresh names and the result
 are, and the counter is positive (an unread target slot is named 0). -/
 theorem edgeTransfer_below [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping}
     {pushed isHandler outFresh : Bool} {entry : State} {result : Nat} {edgeStore : Store}
-    {implies : List (PromiseCalls.Implication ι)} {next : Nat} (hpos : 0 < next) (hn : ∀ x ∈ names, x < next)
+    {implies : List (PromiseCalls.Implication ι)} {live : SinglePass.LiveSlots} {next : Nat} (hpos : 0 < next) (hn : ∀ x ∈ names, x < next)
     (hs : FactsBelow edgeStore next) (hf : ∀ x ∈ entry.fresh, x < next) (hr : result < next) :
-    StateBelow (SinglePass.edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1 next := by
+    StateBelow (SinglePass.edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies live).1 next := by
   refine ⟨fun x hx => ?_, drop_below hs, fun x hx => ?_⟩
   · rcases mapNames_mem hx with hx | rfl
     · exact hn x hx
