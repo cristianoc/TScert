@@ -752,7 +752,7 @@ theorem walk_inv (hs : SetupRecords ι) (hv : VisitsRecord ι) {G : NormalGraph 
       simp only [hr', hd, bind, Except.bind] at hw
       cases hw
     | ok σf =>
-      simp only [hr', hd, bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hw
+      simp only [hr', hd, bind, Except.bind, pure, Except.pure, Except.ok.injEq, SinglePass.dumpWalk, Prod.mk.injEq] at hw
       obtain ⟨rfl, rfl⟩ := hw
       have hdr := drives_of_drive _ _ _ hd
       have hinv := Drives.inv (RecInv c env)

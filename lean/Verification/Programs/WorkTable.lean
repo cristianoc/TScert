@@ -9,6 +9,10 @@ namespace Verification.SinglePass
 `f` alone. -/
 initialize profiling : IO.Ref Bool ← IO.mkRef false
 
+/-- Whether each walk prints its nodes and the facts at each (`TSCERT_DUMP`,
+`dumpWalk`): text for reading, which no result reads. -/
+initialize dumping : IO.Ref Bool ← IO.mkRef false
+
 /-- The work of the process by kind and item: for each `kind` and `item` (a
 function or file of a source, `<sha256 prefix>#<unit>`), how many times it
 was done, its nanoseconds, and its nanoseconds outside the work nested in it:

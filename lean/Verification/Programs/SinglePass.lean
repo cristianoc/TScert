@@ -1,4 +1,5 @@
 import Verification.Programs.WorkTable
+import Verification.Programs.DebugText
 import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
 import Verification.Programs.SinglePassStats
@@ -252,6 +253,13 @@ private unsafe def clockImpl (kind : String) (since : Nat) (_ : Nat) : Nat :=
 /-- Measuring (`profiling`): the time since `since` added to `kind`'s, and
 the time now; `at` orders the call after what computed it. -/
 @[implemented_by clockImpl] def clock (_kind : String) (_since : Nat) (_at : Nat) : Nat := 0
+
+private unsafe def dumpWalkImpl {α : Type} (text : Unit → String) (a : α) : α :=
+  if !(unsafeBaseIO dumping.get) then a else dbgTrace (text ()) fun _ => a
+
+/-- `a`, after printing `text ()` where walks are dumped (`dumping`,
+`TSCERT_DUMP`). -/
+@[implemented_by dumpWalkImpl] def dumpWalk {α : Type} (_text : Unit → String) (a : α) : α := a
 
 /-- `f ()`, its time added to `kind`'s. -/
 @[implemented_by timedKindImpl] def timedKind {α : Type} (_kind : String) (f : Unit → α) : α := f ()
@@ -4361,6 +4369,39 @@ def visitFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   funext ι _ _ _ G images env σ l
   rfl
 
+/-- A fact of a store as one line (`DebugText`). -/
+def Atom.text : Atom → String
+  | .index a => DebugText.indexAtom a
+  | .value f => s!"n{f.slot}.{DebugText.key f.field} ∈ {DebugText.oneLine f.contents}"
+  | .cell f => s!"cell n{f.slot}.{DebugText.key f.field} ∈ {DebugText.oneLine f.contents}"
+  | .link g => s!"link {DebugText.oneLine g}"
+  | .elem e => s!"elem {DebugText.oneLine e}"
+  | .sep f => s!"sep {DebugText.oneLine f}"
+
+/-- A completed walk as text (`TSCERT_DUMP`): each node's term and
+continuation, the names at its slots on entry, and the facts after its step,
+with how many it added and dropped from its entry's. -/
+def walkText (nodes : Array Node) (w : Walk ι) : String := Id.run do
+  let mut out := s!"walk: {nodes.size} nodes"
+  for l in [0:nodes.size] do
+    let lw := w.labels[l]?
+    let node := (nodes[l]?.map DebugText.node).getD "?"
+    out := out ++ s!"\nnode {l}: {node}"
+    match lw.bind (·.entry), lw.bind (·.after) with
+    | some e, some a =>
+      let before := e.store.live.toList.map Atom.text
+      let after := a.store.live.toList.map Atom.text
+      let added := after.filter (!before.contains ·)
+      let dropped := before.filter (!after.contains ·)
+      let slots := String.intercalate " " ((a.names.zipIdx).map fun (n, i) => s!"#{i}=n{n}")
+      out := out ++ s!"\n  slots after: {slots}\n  facts after: {after.length} (+{added.length} -{dropped.length})"
+      for f in (after.toArray.qsort (· < ·)).toList do
+        out := out ++ s!"\n    {if added.contains f then "+" else " "} {f}"
+      for f in (dropped.toArray.qsort (· < ·)).toList do
+        out := out ++ s!"\n    - {f}"
+    | _, _ => out := out ++ "\n  (not visited)"
+  return out
+
 /-- The walk over one graph: the setup, then `drive` over the visits; the
 walk's state and the nodes the start reaches, or where it stopped. Under
 `grading` each visit records its step's local effect (`Walk.visits`). -/
@@ -4387,7 +4428,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   let σ ← drive (visit G images env) (env.n + 1) σ0
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
   let reachable := (env.reached.toList.filter id).length
-  return (σ, reachable)
+  return dumpWalk (fun _ => walkText env.nodes σ.walk) (σ, reachable)
 
 /-- Check a local-confinement table `conf` against a completed walk `w`: the
 start entry is empty, every framed node is in bounds, and every visited node

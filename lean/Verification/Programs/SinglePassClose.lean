@@ -470,7 +470,7 @@ theorem run_rebound_of_records (G : NormalGraph ι) (images : InstanceImageCheck
   | error _ => rw [hd] at hw; cases hw
   | ok σ =>
     rw [hd] at hw
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hw
+    simp only [pure, Except.pure, Except.ok.injEq, dumpWalk, Prod.mk.injEq] at hw
     obtain ⟨rfl, -⟩ := hw
     rw [← hn, ← hc] at hrec ⊢
     exact driveAdmits_of_records G images env B _ hg _ σ0 σ hd hrec

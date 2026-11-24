@@ -9,6 +9,7 @@ import Verification.Programs.CertificateProducer
 import Verification.Programs.CodeConditions
 import Verification.Programs.ComputedKey
 import Verification.Programs.ControlFlow
+import Verification.Programs.DebugText
 import Verification.Programs.DirectObligation
 import Verification.Programs.DirectProof
 import Verification.Programs.ExpressionClaims
