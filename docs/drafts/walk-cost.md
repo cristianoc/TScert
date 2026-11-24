@@ -632,28 +632,40 @@ already applies. Liveness is new, a function of the graph alone.
 ### The existing mechanism this extends
 
 `Store.add` and `Store.addRaw` insert any atom once (`Atom.canon`).
-`ControlFlow.unsatisfiable` finds a node unreachable from its claim's types.
+`ControlFlow.unsatisfiable` finds a node unreachable from its claim's
+types, and an exit of such a node is vacuous (`vacuousOf`, `vacuous_false`):
+its types, its target's assertion and a loop head's checks are skipped.
 
-On the example the store holds `n19 − n19 ≤ 0`, `−n2.kind + n2.kind ≤ 0`
-and `0 ≤ 0`, and, after the chain has excluded every member,
-`b.kind ≤ −1`, `−b.kind ≤ −3` and `0 ≤ −4`.
+On the example the store holds `0 ≤ 0` and `0 ≤ 4294967295`, left by the
+elimination of a dropped name bounded on both sides, each at 31 of the
+closure's 67 nodes.
 
 ### The change
 
-- A linear fact whose form is empty after normalization is true or false
-  as a constant: a true one is not added; a false one makes the state
-  unsatisfiable.
-- An unsatisfiable state is the state of an unreachable node, as an empty
-  claim type already is: the walk carries no facts on it and checks
-  nothing there. Its soundness is a theorem: a store holding `0 ≤ d` with
-  `d < 0` holds at no environment.
+- A linear fact over no term is a constant (`Atom.trivial`): a true one is
+  not added. A form whose terms cancel (`n19 − n19 ≤ 0`) is no constant: it
+  states its terms defined.
+- An unconditional fact whose form normalizes to no term with a false
+  bound (`Atom.contradiction`) is stored as `0 ≤ -1` (`Atom.bot`); a store
+  holding it is impossible (`Store.impossible`). Its soundness is a theorem:
+  such a store holds at no valuation (`storeOk_impossible`).
+- An exit whose edge store is impossible is vacuous, as an exit whose
+  context is empty: it checks nothing. The node's step is still checked,
+  and the false fact stays in the stores after it.
+
+Skipping the step of a node whose entry store is impossible, and carrying
+no facts past it, needs the step's checks (`checkedStep` and the lemmas
+reading its result) to state their conclusion under the entry's facts,
+with a case for a step not run.
 
 ### Tests
 
-- The dump of the example shows no trivial fact.
-- A case whose branch is impossible by its facts (and not its types)
-  verifies with the branch unvisited; a negative case where the facts do
-  not exclude it is refused.
+- The dump of the example shows no trivial fact: the closure's walk holds
+  1,535 facts over its 67 nodes (1,597 before), and every walk of the unit
+  65 fewer.
+- `facts-impossible-branch` verifies with its branch's edge into a loop
+  head unchecked; `invalid-facts-possible-branch`, where the facts do not
+  exclude the branch, is refused, and returns `NaN` under Node.
 
 ## 4. Stores share what their nodes share
 

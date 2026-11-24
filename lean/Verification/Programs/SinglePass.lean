@@ -4349,9 +4349,11 @@ def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
     -- context's answer, and the pushed result's type.
     let unsatΓ := en.here || (if isHandler then ControlFlow.unsatisfiable G [sd.thrownTy.getD []]
       else pushed && ControlFlow.unsatisfiable G [c.type])
-    let vacuous := match observed with
+    -- Whether no environment meets the edge: its types, or its facts,
+    -- which hold at no environment where they contain a false constant.
+    let vacuous := (match observed with
       | some o => unsatΓ || (Γ[0]?).any (BranchRefinement.impossible G · o)
-      | none => unsatΓ
+      | none => unsatΓ) || edgeStore.impossible
     let diff := if vacuous then [] else timedKind "edge types" fun _ => differing Γ tc.context t.mapping
     -- The target's own answer: a slot of the empty type is one the edge's
     -- context gives (where it has none) or a slot whose type differs.

@@ -39,6 +39,8 @@ assert.ok(Number.isNaN(Number(runExample("invalid-invariant-local-index-lacking"
   "a body moving the index below 0 reads xs[-1]");
 assert.ok(Number.isNaN(Number(runExample("invalid-read-field-across-write", "pair([1], { at: 0 })"))),
   "the write moves cursor.at to the length, and the second read reads past the end");
+assert.ok(Number.isNaN(Number(runExample("invalid-facts-possible-branch", "f([1], [], [5])"))),
+  "the lengths differ, and the loop reads xs[5]");
 assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant", "h([1], -1)"))),
   "the catch block's loop starts at the index the try block set, -1");
 
