@@ -163,9 +163,15 @@ structure Walk where
   cells (`cellLocals`: one a closure shares, every `let` of a module's
   initialization), whether or not the walk has met their assignment. -/
   heldCells : List String := []
-  /-- The changes of a value location recorded so far, a cell's own
-  assignment aside. -/
-  valueWrites : Nat := 0
+  /-- The module cells the unit reads (a module `let`, SOURCE-ELABORATION.md,
+  "Module cells"). -/
+  moduleCells : List String := []
+  /-- The changes of a value location recorded so far, newest first, each by
+  what it may reach (`PathEnd`): a call by its normal exit's frame, a cell's
+  own assignment by its root, any other change everything. -/
+  valueWrites : List PathEnd := []
+  /-- Their count. -/
+  valueWriteCount : Nat := 0
   /-- The unit's bindings held in slots (its parameters and declarations
   other than those held in cells): a completed member read narrows one. -/
   slots : Thunk (List String) := Thunk.pure []
@@ -315,6 +321,13 @@ kinds alone, so the answer is the same at every slot the root and the
 callee's positions are held in. -/
 def frameKeeps (Φ : Footprints.Footprint) (path : List PropKey) : Bool :=
   Footprints.respects Footprints.boundQuery (pathSupport path) Φ
+
+/-- Whether a frame `Φ` leaves the contents of the cell holding the binding
+`n` unchanged: `Φ` respects the support of its current contents, the cell
+under the key `n` of the environment holding it (at slot `0`, which the
+query reads no more than `pathSupport`'s) kept, under the query by bounds. -/
+def frameKeepsCell (Φ : Footprints.Footprint) (n : String) : Bool :=
+  Footprints.respects Footprints.boundQuery [(.field 0 (.str n), .keep)] Φ
 
 /-- The paths of `env` none of `xs` ends. -/
 def surviving (env : Env) (xs : List PathEnd) : List ((String × List PropKey) × Ty Tree) :=
@@ -1080,6 +1093,11 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
       if changed.any (·.1 == n) then (n, (env.decl.lookup n).getD A) else (n, A)
     paths := [] }
 
+/-- Whether the walk holds the binding `n` in a cell: one the unit assigns
+and holds in no slot, one a closure shares, a module cell it reads. -/
+def Walk.inCell (w : Walk) (n : String) : Bool :=
+  w.cellAssigned.contains n || w.heldCells.contains n || w.moduleCells.contains n
+
 /-- Each binding held in a cell at its declared type: what a cell holds is a
 current-content fact, which no step keeps across a write without a
 separation and no throw keeps (the producer's `forget`,
@@ -1089,7 +1107,33 @@ handler's edge).
 def cellsDeclared (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   { e with vars := e.vars.map fun (n, A) =>
-      if w.cellAssigned.contains n || w.heldCells.contains n then (n, (e.decl.lookup n).getD A) else (n, A) }
+      if w.inCell n then (n, (e.decl.lookup n).getD A) else (n, A) }
+
+/-- Whether a value write reaching `x` may change the cell holding `n`: any
+write, a call whose frame does not keep it (`frameKeepsCell`), the
+assignment of another binding no cell. -/
+def reachesCell (x : PathEnd) (n : String) : Bool := match x with
+  | .all => true
+  | .frame Φ => !frameKeepsCell Φ n
+  | .field k => k == .str n
+  | .root _ => false
+
+/-- Each binding held in a cell that one of the value writes `xs` may change
+(`reachesCell`) at its declared type (`cellsDeclared`'s rule, at the cells
+the writes reach). -/
+def cellsReached (w : Walk) (xs : List PathEnd) (e : Env) : Env :=
+  if w.force.contains "cells" then e else
+  { e with vars := e.vars.map fun (n, A) =>
+      if w.inCell n && xs.any (reachesCell · n) then (n, (e.decl.lookup n).getD A) else (n, A) }
+
+/-- The environment at the head of a loop over the statements `ss`
+(`loopHead`), each binding held in a cell at its declared type where `ss`
+make a call: a call may run code assigning a cell (a function literal
+sharing it, a module function), of a frame the head is walked before (a
+safe approximation of the calls whose frame may change a value). -/
+def loopEntry (w : Walk) (env : Env) (ss : List Stmt) : Env :=
+  let h := loopHead env ss
+  if ss.any (!·.callees.isEmpty) then cellsDeclared w h else h
 
 /-- Each binding held in a cell whose contract names a type parameter (a
 binder's row, `T` or a bounded `T ⊓ B`) at its contract: a test states no
@@ -1099,7 +1143,7 @@ def cellsAtRigid (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   let rigid (A : Ty Tree) : Bool := A.any fun | .bound .. | .meet .. => true | _ => false
   { e with vars := e.vars.map fun (n, A) =>
-      if w.cellAssigned.contains n || w.heldCells.contains n then
+      if w.inCell n then
         match e.decl.lookup n with
         | some D => if rigid D then (n, D) else (n, A)
         | none => (n, A)
@@ -1898,16 +1942,16 @@ end
 
 /-- The walk meets an operation of summary `op`: the summary walked so far
 extended by it (`ClassSummary.extend`); one whose normal exit may change a
-value location counts as a value write (`valueWrites`). -/
-def meets (op : ClassSummary) : W Unit := do
+value location counts as a value write reaching `reach` (`valueWrites`). -/
+def meets (op : ClassSummary) (reach : PathEnd := .all) : W Unit := do
   modify fun w => { w with summary := w.summary.extend op }
-  if op.normal.any (·.value != .keep) then modify fun w => { w with valueWrites := w.valueWrites + 1 }
+  if op.normal.any (·.value != .keep) then modify fun w => { w with valueWrites := reach :: w.valueWrites, valueWriteCount := w.valueWriteCount + 1 }
 
 /-- The walk meets a write returning within the grade its typed-write rule
 accepts (`ExpressionEffects.writeGrades`: `value` on values, `spine` on both
 kinds of spine), and never throwing. -/
-def wrote (value spine : Footprints.Change := .any) : W Unit :=
-  meets (.ofClosed (.ofSpines value spine))
+def wrote (value spine : Footprints.Change := .any) (reach : PathEnd := .all) : W Unit :=
+  meets (.ofClosed (.ofSpines value spine)) reach
 
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`, of its values (`value`: an initializing
@@ -1917,9 +1961,8 @@ def assigns (n : String) (value : Footprints.Change := .any) : W Unit := do
   ends (.root n)
   let w ← get
   if !w.locals.contains n then
-    wrote value .keep
     -- (the cell's own assignment: what it then holds is the value assigned)
-    modify fun w => { w with valueWrites := w.valueWrites - 1 }
+    wrote value .keep (.root n)
     if !w.cellAssigned.contains n then modify fun w => { w with cellAssigned := n :: w.cellAssigned }
     -- Inside a function literal, a captured binding.
     if w.inLiteral && !w.closureAssigned.contains n then
@@ -2466,22 +2509,28 @@ partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) :
 
 /-- The environment after a call: where the call may change a value of the
 heap, its narrowed paths end but those whose locations its normal exit's
-frame leaves unchanged (`frameKeeps`); where its callee is unknown, all
-end; either way those through stable members (`stablePath`) stay. -/
+frame leaves unchanged (`frameKeeps`), and each binding held in a cell
+whose contents the frame may change is at its declared type
+(`frameKeepsCell`); where its callee is unknown, all end and every cell
+is at its declared type; either way the paths through stable members
+(`stablePath`) stay. -/
 partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W Env := do
   let w ← get
   if w.changedValues || r.toOption.isNone then
-    -- A binding a function literal assigns is held in a cell the call may
-    -- change: at its declared type again (`--force-proposals stale` keeps it).
-    let reset := if w.force.contains "stale" then [] else w.closureAssigned
     let x : PathEnd := if r.toOption.isNone then .all else .frame w.changedFrame
+    -- (`--force-proposals stale` keeps the cells' contents)
+    let reached := fun (n : String) => match x with
+      | .frame Φ => !frameKeepsCell Φ n
+      | _ => true
+    let reset := fun (n : String) => !w.force.contains "stale" &&
+      (w.inCell n || w.closureAssigned.contains n) && reached n
     ends x
     let unreached := surviving env [x]
     let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) =>
       if (unreached.lookup (r, p)).isSome then pure true else stablePath env r p)
     return { env with
       paths := kept
-      vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
+      vars := env.vars.map fun (n, A) => if reset n then (n, (env.decl.lookup n).getD A) else (n, A) }
   return env
 
 /-- Whether a test cannot answer `q`: its value's type has no value of that
@@ -3093,7 +3142,7 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
   if !returns then
     modify fun w => { w with lastFresh := false }
     if (← get).force.contains "no-return" then return
-  meets (ClassSummary.ofEffect inst.effect (if receiverFresh then [0] else []) returns)
+  meets (ClassSummary.ofEffect inst.effect (if receiverFresh then [0] else []) returns) (.frame inst.effect.schema.normal.frame)
   if !returns then return
   if ClassSummary.changesValues inst.effect.schema.normal.frame then
     modify fun w => { w with changedValues := true, changedFrame := inst.effect.schema.normal.frame }
@@ -4456,7 +4505,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .ok (eff, R) => do
         -- The call is an operation of its signature's per-exit contract, as
         -- a call's instance is (`callChanges`).
-        meets (ClassSummary.ofEffect eff [])
+        meets (ClassSummary.ofEffect eff []) (.frame eff.schema.normal.frame)
         if ClassSummary.changesValues eff.schema.normal.frame then
           modify fun w => { w with changedValues := true, changedFrame := eff.schema.normal.frame }
         pure (Except.ok R)
@@ -5710,12 +5759,13 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
       | some (.mutables p _), .loop q .. | some (.constants p _), .loop q .. => if p.2 == q.1 then p.1 else s.pos.1
       | _, _ => s.pos.1
     -- A loop's entry is its head's: each binding the loop assigns at its
-    -- declared type (`loopHead`).
+    -- declared type, and each held in a cell where the loop calls
+    -- (`loopEntry`).
     let vars ← match s with
       | .loop q c body update _ => do
         let ts ← loopOverrides e c body update
         if !ts.isEmpty then modify fun w => { w with loopNarrowed := w.loopNarrowed.insert q.1 ts }
-        pure ((loopHead e (.effect c.span c :: body ++ update)).vars.map fun (n, D) => (n, (ts.lookup n).getD D))
+        pure ((loopEntry (← get) e (.effect c.span c :: body ++ update)).vars.map fun (n, D) => (n, (ts.lookup n).getD D))
       | _ => pure e.vars
     modify fun w =>
       let earlier := if at_ == s.pos.1 then [] else
@@ -5751,7 +5801,7 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
               modify fun w => { w with collected := bs.map (·.name, norm (E ++ [Labels.undef])) ++ w.collected }
     let outer := (← get).stmtAt
     modify fun w => { w with stmtAt := s.pos }
-    let before := (← get).valueWrites
+    let before := (← get).valueWriteCount
     let following := (← get).following
     modify fun w => { w with following := ss.drop (i + 1) }
     env ← stmt e s
@@ -5761,8 +5811,8 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     -- after a write; PROGRAM-TYPING, "No general frame rule").
     -- (`--force-proposals cells` keeps them)
     let w ← get
-    if w.valueWrites != before then
-      env := env.map (cellsDeclared w)
+    if w.valueWriteCount != before then
+      env := env.map (cellsReached w (w.valueWrites.take (w.valueWriteCount - before)))
     -- A loop's kept paths, at its head's entry and its body's.
     if let some (body, update) := (match s with
         | .loop _ _ body update _ => some (body, update)
@@ -5834,12 +5884,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- graph's `.returnHeld`): the statement's bindings.
     modify fun w => { w with entries := w.entries.insert x.span.1 env.vars }
     if let some P := (← get).expected then modify fun w => { w with hints := (x.span, P) :: w.hints }
-    let before := (← get).valueWrites
+    let before := (← get).valueWriteCount
     let (A, _) ← expr env x (← get).expected
     -- The finalizers it passes run after its value: each cell at its
     -- declared type where evaluating the value changes a value location.
     let w ← get
-    let held := if w.valueWrites != before then cellsDeclared w env else env
+    let held := cellsReached w (w.valueWrites.take (w.valueWriteCount - before)) env
     modify fun w => { w with held := (p, x.span, held) :: w.held }
     if !env.ghost then modify fun w => { w with returns := w.returns ++ [A] }
     return none
@@ -6041,17 +6091,18 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let (A, e2) ← withDefault e1 A d
     return some (← bindPattern e2 target A (if d.isNone then memberPath init else none))
   | .ite _ c thn els =>
-    let before := (← get).valueWrites
+    let before := (← get).valueWriteCount
     let (_, e1) ← expr env c
     -- A test that changes a value location (a call) ends a cell's narrowed
     -- contents in both arms, at the step, not the statement's end (the
     -- producer's `forget` at a step that may write cells,
     -- execution_analysis.ml:243-246).
-    let changed := (← get).valueWrites != before
+    let w ← get
+    let changed := w.valueWrites.take (w.valueWriteCount - before)
     let arm (q : Bool) (ss : List Stmt) : W (Option Env) := do
       let r ← refine e1 c q
       let w ← get
-      let r := cellsAtRigid w (if changed then cellsDeclared w r else r)
+      let r := cellsAtRigid w (cellsReached w changed r)
       -- An answer the test's value cannot give (`if (true)`'s `false`): the
       -- arm unreached, walked for its entries.
       if ← decidedTest c q then return ← stmts (some { r with ghost := true }) ss
@@ -6081,7 +6132,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         if declared.contains r || all.any (assignsStmt r) then return false
         if quiet then return true
         stablePath env r p)
-    let head := keepPaths early (loopHead env all)
+    let head := keepPaths early (loopEntry (← get) env all)
     -- (the bindings the loop's head holds narrower than declared, found
     -- where its entry was recorded: `loopNarrowed`)
     let head := match (← get).loopNarrowed.get? p.1 with
@@ -6165,7 +6216,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         let G ← StateT.lift graphNow
         if let some eff := ((ProgramTyping.callSigs G N).map (·.effect)).head? then
           meets (ClassSummary.ofEffect eff [0])
-    let exit := loopHead e1 body
+    let exit := loopEntry (← get) e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
       | none => exit
@@ -6353,7 +6404,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
     (schemes : List (Span × Ty Tree) := [])
-    (initBinders : List (String × Tree × Option (Ty Tree)) := []) :
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) (moduleCells : List String := []) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -6383,7 +6434,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
         if name.endsWith ".[[class]]" && !args.isEmpty then some name else none
     let start : Walk := {
       generics, expected, force, scope, locals, slots, schemes, initBinders,
-      explicitConstructors, values, heldCells, moduleInit := f.name.isEmpty,
+      explicitConstructors, values, heldCells, moduleCells, moduleInit := f.name.isEmpty,
       entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
@@ -6478,14 +6529,14 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (parts : String := "xec") (force : List String := [])
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
-    (initBinders : List (String × Tree × Option (Ty Tree)) := []) :
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) (moduleCells : List String := []) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
       Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String)) := do
   -- A generic closure at the scheme its claim names.
   let schemes := fc.exprs.filterMap fun (sp, c) => c.toOption.map (sp, ·)
-  let (w, T') ← walkUnit T f module generics force scope (schemes := schemes) (initBinders := initBinders)
+  let (w, T') ← walkUnit T f module generics force scope (schemes := schemes) (initBinders := initBinders) (moduleCells := moduleCells)
   return retypeFromWalk T' w fc parts
 
 end Verification.SourceElaboration.Synthesis

@@ -239,7 +239,7 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
   let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← match cachedWalk with
     | some w => pure (Synthesis.retypeFromWalk T w fc "xec")
     | none => SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
-        SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else [])
+        SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else []) (moduleCells := moduleCellNames module)
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
@@ -439,6 +439,7 @@ def instancesFromWalk (force : List String := []) : Instances Synthesis.Walk := 
   let init := f.name.isEmpty
   let (w, T) ← SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
     SinglePass.work "walk: instances" (fr.fnItem f) fun _ => Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
+      (moduleCells := moduleCellNames module)
       (schemes := c.expressions.filterMap fun e => match e.type with
         | .labels A => some (e.pos, A)
         | _ => none)
