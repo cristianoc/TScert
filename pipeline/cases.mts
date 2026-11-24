@@ -5113,6 +5113,7 @@ export const cases: Case[] = [
   positive("callables/methods", "Pass a method's object as its receiver; keep a copied method's plain call apart."),
   positive("callables/optional-arguments", "Omit, write, or pass undefined for an optional trailing parameter."),
   positive("callables/receiver-call", "Check explicit .call receivers and forwarded arguments."),
+  positive("enum-wide-comparison", "Two values of a 64-member enum compared, each member a tag test, before the scope's slots and their disequalities leave the store."),
   positive("callables/rest-arguments", "Collect a tuple rest, spread one in place of arguments, and read it after an effect."),
   positive("callables/thunks", "Create, return, and replace zero-argument closures."),
   positive("callables/unions", "Guard callable alternatives and preserve their argument and result contracts."),
