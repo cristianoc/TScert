@@ -1744,9 +1744,14 @@ bounds of lengths (proved). These are the preservation rules:
   unchanged: $`\chi`$ is its footprint's: $`o`$ where it states `any` for
   values, $`n`$ where it states `scalar` or `any`, $`s`$ $`\mathsf{keep}`$
   where it states `keep` for spines (proved). `{value: scalar, spine: keep}`,
-  a `Map`'s `set`, alters no location holding an object or a spine, so it
+  the closed bound of a `Map`'s `set` (`{this.size: scalar}`), alters no
+  location holding an object or a spine, so it
   preserves every length and every path's objects (positive
-  `map-insert-keeps-paths`, pretext's `getGraphemeEnds`);
+  `map-insert-keeps-paths`, pretext's `getGraphemeEnds`); direct calls of a
+  `Map` or `Set` mutator preserve every unrelated field fact by key
+  disjointness as well (positive `map-set-receiver-size-keeps-facts`;
+  negatives, run under Node, `invalid-map-set-invalidates-size`,
+  `invalid-map-alias-invalidates-size` and `invalid-set-add-invalidates-size`);
   `{value: init, spine: keep}` alters none holding a number either, so it
   preserves every fact over values, paths and lengths.
 - **An initializing write** $`x.f=y`$ of a source value, where the knowledge

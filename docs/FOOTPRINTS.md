@@ -647,8 +647,9 @@ stable set are `push` and `unshift` (`{value: any, spine: grow}`), `sort`
 at a comparator within one of its footprints (`{value: any, spine: grow}`,
 `sort_grow`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
-collections' and dates' mutators (each at most `{value: any, spine: keep}`,
-the mutators `{value: scalar, spine: keep}`);
+collections' and dates' mutators (`Set` and `Map` mutators at
+`{this.size: scalar}`, `Date.prototype.setTime` at `{value: scalar, spine: keep}`,
+each within `{value: scalar, spine: keep}`);
 outside it are `pop`, `shift`, `reverse`, `splice` and every native stated
 unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
 `flatMap`, `reduce` and `reduceRight` have one signature per closed

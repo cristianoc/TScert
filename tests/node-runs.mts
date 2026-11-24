@@ -3410,4 +3410,16 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-if-merge-guarded-bound"),
     "String(lineEndMismatch(1, 2, true, [10, 1, 20]))"),
     "NaN", "invalid-if-merge-guarded-bound: pending === 0 passes pending > 0 with end = 0 < start, reading flags[-1]");
+  assert.equal(runExample(ofKind("map-set-receiver-size-keeps-facts", ["positive"]),
+    'JSON.stringify([cursorAcrossMapMutators(new Map(), { i: 0, label: "hi" }, [40]), cursorAcrossSetMutators(new Set(), { i: 0, label: "hi" }, [40]), callerOfStatedMapSize(new Map(), { i: 0, label: null }, [7])])'),
+    "[42,42,7]", "map-set-receiver-size-keeps-facts: unrelated cursor narrowings and bounds survive Map and Set mutators");
+  assert.equal(runExample(negative("invalid-map-set-invalidates-size"),
+    "typeof readAfterMapSet(new Map(), [42])"),
+    "undefined", "invalid-map-set-invalidates-size: m.set increases m.size past xs.length");
+  assert.equal(runExample(negative("invalid-map-alias-invalidates-size"),
+    "(() => { const m = new Map(); return typeof readAfterAliasSet(m, m, [42]); })()"),
+    "undefined", "invalid-map-alias-invalidates-size: aliased b.set increases a.size past xs.length");
+  assert.equal(runExample(negative("invalid-set-add-invalidates-size"),
+    "typeof readAfterSetAdd(new Set(), [42])"),
+    "undefined", "invalid-set-add-invalidates-size: s.add increases s.size past xs.length");
 }

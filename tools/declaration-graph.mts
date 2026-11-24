@@ -6065,16 +6065,34 @@ function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node
   return mergeMembers([instance, ...added], fail, at);
 }
 
+/** Whether a reviewed call effect's frames mention slot 0 (the receiver).
+ * A method with such an effect is emitted as a readonly field whose receiver
+ * is the interface's own type rather than a host-relative `self` member, so
+ * calls pass the receiver directly as slot 0 and keep the receiver-scoped
+ * region instead of binding and closing it (`Effect.drop`). */
+function effectUsesReceiver(effect: CallEffect | undefined): boolean {
+  if (!effect) return false;
+  const uses0 = (r: CallEffect["exits"]["normal"]["frame"][number]["region"]): boolean =>
+    typeof r !== "string" && (("field" in r && r.field.x === 0) || ("fields" in r && r.fields.x === 0) ||
+      ("cells" in r && r.cells.x === 0) || ("path" in r && r.path.x === 0) ||
+      ("pathFields" in r && r.pathFields.x === 0) || ("pathCells" in r && r.pathCells.x === 0) ||
+      ("spine" in r && r.spine.x === 0));
+  return effect.exits.normal.frame.some(f => uses0(f.region)) ||
+    effect.exits.exceptional.frame.some(f => uses0(f.region));
+}
+
 /** A standard library interface through its overlay entries
  * (`interfaceOverlay`): each listed member, read from the one declaration
  * among the merged parts whose text is the reviewed one, a method as a
- * host-relative member and a property as declared. A member the project's
- * library does not declare is left out. */
+ * host-relative member (or, where its effect names receiver slot 0, a
+ * readonly field taking `selfRef`) and a property as declared. A member the
+ * project's library does not declare is left out. */
 function overlaidInterface(node: InterfaceDeclaration, parts: readonly InterfaceDeclaration[],
     entries: readonly OverlayEntry[], scopeOf: (part: InterfaceDeclaration) => TermScope,
     identityOf: (node: TypeDeclaration) => DeclarationIdentity,
     symbol: (written: Identifier | ts.PropertyAccessExpression) => number,
-    library: (name: string, span: Span) => (args: TypeTerm[]) => TypeTerm): TypeTerm {
+    library: (name: string, span: Span) => (args: TypeTerm[]) => TypeTerm,
+    selfRef: (span: Span) => TypeTerm): TypeTerm {
   const where = `${identityOf(node).module}#${node.name.text}`;
   const keyText = (member: ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration,
       source: SourceFile): string =>
@@ -6112,6 +6130,7 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
       throw Error(`${where}.${entry.name} is not a plain method`);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
+    const receiverScoped = effectUsesReceiver(entry.effect);
     // The weaker result: `Iterator` at the declared result's one argument.
     let given: TypeTerm | undefined;
     if (entry.resultAs) {
@@ -6121,12 +6140,13 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
       given = library(entry.resultAs, span)([typeTerm(scope, argument, member)]);
     } else if (entry.resultIsReceiver) {
       if (member.type?.kind !== ts.SyntaxKind.ThisType) throw Error(`${where}.${entry.name} does not return this`);
-      given = { k: "self", span };
+      given = receiverScoped ? selfRef(span) : { k: "self", span };
     }
     const forms = signatures(scope, parameters, member.type, member, span, false, given);
     if (forms.some(f => f.receiver)) throw Error(`${where}.${entry.name} states its receiver`);
-    fields.push({ name: key, optional: false, readonly: false, span,
-      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span }, effect: entry.effect ?? f.effect })), span) });
+    const receiver: TypeTerm = receiverScoped ? selfRef(span) : { k: "self", span };
+    fields.push({ name: key, optional: false, readonly: receiverScoped, span,
+      type: oneTerm(forms.map(f => ({ ...f, receiver, effect: entry.effect ?? f.effect })), span) });
   }
   return { k: "object", fields, stringIndex: null, calls: [], span: identityOf(node).span };
 }
@@ -6418,7 +6438,9 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
         return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
           args: context.complete(key, target, args, null, name),
           reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
-      }) });
+      }, (span: Span): TypeTerm => ({ k: "reference", span,
+        args: parameterNodes.map((_, index): TypeTerm => applied?.args[index] ?? { k: "parameter", index, span }),
+        reference: { name: node.name.text, span, arguments: parameterNodes.map(() => span), target: identity } })) });
     return;
   }
   // A host class, and a host interface the contract names a view for, is
