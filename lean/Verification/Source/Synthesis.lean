@@ -36,10 +36,13 @@ structure Env where
   held (an exhaustive test's remaining arm): walked for its entries, where
   it completes or returns unreached. -/
   ghost : Bool := false
-  /-- The bindings held in cells (`cellLocals`; a function literal's
-  captured ones no slot holds): no member path of one is narrowed, as the
-  producer states a field's contents of an immutable binding's object alone
-  (`refine_field`'s `Value` root). -/
+  /-- The bindings held in cells: the unit's `cellLocals` (one a closure
+  shares, every `let` of a module's initialization) and early `let`s
+  (`earlyMutables`), a function literal's captured ones no slot holds, the
+  module cells the unit reads. No member
+  path of one is narrowed, as the producer states a field's contents of an
+  immutable binding's object alone (`refine_field`'s `Value` root); what one
+  holds is a current-content fact (`cellsDeclared`). -/
   cells : List String := []
 
 /-- What ends a narrowed member path: anything (a call of an unknown
@@ -163,9 +166,6 @@ structure Walk where
   cells (`cellLocals`: one a closure shares, every `let` of a module's
   initialization), whether or not the walk has met their assignment. -/
   heldCells : List String := []
-  /-- The module cells the unit reads (a module `let`, SOURCE-ELABORATION.md,
-  "Module cells"). -/
-  moduleCells : List String := []
   /-- The changes of a value location recorded so far, newest first, each by
   what it may reach (`PathEnd`): a call by its normal exit's frame, a cell's
   own assignment by its root, any other change everything. -/
@@ -310,7 +310,8 @@ def ends (x : PathEnd) : W Unit := modify fun w => { w with pathEnds := x :: w.p
 /-- The support of a narrowed member path `root.k₁…kₙ`: the locations it
 reads, each field `kⱼ` of the object `root.k₁…kⱼ₋₁` reads, none changed
 (the regions `path`, at the root's slot `0`; a prefix of a key no string
-names, every location). -/
+names, every location). The root is held in a slot: no path of a binding
+held in a cell is narrowed (`Env.cells`). -/
 def pathSupport (path : List PropKey) : Footprints.Footprint :=
   path.zipIdx.map fun (k, j) =>
     let prefix_ := (path.take j).mapM fun | .str s => some s | .sym _ => none
@@ -1098,10 +1099,20 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
       if changed.any (·.1 == n) then (n, (env.decl.lookup n).getD A) else (n, A)
     paths := [] }
 
-/-- Whether the walk holds the binding `n` in a cell: one the unit assigns
-and holds in no slot, one a closure shares, a module cell it reads. -/
-def Walk.inCell (w : Walk) (n : String) : Bool :=
-  w.cellAssigned.contains n || w.heldCells.contains n || w.moduleCells.contains n
+/-- The early `let`s of a body (a function literal created before its
+declaration reads it): each held in a cell the literal shares. -/
+partial def earlyMutables (ss : List Stmt) : List String :=
+  ss.flatMap fun
+    | .mutables _ bs => (bs.filter (·.early)).map (·.name)
+    | .ite _ _ t e => earlyMutables t ++ earlyMutables (e.getD [])
+    | .loop _ _ b u _ => earlyMutables b ++ earlyMutables u
+    | .block _ _ b | .forOf _ _ _ _ _ b => earlyMutables b
+    | .tryStmt _ b h f => earlyMutables b ++ earlyMutables ((h.map (·.2)).getD []) ++ earlyMutables (f.getD [])
+    | .closing _ c b => earlyMutables c ++ earlyMutables b
+    | _ => []
+
+/-- Whether the binding `n` is held in a cell (`Env.cells`). -/
+def Env.inCell (e : Env) (n : String) : Bool := e.cells.contains n
 
 /-- Each binding held in a cell at its declared type: what a cell holds is a
 current-content fact, which no step keeps across a write without a
@@ -1112,7 +1123,7 @@ handler's edge).
 def cellsDeclared (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   { e with vars := e.vars.map fun (n, A) =>
-      if w.inCell n then (n, (e.decl.lookup n).getD A) else (n, A) }
+      if e.inCell n then (n, (e.decl.lookup n).getD A) else (n, A) }
 
 /-- Whether a value write reaching `x` may change the cell holding `n`: any
 write, a call whose frame does not keep it (`frameKeepsCell`), the
@@ -1129,7 +1140,7 @@ the writes reach). -/
 def cellsReached (w : Walk) (xs : List PathEnd) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   { e with vars := e.vars.map fun (n, A) =>
-      if w.inCell n && xs.any (reachesCell · n) then (n, (e.decl.lookup n).getD A) else (n, A) }
+      if e.inCell n && xs.any (reachesCell · n) then (n, (e.decl.lookup n).getD A) else (n, A) }
 
 /-- The environment at the head of a loop over the statements `ss`
 (`loopHead`), each binding held in a cell at its declared type where `ss`
@@ -1148,7 +1159,7 @@ def cellsAtRigid (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   let rigid (A : Ty Tree) : Bool := A.any fun | .bound .. | .meet .. => true | _ => false
   { e with vars := e.vars.map fun (n, A) =>
-      if w.inCell n then
+      if e.inCell n then
         match e.decl.lookup n with
         | some D => if rigid D then (n, D) else (n, A)
         | none => (n, A)
@@ -2528,7 +2539,7 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
       | .frame Φ => !frameKeepsCell Φ n
       | _ => true
     let reset := fun (n : String) => !w.force.contains "stale" &&
-      (w.inCell n || w.closureAssigned.contains n) && reached n
+      env.inCell n && reached n
     ends x
     let unreached := surviving env [x]
     let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) =>
@@ -5331,7 +5342,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let bodyStmts := match body with
     | .block _ ss => ss
     | x => [.effect x.span x]
-  let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
+  let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1) ++ earlyMutables bodyStmts
   inner := { inner with cells := inner.cells ++ cells }
   modify fun w => { w with summary := ClassSummary.skip, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
@@ -5703,8 +5714,7 @@ partial def loopOverrides (env : Env) (c : Expr) (body update : List Stmt) : W (
   let head := loopHead env (.effect c.span c :: body ++ update)
   let w0 ← get
   let narrow := head.vars.filterMap fun (n, D) => match env.vars.lookup n with
-    | some A => if A != D && !n.startsWith "%" && w0.locals.contains n && !w0.heldCells.contains n && !w0.cellAssigned.contains n &&
-        !w0.closureAssigned.contains n then some (n, A) else none
+    | some A => if A != D && !n.startsWith "%" && w0.locals.contains n && !env.inCell n then some (n, A) else none
     | none => none
   -- (but one whose entry type has literals that widen within its declared
   -- type: they widen at the head, as TypeScript widens a mutable binding's)
@@ -6444,7 +6454,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | some A => vars := upd vars p.name (if force.contains "annotations" then [Labels.undef] else A)
       | none => pure ()
     let unitCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
-    let env : Env := { vars := vars, decl := vars, cells := unitCells }
+    let env : Env := { vars := vars, decl := vars, cells := unitCells ++ earlyMutables f.body ++ moduleCells }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
     -- Its own parameters and declarations are its locals: assigning one
     -- changes no heap location.
@@ -6460,7 +6470,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
         if name.endsWith ".[[class]]" && !args.isEmpty then some name else none
     let start : Walk := {
       generics, expected, force, scope, locals, slots, schemes, initBinders,
-      explicitConstructors, values, heldCells, moduleCells, moduleInit := f.name.isEmpty,
+      explicitConstructors, values, heldCells, moduleInit := f.name.isEmpty,
       entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
