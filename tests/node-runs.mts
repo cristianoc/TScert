@@ -14,6 +14,8 @@ import { cases } from "../pipeline/cases.mts";
 assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum([1], 0, 2, false)"))),
   "a disjunct bounding the index by a value past the length reads past it");
 assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
+assert.equal(runExample("comparison-one-node", "(() => { const s = []; const n = order(s); return s.join(',') + ':' + n; })()"), "1,2:2",
+  "each operand of a comparison runs once, in source order");
 assert.equal(runExample("invalid-call-keeps-unreached-paths", 'f({ tag: { k: "id" } })'), "pat",
   "flip changes the narrowed field k");
 assert.equal(runExample("invalid-call-alias-reaches-path", '(() => { const d = { tag: { k: "id" } }; return f(d, d.tag); })()'), "pat",

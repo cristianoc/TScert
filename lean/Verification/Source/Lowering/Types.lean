@@ -607,20 +607,6 @@ a named write). -/
   | some ks => (ks.map (·.2)).eraseDups.length > 1
   | none => true
 
-/-- The tag testing equality with the one value every member of `A` is:
-null, undefined, a number (both zeros are one), a string, a Boolean or a
-bigint. -/
-@[nospecialize] def singletonTag (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option Tag :=
-  if A == [Labels.nul] then some Tag.isNul else if A == [Labels.undef] then some Tag.isUndef else
-    match PositiveNormalization.splitSets (PositiveRules.expand G A) with
-    | .numLit bits :: cs =>
-      if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
-      then some (.numEq bits) else none
-    | [.strLit s] => some (.strEq s)
-    | [.boolLit b] => some (.boolEq b)
-    | [.bigintLit i] => some (.bigintEq i)
-    | _ => none
-
 mutual
 /-- A claimed singleton operand (null, undefined, a number, a string, a Boolean
 or a bigint) selects a tag-test implementation, never an assumption: both
@@ -639,7 +625,7 @@ negation. -/
     let L ← exprType fc l
     let R ← exprType fc r
     let G := SourceTypes.graph (← table)
-    let select := singletonTag G
+    let select := PromiseCalls.singletonTag G
     match select R, select L with
     | some tag, _ => pure (.singletonTest p tag eq true l r)
     | _, some tag => pure (.singletonTest p tag eq false l r)

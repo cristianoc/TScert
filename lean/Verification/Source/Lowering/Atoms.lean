@@ -1245,76 +1245,22 @@ with the knowledge their edges carry, such as the field a failed test left
     else
       let node ← emitBranch scope Γ cond A yes no
       compileAtom recursive fc scope Γ cond node
-  -- For each singleton the split operand may be, in order: it is that one,
-  -- and the other operand is too (strict equality is transitive where it
-  -- holds). After every one failed, the split operand equals none of them
-  -- (NaN, which equals nothing), so the operands differ. A test of a field
-  -- read reads it again, which nothing between has written, and records its
-  -- link, which lets the edge refine the object's arms (`fieldSlice`) and
-  -- tells what the field holds.
-  let dispatch := fun (p : Span) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-      (split other : SplitOperand) (tags : List Tag) (yes no : Target) => do
-    let G := SourceTypes.graph (← table)
-    let width := scope.length
-    let test := fun (Δ : List (Ty Tree)) (op : SplitOperand) (tag : Tag) (y n : Target) =>
-      match op with
-      | ((k, none), _) =>
-        emitAt p (.var k) (.tagBind tag (branchMapping width (some k) y) (branchMapping width (some k) n))
-          Δ (Δ[k]?.getD []) "tag-dispatch" (scope := scope)
-      | ((k, some f), e) => do
-        -- The read is saved and its copy tested, as a guard's saved read is:
-        -- the copy states what the value is, and its link what the field holds.
-        let R ← exprType fc e
-        let drop := fun (t : Target) =>
-          (⟨t.label, some ((t.mapping.getD (List.range width)).map (·+2))⟩ : Target)
-        let dispatchNode ← emitAt p (.var 0) (.tagBind tag (drop y) (drop n)) (R::Δ) R "tag-dispatch"
-          (scope := held ⟨"",some e.span⟩ :: scope)
-        emitAt p (.readAt f (.var k)) (.bind dispatchNode) Δ R "tag-dispatch" (scope := scope)
-    let refine := fun (Δ : List (Ty Tree)) (op : SplitOperand) (tag : Tag) (q : Bool) =>
-      match op.1 with
-      | (k, none) => Δ.set k (BranchRefinement.tagSlice G (Δ[k]?.getD []) tag q)
-      | (k, some f) => Δ.set k (BranchRefinement.fieldSlice G (Δ[k]?.getD []) f tag q)
-    let rec chain : List Tag → List (Ty Tree) → Compiler Target
-      | [], _ => pure no
-      | tag :: more, Δ => do
-        -- Where the other operand cannot be this singleton, its test's true
-        -- edge is never taken; it goes where the false one does, so that
-        -- no target claims what the split operand holds on that path.
-        let possible ← match other with
-          | ((k, none), _) => pure !(BranchRefinement.tagSlice G ((refine Δ split tag true)[k]?.getD []) tag true).isEmpty
-          | ((_, some _), e) => do
-            pure !(BranchRefinement.tagSlice G (← exprType fc e) tag true).isEmpty
-        let inner ← test (refine Δ split tag true) other tag (if possible then yes else no) no
-        let next ← chain more (refine Δ split tag false)
-        test Δ split tag inner next
-    chain tags Γ
   match cond with
   | .arith p .eq l r =>
-    match ← equalitySplit fc scope Γ l r with
-    | some (split, other, tags) =>
-      let start ← dispatch p scope Γ split other tags yes no
-      -- The comparison itself runs first, as the source has it, with its
-      -- obligations; its Boolean is dropped, and the dispatch re-reads the
-      -- operands, which nothing between has written.
-      let A ← exprType fc cond
-      let width := scope.length
-      let skip : Target := ⟨start.label, some ((start.mapping.getD (List.range width)).map (·+1))⟩
-      let discard ← emitAt p (.var 0) (.effect skip) (A::Γ) A (scope := held ⟨"",some p⟩ :: scope)
-      compileAtom recursive fc scope Γ cond discard
-    | none =>
-      match ← savedSplit fc scope l r with
-      | none => simple
-      | some (k, name, e, tags) =>
-        -- The comparison's own claim is a supplemental obligation; the
-        -- operand is evaluated once, into a slot above the scope, and the
-        -- name, which no effect changes, is read where it is.
-        let _ ← LoweringExpression.closureExpr recursive fc scope Γ cond
-        let C ← exprType fc e
-        let lift := fun (t : Target) =>
-          ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩
-        let inner := held ⟨"",some e.span⟩ :: scope
-        let start ← dispatch p inner (C::Γ) (((0, none)), e) (((k+1, none)), name) tags (lift yes) (lift no)
-        compileAtom recursive fc scope Γ e start
+    -- Each operand once, in source order, then one comparison, which
+    -- branches on its own answer: its edges' yields narrow each operand,
+    -- and the objects its value was read from, by the tags of the other's
+    -- type (`PromiseCalls.comparisonYield`).
+    let A ← exprType fc cond
+    let B ← exprType fc l
+    let C ← exprType fc r
+    let shift := fun (t : Target) =>
+      (⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+3))⟩ : Target)
+    let temporaries := held ⟨"",some r.span⟩::held ⟨"",some l.span⟩ :: scope
+    let node ← emitAt p (.arith .eq (.var 1) (.var 0)) (.branchBind (shift yes) (shift no)) (C::B::Γ) A
+      (scope := temporaries)
+    let right ← compileAtom recursive fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
+    compileAtom recursive fc scope Γ l right
   | .logical _ andOp left right =>
     let _ ← LoweringExpression.closureExpr recursive fc scope Γ cond
     -- Where `Array.isArray` holds, a record or `unknown` arm is the built-ins'

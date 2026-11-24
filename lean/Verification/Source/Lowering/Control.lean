@@ -303,59 +303,6 @@ array contracts reads at the union of their positions. -/
         else throw s!"position {i} is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (TypeScript reads it as `undefined`, which is unsound)"
   pure alts.flatten.flatten.eraseDups
 
-/-- An operand of a split comparison: a slot, the field read from it, and
-the source expression. -/
-abbrev SplitOperand := (Nat × Option PropKey) × Fragment.Expr
-
-/-- A strict comparison of two operands neither of which is a singleton, both
-read without effect (a name, or a field of a name), one of them claimed at a
-union of singletons, dispatches as the tag tests it amounts to: the split
-operand, the other operand, and the split operand's singletons. An immutable
-name is split first, as before; otherwise a field read. -/
-@[nospecialize] def equalitySplit (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-    (l r : Fragment.Expr) :
-    Compiler (Option (SplitOperand × SplitOperand × List Tag)) := do
-  let G := SourceTypes.graph (← table)
-  let operand : Fragment.Expr → Option (Nat × Option PropKey)
-    | .var _ name => (valueSlot scope name).map (·, none)
-    | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
-    | _ => none
-  let singletons := fun (C : Ty Tree) =>
-    if C.isEmpty then none else (ProgramTyping.members G C).mapM fun a => singletonTag G [a]
-  let attempt := fun (s o : Fragment.Expr) (field : Bool) => do
-    let some sop := operand s | return none
-    let some oop := operand o | return none
-    let C ← match sop with
-      | (k, none) => if field then pure none else pure Γ[k]?
-      | (_, some _) => if field then (some <$> exprType fc s) else pure none
-    match C.bind singletons with
-    | some tags => return some ((sop, s), (oop, o), tags)
-    | none => return none
-  for (s, o, field) in [(r, l, false), (l, r, false), (r, l, true), (l, r, true)] do
-    if let some x ← attempt s o field then return some x
-  return none
-
-/-- A strict comparison of an immutable name with an operand that is not read
-without effect (a call, say) claimed at a union of singletons: the operand is
-evaluated once, into a slot of its own, and split there; the name, which no
-effect changes, is the other operand. -/
-@[nospecialize] def savedSplit (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (l r : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × List Tag)) := do
-  let G := SourceTypes.graph (← table)
-  let attempt := fun (n e : Fragment.Expr) => do
-    let .var _ name := n | return none
-    let some k := valueSlot scope name | return none
-    match e with
-    | .var .. | .lit .. | .read _ _ (.var ..) => return none
-    | _ =>
-      let C ← exprType fc e
-      if C.isEmpty then return none
-      match (ProgramTyping.members G C).mapM fun a => singletonTag G [a] with
-      | some tags => return some (k, n, e, tags)
-      | none => return none
-  if let some x ← attempt l r then return some x
-  attempt r l
-
 
 private instance : Hashable Descriptor := ⟨fun d => hash (d.name, d.span)⟩
 
