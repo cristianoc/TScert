@@ -3265,13 +3265,13 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     let other := if testLeft then r else l
     StateT.lift (narrowTarget env (if testLeft then l else r) tag (equal == q) (match other with | .lit .. => true | _ => false))
   -- Strict equality with an operand of one value: the test of that value on
-  -- the other operand (`comparisonsExpr`'s choice, `singletonTag`).
+  -- the other operand (`comparisonsExpr`'s choice, `PromiseCalls.singletonTag`).
   | .equality _ equal l r =>
     let w ← get
     let typeOf (x : Expr) : Option (Ty Tree) := (w.exprs.get? x.span).bind (·.2.toOption)
     let G ← StateT.lift graphNow
     let isLit (x : Expr) : Bool := match x with | .lit .. => true | _ => false
-    match (typeOf r).bind (singletonTag G), (typeOf l).bind (singletonTag G) with
+    match (typeOf r).bind (PromiseCalls.singletonTag G), (typeOf l).bind (PromiseCalls.singletonTag G) with
     | some tag, _ => do
       if (w.endsIn.get? r.span).getD (mayCall r) then
         if let some (root, path@(_ :: _)) := memberPath l then
@@ -3279,19 +3279,17 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
       StateT.lift (narrowTarget env l tag (equal == q) (isLit r))
     | _, some tag => StateT.lift (narrowTarget env r tag (equal == q) (isLit l))
     | _, _ =>
-      -- Equal to an operand holding one of several singletons: each
-      -- operand the union of its slices at each singleton the other may
-      -- hold (the lowering's split, one singleton at a time, each member
-      -- of the operand's type, `equalitySplit`, Control.lean:315-340).
+      -- Equal to an operand of any other type: each operand the union of
+      -- its slices at the tags of the other's type, as the comparison's
+      -- yields state (`PromiseCalls.comparisonYield`, `equalityTags`).
       if equal != q then return env
       let singletons (y : Expr) : Option (List Tag) :=
-        (typeOf y).bind fun B => if B.isEmpty then none else
-          (ProgramTyping.members G B).mapM fun b => singletonTag G [b]
+        (typeOf y).bind fun B => if B.isEmpty then none else PromiseCalls.equalityTags G B
       let mut env := env
       for (x, y) in [(l, r), (r, l)] do
         if let some ts := singletons y then
           let mut out : Option Env := none
-          for t in ts do out := join out (some (← StateT.lift (narrowTarget env x t true)))
+          for t in ts do out := join out (some (← StateT.lift (narrowTarget env x t true true)))
           env := out.getD env
       return env
   -- A call of a type guard (`promise := guards p`): on its true arm its

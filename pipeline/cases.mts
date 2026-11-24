@@ -4117,6 +4117,7 @@ export const cases: Case[] = [
   negative("invalid-equality-several-singletons", "where a field equals a name holding one of two singletons, it is either"),
   positive("literal-union-narrowing", "a passed test against a string or a nonzero number leaves the operand that value, `unknown` included; a disjunction of such tests leaves it one of their values, in a statement, a ternary and a negated early return"),
   negative("invalid-literal-union-narrowing", "where either of two singleton tests passed, the operand is either value", /source expression obligation at \[203,208\): evidence search failed/),
+  positive("comparison-one-node", "a strict comparison evaluates each operand once, in source order, and branches on its own answer; where equal, each operand narrows by the tags of the other's type: a family against its singletons, an object by identity (run under Node: 1,2)"),
   positive("module-value-equality", "a comparison with a module value's field, an enum member or an ambient constant's, narrows the other operand"),
   negative("invalid-module-value-equality", "an enum member, a module value, as the singleton of `===`: where `x === E.A` holds, `x` is 0", /source expression obligation at \[134,135\)/),
   positive("loops", "a `while` loop whose head a written cell claim states, left by `break`, and one whose `continue` edge returns to the head"),
