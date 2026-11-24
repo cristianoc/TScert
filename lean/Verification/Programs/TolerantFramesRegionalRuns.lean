@@ -132,7 +132,7 @@ covers throws. -/
 theorem regionsKept_of {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
     {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : ArgumentRegionFresh.FreshTables} {exc : Bool}
-    {h₀ : Heap}
+    {h₀ : Heap} (hcat : Footprints.ClassOk Footprints.intrinsicClasses ε.env h₀)
     (hacc : ∀ l, w.visited l →
       Nonempty (RegionNodeOk G P w startNames ε ctx Φ regions table ft exc h₀.length l)) :
     RegionsKeptS P G w startNames ε ctx (RegionX Φ regions table ft ε h₀) Φ regions h₀ exc := by
@@ -141,7 +141,7 @@ theorem regionsKept_of {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNa
   refine ⟨na.node, na.hP, fun hr hρ => ?_⟩
   obtain ⟨he, hi, hk⟩ := na.entry ρ s hpT
   obtain ⟨origins, outF, outC, outFs, ht, hedge, hhandler, hfr, hef, hec, hfl, hefl, hhf⟩ := na.within
-  have hrun := ht ε s.n s.W s.h ρ h₀ ε.env hX.1 hX.2.1 hX.2.2.1.values hX.2.2.2 he hi hk s.adm s.ok hr hρ (fun _ => hst)
+  have hrun := ht ε s.n s.W s.h ρ h₀ ε.env hcat hX.1 hX.2.1 hX.2.2.1.values hX.2.2.2 he hi hk s.adm s.ok hr hρ (fun _ => hst)
   have hfresh := hfr ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1 he hi hk
     s.adm s.ok hr hρ
   have hfld := hfl ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1.values

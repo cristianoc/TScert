@@ -133,8 +133,8 @@ facts holding where the node assertion does, `regionNodeEntry_of`). -/
 theorem regionsHeld_of (hrec : RegionsRecorded ι) (htyped : RegionsTyped ι) : RegionsHeld ι := by
   intro G I c after admits hp r hchk η hη Φ regions exc hreg
   obtain ⟨table, ft, hs1, hs2, hs3, hnodes⟩ := hrec G I c after admits hp r hchk Φ regions exc hreg
-  refine ⟨fun ε h₀ => RegionX Φ regions table ft ε h₀, fun ε h₀ => ⟨regionX_start hs1 hs2 hs3 ε h₀, ?_⟩⟩
-  refine regionsKept_of fun l hl => ?_
+  refine ⟨fun ε h₀ => RegionX Φ regions table ft ε h₀, fun ε h₀ hcat => ⟨regionX_start hs1 hs2 hs3 ε h₀, ?_⟩⟩
+  refine regionsKept_of hcat fun l hl => ?_
   obtain ⟨T, ftl, sums, hsums, hc, ha⟩ := hnodes l hl
   obtain ⟨hent, hty⟩ := htyped G I c after admits hp r hchk Φ regions exc hreg l hl
   obtain ⟨pc', hpc'⟩ := scope_reassign hp.2.1 hη

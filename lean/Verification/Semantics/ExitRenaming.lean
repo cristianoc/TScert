@@ -1,5 +1,6 @@
 import Verification.Semantics.ExitConjunction
 import Verification.Semantics.AssertionScopes
+import Verification.Semantics.RegionBounds
 
 /-! # Binding: a schema at a call that saves its first actuals
 
@@ -801,6 +802,7 @@ bound call what it meant at the longer one (`action_renameFootprint`,
 closed bound (`Footprint.close_sound`), which reads no position. -/
 theorem Exits.exitPost_dropWeak {k : Nat} {x : Exits ExitSchema} {pre : List Tm} (hp : pre.length = k)
     {c : Completion} {r r₀ : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
+    (hr : RootsOk s.W (callEnv r₀ (pre ++ args)))
     (h : x.exitPost c r₀ (pre ++ args) s s' v) : (x.dropWeak k).exitPost c r args s s' v := by
   have hcy : (x.dropWeak k).canonicalTransports = true := by
     simp only [Exits.canonicalTransports, Exits.dropWeak, Exits.map, canonical_dropWeak, Bool.and_self]
@@ -824,7 +826,8 @@ theorem Exits.exitPost_dropWeak {k : Nat} {x : Exits ExitSchema} {pre : List Tm}
     | none =>
       simp only [Option.getD_none]
       obtain ⟨had, hpost⟩ := hfr
-      exact ⟨had, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp (Footprints.Footprint.close_sound hpost))⟩
+      exact ⟨had, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp
+        (Footprints.Footprint.close_sound (Footprints.intrinsicClasses_ok s.ok hr) hpost))⟩
   · rintro _ G F hF hm rfl
     have hc := (canonical_renameFormula hm).1
     have hsl : F.slots ≤ x.slots := Nat.le_trans (ExitSchema.slots_le_of_mem hF) (Exits.slots_get x c)

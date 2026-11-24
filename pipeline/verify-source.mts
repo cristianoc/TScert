@@ -1197,7 +1197,6 @@ function regionText(r: Region): string {
   if ("path" in r) return `${pathText(r.path.x, r.path.fields)}.${regionKey(r.path.key)}`;
   if ("pathFields" in r) return `${pathText(r.pathFields.x, r.pathFields.fields)}.*`;
   if ("pathCells" in r) return `${pathText(r.pathCells.x, r.pathCells.fields)}[*]`;
-  if ("inCls" in r) return `${regionText(r.inCls.region)} (${selectorText(r.inCls.selector)})`;
   return `${pathText(r.spine.x, r.spine.fields)} spine`;
 }
 

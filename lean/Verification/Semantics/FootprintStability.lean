@@ -185,16 +185,18 @@ theorem keep_across_call {K : SepEvidence} {F : FactKind} {Φ : Footprint} {σ :
   FactKind.frame_step hs hK hok hρ (Post.rename hσ hp) hF
 
 /-- The class evidence a density fact supplies: its spine holds a spine. -/
-def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arraySpineKey then some .spines else none
+def denseClass (x : Nat) : ClassEvidence := fieldClass x arraySpineKey .spines
 
 theorem dense_classOk {x n ρ h} (hd : Dense x n ρ h) : ClassOk (denseClass x) ρ h := by
-  intro y k c l hc hl _
-  simp only [denseClass] at hc
-  split at hc
-  · rename_i hyk
-    obtain ⟨rfl, rfl⟩ := hyk
-    cases hc
-    exact dense_class hd (by simp [Region.mem, hl])
-  · cases hc
+  intro r c l hc hm _
+  cases r <;> simp only [denseClass, fieldClass] at hc
+  case field y k =>
+    split at hc
+    · rename_i hyk
+      obtain ⟨rfl, rfl⟩ := hyk
+      cases hc
+      exact dense_class hd hm
+    · cases hc
+  all_goals cases hc
 
 end Verification.Footprints

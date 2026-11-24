@@ -85,12 +85,13 @@ theorem passWrites_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {kS : HeapKnow
 below `b`: its grade, the closed bound of its frame below the mark, is below
 `Φ` (`GraphCode.selectedWithin_sound`). -/
 theorem selected_within_on {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
-    {eff : CallEffects.Effect} {h h' : Heap} (hF : GraphCode.FreshOk F b ρ)
+    {eff : CallEffects.Effect} {n : Nat} {W : WorldT n} {h h' : Heap} (hF : GraphCode.FreshOk F b ρ)
+    (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t))
     (hle : (Footprints.Footprint.boundBelow (GraphCode.freshPositions F t) eff.frame).le Φ = true)
     (hq : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
       h h') :
     Φ.HoldsOn (· < b) h h' :=
-  GraphCode.selectedWithin_sound hF hle hq
+  GraphCode.selectedWithin_sound hF hh href hle hq
 
 /-- **The pass's `within` bounds the node's normal exit** by `Φ` on the
 locations below `b`, from the node's entry heap. -/
@@ -132,7 +133,7 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
       rw [hterm] at hs
       have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe) hs
-      exact weaken (fun _ _ hq => selected_within_on hF (hterm ▸ hsel) (CallEffects.Effect.callPost_within hq.2)) hboth
+      exact weaken (fun _ _ hq => selected_within_on hF hh hsafe.refs (hterm ▸ hsel) (CallEffects.Effect.callPost_within hq.2)) hboth
     · cases hsel
   · exact ExpressionEffects.noReturn_sound hempty hsafe
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx
@@ -185,7 +186,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
           (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe)) hs
       exact SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun _ hq => GraphCode.selectedThrowWithin_sound hF (hterm ▸ hsel) hq.1.2)
+        (fun _ hq => GraphCode.selectedThrowWithin_sound hF hh hsafe.refs (hterm ▸ hsel) hq.1.2)
         (GraphCode.safePostExc_grow (Nat.le_refl _) hboth)
     · cases hsel
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx

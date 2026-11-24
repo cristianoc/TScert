@@ -25,15 +25,11 @@ def Region.rename (σ : Nat → Nat) : Region → Region
   | .path x p k => .path (σ x) p k
   | .pathFields x p => .pathFields (σ x) p
   | .pathCells x p => .pathCells (σ x) p
-  | .inCls r c => .inCls (r.rename σ) c
   | .spine x p => .spine (σ x) p
 
 theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
     ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by
-  intro r
-  induction r with
-  | inCls r c ih => simp only [Region.rename, Region.mem, ih]
-  | _ => rfl
+  intro r; cases r <;> rfl
 
 def Footprint.rename (σ : Nat → Nat) (Φ : Footprint) : Footprint := Φ.map fun e => (e.1.rename σ, e.2)
 
@@ -51,7 +47,6 @@ def Path.var (x : Nat) : Path := ⟨x, []⟩
 def regionRoots : Region → List Nat
   | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => [x]
   | .cls _ | .all => []
-  | .inCls r _ => regionRoots r
 
 /-- An effect reading runtime slots below `n` alone. -/
 def effectScoped (n : Nat) (Φ : Footprint) : Bool := Φ.all fun e => (regionRoots e.1).all (· < n)
@@ -81,8 +76,7 @@ theorem EffectAction.rename_iff (σ : Nat → Nat) :
 
 private theorem region_mem_congr {r : Region} {η η' : Env} (he : ∀ x ∈ regionRoots r, η x = η' x) (hp : Heap)
     (l : Nat) : r.mem η hp l = r.mem η' hp l := by
-  induction r with
-  | inCls r _ ih => simp only [Region.mem, ih (by simpa [regionRoots] using he)]
+  cases r with
   | cls _ | all => rfl
   | _ => simp only [regionRoots, List.mem_singleton, forall_eq] at he; simp only [Region.mem, he]
 

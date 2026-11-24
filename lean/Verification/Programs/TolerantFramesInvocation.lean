@@ -166,7 +166,7 @@ the invocation reaches whose contents categories hold. -/
 theorem rebaseOk_stable {ev : RebaseEvidence} {σ ρ₀ : Env} {sI : IndexedHeap} {h : Heap}
     (hlink : ∀ s x q, ev.link s = some (x, q) → StablePath sI.W (ρ₀ x) q (σ s))
     (hagree : ∀ s p, ev.agree s p = false) (hfresh : ∀ s p, ev.fresh s p = false)
-    (hc : HeapCategories h) : RebaseOk ev σ ρ₀ sI.h h where
+    (hc : ClassOk intrinsicClasses σ h) : RebaseOk ev σ ρ₀ sI.h h where
   link s x q he := (hlink s x q he).read sI.pos sI.ok
   agree s p he := by rw [hagree s p] at he; cases he
   fresh s p he := by rw [hfresh s p] at he; cases he

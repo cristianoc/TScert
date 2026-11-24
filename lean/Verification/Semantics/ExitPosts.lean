@@ -291,16 +291,31 @@ theorem SafePostExcV.erase_reached {Ξ T : Fam} {Q : WPost} {R : WExcV} {H : Pos
   SafePostExcV.iff_lift.mp
     (SafePostExcV.weaken_admissible s (Q' := WPost.lift H) (R' := (WExc.lift J).liftV) hn he hs)
 
-/-- **One exit specification entails another** at every call and every
-pair of states: the rule of consequence on both completions. -/
+/-- Valid references on a call's receiver and actuals give valid roots on
+its call environment. -/
+theorem callEnv_rootsOk {k : Nat} {W : WorldT k} {r : Tm} {args : List Tm}
+    (hr : RefsOk W r) (ha : ∀ a ∈ args, RefsOk W a) : RootsOk W (callEnv r args) := by
+  intro i
+  cases i with
+  | zero => exact hr
+  | succ j =>
+    simp only [callEnv, Nat.succ_ne_zero, ite_false, Nat.add_sub_cancel, List.getD]
+    cases h : args[j]? with
+    | none => simp [RefsOk, refs]
+    | some a => simpa using ha a (List.mem_of_getElem? h)
+
+/-- **One exit specification entails another** at every call with valid
+references and every pair of states: the rule of consequence on both
+completions. -/
 def Exits.Entails (x y : Exits ExitSchema) : Prop :=
-  ∀ c r args s s' v, x.exitPost c r args s s' v → y.exitPost c r args s s' v
+  ∀ c r args s s' v, RootsOk s.W (callEnv r args) → x.exitPost c r args s s' v → y.exitPost c r args s s' v
 
 /-- Entailment at worlds and heaps. -/
 theorem Exits.Entails.exitPostW {x y : Exits ExitSchema} (h : x.Entails y) {c : Completion} {r : Tm}
     {args : List Tm} {j : Nat} {U : WorldT j} {before : Heap} {k : Nat} {V : WorldT k} {after : Heap} {v : Tm}
+    (hr : RootsOk U (callEnv r args))
     (hp : x.exitPostW c r args U before k V after v) : y.exitPostW c r args U before k V after v :=
-  fun h1 h2 h3 h4 h5 h6 => h _ _ _ _ _ _ (hp h1 h2 h3 h4 h5 h6)
+  fun h1 h2 h3 h4 h5 h6 => h _ _ _ _ _ _ hr (hp h1 h2 h3 h4 h5 h6)
 
 /-- **A completion's guarantee read at heaps**: some indexed states with
 these heaps at which the guarantee holds; what a consequence reading no

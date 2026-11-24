@@ -346,7 +346,6 @@ theorem confinedFootprint_supported {h h' : Heap} {ρ : Env} {owned ownedArr : L
 
 /-- Pure syntactic region inclusion into an owned `.keep` region. -/
 def regionSub : Region → Region → Bool
-  | .inCls r _, R => regionSub r R
   | .field x k, .fields y => x == y && k != arraySpineKey
   | .path x [] k, .fields y => x == y && k != arraySpineKey
   | .fields x, .fields y => x == y
@@ -360,11 +359,7 @@ def regionSub : Region → Region → Bool
 
 theorem regionSub_mem {ρ : Env} {h : Heap} {r R : Region} {loc : Nat}
     (hsub : regionSub r R = true) (hm : r.mem ρ h loc = true) : R.mem ρ h loc = true := by
-  induction r generalizing R with
-  | inCls r' c ih =>
-    simp only [regionSub] at hsub
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hsub hm.1
+  cases r with
   | field x k =>
     cases R with
     | fields y =>

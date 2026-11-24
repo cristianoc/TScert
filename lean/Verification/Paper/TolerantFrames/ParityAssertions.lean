@@ -33,11 +33,9 @@ every support through `SupportedBy`. -/
 abbrev SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   Footprints.Supported S η s.h s'.h
 
-/-- A region read without the name valuation: classes, every location and
-their intersections with a class. -/
+/-- A region read without the name valuation: classes and every location. -/
 def regionEnvFree : Region → Bool
   | .cls _ | .all => true
-  | .inCls r _ => regionEnvFree r
   | _ => false
 
 /-- An effect every region of which is read without the name valuation. -/
@@ -65,8 +63,7 @@ theorem EffectAction.refl (Φ : Footprint) (η : Env) (s : IndexedHeap) : Effect
 
 private theorem region_mem_envFree {r : Region} (hr : regionEnvFree r = true) (hp : Heap) (l : Nat) :
     r.mem η hp l = r.mem η' hp l := by
-  induction r with
-  | inCls r _ ih => simp only [Region.mem, ih hr]
+  cases r with
   | cls _ => rfl
   | all => rfl
   | _ => simp [regionEnvFree] at hr
@@ -94,9 +91,9 @@ theorem EffectAction.closed_mono {a b : Footprints.Closed} (hle : a.le b = true)
 
 /-- Entrywise region inclusion includes the actions (`Footprints.Post.mono`,
 `Region.sub_mem`), read with no class claim on fields. -/
-theorem EffectAction.regions_mono {Ψ : Footprint} (hle : Footprint.le (fun _ _ => none) Φ Ψ = true)
+theorem EffectAction.regions_mono {Ψ : Footprint} (hle : Footprint.le noClassEvidence Φ Ψ = true)
     (ha : EffectAction Φ η s s') : EffectAction Ψ η s s' :=
-  ⟨ha.1, Post.mono hle (fun _ _ _ _ hc => by cases hc) ha.2⟩
+  ⟨ha.1, Post.mono hle (noClassEvidence_ok _ _) ha.2⟩
 
 /-- **An effect whose regions read the same locations at both states of a
 first action composes with a second** (the note, §3, "Order, top,
@@ -131,7 +128,6 @@ spine's cells (`cells`, `pathCells`) are not: a spine may come to list other
 cells (the note, §3, "Not rigid"). -/
 def stableRegion (paths : List (Nat × List String)) : Region → Bool
   | .cls _ | .all | .field _ _ | .fields _ => true
-  | .inCls r _ => stableRegion paths r
   | .spine x p | .path x p _ | .pathFields x p => paths.contains (x, p)
   | .cells _ | .pathCells _ _ => false
 
@@ -142,11 +138,6 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
   | .all, _, l, hl => by simp [Region.mem, hl, Nat.lt_of_lt_of_le hl ha.length_le]
   | .field _ _, _, _, _ => rfl
   | .fields _, _, _, _ => rfl
-  | .inCls r c, h, l, hl => by
-    have := region_mem_stable ha hp (r := r) h l hl
-    have hc := ha.cls_mem hl η c
-    simp only [Region.mem] at hc ⊢
-    rw [this, hc]
   | .spine x p, h, _, _ => by
     simp only [stableRegion, List.contains_iff_mem] at h
     simp only [Region.mem, hp _ h]
@@ -160,11 +151,10 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
   | .pathCells _ _, h, _, _ => by simp [stableRegion] at h
 
 /-- The category class a region's locations lie in at every well-formed
-state, whatever the valuation: a class, a module cell (values), and a
-spine's listed cells (values: element cells hold no spine,
-`HeapCategories.cells`). -/
+state, whatever the valuation: a class, and a spine's listed cells (values:
+element cells hold no spine, `HeapCategories.cells`). -/
 def regionClass : Region → Option Selector
-  | .cls a | .inCls _ a => some a
+  | .cls a => some a
   | .cells _ | .pathCells _ _ => some .values
   | _ => none
 
@@ -195,10 +185,6 @@ theorem regionClass_sound {s : IndexedHeap} {r : Region} {a : Selector} (hr : re
     (hm : r.mem η s.h l = true) : (Region.cls a).mem η s.h l = true := by
   cases r with
   | cls c => cases hr; exact hm
-  | inCls r c =>
-    cases hr
-    simp only [Region.mem, Bool.and_eq_true] at hm ⊢
-    exact hm.2
   | cells x => cases hr; exact spineCells_values hm
   | pathCells x p =>
     cases hr

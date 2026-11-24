@@ -45,13 +45,11 @@ open Verification
 
 /-- **Whether a region is the spine of a call position the list `P`
 names** (the note's Fresh-Eff, `x.spine` with `x` fresh): its spine field,
-its spine field at the empty path, its selected spine at the empty path, or
-such a region restricted to a class. -/
+its spine field at the empty path, or its selected spine at the empty path. -/
 def Region.freshSpine (P : List Nat) : Region → Bool
   | .field i k => decide (k = arraySpineKey) && P.contains i
   | .path i [] k => decide (k = arraySpineKey) && P.contains i
   | .spine i [] => P.contains i
-  | .inCls r _ => r.freshSpine P
   | _ => false
 
 /-- The positions `P` hold values whose array spine was allocated at or
@@ -70,7 +68,7 @@ theorem Region.freshSpine_mem {P : List Nat} {b : Nat} {ρ : Env} {R : Region} {
     rw [spineOf_lookup hs] at hm
     cases hm
     exact hb
-  induction R with
+  cases R with
   | field i k =>
     simp only [Region.freshSpine, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
     obtain ⟨rfl, hi⟩ := hR
@@ -96,10 +94,6 @@ theorem Region.freshSpine_mem {P : List Nat} {b : Nat} {ρ : Env} {R : Region} {
         exact hm ▸ hb
       all_goals cases hfs
     | cons _ _ => simp [Region.freshSpine] at hR
-  | inCls r c ih =>
-    simp only [Region.freshSpine] at hR
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hR hm.1
   | _ => simp [Region.freshSpine] at hR
 
 /-- The entries of a frame that may cover an old location: those freshness
@@ -114,9 +108,11 @@ def Footprint.boundBelow (P : List Nat) (Φ : Footprint) : Closed := Footprint.c
 
 /-- **A frame is within its closed bound below the mark** (proved): every
 location below `b` changes as the bound's component for its contents
-allows, where the positions `P` hold spines allocated at or after `b`. -/
+allows, where the intrinsic category bounds hold and the positions `P` hold
+spines allocated at or after `b`. -/
 theorem Footprint.boundBelow_sound {P : List Nat} {Φ : Footprint} {ρ : Env} {b : Nat} {h h' : Heap}
-    (hp : Post Φ ρ h h') (hP : FreshPositions P b ρ) : (Φ.boundBelow P).HoldsOn (· < b) h h' := by
+    (hcat : ClassOk intrinsicClasses ρ h) (hp : Post Φ ρ h h') (hP : FreshPositions P b ρ) :
+    (Φ.boundBelow P).HoldsOn (· < b) h h' := by
   refine ⟨hp.1, fun l v hl hv => ?_⟩
   obtain ⟨v', hv', ha⟩ := hp.2 l v hv
   refine ⟨v', hv', ?_⟩
@@ -124,7 +120,7 @@ theorem Footprint.boundBelow_sound {P : List Nat} {Φ : Footprint} {ρ : Env} {b
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact .inl rfl
   · cases hf : e.1.freshSpine P
-    · exact .inr ⟨e, List.mem_filter.mpr ⟨he, by simp [hf]⟩, Region.cats_mem hv hm, hh⟩
+    · exact .inr ⟨e, List.mem_filter.mpr ⟨he, by simp [hf]⟩, Region.cats_mem hcat hv hm, hh⟩
     · exact absurd (Region.freshSpine_mem hP hf hm) (by omega)
 
 @[simp] theorem Change.keep_max (a : Change) : Change.keep.max a = a := by cases a <;> rfl
@@ -242,7 +238,8 @@ bound's on the locations below the mark `b`, where the class evidence holds
 at the heap they are read at and the positions `P` hold spines allocated at
 or after `b`. -/
 theorem Footprint.includedIn_sound {cl : ClassEvidence} {P : List Nat} {Φ Ψ : Footprint} {ρ : Env} {b : Nat}
-    {h h' : Heap} (hi : Footprint.includedIn cl P Φ Ψ = true) (hc : ClassOk cl ρ h) (hP : FreshPositions P b ρ)
+    {h h' : Heap} (hi : Footprint.includedIn cl P Φ Ψ = true) (hc : ClassOk cl ρ h)
+    (hcat : ClassOk intrinsicClasses ρ h) (hP : FreshPositions P b ρ)
     (hp : Post Φ ρ h h') : PostBelow b Ψ ρ h h' := by
   refine ⟨hp.1, fun l v hb hv => ?_⟩
   have hlt := (List.getElem?_eq_some_iff.mp hv).1
@@ -252,14 +249,14 @@ theorem Footprint.includedIn_sound {cl : ClassEvidence} {P : List Nat} {Φ Ψ : 
   · exact .inl rfl
   have hei := List.all_eq_true.mp hi e he
   simp only [Footprint.entryIncluded, Bool.or_eq_true] at hei
-  rcases hei with (hf | hsub) | hcat
+  rcases hei with (hf | hsub) | hcat'
   · exact absurd (Region.freshSpine_mem hP hf hm) (by omega)
   · obtain ⟨f, hf, hfe⟩ := List.any_eq_true.mp hsub
     simp only [Bool.and_eq_true] at hfe
     exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hlt hm, hh.mono hfe.1⟩
-  · refine class_cover hv hp.1 hv' ?_ hcat
+  · refine class_cover hv hp.1 hv' ?_ hcat'
     rw [Footprint.close_at, Footprint.changeAt_holds]
-    exact .inr ⟨e, List.mem_singleton_self _, Region.cats_mem hv hm, hh⟩
+    exact .inr ⟨e, List.mem_singleton_self _, Region.cats_mem hcat hv hm, hh⟩
 
 /-- **The closed bound below a mark is an inclusion in the closed bound's
 entries**: where it is below `c`, the frame is included in `c.fp`. -/
@@ -285,15 +282,14 @@ def Footprint.keepsHeap (Φ : Footprint) : Bool := (Φ.boundBelow []).le .empty
 /-- **A frame included in the empty effect keeps the entry heap**
 (proved): the heap a transition it allows leaves extends the entry heap. -/
 theorem Footprint.keepsHeap_prefix {Φ : Footprint} {ρ : Env} {h h' : Heap} (hk : Φ.keepsHeap = true)
-    (hp : Post Φ ρ h h') : h.IsPrefix h' := by
-  have hb := (Footprint.boundBelow_sound (b := h.length) hp (FreshPositions.nil _ _)).mono hk
+    (hcat : ClassOk intrinsicClasses ρ h) (hp : Post Φ ρ h h') : h.IsPrefix h' := by
+  have hb := (Footprint.boundBelow_sound (b := h.length) hcat hp (FreshPositions.nil _ _)).mono hk
   exact Closed.holds_empty.mp (Closed.holds_of_on
     ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩)
 
 /-- No region is the spine of a position of the empty list. -/
 theorem Region.freshSpine_nil (R : Region) : R.freshSpine [] = false := by
-  induction R with
-  | inCls r _ ih => simpa [Region.freshSpine] using ih
+  cases R with
   | path _ p _ => cases p <;> simp [Region.freshSpine]
   | spine _ p => cases p <;> simp [Region.freshSpine]
   | _ => first | rfl | simp [Region.freshSpine]
@@ -306,8 +302,8 @@ location outside it** (proved): where `Φ.without R` is included in the empty
 effect, a transition `Φ` allows leaves every old location `R` does not cover
 as it was. -/
 theorem Footprint.keepsHeap_outside {R : Region} {Φ : Footprint} {ρ : Env} {h h' : Heap}
-    (hk : (Φ.without R).keepsHeap = true) (hp : Post Φ ρ h h') {l : Nat} {v : Val}
-    (hl : R.mem ρ h l = false) (hv : h[l]? = some v) : h'[l]? = some v := by
+    (hk : (Φ.without R).keepsHeap = true) (hcat : ClassOk intrinsicClasses ρ h) (hp : Post Φ ρ h h')
+    {l : Nat} {v : Val} (hl : R.mem ρ h l = false) (hv : h[l]? = some v) : h'[l]? = some v := by
   obtain ⟨v', hv', ha⟩ := hp.2 l v hv
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact hv'
@@ -320,7 +316,7 @@ theorem Footprint.keepsHeap_outside {R : Region} {Φ : Footprint} {ρ : Env} {h 
     refine ⟨v', hv', ?_⟩
     rw [Footprint.boundBelow, Footprint.close_at, Footprint.changeAt_holds]
     exact .inr ⟨e, List.mem_filter.mpr ⟨List.mem_filter.mpr ⟨he, by simp [hne]⟩, by simp [Region.freshSpine_nil]⟩,
-      Region.cats_mem hv hm, hh⟩⟩
+      Region.cats_mem hcat hv hm, hh⟩⟩
   obtain ⟨u, hu, hc⟩ := (hon.mono hk).2 l v rfl hv
   rw [Closed.at_empty] at hc
   rw [hu, hc]

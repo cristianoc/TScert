@@ -101,14 +101,13 @@ path reads. -/
 def spineSite : Region → Option (Nat × List String)
   | .path x p k => if k == arraySpineKey then some (x, p) else none
   | .field x k => if k == arraySpineKey then some (x, []) else none
-  | .inCls r _ => spineSite r
   | _ => none
 
 theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
     ∀ {r : Region} {x : Nat} {p : List String}, spineSite r = some (x, p) → r.mem ρ h l = true →
       ∃ u, readPath h (ρ x) p = some u ∧ spineOf u = some l := by
   intro r
-  induction r with
+  cases r with
   | path y q k =>
     intro x p hs hm
     simp only [spineSite] at hs
@@ -134,10 +133,6 @@ theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
       subst hk
       exact ⟨_, rfl, by simpa [Region.mem, spineOf] using hm⟩
     · cases hs
-  | inCls r c ih =>
-    intro x p hs hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hs hm.1
   | _ => intro x p hs; simp [spineSite] at hs
 
 /-- The locations of the array a value is: the spine it selects and the
@@ -153,7 +148,6 @@ def arraySite : Region → Option (Nat × List String)
   | .spine x p => some (x, p)
   | .cells x => some (x, [])
   | .pathCells x p => some (x, p)
-  | .inCls r _ => arraySite r
   | _ => none
 
 /-- The `[]` slot of a value is the spine it selects. -/
@@ -166,7 +160,6 @@ theorem elementsOf_of_spineOf {u : Val} {l : Nat} (hs : spineOf u = some l) : el
 theorem arraySite_of_spineSite : ∀ {r : Region} {x : Nat × List String}, spineSite r = some x → arraySite r = some x
   | .path _ _ _, _, h => by simpa [spineSite, arraySite] using h
   | .field _ _, _, h => by simpa [spineSite, arraySite] using h
-  | .inCls r _, _, h => arraySite_of_spineSite (r := r) h
   | .fields _, _, h | .cells _, _, h | .cls _, _, h | .all, _, h | .pathFields _ _, _, h
   | .pathCells _ _, _, h | .spine _ _, _, h => by simp [spineSite] at h
 
@@ -174,7 +167,7 @@ theorem arraySite_mem {ρ : Env} {h : Heap} {l : Nat} :
     ∀ {r : Region} {x : Nat} {p : List String}, arraySite r = some (x, p) → r.mem ρ h l = true →
       ∃ u, readPath h (ρ x) p = some u ∧ ArrayPart h u l := by
   intro r
-  induction r with
+  cases r with
   | path y q k =>
     intro x p hs hm
     have hsp : spineSite (.path y q k) = some (x, p) := by simpa [spineSite, arraySite] using hs
@@ -206,10 +199,6 @@ theorem arraySite_mem {ρ : Env} {h : Heap} {l : Nat} :
     split at hm
     · rename_i u hu; exact ⟨u, hu, .inr (by simpa using hm)⟩
     · cases hm
-  | inCls r c ih =>
-    intro x p hs hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hs hm.1
   | _ => intro x p hs; simp [arraySite] at hs
 
 /-- The fields site a region selects within: the value a path reads, and
@@ -219,7 +208,6 @@ def fieldSite : Region → Option ((Nat × List String) × Option PropKey)
   | .path x p k => some ((x, p), some k)
   | .fields x => some ((x, []), none)
   | .pathFields x p => some ((x, p), none)
-  | .inCls r _ => fieldSite r
   | _ => none
 
 /-- A location of a value's field at `k`, or of its field locations at
@@ -238,7 +226,7 @@ theorem fieldSite_mem {ρ : Env} {h : Heap} {l : Nat} :
     ∀ {r : Region} {x : Nat} {p : List String} {o : Option PropKey}, fieldSite r = some ((x, p), o) →
       r.mem ρ h l = true → ∃ v, readPath h (ρ x) p = some v ∧ FieldAt v o l := by
   intro r
-  induction r with
+  cases r with
   | field y k =>
     intro x p o hs hm
     simp only [fieldSite, Option.some.injEq, Prod.mk.injEq] at hs
@@ -265,10 +253,6 @@ theorem fieldSite_mem {ρ : Env} {h : Heap} {l : Nat} :
     split at hm
     · rename_i v hv; exact ⟨v, hv, by simpa [FieldAt] using hm⟩
     · cases hm
-  | inCls r c ih =>
-    intro x p o hs hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hs hm.1
   | _ => intro x p o hs; simp [fieldSite] at hs
 
 /-! ## Separation facts -/
@@ -354,7 +338,7 @@ theorem separationFacts_holds {S : HeapSeparation.Separation} {ρ : Env} {h : He
 against marks and the typed fields they cover, links, and separation
 facts. -/
 structure SepEvidence where
-  cl : ClassEvidence := fun _ _ => none
+  cl : ClassEvidence := noClassEvidence
   stamps : Stamps := ⟨fun _ => none, fun _ => none⟩
   typed : Nat → List PropKey := fun _ => []
   links : HeapLinks.Links := []
@@ -364,51 +348,31 @@ def SepEvidence.Holds (E : SepEvidence) (μ : Nat → Nat) (ρ : Env) (h : Heap)
   ClassOk E.cl ρ h ∧ StampsHold E.stamps E.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j) ∧
     HeapLinks.Holds E.links ρ h ∧ ∀ f ∈ E.facts, f.Holds ρ h
 
-/-- **A region's bound under the evidence**: a field's bound narrowed to
-the kinds of the category its class evidence gives (`Region.bound`
-otherwise). -/
-def SepEvidence.bound (E : SepEvidence) : Region → KindSet
-  | .field x k => match E.cl x k with
-    | some c => (slotBound k).inter c.kinds
-    | none => slotBound k
-  | .inCls r c => (E.bound r).inter c.kinds
-  | r => r.bound
+/-- **A region's bound under the evidence**: narrowed to the kinds of the
+category its class evidence gives (`Region.bound` otherwise). -/
+def SepEvidence.bound (E : SepEvidence) (r : Region) : KindSet :=
+  match E.cl r with
+  | some c => r.bound.inter c.kinds
+  | none => r.bound
 
 theorem SepEvidence.bound_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {W : WorldT n} {h : Heap}
     {ρ : Env} (hE : E.Holds μ ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) :
     ∀ (r : Region) {l : Nat}, l < h.length → r.mem ρ h l = true →
       ∃ role, roleAt W l = some role ∧ (E.bound r).contains role.kind = true := by
-  intro r
-  induction r with
-  | field x k =>
-    intro l hl hm
-    obtain ⟨role, hr, hb⟩ := Region.bound_sound hok hρ (.field x k) hl hm
-    simp only [SepEvidence.bound]
-    split
-    · rename_i c hc
-      have hcls := hE.1 x k c l hc (by simpa [Region.mem] using hm) hl
-      simp only [Region.mem] at hcls
-      split at hcls
-      · rename_i v hv
-        obtain ⟨role', hr', hc'⟩ := selects_bound hok hv hcls
-        rw [hr] at hr'; cases hr'
-        exact ⟨role, hr, by simp [Region.bound] at hb; simp [hb, hc']⟩
-      · cases hcls
-    · exact ⟨role, hr, hb⟩
-  | inCls r c ih =>
-    intro l hl hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    obtain ⟨role, hr, hb⟩ := ih hl hm.1
-    have hc := hm.2
-    split at hc
+  intro r l hl hm
+  obtain ⟨role, hr, hb⟩ := Region.bound_sound hok hρ r hl hm
+  simp only [SepEvidence.bound]
+  split
+  · rename_i c hc
+    have hcls := hE.1 r c l hc hm hl
+    simp only [Region.mem] at hcls
+    split at hcls
     · rename_i v hv
-      obtain ⟨role', hr', hc'⟩ := selects_bound hok hv hc
+      obtain ⟨role', hr', hc'⟩ := selects_bound hok hv hcls
       rw [hr] at hr'; cases hr'
-      exact ⟨role, hr, by simp [SepEvidence.bound, hb, hc']⟩
-    · cases hc
-  | _ =>
-    intro l hl hm
-    exact Region.bound_sound hok hρ _ hl hm
+      exact ⟨role, hr, by simp [hb, hc']⟩
+    · cases hcls
+  · exact ⟨role, hr, hb⟩
 
 /-- Whether a fact separates `r` from `s`, its first site `r`'s and its
 second `s`'s, each read through the links. -/
@@ -568,20 +532,11 @@ theorem SepEvidence.query_symm (E : SepEvidence) (r s : Region) :
 /-- A region's bound under the evidence is within its bound. -/
 theorem SepEvidence.bound_le (E : SepEvidence) :
     ∀ (r : Region) (k : Kind), (E.bound r).contains k = true → r.bound.contains k = true := by
-  intro r
-  induction r with
-  | field x k' =>
-    intro k hk
-    simp only [SepEvidence.bound] at hk
-    split at hk
-    · simp only [KindSet.contains_inter, Bool.and_eq_true] at hk; exact hk.1
-    · exact hk
-  | inCls r c' ih =>
-    intro k hk
-    simp only [SepEvidence.bound, KindSet.contains_inter, Bool.and_eq_true] at hk
-    simp only [Region.bound, KindSet.contains_inter, Bool.and_eq_true]
-    exact ⟨ih k hk.1, hk.2⟩
-  | _ => intro k hk; exact hk
+  intro r k hk
+  simp only [SepEvidence.bound] at hk
+  split at hk
+  · simp only [KindSet.contains_inter, Bool.and_eq_true] at hk; exact hk.1
+  · exact hk
 
 /-- **Every pair the bounds separate, the check separates**
 (`boundQuery`). -/
@@ -601,44 +556,23 @@ theorem SepEvidence.query_of_bound (E : SepEvidence) {r s : Region}
       · simp [E.bound_le r k hr, E.bound_le s k hs] at h0
   simp [SepEvidence.query, this]
 
-/-- **A part of a region in a class is separated from whatever the region
-is.** -/
-theorem SepEvidence.query_inCls_left (E : SepEvidence) {r s : Region} (c : Selector)
-    (hd : E.query.disjoint r s = true) : E.query.disjoint (.inCls r c) s = true := by
-  simp only [SepEvidence.query, Bool.or_eq_true] at hd ⊢
-  have hb : ∀ k, (E.bound (.inCls r c)).contains k = true → (E.bound r).contains k = true := by
-    intro k h; simp only [SepEvidence.bound, KindSet.contains_inter, Bool.and_eq_true] at h; exact h.1
-  rcases hd with (((hd | hd) | hd) | hd) | hd
-  · left; left; left; left
-    refine KindSet.isEmpty_iff.mpr fun k => ?_
-    have h0 := KindSet.isEmpty_iff.mp hd k
-    simp only [KindSet.contains_inter] at h0 ⊢
-    cases hr : (E.bound (.inCls r c)).contains k
-    · simp
-    · simp only [hb k hr, Bool.true_and] at h0; simp [h0]
-  · left; left; left; right; simpa [Region.keysApart, Region.key?] using hd
-  · left; left; right; simpa [SepEvidence.fresh, fieldSite] using hd
-  · left; right; simpa [SepEvidence.fresh, fieldSite] using hd
-  · right
-    obtain ⟨f, hf, hm⟩ := List.any_eq_true.mp hd
-    refine List.any_eq_true.mpr ⟨f, hf, ?_⟩
-    cases f <;> simpa [SepEvidence.byFact, spineSite, arraySite, fieldSite] using hm
-
-/-- A field whose class evidence is a class disjoint from `c` is
-separated from every region bounded by `c`'s kinds: `cls c`, the part of
-a region in `c`, a module cell where `c` is the values. -/
-theorem SepEvidence.query_field_class (E : SepEvidence) {x : Nat} {k : PropKey} {c c' : Selector}
-    (hc : E.cl x k = some c') (hd : c'.disjoint c = true) {s : Region}
+/-- A region whose class evidence is a class disjoint from `c` is separated
+from every region bounded by `c`'s kinds: `cls c`, a field or cell where
+`c` is the values. -/
+theorem SepEvidence.query_region_class (E : SepEvidence) {r : Region} {c c' : Selector}
+    (hc : E.cl r = some c') (hd : c'.disjoint c = true) {s : Region}
     (hs : ∀ kd, (E.bound s).contains kd = true → c.kinds.contains kd = true) :
-    E.query.disjoint (.field x k) s = true := by
+    E.query.disjoint r s = true := by
   have h0 := (Selector.kinds_inter_isEmpty c' c).trans hd
-  have : ((E.bound (.field x k)).inter (E.bound s)).isEmpty = true := by
+  have : ((E.bound r).inter (E.bound s)).isEmpty = true := by
     refine KindSet.isEmpty_iff.mpr fun kd => ?_
     have h1 := KindSet.isEmpty_iff.mp h0 kd
-    simp only [SepEvidence.bound, hc, KindSet.contains_inter] at h1 ⊢
+    simp only [KindSet.contains_inter] at h1 ⊢
     cases h2 : (E.bound s).contains kd
     · simp
-    · simp only [hs kd h2, Bool.and_true] at h1; simp [h1]
+    · simp only [SepEvidence.bound, hc, KindSet.contains_inter]
+      simp only [hs kd h2, Bool.and_true] at h1
+      simp [h1]
   simp [SepEvidence.query, this]
 
 /-- A fact the evidence lists separates its two sites. -/
@@ -649,17 +583,16 @@ theorem SepEvidence.query_fact (E : SepEvidence) {f : SepFact} (hf : f ∈ E.fac
   exact List.any_eq_true.mpr ⟨f, hf, by simp [hb]⟩
 
 
-/-! ## Each separation a field class, a stamp or a listed fact gives
+/-! ## Each separation a class, a stamp or a listed fact gives
 
 Every pair the case table of the stability check separated, the check
-separates: a field against a region in a disjoint class
-(`query_field_class`), a part in a class (`query_inCls_left`,
-`query_of_bound` with `boundQuery_inCls_cls`), fresh own locations against
-an older typed field (`query_fresh`), two listed distinct fields
-(`query_locs`), a path's spine against a slot's (`query_spines`), and the
-cells of a path, element cells by their bound, against a spine field or a
-class other than the values (`query_pathCells_field`,
-`query_pathCells_cls`). -/
+separates: a region against one in a disjoint class
+(`query_region_class`, `query_of_bound` with `boundQuery_cats_cls`), fresh
+own locations against an older typed field (`query_fresh`), two listed
+distinct fields (`query_locs`), a path's spine against a slot's
+(`query_spines`), and the cells of a path, element cells by their bound,
+against a spine field or a class other than the values
+(`query_pathCells_field`, `query_pathCells_cls`). -/
 
 theorem slotsOf_self (ls : HeapLinks.Links) (x : Nat) : x ∈ slotsOf ls x [] := by
   simp [slotsOf, pathViews, HeapLinks.aliases]
@@ -680,7 +613,8 @@ theorem SepEvidence.query_fresh (E : SepEvidence) {x y : Nat} {k' : PropKey} {m 
       · exact ⟨none, rfl⟩
       · exact ⟨some k, rfl⟩
     obtain ⟨o, ho⟩ := hfr
-    simp only [SepEvidence.fresh, ho, fieldSite]
+    have hfy : fieldSite (.field y k') = some ((y, []), some k') := rfl
+    simp only [SepEvidence.fresh, ho, hfy]
     refine List.any_eq_true.mpr ⟨x, slotsOf_self _ _, List.any_eq_true.mpr ⟨y, slotsOf_self _ _, ?_⟩⟩
     simp [ha, hb, hk, hm]
   simp [SepEvidence.query, hf]
@@ -695,10 +629,12 @@ theorem SepEvidence.query_spines (E : SepEvidence) {x y : Nat} {p : List String}
   E.query_fact hf (by simp [SepEvidence.byFact, spineSite, sameSite_self])
 
 theorem SepEvidence.query_pathCells_field (E : SepEvidence) (x : Nat) (p : List String) {y : Nat}
-    {k : PropKey} (hc : E.cl y k = some .spines) : E.query.disjoint (.pathCells x p) (.field y k) = true := by
-  have := (E.query_field_class (s := .pathCells x p) hc (c := .values) rfl
-    (fun kd h => by revert h; cases kd <;> simp [SepEvidence.bound, Region.bound, KindSet.contains, KindSet.elems,
-      Selector.kinds, KindSet.ofCategories, Selector.has]))
+    {k : PropKey} (hc : E.cl (.field y k) = some .spines) : E.query.disjoint (.pathCells x p) (.field y k) = true := by
+  have := (E.query_region_class (s := .pathCells x p) hc (c := .values) rfl
+    (fun kd h => by
+      have hb := E.bound_le (.pathCells x p) kd h
+      cases kd <;> simp [Region.bound, KindSet.contains, KindSet.elems,
+        Selector.kinds, KindSet.ofCategories, Selector.has] at hb ⊢))
   rwa [E.query_symm]
 
 theorem SepEvidence.query_pathCells_cls (E : SepEvidence) (x : Nat) (p : List String) {c : Selector}

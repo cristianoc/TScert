@@ -244,31 +244,26 @@ keys of slots' objects whose contents the transition keeps
 built from first fields by `ReadContext.ofFirst`); a typed array's
 length is its descriptor's, part of the value. A path $`x.f_1\ldots f_n`$ reads the field location of
 $`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$. Each
-location the read passes on from holds an object, of class
-$`\mathsf{values}`$, which every change but `any` keeps; the last holds the
-value the read ends at, of a class $`\sigma`$ selecting it, at a change
-$`\lambda`$ keeping it. The support reads each location within its class
-region, but a first field $`c`$ states stable (`pathReads`):
+location the read passes on from holds an object, which every change but
+`any` keeps; the last holds the value the read ends at, at a change
+$`\lambda`$ keeping it. The support lists each field location along the path
+except a first field $`c`$ states stable (`pathReads`):
 
 ```math
-\mathrm{reads}_c^{\lambda,\sigma}(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i \cap \mathsf{cls}(i < n\ ?\ \mathsf{values} : \sigma) : (i < n\ ?\ \mathsf{grow} : \lambda) \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
+\mathrm{reads}_c^{\lambda}(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i : (i < n\ ?\ \mathsf{grow} : \lambda) \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
 ```
 
-The class $`\sigma`$ is $`\mathsf{values}`$ where the read ends at a number,
-a string or an object, and $`\mathsf{all}`$ where it may end at any
-contents: a field location may hold a spine. **Proved** (`pathReads_sound`):
-where the support is kept and $`\sigma`$ selects the value read, the read
-reads it after the transition.
+**Proved** (`pathReads_sound`): where the support is kept and $`\lambda`$
+keeps the value read, the read reads it after the transition.
 
 A term $`t`$ (ARITHMETIC.md, [linear facts](ARITHMETIC.md#linear-facts))
 at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its spine
 tolerates has the support (`Term.support`): none for an entry term, which
-reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda,\mathsf{values}}`$ of its path,
+reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda}`$ of its path,
 $`\lambda`$ `init` for a value or a string's length (a number or a string)
 and `grow` for a length or a typed array's length (an object), and for a
-length $`|x.\pi|`$ the spine location of the array $`x.\pi`$ reads, where it
-holds an array spine (class $`\mathsf{arrays}`$, the one class a length
-reads), at $`\delta`$, each but where the context keeps it. A typed
+length $`|x.\pi|`$ the spine location $`x.\pi.\mathtt{[]}`$ of the array
+$`x.\pi`$ reads at $`\delta`$, each except where the context keeps it. A typed
 array's length $`\mathrm{view}(x.\pi)`$ reads no further location: the
 length is part of the typed array's descriptor. **Proved** (`Term.support_sound`): where the support is kept, the term
 denotes what it denoted, and at $`\delta = \mathsf{grow}`$ a length denotes
@@ -281,11 +276,11 @@ other at $`\mathsf{keep}`$; in a disequality every term at $`\mathsf{keep}`$
 (`IndexFact.support?`, proved: `IndexFact.support?_supports`): empty for a
 fact of slots' values; a length fact its spine at $`\mathsf{keep}`$, a bound
 its spine at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
-guard path's reads $`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$ and
+guard path's reads $`\mathrm{reads}_c^{\mathsf{keep}}`$ and
 its body's; a spine separation its two paths' reads
-$`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two spine
+$`\mathrm{reads}_c^{\mathsf{keep}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two spine
 locations at `keep`; a quantified fact $`\forall i<t.\ \varphi`$ over $`x.\pi[i]`$
-whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow},\mathsf{values}}(x.\pi)`$,
+whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow}}(x.\pi)`$,
 the array's spine location at either key an array or a typed array holds its
 elements under, at `keep`, the locations of class value at `init` (an element
 the body reads is a number, which `init` keeps), and its bound's and its
@@ -326,12 +321,11 @@ meeting its world, `HeapOk`, with valid roots, `RootsOk`
   kinds field, cell, element cell, array spine, view spine and
   identity holding the kind of each of its allocated locations at a heap
   meeting its world with valid roots (proved: `Region.bound_sound`,
-  `Region.apart_of_bound`); a field's bound under the evidence is narrowed
+  `Region.apart_of_bound`); any region's bound under the evidence is narrowed
   to the kinds of the category its class evidence gives
-  (`SepEvidence.bound`). The bounds answer each pair of a region's part in
-  one class and a class region of a disjoint selector
-  (`boundQuery_inCls_cls`), and a field or cell against a spine or an
-  element cell;
+  (`SepEvidence.bound`). The bounds answer each pair of a region and a class
+  region of a disjoint selector (`boundQuery_cats_cls`), and a field or cell
+  against a spine or an element cell;
 - **by freshness**, $`\mathrm{fresh}(r)`$: every own location of the value
   one region reads lies at or above a mark, and the other is a typed field
   of a slot whose typed fields lie below a mark no later
@@ -760,7 +754,7 @@ $`\{\mathsf{values}:\mathsf{keep}\}`$ under the query by bounds changes no
 cell's contents, a value of no spine: every entry keeps its locations or has
 a bound apart from the values' (proved: `CellsHold.frame`, by `frame_step`,
 the frame's positions with valid roots). `push`'s frame names its
-receiver's spine at its part of class array (`receiverExtendFrame`).
+receiver's spine (`receiverExtendFrame`).
 The allocation rule holds of a run of the allocation with any initializers
 or binding before it (`alloc_fresh`, from `alloc_step`: the spine field's
 location is past the heap the allocation starts in); the others are
@@ -1302,19 +1296,15 @@ region of such a path, $`\mathsf{path}\ s\ p\ \mathtt{[]}`$, to no region:
 a location it selects is no location of $`h_0`$, so `rebase_sound`'s case of a
 location below $`|h_0|`$ contradicts the evidence. It maps
 $`\mathsf{field}\ s\ k`$ and $`\mathsf{path}\ s\ p\ k`$ to
-$`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{fields}`$ and $`\mathsf{pathFields}`$
-alike, a class or a cell to itself, and the part of a region of class $`c`$ to
-its image's part of class $`c`$. Without that evidence it widens a region to
-its class: a field at a nonempty path to the class its key demands
-(`keyClass`: `arrays` for the array spine key, `values` otherwise) and element
-cells, $`\mathsf{cells}`$ and $`\mathsf{pathCells}`$, the cells of the spine
-the `[]` slot names and of the view spine a typed array's descriptor names
-(`spineCells`), to `values`. The
-widening reads the step heap's contents categories (`HeapCategories`, which a
-well-formed heap has: `HeapOk.categories`): a value read at a nonempty path is
-held by the heap, so its fields' roles, its spines' cells' roles
-(`spineEntries`) and its descriptor's view spine fix their contents' class; a location whose class differs at the entry heap is one an
-entry of $`\Phi`$ at `any` covers.
+$`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{fields}`$, $`\mathsf{pathFields}`$
+and $`\mathsf{spine}`$ alike, and a class or `all` to itself. Without that
+evidence it widens every region to its intrinsic category class
+(`Region.cats`: `keyClass` for fields and path fields, `values` for field
+locations and element cells, `spines` for selected spines). The widening reads
+the step state's intrinsic category bounds (`ClassOk intrinsicClasses`, which
+every well-formed state with valid roots has: `intrinsicClasses_ok`); a
+location whose class differs at the entry heap is one an entry of $`\Phi`$ at
+`any` covers.
 
 Across an admissible transition, a class region selects an old location
 after it exactly when it did before, whatever the transition changed
@@ -1325,13 +1315,6 @@ evidence states fresh and nothing else: the spine's cells, old ones among
 them, rebase to `values`, and a class region, the all-views one among them,
 to itself (proved: `rebase_erases_spine_only`).
 
-Stated limit: a field of a position's own value, $`\mathsf{field}\ s\ k`$ or
-$`\mathsf{path}\ s\ []\ k`$, and own locations, without a link, rebase to
-$`\mathsf{all}`$. A position's value is not held by the heap, so its field map
-may name a spine location under an ordinary key; widening it to its class
-needs the position's reference validity, which the step's run does not carry
-to the rebasing (the note's rebasing widens every other region to its
-class).
 A location an entry of $`\Phi`$ at `any` covers needs no rebasing
 (`rebase_sound`'s second disjunct). The rule is `Post.compose_at`
 ([FootprintRebase.lean](../lean/Verification/Semantics/FootprintRebase.lean));
@@ -1350,7 +1333,7 @@ check where every alternative a field read succeeds on states $`f`$ present
 and stable, and there is one (`entryField`).
 
 Push's step frame on normal return is its signature's, the receiver's spine
-at `extend` as its part of class array (`receiverExtendFrame`, which the
+at `extend` (`receiverExtendFrame`, which the
 growth's and the append's postconditions imply,
 `Effect.callPost_receiverExtendFrame`); on a throw it is every location
 (`⊤`). A destructuring read, `const { f } = x`, is a stable read: an

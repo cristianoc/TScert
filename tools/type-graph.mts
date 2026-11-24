@@ -130,12 +130,11 @@ export const viewWriteFrame: Frame = [
   { region: { cls: viewsClass }, change: "grow" }];
 /** **The frame of an extension of the receiver's spine** (the note
  * *Tolerant frames*, Push, within its `{x.spine: grow}`): the receiver's
- * spine, its `[]` slot holding a spine, at `extend`, every other location
- * kept; the frame the growth's and the append's postconditions imply
+ * spine (`[]` slot) at `extend`, every other location kept; the frame the
+ * growth's and the append's postconditions imply
  * (`CallEffects.receiverExtendFrame`, `Effect.callPost_receiverExtendFrame`). */
 export const receiverExtendFrame: Frame = [
-  { region: { inCls: { region: { field: { x: 0, key: "[]" } }, selector: { value: false, array: true, view: false } } },
-    change: "extend" }];
+  { region: { field: { x: 0, key: "[]" } }, change: "extend" }];
 /** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
 export const exitSchema = (frame: Frame, ensures: readonly Formula[] = []): Modifies<{}, ExitSchema> =>
   ({ frame, ensures });
@@ -188,7 +187,7 @@ export const frameEffect = (stated: Frame, options?: EffectOptions): Modifies<{}
   if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => canonicalText(g) === canonicalText(f))))
     throw Error(`an exact element write '${elementWrite}' states its range among its preconditions`);
   const receiver: Frame = options?.receiverFields
-    ? [{ region: { inCls: { region: { fields: { x: 0 } }, selector: valuesClass } }, change: "any" }]
+    ? [{ region: { fields: { x: 0 } }, change: "any" }]
     : options?.receiverSpine ? [receiverSpineEntry] : [];
   const frame: Frame = [...stated, ...receiver];
   const elements = options?.elements ?? null;
@@ -288,7 +287,6 @@ const grammar: { readonly [name: string]: Shape } = {
     field: { record: { x: "nat", key: { ref: "keyOf" } } }, fields: { record: { x: "nat" } }, cells: { record: { x: "nat" } },
     cls: { ref: "selector" }, path: { record: { x: "nat", fields: strings, key: { ref: "keyOf" } } },
     pathFields: { record: { x: "nat", fields: strings } }, pathCells: { record: { x: "nat", fields: strings } },
-    inCls: { record: { region: { ref: "region" }, selector: { ref: "selector" } } },
     spine: { record: { x: "nat", fields: strings } } }, names: ["all"] },
   frame: { list: { record: { region: { ref: "region" }, change: { names: ["keep", "init", "scalar", "extend", "grow", "any"] } } } },
   path: { record: { root: "nat", fields: strings } },

@@ -89,7 +89,7 @@ def leastAccepted (p : Closed → Bool) : Option Closed := ascending.find? p
 /-- The closed language's reading of a frame: the least closed footprint
 whose frame includes it, as `stepWithin` reads inclusion. -/
 def ofFrame (fp : Footprints.Footprint) : Option Closed :=
-  leastAccepted fun c => Footprints.Footprint.le GraphCode.ArgumentRegionGraph.noClasses (c.fp ++ fp) c.fp
+  leastAccepted fun c => Footprints.Footprint.le Footprints.intrinsicClasses (c.fp ++ fp) c.fp
 
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]

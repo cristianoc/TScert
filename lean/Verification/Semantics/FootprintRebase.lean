@@ -44,11 +44,6 @@ well-formed heap these hold of every value the heap holds (`HeapCategories`,
 an empty path is a position's own, whose references the heap does not
 vouch for. -/
 
-/-- The class a field key demands of its location's contents: an array
-spine for the array spine key, a value otherwise (`SlotRole`). -/
-def keyClass (k : PropKey) : Selector :=
-  if k = arraySpineKey then .arrays else .values
-
 /-- **Contents categories of a heap's own values**: each field location of
 a value the heap holds has contents of its key's class, each cell a spine
 of the heap lists (`spineEntries`) holds no spine, and the spine a typed
@@ -193,15 +188,15 @@ theorem FreshAt.ifSpine {b : Nat} {v : Tm} (h : FreshAt b v) : FreshIfSpine b v 
   exact hle
 
 /-- The evidence holds of the step's positions `σ` at heap `h`, against the
-entry values `ρ₀` at the entry heap `h₀`; and the step's heap has its
-contents categories. -/
+entry values `ρ₀` at the entry heap `h₀`; and the step's state satisfies the
+intrinsic category bounds (`intrinsicClasses`). -/
 structure RebaseOk (ev : RebaseEvidence) (σ ρ₀ : Env) (h₀ h : Heap) : Prop where
   link : ∀ s x q, ev.link s = some (x, q) → HeapKnowledge.readPath h₀ (ρ₀ x) q = some (σ s)
   agree : ∀ s p, ev.agree s p = true → ∀ v, HeapKnowledge.readPath h (σ s) p = some v →
     HeapKnowledge.readPath h₀ (σ s) p = some v
   fresh : ∀ s p, ev.fresh s p = true → ∀ v, HeapKnowledge.readPath h (σ s) p = some v →
     FreshIfSpine h₀.length v
-  categories : HeapCategories h
+  categories : ClassOk intrinsicClasses σ h
 
 /-- A region selecting the spine at a path of a position, where the
 evidence states that spine fresh, at any path depth. -/
@@ -230,33 +225,30 @@ def RebaseEvidence.path (ev : RebaseEvidence) (s : Nat) (p : List String) : Opti
   if ev.reads s p then (ev.link s).map fun (x, q) => (x, q ++ p) else none
 
 /-- **Rebasing** a region read at the step's positions and heap into regions
-read at the entry's (the note, §6, rebasing): a class region and a cell to
-themselves; a field or own locations at a path the evidence links to the
-entry, to that entry path; a fresh selected spine to none; a field at a
-nonempty path otherwise to its key's class; element cells to the value
-class; a field of a position's own value without a link, and own locations
-without one, to `all`. -/
+read at the entry's (the note, §6, rebasing): a class region and `all` to
+themselves; a fresh selected spine to none; a field, field locations, or
+selected spine at a path the evidence links to the entry, to that entry path;
+any other region to its intrinsic category class (`Region.cats`). -/
 def rebase (ev : RebaseEvidence) : Region → List Region
   | .field s k => if ev.freshPath s [] k then [] else match ev.path s [] with
     | some (x, q) => [.path x q k]
-    | none => [.all]
+    | none => [.cls (keyClass k)]
   | .fields s => match ev.path s [] with
     | some (x, q) => [.pathFields x q]
-    | none => [.all]
+    | none => [.cls .values]
   | .path s p k => if ev.freshPath s p k then [] else match ev.path s p with
     | some (x, q) => [.path x q k]
-    | none => if p.isEmpty then [.all] else [.cls (keyClass k)]
+    | none => [.cls (keyClass k)]
   | .pathFields s p => match ev.path s p with
     | some (x, q) => [.pathFields x q]
-    | none => [.all]
+    | none => [.cls .values]
   | .cls c => [.cls c]
-  | .inCls r c => (rebase ev r).map (·.inCls c)
   | .cells _ => [.cls .values]
   | .pathCells _ _ => [.cls .values]
   | .all => [.all]
   | .spine s p => match ev.path s p with
     | some (x, q) => [.spine x q]
-    | none => [.all]
+    | none => [.cls .spines]
 
 def rebaseAll (ev : RebaseEvidence) (Ψ : Footprint) : Footprint :=
   Ψ.flatMap fun e => (rebase ev e.1).map (·, e.2)
@@ -298,51 +290,49 @@ theorem rebase_erases_spine_only (ev : RebaseEvidence) (s : Nat) (p : List Strin
   · simp only [RebaseEvidence.freshPath, Bool.and_eq_true, beq_iff_eq] at hf
     exact hf.1
   · simp only [rebase, hf, Bool.false_eq_true, ite_false] at hk
-    split at hk
-    · cases hk
-    · split at hk <;> cases hk
+    split at hk <;> cases hk
 
-/-- A location of the step's heap in a class region by its contents is in
-it at the entry heap, or an entry of the first action at `any` covers it. -/
-private theorem class_back {Φp ρ₀ h₀ h l} (hp : Post Φp ρ₀ h₀ h) (hl : l < h₀.length) {c : Selector}
-    {u : Val} (hu : h[l]? = some u) (hc : c.selects u = true) :
-    (∃ s ∈ [Region.cls c], s.mem ρ₀ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ₀ h₀ l = true ∧ e.2 = .any := by
-  rcases cls_back (ρ := ρ₀) hp hl (c := c) (by simp [Region.mem, hu, hc]) with h | h
-  · exact .inl ⟨.cls c, List.mem_singleton_self _, h⟩
+/-- A location of the step's heap in a region is in the region's intrinsic
+class at the entry heap, or an entry of the first action at `any` covers it. -/
+private theorem cats_back {Φp ρ₀ σ h₀ h l} (hp : Post Φp ρ₀ h₀ h) (hcat : ClassOk intrinsicClasses σ h)
+    (hl : l < h₀.length) {r : Region} (hm : r.mem σ h l = true) :
+    (∃ s ∈ [Region.cls r.cats], s.mem ρ₀ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ₀ h₀ l = true ∧ e.2 = .any := by
+  have hlh : l < h.length := Nat.lt_of_lt_of_le hl hp.1
+  have hcls : (Region.cls r.cats).mem ρ₀ h l = true := by
+    simpa [Region.mem] using hcat r r.cats l rfl hm hlh
+  rcases cls_back (ρ := ρ₀) hp hl hcls with h | h
+  · exact .inl ⟨.cls r.cats, List.mem_singleton_self _, h⟩
   · exact .inr h
 
 theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk : RebaseOk ev σ ρ₀ h₀ h)
     (hl : l < h₀.length) :
     ∀ {r : Region}, r.mem σ h l = true →
     (∃ s ∈ rebase ev r, s.mem ρ₀ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ₀ h₀ l = true ∧ e.2 = .any := by
-  have hlh : l < h.length := Nat.lt_of_lt_of_le hl hp.1
-  obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlh⟩
-  intro r
-  induction r with
+  intro r hm
+  cases r with
   | field s k =>
-    intro hm
     by_cases hf : ev.freshPath s [] k = true
     · have := hk.fresh_path hf (by simpa using hm)
       omega
     simp only [Bool.not_eq_true] at hf
     cases he : ev.path s [] with
-    | none => exact .inl ⟨.all, by simp [rebase, he, hf], by simpa [Region.mem] using hl⟩
+    | none =>
+      simpa [rebase, he, hf, Region.cats] using cats_back hp hk.categories hl hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.path x q k, by simp [rebase, he, hf], ?_⟩
       simp only [Region.mem, hk.path he (show HeapKnowledge.readPath h (σ s) [] = some (σ s) from rfl)]
       simpa [Region.mem] using hm
   | fields s =>
-    intro hm
     cases he : ev.path s [] with
-    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
+    | none =>
+      simpa [rebase, he, Region.cats] using cats_back hp hk.categories hl hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.pathFields x q, by simp [rebase, he], ?_⟩
       simp only [Region.mem, hk.path he (show HeapKnowledge.readPath h (σ s) [] = some (σ s) from rfl)]
       simpa [Region.mem] using hm
   | path s p k =>
-    intro hm
     have hf : ev.freshPath s p k = false := by
       cases hfs : ev.freshPath s p k
       · rfl
@@ -350,19 +340,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
         omega
     cases he : ev.path s p with
     | none =>
-      by_cases hp0 : p.isEmpty = true
-      · exact .inl ⟨.all, by simp [rebase, he, hf, hp0], by simpa [Region.mem] using hl⟩
-      · have hne : p ≠ [] := by simpa using hp0
-        simp only [Region.mem] at hm
-        split at hm
-        · rename_i v hv
-          obtain ⟨l₀, hl₀⟩ := readPath_contents hne hv
-          have hsel := hk.categories.fields l₀ v k l u hl₀ (by simpa using hm) hu
-          have hr : rebase ev (.path s p k) = [.cls (keyClass k)] := by
-            simp [rebase, he, hf, show p.isEmpty = false from by simpa using hp0]
-          rw [hr]
-          exact class_back hp hl hu hsel
-        · cases hm
+      simpa [rebase, he, hf, Region.cats] using cats_back hp hk.categories hl hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.path x q k, by simp [rebase, he, hf], ?_⟩
@@ -371,9 +349,9 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       · rename_i v hv; rw [hk.path he hv]; exact hm
       · cases hm
   | pathFields s p =>
-    intro hm
     cases he : ev.path s p with
-    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
+    | none =>
+      simpa [rebase, he, Region.cats] using cats_back hp hk.categories hl hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.pathFields x q, by simp [rebase, he], ?_⟩
@@ -382,37 +360,18 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       · rename_i v hv; rw [hk.path he hv]; exact hm
       · cases hm
   | cls c =>
-    intro hm
     rcases cls_back (ρ := ρ₀) hp hl (by simpa [Region.mem] using hm) with h | h
     · exact .inl ⟨.cls c, by simp [rebase], h⟩
     · exact .inr h
-  | inCls r c ih =>
-    intro hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    have hc : (Region.cls c).mem ρ₀ h l = true := by simpa [Region.mem] using hm.2
-    rcases ih hm.1 with ⟨s, hs, hsm⟩ | h
-    · rcases cls_back hp hl hc with hc₀ | h
-      · refine .inl ⟨s.inCls c, by simp only [rebase]; exact List.mem_map.mpr ⟨s, hs, rfl⟩, ?_⟩
-        simp only [Region.mem, Bool.and_eq_true]
-        exact ⟨hsm, by simpa [Region.mem] using hc₀⟩
-      · exact .inr h
-    · exact .inr h
   | cells s =>
-    intro hm
-    have harr := hk.categories.elems (by simpa [Region.mem] using hm) hu
-    exact class_back hp hl hu (by rw [Selector.selects_values, harr]; rfl)
+    simpa [rebase, Region.cats] using cats_back hp hk.categories hl hm
   | pathCells s p =>
-    intro hm
-    simp only [Region.mem] at hm
-    split at hm
-    · have harr := hk.categories.elems (by simpa using hm) hu
-      exact class_back hp hl hu (by rw [Selector.selects_values, harr]; rfl)
-    · cases hm
-  | all => intro _; exact .inl ⟨.all, by simp [rebase], by simpa [Region.mem] using hl⟩
+    simpa [rebase, Region.cats] using cats_back hp hk.categories hl hm
+  | all => exact .inl ⟨.all, by simp [rebase], by simpa [Region.mem] using hl⟩
   | spine s p =>
-    intro hm
     cases he : ev.path s p with
-    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
+    | none =>
+      simpa [rebase, he, Region.cats] using cats_back hp hk.categories hl hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.spine x q, by simp [rebase, he], ?_⟩

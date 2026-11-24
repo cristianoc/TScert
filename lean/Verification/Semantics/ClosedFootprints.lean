@@ -568,29 +568,28 @@ theorem Closed.top_safe {Ξ R : Fam} {n W h t} (hs : Safe Ξ R n W h t) :
 
 /-! ## The closed form of a footprint
 
-A region's locations hold contents of the categories `Region.cats` names: a
-class region's selector, a cell's values, and every category otherwise. A
-footprint's closed bound gives each category the largest change of an entry
-whose region may hold it (`Footprint.close`); it is implied by the
-footprint (`Footprint.close_sound`), and equivalent to it where every region
-is a class region (`Footprint.closed?_sound`). A general footprint is never
-recovered from its closed bound. -/
+A region's locations hold contents of the categories `Region.cats` names at
+every well-formed state (`intrinsicClasses_ok`). A footprint's closed bound
+gives each category the largest change of an entry whose region may hold it
+(`Footprint.close`); it is implied by the footprint where the intrinsic class
+evidence holds (`Footprint.close_sound`), and equivalent to it where every
+region is a class region (`Footprint.closed?_sound`), reading no class
+evidence. A general footprint is never recovered from its closed bound. -/
 
-/-- The categories a region's locations may hold. -/
-def Region.cats : Region → Selector
-  | .cls S => S
-  | .inCls _ S => S
-  | _ => .all
+/-- **A region's locations hold contents of the categories it names**, where
+the intrinsic class evidence holds. -/
+theorem Region.cats_mem {r : Region} {ρ : Env} {h : Heap} {l : Nat} {v : Val}
+    (hc : ClassOk intrinsicClasses ρ h) (hv : h[l]? = some v) (hm : r.mem ρ h l = true) :
+    r.cats.has (contentsCategory v) = true := by
+  have hcls := hc r r.cats l rfl hm (List.getElem?_eq_some_iff.mp hv).1
+  simpa [Region.mem, hv, Selector.selects] using hcls
 
-/-- **A region's locations hold contents of the categories it names.** -/
-theorem Region.cats_mem {r : Region} {ρ : Env} {h : Heap} {l : Nat} {v : Val} (hv : h[l]? = some v)
-    (hm : r.mem ρ h l = true) : r.cats.has (contentsCategory v) = true := by
-  cases r with
-  | cls S => simpa [Region.cats, Region.mem, hv, Selector.selects] using hm
-  | inCls r S =>
-    simp only [Region.mem, hv, Bool.and_eq_true] at hm
-    simpa [Region.cats, Selector.selects] using hm.2
-  | _ => exact Selector.has_all _
+/-- **A class region's locations hold contents of its selector's categories**,
+without well-formedness. -/
+theorem Region.cats_mem_cls {S : Selector} {ρ : Env} {h : Heap} {l : Nat} {v : Val}
+    (hv : h[l]? = some v) (hm : (Region.cls S).mem ρ h l = true) :
+    (Region.cls S).cats.has (contentsCategory v) = true := by
+  simpa [Region.cats, Region.mem, hv, Selector.selects] using hm
 
 /-- The largest change of an entry whose region may hold contents of
 category `k`. -/
@@ -644,8 +643,10 @@ theorem Footprint.close_at (Φ : Footprint) (v : Val) : Φ.close.at v = Φ.chang
   rw [Closed.at_category]; unfold Footprint.close
   split <;> rename_i h <;> rw [h]
 
-/-- **A footprint implies its closed bound** (proved). -/
-theorem Footprint.close_sound {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ h h') :
+/-- **A footprint implies its closed bound** (proved), where the intrinsic
+class evidence holds. -/
+theorem Footprint.close_sound {Φ : Footprint} {ρ : Env} {h h' : Heap}
+    (hc : ClassOk intrinsicClasses ρ h) (hp : Post Φ ρ h h') :
     Post Φ.close.fp ρ h h' := by
   rw [Closed.post_iff]
   refine ⟨hp.1, fun l v hv => ?_⟩
@@ -654,7 +655,7 @@ theorem Footprint.close_sound {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Po
   rw [Footprint.close_at, Footprint.changeAt_holds]
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact .inl rfl
-  · exact .inr ⟨e, he, Region.cats_mem hv hm, hh⟩
+  · exact .inr ⟨e, he, Region.cats_mem hc hv hm, hh⟩
 
 /-- Whether a region is a class region. -/
 def Region.isClass : Region → Bool
@@ -672,19 +673,30 @@ theorem Footprint.closed?_sound {Φ : Footprint} {c : Closed} (hc : Φ.closed? =
   split at hc
   · rename_i hall
     cases hc
-    refine ⟨Footprint.close_sound, fun hp => ?_⟩
-    rw [Closed.post_iff] at hp
-    refine ⟨hp.1, fun l v hv => ?_⟩
-    obtain ⟨v', hv', hh⟩ := hp.2 l v hv
-    refine ⟨v', hv', ?_⟩
-    rw [Footprint.close_at, Footprint.changeAt_holds] at hh
-    rcases hh with rfl | ⟨e, he, hk, hh⟩
-    · exact .inl rfl
-    · refine .inr ⟨e, he, ?_, hh⟩
-      have hcl := List.all_eq_true.mp hall e he
-      obtain ⟨r, δ⟩ := e
-      cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hcl
-      simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
+    refine ⟨fun hp => ?_, fun hp => ?_⟩
+    · rw [Closed.post_iff]
+      refine ⟨hp.1, fun l v hv => ?_⟩
+      obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+      refine ⟨v', hv', ?_⟩
+      rw [Footprint.close_at, Footprint.changeAt_holds]
+      rcases ha with rfl | ⟨e, he, hm, hh⟩
+      · exact .inl rfl
+      · have hcl := List.all_eq_true.mp hall e he
+        obtain ⟨r, δ⟩ := e
+        cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hcl
+        exact .inr ⟨_, he, Region.cats_mem_cls hv hm, hh⟩
+    · rw [Closed.post_iff] at hp
+      refine ⟨hp.1, fun l v hv => ?_⟩
+      obtain ⟨v', hv', hh⟩ := hp.2 l v hv
+      refine ⟨v', hv', ?_⟩
+      rw [Footprint.close_at, Footprint.changeAt_holds] at hh
+      rcases hh with rfl | ⟨e, he, hk, hh⟩
+      · exact .inl rfl
+      · refine .inr ⟨e, he, ?_, hh⟩
+        have hcl := List.all_eq_true.mp hall e he
+        obtain ⟨r, δ⟩ := e
+        cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hcl
+        simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
   · cases hc
 
 /-- The class entries of a footprint. -/

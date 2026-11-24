@@ -301,8 +301,9 @@ conservative reader of a call's change uses. -/
 def Effect.changeBound (e : Effect) : Footprints.Closed := e.frame.close
 
 theorem Effect.within_changeBound {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
+    (hc : Footprints.ClassOk Footprints.intrinsicClasses (callEnv r args) before)
     (h : e.within r args before after) : e.changeBound.Holds before after :=
-  Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp (Footprints.Footprint.close_sound h))
+  Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp (Footprints.Footprint.close_sound hc h))
 
 /-- **Whether a signature's frame admits every change** (sufficient): its
 class bound (`Footprint.classBound`) is `⊤`, so every change keeping the

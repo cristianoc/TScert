@@ -153,9 +153,10 @@ def Effect.drop (n : Nat) (e : Effect) : Effect :=
 signature's exits at the longer call, the saved receiver and actuals in
 front, give the bound signature's exits at the bound call. -/
 theorem Effect.drop_exits {e : Effect} {pre args : List Tm} {c : Completion} {r r₀ : Tm}
-    {s s' : IndexedHeap} {v : Tm} (h : e.schema.exitPost c r₀ (pre ++ args) s s' v) :
+    {s s' : IndexedHeap} {v : Tm} (hr : RootsOk s.W (callEnv r₀ (pre ++ args)))
+    (h : e.schema.exitPost c r₀ (pre ++ args) s s' v) :
     (e.drop pre.length).schema.exitPost c r args s s' v :=
-  Exits.exitPost_dropWeak rfl h
+  Exits.exitPost_dropWeak rfl hr h
 
 /-- **A bound signature's exits reference no arena node**: a substituted
 postcondition never does (`renameFormula`). -/
@@ -195,8 +196,8 @@ def Effect.callPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Pos
 /-- **The receiver's extension as a frame**: what a normal return of the
 note's Push may change, `{x.spine: extend}`, within its `{x.spine: grow}`,
 the receiver at position `0`, its spine the location of its `[]` slot
-holding an array spine (`Effect.callPost_receiverExtendFrame`). -/
-def receiverExtendFrame : Footprint := [((Region.field 0 arraySpineKey).inCls .arrays, .extend)]
+(`Effect.callPost_receiverExtendFrame`). -/
+def receiverExtendFrame : Footprint := [(.field 0 arraySpineKey, .extend)]
 
 /-- **A call's throw read at heaps**: the exceptional exit at the actuals
 followed by the omitted positions' `undefined`, read at heaps, or a throw of
@@ -300,8 +301,8 @@ theorem receiverExtendFrame_post {r : Tm} {args vs : List Tm} {before after : He
     obtain ⟨t, rfl⟩ := hpre
     refine ⟨.arr (ls ++ t), hl', .inr ⟨_, List.mem_singleton_self _, ?_, .inr (.inr ⟨ls, t, rfl, rfl,
       ?_, ⟨by simp, fun _ => hmax⟩⟩)⟩⟩
-    · simp only [Region.mem, hu, Bool.and_eq_true]
-      exact ⟨by simpa [callEnv, spineOf] using hs, rfl⟩
+    · simp only [Region.mem, beq_iff_eq]
+      simpa [callEnv, spineOf] using hs
     · intro l₀ hm
       obtain ⟨j, hj, hjt⟩ := List.getElem_of_mem hm
       have hjv : j < vs.length := by simp at hn; omega

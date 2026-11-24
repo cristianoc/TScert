@@ -96,7 +96,6 @@ def slotOf (u : Unit) (d p : Nat) : Nat := d - u.inputs + p
 /-- The slot a region is rooted at, where it is rooted at one. -/
 def rootSlot : Footprints.Region → Option Nat
   | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => some x
-  | .inCls r _ => rootSlot r
   | .cls _ | .all => none
 
 /-- The slots holding an object the function's body allocated and never
@@ -158,13 +157,7 @@ def inReach (pairs : List (Nat × List AccPath × List String)) : Footprints.Reg
   | .spine x p => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a ++ p && e.array
   | .cells x => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a && e.array
   | .pathCells x p => pairs.any fun (s, acc, a) => s == x && acc.any fun e => e.path == a ++ p && e.array
-  | .inCls r _ => inReach pairs r
   | .fields _ | .pathFields _ _ | .cls _ | .all => false
-
-/-- A region without its class restriction. -/
-def unrestricted : Footprints.Region → Footprints.Region
-  | .inCls r _ => unrestricted r
-  | r => r
 
 /-- The slot whose object's own location a region names: a field, the
 fields or the spine at a slot itself. A path through a field, and an
@@ -172,7 +165,6 @@ array's element locations, may name storage older than the slot's object. -/
 def ownSlot : Footprints.Region → Option Nat
   | .field x _ | .fields x => some x
   | .path x [] _ | .pathFields x [] | .spine x [] => some x
-  | .inCls r _ => ownSlot r
   | _ => none
 
 /-- A change read at a region's category: on a spine, `init` and `scalar`
@@ -180,7 +172,6 @@ are `keep`; on contents, `extend` and `grow` are `scalar`
 (`Change.onSpine`, `Change.onValue`). -/
 def atCategory : Footprints.Region → Footprints.Change → Footprints.Change
   | .spine .., c => c.onSpine
-  | .inCls r _, c => atCategory r c
   | _, c => c.onValue
 
 /-- **The pair rule**: the callback's effect `ε` is within `δ` on `r`
@@ -197,7 +188,7 @@ def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.F
     (reach : Footprints.Region → Bool) (e : Footprints.Region × Footprints.Change) : Bool :=
   (ownSlot e.1).any fresh.contains ||
     (Footprints.respects q [e] bound &&
-      ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (unrestricted ·.1 == unrestricted e.1)))
+      ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (·.1 == e.1)))
 
 /-- An effect the layer reads at a call: its entries at the call's slots,
 its `else`, the roots of its reach entries with their access paths, and

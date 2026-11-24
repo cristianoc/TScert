@@ -627,7 +627,7 @@ theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkCopy c facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hr hρ _
+  intro ε n W h ρ initial input _ hb hf _ _ he hi hk hw hh hr hρ _
   cases t <;> simp only [checkCopy, Bool.false_eq_true] at hc
   rename_i i
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.contains_iff_mem] at hc
@@ -695,7 +695,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hrf hρ hst
+  intro ε n W h ρ initial input _ hb hf _ _ he hi hk hw hh hrf hρ hst
   unfold checkRead at hc
   split at hc
   · rename_i f i

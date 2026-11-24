@@ -116,7 +116,9 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
     FootprintKept P G w (List.range inputs.length) ε ctx Φ Ψ h₀ dead fr
   returns : «ensures» ≠ [] → ∀ ε m, ReturnsEnsured P G w (List.range inputs.length) ε ctx «ensures» m
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
-    ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ start ε.env h₀ ∧
+    ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀,
+      Footprints.ClassOk Footprints.intrinsicClasses ε.env h₀ →
+      X ε h₀ start ε.env h₀ ∧
       RegionsKeptS P G w (List.range inputs.length) ε ctx (X ε h₀) Φ regions h₀ exc
   labelled : ∀ l k, (l, k) ∈ assertions → w.visited l → stated l = some k
 
@@ -190,13 +192,14 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr
+    have hcat := Footprints.intrinsicClasses_ok ho (GraphCode.goto_refs hgo).2
     subst hP
     have hf : regionFields regional = ArgumentPathTracking.stableFields regions := by simp [regionFields, hr]
     exact keeps_postExc (nodesChecked_of_walk (hp.walk ⟨envOf L d, h⟩ h.length) (regionFields regional) h)
-      passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => ⟨hu.1.1.1, hf ▸ hu.2⟩) (hX ⟨envOf L d, h⟩ h).2)
+      passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => ⟨hu.1.1.1, hf ▸ hu.2⟩) (hX ⟨envOf L d, h⟩ h hcat).2)
       (fun _ _ _ h => h) n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
       (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
-      (hX ⟨envOf L d, h⟩ h).1
+      (hX ⟨envOf L d, h⟩ h hcat).1
   asserted η hη n W h ρ he hPn hρ l k hl j h' ρ' hj hrun := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
@@ -257,7 +260,9 @@ structure PassWalkSoundR (G : NormalGraph ι) (P : Program) (start : Nat) (goal 
   returns : «ensures» ≠ [] → ∀ ε m, NodesKeepR P (passPreT G w (List.range inputs.length) ε ctx) F Ret RetE
     (fun _ _ _ => True) (EnsuresQ «ensures» ε) (fun _ => True) m
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
-    ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ start ε.env h₀ ∧
+    ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀,
+      Footprints.ClassOk Footprints.intrinsicClasses ε.env h₀ →
+      X ε h₀ start ε.env h₀ ∧
       NodesKeepR P (passPreS G w (List.range inputs.length) ε ctx regions h₀) F Ret RetE (X ε h₀)
         (RegionQ Φ regions ε h₀) (RegionR Φ regions ε h₀ exc) h₀.length
   labelled : ∀ l k, (l, k) ∈ assertions → w.visited l → stated l = some k
@@ -284,7 +289,7 @@ theorem PassWalkSound.toR {G : NormalGraph ι} {P : Program} {start : Nat} {goal
   returns hne ε m := (hp.returns hne ε m).toRF F Ret RetE
   regions Φ regions exc hr := by
     obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr
-    exact ⟨X, fun ε h₀ => ⟨(hX ε h₀).1, (hX ε h₀).2.toRF F Ret RetE⟩⟩
+    exact ⟨X, fun ε h₀ hcat => ⟨(hX ε h₀ hcat).1, (hX ε h₀ hcat).2.toRF F Ret RetE⟩⟩
   labelled := hp.labelled
 
 omit [DecidableEq ι] [Hashable ι] in
@@ -416,15 +421,16 @@ theorem run_guaranteeR {G : NormalGraph ι} {admits : MixedAssignment ι → Pro
     obtain ⟨w, ctx, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr
+    have hcat := Footprints.intrinsicClasses_ok ho (GraphCode.goto_refs hgo).2
     subst hP
     have hf : regionFields regional = ArgumentPathTracking.stableFields regions := by simp [regionFields, hr]
     exact keeps_postExcR (J := fun _ _ => True)
       (nodesChecked_of_walkR (hp.walk ⟨envOf L d, h⟩ h.length) (regionFields regional) h)
-      passPreU_adminClosed (nodesKeepR_anti (fun _ _ _ hu => ⟨hu.1.1.1, hf ▸ hu.2⟩) (hX ⟨envOf L d, h⟩ h).2)
+      passPreU_adminClosed (nodesKeepR_anti (fun _ _ _ hu => ⟨hu.1.1.1, hf ▸ hu.2⟩) (hX ⟨envOf L d, h⟩ h hcat).2)
       (fun _ _ _ h => h) (fun _ _ _ _ _ _ => trivial) n W none h _ _ .goto ha ho (GraphCode.goto_refs hgo).1
       (GraphCode.goto_refs hgo).2
       (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
-      (hX ⟨envOf L d, h⟩ h).1
+      (hX ⟨envOf L d, h⟩ h hcat).1
   asserted E K hP η hη n W h L d _ he hgo := by
     obtain ⟨w, ctx, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he

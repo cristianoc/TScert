@@ -1086,16 +1086,19 @@ def promiseOutput (effect : Effect) (k : HeapKnowledge.Knowledge) : HeapKnowledg
 /-- A transition within the frame of an effect keeping the heap ends in an
 extension of the heap it starts in. -/
 theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {args : List Tm} {before after : Heap}
+    (hcat : Footprints.ClassOk Footprints.intrinsicClasses (CallEffects.callEnv r args) before)
     (hp : e.within r args before after) : before.IsPrefix after := by
-  exact Footprints.Footprint.keepsHeap_prefix hk hp
+  exact Footprints.Footprint.keepsHeap_prefix hk hcat hp
 
 theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
-    {r : Tm} {args : List Tm} {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h) (hp : effect.within r args h h') :
+    {r : Tm} {args : List Tm} {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h)
+    (hcat : Footprints.ClassOk Footprints.intrinsicClasses (CallEffects.callEnv r args) h)
+    (hp : effect.within r args h h') :
     HeapKnowledge.Holds (promiseOutput effect k) ε (push v ρ) h' := by
   unfold promiseOutput
   split
   · rename_i hkeep
-    exact HeapKnowledge.shift_holds (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep hp))
+    exact HeapKnowledge.shift_holds (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep hcat hp))
   · exact HeapExpressionRules.ordinaryOutput_holds hk v h'
 
 /-- What the ordinary output states holds wherever a promise call's output
@@ -1218,7 +1221,12 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     have hsel : s.effect = effect := by
       revert hsome
       split <;> (try split) <;> intro hsome <;> simp_all
-    refine consequence (fun m U u hu => ?_) (fun h' v hq => promiseOutput_holds hk (hsel ▸ Effect.callPost_within hq)) hs'
+    refine consequence (fun m U u hu => ?_)
+      (fun h' v hq => promiseOutput_holds hk
+        (Footprints.intrinsicClasses_ok hh (CallEffects.callEnv_rootsOk
+          (RefsOk_invoke.mp (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)).2.1
+          (RefsOk_invoke.mp (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)).2.2))
+        (hsel ▸ Effect.callPost_within hq)) hs'
     clear hsel
     split at hsome
     · rename_i p heff
@@ -1380,7 +1388,9 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
       have hfresh := Effect.callPost_freshObject hfo hq
       have hshift := HeapKnowledge.shift_holds (v := v)
-        (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep (Effect.callPost_within hq)))
+        (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep
+          (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+          (Effect.callPost_within hq)))
       refine ⟨?_, hshift.2.1, hshift.2.2.1,
         HeapSeparation.allocate_holds hk.2.2.2.1 (freshObject_apart he hh hfresh), hshift.2.2.2.2⟩
       simpa [freshOutput, HeapExpressionRules.allocOutput, HeapKnowledge.shift] using hshift.1
@@ -1395,9 +1405,9 @@ locations, and whose other entries are included in the empty effect
 separation fact keeps apart from every own location of the receiver
 (`call-own`). -/
 
-/-- The receiver's own value locations: the region of a frame's entry that
+/-- The receiver's own field locations: the region of a frame's entry that
 `call-own` reads as changed. -/
-def receiverFieldsValues : Footprints.Region := .inCls (.fields 0) .values
+def receiverFieldsValues : Footprints.Region := .fields 0
 
 /-- **Whether a frame changes only its receiver's own value locations**: it
 has an entry at them, and its entries at every other region are included in
@@ -1518,9 +1528,13 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         rw [hterm] at hw'
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
         refine HeapKnowledge.shift_holds (ownKept_holds hk fun l hl u hu => ?_)
-        refine Footprints.Footprint.keepsHeap_outside (Φ := eff.schema.normal.frame) hkeep hw' ?_ hu
-        simp only [receiverFieldsValues, Footprints.Region.mem, CallEffects.callEnv, ite_eq_left, Bool.and_eq_false_iff]
-        left
+        refine Footprints.Footprint.keepsHeap_outside (Φ := eff.schema.normal.frame) hkeep
+          (by
+            have hcat := Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href)
+            rw [hterm] at hcat
+            simpa [ExpressionEffects.receiverOf, instantiate] using hcat)
+          hw' ?_ hu
+        simp only [receiverFieldsValues, Footprints.Region.mem, CallEffects.callEnv, ite_eq_left]
         have hown : ∀ x, ¬ (x, l) ∈ Footprints.fieldsOf (ρ i) := by
           simpa [List.contains_iff_mem, Footprints.ownOf] using hl
         simp only [Nat.not_lt_zero, ite_false, Nat.sub_zero]
@@ -1670,7 +1684,9 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
             have hb := onlyBool_sound hbool hT
             have hs := HeapKnowledge.shift_holds (v := v)
-              (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep (Effect.callPost_within hq)))
+              (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep
+                (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+                (Effect.callPost_within hq)))
             refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_, hs.2.2.2.2.2⟩
             intro a ha hcond
             rcases List.mem_cons.mp ha with rfl | ha
@@ -2100,7 +2116,9 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     have hs := hs he hk hw hh href
     refine consequence (fun _ _ _ hv => hv) (fun h' v hp => ?_) hs
     simp only [requiresOutput, hsel]
-    exact promiseOutput_holds hk (Effect.callPost_within hp)
+    exact promiseOutput_holds hk
+      (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+      (Effect.callPost_within hp)
   · cases hc
 
 /-! ### A call stating a postcondition (PROGRAM-TYPING.md, "Reads below the length")
@@ -3884,7 +3902,9 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
           simp only [hsel, hrs] at hc
           by_cases hkeep : keepsHeap eff = true
           · exact post_with_type
-              (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
+              (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep
+                (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+                (CallEffects.Effect.callPost_within hq)), trivial⟩)
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
           · rw [ite_eq_right hkeep] at hc; cases hc
     · rw [ite_eq_right hcond] at hc; cases hc
@@ -3903,9 +3923,11 @@ theorem requiresCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
   simp only [requiresCall, Bool.and_eq_true, decide_eq_true_eq] at hc
   obtain ⟨rfl, hc⟩ := hc
   obtain ⟨eff, hsel, hs⟩ := requiresTree_sound hcodes hsums p hc
-  rw [hsel] at hkeep
+  simp only [hsel, Option.any_some] at hkeep
   exact post_with_type
-    (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
+    (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep
+      (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+      (CallEffects.Effect.callPost_within hq)), trivial⟩)
     (hs he hk hw hh href)
 
 /-- **A call the pass keeps the heap across (`keepsCall`)** has
@@ -3948,7 +3970,9 @@ theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     · rename_i eff heff
       simp only [Bool.and_eq_true] at hsel
       exact post_with_type
-        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hsel.1 (CallEffects.Effect.callPost_within hq)), trivial⟩)
+        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hsel.1
+          (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+          (CallEffects.Effect.callPost_within hq)), trivial⟩)
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
     · cases hsel
   · contradiction

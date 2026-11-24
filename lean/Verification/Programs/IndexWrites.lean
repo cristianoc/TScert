@@ -3204,7 +3204,7 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
 slot `r`: the note's Push, `{r.spine: extend}` (`CallEffects.receiverExtendFrame`
 at the caller's slot). -/
 def receiverExtendAt (r : Nat) : Footprints.Footprint :=
-  [((Footprints.Region.field r arraySpineKey).inCls .arrays, .extend)]
+  [(.field r arraySpineKey, .extend)]
 
 /-- The region facts a call growing its receiver's spine keeps
 (`region-grow`), between two array slots: each whose support

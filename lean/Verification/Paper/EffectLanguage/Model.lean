@@ -131,8 +131,7 @@ theorem mem_renameM_total {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l
     (hσ : ∀ i, ∃ j, σ i = some j ∧ ρ j = env i) :
     ∀ r : Region, (r.renameM σ).mem ρ h l = r.mem env h l := by
   intro r
-  induction r with
-  | inCls r c ih => simp only [Region.renameM, Region.mem, ih]
+  cases r with
   | cls | all => rfl
   | field x | fields x | cells x | path x | pathFields x | pathCells x | spine x =>
     obtain ⟨j, hj, hρ⟩ := hσ x

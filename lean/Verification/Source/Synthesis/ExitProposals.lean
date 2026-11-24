@@ -305,7 +305,7 @@ def schema (S : ClassSummary) : Exits ExitSchema :=
 frame includes the first's (`Exits.Entails`). -/
 theorem entails_of_frames {x y : Exits ExitSchema} (hy : ∀ c, (y.get c).ensures = [])
     (hf : ∀ c ρ h h', Post (x.get c).frame ρ h h' → Post (y.get c).frame ρ h h') : x.Entails y := by
-  intro c r args s s' v hp
+  intro c r args s s' v _ hp
   refine ⟨⟨hp.1.1, ?_⟩, ?_⟩
   · rw [Exits.atArity_frame]
     exact hf c _ _ _ (Exits.exitPost_frame hp)
