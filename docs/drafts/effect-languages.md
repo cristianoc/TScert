@@ -9,9 +9,12 @@ explicit `else` for the locations its entries do not cover, so the facts a
 step must preserve are effects too and every check is inclusion. The
 language has regions at a closure's captures, effect variables bounded by
 effects, and reach through declared keys; the paper derives Pretext's
-line-walker patterns in it. TScert's footprints today are a fragment,
-$`\mathcal L_0`$, which a section maps to the language. The language
-beyond $`\mathcal L_0`$ has no implementation and no proof.
+line-walker patterns in it. TScert's verified footprint calculus embeds into the language as the
+monomorphic fragment $`\mathcal L_0`$. The four effect-polymorphism rules
+(`Bound`, `Anch`, `Meet`, `Inst`) are mechanized over an idealised heap
+model in `lean/Verification/Paper/EffectLanguage/{Rules,Model}.lean` and
+exercised experimentally through [paper-rules-mode](paper-rules-mode.md);
+soundness for the full language in TScert's calculus remains conjectured.
 
 ## The existing mechanism this extends
 
