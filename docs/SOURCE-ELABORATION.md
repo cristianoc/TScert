@@ -1952,12 +1952,12 @@ of an immutable binding's object refines that object by its field slice
 $`F^f`$, as `if-field` does, so `n.kind === 1 || n.kind === 2` leaves `n` at
 the arms whose `kind` admits 1 or 2 (`field-test-disjunction`).
 
-`x === y` with `x` claimed at a union of
-singletons is dispatched as the disjunction over its singletons $`c`$ of
-$`x\equiv c\land y\equiv c`$ (`savedSplit` where `x` has effects). Strict
-equality without a singleton is the $`\equiv`$ operator of `arith`, which
-narrows nothing and is refused between two operands that may both be objects
-without a field. `x instanceof C`, for a class the file declares at its top
+`x === y` without a singleton operand is the $`\equiv`$ operator of
+`arith`, each operand evaluated once, in source order, and the comparison's
+node branches on its answer: where it is `true`, each operand narrows by the
+tags of the other's type, and where it is `false`, by the other's singleton
+tag ([a strict comparison](PROGRAM-TYPING.md#a-strict-comparison)). It is
+refused between two operands that may both be objects without a field. `x instanceof C`, for a class the file declares at its top
 level, is $`\mathsf{hasKey}(\kappa_C)`$ ([derived form](SOURCE-ELABORATION.md#derived-source-forms)).
 It does not narrow `unknown`: an object gets $`C`$'s prototype without $`C`$'s
 constructor running (`Object.create(C.prototype)`), so the key is no evidence

@@ -4018,6 +4018,15 @@ slices are `memberFieldSlice`'s, `FieldSlices.eq_direct`). The rule:
 \quad(\textsf{member-yield}).
 ```
 
+Where the answer is `true`, a yield also follows where, for every
+$`t\in S`$, the single tag test's own rule gives its type: the slot's
+observed refinement $`\Gamma(i)\preceq_{t=\mathsf{true}} T`$
+([refinement under an observed outcome](#refinement-under-an-observed-outcome)),
+which narrows a family to the singleton tested, or the object's field slice
+by $`t`$. The tag that holds of the run gives it, so `string` tested against
+$`\{\mathsf{strEq}\,\texttt{"a"}, \mathsf{strEq}\,\texttt{"b"}\}`$ is
+`"a" | "b"` where it passes.
+
 A yield where the answer is `true` is `conditional`; one where it is `false`
 is `onFalse`. A `branchBind` edge on `false` refines its context by the
 `onFalse` yields as its `true` edge does by the conditional ones; every other
@@ -4074,6 +4083,65 @@ Numbers are compared by `numberEqual`, JavaScript's equality, under which
 where the tag's test answers so for every value of it (`tagClause_sound`),
 so it agrees with the run whichever zero a set or a value holds, and the
 Fragment refuses `NaN` as a tag.
+
+#### A strict comparison
+
+A strict comparison $`x_i \equiv x_j`$ evaluates both operands, in source
+order, into slots, and its node branches on its own answer. Each clause
+$`c`$ has **tags** $`\tau(c)`$, one of which holds of every value strictly
+equal to a member of $`c`$ (`PromiseCalls.equalityTagsOf`), by cases over
+every clause form: a primitive kind's test ($`\mathsf{isNum}`$ of `number`
+and `SafeInt`, $`\mathsf{isStr}`$, $`\mathsf{isBool}`$, …), a literal's
+equality test ($`\mathsf{numEq}\,k`$, $`\mathsf{strEq}\,s`$,
+$`\mathsf{boolEq}\,b`$, $`\mathsf{bigintEq}\,i`$, one per literal of a tag
+set), $`\{\mathsf{isRef}, \mathsf{isFun}\}`$ of an object clause, since
+strict equality compares objects by identity and every object passes one of
+the two by its call code, and none of a spine, which nothing strictly
+equals. `top` and `source` have no tags. A type's tags are its clauses',
+one per class of equal holders ($`\mathsf{numEq}(+0)`$ and
+$`\mathsf{numEq}(-0)`$ are one), where every label of the type is a clause
+row, and none otherwise (`equalityTags`): a type parameter's members are no
+clause's. A type is a **singleton** with tag $`t`$ where every member is
+one value up to strict equality: `null`, `undefined`, numbers all
+`Number::equal` to the first, one string, one Boolean or one bigint
+(`singletonTag`).
+
+```math
+\frac{
+ e = (x_i \equiv x_j)\quad \{a, b\} = \{i, j\}\quad \Gamma(b) = B\quad
+ \tau(B) = S\quad e' = \mathsf{member}(S, x_a)\ \text{yields}\ y\ \text{where it answers}\ \mathsf{true}
+}{
+ e\ \text{yields}\ y\ \text{where it answers}\ \mathsf{true}
+}\ (\textsf{eq-true})
+\qquad
+\frac{
+ e = (x_i \equiv x_j)\quad \{a, b\} = \{i, j\}\quad \Gamma(b) = B\quad
+ \mathrm{single}(B) = t\quad e' = \mathsf{member}(\{t\}, x_a)\ \text{yields}\ y\ \text{where it answers}\ \mathsf{false}
+}{
+ e\ \text{yields}\ y\ \text{where it answers}\ \mathsf{false}
+}\ (\textsf{eq-false})
+```
+
+(`PromiseCalls.comparisonYield`). Four lemmas about values, none reading
+the heap, make it a membership test's run, each **proved** in
+`PromiseCalls.lean`:
+
+- (E1) $`\tau(B) = S`$, $`v\in⟦B⟧`$ and $`u \equiv v`$ answering `true`
+  give a $`t\in S`$ holding of $`u`$ (`equalityTags_sound`);
+- (E2) $`\mathrm{single}(B) = t`$, $`v\in⟦B⟧`$ and $`u \equiv v`$
+  answering `false` give $`t`$ failing of $`u`$ (`singletonTag_sound`);
+- (E3) strict equality is symmetric (`strictEquals_comm`);
+- (E4) a comparison of two values returns at once, in its heap, the
+  Boolean `strictEquals` answers (`eq_run`).
+
+`comparisonYield_sound` reads the answer by (E4), and (E3) for the second
+operand, then (E1) or (E2) gives `memberYield_sound`'s premise. A literal
+type's meaning is its exact bits, so $`+0`$ and $`-0`$ are different
+labels, while the tags compare by `Number::equal`: the true edge of
+$`x \equiv y`$ with $`y`$ holding $`+0`$ keeps an $`x`$ holding $`-0`$. The
+false edge narrows only by a singleton's tag, never an object. With
+`Kind = 0 | 1 | 2`, `a.kind === b.kind` is three nodes, the two reads and
+the comparison, whatever the number of members.
 
 #### Refinement by a fact
 
