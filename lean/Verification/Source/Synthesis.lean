@@ -251,6 +251,11 @@ structure Walk where
   instance's footprint), and its normal exit's frame: the narrowed paths
   it reaches end there. -/
   changedValues : Bool := false
+  /-- The actuals of the last call its selected signature's parameters do
+  not admit, each with that parameter read at the call's instance
+  (`applyCall`): the call is walked again with each expected there
+  (`exprCall`). -/
+  misfits : List (Nat × Ty Tree) := []
   changedFrame : Footprints.Footprint := []
   /-- The environments a `continue` of the innermost loop leaves with. -/
   continues : List Env := []
@@ -4373,10 +4378,39 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
 /-- `exprAt`'s arms of a call: a construction, a call, a call at a receiver,
 an `apply`, a `bind` and an invocation. -/
 partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option (Ty Tree) × Env) := do
+  let w0 ← get
+  let r ← exprCallAt env e exp []
+  -- An actual its selected parameter does not admit (`misfits`): the call
+  -- walked again from its start, each such actual with its parameter
+  -- expected, as an annotated binding's initializer is (TypeScript's
+  -- contextual typing of an argument: `new Map()` at `Map<string, number>`
+  -- reads the binders its actuals leave unbound off it); kept where each is
+  -- then admitted. (A call spreading an actual places its actuals apart from
+  -- its parameters.)
+  let w1 ← get
+  let (args, spread) := match e with
+    | .construct _ _ args spreads _ | .call _ _ args spreads _ | .invoke _ _ args spreads _ => (args, !spreads.isEmpty)
+    | .callWithReceiver _ _ _ args => (args, false)
+    | _ => ([], true)
+  if w1.misfits.isEmpty || spread then return r
+  let exps := (List.range args.length).map fun i => w1.misfits.lookup i
+  set { w0 with misfits := [] }
+  let r' ← exprCallAt env e exp exps
+  let w2 ← get
+  let T ← StateT.lift table
+  let admitted := w1.misfits.all fun (i, P) =>
+    (args[i]?.bind fun x => (w2.exprs.get? x.span).bind (·.2.toOption)).any (within T · P)
+  if admitted then return r'
+  set w1
+  return r
+
+/-- `exprCall`, each actual walked at its expected type in `exps`. -/
+partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : List (Option (Ty Tree))) :
+    W (Option (Ty Tree) × Env) := do
   match e with
   | .construct _ callee args spreads typeArgs =>
     let (F, e1) ← expr env callee
-    let (As, e2) ← actuals e1 args
+    let (As, e2) ← actuals e1 args exps
     -- Spread actuals as the construction reads them (`spreadCall`).
     let gs := (← get).generics
     let generic := match callee with
@@ -4428,7 +4462,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .var _ n => gs.lookup n
       | _ => none
     let (F, e1) ← expr env callee
-    let (As, e2) ← actuals e1 args
+    let (As, e2) ← actuals e1 args exps
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
         let c ← match generic with
@@ -4461,7 +4495,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
   | .callWithReceiver _ callee recv args =>
     let (F, e1) ← expr env callee
     let (R, e2) ← expr e1 recv
-    let (As, e3) ← actuals e2 args
+    let (As, e3) ← actuals e2 args exps
     let c ← StateT.lift (tryCatch (do
         return Except.ok (← calleeOf (← need F "the callee") (R.getD [Labels.undef]))) fun m => pure (.error m))
     let r ← called e3 c args As e.span exp
@@ -4631,7 +4665,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let narrowed := if (← get).force.contains "path-callees" then narrowed.map fun _ => [Labels.tru] else narrowed
     if let (some p, some _) := (memberPath callee, narrowed) then
       modify fun w => { w with readPaths := w.readPaths.insert p }
-    let (As, e2) ← actuals e1 args
+    let (As, e2) ← actuals e1 args exps
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
         if let some F := narrowed then
@@ -4695,13 +4729,14 @@ partial def exprs (env : Env) (es : List Expr) : W (List (Option (Ty Tree)) × E
 
 /-- A call's actuals in order, a callback left for the signature's pass
 (`applyCall`), none in its place. -/
-partial def actuals (env : Env) (args : List Expr) : W (List (Option (Ty Tree)) × Env) := do
+partial def actuals (env : Env) (args : List Expr) (exps : List (Option (Ty Tree)) := []) :
+    W (List (Option (Ty Tree)) × Env) := do
   let mut env := env
   let mut out := []
-  for x in args do
+  for (x, i) in args.zipIdx do
     if callback x then out := out ++ [none]
     else
-      let (A, e') ← expr env x
+      let (A, e') ← expr env x (exps[i]?.join)
       out := out ++ [A]
       env := e'
   return (out, env)
@@ -4711,11 +4746,11 @@ where it is not. -/
 partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As : List (Option (Ty Tree)))
     (at_ : Span) (exp : Option (Ty Tree) := none) (receiverFresh : Bool := false) :
     W (Except String (Ty Tree × Ty Tree)) := do
-  modify fun w => { w with changedValues := false }
+  modify fun w => { w with changedValues := false, misfits := [] }
   match c with
   | .ok c =>
     let c ← if (← get).generalCalls.contains at_ then StateT.lift (generalArrayCallee c As) else pure c
-    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh (atParameters := true)
+    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
     return .error m
@@ -4754,12 +4789,11 @@ arguments, one pass): the signature the actuals' count and the walked
 actuals' types select; each binder from the receiver and the walked
 actuals (`matchBinder`); then each callback walked with its parameters at
 the selected signature's, under those binders, its result binding what
-remains; each literal actual at the parameter's shape (`fit`); where
-`atParameters` (a call the source writes, whose arguments it states), each
-actual its parameter does not admit walked again at the parameter. The
-callee's type at the call and the call's result. -/
+remains; each literal actual at the parameter's shape (`fit`); each actual
+its parameter does not admit recorded (`misfits`). The callee's type at the
+call and the call's result. -/
 partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) (atParameters : Bool := false) :
+    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) :
     W (Except String (Ty Tree × Ty Tree)) := do
   let T ← StateT.lift table
   let G := SourceTypes.graph T
@@ -5097,6 +5131,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     | .lambda .., [r] => if c.binders.contains r && (σ.lookup r).isNone then some r else none
     | _, _ => none
   let fromActuals ← StateT.lift (methodBinders args a.arguments As lambdaBinders)
+  let mut misfits : List (Nat × Ty Tree) := []
   for ((x, P), i) in (args.zip a.arguments).zipIdx do
     let sub (A : Ty Tree) : Ty Tree := substitute σ A
     if callback x then
@@ -5126,28 +5161,13 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if let .var _ n := x then
         offerUse n (sub P)
         offerClass n (sub P)
-      -- An actual whose walked type its parameter does not admit is walked
-      -- again with the parameter's type expected, as an annotated binding's
-      -- initializer is (TypeScript's contextual typing of an argument): a
-      -- construction or a call reads the binders its actuals leave unbound
-      -- off it (`new Map()` at `Map<string, number>`). The parameter is read
-      -- at the instance, where it names none of the call's binders. The
-      -- walk's environment is discarded (the actual's own walk gave the
-      -- call's), and so is the walk where its type is still not admitted.
+      -- An actual its parameter, read at the instance and naming none of
+      -- the call's binders, does not admit: a misfit, which the call's walk
+      -- walks again with that parameter expected (`exprCall`).
       let P' := sub P
       let Tc ← StateT.lift table
-      let A ← if !atParameters || c.binders.any (fun b => P'.any (occurs b)) || A.any (within Tc · P') then pure A else do
-        let w0 ← get
-        let (A', _) ← expr env x (some P')
-        let Tc ← StateT.lift table
-        if A'.any (within Tc · P') then
-          -- (the call's own instance, change and fresh result, which the
-          -- actual's walk would otherwise state)
-          modify fun w => { w with changedValues := w0.changedValues, lastFresh := w0.lastFresh, lastInstance := w0.lastInstance, lastResolution := w0.lastResolution }
-          pure A'
-        else
-          set w0
-          pure A
+      if !c.binders.any (fun b => P'.any (occurs b)) && !A.any (within Tc · P') then
+        misfits := misfits ++ [(i, P')]
       As := As.set i (← fit P' x A)
   -- A finite record supplies no index candidate to a dictionary parameter. With no other candidate or declared bound,
   -- that binder defaults to unknown: its unnamed
@@ -5227,6 +5247,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
   callChanges inst receiverFresh
+  modify fun w => { w with misfits }
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
