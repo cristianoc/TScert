@@ -144,7 +144,7 @@
   "repro-365.ts": {
     "ordinary": "unverified",
     "units": {
-      "startAdvance": "refused",
+      "startAdvance": "accepted",
       "paperAssume": "accepted",
       "startAdvanceAssumed": "accepted",
       "startAdvanceWeak": "refused"

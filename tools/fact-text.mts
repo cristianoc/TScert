@@ -106,6 +106,16 @@ export function indexFact(f: IndexFact, name: Namer): string | null {
     const a = f.spineApart;
     return `apart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;
   }
+  if ("atIndex" in f) {
+    const e = f.atIndex;
+    const array = pathText(e.slot, e.path, name);
+    const elem = `${array}[${term(e.index, name)}]`;
+    const b = body(e.body, array, name);
+    if (e.guard === null) return `at ${elem}: ${b}`;
+    const cond = e.guard === "notNull" ? "=== null" : e.guard === "notUndefined" ? "=== undefined"
+      : e.guard === "notTrue" ? "=== true" : e.guard === "notFalse" ? "=== false" : `!== ${e.guard}`;
+    return `${elem} ${cond} → ${b}`;
+  }
   const e = f.every;
   const array = pathText(e.slot, e.path, name);
   return `every element e at k < ${term(e.stop, name)} of ${array}: ${e.body.map((b) => body(b, array, name)).join(" && ")}`;

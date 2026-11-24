@@ -126,6 +126,25 @@ private theorem g_categories : ClassOk intrinsicClasses fieldK g := by
           subst hl'
           cases p <;> simp [hfk, g, HeapKnowledge.readPath, HeapKnowledge.elementsOf] at hm
       · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx] at hm
+  | elemSpines x p =>
+    cases p with
+    | nil =>
+      by_cases hx : x = 0
+      · subst hx; exact absurd hm (by decide)
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx, spineCells, fieldsOf, entriesAt, HeapKnowledge.descriptorSpine] at hm
+    | cons f p =>
+      by_cases hx : x = 0
+      · subst hx
+        simp only [Region.mem, HeapKnowledge.readPath, fieldK, ite_true] at hm
+        cases hfk : ([("k", 0)] : List (PropKey × Nat)).lookup (.str f) with
+        | none => simp [hfk] at hm
+        | some l' =>
+          have hl' : l' = 0 := by
+            simp only [List.lookup] at hfk
+            split at hfk <;> simp_all
+          subst hl'
+          cases p <;> simp [hfk, g, HeapKnowledge.readPath, spineCells, fieldsOf, entriesAt, HeapKnowledge.descriptorSpine] at hm
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx] at hm
 
 private theorem noLinks_ok (ρ₀ : Env) (a : Heap) : RebaseOk noLinks fieldK ρ₀ a g where
   link := by intro _ _ _ h; simp [noLinks] at h

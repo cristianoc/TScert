@@ -467,6 +467,10 @@ theorem regionSub_mem {ρ : Env} {h : Heap} {r R : Region} {loc : Nat}
     cases R with
     | cls c' => simp only [regionSub, beq_iff_eq] at hsub; cases hsub; exact hm
     | _ => simp only [regionSub, beq_iff_eq] at hsub; cases hsub
+  | elemSpines x p =>
+    cases R with
+    | elemSpines y p' => simp only [regionSub, beq_iff_eq] at hsub; cases hsub; exact hm
+    | _ => simp only [regionSub, beq_iff_eq] at hsub; cases hsub
   | all =>
     cases R with
     | all => exact hm

@@ -193,6 +193,7 @@ def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .cls c => .cls c
   | .all => .all
   | .spine x p => match σ x with | some y => .spine y p | none => .all
+  | .elemSpines x p => match σ x with | some y => .elemSpines y p | none => .all
 
 theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l : Nat}
     (hσ : ∀ i j, σ i = some j → ρ j = env i) (hl : l < h.length) :

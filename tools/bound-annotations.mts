@@ -240,7 +240,8 @@ function tokens(text: string): Token[] | string {
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
   { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[][] } |
-  { k: "distinct"; left: string; right: string };
+  { k: "distinct"; left: string; right: string } |
+  { k: "elemTag"; elem: string; tag: GuardTag; negated: boolean };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
  * conjunction. */
 type Guard = { path: string; tag: GuardTag };
@@ -294,7 +295,8 @@ class Parser {
       const body = this.booleanPrimary();
       let out: Atom[][] = [[]];
       for (const conjunction of body) {
-        const negated = conjunction.flatMap(a => {
+        const negated = conjunction.flatMap((a): Atom[] => {
+          if (a.k === "elemTag") return [{ ...a, negated: !a.negated }];
           if (a.k !== "compare") throw new ClauseError("negation requires linear comparisons");
           const opposite: Record<string, string> = { "<": ">=", "<=": ">", ">": "<=", ">=": "<" };
           if (a.op === "===") return [{ ...a, op: "<" }, { ...a, op: ">" }];
@@ -360,15 +362,34 @@ class Parser {
       this.expect(")");
       return { k: "safeInteger", of };
     }
-    // `p !== q` of two array paths (ARITHMETIC.md, "Spine separation").
+    // `p !== q` of two array paths (ARITHMETIC.md, "Spine separation"), or
+    // `p[q] === tag` / `p[q] !== tag` on an indexed array element.
     if (t && t.k === "name") {
       const saved = this.at;
-      const left = this.variable();
+      const left = this.element(this.variable());
       if (this.isOp("!==")) {
         this.at++;
         const r = this.peek();
+        if (left.includes("[")) {
+          if (!left.endsWith("]"))
+            throw new ClauseError("an element guard tests the indexed element itself (`p[q] !== tag`)");
+          if (!r || r.k !== "name" || (r.v !== "null" && r.v !== "undefined" && r.v !== "true" && r.v !== "false"))
+            throw new ClauseError("`!==` on an indexed element compares against null, undefined, true or false");
+          this.at++;
+          return { k: "elemTag", elem: left, tag: r.v, negated: true };
+        }
         if (!r || r.k !== "name") throw new ClauseError("`!==` compares two paths");
         return { k: "distinct", left, right: this.variable() };
+      }
+      if (left.includes("[") && this.isOp("===")) {
+        this.at++;
+        const r = this.peek();
+        if (r && r.k === "name" && (r.v === "null" || r.v === "undefined" || r.v === "true" || r.v === "false")) {
+          if (!left.endsWith("]"))
+            throw new ClauseError("an element guard tests the indexed element itself (`p[q] === tag`)");
+          this.at++;
+          return { k: "elemTag", elem: left, tag: r.v, negated: false };
+        }
       }
       this.at = saved;
     }
@@ -413,16 +434,22 @@ class Parser {
     }
     return this.variable();
   }
-  /** A path, or the element `p[i]` a path's array holds at a `forall`'s index. */
+  /** A path, or the element `p[i]` a path's array holds at an index path or a `forall`'s index. */
   private element(path: string): string {
     if (!this.isOp("[")) return path;
     this.at++;
-    const i = this.take();
-    if (!i || i.k !== "name") throw new ClauseError("an element is read at a `forall`'s index");
+    const idx = this.variable();
     let delta = 0;
-    if (this.isOp("+")) { this.at++; const d = this.take(); if (!d || d.k !== "num" || !Number.isSafeInteger(d.v) || d.v < 0) throw new ClauseError("an element offset is a nonnegative integer"); delta = d.v; }
+    if (this.isOp("+")) {
+      if (idx.includes(".")) throw new ClauseError("an element offset applies only to a `forall` index");
+      this.at++;
+      const d = this.take();
+      if (!d || d.k !== "num" || !Number.isSafeInteger(d.v) || d.v < 0)
+        throw new ClauseError("an element offset is a nonnegative integer");
+      delta = d.v;
+    }
     this.expect("]");
-    let out = `${path}[${i.v}${delta === 0 ? "" : `+${delta}`}]`;
+    let out = `${path}[${idx}${delta === 0 ? "" : `+${delta}`}]`;
     while (this.isOp(".")) {
       this.at++;
       const f = this.take();
@@ -491,6 +518,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
+  if ("atIndex" in f) return [f.atIndex.slot, f.atIndex.index.slot, ...bodyPositions(f.atIndex.body)];
   if ("spineApart" in f) return [f.spineApart.slot, f.spineApart.other];
   if ("apart" in f) return [f.apart.slot, f.apart.other];
   if ("same" in f) return [f.same.slot, f.same.other];
@@ -604,47 +632,72 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       if (!p) throw new ClauseError(`the clause names ${name}, which is no parameter of the declaration`);
       return p;
     };
-    // The safe integers every clause states, then its comparisons' facts.
-    const intFacts: IndexFact[] = [];
-    const compared: IndexFact[] = [];
-    /** The facts each atom of a clause states, each in turn in a guarded
-     * fact of each of the clause's guards, the first outermost. */
-    const elaborate = (clause: Clause, unguarded: ReadonlySet<string>): void => {
-      const { guards, atoms } = clause;
-      /** The tags the guards before the `i`-th exclude of the prefix of
-       * `depth` fields of the parameter `x`'s path. */
-      const excludedBy = (i: number, x: string): Excluded => (depth) =>
-        guards.slice(0, i).flatMap(g => {
-          const [y = "", ...fields] = g.path.split(".");
-          return y === x && fields.length === depth ? [g.tag] : [];
-        });
-      /** The parameter and fields a path names, each field resolved past
-       * the guards before the `i`-th. */
-      const pathAt = (i: number, key: string, optionalLast = false): { p: ClauseParameter; path: string[] } => {
-        const [x = "", ...fields] = key.split(".");
-        const p = param(x);
-        if (fields.length > 0 && p.at(fields, excludedBy(i, x), optionalLast) === null)
-          throw new ClauseError(`the path ${key} reads a field no record type of ${x} declares as a required data field`);
-        return { p, path: fields };
-      };
+    const parseElemKey = (key: string): { elem: string; array: string; index: string; tail: string[] } | null => {
+      const open = key.indexOf("[");
+      if (open < 0) return null;
+      const close = key.indexOf("]", open + 1);
+      if (close < 0) throw new ClauseError(`invalid indexed element ${key}`);
+      const array = key.slice(0, open);
+      const index = key.slice(open + 1, close);
+      if (index.includes("+")) throw new ClauseError(`element offset ${key} is only permitted inside \`forall\``);
+      const rest = key.slice(close + 1);
+      if (rest !== "" && !rest.startsWith(".")) throw new ClauseError(`invalid indexed element path ${key}`);
+      const tail = rest === "" ? [] : rest.slice(1).split(".");
+      return { elem: key.slice(0, close + 1), array, index, tail };
+    };
+    const atomsMentionElem = (atoms: readonly Atom[], elem: string): boolean => atoms.some(a => {
+      if (a.k === "safeInteger") return a.of === elem || a.of.startsWith(`${elem}.`);
+      if (a.k === "elemTag") return a.elem === elem;
+      if (a.k === "compare") {
+        const has = (e: Linear): boolean => [...e.terms.keys()].some(k => k === elem || k.startsWith(`${elem}.`)) ||
+          e.steps.some(has);
+        return has(a.left) || has(a.right);
+      }
+      return false;
+    });
+    /** The tags the guards before the `i`-th exclude of the prefix of
+     * `depth` fields of the parameter `x`'s path. */
+    const excludedBy = (guards: readonly Guard[], i: number, x: string): Excluded => (depth) =>
+      guards.slice(0, i).flatMap(g => {
+        const [y = "", ...fields] = g.path.split(".");
+        return y === x && fields.length === depth ? [g.tag] : [];
+      });
+    /** The parameter and fields a path names, each field resolved past
+     * the guards before the `i`-th. */
+    const pathAt = (guards: readonly Guard[], i: number, key: string, optionalLast = false): { p: ClauseParameter; path: string[] } => {
+      const [x = "", ...fields] = key.split(".");
+      const p = param(x);
+      if (fields.length > 0 && p.at(fields, excludedBy(guards, i, x), optionalLast) === null)
+        throw new ClauseError(`the path ${key} reads a field no record type of ${x} declares as a required data field`);
+      return { p, path: fields };
+    };
+    /** The outer guard wrapper for a clause's disjunction. */
+    const outerWrapper = (guards: readonly Guard[]): ((f: IndexFact) => IndexFact) => {
       const resolved = guards.map((g, i) => {
-        const { p, path: fields } = pathAt(i, g.path, g.tag === "undefined" || g.tag === "notUndefined");
+        const { p, path: fields } = pathAt(guards, i, g.path, g.tag === "undefined" || g.tag === "notUndefined");
         return { slot: p.position, path: fields, tag: g.tag };
       });
-      const wrap = (f: IndexFact): IndexFact =>
+      return (f: IndexFact): IndexFact =>
         resolved.reduceRight<IndexFact>((body, g) => ({ guarded: { ...g, body } }), f);
-      const path = (key: string): { p: ClauseParameter; path: string[] } => pathAt(guards.length, key);
+    };
+    /** The facts each atom of a clause states (unwrapped by outer guards, which
+     * are applied once around the clause's disjunction). */
+    const elaborate = (clause: Clause, unguarded: ReadonlySet<string>, elemGuards: ReadonlyMap<string, GuardTag>): IndexFact[] => {
+      const { guards, atoms } = clause;
+      const intFacts: IndexFact[] = [];
+      const compared: IndexFact[] = [];
+      const path = (key: string): { p: ClauseParameter; path: string[] } => pathAt(guards, guards.length, key);
       /** Whether a path's type, past the clause's guards, is a safe integer. */
       const integral = (key: string): boolean => {
         const { p, path: fields } = path(key);
-        return p.at(fields, excludedBy(guards.length, key.split(".")[0] ?? "")) === "int";
+        return p.at(fields, excludedBy(guards, guards.length, key.split(".")[0] ?? "")) === "int";
       };
       const value = (key: string): LinearTerm => {
         const { p, path: fields } = path(key);
         return { kind: "value", slot: p.position, path: fields };
       };
       const ints = new Set([...unguarded,
-        ...atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : [])]);
+        ...atoms.flatMap(a => a.k === "safeInteger" && !a.of.includes("[") ? [JSON.stringify(value(a.of))] : [])]);
       const term = (key: string): LinearTerm => {
         // `old(p)`: the term `p` read in the entry state, at the entry's
         // position holding `p`'s root.
@@ -660,7 +713,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         if (names.length > 1 && names[names.length - 1] === "length") {
           const prefix = names.slice(0, -1).join(".");
           const { p, path: fields } = path(prefix);
-          const at = p.at(fields, excludedBy(guards.length, names[0] ?? ""));
+          const at = p.at(fields, excludedBy(guards, guards.length, names[0] ?? ""));
           if (at === "array") return { kind: "length", slot: p.position, path: fields };
           if (at === "view") return { kind: "view", slot: p.position, path: fields };
           if (at === "string") return { kind: "strLength", slot: p.position, path: fields };
@@ -670,36 +723,130 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
         return t;
       };
+      const negElemTags = new Map<string, GuardTag[]>();
+      for (const a of atoms) {
+        if (a.k !== "elemTag") continue;
+        if (!a.negated)
+          throw new ClauseError(`\`${a.elem} === ${a.tag}\` may only appear as a guard disjunction \`${a.elem} === ${a.tag} || ...\``);
+        const list = negElemTags.get(a.elem) ?? [];
+        if (!list.includes(a.tag)) list.push(a.tag);
+        negElemTags.set(a.elem, list);
+      }
+      const guardedHere = [...elemGuards.keys()].filter(e => atomsMentionElem(atoms, e));
+      if (guardedHere.length > 1)
+        throw new ClauseError("a conjunction may reference at most one guarded indexed element");
+      const activeGuardElem = guardedHere[0] ?? null;
+      type ElemSpec = { elem: string; slot: number; path: string[]; index: LinearTerm; guard: GuardTag | null;
+        p: ClauseParameter; elemExcl: Excluded };
+      const elemSpecCache = new Map<string, ElemSpec>();
+      const resolveElem = (elem: string): ElemSpec => {
+        const cached = elemSpecCache.get(elem);
+        if (cached !== undefined) return cached;
+        const parsedElem = parseElemKey(elem);
+        if (parsedElem === null || parsedElem.tail.length > 0) throw new ClauseError(`invalid indexed element ${elem}`);
+        const root = parsedElem.array.split(".")[0] ?? "";
+        const { p, path: fields } = path(parsedElem.array);
+        const ranged = p.at(fields, excludedBy(guards, guards.length, root));
+        if (ranged !== "array")
+          throw new ClauseError(`indexed element \`${elem}\` requires an array, which ${parsedElem.array} is not`);
+        const index = term(parsedElem.index);
+        const guard = elemGuards.get(elem) ?? null;
+        const extraTags: GuardTag[] = [...(negElemTags.get(elem) ?? []), ...(guard !== null ? [guard] : [])];
+        const elemDepth = fields.length + 1;
+        const baseExcl = excludedBy(guards, guards.length, root);
+        const elemExcl: Excluded = (depth) => depth === elemDepth ? [...baseExcl(depth), ...extraTags] : baseExcl(depth);
+        const spec: ElemSpec = { elem, slot: p.position, path: fields, index, guard, p, elemExcl };
+        elemSpecCache.set(elem, spec);
+        return spec;
+      };
+      const elemVar = (spec: ElemSpec, key: string): BodyVariable => {
+        const parsedKey = parseElemKey(key);
+        if (parsedKey !== null) {
+          if (parsedKey.elem !== spec.elem)
+            throw new ClauseError("a comparison may index at most one array element");
+          const fields = parsedKey.tail;
+          const length = fields.at(-1) === "length";
+          const fieldPath = length ? fields.slice(0, -1) : fields;
+          const kind = spec.p.at([...spec.path, "[]", ...fieldPath], spec.elemExcl);
+          if (length) {
+            if (kind !== "array" && kind !== "view" && kind !== "string")
+              throw new ClauseError(`the element path ${key} has no length contract`);
+            return { project: { kind: kind === "array" ? "length" : kind === "view" ? "view" : "strLength", path: fieldPath } };
+          }
+          if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && kind !== "int")
+            throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
+          if (fieldPath.length === 0) return "elem";
+          if (kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
+          return { project: { kind: "value", path: fieldPath } };
+        }
+        return { free: { t: term(key) } };
+      };
+      const usedNegElems = new Set<string>();
       for (const a of atoms) {
         if (a.k !== "safeInteger") continue;
+        const pk = parseElemKey(a.of);
+        const targetElem = pk !== null ? pk.elem : activeGuardElem;
+        if (targetElem !== null) {
+          if (activeGuardElem !== null && pk !== null && pk.elem !== activeGuardElem)
+            throw new ClauseError("a guarded indexed-element clause may index only its guarded element");
+          const spec = resolveElem(targetElem);
+          const v = elemVar(spec, a.of);
+          if (v === "elem" || (typeof v !== "string" && "project" in v)) usedNegElems.add(targetElem);
+          intFacts.push({ atIndex: { slot: spec.slot, path: spec.path, index: spec.index, guard: spec.guard,
+            body: { le: { form: [[v, 1]], bound: MAX_SAFE } } } });
+          continue;
+        }
         const t = value(a.of);
-        intFacts.push(wrap(t.path.length === 0 ? { int: { slot: t.slot } }
-          : { linear: { fact: { le: { form: [[t, 1]], bound: MAX_SAFE } } } }));
+        intFacts.push(t.path.length === 0 ? { int: { slot: t.slot } }
+          : { linear: { fact: { le: { form: [[t, 1]], bound: MAX_SAFE } } } });
       }
       /** The fact `Σ c·t ≤ bound`, each term once, sorted by position and kind. */
       const lessEq = (terms: Map<string, number>, bound: number): void => {
         if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
-        const form: [LinearTerm, number][] = [...terms].filter(([, c]) => c !== 0)
+        const nonzero = [...terms].filter(([, c]) => c !== 0);
+        const elems = [...new Set(nonzero.flatMap(([x]) => {
+          const pk = parseElemKey(x);
+          return pk === null ? [] : [pk.elem];
+        }))];
+        if (elems.length > 1) throw new ClauseError("a comparison may index at most one array element");
+        const targetElem = elems[0] ?? activeGuardElem;
+        if (targetElem !== null) {
+          if (activeGuardElem !== null && elems[0] !== undefined && elems[0] !== activeGuardElem)
+            throw new ClauseError("a guarded indexed-element clause may index only its guarded element");
+          const spec = resolveElem(targetElem);
+          const form: [BodyVariable, number][] = nonzero.map(([x, c]): [BodyVariable, number] => [elemVar(spec, x), c]);
+          if (form.some(([v]) => v === "elem" || (typeof v !== "string" && "project" in v))) usedNegElems.add(targetElem);
+          compared.push({ atIndex: { slot: spec.slot, path: spec.path, index: spec.index, guard: spec.guard,
+            body: { le: { form, bound } } } });
+          return;
+        }
+        const form: [LinearTerm, number][] = nonzero
           .map(([x, c]): [LinearTerm, number] => [term(x), c])
           .sort((a, b) => order(a[0], b[0]));
         const fact: LinearFact = { le: { form, bound } };
-        compared.push(wrap({ linear: { fact } }));
+        compared.push({ linear: { fact } });
       };
       compareAtoms(atoms, lessEq);
+      for (const elem of negElemTags.keys()) {
+        if (!usedNegElems.has(elem))
+          throw new ClauseError(`\`${elem} !== ...\` must accompany a comparison or \`safeInteger\` naming \`${elem}\``);
+      }
       // `p !== q` (ARITHMETIC.md, "Spine separation"): the arrays the two
       // paths read hold different spines. Each side's type is an array: a
       // typed array's view may share its buffer with another view.
       for (const a of atoms) {
         if (a.k !== "distinct") continue;
+        if (activeGuardElem !== null)
+          throw new ClauseError("a guarded indexed-element clause cannot state `!==`");
         const side = (key: string): { slot: number; path: string[] } => {
           const { p, path: fields } = path(key);
-          const at = p.at(fields, excludedBy(guards.length, key.split(".")[0] ?? ""));
+          const at = p.at(fields, excludedBy(guards, guards.length, key.split(".")[0] ?? ""));
           if (at === "view") throw new ClauseError(`\`!==\` compares two arrays, and ${key} may be a typed array, whose buffer another view may share`);
           if (at !== "array") throw new ClauseError(`\`!==\` compares two arrays, and ${key} is not an array`);
           return { slot: p.position, path: fields };
         };
         const l = side(a.left), r = side(a.right);
-        compared.push(wrap({ spineApart: { slot: l.slot, path: l.path, other: r.slot, otherPath: r.path } }));
+        compared.push({ spineApart: { slot: l.slot, path: l.path, other: r.slot, otherPath: r.path } });
       }
       // `forall i in p: C` (ARITHMETIC.md, "Quantified clauses"): for
       // every index of the array or typed array `p` reads, below its length
@@ -709,20 +856,23 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       // path is.
       for (const a of atoms) {
         if (a.k !== "forall") continue;
+        if (activeGuardElem !== null)
+          throw new ClauseError("a guarded indexed-element clause cannot state `forall`");
         const root = a.array.split(".")[0] ?? "";
         const { p, path: fields } = path(a.array);
-        const ranged = p.at(fields, excludedBy(guards.length, root));
+        const ranged = p.at(fields, excludedBy(guards, guards.length, root));
         if (ranged !== "array" && ranged !== "view")
           throw new ClauseError(`\`forall\` ranges over the indices of an array or a typed array, which ${a.array} is not`);
         if (params.some(q => q.name === a.binder)) throw new ClauseError(`the index ${a.binder} is a parameter's name`);
         const elem = `${a.array}[${a.binder}]`;
         const branchBody = (atoms: Atom[]): BodyFact[] => {
         if (atoms.some(b => b.k === "distinct")) throw new ClauseError("a `forall` body states no `!==`");
+        if (atoms.some(b => b.k === "elemTag")) throw new ClauseError("a `forall` body states no element tag guard");
         const body: BodyFact[] = [];
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
           if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
-            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...a.array.split(".").slice(1), "[]"], excludedBy(guards.length, root)) !== "int")
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...a.array.split(".").slice(1), "[]"], excludedBy(guards, guards.length, root)) !== "int")
               throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
             return { offset: { delta: Number(key.slice(`${a.array}[${a.binder}+`.length, -1)) } };
           }
@@ -730,7 +880,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             const fields = key === elem ? [] : key.slice(elem.length + 1).split(".");
             const length = fields.at(-1) === "length";
             const path = length ? fields.slice(0, -1) : fields;
-            const kind = p.at([...a.array.split(".").slice(1), "[]", ...path], excludedBy(guards.length, root));
+            const kind = p.at([...a.array.split(".").slice(1), "[]", ...path], excludedBy(guards, guards.length, root));
             if (length) {
               if (kind !== "array" && kind !== "view" && kind !== "string")
                 throw new ClauseError(`the element path ${key} has no length contract`);
@@ -767,9 +917,10 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           }
         }
         body ??= [];
-        compared.push(wrap({ every: { slot: p.position, path: fields,
-          stop: a.stop === null ? { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields } : term(a.stop), body } }));
+        compared.push({ every: { slot: p.position, path: fields,
+          stop: a.stop === null ? { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields } : term(a.stop), body } });
       }
+      return [...intFacts, ...compared];
     };
     /** The values the unguarded clauses state safe integers. */
     const assumed = assumptions.map(text => {
@@ -778,19 +929,34 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       return new Parser(ts).clause();
     });
     const unguarded = new Set([...parsed, ...assumed].filter(cs => cs.length === 1).flat().filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
-      if (a.k !== "safeInteger") return [];
+      if (a.k !== "safeInteger" || a.of.includes("[")) return [];
       const [x = "", ...fields] = a.of.split(".");
       return [JSON.stringify({ kind: "value", slot: param(x).position, path: fields })];
     })));
     const result: IndexFact[] = [];
     for (const alternatives of parsed) {
-      const branches = alternatives.map(c => {
-        intFacts.length = 0; compared.length = 0;
-        elaborate(c, unguarded);
-        return [...intFacts, ...compared];
-      });
+      const elemGuards = new Map<string, GuardTag>();
+      const bodyAlts: Clause[] = [];
+      for (const c of alternatives) {
+        const only = c.atoms.length === 1 ? c.atoms[0] : undefined;
+        if (only !== undefined && only.k === "elemTag" && !only.negated) {
+          if (elemGuards.has(only.elem))
+            throw new ClauseError(`indexed element \`${only.elem}\` may have at most one guard tag`);
+          elemGuards.set(only.elem, only.tag);
+        } else {
+          bodyAlts.push(c);
+        }
+      }
+      if (elemGuards.size > 0 && bodyAlts.length === 0)
+        throw new ClauseError("an element guard `p[q] === tag` requires an alternative over that element");
+      for (const elem of elemGuards.keys()) {
+        if (!bodyAlts.some(c => atomsMentionElem(c.atoms, elem)))
+          throw new ClauseError(`element guard on \`${elem}\` has no alternative referencing \`${elem}\``);
+      }
+      const clauseWrap = outerWrapper(alternatives[0]?.guards ?? []);
+      const branches = bodyAlts.map(c => elaborate(c, unguarded, elemGuards));
       const common = (branches[0] ?? []).filter(f => branches.every(bs => bs.some(g => JSON.stringify(f) === JSON.stringify(g))));
-      result.push(...common);
+      result.push(...common.map(clauseWrap));
       const residual = branches.map(bs => bs.filter(f => !common.some(g => JSON.stringify(f) === JSON.stringify(g))));
       let distributed: IndexFact[] | undefined;
       for (const branch of residual) {
@@ -800,7 +966,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           distributed = distributed.flatMap(left => branch.map(right => ({ either: { left, right } })));
         }
       }
-      result.push(...(distributed ?? []));
+      result.push(...(distributed ?? []).map(clauseWrap));
     }
     const seen = new Set<string>();
     const facts = result.filter(f => {

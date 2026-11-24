@@ -23,6 +23,29 @@ theorem deltaAdd_wf {s : Store} (w : StoreWF s) (pairs : List (Atom × Atom)) (o
   repeat' split
   all_goals first | exact add_wf hr _ | exact hr
 
+theorem restateAddedReads_wf {s : Store} (w : StoreWF s) (x : HeapKnowledge.IndexAtom) (v : Nat) :
+    StoreWF (SinglePass.restateAddedReads s x v) := by
+  unfold SinglePass.restateAddedReads; simp only [Id.run]
+  split
+  · exact w
+  · exact forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w (fun _ _ w' hw => add_wf hw _) (fun _ h => h)
+
+theorem restateAddedAtIndex_wf {s : Store} (w : StoreWF s) (x : HeapKnowledge.IndexAtom) (v : Nat) :
+    StoreWF (SinglePass.restateAddedAtIndex s x v) := by
+  unfold SinglePass.restateAddedAtIndex; simp only [Id.run]
+  split
+  · exact w
+  · split
+    all_goals first
+      | exact w
+      | (refine forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w ?_ (fun _ h => h)
+         intro r _ w' hw'
+         split
+         · split
+           · exact forIn_inv _ _ _ StoreWF hw' fun _ _ z hz => add_wf hz _
+           · exact hw'
+         · exact hw')
+
 theorem deltaRestate_wf {s : Store} (w : StoreWF s) (added : List HeapKnowledge.IndexAtom) :
     StoreWF (deltaRestate s added) := by
   unfold deltaRestate
@@ -30,12 +53,7 @@ theorem deltaRestate_wf {s : Store} (w : StoreWF s) (added : List HeapKnowledge.
   refine forIn_inv_bind (R := StoreWF) added s _ StoreWF _ w ?_ (fun _ h => h)
   intro x _ t ht
   show StoreWF (forIn (m := Id) x.fact.slots t _)
-  refine forIn_inv _ _ _ StoreWF ht ?_
-  intro v _ u hu
-  split
-  · show StoreWF (forIn (m := Id) _ u _)
-    exact forIn_inv _ _ _ StoreWF hu fun y _ w' hw => add_wf hw _
-  · exact hu
+  exact forIn_inv _ _ _ StoreWF ht fun v _ u hu => restateAddedAtIndex_wf (restateAddedReads_wf hu x v) x v
 
 /-- **The delta keeps the store well-formed.** -/
 theorem applyDelta_wf {s : Store} (w : StoreWF s) (pairs : List (Atom × Atom)) (out : HeapKnowledge.Knowledge)

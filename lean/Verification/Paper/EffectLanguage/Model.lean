@@ -202,7 +202,8 @@ theorem closedOut_elementsOf_not_priv {priv : Nat → Prop} {v : Val} (hnp : NoP
 /-- The slot a concrete `Footprints.Region` is rooted at, where it is rooted
 at one (every region except `cls` and `all`). -/
 def rootOf : Region → Option Nat
-  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => some x
+  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _
+  | .spine x _ | .elemSpines x _ => some x
   | .cls _ | .all => none
 
 /-- **Module disjointness for concrete regions**: in a `ClosedOut` heap,
@@ -262,6 +263,24 @@ theorem closedOut_region_disjoint {h : Heap} {priv : Nat → Prop} {ρ : Env} {x
     | some v =>
       rw [hrp] at hmem; simp only [beq_iff_eq] at hmem
       exact closedOut_elementsOf_not_priv (closedOut_readPath_noPriv hc hnp hrp) hmem
+  | elemSpines y p =>
+    simp [rootOf] at hr; subst hr
+    simp only [Region.mem] at hmem
+    cases hrp : HeapKnowledge.readPath h (ρ y) p with
+    | none => rw [hrp] at hmem; cases hmem
+    | some v =>
+      rw [hrp] at hmem; simp only [List.any_eq_true] at hmem
+      obtain ⟨o, ho, hm⟩ := hmem
+      cases o with
+      | none => cases hm
+      | some c =>
+        simp only at hm
+        cases hcu : h[c]? with
+        | none => rw [hcu] at hm; cases hm
+        | some u =>
+          rw [hcu] at hm; simp only [beq_iff_eq] at hm
+          have hcn := closedOut_spineCells_not_priv hc (closedOut_readPath_noPriv hc hnp hrp) ho
+          exact closedOut_elementsOf_not_priv (hc c (List.getElem?_eq_some_iff.mp hcu).1 hcn u hcu) hm
 
 /-- **Module disjointness for declared reach (`x.**_T`)**: any location
 reachable along arbitrary public field, spine, and element paths from an
@@ -454,7 +473,7 @@ theorem mem_renameM_total {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l
   intro r
   cases r with
   | cls | all => rfl
-  | field x | fields x | cells x | path x | pathFields x | pathCells x | spine x =>
+  | field x | fields x | cells x | path x | pathFields x | pathCells x | spine x | elemSpines x =>
     obtain ⟨j, hj, hρ⟩ := hσ x
     simp only [Region.renameM, hj, Region.mem, hρ]
 

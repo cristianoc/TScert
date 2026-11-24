@@ -39,6 +39,16 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
     pure (.every slot (pre ++ path) stop body)
+  | .atIndex p path idx guard body => do
+    let (slot, pre) ← now p
+    let idx ← idx.reroot now entry
+    let body ← body.mapVars fun
+      | .free t => (t.reroot now entry).map HeapKnowledge.Bound.free
+      | .index => some .index
+      | .elem => some .elem
+      | .offset d => some (.offset d)
+      | .project k p => some (.project k p)
+    pure (.atIndex slot (pre ++ path) idx guard body)
   | f => f.mapM fun p => do
     let (slot, path) ← now p
     if path.isEmpty then some slot else none

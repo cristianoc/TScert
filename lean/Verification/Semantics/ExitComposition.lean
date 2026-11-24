@@ -217,7 +217,7 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
   | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | pathFields _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | spine _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
-  | cells | pathCells => simp [Region.atLocation] at hR
+  | cells | pathCells | elemSpines => simp [Region.atLocation] at hR
 
 /-- **An allocation alone meets an exceptional exit stating no
 postcondition** (proved): it keeps every old location (`Post.of_prefix`),

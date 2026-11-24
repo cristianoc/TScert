@@ -631,23 +631,26 @@ Several tags of one kind state their conjunction.
 K &::= G\ \texttt{||}\ K \mid C\\
 G &::= P\ \texttt{===}\ \mathtt{null} \mid P\ \texttt{===}\ \mathtt{undefined} \mid P\ \texttt{===}\ \mathtt{true} \mid P\ \texttt{===}\ \mathtt{false}\\
 C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ P\ \mathtt{of}\ P\texttt{:}\ B\\
-A &::= \mathtt{safeInteger}(P) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P\\
-E &::= n \mid P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
-P &::= x \mid P.f\\
+A &::= \mathtt{safeInteger}(P) \mid \mathtt{safeInteger}(I) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P \mid P[Q]\ \texttt{===}\ t \mid P[Q]\ \texttt{!==}\ t\\
+I &::= P[Q] \mid P[Q].p\\
+E &::= n \mid P \mid P.\mathtt{length} \mid I \mid I.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid n\cdot I \mid n\cdot I.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
+P,Q &::= x \mid P.f\\
 B &::= A' \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
 E' &::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid P[x].p.\mathtt{length} \mid n\cdot E'
 \end{aligned}
 ```
 
-with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`n`$ and $`d`$
+with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`t`$ one of `null`, `undefined`, `true`, `false`, $`n`$ and $`d`$
 integer literals ($`d\ge 0`$), $`x`$ a parameter (`result` in an
 `@ensures`, `this` in a type invariant, a binding in a loop invariant) or a
-quantified atom's index, $`f`$ a field name, and $`A'`$ an atom over terms
+quantified atom's index, $`f`$ a field name, $`p`$ a field path, and $`A'`$ an atom over terms
 $`E'`$, `safeInteger(P[x])` among them. A clause starts with its
 [guards](#guarded-clauses); a [quantified atom](#quantified-clauses) is its
 last, its body extending to the clause's end, and states no quantified atom
 of its own; a `!` or an `||` among atoms states a
-[linear disjunction](#guarded-clauses). A guard against `true` or `false`
+[linear disjunction](#guarded-clauses); an expression $`P[Q]`$ outside
+`forall` states an [indexed-element clause](#indexed-element-clauses), at most
+one indexed array element per comparison. A guard against `true` or `false`
 tests a Boolean result ([postconditions](#postconditions)).
 
 **Reading a clause.** A path $`P = x.f_1\ldots f_k`$ reads the fields from
@@ -1879,6 +1882,113 @@ head decides, whatever the proposed candidates.
 `invalid-loop-invariant-entry` (an entry with `j = 2`). Control
 (`tests/single-pass-controls.mts`): a false fact written into
 `bounds-cell-invariant`'s loop invariant, refused.
+
+## Indexed-element clauses
+
+An **indexed-element fact** (`IndexFact.atIndex`) states a body clause $`B`$ of
+the single element at index $`\tau`$ of the array that path $`P = s.p`$ reads,
+optionally guarded by a tag $`g \in \{\mathtt{null}, \mathtt{undefined},
+\mathtt{true}, \mathtt{false}\}`$:
+
+```math
+\begin{aligned}
+h,\rho \models \mathrm{atIndex}(s.p,\ \tau,\ \mathit{guard},\ B) \iff
+  &\exists w,\ \mathit{st},\ \mathit{ls},\ i \in \mathbb{N}.\
+   \mathrm{read}_h(\rho\,s, p) = w \wedge \mathrm{elementsOf}(w) = \mathit{st}\\
+  &\wedge h[\mathit{st}] = \mathrm{arr}(\mathit{ls})
+   \wedge \mathrm{termValue}(\varepsilon, \rho, h, \tau) = i \wedge i < |\mathit{ls}|\\
+  &\wedge \begin{cases}
+      B\text{ holds at }\mathrm{boundValue}(\varepsilon, \rho, h, \mathit{ls}, i)
+        & \text{if }\mathit{guard} = \mathrm{none}\\
+      (\exists l.\ \mathit{ls}[i] = \mathrm{some}(l) \wedge h[l] = \overline{g})
+        \vee (\mathit{ls}[i] = \mathrm{none} \wedge g = \mathtt{undefined})
+        \vee B\text{ holds at }\mathrm{boundValue}(\varepsilon, \rho, h, \mathit{ls}, i)
+        & \text{if }\mathit{guard} = \mathrm{some}(g)
+    \end{cases}
+\end{aligned}
+```
+
+The body $`B`$ is a linear clause (`LinearClause Bound`) over the same body
+variables as [quantified clauses](#quantified-clauses): the element's integer
+value, projections through its fields and lengths (array length, typed-array
+length, string length), and free terms. Because every linear fact requires its
+terms to be defined, an unguarded fact (`guard = none`) whose body reads the
+element's length $`P[Q].\mathtt{length}`$ holds only where the element at
+$`Q`$ is an array.
+
+**Syntax.** An indexed-element atom names an array path $`P`$ indexed by a
+safe-integer path $`Q`$ in a comparison or `safeInteger`, either unguarded,
+narrowed in a conjunction by $`P[Q]\ \texttt{!==}\ t`$, or guarded in a
+disjunction by $`P[Q]\ \texttt{===}\ t\ \texttt{||}\ \dots`$:
+
+```ts
+/** @requires safeInteger(c.segmentIndex) && 0 <= c.segmentIndex && c.segmentIndex < h.advances.length
+ *  @requires safeInteger(c.graphemeIndex) && 0 <= c.graphemeIndex
+ *  @requires h.advances[c.segmentIndex] === null || c.graphemeIndex < h.advances[c.segmentIndex].length */
+function startAdvance(h: Handle, c: Cursor): number {
+  const advances = h.advances[c.segmentIndex];
+  if (advances === undefined || advances === null) return 0;
+  return advances[c.graphemeIndex]!;
+}
+```
+
+A disjunction with a linear alternative, such as
+`c.graphemeIndex === 0 || (h.advances[c.segmentIndex] !== null && c.graphemeIndex < h.advances[c.segmentIndex].length)`,
+elaborates to an `either` whose right arm is an unguarded `atIndex`.
+
+**Establishing it.** An edge establishes an indexed-element target
+(`HeapKnowledge.atIndexFollows`, proved: `atIndexFollows_sound`) in three ways:
+from an existing `atIndex` whose array path shares a read site (`sitesMeet`),
+whose index is entailed equal (`entailsTermEq`), whose guard is compatible
+(equal or unguarded), and whose lifted body entails the target body over
+ambient linear facts (`bodyClauseEntails`, proved: `bodyClauseEntails_sound`);
+from a checked element read `element(r, x, j)` whose array site and index match
+and whose read value `r` entails the instantiated body (or guarded body); or
+from a quantified `every` over the same array site where $`0 \le \tau < \mathit{stop}`$
+and $`\tau < |P|`$. Disjunction monotonicity (`eitherMono`, proved:
+`eitherMono_sound`) discharges `A' || B' ⊢ A || B` directly before case
+splitting. When a slot leaves the knowledge or a linear fact over an element
+read's projection is added, existing `atIndex` atoms are lifted through read
+links and linear or singly guarded linear facts over an element slot `r`
+(`element(r, x, j)`) are restated as `atIndex` (`restateAtIndex`, proved:
+`restateAtIndex_holds`; `restateAddedAtIndex`, proved: `restateAddedAtIndex_ok`).
+At a merge, `atIndex` atoms participate in `mergeDisjCandidates` so
+`if (g > 0) { ... }` merges into `either (g <= 0) (atIndex ...)`.
+
+**Instantiating it.** Reading an element `r = x[k]` (`element(r, x, k)`)
+instantiates every matching `atIndex` (including inside `either` disjunctions,
+after lowering through read links via `lowerAtIndexFact`, proved:
+`lowerAtIndexFact_holds`) whose array slot aliases `x` and whose index equals
+`k` (`instantiateAtIndex`, proved: `instantiateAtIndex_holds`): an unguarded
+fact produces the instantiated body directly, and a guarded fact produces
+`guarded r [] g body` unless the store's value facts already exclude `g` at
+`r` (`valExcludesTag`, proved: `valExcludesTag_ne`).
+
+**Keeping it.** The support of `atIndex` (`FactSupport.atIndex`, proved:
+`FactSupport.check_sound` in `Survival.lean`) includes the array path's
+fields at `grow`, its spine at `keep`, its element cells (`Region.pathCells`)
+at `init` when unguarded and `keep` when guarded, the index and free terms'
+supports at `keep`, and — when the body reads the element's array length — the
+nested element spines `Region.elemSpines s p` at `keep`
+(`Footprints.Region.elemSpines`, proved confined in `Model.lean`). A step whose
+effect respects those regions preserves the fact across calls and writes.
+
+**Implementation.** The front end elaborates indexed-element clauses
+(`tools/bound-annotations.mts`) to
+`{"atIndex": {slot, path, index, guard, body}}`, decoded and round-tripped in
+`EffectCodec.lean` (`factOf_factJ`). Proved: `atIndex_frame`,
+`atIndexFollows_sound`, `bodyClauseEntails_sound`, `eitherMono_sound`,
+`lowerAtIndexFact_holds`, `restateAtIndex_holds`, `restateAddedAtIndex_ok`,
+`instantiateAtIndex_holds`, `FactSupport.check_sound`,
+`restateAtIndex_named`.
+
+**Cases.** Positive: `indexed-element-length` (guarded nullable element
+length, disjunctive non-null element length, nested non-nullable array,
+caller establishing `atIndex` across an `if` merge, and `@ensures`
+round-trip). Negative, run under Node: `invalid-indexed-element-length`
+(`<=` allows `g > fitAdvances.length`, returning `NaN`) and
+`invalid-indexed-element-caller` (caller omits the indexed-element check,
+returning `NaN`).
 
 ## Spine separation
 

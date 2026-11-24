@@ -6090,6 +6090,7 @@ function regionPosition(r: Region): number | null {
   if ("pathFields" in r) return r.pathFields.x;
   if ("pathCells" in r) return r.pathCells.x;
   if ("spine" in r) return r.spine.x;
+  if ("elemSpines" in r) return r.elemSpines.x;
   const unhandled: never = r;
   return unhandled;
 }

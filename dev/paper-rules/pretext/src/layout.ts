@@ -298,6 +298,14 @@ function stepNextLine(
   lineEnd.graphemeIndex = start.graphemeIndex
   const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
   if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
+  const graphemeAtStart = lineEnd.graphemeIndex   // PAPER: a local copy for the check
+  if (!(Number.isSafeInteger(graphemeAtStart) && 0 <= graphemeAtStart)) throw new RangeError('cursor grapheme index out of range')   // PAPER: the caller's cursor checked at the API boundary
+  const breakableFitAdvances = internal.breakableFitAdvances   // PAPER: keep array read link across branch
+  if (graphemeAtStart > 0) {   // PAPER: the caller's cursor checked at the API boundary
+    if (segmentAtStart >= internal.widths.length || segmentAtStart >= breakableFitAdvances.length) return null
+    const advances = breakableFitAdvances[segmentAtStart]
+    if (advances === undefined || advances === null || graphemeAtStart >= advances.length) throw new RangeError('cursor grapheme index out of range')
+  }
   if (!normalizePreparedLineStart(internal, lineEnd)) return null
 
   const lineStartSegmentIndex = lineEnd.segmentIndex   // PAPER: the line start through locals, written after the step

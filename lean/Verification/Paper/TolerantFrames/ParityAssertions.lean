@@ -129,7 +129,7 @@ cells (the note, §3, "Not rigid"). -/
 def stableRegion (paths : List (Nat × List String)) : Region → Bool
   | .cls _ | .all | .field _ _ | .fields _ => true
   | .spine x p | .path x p _ | .pathFields x p => paths.contains (x, p)
-  | .cells _ | .pathCells _ _ => false
+  | .cells _ | .pathCells _ _ | .elemSpines _ _ => false
 
 theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s s')
     (hp : ∀ xp ∈ paths, readPath s'.h (η xp.1) xp.2 = readPath s.h (η xp.1) xp.2) :
@@ -149,6 +149,7 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
     simp only [Region.mem, hp _ h]
   | .cells _, h, _, _ => by simp [stableRegion] at h
   | .pathCells _ _, h, _, _ => by simp [stableRegion] at h
+  | .elemSpines _ _, h, _, _ => by simp [stableRegion] at h
 
 /-- The category class a region's locations lie in at every well-formed
 state, whatever the valuation: a class, and a spine's listed cells (values:

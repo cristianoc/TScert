@@ -717,6 +717,10 @@ inductive Region where
   (`HeapKnowledge.elementsOf`); a failed read or a value with no spine
   selects nothing. -/
   | spine (x : Nat) (p : List String)
+  /-- The spine locations of the elements listed by the array or typed array
+  the path reads from `x`: for every present element cell listed by `x.p`'s
+  spine, the spine location (`HeapKnowledge.elementsOf`) of the value it holds. -/
+  | elemSpines (x : Nat) (p : List String)
   deriving DecidableEq, Repr
 
 def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
@@ -738,6 +742,13 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | none => false
   | .spine x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => HeapKnowledge.elementsOf v == some l
+    | none => false
+  | .elemSpines x p, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => (spineCells h v).any fun o => match o with
+      | some c => match h[c]? with
+        | some u => HeapKnowledge.elementsOf u == some l
+        | none => false
+      | none => false
     | none => false
 
 @[simp] theorem Region.mem_path_nil (ρ : Env) (h : Heap) (x : Nat) (k : PropKey) (l : Nat) :
@@ -821,7 +832,7 @@ class region its selector, and `all` every category. -/
 def Region.cats : Region → Selector
   | .field _ k | .path _ _ k => keyClass k
   | .fields _ | .pathFields _ _ | .cells _ | .pathCells _ _ => .values
-  | .spine _ _ => .spines
+  | .spine _ _ | .elemSpines _ _ => .spines
   | .cls S => S
   | .all => .all
 
@@ -996,6 +1007,7 @@ theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
     case pathFields.cls c => exact byCl c hs
     case pathCells.cls c => exact byCl c hs
     case spine.cls c => exact byCl c hs
+    case elemSpines.cls c => exact byCl c hs
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
 def Footprint.le (cl : ClassEvidence) (Φ Ψ : Footprint) : Bool :=

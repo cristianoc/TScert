@@ -483,6 +483,8 @@ def guardOf (j : Json) : Except String GuardTag := do
 
 @[simp] theorem guardOf_guardJ (g : GuardTag) : guardOf (guardJ g) = .ok g := by cases g <;> rfl
 
+theorem guardJ_ne_null (g : GuardTag) : guardJ g ≠ Json.null := by cases g <;> simp [guardJ]
+
 def phaseJ : Phase → Json
   | .before => "before" | .after => "after"
 
@@ -605,6 +607,7 @@ def regionJ : Region → Json
   | .pathFields x p => tagged "pathFields" (obj ["x", "fields"] [natJ x, strsJ p])
   | .pathCells x p => tagged "pathCells" (obj ["x", "fields"] [natJ x, strsJ p])
   | .spine x p => tagged "spine" (obj ["x", "fields"] [natJ x, strsJ p])
+  | .elemSpines x p => tagged "elemSpines" (obj ["x", "fields"] [natJ x, strsJ p])
 
 def regionOf (j : Json) : Except String Region := do
   let (k, v) ← tagOf j
@@ -632,6 +635,9 @@ def regionOf (j : Json) : Except String Region := do
   | "spine" => do
     let [x, p] ← fields v ["x", "fields"] | throw "spine"
     pure (.spine (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+  | "elemSpines" => do
+    let [x, p] ← fields v ["x", "fields"] | throw "elemSpines"
+    pure (.elemSpines (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
   | _ => throw "no region"
 
 theorem regionOf_regionJ (r : Region) : regionOf (regionJ r) = .ok r := by
@@ -882,6 +888,7 @@ def factDepth : IndexFact → Nat
   | .either a b => max (factDepth a) (factDepth b) + 1
   | .guarded _ _ _ b => factDepth b + 1
   | .every _ _ _ body => maxOf (clauseDepth (V := Bound)) body + 1
+  | .atIndex _ _ _ _ body => clauseDepth (V := Bound) body + 1
   | _ => 1
 
 def factJ : IndexFact → Json
@@ -896,6 +903,8 @@ def factJ : IndexFact → Json
   | .element v x k => tagged "element" (obj ["value", "array", "index"] [natJ v, natJ x, natJ k])
   | .every k p stop body => tagged "every"
       (obj ["slot", "path", "stop", "body"] [natJ k, strsJ p, termJ stop, listJ (clauseJ boundJ) body])
+  | .atIndex k p idx g body => tagged "atIndex"
+      (obj ["slot", "path", "index", "guard", "body"] [natJ k, strsJ p, termJ idx, optJ guardJ g, clauseJ boundJ body])
   | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
   | .spineApart a p b q => tagged "spineApart"
       (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
@@ -938,6 +947,10 @@ def factOf : Nat → Json → Except String IndexFact
       let [s, p, st, b] ← fields v ["slot", "path", "stop", "body"] | throw "every"
       pure (.every (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "stop" (termOf st))
         (← under "body" (listOf (clauseOf boundOf n) b)))
+    | "atIndex" => do
+      let [s, p, idx, g, b] ← fields v ["slot", "path", "index", "guard", "body"] | throw "atIndex"
+      pure (.atIndex (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "index" (termOf idx))
+        (← under "guard" (optOf guardOf g)) (← under "body" (clauseOf boundOf n b)))
     | "apart" => do
       let [a, b] ← fields v ["slot", "other"] | throw "apart"
       pure (.apart (← under "slot" (natOf a)) (← under "other" (natOf b)))
@@ -970,6 +983,12 @@ theorem factOf_factJ (F : IndexFact) : ∀ n, factDepth F ≤ n → factOf n (fa
       clauseOf_clauseJ boundOf boundJ boundOf_boundJ c m
         (Nat.le_trans (le_maxOf _ hc) (by simp [factDepth] at hn; omega))
     simp [factJ, factOf, fields_obj, hb] <;> try rfl
+  | atIndex k p idx g body =>
+    intro n hn
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [factDepth] at hn; omega⟩
+    have hb := clauseOf_clauseJ boundOf boundJ boundOf_boundJ body m (by simp [factDepth] at hn; omega)
+    have hg := optOf_optJ guardOf guardJ (o := g) guardJ_ne_null (fun a _ => guardOf_guardJ a)
+    simp [factJ, factOf, fields_obj, hg, hb] <;> try rfl
   | linear F =>
     intro n hn
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [factDepth] at hn; omega⟩

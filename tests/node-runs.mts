@@ -103,6 +103,12 @@ assert.equal(runExample("invalid-closure-precondition-call", "typeof broken([1])
 
 assert.equal(runExample("invalid-table-constant-stride", "typeof lastCell(new Uint8Array(28), 1)"), "undefined",
   "a row start at the length does not bound its last cell");
+assert.ok(Number.isNaN(Number(runExample("invalid-indexed-element-length",
+  "readPastLength({ advances: [[10, 20]] }, { segmentIndex: 0, graphemeIndex: 2 })"))),
+  "g = graphemeIndex + 1 > fitAdvances.length reads undefined and produces NaN");
+assert.ok(Number.isNaN(Number(runExample("invalid-indexed-element-caller",
+  "uncheckedCaller({ advances: [[10, 20]] }, 0, 2)"))),
+  "calling without checking graphemeIndex < advances[seg].length reads undefined and produces NaN");
 
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.

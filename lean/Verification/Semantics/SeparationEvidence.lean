@@ -161,7 +161,7 @@ theorem arraySite_of_spineSite : ∀ {r : Region} {x : Nat × List String}, spin
   | .path _ _ _, _, h => by simpa [spineSite, arraySite] using h
   | .field _ _, _, h => by simpa [spineSite, arraySite] using h
   | .fields _, _, h | .cells _, _, h | .cls _, _, h | .all, _, h | .pathFields _ _, _, h
-  | .pathCells _ _, _, h | .spine _ _, _, h => by simp [spineSite] at h
+  | .pathCells _ _, _, h | .spine _ _, _, h | .elemSpines _ _, _, h => by simp [spineSite] at h
 
 theorem arraySite_mem {ρ : Env} {h : Heap} {l : Nat} :
     ∀ {r : Region} {x : Nat} {p : List String}, arraySite r = some (x, p) → r.mem ρ h l = true →
