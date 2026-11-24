@@ -718,10 +718,9 @@ default at that type's members it is within. Strict equality with
 a literal holding narrows the operand, where it may hold the literal
 (`unknown` included), to the literal (but `0`, which `-0` equals too);
 a comma expression tested is its last operand's test, where the test
-assigns no binding; equality with an operand holding one of
-several singletons (each member of its type one, `equalitySplit`)
-narrows each operand to the union of its slices at the
-singletons the other may hold. `k in x` holding states a record's optional
+assigns no binding; equality with an operand of any other type
+narrows each operand to the union of its slices at the tags of the
+other's type ([a strict comparison](PROGRAM-TYPING.md#a-strict-comparison)). `k in x` holding states a record's optional
 `k` present (a field where the record states one, else a view) and a
 dictionary not naming `k` with `k` a view of its index. `Array.isArray`
 holding keeps the labels the edge's observation keeps
