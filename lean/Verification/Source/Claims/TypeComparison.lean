@@ -37,6 +37,13 @@ def moduleValueType (value : ModuleValue Tree) : Compiler (Ty Tree) := do
   | .ok (.claimed A none) | .ok (.cell A) => SourceClaims.resolve (← table) A
   | .error reason => throw reason
 
+/-- The module values a unit reads that are module cells (a module `let`,
+SOURCE-ELABORATION.md, "Module cells"), by name. -/
+def moduleCellNames (module : List (ModuleValue Tree)) : List String :=
+  module.filterMap fun v => match v.2.2 with
+    | .ok (.cell _) => some v.1
+    | _ => none
+
 /-- The generic module functions a unit's walk instantiates at its calls,
 and the scheme a read of one as a value is (`Scheme.moduleScheme`). -/
 def Front.genericValues (fr : Front) :
