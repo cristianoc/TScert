@@ -38,15 +38,10 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
   [docs/drafts/paper-rules-mode.md](../../../docs/drafts/paper-rules-mode.md),
   [dev/paper-rules/README.md](../../../dev/paper-rules/README.md).
 - **The Pretext copy and its verdicts**: `dev/paper-rules/pretext/`.
-- **Pull request**: cristianoc/TScert#347 (branch `effect-languages-paper`,
-  based on `single-pass`).
-- **Issues for unsafe assumes**: each `paperAssume` names one.
-  cristianoc/TScert#365 (no clause bounds the cursor's grapheme index) in
-  `dev/paper-rules/repro-365.ts` and the copy; in the copy also #356 (the
-  prepared handle's length invariant), #355 (the complex walker's cursor
-  parameter across its visit) and #364 (the handle's length across
-  the complex walker's visit); #351 (links at loop heads) was one, fixed by
-  #353.
+- **Branch**: work lands on `single-pass` via pull requests.
+- **Issues for unsafe assumes**: each `paperAssume` names its tracking issue;
+  the live list of open assumes lives in the [WORK.md](../../../WORK.md#status)
+  row.
 
 ## Standing decisions (the owner's, 2026-11-23)
 
@@ -85,12 +80,40 @@ walkLines<{ "lines[*]": "extend" }>(p, w => p.widths.push(0))    // refused
   expectation set; each negative says whether the program is unsafe or
   only unprovable.
 
+## Unification guardrails
+
+The priority is Pretext coverage, while keeping the prototype ready to fold
+into the proved `SinglePass` verifier without unnecessary reconciliation debt:
+
+- **Thin call-framing layer only.** `lean/PaperRulesPrototype.lean` stays
+  strictly a `SinglePass.PassLayer` for the four paper rules (`Bound`, `Anch`,
+  `Meet`, `Inst`) and `paperAssume`. General reasoning improvements (merges,
+  loop-head invariants, arithmetic, local-object confinement, `@ensures`
+  propagation) land in the proved `SinglePass` pass rather than as workarounds
+  in the prototype layer.
+- **Shared region vocabulary (`Footprints.Region`).** Every region form read by
+  `PaperRulesPrototype.lean` maps to `Verification.Semantics.Footprints.Region`
+  or its type-directed declared-reach expansion. Any new region form Pretext
+  requires (such as map or `WeakMap` entries for W5) is introduced in
+  `Footprints.Region` and proved in `Model.lean` first, rather than as a
+  prototype-only string key.
+- **Purely type-directed declared reach (`Acc(T)`).**
+  `dev/paper-annotations.mts` computes declared reach strictly from `T`'s
+  declared TypeScript type (Definition 4 of the effect-language paper), with no
+  per-function overrides or runtime-only shortcuts, so Lean can verify `Acc(T)`
+  directly against `Types` when unifying.
+- **Single soundness seam (`Rules.lean`).** Every rule change keeps
+  `Rules.lean`, `Model.lean`, `PaperRulesPrototype.lean`, and the paper in
+  lockstep, so eventual unification consists of instantiating `Rules.Semantics`
+  with TScert's `TolerantFrames` semantics (reusing `LocalConfinement` and
+  `respects`), moving annotation parsing into `tools/type-graph.mts` and
+  `EffectCodec.lean`, and deleting `paperKeptFactsSurvive`.
+
 ## How the work runs
 
-- Work happens on the branch of #347 in a worktree under the session's
-  scratchpad, never in `~/GitHub`. Copy `lean/.lake` and the
-  `node_modules` from the main checkout (AGENTS.md, "Working in a separate
-  git worktree").
+- Work happens on a branch off `single-pass` in an isolated worktree outside
+  `~/GitHub` (never in `~/GitHub`). Copy `lean/.lake` and the `node_modules`
+  from the main checkout (AGENTS.md, "Working in a separate git worktree").
 - Each step is one agent with a narrow brief. It commits locally with
   commit records and does not push. The lead session reruns both
   expectation sets, checks the code for names or shapes, and then pushes.
