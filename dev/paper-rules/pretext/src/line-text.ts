@@ -12,7 +12,7 @@ export type PreparedSegments = PreparedLineData & { readonly segments: readonly 
 const graphemeEndCaches = new WeakMap<PreparedSegments, Map<number, Int32Array>>()
 
 // The offsets in a segment's text where its graphemes end, in order, then zeros.
-export function getGraphemeEnds(prepared: PreparedSegments, segmentIndex: number): Int32Array {
+export function getGraphemeEnds(prepared: PreparedSegments, segmentIndex: number): Effects<{ "@state": "any" }, Int32Array> {   // PAPER: annotation
   let cache = graphemeEndCaches.get(prepared)
   if (cache === undefined) {
     cache = new Map<number, Int32Array>()
@@ -31,7 +31,7 @@ export function getGraphemeEnds(prepared: PreparedSegments, segmentIndex: number
 
 // Where grapheme `graphemeIndex` of a segment starts in its text: its end past its last grapheme,
 // where a range kept from a longer text stops.
-export function getGraphemeStart(prepared: PreparedSegments, segmentIndex: number, graphemeIndex: number): number {
+export function getGraphemeStart(prepared: PreparedSegments, segmentIndex: number, graphemeIndex: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   if (graphemeIndex <= 0) return 0
   const ends = getGraphemeEnds(prepared, segmentIndex)
   // bounds bug: upstream reads ends[graphemeIndex - 1]!, which is undefined, returned as a
@@ -48,7 +48,7 @@ export function buildRangeText(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): string {
+): Effects<{ "@state": "any" }, string> {   // PAPER: annotation
   const { segmentFlags } = prepared
   // A range kept from a longer text, such as one prepared again since, can end
   // past this one, up to segment Infinity: its text stops at this text's end.
@@ -87,7 +87,7 @@ export function buildLineTextFromRange(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): string {
+): Effects<{ "@state": "any" }, string> {   // PAPER: annotation
   const text = buildRangeText(prepared, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
   return isDiscretionaryLineEnd(prepared.segmentFlags, prepared.widths.length, endSegmentIndex, endGraphemeIndex) ? text + '-' : text
 }

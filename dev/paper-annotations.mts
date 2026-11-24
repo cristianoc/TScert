@@ -113,13 +113,67 @@ it is an array there. Read are the members of a type literal or an
 interface (its `extends` clauses too), the element type of an array, a
 readonly array or `Array<T>`, a typed array (a spine and cells, no key), the
 members of a union or an intersection, a primitive or literal type (no
-key), and a type alias or interface named in the same file. Any other form
-(a tuple, an index or call signature, a method, a mapped or conditional
-type, a name declared elsewhere, a recursive reference) is open: it may
-declare any key, so no key is decided absent from the reach. */
+key), and a type alias or interface named in the same file or imported from
+a relative module. Any other form (a tuple, an index or call signature, a
+method, a mapped or conditional type, an external name, a recursive
+reference) is open: it may declare any key, so no key is decided absent from
+the reach. */
 interface Acc { paths: Map<string, { keys: Set<string>; array: boolean }>; open: boolean }
 
-function accOf(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>): Acc {
+/** A type declaration (alias or interface) exported from a module, directly
+or through re-exports. */
+function exportedTypeFrom(file: string, name: string, depth: number = 0): { node: ts.Node; file: ts.SourceFile } | null {
+  if (depth > 16 || !existsSync(file)) return null;
+  const t = treeOf(file);
+  for (const st of t.statements)
+    if ((ts.isTypeAliasDeclaration(st) || ts.isInterfaceDeclaration(st)) && st.name.text === name)
+      return { node: st, file: t };
+  for (const st of t.statements) {
+    if (!ts.isExportDeclaration(st)) continue;
+    const spec = st.moduleSpecifier;
+    const target = spec !== undefined && ts.isStringLiteral(spec) ? importedFile(file, spec.text) : null;
+    if (spec !== undefined && target === null) continue;
+    if (st.exportClause === undefined) {
+      const r = target === null ? null : exportedTypeFrom(target, name, depth + 1);
+      if (r !== null) return r;
+      continue;
+    }
+    if (!ts.isNamedExports(st.exportClause)) continue;
+    for (const e of st.exportClause.elements) {
+      if (e.name.text !== name) continue;
+      const local = e.propertyName?.getText() ?? e.name.text;
+      if (target !== null) return exportedTypeFrom(target, local, depth + 1);
+      for (const im of t.statements) {
+        if (!ts.isImportDeclaration(im) || !ts.isStringLiteral(im.moduleSpecifier)) continue;
+        const named = im.importClause?.namedBindings;
+        const from = importedFile(file, im.moduleSpecifier.text);
+        if (from === null || !named || !ts.isNamedImports(named)) continue;
+        for (const ie of named.elements)
+          if (ie.name.text === local) return exportedTypeFrom(from, ie.propertyName?.getText() ?? local, depth + 1);
+      }
+    }
+  }
+  return null;
+}
+
+/** Resolve a named type alias or interface in `sf` or imported from a relative module. */
+function resolveTypeDecl(name: string, sf: ts.SourceFile): { node: ts.Node; file: ts.SourceFile } | null {
+  const local = typeDecls(sf).get(name);
+  if (local !== undefined) return { node: local, file: sf };
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const named = st.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    const elem = named.elements.find((e) => e.name.text === name);
+    if (!elem) continue;
+    const target = importedFile(sf.fileName, st.moduleSpecifier.text);
+    if (target === null) return null;
+    return exportedTypeFrom(target, elem.propertyName?.getText() ?? elem.name.text);
+  }
+  return null;
+}
+
+function accOf(node: ts.TypeNode | undefined, sf: ts.SourceFile): Acc {
   const acc: Acc = { paths: new Map(), open: false };
   const at = (path: string[]): { keys: Set<string>; array: boolean } => {
     const k = path.join(".");
@@ -127,40 +181,42 @@ function accOf(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>): Acc 
     if (e === undefined) { e = { keys: new Set(), array: false }; acc.paths.set(k, e); }
     return e;
   };
-  const members = (ms: ts.NodeArray<ts.TypeElement>, path: string[], seen: string[]): void => {
+  const members = (ms: ts.NodeArray<ts.TypeElement>, path: string[], seen: string[], curSf: ts.SourceFile): void => {
     at(path);
     for (const m of ms) {
       if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
         at(path).keys.add(m.name.text);
-        walk(m.type, [...path, m.name.text], seen);
+        walk(m.type, [...path, m.name.text], seen, curSf);
       } else acc.open = true;
     }
   };
-  const named = (name: string, args: ts.NodeArray<ts.TypeNode> | undefined, path: string[], seen: string[]): void => {
-    const decl = decls.get(name);
-    if (decl === undefined) {
+  const named = (name: string, args: ts.NodeArray<ts.TypeNode> | undefined, path: string[], seen: string[], curSf: ts.SourceFile): void => {
+    const resolved = resolveTypeDecl(name, curSf);
+    if (resolved === null) {
       if (/^(?:Uint8|Uint8Clamped|Int8|Uint16|Int16|Uint32|Int32|Float32|Float64)Array$/.test(name)) { at(path).array = true; return; }
       if ((name === "Array" || name === "ReadonlyArray") && args?.length === 1) {
         at(path).array = true;
-        return walk(args[0], [...path, "[*]"], seen);
+        return walk(args[0], [...path, "[*]"], seen, curSf);
       }
       acc.open = true;
       return;
     }
-    if (seen.includes(name) || (args ?? []).length > 0) { acc.open = true; return; }
-    const inner = [...seen, name];
-    if (ts.isTypeAliasDeclaration(decl) && (decl.typeParameters ?? []).length === 0) return walk(decl.type, path, inner);
+    const key = `${resolved.file.fileName}#${name}`;
+    if (seen.includes(key) || (args ?? []).length > 0) { acc.open = true; return; }
+    const inner = [...seen, key];
+    const decl = resolved.node;
+    if (ts.isTypeAliasDeclaration(decl) && (decl.typeParameters ?? []).length === 0) return walk(decl.type, path, inner, resolved.file);
     if (ts.isInterfaceDeclaration(decl) && (decl.typeParameters ?? []).length === 0) {
       for (const h of decl.heritageClauses ?? [])
         for (const t of h.types) {
-          if (ts.isIdentifier(t.expression) && (t.typeArguments ?? []).length === 0) named(t.expression.text, undefined, path, inner);
+          if (ts.isIdentifier(t.expression) && (t.typeArguments ?? []).length === 0) named(t.expression.text, undefined, path, inner, resolved.file);
           else acc.open = true;
         }
-      return members(decl.members, path, inner);
+      return members(decl.members, path, inner, resolved.file);
     }
     acc.open = true;
   };
-  const walk = (n: ts.TypeNode | undefined, path: string[], seen: string[]): void => {
+  const walk = (n: ts.TypeNode | undefined, path: string[], seen: string[], curSf: ts.SourceFile): void => {
     if (n === undefined) { acc.open = true; return; }
     switch (n.kind) {
       case ts.SyntaxKind.NumberKeyword: case ts.SyntaxKind.StringKeyword: case ts.SyntaxKind.BooleanKeyword:
@@ -169,16 +225,16 @@ function accOf(node: ts.TypeNode | undefined, decls: Map<string, ts.Node>): Acc 
         return;
     }
     if (ts.isLiteralTypeNode(n)) return;
-    if (ts.isParenthesizedTypeNode(n)) return walk(n.type, path, seen);
-    if (ts.isUnionTypeNode(n) || ts.isIntersectionTypeNode(n)) { for (const t of n.types) walk(t, path, seen); return; }
-    if (ts.isArrayTypeNode(n)) { at(path).array = true; return walk(n.elementType, [...path, "[*]"], seen); }
+    if (ts.isParenthesizedTypeNode(n)) return walk(n.type, path, seen, curSf);
+    if (ts.isUnionTypeNode(n) || ts.isIntersectionTypeNode(n)) { for (const t of n.types) walk(t, path, seen, curSf); return; }
+    if (ts.isArrayTypeNode(n)) { at(path).array = true; return walk(n.elementType, [...path, "[*]"], seen, curSf); }
     if (ts.isTypeOperatorNode(n) && n.operator === ts.SyntaxKind.ReadonlyKeyword && ts.isArrayTypeNode(n.type))
-      return walk(n.type, path, seen);
-    if (ts.isTypeLiteralNode(n)) return members(n.members, path, seen);
-    if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) return named(n.typeName.text, n.typeArguments, path, seen);
+      return walk(n.type, path, seen, curSf);
+    if (ts.isTypeLiteralNode(n)) return members(n.members, path, seen, curSf);
+    if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) return named(n.typeName.text, n.typeArguments, path, seen, curSf);
     acc.open = true;
   };
-  walk(node, [], []);
+  walk(node, [], [], sf);
   return acc;
 }
 
@@ -258,19 +314,149 @@ function unwrapExpr(e: ts.Expression): ts.Expression {
   return e;
 }
 
-const isAllocation = (e: ts.Expression | undefined): boolean =>
-  e !== undefined && (ts.isObjectLiteralExpression(unwrapExpr(e)) || ts.isArrayLiteralExpression(unwrapExpr(e)));
-const isPathExpr = (e: ts.Expression | undefined): e is ts.Expression => {
+/** Whether a function declaration is a pure identity returning its single
+ * parameter unchanged: `function f(x) { return x }`. */
+function isIdentityFn(decl: ts.FunctionDeclaration): boolean {
+  if (decl.parameters.length !== 1 || !decl.body || decl.body.statements.length !== 1) return false;
+  const param = decl.parameters[0];
+  const stmt = decl.body.statements[0];
+  if (!param || !ts.isIdentifier(param.name) || param.initializer || param.dotDotDotToken) return false;
+  if (!stmt || !ts.isReturnStatement(stmt) || !stmt.expression) return false;
+  const ret = unwrapExpr(stmt.expression);
+  return ts.isIdentifier(ret) && ret.text === param.name.text;
+}
+
+/** Resolve a call `f(x)` to its argument `x` when `f` is a local or imported
+ * pure identity function (`function f(x) { return x }`). */
+function unwrapIdentityCall(e: ts.Expression): ts.Expression {
+  let cur = unwrapExpr(e);
+  for (let steps = 0; steps < 8 && ts.isCallExpression(cur) && cur.arguments.length === 1 && ts.isIdentifier(unwrapExpr(cur.expression)); steps++) {
+    const callee = unwrapExpr(cur.expression);
+    if (!ts.isIdentifier(callee)) break;
+    const d = declOf(callee.text, callee);
+    const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
+    const arg = cur.arguments[0];
+    if (decl === undefined || arg === undefined || !isIdentityFn(decl)) break;
+    cur = unwrapExpr(arg);
+  }
+  return cur;
+}
+
+const TYPED_ARRAY_NAMES = new Set<string>([
+  "Uint8Array", "Uint8ClampedArray", "Int8Array", "Uint16Array", "Int16Array",
+  "Uint32Array", "Int32Array", "Float32Array", "Float64Array",
+]);
+
+const COLLECTION_NAMES = new Set<string>(["Map", "WeakMap", "Set"]);
+
+const NUMERIC_BINARY_OPS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.AsteriskAsteriskToken,
+  ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.LessThanLessThanToken,
+  ts.SyntaxKind.GreaterThanGreaterThanToken, ts.SyntaxKind.GreaterThanGreaterThanGreaterThanToken,
+  ts.SyntaxKind.AmpersandToken, ts.SyntaxKind.BarToken, ts.SyntaxKind.CaretToken,
+]);
+
+/** Whether an expression is syntactically a numeric expression (guaranteed to
+ * pass a length, never an existing ArrayBuffer or view, to `new TypedArray(len)`). */
+function isNumericExpr(e: ts.Expression): boolean {
+  const u = unwrapExpr(e);
+  if (ts.isNumericLiteral(u)) return true;
+  if (ts.isPropertyAccessExpression(u) && u.name.text === "length") return true;
+  if (ts.isPrefixUnaryExpression(u)) return isNumericExpr(u.operand);
+  if (ts.isBinaryExpression(u))
+    return NUMERIC_BINARY_OPS.has(u.operatorToken.kind) || (isNumericExpr(u.left) && isNumericExpr(u.right));
+  if (ts.isCallExpression(u) && ts.isIdentifier(unwrapExpr(u.expression))) {
+    const cname = unwrapExpr(u.expression).getText();
+    const d = declOf(cname, u.expression);
+    if (d !== null && d.kind === "function" && d.node.type?.kind === ts.SyntaxKind.NumberKeyword) return true;
+    if (d !== null && d.kind === "const" && d.init !== undefined && isFn(unwrapExpr(d.init))) {
+      const fnNode = unwrapExpr(d.init);
+      if (isFn(fnNode) && fnNode.type?.kind === ts.SyntaxKind.NumberKeyword) return true;
+    }
+  }
+  if (ts.isIdentifier(u)) {
+    const d = declOf(u.text, u);
+    if (d !== null && d.kind !== "function" && d.type !== undefined)
+      return d.type.kind === ts.SyntaxKind.NumberKeyword;
+    if (d !== null && d.kind === "const" && d.init !== undefined) return isNumericExpr(d.init);
+  }
+  return false;
+}
+
+/** Whether an expression is a fresh empty collection construction
+ * (`new Map()`, `new WeakMap()`, `new Set()` with zero arguments). */
+function isFreshCollectionAlloc(e: ts.Expression | undefined): boolean {
   if (e === undefined) return false;
   const u = unwrapExpr(e);
+  if (!ts.isNewExpression(u) || !ts.isIdentifier(unwrapExpr(u.expression))) return false;
+  const name = unwrapExpr(u.expression).getText();
+  return COLLECTION_NAMES.has(name) && (u.arguments === undefined || u.arguments.length === 0);
+}
+
+/** Whether an expression allocates a fresh typed array with a fresh backing
+ * buffer (`new Int32Array(n)` for numeric `n`, optionally `.fill(...)`, never
+ * `new Int32Array(buf)` or `a.subarray(...)`). */
+function isFreshTypedArrayAlloc(e: ts.Expression | undefined): boolean {
+  if (e === undefined) return false;
+  const u = unwrapExpr(e);
+  if (ts.isCallExpression(u) && ts.isPropertyAccessExpression(unwrapExpr(u.expression)) &&
+      unwrapExpr(u.expression).getText().endsWith(".fill")) {
+    const p = unwrapExpr(u.expression);
+    if (ts.isPropertyAccessExpression(p) && p.name.text === "fill") return isFreshTypedArrayAlloc(p.expression);
+  }
+  if (!ts.isNewExpression(u)) return false;
+  const c = unwrapExpr(u.expression);
+  if (!ts.isIdentifier(c) || !TYPED_ARRAY_NAMES.has(c.text)) return false;
+  if (u.arguments === undefined || u.arguments.length !== 1) return false;
+  const arg = u.arguments[0];
+  return arg !== undefined && isNumericExpr(arg);
+}
+
+const isAllocation = (e: ts.Expression | undefined): boolean =>
+  e !== undefined && (ts.isObjectLiteralExpression(unwrapExpr(e)) || ts.isArrayLiteralExpression(unwrapExpr(e)));
+
+/** Whether an expression freshly allocates a new object, array, empty
+ * collection, or fresh-buffer typed array. */
+const isFreshContainerAlloc = (e: ts.Expression | undefined): boolean =>
+  isAllocation(e) || isFreshCollectionAlloc(e) || isFreshTypedArrayAlloc(e);
+
+/** Whether an expression is a primitive or nullish literal (no heap reference). */
+function isPrimitiveLiteral(e: ts.Expression | undefined): boolean {
+  if (e === undefined) return true;
+  const u = unwrapExpr(e);
+  if (u.kind === ts.SyntaxKind.NullKeyword || u.kind === ts.SyntaxKind.TrueKeyword ||
+      u.kind === ts.SyntaxKind.FalseKeyword || u.kind === ts.SyntaxKind.UndefinedKeyword) return true;
+  if (ts.isIdentifier(u) && u.text === "undefined") return true;
+  if (ts.isNumericLiteral(u) || ts.isStringLiteral(u) || ts.isNoSubstitutionTemplateLiteral(u)) return true;
+  if (ts.isPrefixUnaryExpression(u) && (u.operator === ts.SyntaxKind.MinusToken || u.operator === ts.SyntaxKind.PlusToken))
+    return ts.isNumericLiteral(unwrapExpr(u.operand));
+  return false;
+}
+
+/** Whether a module-level initializer is fresh (primitive/nullish, fresh empty
+ * container, or literal with primitive/fresh members). */
+function isFreshModuleInit(e: ts.Expression | undefined): boolean {
+  if (isPrimitiveLiteral(e) || isFreshCollectionAlloc(e) || isFreshTypedArrayAlloc(e)) return true;
+  if (e === undefined) return true;
+  const u = unwrapExpr(e);
+  if (ts.isArrayLiteralExpression(u)) return u.elements.every((el) => isFreshModuleInit(el));
+  if (ts.isObjectLiteralExpression(u))
+    return u.properties.every((p) => ts.isPropertyAssignment(p) && isFreshModuleInit(p.initializer));
+  return false;
+}
+
+const isPathExpr = (e: ts.Expression | undefined): e is ts.Expression => {
+  if (e === undefined) return false;
+  const u = unwrapIdentityCall(e);
   return ts.isIdentifier(u) || (ts.isPropertyAccessExpression(u) && isPathExpr(u.expression));
 };
 
-function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 0, paramRoots: boolean = false): Resolved | null {
-  const e = unwrapExpr(expr);
+function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 0, paramRoots: boolean = false,
+    freshLocals?: ReadonlySet<ts.Node>): Resolved | null {
+  const e = unwrapIdentityCall(expr);
   if (depth > 32) return null;
   if (ts.isPropertyAccessExpression(e)) {
-    const base = resolve_(e.expression, closure, depth + 1, paramRoots);
+    const base = resolve_(e.expression, closure, depth + 1, paramRoots, freshLocals);
     if (base === null || base.fresh) return null;
     return { fresh: false, root: base.root, path: [...base.path, e.name.text] };
   }
@@ -285,8 +471,9 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   if (d.kind === "param")
     return (local && !(paramRoots && d.owner === closure)) || (closure !== null && assignedIn(e.text, d.owner)) ? null
       : { fresh: false, root: e.text, path: [] };
-  if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots);
-  if (local) return d.kind === "const" && isAllocation(d.init) ? { fresh: true } : null;
+  if (local && freshLocals?.has(d.at)) return { fresh: true };
+  if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots, freshLocals);
+  if (local) return d.kind === "const" && isFreshContainerAlloc(d.init) ? { fresh: true } : null;
   return { fresh: false, root: e.text, path: [] };
 }
 
@@ -373,6 +560,7 @@ call: a `const` of its body initialised by an object or array literal
 older than it); null where the root resolves to nothing this script
 reads. */
 function normalizeKey(key: string, call: ts.Node, unit: ts.Node | null): { key: string; fresh: boolean } | null {
+  if (key === "@state") return { key: "@state", fresh: false };
   const root = rootOf(key);
   const d = declOf(root, call);
   if (d === null || d.kind === "function") return null;
@@ -400,8 +588,8 @@ function resolveAt(e: ts.Expression): { root: string; path: string[] } | null {
   return r === null || r.fresh ? null : r;
 }
 
-/** A call's argument as a path, its `const` aliases resolved; null for any
-other expression. */
+/** A call's argument as a path, its `const` aliases and pure identity calls
+resolved; null for any other expression. */
 function argPath(e: ts.Expression): string | null {
   if (!isPathExpr(e)) return null;
   const r = resolveAt(e);
@@ -410,11 +598,16 @@ function argPath(e: ts.Expression): string | null {
 
 /** A region key, parsed: its root, the declared keys from the root to the
 location's object, and what it names there: a field, every field (`.*`),
-the spine (`[*]`), the cells (`[#]`), or the reach through declared keys
-(`.**`). */
-interface Loc { root: string; path: string[]; kind: "field" | "fields" | "spine" | "cells" | "reach"; key: string | null }
+the spine (`[*]`), the cells (`[#]`), the reach through declared keys
+(`.**`), or confined module-private state (`@state`). */
+interface Loc {
+  root: string; path: string[];
+  kind: "field" | "fields" | "spine" | "cells" | "reach" | "modState";
+  key: string | null;
+}
 
 function locOf(key: string): Loc | null {
+  if (key === "@state") return { root: "@state", path: [], kind: "modState", key: null };
   const m = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)*)(\.\*\*|\.\*|\[\*\]|\[#\])?$/.exec(key);
   if (!m || m[1] === undefined) return null;
   const steps = (m[2] ?? "").split(".").filter((x) => x !== "");
@@ -432,18 +625,40 @@ const pathText = (l: Loc): string => [l.root, ...l.path].join(".");
 /** Whether a field key is declared anywhere in a reach. */
 const declaresKey = (acc: Acc, key: string): boolean => [...acc.paths.values()].some((e) => e.keys.has(key));
 
+/** Whether reach `sub` (at `subAcc`) is contained in reach `sup` (at `supAcc`):
+`sub`'s base path extends `sup`'s base path by `prefix`, and every declared
+path, key, and array flag in `subAcc` appears at `prefix ++ path` in `supAcc`. */
+function reachInside(sub: Loc, subAcc: Acc, sup: Loc, supAcc: Acc): boolean {
+  const base = [sup.root, ...sup.path];
+  const full = [sub.root, ...sub.path];
+  if (full.length < base.length || base.some((x, i) => full[i] !== x)) return false;
+  const prefix = full.slice(base.length);
+  if (subAcc.open || supAcc.open) return prefix.length === 0 && subAcc.open === supAcc.open && subAcc.paths.size === 0 && supAcc.paths.size === 0;
+  for (const [subPath, subEntry] of subAcc.paths) {
+    const steps = subPath === "" ? prefix : [...prefix, ...subPath.split(".")];
+    const supEntry = supAcc.paths.get(steps.join("."));
+    if (supEntry === undefined) return false;
+    if (subEntry.array && !supEntry.array) return false;
+    for (const k of subEntry.keys) if (!supEntry.keys.has(k)) return false;
+  }
+  return true;
+}
+
 /** Whether two locations are disjoint, decided from the source
-(docs/drafts/effect-languages.md, "Decisions"): a field location, a spine
-and cells differ (their keys differ); two field locations at different
-keys differ whatever objects they are on (disjointness by key); a field
-whose key no type in a closed reach declares lies outside it; and an own
-location (a field or the spine, at the empty path) of an object the caller
-allocated is apart from an own location of a parameter the caller never
-assigns, and, where no reference lets the object reach other storage
-before the call, from the parameter's reach (rule Alloc of Tolerant
-frames). Anything else may overlap. `acc` is the
-reach's access paths where one of them is a reach. */
+(docs/drafts/effect-languages.md, "Decisions"): confined module-private state
+`@state` is disjoint from every external root region (rule Confined,
+`Model.closedOut_region_disjoint` / `closedOut_reach_disjoint`); a field
+location, a spine and cells differ (their keys differ); two field locations
+at different keys differ whatever objects they are on (disjointness by key);
+a field whose key no type in a closed reach declares lies outside it; and an
+own location (a field or the spine, at the empty path) of an object the
+caller allocated is apart from an own location of a parameter the caller
+never assigns, and, where no reference lets the object reach other storage
+before the call, from the parameter's reach (rule Alloc of Tolerant frames).
+Anything else may overlap. `acc` is the reach's access paths where one of
+them is a reach. */
 function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<string>): boolean {
+  if (r.kind === "modState" || b.kind === "modState") return r.kind !== b.kind;
   const ownOf = (l: Loc): boolean => l.path.length === 0 && (l.kind === "field" || l.kind === "fields" || l.kind === "spine");
   const apart = (f: Loc, o: Loc): boolean => fresh.has(f.root) && ownOf(f) && f.root !== o.root && params.has(o.root) &&
     o.path.length === 0 && (ownOf(o) || o.kind === "reach");
@@ -456,10 +671,12 @@ function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<stri
   return differ("field", "spine") || differ("field", "cells") || differ("spine", "cells") || differ("fields", "spine");
 }
 
-/** Whether `r` lies in `b`: the same location, or a location at a path
-`Acc(T)` admits when `b` is a reach. */
-function inside(r: Loc, b: Loc, acc: Acc): boolean {
+/** Whether `r` lies in `b`: the same location, a reach contained in a reach,
+or a location at a path `Acc(T)` admits when `b` is a reach. */
+function inside(r: Loc, b: Loc, acc: Acc, racc?: Acc): boolean {
+  if (r.kind === "modState" || b.kind === "modState") return r.kind === "modState" && b.kind === "modState";
   if (b.kind === "reach") {
+    if (r.kind === "reach") return racc !== undefined && reachInside(r, racc, b, acc);
     const base = [b.root, ...b.path];
     const full = [r.root, ...r.path];
     if (full.length < base.length || base.some((x, i) => full[i] !== x)) return false;
@@ -566,7 +783,7 @@ function isArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
   if (d === null || d.kind === "function") return false;
   if (r.path.length === 0 && d.kind !== "param" && d.type === undefined) return isArrayLiteral(d.init);
-  const acc = accOf(d.type, typeDecls(at.getSourceFile()));
+  const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
   return !acc.open && e !== undefined && e.array && e.keys.size === 0;
 }
@@ -575,23 +792,557 @@ its declared type is closed and, at the path, declares keys and no array. */
 function declaredNoArray(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
   if (d === null || d.kind === "function") return false;
-  const acc = accOf(d.type, typeDecls(at.getSourceFile()));
+  const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
   return d.type !== undefined && !acc.open && e !== undefined && !e.array;
 }
 const isArrayLiteral = (e: ts.Expression | undefined): boolean => e !== undefined && ts.isArrayLiteralExpression(unwrapExpr(e));
 
+/** Local module confinement check (`OwnerConfined`,
+ * `docs/drafts/abstract-confined-regions.md` §2):
+ *
+ * For a module `M`, a top-level binding `b` belongs to `M`'s confined state
+ * `M.@state` when it is unexported, initialized with a fresh/primitive value,
+ * and satisfies either:
+ * - **Cell-only (`let`)**: never mutated through (neither `b.f = …`, `b[i] = …`,
+ *   nor mutating methods on `b` or any local alias of `b`); writes to `b` touch
+ *   only the unexported module cell `b` (`Role.cell`).
+ * - **Interior container (`const`)**: initialized with a fresh container
+ *   (`{}`, `[]`, `new Map()`, `new WeakMap()`, `new Set()`, or fresh-buffer
+ *   `new TypedArray(len)`), never escapes `M`, and if any value loaded from `b`
+ *   (via `b.get(…)` / `b[k]` / `b.f`) is mutated, every value stored into `b`
+ *   is freshly allocated and no loaded nested container escapes `M` or has its
+ *   own loaded payloads mutated after load. */
+interface ConfinedModuleInfo {
+  cells: Set<ts.VariableDeclaration>;
+  containers: Set<ts.VariableDeclaration>;
+  nestedLocals: Set<ts.VariableDeclaration>;
+  failures: Map<ts.VariableDeclaration, string>;
+}
+
+const MUTATING_METHODS = new Set<string>(["set", "delete", "clear", "add", "push", "pop", "shift", "unshift", "splice", "fill", "copyWithin"]);
+const READ_COLLECTION_METHODS = new Set<string>(["get", "has"]);
+const PURE_STRING_METHODS = new Set<string>(["charCodeAt", "codePointAt", "slice", "substring", "includes", "startsWith", "endsWith", "indexOf", "lastIndexOf", "trim", "toLowerCase", "toUpperCase"]);
+const FRESH_TYPED_ARRAY_MUTATORS = new Set<string>(["fill", "set", "copyWithin"]);
+
+const isAssignmentOp = (k: ts.SyntaxKind): boolean =>
+  k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment;
+
+/** Walk up past grouping/non-null/as wrappers around a node. */
+function climbWrappers(n: ts.Node): ts.Node {
+  let cur = n;
+  while (cur.parent !== undefined && (ts.isParenthesizedExpression(cur.parent) ||
+      ts.isNonNullExpression(cur.parent) || ts.isAsExpression(cur.parent)))
+    cur = cur.parent;
+  return cur;
+}
+
+type RefUsage =
+  | { kind: "assignSelf"; expr: ts.BinaryExpression | ts.PrefixUnaryExpression | ts.PostfixUnaryExpression; rhs: ts.Expression | null }
+  | { kind: "mutateProp"; access: ts.PropertyAccessExpression | ts.ElementAccessExpression; rhs: ts.Expression | null }
+  | { kind: "mutateMethod"; call: ts.CallExpression; method: string }
+  | { kind: "loadEntry"; call: ts.CallExpression }
+  | { kind: "readMethod"; call: ts.CallExpression }
+  | { kind: "readProp"; access: ts.PropertyAccessExpression | ts.ElementAccessExpression }
+  | { kind: "test" }
+  | { kind: "localAlias"; decl: ts.VariableDeclaration }
+  | { kind: "escape"; at: ts.Node };
+
+function classifyUsage(id: ts.Identifier): RefUsage {
+  const cur = climbWrappers(id);
+  const p = cur.parent;
+  if (p === undefined) return { kind: "escape", at: id };
+  if (ts.isBinaryExpression(p) && isAssignmentOp(p.operatorToken.kind) && p.left === cur)
+    return { kind: "assignSelf", expr: p, rhs: p.right };
+  if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) &&
+      (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken) && p.operand === cur)
+    return { kind: "assignSelf", expr: p, rhs: null };
+  if (ts.isVariableDeclaration(p) && p.initializer !== undefined && climbWrappers(p.initializer) === cur && ts.isIdentifier(p.name))
+    return { kind: "localAlias", decl: p };
+  if (ts.isBinaryExpression(p) && (p.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+      p.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+      p.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      p.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken))
+    return { kind: "test" };
+  if ((ts.isPrefixUnaryExpression(p) && p.operator === ts.SyntaxKind.ExclamationToken) ||
+      (ts.isIfStatement(p) && p.expression === cur) ||
+      (ts.isConditionalExpression(p) && p.condition === cur))
+    return { kind: "test" };
+  if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === cur) {
+    const outer = climbWrappers(p);
+    const gp = outer.parent;
+    if (gp !== undefined && ts.isBinaryExpression(gp) && isAssignmentOp(gp.operatorToken.kind) && gp.left === outer)
+      return { kind: "mutateProp", access: p, rhs: gp.right };
+    if (gp !== undefined && (ts.isPrefixUnaryExpression(gp) || ts.isPostfixUnaryExpression(gp)) &&
+        (gp.operator === ts.SyntaxKind.PlusPlusToken || gp.operator === ts.SyntaxKind.MinusMinusToken) && gp.operand === outer)
+      return { kind: "mutateProp", access: p, rhs: null };
+    if (gp !== undefined && ts.isDeleteExpression(gp) && gp.expression === outer)
+      return { kind: "mutateProp", access: p, rhs: null };
+    if (gp !== undefined && ts.isCallExpression(gp) && gp.expression === outer) {
+      if (ts.isPropertyAccessExpression(p)) {
+        if (MUTATING_METHODS.has(p.name.text)) return { kind: "mutateMethod", call: gp, method: p.name.text };
+        if (p.name.text === "get") return { kind: "loadEntry", call: gp };
+        if (READ_COLLECTION_METHODS.has(p.name.text)) return { kind: "readMethod", call: gp };
+      }
+      return { kind: "escape", at: gp };
+    }
+    return { kind: "readProp", access: p };
+  }
+  return { kind: "escape", at: p };
+}
+
+/** Collect all value-position identifier references in `scope` resolving to `decl`. */
+function refsTo(decl: ts.VariableDeclaration, scope: ts.Node): ts.Identifier[] {
+  if (!ts.isIdentifier(decl.name)) return [];
+  const name = decl.name.text;
+  const out: ts.Identifier[] = [];
+  const walk = (n: ts.Node): undefined => {
+    if (ts.isIdentifier(n) && n.text === name && n !== decl.name && isValueReference(n)) {
+      const d = declOf(name, n);
+      if (d !== null && d.kind !== "function" && d.kind !== "param" && d.at === decl) out.push(n);
+    }
+    n.forEachChild(walk);
+    return undefined;
+  };
+  walk(scope);
+  return out;
+}
+
+/** Check whether an expression stored into a container is freshly allocated
+ * (directly, or a local variable assigned a fresh allocation immediately before
+ * in the same block or initialized exclusively with fresh allocations). */
+function isFreshStoredValue(expr: ts.Expression, scope: ts.Node, containerDecl: ts.VariableDeclaration): boolean {
+  const u = unwrapExpr(expr);
+  if (isFreshContainerAlloc(u)) return true;
+  if (!ts.isIdentifier(u)) return false;
+  const d = declOf(u.text, u);
+  if (d === null || d.kind === "function" || d.kind === "param" || !ts.isVariableDeclaration(d.at)) return false;
+  const vDecl = d.at;
+  // Check if `vDecl` is a `const` initialized with a fresh container allocation.
+  if (d.kind === "const" && isFreshContainerAlloc(d.init)) return true;
+  // Or a `let` whose immediately preceding statement in the enclosing block
+  // assigned a fresh container allocation (e.g. `cache = new Map(); map.set(k, cache)`).
+  let stmt: ts.Node | undefined = expr;
+  while (stmt !== undefined && !ts.isStatement(stmt)) stmt = stmt.parent;
+  const blk = stmt?.parent;
+  if (stmt !== undefined && blk !== undefined && ts.isBlock(blk)) {
+    const idx = blk.statements.indexOf(stmt);
+    if (idx > 0) {
+      const prev = blk.statements[idx - 1];
+      if (prev !== undefined && ts.isExpressionStatement(prev)) {
+        const pe = unwrapExpr(prev.expression);
+        if (ts.isBinaryExpression(pe) && pe.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+            ts.isIdentifier(unwrapExpr(pe.left)) && unwrapExpr(pe.left).getText() === u.text &&
+            declOf(u.text, pe.left)?.kind === "let" && isFreshContainerAlloc(pe.right))
+          return true;
+      }
+    }
+  }
+  // Or every initializer/assignment to `vDecl` (other than loads from `containerDecl` itself) is fresh.
+  const initOk = vDecl.initializer === undefined || isFreshContainerAlloc(vDecl.initializer) || isPrimitiveLiteral(vDecl.initializer);
+  if (!initOk) return false;
+  for (const r of refsTo(vDecl, scope)) {
+    const use = classifyUsage(r);
+    if (use.kind === "assignSelf") {
+      if (use.rhs === null || !isFreshContainerAlloc(use.rhs)) return false;
+    }
+  }
+  void containerDecl;
+  return true;
+}
+
+const moduleConfinementCache = new Map<ts.SourceFile, ConfinedModuleInfo>();
+
+function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
+  const cached = moduleConfinementCache.get(sf);
+  if (cached !== undefined) return cached;
+  const cells = new Set<ts.VariableDeclaration>();
+  const containers = new Set<ts.VariableDeclaration>();
+  const nestedLocals = new Set<ts.VariableDeclaration>();
+  const failures = new Map<ts.VariableDeclaration, string>();
+
+  // Collect all names exported from this module.
+  const exported = new Set<string>();
+  for (const st of sf.statements) {
+    if (ts.isExportDeclaration(st) && st.moduleSpecifier === undefined && st.exportClause && ts.isNamedExports(st.exportClause))
+      for (const e of st.exportClause.elements) exported.add(e.propertyName?.getText() ?? e.name.text);
+    if (ts.isExportAssignment(st) && ts.isIdentifier(unwrapExpr(st.expression)))
+      exported.add(unwrapExpr(st.expression).getText());
+  }
+
+  /** Whether any usage of local variable `vDecl` mutates through its value. */
+  const localMutatedThrough = (vDecl: ts.VariableDeclaration, scope: ts.Node): boolean => {
+    for (const r of refsTo(vDecl, scope)) {
+      const u = classifyUsage(r);
+      if (u.kind === "mutateProp" || u.kind === "mutateMethod") return true;
+      if (u.kind === "localAlias" && localMutatedThrough(u.decl, scope)) return true;
+    }
+    return false;
+  };
+
+  /** Check whether a value loaded from a container (an expression like `c.get(k)` or `c[k]`)
+   * is mutated anywhere, and if so, collect the local variable declarations holding it. */
+  const analyzeLoadedExpr = (expr: ts.Expression): { mutated: boolean; escapes: boolean; localDecl: ts.VariableDeclaration | null; escapeAt: ts.Node | null } => {
+    const cur = climbWrappers(expr);
+    const p = cur.parent;
+    if (p === undefined) return { mutated: false, escapes: true, localDecl: null, escapeAt: expr };
+    // Directly assigned to a local variable: `let cache = m.get(k)`
+    if (ts.isVariableDeclaration(p) && p.initializer !== undefined && climbWrappers(p.initializer) === cur && ts.isIdentifier(p.name)) {
+      const fnScope = runnerOf(p) ?? sf;
+      let mutated = false;
+      let escapes = false;
+      let escapeAt: ts.Node | null = null;
+      for (const r of refsTo(p, fnScope)) {
+        const u = classifyUsage(r);
+        if (u.kind === "mutateProp" || u.kind === "mutateMethod") {
+          mutated = true;
+          // For `cache.set(k, v)`, values stored into nested container are payloads; check no escape of `cache`.
+        } else if (u.kind === "assignSelf") {
+          // Reassignment of the local variable (e.g. `cache = new Map()`) must be fresh!
+          if (u.rhs === null || !isFreshContainerAlloc(u.rhs)) { escapes = true; escapeAt ??= u.expr; }
+        } else if (u.kind === "escape") {
+          // Storing `cache` back into the parent container (`graphemeEndCaches.set(p, cache)`) is checked separately by the caller!
+          const parentCall = climbWrappers(r).parent;
+          const backIntoParent = parentCall !== undefined && ts.isCallExpression(parentCall) &&
+            ts.isPropertyAccessExpression(unwrapExpr(parentCall.expression)) &&
+            unwrapExpr(parentCall.expression).getText().endsWith(".set") &&
+            parentCall.arguments[1] !== undefined && climbWrappers(parentCall.arguments[1]) === climbWrappers(r);
+          if (!backIntoParent) { escapes = true; escapeAt ??= u.at; }
+        } else if (u.kind === "localAlias") {
+          if (localMutatedThrough(u.decl, fnScope)) mutated = true;
+          escapes = true; escapeAt ??= u.decl;
+        }
+      }
+      return { mutated, escapes, localDecl: p, escapeAt };
+    }
+    // Directly mutated in place: `m.get(k)!.push(0)` or `m[k].x = 1`
+    if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === cur) {
+      const outer = climbWrappers(p);
+      const gp = outer.parent;
+      if (gp !== undefined && ((ts.isBinaryExpression(gp) && isAssignmentOp(gp.operatorToken.kind) && gp.left === outer) ||
+          (ts.isCallExpression(gp) && gp.expression === outer && ts.isPropertyAccessExpression(p) && MUTATING_METHODS.has(p.name.text))))
+        return { mutated: true, escapes: false, localDecl: null, escapeAt: null };
+      return { mutated: false, escapes: false, localDecl: null, escapeAt: null };
+    }
+    // Returned or passed directly (e.g. `return map.get(k)`): escapes!
+    return { mutated: false, escapes: true, localDecl: null, escapeAt: p };
+  };
+
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    const isExport = st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+    const isConst = (st.declarationList.flags & ts.NodeFlags.Const) !== 0;
+    for (const decl of st.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) continue;
+      const name = decl.name.text;
+      if (isExport || exported.has(name)) {
+        failures.set(decl, `module binding ${name} is exported, not module-private`);
+        continue;
+      }
+      if (!isFreshModuleInit(decl.initializer)) {
+        failures.set(decl, `module binding ${name} is not initialized with a fresh or primitive value`);
+        continue;
+      }
+      const refs = refsTo(decl, sf);
+      if (!isConst) {
+        // `let` binding: confined cell if never mutated through (nor any local alias mutated through).
+        let mutatedThrough = false;
+        let failReason: string | null = null;
+        for (const r of refs) {
+          const u = classifyUsage(r);
+          if (u.kind === "mutateProp" || u.kind === "mutateMethod") {
+            mutatedThrough = true;
+            failReason ??= `module binding ${name} is mutated through at ${r.getText()}`;
+          } else if (u.kind === "localAlias") {
+            const fnScope = runnerOf(u.decl) ?? sf;
+            if (localMutatedThrough(u.decl, fnScope)) {
+              mutatedThrough = true;
+              failReason ??= `alias ${u.decl.name.getText()} of module binding ${name} is mutated through`;
+            }
+          } else if (u.kind === "assignSelf") {
+            // If `(b ??= e)` is bound to a local variable `const runs = b ??= e`, check that local too.
+            const outer = climbWrappers(u.expr);
+            const gp = outer.parent;
+            if (gp !== undefined && ts.isVariableDeclaration(gp) && gp.initializer !== undefined &&
+                climbWrappers(gp.initializer) === outer && ts.isIdentifier(gp.name)) {
+              const fnScope = runnerOf(gp) ?? sf;
+              if (localMutatedThrough(gp, fnScope)) {
+                mutatedThrough = true;
+                failReason ??= `alias ${gp.name.text} of module binding ${name} is mutated through`;
+              }
+            }
+          }
+        }
+        if (!mutatedThrough) cells.add(decl);
+        else failures.set(decl, failReason ?? `module binding ${name} is mutated through`);
+      } else {
+        // `const` container binding: must be freshly initialized container and never escape.
+        if (!isFreshContainerAlloc(decl.initializer)) {
+          failures.set(decl, `module const ${name} is not initialized with a fresh container`);
+          continue;
+        }
+        let escapeReason: string | null = null;
+        const loads: { mutated: boolean; escapes: boolean; localDecl: ts.VariableDeclaration | null; escapeAt: ts.Node | null }[] = [];
+        const storedValues: { expr: ts.Expression; scope: ts.Node }[] = [];
+        for (const r of refs) {
+          const u = classifyUsage(r);
+          if (u.kind === "escape" || u.kind === "localAlias" || u.kind === "assignSelf") {
+            escapeReason ??= `module container ${name} escapes at ${r.parent?.getText() ?? r.getText()}`;
+          } else if (u.kind === "loadEntry") {
+            loads.push(analyzeLoadedExpr(u.call));
+          } else if (u.kind === "readProp") {
+            // Reading `.length` or `.size` is a scalar property, not an entry load.
+            const isScalarMeta = ts.isPropertyAccessExpression(u.access) && (u.access.name.text === "length" || u.access.name.text === "size");
+            if (!isScalarMeta) loads.push(analyzeLoadedExpr(u.access));
+          } else if (u.kind === "mutateProp") {
+            if (u.rhs !== null) storedValues.push({ expr: u.rhs, scope: runnerOf(r) ?? sf });
+          } else if (u.kind === "mutateMethod") {
+            if (u.method === "set" && u.call.arguments[1] !== undefined)
+              storedValues.push({ expr: u.call.arguments[1], scope: runnerOf(r) ?? sf });
+            else if ((u.method === "push" || u.method === "add" || u.method === "unshift") && u.call.arguments[0] !== undefined)
+              storedValues.push({ expr: u.call.arguments[0], scope: runnerOf(r) ?? sf });
+          }
+        }
+        if (escapeReason !== null) { failures.set(decl, escapeReason); continue; }
+        const anyLoadedMutated = loads.some((l) => l.mutated);
+        if (!anyLoadedMutated) {
+          // Payload container (values stored are read-only after storage).
+          containers.add(decl);
+        } else {
+          // Nested interior container: every stored value must be fresh, and NO loaded value may escape!
+          let nestedFail: string | null = null;
+          for (const s of storedValues)
+            if (!isFreshStoredValue(s.expr, s.scope, decl))
+              nestedFail ??= `module container ${name} stores non-fresh value ${s.expr.getText()} into a mutated nested interior`;
+          for (const l of loads) {
+            if (l.escapes)
+              nestedFail ??= `nested interior loaded from module container ${name} escapes at ${l.escapeAt?.getText() ?? name}`;
+            // Also check that values loaded one level deeper (from `l.localDecl`, e.g. `ends = cache.get(i)`) are not mutated after load.
+            if (l.localDecl !== null) {
+              const fnScope = runnerOf(l.localDecl) ?? sf;
+              for (const lr of refsTo(l.localDecl, fnScope)) {
+                const lu = classifyUsage(lr);
+                if (lu.kind === "loadEntry") {
+                  // Check `let ends = cache.get(i)`: allowed to be mutated ONLY after being overwritten with a fresh allocation!
+                  const outer = climbWrappers(lu.call);
+                  const gp = outer.parent;
+                  if (gp !== undefined && ts.isVariableDeclaration(gp) && gp.initializer !== undefined &&
+                      climbWrappers(gp.initializer) === outer && ts.isIdentifier(gp.name)) {
+                    // Any mutation of `gp` must be preceded by a fresh assignment to `gp` in the same block!
+                    for (const er of refsTo(gp, fnScope)) {
+                      const eu = classifyUsage(er);
+                      if ((eu.kind === "mutateProp" || eu.kind === "mutateMethod") && !isBlockFreshVar(er, gp, er))
+                        nestedFail ??= `value loaded from nested interior of ${name} is mutated directly`;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (nestedFail !== null) { failures.set(decl, nestedFail); continue; }
+          containers.add(decl);
+          for (const l of loads) if (l.localDecl !== null) nestedLocals.add(l.localDecl);
+        }
+      }
+    }
+  }
+  const info: ConfinedModuleInfo = { cells, containers, nestedLocals, failures };
+  moduleConfinementCache.set(sf, info);
+  return info;
+}
+
+/** Read a function declaration's stated effect:
+ * - `Effects<P, T>` or `Modifies<OrdP, Effects<PaperP, T>>` (`checkBody: true`,
+ *   must be verified against the function's body and module confinement), or
+ * - `Modifies<OrdP, T>` (`checkBody: false`, certified by the ordinary pass). */
+function statedEffect(decl: ts.FunctionDeclaration): { effect: Effect; checkBody: boolean } | null {
+  const result = decl.type;
+  if (result === undefined || !ts.isTypeReferenceNode(result) || !ts.isIdentifier(result.typeName)) return null;
+  if (result.typeName.text === "Effects") {
+    const p = result.typeArguments?.[0];
+    const eff = p ? effectOf(p) : null;
+    return eff === null ? null : { effect: eff, checkBody: true };
+  }
+  if (result.typeName.text === "Modifies") {
+    const [ordP, retT] = result.typeArguments ?? [];
+    if (retT !== undefined && ts.isTypeReferenceNode(retT) && ts.isIdentifier(retT.typeName) && retT.typeName.text === "Effects") {
+      const paperP = retT.typeArguments?.[0];
+      const eff = paperP ? effectOf(paperP) : null;
+      return eff === null ? null : { effect: eff, checkBody: true };
+    }
+    const eff = ordP ? effectOf(ordP) : null;
+    return eff === null ? null : { effect: eff, checkBody: false };
+  }
+  return null;
+}
+
+/** Cache of verified `Effects<P, T>` function declarations (`null` = ok, string = refusal). */
+const verifiedEffects = new Map<ts.FunctionDeclaration, string | null>();
+const verifyingEffects = new Set<ts.FunctionDeclaration>();
+
+/** Verify a function declaration's body against its stated `Effects<P, T>`. */
+function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect): string | null {
+  const cached = verifiedEffects.get(decl);
+  if (cached !== undefined) return cached;
+  if (verifyingEffects.has(decl)) return null; // coinductive assumption for recursive self/mutual calls
+  verifyingEffects.add(decl);
+  const actual = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
+  verifyingEffects.delete(decl);
+  const res = typeof actual === "string" ? actual : effectWithin(actual, stated);
+  verifiedEffects.set(decl, res);
+  return res;
+}
+
+/** Collect local `let` variables in `fn` whose initializer and every assignment
+ * are exclusively fresh allocations or nullish literals (e.g. `let frag = null; ... frag = { ... }`),
+ * and local fresh arrays (`const a = []`) whose only pushed/written elements are fresh allocations. */
+function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts.Node> } {
+  const vars = new Set<ts.Node>();
+  const elemArrays = new Set<ts.Node>();
+  if (fn.body === undefined) return { vars, elemArrays };
+  const candidates: ts.VariableDeclaration[] = [];
+  const collectDecls = (n: ts.Node): undefined => {
+    if (n !== fn && isFn(n)) return undefined;
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) candidates.push(n);
+    n.forEachChild(collectDecls);
+    return undefined;
+  };
+  collectDecls(fn.body);
+  // Fixed point so fresh arrays holding fresh locals (like `fragments.push(fragment)`) are recognized cleanly.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const d of candidates) {
+      if (!ts.isIdentifier(d.name)) continue;
+      const isConst = (d.parent.flags & ts.NodeFlags.Const) !== 0;
+      if (!vars.has(d)) {
+        const initFresh = d.initializer === undefined || isPrimitiveLiteral(d.initializer) || isFreshContainerAlloc(d.initializer) ||
+          (ts.isElementAccessExpression(unwrapExpr(d.initializer)) && (() => {
+            const arr = unwrapExpr(d.initializer);
+            if (!ts.isElementAccessExpression(arr) || !ts.isIdentifier(unwrapExpr(arr.expression))) return false;
+            const ad = declOf(unwrapExpr(arr.expression).getText(), arr.expression);
+            return ad !== null && ad.kind !== "function" && ad.kind !== "param" && elemArrays.has(ad.at);
+          })());
+        if (initFresh && (isConst ? !isPrimitiveLiteral(d.initializer) : true)) {
+          let allFresh = true;
+          let hasFresh = !isPrimitiveLiteral(d.initializer);
+          for (const r of refsTo(d, fn.body)) {
+            const u = classifyUsage(r);
+            if (u.kind === "assignSelf") {
+              if (u.rhs !== null && (isFreshContainerAlloc(u.rhs) || isPrimitiveLiteral(u.rhs))) {
+                if (isFreshContainerAlloc(u.rhs)) hasFresh = true;
+              } else { allFresh = false; break; }
+            }
+          }
+          if (allFresh && hasFresh) { vars.add(d); changed = true; }
+        }
+      }
+      if (isConst && !elemArrays.has(d) && d.initializer !== undefined &&
+          ts.isArrayLiteralExpression(unwrapExpr(d.initializer)) &&
+          unwrapExpr(d.initializer).getText() === "[]") {
+        let allElemsFresh = true;
+        for (const r of refsTo(d, fn.body)) {
+          const u = classifyUsage(r);
+          if (u.kind === "mutateMethod" && u.method === "push") {
+            const arg = u.call.arguments[0];
+            const ok = arg !== undefined && (isFreshContainerAlloc(arg) ||
+              (ts.isIdentifier(unwrapExpr(arg)) && (() => {
+                const ad = declOf(unwrapExpr(arg).getText(), arg);
+                return ad !== null && ad.kind !== "function" && ad.kind !== "param" && vars.has(ad.at);
+              })()));
+            if (!ok) { allElemsFresh = false; break; }
+          } else if (u.kind === "mutateMethod" || u.kind === "mutateProp") {
+            allElemsFresh = false; break;
+          }
+        }
+        if (allElemsFresh) { elemArrays.add(d); changed = true; }
+      }
+    }
+  }
+  return { vars, elemArrays };
+}
+
+/** Whether `target` is a fresh-element expression: an element read `arr[i]` of
+ * an array in `elemArrays` (whose elements are all freshly allocated inside `fn`). */
+function isFreshElementExpr(e: ts.Expression, elemArrays: ReadonlySet<ts.Node>): boolean {
+  const u = unwrapExpr(e);
+  if (!ts.isElementAccessExpression(u)) return false;
+  const arr = unwrapExpr(u.expression);
+  if (!ts.isIdentifier(arr)) return false;
+  const d = declOf(arr.text, arr);
+  return d !== null && d.kind !== "function" && d.kind !== "param" && elemArrays.has(d.at);
+}
+
+/** Whether an identifier expression refers to a variable that is fresh right at
+ * `at` because an earlier statement in the same block assigned a fresh
+ * allocation to it without an intervening reassignment. */
+function isBlockFreshVar(id: ts.Identifier, declNode: ts.Node, at: ts.Node): boolean {
+  let stmt: ts.Node | undefined = at;
+  while (stmt !== undefined && !ts.isStatement(stmt)) stmt = stmt.parent;
+  const blk = stmt?.parent;
+  if (stmt === undefined || blk === undefined || !ts.isBlock(blk)) return false;
+  const idx = blk.statements.indexOf(stmt);
+  for (let i = idx - 1; i >= 0; i--) {
+    const prev = blk.statements[i];
+    if (prev === undefined) continue;
+    if (ts.isExpressionStatement(prev)) {
+      const pe = unwrapExpr(prev.expression);
+      if (ts.isBinaryExpression(pe) && pe.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          ts.isIdentifier(unwrapExpr(pe.left)) && unwrapExpr(pe.left).getText() === id.text &&
+          declOf(id.text, pe.left)?.kind === "let") {
+        const d = declOf(id.text, pe.left);
+        if (d !== null && d.kind === "let" && d.at === declNode) return isFreshContainerAlloc(pe.right);
+      }
+    }
+    // Stop if another statement mentions this variable as an assignment target.
+    if (assignedIn(id.text, prev)) return false;
+  }
+  return false;
+}
+
 function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noSkip): Effect | string {
   if (fn.body === undefined) return "has no body";
+  const sf = fn.getSourceFile();
+  const confined = moduleConfinement(sf);
+  const { vars: freshVars, elemArrays: freshElemArrays } = alwaysFreshLocals(fn);
   const entries: [string, Change][] = [];
   let otherwise: Change = "keep";
   let error: string | null = null;
   const fail = (n: ts.Node, why: string): undefined => { error ??= `the callback's ${n.getText()} ${why}`; return undefined; };
   const keyOf = (r: { root: string; path: string[] }, tail: string): string => [r.root, ...r.path].join(".") + tail;
+
+  /** Check whether an identifier refers to a confined module container or nested interior local. */
+  const isConfinedContainerRef = (e: ts.Expression): boolean => {
+    const u = unwrapExpr(e);
+    if (!ts.isIdentifier(u)) return false;
+    const d = declOf(u.text, u);
+    if (d === null || d.kind === "function" || d.kind === "param" || !ts.isVariableDeclaration(d.at)) return false;
+    return confined.containers.has(d.at) || confined.nestedLocals.has(d.at);
+  };
+
+  /** Check whether an expression is fresh at `at` (always-fresh local, block-fresh local, or fresh element). */
+  const isFreshAt = (e: ts.Expression, at: ts.Node): boolean => {
+    const u = unwrapExpr(e);
+    if (isFreshContainerAlloc(u)) return true;
+    if (isFreshElementExpr(u, freshElemArrays)) return true;
+    if (ts.isIdentifier(u)) {
+      const d = declOf(u.text, u);
+      if (d !== null && d.kind !== "function" && d.kind !== "param" && within(d.at, fn)) {
+        if (freshVars.has(d.at)) return true;
+        if (isBlockFreshVar(u, d.at, at)) return true;
+      }
+    }
+    return false;
+  };
+
   const write = (target: ts.Expression, change: Change, at: ts.Node): undefined => {
     const t = unwrapExpr(target);
     if (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) {
-      const base = resolve_(t.expression, fn, 0, paramRoots);
+      if (isConfinedContainerRef(t.expression)) {
+        entries.push(["@state", "any"]);
+        return undefined;
+      }
+      if (isFreshAt(t.expression, at)) return undefined;
+      const base = resolve_(t.expression, fn, 0, paramRoots, freshVars);
       if (base === null) return fail(at, "writes a location no key of the instance can name");
       if (base.fresh) return undefined;
       // A key written as a string literal (`x["f"]`) names the field `f`.
@@ -612,29 +1363,38 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
       const d = declOf(t.text, t);
       const local = d !== null && d.kind !== "function" &&
         (d.kind === "param" ? d.owner === fn || within(d.owner, fn) : within(d.at, fn));
-      return local ? undefined : fail(at, "assigns a captured binding");
+      if (local) return undefined;
+      if (d !== null && d.kind === "let" && ts.isVariableDeclaration(d.at) && confined.cells.has(d.at)) {
+        entries.push(["@state", "any"]);
+        return undefined;
+      }
+      const why = d !== null && d.kind !== "function" && d.kind !== "param" && ts.isVariableDeclaration(d.at)
+        ? confined.failures.get(d.at) : undefined;
+      return fail(at, why !== undefined ? `assigns a non-confined module binding (${why})` : "assigns a captured binding");
     }
     return fail(at, "writes a location no key of the instance can name");
   };
+  const visitedHelpers = new Set<ts.Node>();
   const visit = (n: ts.Node): undefined => {
     if (error !== null) return undefined;
     if (n !== fn && isFn(n)) return undefined;
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
+    if (ts.isBinaryExpression(n) && isAssignmentOp(n.operatorToken.kind))
       write(n.left, arithmetic.has(n.operatorToken.kind) ? "scalar" : "any", n);
     else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
         (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
       write(n.operand, "scalar", n);
     else if (ts.isDeleteExpression(n)) write(n.expression, "any", n);
     else if (ts.isNewExpression(n)) {
-      // A construction of a library global (`new RangeError(…)`): a fresh
-      // object, and the reviewed construct effect of the overlay (rule
-      // Native); only an empty one is read here.
+      // A construction of a library global (`new RangeError(…)`, `new Map()`,
+      // `new Int32Array(n)`): a fresh object, and the reviewed construct effect
+      // of the overlay (rule Native); only an empty one is read here.
       const c = unwrapExpr(n.expression);
       const name = ts.isIdentifier(c) && declOf(c.text, c) === null && importedDecl(c.text, c) === undefined ? c.text : null;
-      const entries = name === null ? [] : globalsOverlay.filter((g) => g.global === name && g.member === undefined &&
+      const gEntries = name === null ? [] : globalsOverlay.filter((g) => g.global === name && g.member === undefined &&
         (g.constructs === true || g.signature.startsWith("new ")));
-      if (entries.length === 0 || !entries.every((g) => g.effect !== undefined && keepsHeap(g.effect)))
+      const okCollection = name !== null && COLLECTION_NAMES.has(name) && (n.arguments === undefined || n.arguments.length === 0);
+      const okTypedArray = isFreshTypedArrayAlloc(n);
+      if (!okCollection && !okTypedArray && (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))))
         return fail(n, "constructs an object whose reviewed effect may change old storage");
     }
     else if (ts.isCallExpression(n)) {
@@ -643,55 +1403,138 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
         const d = declOf(callee.text, callee);
         return d !== null && d.kind === "param" && d.owner === skip.owner;
       })();
-      if (ts.isPropertyAccessExpression(callee) && callee.name.text === "push") {
+      if (ts.isPropertyAccessExpression(callee) && isConfinedContainerRef(callee.expression)) {
+        const m = callee.name.text;
+        if (READ_COLLECTION_METHODS.has(m)) {
+          // Pure read on confined container (e.g. `cache.get(k)`, `cache.has(k)`).
+        } else if (MUTATING_METHODS.has(m)) {
+          entries.push(["@state", "any"]);
+        } else return fail(n, `calls unrecognised method ${m} on a confined container`);
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "push") {
         // Rule Push: `push` of an array, by its declaration; a member named
         // `push` of any other object is an unknown method.
-        const base = resolve_(callee.expression, fn, 0, paramRoots);
-        if (base === null) return fail(n, "pushes onto an array no key of the instance can name");
-        const receiver = unwrapExpr(callee.expression);
-        const array = base.fresh
-          ? ts.isIdentifier(receiver) && (() => { const d = declOf(receiver.text, receiver); return d !== null && d.kind === "const" && isArrayLiteral(d.init); })()
-          : isArrayAt(base, n);
-        if (!array) return fail(n, "calls push of a value not declared an array, a method whose effect is not stated");
-        if (!base.fresh) entries.push([keyOf(base, "[*]"), "extend"]);
+        if (isFreshAt(callee.expression, n)) {
+          // Fresh local array push: `Fresh-Eff`.
+        } else {
+          const base = resolve_(callee.expression, fn, 0, paramRoots, freshVars);
+          if (base === null) return fail(n, "pushes onto an array no key of the instance can name");
+          const receiver = unwrapExpr(callee.expression);
+          const array = base.fresh
+            ? ts.isIdentifier(receiver) && (() => { const d = declOf(receiver.text, receiver); return d !== null && d.kind === "const" && isArrayLiteral(d.init); })()
+            : isArrayAt(base, n);
+          if (!array) return fail(n, "calls push of a value not declared an array, a method whose effect is not stated");
+          if (!base.fresh) entries.push([keyOf(base, "[*]"), "extend"]);
+        }
+      } else if (ts.isPropertyAccessExpression(callee) && FRESH_TYPED_ARRAY_MUTATORS.has(callee.name.text) &&
+          isFreshAt(callee.expression, n)) {
+        // Mutator (`.fill`, `.set`, `.copyWithin`) on a fresh local typed array: `Fresh-Eff`.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "subarray") {
+        // `TypedArray.prototype.subarray` allocates a view without mutating any heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && PURE_STRING_METHODS.has(callee.name.text)) {
+        // Pure string methods (`charCodeAt`, `slice`, `includes`, etc.) mutate no heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "test" &&
+          ts.isRegularExpressionLiteral(unwrapExpr(callee.expression)) &&
+          !/[gy]/.test(unwrapExpr(callee.expression).getText().split("/").pop() ?? "")) {
+        // Non-global, non-sticky regex literal `.test(...)` mutates no old storage.
       } else if (skipped) {
         // A call of a bounded callback parameter: its effect is the effect
         // variable's, which the caller's instance gives.
       } else if (ts.isIdentifier(callee)) {
         const d = declOf(callee.text, callee);
-        const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
-        const result = decl?.type;
-        const stated = result && ts.isTypeReferenceNode(result) && ts.isIdentifier(result.typeName) &&
-          result.typeName.text === "Modifies" ? result.typeArguments?.[0] : undefined;
-        // A call of a function with effect parameters whose instances are the
-        // calling function's own effect parameters (a forwarding call): its
-        // effect is its own effect besides them, read from its body, and the
-        // forwarded variables, which the calling function's bound accounts for.
-        const outer = effectVars(fn);
-        const positions = decl === undefined ? [] : (decl.typeParameters ?? []).flatMap((tp, i) => effectVars(decl).includes(tp.name.text) ? [i] : []);
-        const forwards = decl !== undefined && stated === undefined && positions.length > 0 &&
-          positions.every((i) => { const t = n.typeArguments?.[i]; return t !== undefined && ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text); });
-        const eff = stated ? effectOf(stated)
-          : forwards && decl !== undefined && !reading.has(decl) ? (() => {
-            reading.add(decl);
-            const e = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
-            reading.delete(decl);
-            return typeof e === "string" ? null : e;
-          })() : null;
-        if (decl === undefined || eff === null) return fail(n, "calls a function whose effect is not stated");
-        const params = decl.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
-        for (const [k, c] of eff.entries) {
-          const at = params.indexOf(rootOf(k));
-          const arg = n.arguments[at];
-          const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots);
-          if (base === null) return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
-          // A fresh object's own fields and spine are no change of older
-          // storage; a location through one of its fields may be.
-          const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
-          if (base.fresh && !own) return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
-          if (!base.fresh) entries.push([keyOf(base, restOf(k)), c]);
+        // A call to a local `const` helper closure declared inside `fn` (e.g. `const varint = () => ...`):
+        // inline its body under `fn`'s own local scope.
+        if (d !== null && d.kind === "const" && within(d.at, fn) && d.init !== undefined && isFn(unwrapExpr(d.init))) {
+          const helper = unwrapExpr(d.init);
+          if (isFn(helper) && helper.body !== undefined && !visitedHelpers.has(helper)) {
+            visitedHelpers.add(helper);
+            for (const p of helper.parameters) visit(p);
+            visit(helper.body);
+          }
+        } else {
+          const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
+          // Bare global library function (e.g. `atob`): checked against reviewed `globalsOverlay`.
+          if (d === null && decl === undefined) {
+            const gEntries = globalsOverlay.filter((g) => g.global === callee.text && g.member === undefined &&
+              g.constructs !== true && !g.signature.startsWith("new "));
+            if (gEntries.length > 0 && gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))) {
+              n.forEachChild(visit);
+              return undefined;
+            }
+          }
+          const st = decl === undefined ? null : statedEffect(decl);
+          if (decl !== undefined && st !== null && st.checkBody) {
+            const why = verifyStatedEffect(decl, st.effect);
+            if (why !== null) return fail(n, `calls ${callee.text} whose stated Effects failed verification (${why})`);
+          }
+          // A call of a function with effect parameters whose instances are the
+          // calling function's own effect parameters (or joins `[E, P]`): its
+          // effect is its own effect besides them, read from its body, and the
+          // forwarded variables, which the calling function's bound accounts for.
+          const outer = effectVars(fn);
+          const positions = decl === undefined ? [] : (decl.typeParameters ?? []).flatMap((tp, i) => effectVars(decl).includes(tp.name.text) ? [i] : []);
+          const forwards = decl !== undefined && st === null && positions.length > 0 &&
+            positions.every((i) => {
+              const t = n.typeArguments?.[i];
+              if (t === undefined) return false;
+              if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && outer.includes(t.typeName.text)) return true;
+              const jp = joinParts(t);
+              if (jp !== null) {
+                const [vEl, pEl] = jp;
+                return ts.isTypeReferenceNode(vEl) && ts.isIdentifier(vEl.typeName) &&
+                  outer.includes(vEl.typeName.text) && effectOf(pEl) !== null;
+              }
+              return false;
+            });
+          const pureEff: Effect = { entries: [], else: "keep" };
+          const eff = st !== null ? st.effect
+            : decl !== undefined && isIdentityFn(decl) ? pureEff
+            : forwards && decl !== undefined && !reading.has(decl) ? (() => {
+              reading.add(decl);
+              const e = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
+              reading.delete(decl);
+              return typeof e === "string" ? null : e;
+            })() : null;
+          if (decl === undefined || eff === null) return fail(n, "calls a function whose effect is not stated");
+          const params = decl.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
+          for (const [k, c] of eff.entries) {
+            if (k === "@state") { entries.push(["@state", c]); continue; }
+            const at = params.indexOf(rootOf(k));
+            const arg = n.arguments[at];
+            const paramDecl = decl.parameters[at];
+            if (arg === undefined && paramDecl !== undefined && isFreshContainerAlloc(paramDecl.initializer)) {
+              // Omitted parameter with fresh allocation default (e.g. `stats = { ... }`): own locations are fresh.
+              const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
+              if (!own) return fail(n, `omits ${rootOf(k)} whose default's held storage ${k} may change`);
+              continue;
+            }
+            if (arg !== undefined && isFreshAt(arg, n)) {
+              const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
+              if (!own) return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
+              continue;
+            }
+            const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots, freshVars);
+            if (base === null) return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
+            // A fresh object's own fields and spine are no change of older
+            // storage; a location through one of its fields may be.
+            const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
+            if (base.fresh && !own) return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
+            if (!base.fresh) entries.push([keyOf(base, restOf(k)), c]);
+          }
+          // If forwarding `[E, P]` or `Join<E, P>`, include `P`'s entries in the caller's own effect too.
+          if (forwards)
+            for (const i of positions) {
+              const t = n.typeArguments?.[i];
+              const jp = t === undefined ? null : joinParts(t);
+              if (jp !== null) {
+                const extra = effectOf(jp[1]);
+                if (extra !== null) {
+                  for (const [k, c] of extra.entries) entries.push([k, c]);
+                  if (!le(extra.else, otherwise)) otherwise = extra.else;
+                }
+              }
+            }
+          if (!le(eff.else, otherwise)) otherwise = eff.else;
         }
-        if (!le(eff.else, otherwise)) otherwise = eff.else;
       } else if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
           declOf(callee.expression.text, callee) === null && importedDecl(callee.expression.text, callee) === undefined) {
         // A member of a library global (`Math.max`): its effect is the
@@ -699,8 +1542,8 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
         // member whose reviewed effect keeps the heap changes nothing.
         const global = callee.expression.text;
         const member = callee.name.text;
-        const entries = globalsOverlay.filter((g) => g.global === global && g.member === member);
-        if (entries.length === 0 || !entries.every((g) => g.effect !== undefined && keepsHeap(g.effect)))
+        const gEntries = globalsOverlay.filter((g) => g.global === global && g.member === member);
+        if (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect)))
           return fail(n, "calls a library member whose reviewed effect may change old storage");
       } else return fail(n, "calls a method whose effect is not stated");
     }
@@ -713,13 +1556,24 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
   return error ?? { entries, else: otherwise };
 }
 
+/** Extract `[E, P]` from either a tuple `[E, P]` or `Join<E, P>`. */
+function joinParts(t: ts.TypeNode): [ts.TypeNode, ts.TypeNode] | null {
+  if (ts.isTupleTypeNode(t) && t.elements.length === 2 && t.elements[0] !== undefined && t.elements[1] !== undefined)
+    return [t.elements[0], t.elements[1]];
+  if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === "Join" &&
+      t.typeArguments?.length === 2 && t.typeArguments[0] !== undefined && t.typeArguments[1] !== undefined)
+    return [t.typeArguments[0], t.typeArguments[1]];
+  return null;
+}
+
 /** The access paths of an effect's reach entry, open where not read. */
 const accAt = (e: Effect, key: string): Acc => accFromJson(e.reach?.[key]);
 
 /** Whether a claim's location covers an effect's location: the same
- * location, a field among the fields `x.*`, or a location in the reach
- * `x.**` at an access path of its type. */
+ * location, a field among the fields `x.*`, a location in the reach
+ * `x.**` at an access path of its type, or confined module state `@state`. */
 function covers(c: Loc, r: Loc, acc: Acc): boolean {
+  if (c.kind === "modState" || r.kind === "modState") return c.kind === "modState" && r.kind === "modState";
   if (c.kind === "reach") return inside(r, c, acc);
   if (c.kind === "fields") return r.kind === "field" && pathText(r) === pathText(c);
   return r.kind === c.kind && r.key === c.key && pathText(r) === pathText(c);
@@ -755,6 +1609,7 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: (str
   // The empty effect is within every bound, whatever its arguments.
   if (instance.entries.length === 0 && instance.else === "keep") return null;
   const actual = (key: string): string | null => {
+    if (key === "@state") return "@state";
     const at = params.indexOf(rootOf(key));
     if (at < 0) return key;
     const arg = args[at];
@@ -777,34 +1632,35 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: (str
     for (const [b, d, text, bacc] of bs)
       if (!disjoint(l, b, l.kind === "reach" ? iacc : bacc, fresh, callerParams) && !le(c, d))
         return `the instance changes ${r} by ${c}; the bound allows ${text}: ${d}`;
-    if (bound.else !== "any" && !bs.some(([b, , , bacc]) => inside(l, b, bacc)) && !le(c, bound.else))
+    if (bound.else !== "any" && !bs.some(([b, , , bacc]) => inside(l, b, bacc, iacc)) && !le(c, bound.else))
       return `the instance changes ${r} by ${c}; the bound's else allows ${bound.else}`;
   }
   // The instance's `else` reaches the locations of a bound entry that no
   // instance entry covers: the same location, or one inside an instance
   // reach.
-  const covered = (b: Loc): boolean => is.some(([l, , iacc]) =>
-    l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b) || inside(b, l, iacc));
-  for (const [b, d, text] of bs)
-    if (!covered(b) && !le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
+  const covered = (b: Loc, bacc: Acc): boolean => is.some(([l, , iacc]) =>
+    (l.kind === "reach" && b.kind === "reach" ? reachInside(b, bacc, l, iacc)
+      : l.kind === b.kind && l.key === b.key && pathText(l) === pathText(b)) || inside(b, l, iacc, bacc));
+  for (const [b, d, text, bacc] of bs)
+    if (!covered(b, bacc) && !le(instance.else, d)) return `the instance's else ${instance.else} exceeds the bound's ${text}: ${d}`;
   if (!le(instance.else, bound.else)) return `the instance's else ${instance.else} exceeds the bound's else ${bound.else}`;
   return null;
 }
 
 /** Whether an instance is anchored as the prototype decides it
-(Definition "Instances and anchoring"): its `else` is `keep`, it has no
-class key, and each key is a field, the fields or the spine of a variable
-that is a `const` or a parameter its function never assigns; the reason
-otherwise. A path through a field, a reach or the cells are anchored only
-where their contracts admit one value or no growth, which this script
-does not read. */
+(Definition "Instances and anchoring", generalized for confined module state
+`@state` per `Model.confined_rule`): its `else` is `keep`, it has no class
+key, and each key is `@state` or a field, the fields or the spine of a
+variable that is a `const` or a parameter its function never assigns; the
+reason otherwise. */
 function anchored(instance: Effect, at: ts.Node): string | null {
   if (instance.classes) return "an instance has no class key (values, spines): such regions are not anchored";
   if (instance.else !== "keep") return `an instance's else is keep; this one's is ${instance.else}, which changes storage allocated after the call`;
   for (const [k] of instance.entries) {
     const l = locOf(k);
+    if (l !== null && l.kind === "modState") continue;
     if (l === null || l.path.length > 0 || !(l.kind === "field" || l.kind === "fields" || l.kind === "spine"))
-      return `the instance's key ${k} is not a field, the fields or the spine of a variable, which the prototype decides anchored`;
+      return `the instance's key ${k} is not a field, the fields, the spine of a variable, or @state, which the prototype decides anchored`;
     const d = declOf(l.root, at);
     const rigid = d !== null && (d.kind === "const" || (d.kind === "param" && !assignedIn(l.root, d.owner)));
     if (!rigid) return `the instance's key ${k} is rooted at ${l.root}, which is no const or unassigned parameter`;
@@ -895,7 +1751,7 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
         const l = locOf(k);
         if (l?.kind !== "reach") continue;
         const p = l.path.length === 0 ? s.parameters[params.indexOf(l.root)] : undefined;
-        reach[k] = accJson(accOf(p?.type, decls));
+        reach[k] = accJson(accOf(p?.type, tree));
       }
       if (Object.keys(reach).length > 0) e.bound.reach = reach;
     }
@@ -907,6 +1763,13 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
         bounded.push({ param: params[index] ?? "", index, variable: form.variable });
     });
     let refusal = unread;
+    // Verify any stated `Effects<P, T>` on this function against its body and
+    // module confinement obligations (`OwnerConfined`).
+    const st = statedEffect(s);
+    if (st !== null && st.checkBody && refusal === undefined) {
+      const why = verifyStatedEffect(s, st.effect);
+      if (why !== null) refusal = `stated Effects verification failed: ${why}`;
+    }
     const own = effectVars(s).length === 0 ? undefined : closureEffect(s, true, { owner: s, names: boundedParams(s) });
     // Rule Bound's second premise: the regions of each bound read at a
     // callback's call are those read at the function's entry. A field or
@@ -1157,6 +2020,7 @@ export function annotations(path: string): {
         const outer = functions[caller];
         const instance: Record<string, Effect> = {};
         const forwarded = new Map<string, string>();
+        const forwardedExtra = new Map<string, Effect>();
         const empty = new Set<string>();
         let reason: string | null = null;
         callee.effectParams.forEach((e) => {
@@ -1164,6 +2028,17 @@ export function annotations(path: string): {
           const eff = arg ? effectOf(arg) : null;
           const variable = arg !== undefined && ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName)
             ? outer?.effectParams.find((o) => o.name === arg.typeName.getText()) : undefined;
+          // A join instance `[E, P]` or `Join<E, P>` forwarding an outer effect variable `E`
+          // joined with a closed anchored effect `P` (e.g. `Join<E, { "@state": "any" }>`).
+          const joinTuple = arg !== undefined ? (() => {
+            const jp = joinParts(arg);
+            if (jp === null) return null;
+            const [vEl, pEl] = jp;
+            if (!ts.isTypeReferenceNode(vEl) || !ts.isIdentifier(vEl.typeName)) return null;
+            const v = outer?.effectParams.find((o) => o.name === vEl.typeName.getText());
+            const p = effectOf(pEl);
+            return v !== undefined && p !== null ? { variable: v, extra: p } : null;
+          })() : null;
           const none = callee.bounded.filter((b) => b.variable === e.name).every((b) => {
             const a = n.arguments[b.index];
             return a === undefined || unwrapExpr(a).kind === ts.SyntaxKind.UndefinedKeyword ||
@@ -1173,39 +2048,52 @@ export function annotations(path: string): {
             instance[e.name] = eff;
             reason ??= anchored(eff, n);
           } else if (variable) { instance[e.name] = variable.bound; forwarded.set(e.name, variable.name); }
-          else if (arg === undefined && none) { instance[e.name] = { entries: [], else: "keep" }; empty.add(e.name); }
+          else if (joinTuple !== null) {
+            instance[e.name] = joinTuple.variable.bound;
+            forwarded.set(e.name, joinTuple.variable.name);
+            forwardedExtra.set(e.name, joinTuple.extra);
+            reason ??= anchored(joinTuple.extra, n);
+          } else if (arg === undefined && none) { instance[e.name] = { entries: [], else: "keep" }; empty.add(e.name); }
         });
         const args = n.arguments.map((a) => argPath(a));
         // The caller's parameters it never assigns: their values and own
         // locations are apart from what the caller allocates.
         const callerParams = new Set(unit.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "")
           .filter((q) => q !== "" && !assignedIn(q, unit)));
+        const normalizeEffect = (written: Effect): { inst: Effect; fresh: Set<string> } | string => {
+          const fresh = new Set<string>();
+          const entries: [string, Change][] = [];
+          const reach: Record<string, AccJson> = {};
+          for (const [k, c] of written.entries) {
+            const norm = normalizeKey(k, n, unit);
+            if (norm === null) return `the instance's key ${k} names no variable of the caller`;
+            if (norm.fresh) fresh.add(rootOf(norm.key));
+            entries.push([norm.key, c]);
+            const a = written.reach?.[k];
+            if (a !== undefined) reach[norm.key] = a;
+          }
+          const inst: Effect = Object.keys(reach).length > 0 ? { entries, else: written.else, reach } : { entries, else: written.else };
+          return { inst, fresh };
+        };
         for (const e of callee.effectParams) {
           if (reason !== null) break;
           const written = instance[e.name];
           if (written === undefined) { reason = `no instance written for ${e.name}`; break; }
           // The instance's roots resolved at the call: aliases replaced by
           // the paths they hold, and the objects the caller allocated.
-          const fresh = new Set<string>();
-          const entries: [string, Change][] = [];
-          const reach: Record<string, AccJson> = {};
-          for (const [k, c] of written.entries) {
-            const norm = normalizeKey(k, n, unit);
-            if (norm === null) { reason = `the instance's key ${k} names no variable of the caller`; break; }
-            if (norm.fresh) fresh.add(rootOf(norm.key));
-            entries.push([norm.key, c]);
-            const a = written.reach?.[k];
-            if (a !== undefined) reach[norm.key] = a;
-          }
-          if (reason !== null) break;
-          const inst: Effect = Object.keys(reach).length > 0 ? { entries, else: written.else, reach } : { entries, else: written.else };
+          const normRes = normalizeEffect(written);
+          if (typeof normRes === "string") { reason = normRes; break; }
+          const { inst, fresh } = normRes;
+          const extraRaw = forwardedExtra.get(e.name);
+          const extraNorm = extraRaw === undefined ? null : normalizeEffect(extraRaw);
+          if (typeof extraNorm === "string") { reason = extraNorm; break; }
           for (const b of callee.bounded.filter((x) => x.variable === e.name)) {
             if (empty.has(e.name)) break;
             let arg: ts.Expression | undefined = n.arguments[b.index];
-            // A forwarded variable: the callback is one of the calling
-            // function's own callbacks of that variable, or a closure whose
-            // only effect on old storage is calls of them (effect ε) besides
-            // fresh allocations.
+            // A forwarded variable (or join `[E, P]`): the callback is one of
+            // the calling function's own callbacks of that variable, or a
+            // closure whose effect besides calls to them lies within `P`
+            // (empty when bare `E`).
             const outerVar = forwarded.get(e.name);
             if (outerVar !== undefined) {
               const own = new Set((outer?.bounded ?? []).filter((o) => o.variable === outerVar).map((o) => o.param));
@@ -1217,10 +2105,14 @@ export function annotations(path: string): {
                 break;
               }
               const eff = closureEffect(passed, false, { owner: unit, names: own });
-              reason = typeof eff === "string" ? eff
-                : eff.entries.length > 0 || eff.else !== "keep"
-                  ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable ${outerVar} does not allow`
-                  : null;
+              if (extraNorm !== null) {
+                reason = typeof eff === "string" ? eff : effectWithin(eff, extraNorm.inst);
+              } else {
+                reason = typeof eff === "string" ? eff
+                  : eff.entries.length > 0 || eff.else !== "keep"
+                    ? `the callback also changes ${eff.entries.map(([k, c]) => `${k} by ${c}`).join(", ") || `else ${eff.else}`}, which ${e.name} forwarded as ${caller}'s effect variable ${outerVar} does not allow`
+                    : null;
+              }
               if (reason !== null) break;
               continue;
             }
@@ -1239,6 +2131,8 @@ export function annotations(path: string): {
           }
           if (reason !== null) break;
           reason = instCheck(inst, e.bound, callee.params, args, fresh, callerParams);
+          if (reason === null && extraNorm !== null)
+            reason = instCheck(extraNorm.inst, e.bound, callee.params, args, extraNorm.fresh, callerParams);
         }
         // The call's effect at the caller (Inst's conclusion) is within the
         // bounds and the callee's own effect; an empty instance stands for
@@ -1254,6 +2148,10 @@ export function annotations(path: string): {
   visit(tree);
   closeParser();
   importedFiles.clear();
+  moduleConfinementCache.clear();
+  verifiedEffects.clear();
+  verifyingEffects.clear();
+  typeDeclsOf.clear();
   return { functions, calls, assumes, refusals };
 }
 

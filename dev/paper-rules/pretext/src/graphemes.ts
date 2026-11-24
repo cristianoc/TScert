@@ -34,7 +34,7 @@ type GraphemeRules = {
 // position one code point back; the generator checks both. So a cluster ends right before the
 // code point whose transition stops or enters that state, and the next cluster starts at that
 // code point from the start state. One pass over the text finds every cluster.
-function parseGraphemeRules(table: GraphemeTable): GraphemeRules {
+function parseGraphemeRules(table: GraphemeTable): Effects<{ "@state": "any" }, GraphemeRules> {   // PAPER: annotation
   const rules = getBreakRules(table === 'gecko/char' ? 'chromium/char' : table)
   const width = rules.rowWidth
   const rows = rules.rows
@@ -55,7 +55,7 @@ function parseGraphemeRules(table: GraphemeTable): GraphemeRules {
 const graphemeRules: Partial<Record<GraphemeTable, GraphemeRules>> = {}
 
 // nsBidiUtils.h:84-90
-export function isBidiControl(cp: number): boolean {
+export function isBidiControl(cp: number): Effects<{}, boolean> {   // PAPER: annotation
   return ((cp & 0xff00) === 0x2000 && ((cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069) || (cp & ~1) === 0x200e)) ||
     cp === 0x061c
 }
@@ -63,7 +63,7 @@ export function isBidiControl(cp: number): boolean {
 // The number of grapheme clusters in text[start, end), read as if the text began at `start`
 // and ended at `end`. Unless `ends` is null, writes where each cluster ends to it from index
 // 0; it needs room for end - start values.
-export function findGraphemeEnds(table: GraphemeTable, text: string, start: number, end: number, ends: Int32Array | null): number {
+export function findGraphemeEnds(table: GraphemeTable, text: string, start: number, end: number, ends: Int32Array | null): Effects<{ "@state": "any"; "ends[*]": "grow"; "ends[#]": "any" }, number> {   // PAPER: annotation
   const { rules, transitions, skipped } = graphemeRules[table] ?? (graphemeRules[table] = parseGraphemeRules(table))
   const catCount = rules.catCount
   let state = START_STATE

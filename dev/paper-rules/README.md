@@ -77,15 +77,24 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
   a reassigned parameter, a parameter default, a shadowed callback, calls
   through a re-export or from another directory, a class key in a bound),
   each refused, and an instance after an ordinary type parameter, accepted.
+- `module-state.ts`: module-private confined state (`"@state"`,
+  `Effects<P, T>`, `Join<E, P>`): positive cases for a confined `let` lazy
+  cache, a `Partial<Record<...>>` cache, a nested `WeakMap<P, Map<K, Int32Array>>`
+  cache, a walker calling a confined helper, and a forwarding adapter with
+  `Join<E, { "@state": "any" }>`; negative controls refusing an escaping
+  container, a parameter absorbed into a `let` or `WeakMap` and mutated, an
+  escaping nested interior, an exported container, a direct parameter write
+  claiming `@state`, a `subarray` stored into a mutated cache, and `@state`
+  under an `else: "keep"` bound.
 
 ## The Pretext copy
 
 `pretext/src` is Pretext at commit
 `0dafecb370638ddc244909cc949efaf85b1efa26` (`~/GitHub/pretext`), with
 the prototype's edits and `src/paper.d.ts`, the effect language's
-declarations (`Footprint`, `AtMost`), a declaration file so that
-`AtMost`'s parameter, which its body does not name, is no unused one to
-TypeScript. Every edit is marked:
+declarations (`Footprint`, `AtMost`, `Effects`, `Join`), a declaration file
+so that their effect parameters, which their bodies do not name, are no
+unused ones to TypeScript. Every edit is marked:
 
 - `// PAPER`: a paper annotation (a bound, an instance, a visitor type's
   `Modifies<E, void>`, the verifier's declarations the instances need);

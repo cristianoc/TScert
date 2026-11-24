@@ -248,6 +248,44 @@ function at(xs: number[], i: SafeInt): number {
 }
 ```
 
+## Experimental effect-language annotations
+
+Annotations read only by the experimental paper-rules prototype
+([the mode's draft](drafts/paper-rules-mode.md),
+[An effect language for TScert](drafts/effect-languages.md)) and declared in
+a project's `paper.d.ts`. To the ordinary verifier their effect parameters
+carry no type meaning ([arguments without type meaning](SOURCE-CONTRACTS.md#arguments-without-type-meaning)),
+so they leave every ordinary verdict unchanged.
+
+- **`AtMost<P>`**: as an effect type parameter's constraint,
+  `<E extends AtMost<P>>`, bounds the effect variable `E` by the effect
+  literal `P` (with explicit `else` and declared-reach keys `"x.**"`).
+- **`Effects<P, T>`**: as a function declaration's return type (or as the `T`
+  of `Modifies<OrdP, Effects<P, T>>`), states the function's paper-language
+  effect `P` (including confined module-private state `"@state": c`), checked
+  against the function's body and its module's confinement obligations
+  (`OwnerConfined`).
+- **`Join<E, P>`**: as a call's effect type argument, `f<Join<E, P>>(…)`,
+  forwards an enclosing effect variable `E` joined pointwise with a closed
+  anchored effect `P` (such as `Join<E, { "@state": "any" }>`), checked by
+  showing both `E`'s bound and `P` lie within the callee's bound and the
+  callback's extra steps lie within `P`.
+- **`"@state"`**: as a region key in `Effects<P, T>`, `Join<E, P>`, or a
+  call's effect instance (`{ "@state": "any" }`), denotes the confined
+  module-private state of the defining module and its confined callees
+  (unexported `let` cells never mutated through, and unexported freshly
+  initialized containers that never escape and whose mutated nested interiors
+  are freshly acquired and never escape). By boundary closure
+  (`Confinement.ClosedOut`), `"@state"` is disjoint from every external root
+  region and declared reach `"x.**"`.
+
+```ts
+let cached: Config | null = null;
+export function getConfig(): Modifies<{ values: "init" }, Effects<{ "@state": "any" }, Config>> {
+  return cached ??= buildConfig();
+}
+```
+
 ## What is inferred, and where an annotation is required
 
 TScert infers the types of locals and of functions written as arguments,

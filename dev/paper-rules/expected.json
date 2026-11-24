@@ -192,5 +192,31 @@
       "walkSettling": "accepted",
       "walkUnbounded": "refused"
     }
+  },
+  "module-state.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "getBias": "accepted",
+      "lookupRule": "accepted",
+      "getCachedSlots": "accepted",
+      "walkLines": "accepted",
+      "collectWithCaches": "accepted",
+      "walkAdapter": "accepted",
+      "leakRecord": "accepted",
+      "writeLeakedRecord": "refused",
+      "absorbIntoLet": "accepted",
+      "mutateStashedLet": "refused",
+      "absorbIntoMap": "accepted",
+      "mutateAbsorbedMap": "refused",
+      "leakNestedInner": "accepted",
+      "writeLeakyNested": "refused",
+      "writeExported": "refused",
+      "lieAboutParam": "refused",
+      "absorbSubarray": "accepted",
+      "mutateSubarrayCache": "refused",
+      "walkPure": "accepted",
+      "callPureWithState": "refused",
+      "init": "accepted"
+    }
   }
 }

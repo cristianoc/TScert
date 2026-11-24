@@ -952,7 +952,7 @@ function narrowsLine(data: PreparedSegments, itemSegments: number[]): boolean {
 // fitted against a width under 0 as given, such a paragraph would be one line down to its own
 // width and walked under it, where the walkers can end a line that the whole fit takes
 // (findWholeLine; RESEARCH.md, Decisions Log, 2026-10-09, rich inline's width).
-function fitsWhole(flow: InternalPreparedRichInline, maxWidth: number): boolean {
+function fitsWhole(flow: InternalPreparedRichInline, maxWidth: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return flow.wholeWidth !== null && flow.wholeWidth <= maxWidth + getEngineProfile().lineFitEpsilon
 }
 
@@ -1005,7 +1005,7 @@ function getOpeningFit(flags: number[], from: number, to: number, extraWidth: nu
 // starts or ends inside its first and its last segment only. Where they start the line
 // (`startsLine`), the first of them adds what a line that starts with it does
 // (breakableLineStartExtras), as the walker's line does.
-function getPartWidth(data: PreparedSegments, i: number, from: number, to: number, startsLine: boolean): number {
+function getPartWidth(data: PreparedSegments, i: number, from: number, to: number, startsLine: boolean): Effects<{}, number> {   // PAPER: annotation
   const { breakableFitAdvances, breakableLineStartExtras, letterSpacing, items } = data
   const advances = breakableFitAdvances[i]
   if (advances === undefined || advances === null) throw new RangeError('missing value')
@@ -1075,7 +1075,7 @@ function createLine(
   startGraphemeIndex: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): RichInlineLineRange {
+): Effects<{ "@state": "any" }, RichInlineLineRange> {   // PAPER: annotation
   const { data, itemSegments } = flow
   const { widths, segmentFlags, lineStartExtras, letterSpacing } = data
   const items = data.items
@@ -1386,7 +1386,7 @@ export function walkRichInlineLineRanges<E extends AtMost<{ "prepared.**": "keep
   }
   const data = flow.data   // PAPER: the handle through a local
   paperAssume(data.segmentFlags.length === data.widths.length, "#356")   // PAPER: unsafe assume until #356
-  return walkPreparedLinesRaw<E>(data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E
+  return walkPreparedLinesRaw<Join<E, { "@state": "any" }>>(data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E with confined module state
     onLine(flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
       : createLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex))
   })

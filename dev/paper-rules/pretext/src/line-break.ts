@@ -147,7 +147,7 @@ export function isDiscretionaryLineEnd(
   segmentCount: number,
   endSegmentIndex: number,
   endGraphemeIndex: number,
-): boolean {
+): Effects<{}, boolean> {   // PAPER: annotation
   return endGraphemeIndex === 0 && endSegmentIndex > 0 && endSegmentIndex < segmentCount &&
     ((segmentFlags[endSegmentIndex - 1] ?? missing()) & KIND_BITS) === SOFT_HYPHEN
 }
@@ -255,7 +255,7 @@ function getTerminalLetterSpacing(
 // others whether it overflows, so the line APIs called once for a paragraph pass their width
 // through here and the loops stay written for numbers. The streams, called once for each
 // line, take their width as given (RESEARCH.md, Decisions Log, 2026-10-02).
-export function normalizeMaxWidth(maxWidth: number): number {
+export function normalizeMaxWidth(maxWidth: number): Effects<{}, number> {   // PAPER: annotation
   return maxWidth <= Infinity ? maxWidth : Infinity
 }
 
@@ -272,7 +272,7 @@ export function normalizeMaxWidth(maxWidth: number): number {
 export function normalizePreparedLineStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
-): Modifies<{ "cursor.*": "scalar" }, boolean> {   // PAPER: annotation
+): Modifies<{ "cursor.segmentIndex": "scalar"; "cursor.graphemeIndex": "scalar" }, boolean> {   // PAPER: annotation
   const { segmentFlags } = prepared
   const segmentCount = prepared.widths.length
   let segmentIndex = cursor.segmentIndex
@@ -1159,7 +1159,7 @@ function stepPreparedSimpleLineGeometry(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,
-): Modifies<{ values: "init"; "cursor.*": "scalar" }, number> {   // PAPER: annotation
+): Modifies<{ values: "init"; "cursor.segmentIndex": "scalar"; "cursor.graphemeIndex": "scalar" }, Effects<{ "@state": "any"; "cursor.segmentIndex": "any"; "cursor.graphemeIndex": "any" }, number>> {   // PAPER: annotation
   const { widths, segmentFlags, breakableFitAdvances, lineStartExtras, lineEndTrims, overflowLineEndTrims } = prepared
   const engineProfile = getEngineProfile()
   // A negative width lays out as 0, as in the complex walker.

@@ -78,7 +78,7 @@ export function getBreakLanguage(tag: string | null): BreakLanguage {
 // bytes, each followed by a copy of earlier bytes (length - 4, then distance back), every count a
 // little-endian base-128 varint. Packing keeps the tables a page parses small; a page unpacks only
 // its engine's tables.
-export function unpackTable(packed: string): Uint8Array {
+export function unpackTable(packed: string): Effects<{}, Uint8Array> {   // PAPER: annotation
   const input = atob(packed)
   let at = 0
   const varint = (): number => {
@@ -110,7 +110,7 @@ export function unpackTable(packed: string): Uint8Array {
 
 // The little-endian base-128 varints a table in base64 holds. Tables of varints ship without
 // unpackTable's packing, which saves them nothing once the bundle is compressed.
-export function unpackVarints(base64: string): Int32Array {
+export function unpackVarints(base64: string): Effects<{}, Int32Array> {   // PAPER: annotation
   const input = atob(base64)
   const values = new Int32Array(input.length)
   let count = 0
@@ -134,7 +134,7 @@ export type ClassTable = { readonly index: Uint16Array, readonly values: Uint8Ar
 // For c in U+0000..U+10FFFF, which is every code point a scan decodes from UTF-16: `index` has no
 // entry above that, where the engines' tries give their error value (unicode/ucptrie.h:615-620;
 // getLineBreakClass in src/gecko-line-breaks.ts gives ICU4X's itself).
-export function getClass(table: ClassTable, c: number): number {
+export function getClass(table: ClassTable, c: number): Effects<{}, number> {   // PAPER: annotation
   return table.values[((table.index[c >> 8] ?? missing()) << 8) | (c & 0xff)] ?? missing()
 }
 
@@ -143,7 +143,7 @@ export function getClass(table: ClassTable, c: number): number {
 // engines class alike are stored once. `remap` has one map's class for each joint class, and
 // `blocks` is how many blocks its table takes. Throws for a list that doesn't end at U+10FFFF, an
 // empty one included.
-export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: number): ClassTable {
+export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: number): Effects<{}, ClassTable> {   // PAPER: annotation
   const index = new Uint16Array(0x1100)
   const values = new Uint8Array(blocks << 8)
   // The block each class fills whole, once a run covers one.
@@ -187,7 +187,7 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
 let classRuns: Int32Array | null = null
 let classRemaps: Uint8Array | null = null
 
-export function unpackClasses(map: ClassMap): ClassTable {
+export function unpackClasses(map: ClassMap): Effects<{ "@state": "any" }, ClassTable> {   // PAPER: annotation
   const [row, blocks] = classMaps[map]
   const runs = classRuns ??= unpackVarints(classRunsVarints)
   classRemaps ??= unpackTable(classRemapsPacked)
@@ -276,7 +276,7 @@ export type BreakRules = {
 // starts: the rows skipped since the last such row, how many rows back the row it copies is, or 0
 // for none, how many cells differ after that, and for each the cells skipped since the last one
 // and its value.
-export function unpackStateRows(width: number, states: number, base: Uint16Array | null, differences: Int32Array): Uint16Array {
+export function unpackStateRows(width: number, states: number, base: Uint16Array | null, differences: Int32Array): Effects<{}, Uint16Array> {   // PAPER: annotation
   const rows = new Uint16Array(states * width)
   if (base !== null) rows.set(base)
   for (let i = 0, row = -width; i < differences.length;) {
@@ -293,7 +293,7 @@ export function unpackStateRows(width: number, states: number, base: Uint16Array
 }
 
 // A table's rows. The rows of the table they start from are unpacked for it and not kept.
-function unpackTableRows(table: RuleTable): Uint16Array {
+function unpackTableRows(table: RuleTable): Effects<{}, Uint16Array> {   // PAPER: annotation
   const [catCount, , , states, base, differences] = ruleTables[table]
   return unpackStateRows(catCount + 3, states, base === null ? null : unpackTableRows(base), unpackVarints(differences))
 }
@@ -301,7 +301,7 @@ function unpackTableRows(table: RuleTable): Uint16Array {
 const breakRules: Partial<Record<RuleTable, BreakRules>> = {}
 
 // A line or character table's rules, unpacked the first time a scan asks for them.
-export function getBreakRules(table: RuleTable): BreakRules {
+export function getBreakRules(table: RuleTable): Effects<{ "@state": "any" }, BreakRules> {   // PAPER: annotation
   let rules = breakRules[table]
   if (rules === undefined) {
     const [catCount, dictCategoriesStart, lookAheadResultsSize] = ruleTables[table]

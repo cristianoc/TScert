@@ -30,14 +30,15 @@ structure AccPath where
   deriving Repr, BEq
 
 /-- A bound entry's region, relative to a parameter: its spine, its cells,
-a field, every field, or its reach through the access paths its declared
-type admits (`"x.**"`). -/
+a field, every field, its reach through the access paths its declared type
+admits (`"x.**"`), or confined module-private state (`"@state"`). -/
 inductive Key where
   | spine
   | cells
   | field (f : String)
   | fields
   | reach (acc : List AccPath)
+  | moduleState
   deriving Repr, BEq
 
 /-- An effect at a callee's parameters: its entries and its `else`. -/
@@ -108,13 +109,14 @@ def freshSlots (k : Knowledge) : List Nat :=
 
 /-- A region of a callee's parameter key at a caller's slot, in the form
 the facts' supports take: a key at the empty path of the slot, the spine
-at the key `[]`; none for a reach, which is no region of a footprint. -/
+at the key `[]`; none for a reach or confined module state, which are no
+slot-rooted footprint regions. -/
 def keyRegion (s : Nat) : Key → Option Footprints.Region
   | .spine => some (Footprints.Region.path s [] arraySpineKey)
   | .cells => some (Footprints.Region.cells s)
   | .field f => some (Footprints.Region.path s [] (.str f))
   | .fields => some (Footprints.Region.fields s)
-  | .reach _ => none
+  | .reach _ | .moduleState => none
 
 /-- The bound's entries as regions at the call's slots. -/
 def boundAt (u : Unit) (d : Nat) (b : Bound) : Footprints.Footprint :=
@@ -174,31 +176,48 @@ def atCategory : Footprints.Region → Footprints.Change → Footprints.Change
   | .spine .., c => c.onSpine
   | _, c => c.onValue
 
+/-- Whether a support region may overlap confined module-private state
+`"@state"`: class/all regions, full field wildcards, or a cell location
+(`Role.cell`, keyed by `"value"` in the calculus). Every other parameter- or
+local-rooted region (a named field under any other key, a spine, or element
+cells) is disjoint from confined module state by
+`EffectLanguage.Model.closedOut_region_disjoint`. -/
+def mayOverlapModState : Footprints.Region → Bool
+  | .cls _ | .all | .fields _ | .pathFields _ _ => true
+  | .field _ (.str "value") | .path _ [] (.str "value") => true
+  | _ => false
+
 /-- **The pair rule**: the callback's effect `ε` is within `δ` on `r`
 (Definition "Order") when one of the two effects `ε` is included in is
 (the meet, rules Anch and Bound):
 
-- Anch, `{old: any}`: `r` is an own location of an object the body
-  allocated, so no `old` location; its `else` is `keep`;
+- Anch, `{old: any}` (generalized for confined module state): `r` is an own
+  location of an object the body allocated, so no `old` or confined module
+  location; its `else` is `keep`;
 - Bound: every bound entry not disjoint from `r` is within `δ` (the
-  existing `respects`, with its separation query), and the bound's `else`
+  existing `respects`, with its separation query), any confined module-state
+  entry `modChange` that may overlap `r` is within `δ`, and the bound's `else`
   is within `δ` unless `r` lies in an entry: equal to an entry's region, or
   in a reach entry's declared reach. -/
 def keepsPair (q : Footprints.SepQuery) (fresh : List Nat) (bound : Footprints.Footprint) (otherwise : Footprints.Change)
-    (reach : Footprints.Region → Bool) (e : Footprints.Region × Footprints.Change) : Bool :=
+    (reach : Footprints.Region → Bool) (modChange : Footprints.Change)
+    (e : Footprints.Region × Footprints.Change) : Bool :=
   (ownSlot e.1).any fresh.contains ||
     (Footprints.respects q [e] bound &&
+      (!mayOverlapModState e.1 || (atCategory e.1 modChange).le e.2) &&
       ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (·.1 == e.1)))
 
 /-- An effect the layer reads at a call: its entries at the call's slots,
-its `else`, the roots of its reach entries with their access paths, and
-the slots of storage it leaves alone by Anch (none at a call whose effect
-is not an anchored variable). -/
+its `else`, the roots of its reach entries with their access paths, the
+maximum change on confined module state `"@state"`, and the slots of storage
+it leaves alone by Anch (none at a call whose effect is not an anchored
+variable). -/
 structure CallEff where
   fresh : List Nat
   bound : Footprints.Footprint
   otherwise : Footprints.Change
   roots : List (Nat × List AccPath)
+  modChange : Footprints.Change := .keep
 
 /-- The facts of the call's entry that every effect of `effs` keeps, past
 the call's result. The effects are the components of one call's effect
@@ -207,7 +226,7 @@ every one keeps survive. -/
 def keptBy (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
   let keeps := fun (S : Footprints.Footprint) => !effs.isEmpty && effs.all fun c =>
-    S.all (keepsPair q c.fresh c.bound c.otherwise (inReach (reachPairs k c.roots)))
+    S.all (keepsPair q c.fresh c.bound c.otherwise (inReach (reachPairs k c.roots)) c.modChange)
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S
@@ -226,27 +245,36 @@ def reachRoots (es : List (Nat × Key × Footprints.Change)) : List (Nat × List
     | .reach acc => some (s, acc)
     | _ => none
 
+/-- The largest change stated for confined module state `"@state"` in a list
+of entries (`keep` when none). -/
+def modChangeOf (es : List (Nat × Key × Footprints.Change)) : Footprints.Change :=
+  es.foldl (fun acc (_, key, ch) => match key with | .moduleState => acc.max ch | _ => acc) .keep
+
 /-- At a call of a bounded callback parameter: the callback's effect is
 the variable, within the bound (Bound) and within `{old: any}` (Anch). -/
 def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
   let roots := reachRoots (b.entries.map fun (p, key, c) => (slotOf u d p, key, c))
-  keptBy [{ fresh := freshSlots k, bound := boundAt u d b, otherwise := b.otherwise, roots }] stable k
+  keptBy [{ fresh := freshSlots k, bound := boundAt u d b, otherwise := b.otherwise, roots,
+            modChange := modChangeOf b.entries }] stable k
 
 /-- At a call of a function with effect parameters (rule Inst's
 conclusion): the call's effect is the callee's effect with each variable
 replaced by its instance, and each instance is within its bound, so the
 call's effect is within the union of the bounds and the callee's own
 effect, read at the actual arguments' slots: one component each. No Anch:
-the instance may change the caller's own storage. Where an entry's
-parameter receives no slot, nothing is kept. -/
+the instance may change the caller's own storage. Confined module-state
+entries (`"@state"`) require no argument slot. Where a parameter-rooted
+entry's parameter receives no slot, nothing is kept. -/
 def atCall (c : QCall) (args : List Tm) : Option (List CallEff) :=
   let slot := fun (p : Nat) => match args[p]? with
     | some (.var a) => some a
     | _ => none
   c.components.mapM fun pe => do
-    let es ← pe.entries.mapM fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
+    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState
+    let es ← paramEntries.mapM fun (p, key, ch) => (slot p).map fun a => (a, key, ch)
     let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
-    pure { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es }
+    pure { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es,
+           modChange := modChangeOf pe.entries }
 
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
@@ -330,13 +358,14 @@ def changeOf : String → Option Footprints.Change
   | "keep" => some .keep | "init" => some .init | "scalar" => some .scalar
   | "extend" => some .extend | "grow" => some .grow | "any" => some .any | _ => none
 
-/-- A key at a parameter list: `"x[*]"` its spine, `"x[#]"` its cells,
-`"x.f"` a field, `"x.*"` every field, `"x.**"` its reach with the access
-paths the side file gives; none for any other key (a path through a
-field), which the layer does not read. -/
+/-- A key at a parameter list: `"@state"` confined module-private state,
+`"x[*]"` its spine, `"x[#]"` its cells, `"x.f"` a field, `"x.*"` every field,
+`"x.**"` its reach with the access paths the side file gives; none for any
+other key (a path through a field), which the layer does not read. -/
 def keyOf (params : List String) (reach : String → Option (List AccPath)) (key : String) : Option (Nat × Key) :=
   let root := fun (n : Nat) => String.ofList (key.toList.take (key.length - n))
-  if key.endsWith ".**" then do
+  if key == "@state" then some (0, .moduleState)
+  else if key.endsWith ".**" then do
     let acc ← reach key
     (params.idxOf? (root 3)).map (·, .reach acc)
   else if key.endsWith "[*]" then (params.idxOf? (root 3)).map (·, .spine)
