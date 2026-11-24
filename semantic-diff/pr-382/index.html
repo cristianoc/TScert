@@ -1,0 +1,150 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-382"><code>89f38a8783628396261b188a45ccdf0045d9891f..pr-382</code></a><ul><li>1 commit, units 11 verified</li><li>changes: 4 Rule, 1 Check, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></li><li>wire: EffectCodec guard tags add notNull, notUndefined, notTrue, notFalse</li></ul></li></ul></section>
+<h2 id="g-pr-382"><code>89f38a8783628396261b188a45ccdf0045d9891f..pr-382</code></h2><article class="card" id="c-472b4e205"><header><div><div class="sha">472b4e205 · Cristiano Calcagno · Nov 24, 12:27</div><h3>Prove four single-pass rules and eliminate 13 #356 assumes in layout and rich-inline</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>dev/paper-rules/pretext/src/layout.ts#prepareWithSegments</span><span>dev/paper-rules/pretext/src/layout.ts#createLayoutLine</span><span>dev/paper-rules/pretext/src/layout.ts#walkLineRanges</span><span>dev/paper-rules/pretext/src/layout.ts#measureLineStats</span><span>dev/paper-rules/pretext/src/layout.ts#layoutNextLine</span><span>dev/paper-rules/pretext/src/layout.ts#layoutWithLines</span><span>dev/paper-rules/pretext/src/rich-inline.ts#findWholeLine</span><span>dev/paper-rules/pretext/src/rich-inline.ts#createLine</span><span>dev/paper-rules/pretext/src/rich-inline.ts#findSegmentSources</span><span>dev/paper-rules/pretext/src/rich-inline.ts#materializeRichInlineLineRange</span><span>dev/paper-rules/pretext/src/rich-inline.ts#measureRichInlineStats</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's layout.ts and rich-inline.ts carried 25 <code>#356</code> paperAssume calls restating <code>segmentFlags.length === widths.length</code> after object spreads, fresh array allocations pushed in loops, pure identity unwrappers (getInternalPrepared / getInternalPreparedRichInline), and calls to verified <code>Effects&lt;P, T&gt;</code> helpers or walkers with omitted optional arguments. Meanwhile, <code>@ensures</code> and <code>@requires</code> clauses could express positive guards (<code>p === null || ...</code>) but not negated guards (<code>p !== null || ...</code>).</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">single-pass verifier: negated guard tags and call-site guard discharge</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">GuardTag gains <code class="m-code">notNull</code>, <code class="m-code">notUndef</code>, <code class="m-code">notTru</code>, and <code class="m-code">notFls</code> with</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">GuardTag</span>.holds</code> <span class="m-text">and</span> <code class="m-code"><span class="tk-t">GuardTag</span>.complement</code>.</span></div><div class="row"><span><span class="m-text">At a call return, <code class="m-code">dischargeGuards</code> releases any guarded postcondition</span></span></div><div class="row"><span><span class="m-text">whose guard tag is ruled out by known slot facts</span> (<var>e</var>.<var>g</var>. <span class="m-text">passing</span> <code class="m-code"><span class="tk-k">null</span></code></span></div><div class="row"><span><span class="m-text">discharges <code class="m-code">p !== <span class="tk-k">null</span></code>), and <code class="m-code">releaseFact</code> releases guarded facts on</span></span></div><div class="row"><span><span class="m-text">guarded entailment</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">single-pass verifier: object spread preserves links and field-rooted index facts</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">At <code class="m-code"><span class="tk-t">Tm</span>.merge a b</code>, <code class="m-code">merge_alloc_sound</code> transfers read links and</span></span></div><div class="row"><span><span class="m-text">field-rooted index facts (<code class="m-code">linear</code>, <code class="m-code">spineApart</code>, <code class="m-code">every</code>) from every key</span></span></div><div class="row"><span><span class="m-text">of <code class="m-code">a</code> that <code class="m-code">b</code> never defines (<code class="m-code">srcNever</code>) onto the freshly allocated</span></span></div><div class="row"><span><span class="m-text">merged object</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">single-pass verifier: fresh array spine separation from existing field paths</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">At every array object allocation (<code class="m-code">wholeStepOf</code> materializing all store</span></span></div><div class="row"><span><span class="m-text">facts), <code class="m-code">freshSpineApart</code> emits <code class="m-code">spineApart <span class="tk-n">0</span> [] (s + <span class="tk-n">1</span>) p</code> against every</span></span></div><div class="row"><span><span class="m-text">existing field-rooted array path <code class="m-code">(s, p)</code> named unconditionally in the</span></span></div><div class="row"><span><span class="m-text">state's index facts, so pushing into a freshly allocated local array keeps</span></span></div><div class="row"><span><span class="m-text">existing field-rooted array invariants across loops</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">single-pass verifier: direct identity-return alias via transport</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A direct identity function returning parameter <code class="m-code">p</code> unchanged</span></span></div><div class="row"><span>(<code class="m-code">identityReturnParam</code> / <code class="m-code">identityReturn</code>) <span class="m-text">establishes</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">FormulaSchema</span>.transport</code> <span class="m-text">linking slot <code class="m-code"><span class="tk-n">0</span></code> (result) to parameter</span> <code class="m-code">p</code>,</span></div><div class="row"><span><span class="m-text">which <code class="m-code">transportLinks</code> materializes as an alias link at every call site</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">paper-rules prototype: confined calls, caller-rooted instances, omitted optional arguments</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Calls to monomorphic <code>Effects&lt;P, T&gt;</code> helpers were not framed in the prototype layer; quantified calls dropped caller-parameter-rooted instances and forwarded <code>E</code> / <code>Join&lt;E, P&gt;</code> bounds in favor of callee bounds; <code>atCall</code> bailed whenever an optional parameter was omitted (<code>args[p]? = none</code>); and destructuring <code>const { segments } = flow.data</code> plus primitive-array <code>.join</code> were unread by <code>verifyStatedEffect</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a call to a verified monomorphic <code>Effects&lt;P, T&gt;</code> helper</span><span class="tgt"><span class="m-text">emits a prototype call framed by</span> <code class="m-code"><span class="tk-t">ConfinedRule</span></code>;</span></div><div class="obligation"><span class="where"><span class="at">at</span> a quantified call with caller-parameter-rooted instance or forwarded <code>E</code> / <code>Join&lt;E, P&gt;</code></span><span class="tgt"><span class="m-text">preserves the tighter caller-scope bound via</span> <code class="m-code">callerComponents</code>;</span></div><div class="obligation"><span class="where"><span class="at">at</span> <code>atCall</code></span><span class="tgt"><span class="m-text">drops parameter-rooted entries whose argument is omitted or a primitive literal (empty heap footprint)</span>;</span></div><div class="obligation"><span class="where"><span class="at">at</span> <code>verifyStatedEffect</code></span><span class="tgt"><span class="m-text">resolves <code class="m-code"><span class="tk-k">const</span></code> object destructuring bindings and accepts <code class="m-code"><span class="tk-t">Array</span>.prototype.join</code> on declared closed primitive arrays with omitted or string-literal separator</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Clause documentation listed only positive <code>=== null</code> / <code>=== undefined</code> guards.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Documents <code>p === t</code> and <code>p !== t</code> guards against <code>null</code>, <code>undefined</code>, <code>true</code>, and <code>false</code> in preconditions, postconditions, and type invariants.</p></div></figure></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>All four single-pass extensions are proved in Lean with zero sorry, zero project axioms, and zero warnings (<code>Verification.Tests.AxiomCheck</code> and <code>Verification.Paper.TolerantFrames.Tests.AxiomCheck</code> pass; <code>mode8Accepted_sound</code> and its premise are unchanged). Prototype changes stay confined to <code>PaperRulesPrototype.lean</code> and <code>dev/paper-annotations.mts</code> under the existing <code>paperKeptFactsSurvive</code> assumption.</p></div>
+<h4 class="change">Gap</h4><div class="prose"><p>12 <code>#356</code> assumes remain across layout.ts (4) and rich-inline.ts (8): - 3 sites (<code>layout.ts:118</code>, <code>rich-inline.ts:219,372</code>) depend on proving <code>measureAnalysis(..., null)</code> preserves <code>widths.length === at</code> across calls/loops while keeping <code>src/prepare.ts</code> ordinary-verified; - 3 sites (<code>rich-inline.ts:862,897,904</code> in <code>setEmptyObjectFacts</code>) depend on loop-invariant <code>fresh</code> slots in <code>SinglePass</code> so <code>zeros(count)</code> can be proved <code>Fresh&lt;number[]&gt;</code> and separated from <code>data.widths</code>; - 3 sites (<code>layout.ts:168,309</code>, <code>rich-inline.ts:1249</code>) follow calls to unannotated <code>line-break.ts</code> functions (<code>countPreparedLines</code>, <code>stepPreparedLineGeometryFromStart</code>, owned separately); - 2 sites (<code>layout.ts:357</code>, <code>rich-inline.ts:1388</code>) are inside visitor closures capturing <code>prepared</code>/<code>flow</code>; - 1 site (<code>rich-inline.ts:738</code>) depends on <code>TypedArray.prototype.subarray</code> length plus counting-bound <code>widths.length &lt;= flags.length</code> across two loops.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.GuardTag.complement_not_holds · Verification.HeapKnowledge.dischargeGuards_holds · Verification.HeapKnowledge.releaseFact · Verification.ObjectMerge.srcNever_sound · Verification.ObjectMerge.mergeParts_lookup_a · Verification.HeapExpressionRules.merge_alloc_sound · Verification.IndexWrites.freshSpineApart_holds · Verification.CodeConditions.returnAliasFormula_holds · Verification.PromiseCalls.transportLinks_holds · Verification.Source.Claims.PassUnitRealize.safePostExc_identityReturn</dd><dt>Wire</dt><dd>EffectCodec guard tags add notNull, notUndefined, notTrue, notFalse</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>#356 assumes in layout.ts and rich-inline.ts 25 -&gt; 12 (layout.ts 10 -&gt; 4, rich-inline.ts 15 -&gt; 8) · Pretext paper-rules suite 78/78 accepted, src/prepare.ts ordinary verified</dd><dt>Tests</dt><dd><span class="test pos">negated-guard-clause</span> <span class="test neg">invalid-negated-guard-clause</span> <span class="test pos">object-spread-index-facts</span> <span class="test neg">invalid-object-spread-override</span> <span class="test pos">fresh-array-spine-apart</span> <span class="test neg">invalid-aliased-array-push</span> <span class="test pos">identity-return-alias</span> <span class="test neg">invalid-non-identity-return</span></dd></dl>
+<details><summary>40 files changed, 1565 insertions(+), 252 deletions(-)</summary><pre class="code"> dev/paper-annotations.mts                          |  91 ++++-
+ dev/paper-rules/pretext/src/analysis.ts            |   4 +-
+ dev/paper-rules/pretext/src/layout.ts              |   7 +-
+ dev/paper-rules/pretext/src/rich-inline.ts         |  20 +-
+ docs/ANNOTATIONS.md                                |   3 +-
+ docs/ARITHMETIC.md                                 |   9 +-
+ lean/PaperRulesPrototype.lean                      |  35 +-
+ lean/Verification/Programs/CodeConditions.lean     | 151 ++++++--
+ .../Verification/Programs/HeapExpressionRules.lean | 408 ++++++++++++++++++++-
+ lean/Verification/Programs/IndexWrites.lean        | 198 ++++++++--
+ lean/Verification/Programs/ObjectMerge.lean        |  86 +++++
+ lean/Verification/Programs/PromiseCalls.lean       | 122 +++++-
+ lean/Verification/Programs/SinglePass.lean         |  18 +-
+ .../Programs/TolerantFramesMergeGuarded.lean       |   2 +-
+ .../Programs/TolerantFramesStepLink.lean           |   6 +-
+ lean/Verification/Semantics/HeapKnowledge.lean     | 146 ++++++--
+ lean/Verification/Semantics/IndexFacts.lean        |  61 ++-
+ lean/Verification/Semantics/KnowledgeExpand.lean   |   8 +-
+ lean/Verification/Semantics/StepRelations.lean     |   5 +-
+ .../Verification/Semantics/SurvivalSeparation.lean |  74 ++--
+ lean/Verification/Source/Claims/FragmentFront.lean |   2 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  23 +-
+ lean/Verification/Source/Claims/PassUnitFile.lean  |  10 +-
+ .../Source/Claims/PassUnitRealize.lean             | 152 +++++++-
+ lean/Verification/Source/EffectCodec.lean          |   2 +
+ lean/Verification/Source/Lowering/Types.lean       |  27 +-
+ pipeline/cases.mts                                 |   8 +
+ pipeline/examples/fresh-array-spine-apart.ts       |  17 +
+ pipeline/examples/identity-return-alias.ts         |  15 +
+ pipeline/examples/invalid-aliased-array-push.ts    |  14 +
+ pipeline/examples/invalid-negated-guard-clause.ts  |  11 +
+ pipeline/examples/invalid-non-identity-return.ts   |  17 +
+ .../examples/invalid-object-spread-override.ts     |  11 +
+ pipeline/examples/negated-guard-clause.ts          |  19 +
+ pipeline/examples/object-spread-index-facts.ts     |  10 +
+ tools/bound-annotations.mts                        |  12 +-
+ tools/declaration-types.mts                        |   2 +-
+ tools/diagnostic.mts                               |   5 +-
+ tools/fact-text.mts                                |   4 +-
+ tools/type-graph.mts                               |   2 +-</pre></details>
+</article>
+</main></body></html>
