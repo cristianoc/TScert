@@ -302,12 +302,14 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
   let n := r.node l hl
   (r.given t.label = false → IncomingRecorded r.w t.label
     (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry s.sdK.st.result
-      (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l))) ∧
+      (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l)
+      (s.env.live[t.label]!))) ∧
   (r.given t.label = false → 2 ≤ (r.w.incoming t.label).length →
     MergeRecorded r.edgesIn t.label (handlerCtx n.c (s.sd.thrownTy.getD []),
       atSlotsOf (s.sd.thrown :: n.entry.names)
         (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry s.sdK.st.result
-          (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l)).2, t.mapping))
+          (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l)
+          (s.env.live[t.label]!)).2, t.mapping))
 
 /-- Handler edge checks from the trace, under the structural head-entry
 and incoming-record leaves. Type admission, type checks, head queries,
@@ -341,7 +343,7 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
       (r.node l hl).c (r.node l hl).entry s.sdK.st s.en.here s.sd.outFresh
       (s.sd.thrownTy.getD []) s.sd.thrown t := by
     have hK : s.sdK = SinglePass.keptDone s.env l s.en s.sd := rfl
-    refine ⟨admits, ?_, ?_, (handlerRecords t ht).1, (handlerRecords t ht).2, ?_⟩
+    refine ⟨admits, ?_, ?_, fun hg => ⟨_, (handlerRecords t ht).1 hg, (handlerRecords t ht).2 hg⟩, ?_⟩
     · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext] using typed
     · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, headFlag, writtenContext] using asserted
     · intro hg

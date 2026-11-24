@@ -161,7 +161,7 @@ theorem pushOk_of_exit {c : Target.RunCall G I} {tl : Nat} {m : PointClaims.Mapp
     {names pushedNames : List Nat} {pushed isHandler outFresh : Bool} {entry : SinglePass.State}
     {store : SinglePass.Store} {result width next : Nat} {Γ : List (ProgramTyping.Ty ι)}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    {implies : List (PromiseCalls.Implication ι)}
+    {implies : List (PromiseCalls.Implication ι)} {live : SinglePass.LiveSlots}
     (hw : match m with
       | none => names.length = (passCtx c tl).length
       | some slots => slots.length = (passCtx c tl).length ∧ ∀ j ∈ slots, j < names.length)
@@ -170,7 +170,7 @@ theorem pushOk_of_exit {c : Target.RunCall G I} {tl : Nat} {m : PointClaims.Mapp
     (hf : ∀ x ∈ entry.fresh, x < next) (hr : result < next) :
     PushOk c tl (SinglePass.edgeTransfer names m pushed isHandler outFresh entry result
       (SinglePass.edgeStoreOf G Γ entry.store store names pushedNames width pushed isHandler observed promote)
-      implies).1 next :=
+      implies live).1 next :=
   ⟨edgeTransfer_width implies hw,
     edgeTransfer_wf (edgeStoreOf_wf we ws names pushedNames width pushed isHandler observed promote) implies,
     edgeTransfer_below hpos hn (edgeStoreOf_below we he hs hn hp width pushed isHandler observed promote) hf hr⟩

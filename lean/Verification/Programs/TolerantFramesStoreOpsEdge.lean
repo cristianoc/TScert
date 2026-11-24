@@ -95,9 +95,9 @@ theorem edgeStoreOf_wf {G : NormalGraph ι} {Γ : List (ProgramTyping.Ty ι)} {e
 /-- **An edge's transfer keeps the store well-formed**: the target's store is
 the edge's store without the dropped names (`drop_wf`). -/
 theorem edgeTransfer_wf [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping} {pushed isHandler outFresh : Bool}
-    {entry : State} {result : Nat} {edgeStore : Store} (ws : StoreWF edgeStore)
+    {entry : State} {result : Nat} {edgeStore : Store} {live : SinglePass.LiveSlots} (ws : StoreWF edgeStore)
     (implies : List (PromiseCalls.Implication ι)) :
-    StoreWF (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.store :=
+    StoreWF (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies live).1.store :=
   drop_wf ws _
 
 /-- **Where a mapping's last run starts** (`orderedSuffix.down`): at most
@@ -151,18 +151,18 @@ theorem mapNames_length (names slots : List Nat) : (mapNames names (some slots))
 /-- **An edge's transfer has the mapping's width** (`mapNames_length`); the
 identity mapping keeps the source's names. -/
 theorem edgeTransfer_names [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping} {pushed isHandler outFresh : Bool}
-    {entry : State} {result : Nat} {edgeStore : Store} (implies : List (PromiseCalls.Implication ι)) :
-    (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.names = mapNames names m :=
+    {entry : State} {result : Nat} {edgeStore : Store} {live : SinglePass.LiveSlots} (implies : List (PromiseCalls.Implication ι)) :
+    (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies live).1.names = mapNames names m :=
   rfl
 
 /-- **The target's width** (`mapNames_length`): an edge whose mapping
 reads only source slots gives the target as many names as the mapping has
 slots; the identity mapping as many as the source. -/
 theorem edgeTransfer_width [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping}
-    {pushed isHandler outFresh : Bool} {entry : State} {result : Nat} {edgeStore : Store}
+    {pushed isHandler outFresh : Bool} {entry : State} {result : Nat} {edgeStore : Store} {live : SinglePass.LiveSlots}
     (implies : List (PromiseCalls.Implication ι)) {w : Nat}
     (hw : match m with | none => names.length = w | some slots => slots.length = w ∧ ∀ j ∈ slots, j < names.length) :
-    (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.names.length = w := by
+    (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies live).1.names.length = w := by
   rw [edgeTransfer_names]
   cases m with
   | none => exact hw

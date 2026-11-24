@@ -100,10 +100,11 @@ theorem exitDeliversY_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → 
     {m : Nat}
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (hmap : MapNamesSound (if pushed then result :: entry.names else entry.names) t.mapping)
+    {live : SinglePass.LiveSlots}
     (hrec : (edgeTransfer (if pushed then result :: entry.names else entry.names) t.mapping pushed false outFresh
       entry result (edgeStoreOf G (if pushed then A :: Γ else Γ) entry.store store
         (if pushed then result :: entry.names else entry.names) (result :: entry.names) width pushed false observed
-        promote) (I ++ freshImplOf pushed false ys entry.names result)) ∈ w.incoming t.label)
+        promote) (I ++ freshImplOf pushed false ys entry.names result) live) ∈ w.incoming t.label)
     (hfo : ∀ v, pushed = true → outFresh = true → result ∉ entry.fresh → FreshAt m v)
     (ρ : Env)
     (htc : ∀ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →

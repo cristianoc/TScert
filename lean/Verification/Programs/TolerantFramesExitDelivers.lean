@@ -114,17 +114,20 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
       (assertionSource G (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA)
           (SinglePass.outAllOf G c st.stepOut) (i == 0)) req
         (exitAssertFacts G c entry st pushed observed promote req t.mapping) t.mapping observed) req t.mapping = true
-  pushedIn : IncomingRecorded w t.label (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
-    (exitStore G c entry st pushed observed promote)
-    (w.implies l ++ freshImplOf pushed false ysE entry.names st.result))
-  merged : 2 ≤ (w.incoming t.label).length →
-    MergeRecorded edgesIn t.label (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
-        (i == 0),
-      atSlotsOf (normalNames entry st pushed)
-        (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
-          (exitStore G c entry st pushed observed promote)
-          (w.implies l ++ freshImplOf pushed false ysE entry.names st.result)).2,
-      t.mapping)
+  /-- The state and implications the exit carries in, at the target's
+  slots read `live`, and at a merge the edge as the merge reads it. -/
+  pushedIn : ∃ live : SinglePass.LiveSlots,
+    IncomingRecorded w t.label (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
+      (exitStore G c entry st pushed observed promote)
+      (w.implies l ++ freshImplOf pushed false ysE entry.names st.result) live) ∧
+    (2 ≤ (w.incoming t.label).length →
+      MergeRecorded edgesIn t.label (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
+          (i == 0),
+        atSlotsOf (normalNames entry st pushed)
+          (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
+            (exitStore G c entry st pushed observed promote)
+            (w.implies l ++ freshImplOf pushed false ysE entry.names st.result) live).2,
+        t.mapping))
 
 /-- **The checks at a reassigned graph**: the same checks there
 (`ExitTyped.reassign`, `assertionQuery_reassign`; the edge's facts, the
@@ -145,7 +148,6 @@ theorem NonHeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImage
     unfold assertionSource at this ⊢
     exact (assertionQuery_reassign G η _ _ req _ t.mapping observed).trans this
   pushedIn := hc.pushedIn
-  merged := hc.merged
 
 /-- **The state after a step a normal exit reads, with the result's
 freshness**: `NodeExitsY`'s state, kept yields and output, and, where the
@@ -189,6 +191,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
       (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
+  obtain ⟨_, hpin, hmerged⟩ := hc.pushedIn
   have hYA := hA ρ m s' v hF
   have hYE := hE ρ m s' v hF
   obtain ⟨hS, _, hout, hfr⟩ := hF
@@ -232,7 +235,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   have htc := (hc.typed hvac).env hsub hΓ hko hr houtL hh ho'
   -- The edge's state.
   have hT := normal_edge_delivers (w := w) (ctx := ctx) (s := ⟨n + 1, W, h, pos, adm, hh⟩) (width := c.context.length)
-    hS ho hpo hpp heo (fun _ => hYE) hmap (fun _ hf hn => hfr hf hn) hc.pushedIn.mem htc
+    hS ho hpo hpp heo (fun _ => hYE) hmap (fun _ hf hn => hfr hf hn) hpin.mem htc
   -- The written assertion at the context the yields `ysA` refine.
   have hrA := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho
     (yieldsOk_atSlots hnames hYA) hout
@@ -249,7 +252,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     | true => simpa using hn'
     | false => simpa using slotsNamed_tail hn'
   exact ⟨⟨hT, hAs⟩, fun hg hlen =>
-    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss
+    joinedAt_of_exit (given := given) (k := m) (hmerged hlen).mem hrA hss
       (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg hlen⟩
 
 /-- **What `exitStep` checks on the normal exit at position `i` into a
@@ -484,12 +487,15 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (assertionSource G (handlerCtx c TT) req (handlerAssertFacts G c TT entry st x req t.mapping) t.mapping none) req
       t.mapping = true
-  pushedIn : «given» t.label = false → IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
-    (handlerStore G c TT entry st x) (w.implies l))
-  merged : «given» t.label = false → 2 ≤ (w.incoming t.label).length →
-    MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names)
-      (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
-        (handlerStore G c TT entry st x) (w.implies l)).2, t.mapping)
+  /-- The state and implications the exit carries in, at the target's
+  slots read `live`, and at a merge the edge as the merge reads it. -/
+  pushedIn : «given» t.label = false → ∃ live : SinglePass.LiveSlots,
+    IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
+      (handlerStore G c TT entry st x) (w.implies l) live) ∧
+    (2 ≤ (w.incoming t.label).length →
+      MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names)
+        (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
+          (handlerStore G c TT entry st x) (w.implies l) live).2, t.mapping))
   head : «given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat),
@@ -569,7 +575,8 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   have htc := hty.env hsub heh hko heh (fun h => by cases h) hh (fun o ho => by cases ho)
   cases hg : given t.label with
   | false =>
-    have hrec := (hc.pushedIn hg).mem
+    obtain ⟨_, hpin, hmerged⟩ := hc.pushedIn hg
+    have hrec := hpin.mem
     have hT := handler_edge_delivers (w := w) (ctx := ctx) (ys := ([] : List (PromiseCalls.Yield ι)))
       (s := ⟨n + 1, W, h, pos, adm, hh⟩) hS wf hb hmap
       (by rw [freshImplOf_handler, List.append_nil]; exact hrec) htc
@@ -578,7 +585,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
         (stateHolds_materialize (stateHolds_edge hSe) _ _ true) heh hh (fun o ho => by cases ho) htc
     obtain ⟨η', hn', -, hI', -⟩ := hSh
     exact ⟨⟨hT, hAs⟩, fun hg' hlen =>
-      joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen).mem heh hn'
+      joinedAt_of_exit (given := given) (k := m) (hmerged hlen).mem heh hn'
         (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg' hlen⟩
   | true =>
     obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, himp, hin, harg, hfr, hq, hent,
@@ -641,7 +648,6 @@ theorem HandlerExitChecked.reassign {G : NormalGraph ι} {images : InstanceImage
     unfold assertionSource at this ⊢
     exact (assertionQuery_reassign G η _ _ req _ t.mapping none).trans this
   pushedIn := hc.pushedIn
-  merged := hc.merged
   head hg := by
     obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, himp, hin, harg, hfr, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg

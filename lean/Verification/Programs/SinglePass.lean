@@ -2102,18 +2102,65 @@ def edgeStoreOf (G : NormalGraph ι) (Γ : List (Ty ι)) (entryStore store : Sto
     applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => pushedNames[i]?
   | none, none => store
 
+/-- What a node or a later node reads of a state at the node's entry: the
+slots (`none`, every slot; `liveSlots`), and the names it reads whatever
+slot holds them (the inputs' entry values, which a return's postcondition
+and promise read). -/
+structure LiveSlots where
+  slots : Option (Std.HashSet Nat) := none
+  keep : List Nat := []
+  deriving Inhabited
+
+/-- The names the store `s` connects to the names `roots`, transitively,
+the roots included, through the facts `Store.drop` does not restate on
+the names it keeps: both names of a read link (`o.f ↦ y` states the facts
+of the path `o.f` over `y`, and those of `y` over the path), and every name
+of a conditional fact (`[if c] F` holds of its names where the Boolean `c`
+is `true`). -/
+def Store.pathNames (s : Store) (roots : List Nat) : Std.HashSet Nat := Id.run do
+  let mut seen : Std.HashSet Nat := roots.foldl (·.insert ·) {}
+  let mut frontier := roots
+  for _ in [0:s.size + 1] do
+    if frontier.isEmpty then break
+    let mut next := []
+    for o in frontier do
+      for a in s.about o do
+        let reached : List Nat := match a with
+          | .link g => if g.alias then [] else [g.cell, g.value]
+          | .index x => if x.cond.isSome then a.names else []
+          | .elem e => if e.cond.isSome then a.names else []
+          | _ => []
+        for x in reached do
+          if !seen.contains x then
+            seen := seen.insert x
+            next := x :: next
+    frontier := next
+  return seen
+
+/-- The names a target's slots `targetNames` hold that the target does not
+read (`live`): connected to no slot it reads, nor to the names it keeps,
+through the read links of the store `s` (`Store.pathNames`). -/
+def deadNames (targetNames : List Nat) (live : LiveSlots) (s : Store) : List Nat :=
+  match live.slots with
+  | none => []
+  | some L =>
+    let roots := live.keep ++ (targetNames.zipIdx.filter fun (_, j) => L.contains j).map (·.1)
+    let held := s.pathNames roots
+    (targetNames.filter (!held.contains ·)).eraseDups
+
 /-- What an edge into a node other than a loop head carries, from the
 source's names `names` on the edge and its store: the target's names (the
 mapping applied), the store without the names the edge drops
-(`droppedBy`, and an unpushed result no slot holds), the fresh names it
-keeps (the result where pushed and fresh), and the implications naming no
-dropped name. -/
+(`droppedBy`, an unpushed result no slot holds, and the names no slot the
+target reads holds, `deadNames` of its slots read `live`), the fresh names
+it keeps (the result where pushed and fresh), and the implications naming
+no dropped name. -/
 def edgeTransfer (names : List Nat) (m : PointClaims.Mapping) (pushed isHandler outFresh : Bool) (entry : State)
-    (result : Nat) (edgeStore : Store) (implies : List (PromiseCalls.Implication ι)) :
-    State × List (PromiseCalls.Implication ι) :=
+    (result : Nat) (edgeStore : Store) (implies : List (PromiseCalls.Implication ι))
+    (live : LiveSlots) : State × List (PromiseCalls.Implication ι) :=
   let targetNames := timedKind "edge names" fun _ => mapNames names m
   let gone := timedKind "edge dropped" fun _ => droppedBy names m targetNames ++
-    (if !pushed && !entry.names.contains result then [result] else [])
+    (if !pushed && !entry.names.contains result then [result] else []) ++ deadNames targetNames live edgeStore
   let freshOut := (if pushed && !isHandler && outFresh && !entry.fresh.contains result then result :: entry.fresh
     else entry.fresh).filter (!gone.contains ·)
   let carried := timedKind "edge implications" fun _ => (keepFirst {} (implies.filter fun x =>
@@ -2920,6 +2967,8 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   grading : Bool
   /-- The framed nodes with the supports their returns keep (`framedAt`). -/
   framed : List (Nat × List Confinement.FrameSpec)
+  /-- What each label's node or a later node reads (`liveSlots`). -/
+  live : Array LiveSlots
   /-- The slots stated fresh at each loop head other than the start. -/
   givenFresh : Array (List Nat) := #[]
 
@@ -2949,6 +2998,94 @@ def inDegrees (nodes : Array Node) (reached isHead : Array Bool) : Array Nat :=
       (successors node.continuation ++ node.handler.toList).foldl (fun (indeg : Array Nat) t =>
         if t.label < nodes.size && !isHead[t.label]! then indeg.modify t.label (· + 1) else indeg) indeg
     else indeg) (Array.replicate nodes.size 0)
+
+/-- **A topological order** of the labels below `nodes.size` the start
+reaches, over the edges into no loop head (continuations and handlers):
+the order the walk's queue visits them in, from the in-degrees `indeg`
+(`inDegrees`); none where some label is not ordered. -/
+def topoOrder (nodes : Array Node) (reached isHead : Array Bool) (indeg : Array Nat) : Option (Array Nat) := Id.run do
+  let n := nodes.size
+  let mut indeg := indeg
+  let mut queue : Array Nat := ((List.range n).filter fun l => reached[l]! && indeg[l]! == 0).toArray
+  let mut order : Array Nat := #[]
+  let mut i := 0
+  for _ in [0:n] do
+    if h : i < queue.size then
+      let l := queue[i]
+      i := i + 1
+      order := order.push l
+      for t in successors nodes[l]!.continuation ++ nodes[l]!.handler.toList do
+        if t.label < n && !isHead[t.label]! then
+          indeg := indeg.modify t.label (· - 1)
+          if indeg[t.label]! == 0 then queue := queue.push t.label
+  let count := (List.range n).countP fun l => reached[l]!
+  return if order.size == count then some order else none
+
+/-- **The slots an edge into a loop head reads** at the head's slots: those
+its given invariant `req` states facts of, the tests and targets of its
+given implications, and the slots its given state holds the promised input
+or an input's entry value at (`headExit` checks these on the edge; the
+head's state is its given state, over fresh names). -/
+def headReads (req : Option Knowledge) (implies : List (PromiseCalls.Implication ι)) (args : List Nat)
+    (inputs : List (Nat × Nat)) : List Nat :=
+  ((req.map fun g => (atomsOf g).flatMap Atom.names).getD []) ++ implies.flatMap (fun y => [y.test, y.target]) ++
+    args ++ inputs.map (·.1)
+
+/-- **The slots each node reads or a later node reads** (liveness over the
+walk's graph), at each label below `nodes.size` the start reaches, at the
+slots of its claim's context: `none` where every slot counts as read.
+A node reads the slots its term mentions (`mentioned`) and those its
+written assertion `stated` states facts of (checked on the edges into it);
+every slot at a node with a handler (its edge carries the entry's facts),
+at a construction (a view's length may follow from facts its operands do
+not reach), at a node whose term lists no reads, and everywhere under
+spine regions (the regional check reads the entry's facts). Every node
+reads the inputs' entry values `startNames`, whatever slot holds them: a
+return checks the postcondition and the promise over them. Across each
+exit a node reads the source slot the mapping reads for each slot its
+target reads (into a loop head, `headReads`), each slot whose type the
+edge changes (`differing`, checked over the source's facts), and the
+result an edge observes; a pushed exit's slot `i + 1` is the entry's slot
+`i`. The graph without the edges into loop heads is acyclic: one pass in
+reverse topological order (`topoOrder`) computes it. -/
+def liveSlots (nodes : Array Node) (claimed : Array (PointClaim ι)) (reached isHead : Array Bool)
+    (indeg : Array Nat) (stated «given» : Array (Option Knowledge))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (givenInputs : Array (List (Nat × Nat))) (regional : Bool) (startNames : List Nat) :
+    Array LiveSlots := Id.run do
+  let n := nodes.size
+  let all : Array LiveSlots := Array.replicate n {}
+  if regional then return all
+  let some order := topoOrder nodes reached isHead indeg | return all
+  let mut live : Array (Option (Std.HashSet Nat)) := Array.replicate n none
+  for l in order.reverse do
+    let node := nodes[l]!
+    let c := claimed[l]!
+    let construction := match node.expression with | .construct .. => true | _ => false
+    let reads? : Option (List Nat) :=
+      if node.handler.isSome || construction then none
+      else (mentioned 0 node.expression).map fun ms =>
+        ms ++ ((stated[l]!).map fun g => (atomsOf g).flatMap Atom.names).getD []
+    let some reads := reads? | continue
+    let mut acc : Option (Std.HashSet Nat) := some (reads.foldl (·.insert ·) {})
+    for ex in Exit.ofNode node do
+      let t := ex.target
+      let target? : Option (List Nat) :=
+        if t.label ≥ n then none
+        else if isHead[t.label]! then
+          some (headReads «given»[t.label]! ((givenImplies[t.label]?).getD []) ((givenArgs[t.label]?).getD [])
+            ((givenInputs[t.label]?).getD []))
+        else (live[t.label]!).map (·.toList)
+      match acc, target?, claimed[t.label]? with
+      | some a, some L, some tc =>
+        let Γ := if ex.pushed then c.type :: c.context else c.context
+        let exitSlots := L.map (PointClaims.slot t.mapping) ++ (differing Γ tc.context t.mapping).map (·.2) ++
+          (if ex.observed.isSome then [0] else [])
+        acc := some (exitSlots.foldl (fun (a : Std.HashSet Nat) s =>
+          if ex.pushed then (if s ≥ 1 then a.insert (s - 1) else a) else a.insert s) a)
+      | _, _, _ => acc := none
+    live := live.set! l acc
+  return live.map fun slots => { slots, keep := startNames }
 
 /-- **The queue** the walk starts from: the labels below `n` the start
 reaches, in order, of in-degree 0 that are loop heads or the start. -/
@@ -2998,11 +3135,11 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
     (stated «given» : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
     (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Confinement.FrameSpec))
-    (givenFresh : Array (List Nat) := #[]) : WalkEnv ι G images :=
+    (live : Array LiveSlots) (givenFresh : Array (List Nat) := #[]) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
     observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName,
-    grading, framed, givenFresh }
+    grading, framed, live, givenFresh }
 
 /-- The walk's setup over one graph: its checks (the claims' count, the
 loop heads' fuel, spine regions with an edge into the start, the entry's
@@ -3095,7 +3232,9 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
     .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
         ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
-        isHead reached startEntered stated given merging deadArr startNames argName grading framed givenFresh,
+        isHead reached startEntered stated given merging deadArr startNames argName grading framed
+        (liveSlots nodes claimed reached isHead indeg stated given givenImplies givenArgs givenInputs regional.isSome
+          startNames) givenFresh,
       setupState n answers counts trace indeg queue startWidth)
 
 /-- A node's output facts as an edge reads them: the step's output `out`
@@ -4212,7 +4351,7 @@ def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
         | .error stop => .error stop
         | .ok acc =>
           let (target, carried) := edgeTransfer names t.mapping pushed isHandler sd.outFresh entry st.result edgeStore
-            (en.implies ++ freshImpl)
+            (en.implies ++ freshImpl) (env.live[t.label]!)
           let read := ((env.stated[t.label]!).isSome && !vacuous) || env.merging[t.label]!
           let acc := pushExit env l t target carried Γe names pushed vacuous acc
           let Γr := if read then some Γe.get else none
@@ -4403,14 +4542,18 @@ def Atom.text : Atom → String
   | .sep f => s!"sep {DebugText.oneLine f}"
 
 /-- A completed walk as text (`TSCERT_DUMP`): each node's term and
-continuation, the names at its slots on entry, and the facts after its step,
+continuation, the slots it or a later node reads (`liveSlots`, `all` for
+every slot), the names at its slots on entry, and the facts after its step,
 with how many it added and dropped from its entry's. -/
-def walkText (nodes : Array Node) (w : Walk ι) : String := Id.run do
+def walkText (nodes : Array Node) (live : Array LiveSlots) (w : Walk ι) : String := Id.run do
   let mut out := s!"walk: {nodes.size} nodes"
   for l in [0:nodes.size] do
     let lw := w.labels[l]?
     let node := (nodes[l]?.map DebugText.node).getD "?"
-    out := out ++ s!"\nnode {l}: {node}"
+    let reads := match (live[l]?).bind (·.slots) with
+      | some L => String.intercalate " " ((L.toList.toArray.qsort (· < ·)).toList.map fun i => s!"#{i}")
+      | none => "all"
+    out := out ++ s!"\nnode {l}: {node}\n  reads: {reads}"
     match lw.bind (·.entry), lw.bind (·.after) with
     | some e, some a =>
       let before := e.store.live.toList.map Atom.text
@@ -4452,7 +4595,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   let σ ← drive (visit G images env) (env.n + 1) σ0
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
   let reachable := (env.reached.toList.filter id).length
-  return dumpWalk (fun _ => walkText env.nodes σ.walk) (σ, reachable)
+  return dumpWalk (fun _ => walkText env.nodes env.live σ.walk) (σ, reachable)
 
 /-- Check a local-confinement table `conf` against a completed walk `w`: the
 start entry is empty, every framed node is in bounds, and every visited node

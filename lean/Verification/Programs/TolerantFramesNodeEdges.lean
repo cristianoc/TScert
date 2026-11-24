@@ -95,10 +95,11 @@ theorem normal_edge_delivers [DecidableEq ι] [Hashable ι] {G : NormalGraph ι}
     (hY : pushed = true → PromiseCalls.YieldsOk G ys ρ s.n s.W v)
     (hmap : MapNamesSound (if pushed then result :: entry.names else entry.names) t.mapping)
     (hfo : pushed = true → outFresh = true → result ∉ entry.fresh → FreshAt m v)
+    {live : SinglePass.LiveSlots}
     (hrec : (edgeTransfer (if pushed then result :: entry.names else entry.names) t.mapping pushed false outFresh
       entry result (edgeStoreOf G Γ entry.store store (if pushed then result :: entry.names else entry.names)
         (result :: entry.names) width pushed false observed promote)
-      (I ++ freshImplOf pushed false ys entry.names result)) ∈ w.incoming t.label)
+      (I ++ freshImplOf pushed false ys entry.names result) live) ∈ w.incoming t.label)
     (htc : EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s.n s.W) :
     edgePreT G w start ε ctx t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) m s :=
   ⟨⟨_, hrec, edge_normal_sound (stateHolds_freshImpl hS hY) hobs hpo hpp he hmap hfo⟩, htc⟩
@@ -111,9 +112,10 @@ theorem handler_edge_delivers [DecidableEq ι] [Hashable ι] {G : NormalGraph ι
     {ys : List (PromiseCalls.Yield ι)} {start : List Nat}  {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε ρ m s)
     (w' : StoreWF entry.store) (hb : NamesBelow entry I start x) (hmap : MapNamesSound (x :: entry.names) t.mapping)
+    {live : SinglePass.LiveSlots}
     (hrec : (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry result
       (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none)
-      (I ++ freshImplOf true true ys entry.names result)) ∈ w.incoming t.label)
+      (I ++ freshImplOf true true ys entry.names result) live) ∈ w.incoming t.label)
     (htc : EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (push e ρ)) s.n s.W) :
     edgePreT G w start ε ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s := by
   rw [freshImplOf_handler, List.append_nil] at hrec

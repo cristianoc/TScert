@@ -302,12 +302,12 @@ names it keeps, the result among them where it holds a fresh spine; the
 implications naming no dropped name. -/
 theorem edgeTransfer_ok [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {names : List Nat} {m : PointClaims.Mapping}
     {pushed isHandler outFresh : Bool} {entry : SinglePass.State} {result : Nat} {edgeStore : Store}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {mk : Nat} {s : IndexedHeap}
+    {I : List (PromiseCalls.Implication ι)} {live : SinglePass.LiveSlots} {start : List Nat} {ρ : Env} {mk : Nat} {s : IndexedHeap}
     (hS : StateHolds G ⟨names, edgeStore, entry.fresh⟩ I start ε ρ mk s) (hmap : MapNamesSound names m)
     (hfo : pushed = true → isHandler = false → outFresh = true → result ∉ entry.fresh →
       names[0]? = some result ∧ FreshAt mk (ρ 0)) :
-    StateHolds G (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I).1
-      (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I).2 start ε
+    StateHolds G (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I live).1
+      (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I live).2 start ε
       (PointClaims.mapEnv m ρ) mk s := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   simp only [edgeTransfer, timedKind]
@@ -359,7 +359,7 @@ edge, a promotion of an unpushed one (`Exit.ofNode`). -/
 theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {entry : SinglePass.State} {store : Store} {result width : Nat} {v : Tm} {ρ : Env}
     {pushed outFresh : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {start : List Nat}  {m : Nat}
+    {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {live : SinglePass.LiveSlots} {start : List Nat} {m : Nat}
     {s : IndexedHeap}
     (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε (push v ρ) m s)
     (hobs : ObservedOk observed promote v)
@@ -369,10 +369,10 @@ theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {�
     (hfo : pushed = true → outFresh = true → result ∉ entry.fresh → FreshAt m v) :
     StateHolds G (edgeTransfer (if pushed then result :: entry.names else entry.names) θ pushed false outFresh entry
         result (edgeStoreOf G Γ entry.store store (if pushed then result :: entry.names else entry.names)
-          (result :: entry.names) width pushed false observed promote) I).1
+          (result :: entry.names) width pushed false observed promote) I live).1
       (edgeTransfer (if pushed then result :: entry.names else entry.names) θ pushed false outFresh entry
         result (edgeStoreOf G Γ entry.store store (if pushed then result :: entry.names else entry.names)
-          (result :: entry.names) width pushed false observed promote) I).2
+          (result :: entry.names) width pushed false observed promote) I live).2
       start ε (PointClaims.mapEnv θ (if pushed then push v ρ else ρ)) m s := by
   have hfo' : ∀ ρx : Env, ρx 0 = v → pushed = true → false = false → outFresh = true → result ∉ entry.fresh →
       (if pushed then result :: entry.names else entry.names)[0]? = some result ∧ FreshAt m (ρx 0) :=
@@ -406,13 +406,14 @@ the handler's environment under its mapping. -/
 theorem edge_handler_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {entry : SinglePass.State} {store : Store} {result width x : Nat} {e : Tm} {ρ : Env}
     {outFresh : Bool} {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
+     {live : SinglePass.LiveSlots}
      {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε ρ m s)
     (w : StoreWF entry.store) (hb : NamesBelow entry I start x) (hmap : MapNamesSound (x :: entry.names) θ) :
     StateHolds G (edgeTransfer (x :: entry.names) θ true true outFresh entry result
-        (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I).1
+        (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I live).1
       (edgeTransfer (x :: entry.names) θ true true outFresh entry result
-        (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I).2
+        (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I live).2
       start ε (PointClaims.mapEnv θ (push e ρ)) m s :=
   edgeTransfer_ok (stateHolds_handler (v := e) hS (namesBelow_dropHeap w _ hb)) hmap (fun _ h => by cases h)
 

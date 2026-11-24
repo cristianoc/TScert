@@ -116,8 +116,8 @@ theorem implArrayBelow_modify {a : Array (List (List (PromiseCalls.Implication �
 /-- An edge only filters and deduplicates its incoming implications. -/
 theorem edgeTransfer_impBelow {names : List Nat} {m : PointClaims.Mapping} {pushed handler outFresh : Bool}
     {entry : SinglePass.State} {result : Nat} {store : SinglePass.Store}
-    {xs : List (PromiseCalls.Implication ι)} {N : Nat} (h : ImpliesBelow xs N) :
-    ImpliesBelow (SinglePass.edgeTransfer names m pushed handler outFresh entry result store xs).2 N := by
+    {xs : List (PromiseCalls.Implication ι)} {live : SinglePass.LiveSlots} {N : Nat} (h : ImpliesBelow xs N) :
+    ImpliesBelow (SinglePass.edgeTransfer names m pushed handler outFresh entry result store xs live).2 N := by
   intro y hy
   exact h y (List.mem_filter.mp (keepFirst_mem hy)).1
 

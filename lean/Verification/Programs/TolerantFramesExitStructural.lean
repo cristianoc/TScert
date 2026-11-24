@@ -22,7 +22,7 @@ theorem exitStep_handler_arrays {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     (h : exitStep G I env l en sd ys out a (.handler t, i) = .ok b)
     (hh : env.isHead[t.label]! = false) :
     let pair := edgeTransfer (sd.thrown :: en.entry.names) t.mapping true true sd.outFresh en.entry sd.st.result
-      (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown) en.implies
+      (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown) en.implies (env.live[t.label]!)
     b.incoming = a.incoming.modify t.label (pair.1 :: ·) ∧
     b.incomingImpl = a.incomingImpl.modify t.label (pair.2 :: ·) ∧
     b.incomingEdges = if env.merging[t.label]! then a.incomingEdges.modify t.label

@@ -1006,7 +1006,9 @@ facts holding at the exit's valuation $`\eta`$. Proved:
 - `edgeTransfer_ok`: where each target slot is named by the name of the
   source slot the mapping reads (`MapNamesSound`), the target's state
   (mapped names, dropped store, kept fresh names, implications naming no
-  dropped name) holds at $`\mathrm{mapEnv}\ \theta\ \rho_x`$;
+  dropped name) holds at $`\mathrm{mapEnv}\ \theta\ \rho_x`$, whatever
+  names the edge drops: the names the mapping drops and those its target
+  does not read (`deadNames`) alike;
 - `edge_normal_sound`, `edge_handler_sound`: from the step's normal exit and
   the observation of its value, or from its throw state, the state
   `edgeTransfer` builds from `edgeStoreOf` holds at the target's
