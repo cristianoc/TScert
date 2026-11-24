@@ -1,3 +1,11 @@
+// ============================================================================
+// PROTOTYPE ONLY — SCHEDULED FOR DELETION UPON UNIFICATION
+// Disposable experimental paper-rules prototype (`docs/drafts/paper-rules-mode.md`).
+// Must NEVER be imported by `tools/`, `pipeline/`, or `lean/Verification/`
+// (enforced by `tests/prototype-isolation.mts`). Replaced upon unification by
+// mechanical annotation parsing plus proved CFG checks in `lean/Verification/`.
+// ============================================================================
+
 // The experimental prototype of docs/drafts/paper-rules-mode.md over one
 // source file: the ordinary check (`pipeline/verify-source.mts`), then the
 // paper's annotations (`dev/paper-annotations.mts`) and the pass with the

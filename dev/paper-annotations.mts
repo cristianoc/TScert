@@ -1,3 +1,11 @@
+// ============================================================================
+// PROTOTYPE ONLY — SCHEDULED FOR DELETION UPON UNIFICATION
+// Disposable experimental paper-rules prototype (`docs/drafts/paper-rules-mode.md`).
+// Must NEVER be imported by `tools/`, `pipeline/`, or `lean/Verification/`
+// (enforced by `tests/prototype-isolation.mts`). Replaced upon unification by
+// mechanical annotation parsing plus proved CFG checks in `lean/Verification/`.
+// ============================================================================
+
 // The paper's annotations in a source file, for the experimental prototype of
 // docs/drafts/paper-rules-mode.md: each function's effect type parameters
 // with their `AtMost<P>` bounds and the parameters whose types mention them,
