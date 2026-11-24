@@ -1023,21 +1023,24 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // or a copy of some of its declarations (the census's copy of tools/
     // holds one; a checked project keeps one written at an earlier
     // version): a file each of whose statements is a statement of the
-    // repository's file, as written, but for its type parameters' bounds
-    // (`withoutBounds`). A bound only restricts the arguments TypeScript
-    // admits: the verifier reads each argument of its declarations itself
-    // and refuses one outside its grammar (`statementOf`), so a copy whose
-    // bound admits fewer arguments (`Modifies` written before a change
-    // joined `P`'s vocabulary) declares the same. Every statement there
-    // starts a line and every comment is a line comment, so a statement's
-    // text found between two line breaks is one of its statements.
+    // repository's file, token for token (`layoutFree`), but for its type
+    // parameters' bounds (`withoutBounds`). A bound only restricts the
+    // arguments TypeScript admits: the verifier reads each argument of its
+    // declarations itself and refuses one outside its grammar
+    // (`statementOf`), so a copy whose bound admits fewer arguments
+    // (`Modifies` written before a change joined `P`'s vocabulary) declares
+    // the same. Every statement there is a type alias ending in `;`, and
+    // every comment is a line comment, so a statement's tokens found right
+    // after a `;` or at the file's start are one of its statements.
     let verifierText: string | null = null;
     const verifierFile = (file: SourceFile): boolean => {
       if (file.fileName === resolvableDeclaration) return true;
-      verifierText ??= `\n${withoutBounds(readText(resolvableDeclaration))}\n`;
+      verifierText ??= `;${layoutFree(withoutBounds(readText(resolvableDeclaration)))}`;
       const canonical = verifierText;
-      return file.statements.length > 0 &&
-        file.statements.every(statement => canonical.includes(`\n${withoutBounds(statement.getText(file))}\n`));
+      return file.statements.length > 0 && file.statements.every(statement => {
+        const tokens = layoutFree(withoutBounds(statement.getText(file)));
+        return canonical.includes(`;${tokens.endsWith(";") ? tokens : `${tokens};`}`);
+      });
     };
     // Statements (`Modifies<P, T>`, SOURCE-ELABORATION.md, "Stated effects"):
     // a reference to the verifier's `Modifies`, by the declaration TypeScript
@@ -6919,6 +6922,39 @@ export function withoutBounds(text: string): string {
     header.lastIndex = Math.max(j, header.lastIndex);
   }
   return out + text.slice(i);
+}
+
+/** A declaration text's tokens, without its layout: its line comments and
+ * whitespace dropped, a space kept only between two word characters, and a
+ * trailing comma before a closing bracket dropped. Two texts with the same
+ * tokens up to these differ in layout alone, which TypeScript does not
+ * read. String literals are tokens kept whole. */
+export function layoutFree(text: string): string {
+  let out = "";
+  let gap = false;
+  for (let j = 0; j < text.length; j++) {
+    const c = text.charAt(j);
+    if (c === "\"" || c === "'") {
+      const close = text.indexOf(c, j + 1);
+      const end = close < 0 ? text.length : close + 1;
+      out += text.slice(j, end);
+      gap = false;
+      j = end - 1;
+      continue;
+    }
+    if (c === "/" && text.charAt(j + 1) === "/") {
+      const eol = text.indexOf("\n", j);
+      j = eol < 0 ? text.length : eol - 1;
+      gap = true;
+      continue;
+    }
+    if (/\s/.test(c)) { gap = true; continue; }
+    if ("}])>".includes(c) && out.endsWith(",")) out = out.slice(0, -1);
+    if (gap && /\w$/.test(out) && /\w/.test(c)) out += " ";
+    out += c;
+    gap = false;
+  }
+  return out;
 }
 
 function resolutionResolveDeclarations(checker: Checker, verifierFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, identifier: Identifier, what: string): Node[] {

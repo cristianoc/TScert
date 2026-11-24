@@ -1,0 +1,13 @@
+{
+  // A project holding its own copy of the verifier's declarations
+  // (`resolvable.d.ts`), written in another layout and with `Modifies`'s
+  // bound erased: the `*verifier-copy*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["resolvable.d.ts", "../examples/*verifier-copy*.ts"]
+}

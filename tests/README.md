@@ -50,6 +50,7 @@ A case naming a project reads its imports and declarations from it:
 | `pipeline/host-augmented-project/` | an augmentation merging members into the compiler API's host types, for the `invalid-host-augmentation-*` cases |
 | `pipeline/fake-lib-project/` | `pipeline/fake-lib/`, a file named like a standard library file, for the `*fake-lib*` cases |
 | `pipeline/exact-optional-project/` | `exactOptionalPropertyTypes`, under which `-?` keeps an optional field's type, for the `*exact-optional*` cases |
+| `pipeline/verifier-copy-project/` | a copy of the verifier's declarations in another layout, for the `*verifier-copy*` cases |
 | `pipeline/node-types-heritage-project/` | Node's `statSync` declared through a `StatSyncFn` with a base other than `Function`, for `invalid-node-types-heritage-stat` |
 | `pipeline/node-types-let-project/` | Node's `statSync` declared by `let`, for `invalid-node-types-let-stat` |
 | `pipeline/lib-collision-project/` | a file at `typescript/lib/lib.augment.d.ts`, the path a standard library identity is printed with, for the `*lib-collision*` case |
