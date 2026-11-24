@@ -108,7 +108,8 @@ theorem exitDelivers_head {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List
       cases pushed with
       | true => simpa using he
       | false => simpa using envOk_tail he
-    have hest := headEstablishes_of_edge hS heΓ (htc ρ s' v he ho) (hq hV) (himp hV) (hin hV) (harg hV)
+    have hest := headEstablishes_of_edge (freshSlots := []) hS heΓ (htc ρ s' v he ho) (hq hV) (himp hV) (hin hV) (harg hV)
+      (fun _ h => by simp at h)
     refine ⟨⟨_, hrecHead, ?_⟩, htc ρ s' v he ho⟩
     rw [hentry.1, hentry.2]
     exact (headEntry_holds hnd hlt hargs hest).1

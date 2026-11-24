@@ -118,7 +118,7 @@ const viewsClass: Selector = { value: false, array: false, view: true };
  * its spine change on both spine classes (`Closed.ofSpines`). */
 export const classFrame = (c: ClosedFootprint): Modifies<{}, Frame> => [
   { region: { cls: valuesClass }, change: c.value }, { region: { cls: arraysClass }, change: c.spine },
-  { region: { cls: viewsClass }, change: c.spine }];
+  { region: { cls: viewsClass }, change: c.view ?? c.spine }];
 /** The frame letting every location change: the note's `⊤`. */
 export const topFrame: Frame = classFrame(topFootprint);
 /** **The frame of a write through a typed array** (the note *Tolerant

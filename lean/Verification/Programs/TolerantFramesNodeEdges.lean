@@ -141,7 +141,7 @@ theorem headEstablishes_of_edge [DecidableEq ι] {G : NormalGraph ι} {Γe tc : 
     {edgeStore : Store} {F : List Nat} {I : List (PromiseCalls.Implication ι)} {startNames : List Nat}
     {ρx : Env} {m : Nat} {s : IndexedHeap} {θ : PointClaims.Mapping} {req : HeapKnowledge.Knowledge}
     {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat} {argSlots : List Nat}
-    {inputSlots : List (Nat × Nat)} {d : Nat}
+    {inputSlots : List (Nat × Nat)} {freshSlots : List Nat} {d : Nat}
     (hS : StateHolds G ⟨names, edgeStore, F⟩ I startNames ε ρx m s)
     (he : EnvOk G Γe ρx s.n s.W) (htc : EnvOk G tc (PointClaims.mapEnv θ ρx) s.n s.W)
     (hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc)
@@ -152,12 +152,13 @@ theorem headEstablishes_of_edge [DecidableEq ι] {G : NormalGraph ι} {Γe tc : 
       names[PointClaims.slot θ x.target]? = some y.target ∧
       ∀ n (W : WorldT n) v, meaning G y.type n W v → meaning G x.type n W v)
     (hin : ∀ p ∈ inputSlots, names[PointClaims.slot θ p.1]? = startNames[p.2]?)
-    (harg : ∀ j ∈ argSlots, names[PointClaims.slot θ j]? = argName) :
-    HeadEstablishes G req gimp startNames argName argSlots inputSlots ε (PointClaims.mapEnv θ ρx) s := by
+    (harg : ∀ j ∈ argSlots, names[PointClaims.slot θ j]? = argName)
+    (hfresh : ∀ j ∈ freshSlots, FreshAt m (ρx (PointClaims.slot θ j))) :
+    HeadEstablishes G req gimp startNames argName argSlots inputSlots freshSlots ε (PointClaims.mapEnv θ ρx) m s := by
   have hk := stateHolds_materialize_whole (stateHolds_edge hS) d
     (((atomsOf req).flatMap Atom.names).map (PointClaims.slot θ)) true
   obtain ⟨η, hn, -, hI, -, hst⟩ := hS
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, fun j hj => hfresh j hj⟩
   · obtain ⟨n, W, h, pos, adm, ok⟩ := s
     cases n with
     | zero => exact absurd pos (Nat.lt_irrefl 0)

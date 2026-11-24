@@ -348,7 +348,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
   have hS' := hS
   obtain ⟨η, hn, hst, hI, hF, hstart⟩ := hS'
-  have hk := stateHolds_stepKnowledge hS he c.context.length ms (wholeOf node.expression)
+  have hk := stateHolds_stepKnowledge hS he c.context.length ms (wholeOf G c.context node.expression)
   have heR : EnvOk G (jOf G c node entry ms).context ρ s.n s.W := PromiseCalls.envOk_intRefine he hk.1.2.2.2.2.2
   rcases h with ⟨x, hc, hr, hstore, hfr, -, hK, hO, rfl⟩ |
       ⟨-, effect, a0, ⟨out, pre, hsel, htree, hres, hfresh, -, -, hpres, hwrit⟩, hss⟩
@@ -393,9 +393,9 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       rcases resultOf_cases node.expression entry.names fresh with ⟨i, -, hx, hf⟩ | ⟨hr1, hf⟩
       · exact .inl ⟨hres ▸ List.mem_of_getElem? hx, hfresh.trans hf⟩
       · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
-    have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf node.expression)) codes
+    have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf G c.context node.expression)) codes
         ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
-    by_cases hp : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect
+    by_cases hp : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect
         codes ans.summaries.toList == Footprints.Closed.empty) = true
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
@@ -408,7 +408,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         exact preserving_spine hn (hkv k h' v hsteps)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
-    · have hpf : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect
+    · have hpf : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect
           codes ans.summaries.toList == Footprints.Closed.empty) = false := by simpa using hp
       obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
       have hrun := pass_select_whole htree hwc hsel'

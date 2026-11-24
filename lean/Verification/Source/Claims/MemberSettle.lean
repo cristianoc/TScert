@@ -52,8 +52,18 @@ def inputsTable (P : ControlFlow.Program) (widths : Array Nat) (start : Nat) (se
     let mut changed := false
     for (node, l) in P.zipIdx do
       let some here := table.getD l none | continue
-      for e in GraphCode.edgesOf node.continuation node.handler do
-        let sources := if e.2 then GraphCode.shiftTracked here else here
+      -- A variable read pushes the slot's own value at position 0 on normal
+      -- pushing edges (such as `tagBind` narrowing a parameter in place),
+      -- while a handler edge pushes the thrown value.
+      let varResult : GraphCode.Tracked := match node.expression with
+        | .var s => here.filterMap fun p => if p.1 == s then some (0, p.2) else none
+        | _ => []
+      let normalEdges := (GraphCode.edgesOf node.continuation none).map (·, true)
+      let handlerEdges := node.handler.toList.map fun t => ((t, true), false)
+      for (e, isNormal) in normalEdges ++ handlerEdges do
+        let sources := if e.2 then
+            (if isNormal then varResult else []) ++ GraphCode.shiftTracked here
+          else here
         let carried := (List.range (widths.getD e.1.label 0)).flatMap fun i =>
           sources.filterMap fun p => if p.1 == PointClaims.slot e.1.mapping i then some (i, p.2) else none
         let current := table.getD e.1.label none
@@ -156,9 +166,10 @@ def FilePlans.computedGiven (f : FilePlans) («given» : Std.HashMap String Json
       let regional := regionalLines r falseRegional
       if r.ensures.isEmpty && implied.isEmpty && regional.isEmpty then m else
       let widths := (r.claims.map (·.context.length)).toArray
+      let loopHeads := (SinglePass.loopHeadsRun r.program.toArray r.start).2.1
       let table := if r.ensures.isEmpty then [] else inputsTable r.program widths r.start (GraphCode.namedInputs r.ensures)
       let inputs := table.zipIdx.filterMap fun (t, l) => match t with
-        | some ps@(_ :: _) => if l == r.start || r.cuts.contains l then
+        | some ps@(_ :: _) => if l == r.start || r.cuts.contains l || loopHeads.getD l false then
             let ps := if falseInputs && l != r.start then
               ps ++ ps.filterMap fun (s, q) => if s + 1 < widths.getD l 0 && !ps.contains (s + 1, q) then some (s + 1, q) else none
               else ps

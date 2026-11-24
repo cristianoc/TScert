@@ -25,7 +25,6 @@
   "src/layout.ts": {
     "ordinary": "unverified",
     "units": {
-      "paperAssume": "accepted",
       "prepareInternal": "accepted",
       "prepare": "accepted",
       "prepareWithSegments": "accepted",
@@ -49,7 +48,6 @@
   "src/rich-inline.ts": {
     "ordinary": "unverified",
     "units": {
-      "paperAssume": "accepted",
       "getInternalPreparedRichInline": "accepted",
       "prepareRichInline": "accepted",
       "getHyphenRooms": "accepted",

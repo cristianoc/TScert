@@ -50,9 +50,10 @@
  *   does the lookup on the objects a program holds (no proxy, DESIGN.md
  *   "Trust surface"); the answer is a Boolean, which narrows nothing.
  * - `b[k]` of a view of bytes at a key TypeScript types as `number` is
- *   `%ByteAt%(b, k)`, `b[k] = v` is `%ByteSet%(b, k, v)`, and `b.length` is
- *   `%ByteLength%(b)` (`library-types.mts`): the host's element read,
- *   element write and `length` getter.
+ *   `%ByteAt%(b, k)`, `b[k] = v` is `%ByteSet%(b, k, v)`, `b.length` is
+ *   `%ByteLength%(b)`, and `b.subarray(begin, end)` is
+ *   `%ByteSubarray%(b, begin, end)` (`library-types.mts`): the host's element
+ *   read, element write, `length` getter and bounded `subarray` view.
  * - `o.k` and `o.k = v` of a 2D context at a key its host getter or setter
  *   reads or writes are `%CanvasGet:k%(o)` and `%CanvasSet:k%(o, v)`
  *   (`library-types.mts`), and `typeof X` of a DOM global some hosts do not
@@ -96,7 +97,7 @@ import { join } from "node:path";
 import type { CallEffect, IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
-import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
+import { buffer, viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 import { checkTrust, signatureEffects, throwBound, withinB, type BuiltinTrust } from "./builtin-trust.mts";
 
@@ -128,6 +129,7 @@ export const elementAtName = "%ElementAt%";
 export const byteAtName = "%ByteAt%";
 export const byteLengthName = "%ByteLength%";
 export const byteSetName = "%ByteSet%";
+export const byteSubarrayName = "%ByteSubarray%";
 export const typeOfDocumentName = "%TypeOf:document%";
 export const typeOfNavigatorName = "%TypeOf:navigator%";
 export const typeOfOffscreenCanvasName = "%TypeOf:OffscreenCanvas%";
@@ -604,6 +606,7 @@ export const intrinsicTrust: ReadonlyMap<string, BuiltinTrust> = new Map<string,
   [byteAtName, withinB("ECMA-262 sec-typedarray-exotic-objects-get-p-receiver, sec-typedarraygetelement", "top")],
   [byteLengthName, withinB("ECMA-262 sec-get-%typedarray%.prototype.length", "top")],
   [byteSetName, withinB("ECMA-262 sec-typedarray-exotic-objects-set-p-v-receiver, sec-typedarraysetelement", "top")],
+  [byteSubarrayName, withinB("ECMA-262 sec-%typedarray%.prototype.subarray, sec-typedarrayspeciescreate", "top")],
   [typeOfDocumentName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML document", "top")],
   [typeOfNavigatorName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML navigator", "top")],
   [typeOfOffscreenCanvasName, withinB("ECMA-262 sec-typeof-operator; WHATWG HTML OffscreenCanvas", "top")],
@@ -852,6 +855,37 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         ...viewKinds.map(({ type, range, write }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
           effect: frameEffect(viewWriteFrame, { elementWrite: write, pre: [...index,
             ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),
+      ] } };
+    },
+    // `%TypedArray%.prototype.subarray(begin, end)` (ECMA-262): allocates a
+    // view of the same kind over the same underlying `ArrayBuffer` within the
+    // empty footprint. Unconditionally accepts optional numbers (clamping as
+    // ECMA-262 specifies). When both bounds are safe integers with
+    // `0 <= begin <= end <= view(b)` (call positions: 1 the view, 2 `begin`,
+    // 3 `end`), neither clamps and the returned view has length `end - begin`
+    // (return positions: 0 the result, 2 the view, 3 `begin`, 4 `end`). No
+    // buffer disjointness is stated: the result shares `b`'s buffer.
+    [byteSubarrayName]: () => {
+      const optionalNumber = either(atom("number"), atom("undefined"));
+      const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
+      const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });
+      const boundedEffect = footprintEffect(emptyFootprint, {
+        pre: [
+          { int: { slot: 2 } },
+          { int: { slot: 3 } },
+          le([[value(2), -1]], 0),
+          le([[value(2), 1], [value(3), -1]], 0),
+          le([[value(3), 1], [{ kind: "view", slot: 1, path: [] }, -1]], 0),
+        ],
+        ensures: [
+          le([[{ kind: "view", slot: 0, path: [] }, 1], [value(4), -1], [value(3), 1]], 0),
+          le([[{ kind: "view", slot: 0, path: [] }, -1], [value(4), 1], [value(3), -1]], 0),
+        ],
+      });
+      const allViews: TypeTerm[] = [buffer, ...viewKinds.map(v => v.type), views];
+      return { typeParams: [], type: { k: "intersection", span, parts: [
+        ...allViews.map((type): TypeTerm => ({ ...fn([type, optionalNumber, optionalNumber], type), effect: emptyEffect })),
+        ...allViews.map((type): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], type), effect: boundedEffect })),
       ] } };
     },
     // `typeof X` of a DOM global some hosts define (`GlobalEntry.typeOf`):

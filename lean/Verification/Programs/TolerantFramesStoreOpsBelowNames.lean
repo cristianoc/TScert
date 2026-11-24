@@ -523,12 +523,12 @@ promised input's name and the slots' own names `i + base` are: its store's
 facts are renamed to the slots' names. -/
 theorem headEntry_below {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fresh : Nat} {startNames : List Nat}
     {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} {N : Nat}
-    (hN : N = (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies).2.2)
+    {implies : List (PromiseCalls.Implication ι)} {freshSlots : List Nat} {N : Nat}
+    (hN : N = (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies freshSlots).2.2)
     (hstart : ∀ x ∈ startNames, x < N) (harg : ∀ a, argName = some a → a < N)
     (hbase : ∀ i < width, i + (if isStart then startNames.headD 0 else fresh) < N) :
-    StateBelow (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies).1 N := by
-  have hnames : ∀ x ∈ (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies).1.names,
+    StateBelow (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies freshSlots).1 N := by
+  have hnames : ∀ x ∈ (SinglePass.headEntry g isStart width fresh startNames argName argSlots inputSlots implies freshSlots).1.names,
       x < N := by
     intro x hx
     simp only [SinglePass.headEntry, List.mem_map, List.mem_range] at hx
@@ -543,25 +543,31 @@ theorem headEntry_below {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fr
         · subst hx; exact harg _ rfl
         · subst hx; exact hbase i hi
       · subst hx; exact hbase i hi
-  refine ⟨hnames, ?_, fun x hx => by simp [SinglePass.headEntry] at hx⟩
-  have key : ∀ (l : List Atom) (st : Store), FactsBelow st N → FactsBelow (l.foldl (fun s a =>
-      match a.rename fun i => (SinglePass.headEntry g isStart width fresh startNames argName argSlots
-        inputSlots implies).1.names[i]? with
-      | some b => s.add b | none => s) st) N := by
-    intro l
-    induction l with
-    | nil => intro st h; exact h
-    | cons a l ih =>
-      intro st h
-      refine ih _ ?_
-      dsimp only
-      split
-      · rename_i b hb
-        refine add_below h fun y hy => ?_
-        obtain ⟨x, -, e⟩ := atom_rename_names hb y hy
-        exact hnames y (List.mem_of_getElem? e)
-      · exact h
-  exact key _ _ (empty_below N)
+  refine ⟨hnames, ?_, fun x hx => ?_⟩
+  · have key : ∀ (l : List Atom) (st : Store), FactsBelow st N → FactsBelow (l.foldl (fun s a =>
+        match a.rename fun i => (SinglePass.headEntry g isStart width fresh startNames argName argSlots
+          inputSlots implies freshSlots).1.names[i]? with
+        | some b => s.add b | none => s) st) N := by
+      intro l
+      induction l with
+      | nil => intro st h; exact h
+      | cons a l ih =>
+        intro st h
+        refine ih _ ?_
+        dsimp only
+        split
+        · rename_i b hb
+          refine add_below h fun y hy => ?_
+          obtain ⟨x, -, e⟩ := atom_rename_names hb y hy
+          exact hnames y (List.mem_of_getElem? e)
+        · exact h
+    exact key _ _ (empty_below N)
+  · cases isStart with
+    | true => simp [SinglePass.headEntry] at hx
+    | false =>
+      simp only [SinglePass.headEntry, Bool.false_eq_true, ite_false, List.mem_filterMap] at hx
+      obtain ⟨j, _, hjx⟩ := hx
+      exact hnames x (by simpa [SinglePass.headEntry] using List.mem_of_getElem? hjx)
 
 /-- **The store with kept facts is below the counter** where the store and
 the names the facts are renamed to are (`SinglePass.keepStore`). -/

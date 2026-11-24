@@ -75,8 +75,8 @@ theorem exitTypes_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Sin
 /-- The head check leaves the regional result intact. -/
 theorem headExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {store : SinglePass.Store} {pushed vacuous : Bool}
-    {carried : List (PromiseCalls.Implication ι)} {a b : SinglePass.ExitsDone ι G}
-    (h : SinglePass.headExit G I env l exit t tc Γ names store pushed vacuous carried a = .ok b) :
+    {carried : List (PromiseCalls.Implication ι)} {freshOut : List Nat} {a b : SinglePass.ExitsDone ι G}
+    (h : SinglePass.headExit G I env l exit t tc Γ names store pushed vacuous carried freshOut a = .ok b) :
     b.regional = a.regional := by
   unfold SinglePass.headExit at h
   repeat' (first | split at h | extract_lets at h)

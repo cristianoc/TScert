@@ -429,4 +429,40 @@ theorem le_of_relation_swap {x : UInt64} {L i : Nat} (hi : indexOfBits x = some 
       cases op <;> cases q <;> simp_all [boundAnswer, relationHolds]
   · omega
 
+/-- The answers of the relational operator `op` that give an index strictly
+below a length: with the index on the left (`left`), `>=` false and `<` true;
+with it on the right, `<=` false and `>` true. -/
+def strictBoundAnswer : Arith → Bool → Bool → Bool
+  | .ge, true, false | .lt, true, true => true
+  | .le, false, false | .gt, false, true => true
+  | _, _, _ => false
+
+theorem lt_of_relation {x : UInt64} {L i : Nat} (hi : indexOfBits x = some i) {op : Arith} {q : Bool}
+    (hb : strictBoundAnswer op true q = true) (hr : relationHolds op (doubleOrder x (bitsOfNat L)) = q) :
+    i + 1 ≤ L := by
+  obtain ⟨hd, hlt⟩ := indexOfBits_denotes hi
+  by_cases hL : L < 2 ^ 53
+  · rw [doubleOrder_denotes hd (denotes_bitsOfNat hL)] at hr
+    rcases Nat.lt_trichotomy i L with h | rfl | h
+    · omega
+    · rw [Nat.compare_eq_eq.mpr rfl] at hr
+      cases op <;> cases q <;> simp_all [strictBoundAnswer, relationHolds]
+    · rw [Nat.compare_eq_gt.mpr h] at hr
+      cases op <;> cases q <;> simp_all [strictBoundAnswer, relationHolds]
+  · omega
+
+theorem lt_of_relation_swap {x : UInt64} {L i : Nat} (hi : indexOfBits x = some i) {op : Arith} {q : Bool}
+    (hb : strictBoundAnswer op false q = true) (hr : relationHolds op (doubleOrder (bitsOfNat L) x) = q) :
+    i + 1 ≤ L := by
+  obtain ⟨hd, hlt⟩ := indexOfBits_denotes hi
+  by_cases hL : L < 2 ^ 53
+  · rw [doubleOrder_denotes (denotes_bitsOfNat hL) hd] at hr
+    rcases Nat.lt_trichotomy i L with h | rfl | h
+    · omega
+    · rw [Nat.compare_eq_eq.mpr rfl] at hr
+      cases op <;> cases q <;> simp_all [strictBoundAnswer, relationHolds]
+    · rw [Nat.compare_eq_lt.mpr h] at hr
+      cases op <;> cases q <;> simp_all [strictBoundAnswer, relationHolds]
+  · omega
+
 end Verification.IndexNumbers

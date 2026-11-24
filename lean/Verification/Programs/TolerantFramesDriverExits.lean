@@ -53,8 +53,8 @@ theorem assertionExit_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Targ
 
 theorem headExit_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {edgeStore : SinglePass.Store} {pushed vacuous : Bool}
-    {carried : List (PromiseCalls.Implication ι)} {acc acc' : SinglePass.ExitsDone ι G}
-    (h : SinglePass.headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
+    {carried : List (PromiseCalls.Implication ι)} {freshOut : List Nat} {acc acc' : SinglePass.ExitsDone ι G}
+    (h : SinglePass.headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried freshOut acc = .ok acc') :
     SameCore acc acc' ∧ acc'.edges = acc.edges.push { source := l, target := t, pushed, carried, meets := !vacuous } := by
   unfold SinglePass.headExit at h
   repeat' (first | split at h | extract_lets at h)

@@ -98,9 +98,9 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
       ysE = n.ys ∧
       ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
-        (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
+        (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat),
         HeadExitChecked H (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated l n.node n.c n.entry s.sdK.st
-          n.ys ysE s.en.here i t pushed observed promote req written cf gimp argName argSlots inputSlots hwidth hfresh ∧
+          n.ys ysE s.en.here s.sd.outFresh i t pushed observed promote req written cf gimp argName argSlots inputSlots freshSlots hwidth hfresh ∧
         (∀ y ∈ List.range c.inputs.length, y < hfresh) ∧
         (∀ a, argName = some a → ∃ q : Nat, (List.range c.inputs.length)[q]? = some a)
 

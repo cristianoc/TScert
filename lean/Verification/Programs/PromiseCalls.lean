@@ -2335,7 +2335,7 @@ caller's slots (`callerFrame`) respects under the query of the call's entry
 the evidence is missing the check fails. -/
 def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
     (a : HeapKnowledge.IndexAtom) : Bool :=
-  a.fact.keeps (Footprints.knowledgeQuery k) (.ofFirst stable) (callerFrame eff t)
+  a.fact.keepsUnder k (.ofFirst stable) (callerFrame eff t) []
 
 /-- **A call's cell facts kept by its frame** (the note's Frame, at cell
 facts): those of the call's entry whose support in the call's read context
@@ -2524,8 +2524,8 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
     obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
     simp only [Bool.and_eq_true] at hkeep
     have hF := hk.2.2.2.2.2 a ha hcd
-    exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk hok hρ)
-        (callerFrame_post hw) (Footprints.ReadContext.ofFirst_holds hst) hF
+    exact Footprints.IndexFact.keepsUnder_sound hk hok hρ
+        (callerFrame_post hw) (Footprints.ReadContext.ofFirst_holds hst) a.fact [] (by simp) hkeep.2 hF
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 
@@ -3644,26 +3644,90 @@ private theorem sameLinks_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
     | _ => simp at hFm
   | _ => simp [sameLinks] at hg
 
+/-- Spine separations a call stating a fresh array result (`ExitSchema.freshResult`)
+establishes: its result's spine lies at or past the pre-call heap's end, so it
+differs from the spine of every bare array slot in `Γ`, and from the spine of
+every existing field-rooted path `(s, p)` in `IndexWrites.indexPaths` whose path
+read is respected by the call's frame. -/
+def freshCallSpineApart (stable : Nat → String → Bool) (G : NormalGraph ι) (Γ : List (Ty ι))
+    (eff : Effect) (t : Tm) (k0 : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  if !eff.schema.normal.freshResult then [] else
+  let fieldPaths := (IndexWrites.indexPaths Γ.length k0).filterMap fun (s, p) =>
+    if p.isEmpty || Footprints.respects (Footprints.knowledgeQuery k0)
+        (Footprints.pathReads (.ofFirst stable) s .keep [] p) (callerFrame eff t) then
+      some { fact := .spineApart 0 [] (s + 1) p }
+    else none
+  let bareArrays := ((List.range Γ.length).filter (IndexWrites.arraySlot G Γ)).map fun s =>
+    { fact := .spineApart 0 [] (s + 1) [] }
+  fieldPaths ++ bareArrays
+
+omit [DecidableEq ι] in
+private theorem freshCallSpineApart_holds {stable : Nat → String → Bool} {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {eff : Effect} {t : Tm} {k0 : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    {nw : Nat} {W : WorldT nw} (hk0 : HeapKnowledge.Holds k0 ε ρ h)
+    (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
+    (hstable : HeapKnowledge.FirstKept stable ρ h h') :
+    HeapKnowledge.IndexHolds ε (freshCallSpineApart stable G Γ eff t k0) (push v ρ) h' := by
+  unfold freshCallSpineApart
+  split
+  · exact HeapKnowledge.indexHolds_nil _ _
+  · rename_i hfr
+    have hfr' : eff.schema.normal.freshResult = true := by simpa using hfr
+    obtain ⟨lu, hlu, hge⟩ := CallEffects.Effect.callPost_fresh hfr' hq
+    intro a ha _
+    rcases List.mem_append.mp ha with ha | ha
+    · obtain ⟨⟨s, p⟩, hmem, hm⟩ := List.mem_filterMap.mp ha
+      dsimp only at hm
+      split at hm
+      · rename_i hcond
+        simp only [Option.some.injEq] at hm
+        subst hm
+        obtain ⟨w, hw⟩ := IndexWrites.indexPaths_defined hmem hk0
+        have hw' : HeapKnowledge.readPath h' (ρ s) p = some w := by
+          rcases Bool.or_eq_true_iff.mp hcond with hp | hr
+          · have hp' : p = [] := List.isEmpty_iff.mp hp
+            subst hp'
+            simpa [HeapKnowledge.readPath] using hw
+          · have hsup := Footprints.respect_sound hr (Footprints.knowledgeQuery_sound hk0 hok hρ)
+              (callerFrame_post (CallEffects.Effect.callPost_within hq))
+            exact Footprints.pathReads_sound (Footprints.ReadContext.ofFirst_holds hstable) p []
+              hsup (Footprints.keeps_keep w) rfl rfl hw
+        refine ⟨v, w, rfl, hw', fun s1 s2 hs1 hs2 => ?_⟩
+        rw [hlu] at hs1; cases hs1
+        have hrb := IndexWrites.refsOk_readPath_extend hok [] (hρ s) (by simpa using hw)
+        have hlt := IndexWrites.refsOk_spineOf_lt hok hrb hs2
+        omega
+      · cases hm
+    · obtain ⟨s, -, rfl⟩ := List.mem_map.mp ha
+      refine ⟨v, ρ s, rfl, rfl, fun s1 s2 hs1 hs2 => ?_⟩
+      rw [hlu] at hs1; cases hs1
+      have hlt := IndexWrites.refsOk_spineOf_lt hok (hρ s) hs2
+      omega
+
 /-- Knowledge with a call's result-fact atoms added, the atoms, the cell
 facts and the read links of its entry `k0` its footprint keeps (`effectKept`,
-`frameCells`, `frameLinks`), any return-alias links (`sameLinks`), and the
-quantified atoms its growth of its receiver's spine keeps or extends
-(`appendKept`), then the instances of quantified facts the element reads among
-them state (`withElements`). -/
-def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+`frameCells`, `frameLinks`), any return-alias links (`sameLinks`), any fresh
+array spine separations (`freshCallSpineApart`), and the quantified atoms its
+growth of its receiver's spine keeps or extends (`appendKept`), then the
+instances of quantified facts the element reads among them state
+(`withElements`). -/
+def withEnsures (stable : Nat → String → Bool) (G : NormalGraph ι) (Γ : List (Ty ι)) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.dischargeGuards <| HeapKnowledge.withElements
     { k with cells := k.cells ++ (frameCells stable eff t k0).filter (!k.cells.contains ·),
              links := k.links ++ (frameLinks stable eff t k0).filter (!k.links.contains ·) ++ sameLinks eff t,
              indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
-        writeKept eff t k0 ++ linearAppendKept n eff t k0 ++ ensuresComposed stable eff t k0 }
+        writeKept eff t k0 ++ linearAppendKept Γ.length eff t k0 ++ ensuresComposed stable eff t k0 ++
+        freshCallSpineApart stable G Γ eff t k0 }
 
-theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hv : ∀ i, i < n → isVal (ρ i) = true)
+omit [DecidableEq ι] in
+theorem withEnsures_holds {stable : Nat → String → Bool} {G : NormalGraph ι} {Γ : List (Ty ι)} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hv : ∀ i, i < Γ.length → isVal (ρ i) = true)
     (hk : HeapKnowledge.Holds k ε (push v ρ) h') {nw : Nat} {W : WorldT nw} (hk0 : HeapKnowledge.Holds k0 ε ρ h)
     (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
-    HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.dischargeGuards_holds <| HeapKnowledge.withElements_holds
+    HeapKnowledge.Holds (withEnsures stable G Γ eff t k0 k) ε (push v ρ) h' := HeapKnowledge.dischargeGuards_holds <| HeapKnowledge.withElements_holds
   ⟨fun f hf => (List.mem_append.mp hf).elim (hk.1 f)
       (fun hf => frameCells_holds hk0 hok hρ hq hstable f (List.mem_filter.mp hf).1),
     hk.2.1,
@@ -3678,14 +3742,16 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
         · rcases List.mem_append.mp ha with ha | ha
           · rcases List.mem_append.mp ha with ha | ha
             · rcases List.mem_append.mp ha with ha | ha
-              · exact hk.2.2.2.2.2 a ha hc
-              · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp
-                (CallEffects.Effect.callPost_ensures hF hq)) a ha hc
-            · exact effectKept_holds hk0 hok hρ hq hstable a ha hc
-          · exact appendKept_holds hk0 hok hρ hq a ha hc
-        · exact writeKept_holds hk0 hq a ha hc
-      · exact linearAppendKept_holds hv hk0 hok hρ hq a ha hc
-    · exact ensuresComposed_holds hk0 hok hρ hq hstable a ha hc⟩
+              · rcases List.mem_append.mp ha with ha | ha
+                · exact hk.2.2.2.2.2 a ha hc
+                · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp
+                  (CallEffects.Effect.callPost_ensures hF hq)) a ha hc
+              · exact effectKept_holds hk0 hok hρ hq hstable a ha hc
+            · exact appendKept_holds hk0 hok hρ hq a ha hc
+          · exact writeKept_holds hk0 hq a ha hc
+        · exact linearAppendKept_holds hv hk0 hok hρ hq a ha hc
+      · exact ensuresComposed_holds hk0 hok hρ hq hstable a ha hc
+    · exact freshCallSpineApart_holds hk0 hok hρ hq hstable a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's spine keeps
 (`IndexWrites.grownRegions`) added, renamed past the result, where its
@@ -3729,7 +3795,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
+      | some eff => if eff.schema.normal.facts.isEmpty && !eff.schema.normal.freshResult && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (sameLinks eff j.term).isEmpty then none else some eff
@@ -3746,7 +3812,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
   match e with
   | .ordinary p =>
     match ExpressionEffects.selectedEffect p with
-    | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
+    | some eff => if eff.schema.normal.facts.isEmpty && !eff.schema.normal.freshResult && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (sameLinks eff j.term).isEmpty then none
@@ -4315,12 +4381,12 @@ other step is `base`'s. -/
   run := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.run j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) G j.context eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.select j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) G j.context eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ

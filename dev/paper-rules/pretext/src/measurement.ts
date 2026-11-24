@@ -13,7 +13,7 @@ export type SegmentMetrics = {
   spaceKerning: SpaceKerning | null // Its kerning beside a space, once asked (getSpaceKerning)
   // Per grapheme, the letter spacings it takes more than one, once letter-spaced text asked
   // where the engine spaces glyphs (getExtraSpacings): empty where every grapheme takes one.
-  extraSpacings: number[] | null
+  extraSpacings: Dense<number[]> | null
 }
 
 // A text segment's kerning with a U+0020 beside it, in the Chromium profile (getSpaceKerning).
@@ -26,10 +26,10 @@ export type SpaceKerning = {
 // replaced whole when another mode is asked for.
 export type SegmentFit = {
   mode: BreakableFitMode
-  advances: number[] | null // Per grapheme, or null for one grapheme
+  advances: Dense<number[]> | null // Per grapheme, or null for one grapheme
   // With advances, per grapheme, what a line that starts with it adds to its advance, where
   // the engine shapes such a line again (the 'reshaped-lines' mode). Null where nothing.
-  lineStartExtras: number[] | null
+  lineStartExtras: Dense<number[]> | null
 }
 
 export type EngineProfile = {
@@ -650,8 +650,8 @@ export function readLetterSpacing(letterSpacing: number | undefined, profile: En
 
 // A zero per segment, where per-segment widths start, pushed in a loop: Array.from over
 // `{ length }` reads every index off the object and calls its map function for each.
-export function zeros(count: number): number[] {
-  const out: number[] = []
+export function zeros(count: number): Modifies<{}, Fresh<Dense<number[]>>> {   // PAPER: annotation
+  const out: Dense<number[]> = []
   for (let i = 0; i < count; i++) out.push(0)
   return out
 }
@@ -664,7 +664,7 @@ const GLYPH_COUNT_SPACING = 2 ** 20
 
 // The spacings of a segment whose graphemes each take one, and of any segment where Canvas
 // can't be asked.
-export const noExtraSpacings: number[] = []
+export const noExtraSpacings: Dense<number[]> = []
 
 // Per grapheme of a text segment, how many letter spacings it takes more than one, where
 // the engine spaces glyphs (EngineProfile's letterSpacesGlyphs). Canvas spaces by the
@@ -679,7 +679,7 @@ export const noExtraSpacings: number[] = []
 // for each prefix new to the font, which WebKit shapes each time, since it keeps no width
 // measured under a letter spacing (TextMeasurementCache.h:165-167). Under a context that
 // takes no letterSpacing every grapheme takes one.
-export function getExtraSpacings(seg: string, measurement: FontMeasurement): number[] {
+export function getExtraSpacings(seg: string, measurement: FontMeasurement): Dense<number[]> {
   if (!measurement.state.takesLetterSpacing) return noExtraSpacings
   const ends = new Int32Array(seg.length)
   const count = findGraphemeEnds(getEngineProfile().graphemeTable, seg, 0, seg.length, ends)
@@ -688,7 +688,7 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): num
   // The font's context once Canvas is asked, under the counting spacing from then on, so
   // it changes its spacing once, and not at all for a segment whose prefixes are counted.
   let context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
-  let extras = noExtraSpacings
+  let extras: Dense<number[]> = noExtraSpacings
   try {
     let before = 0
     for (let i = 0; i < count; i++) {
@@ -707,8 +707,8 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): num
       before = glyphs
       if (extra === 0 && extras.length === 0) continue
       if (extras.length === 0) extras = zeros(count)
-      const extrasStore = extras
-      if ((i & 0x7fffffff) !== i || i > extrasStore.length) throw new RangeError('index')
+      const extrasStore: Dense<number[]> = extras
+      if ((i & 0x7fffffff) !== i || i >= extrasStore.length) throw new RangeError('index')
       extrasStore[i] = extra
     }
   } finally {
@@ -1211,15 +1211,15 @@ export function getSegmentFit(
   mode: BreakableFitMode,
   // When metrics measured seg together with one following U+0020, the width of
   // that space alone. The last grapheme then keeps its kerning with the space.
-  followingSpaceWidth: number | null = null,
+  followingSpaceWidth: number | null,
 ): SegmentFit {
   if (metrics.fit !== null && metrics.fit.mode === mode) return metrics.fit
   const profile = getEngineProfile()
   const ends = new Int32Array(seg.length)
   const count = findGraphemeEnds(profile.graphemeTable, seg, 0, seg.length, ends)
   if (count <= 1) return metrics.fit = { mode, advances: null, lineStartExtras: null }
-  let advances: number[]
-  let lineStartExtras: number[] | null = null
+  let advances: Dense<number[]>
+  let lineStartExtras: Dense<number[]> | null = null
   // Whether each advance is of a grapheme measured after the one before it alone.
   let pairs = false
   if (mode === 'reshaped-lines') {
@@ -1239,8 +1239,9 @@ export function getSegmentFit(
       advances = measureFitAdvances(seg, ends, count, 'pair-context', metrics, measurement, emojiCorrection, followingSpaceWidth)
       pairs = count > MAX_PREFIX_FIT_GRAPHEMES || addUpTo(advances, width)
       if (!pairs) advances = measureFitAdvances(seg, ends, count, 'segment-prefixes', metrics, measurement, emojiCorrection, followingSpaceWidth)
-      lineStartExtras = [0]
-      for (let i = 1; i < count; i++) lineStartExtras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
+      const extras: Dense<number[]> = [0]
+      for (let i = 1; i < count; i++) extras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
+      lineStartExtras = extras
     }
   } else {
     // Past MAX_PREFIX_FIT_GRAPHEMES, prefixes give way to pairs.
@@ -1266,17 +1267,17 @@ export function getSegmentFit(
           const idx = g - 1
           const advancesStore = advances
           const advancesValue = (advancesStore[idx] ?? missing()) + kerning
-          if ((idx & 0x7fffffff) !== idx || idx > advancesStore.length) throw new RangeError('index')
+          if ((idx & 0x7fffffff) !== idx || idx >= advancesStore.length) throw new RangeError('index')
           advancesStore[idx] = advancesValue
         } else if (kerning < 0) {
           const advancesStore = advances
           const advancesValue = (advancesStore[g] ?? missing()) + kerning
-          if ((g & 0x7fffffff) !== g || g > advancesStore.length) throw new RangeError('index')
+          if ((g & 0x7fffffff) !== g || g >= advancesStore.length) throw new RangeError('index')
           advancesStore[g] = advancesValue
           lineStartExtras ??= zeros(count)
           const lineStartExtrasStore = lineStartExtras
           const lineStartExtrasValue = (lineStartExtrasStore[g] ?? missing()) - kerning
-          if ((g & 0x7fffffff) !== g || g > lineStartExtrasStore.length) throw new RangeError('index')
+          if ((g & 0x7fffffff) !== g || g >= lineStartExtrasStore.length) throw new RangeError('index')
           lineStartExtrasStore[g] = lineStartExtrasValue
         }
       }
@@ -1294,7 +1295,7 @@ export function getSegmentFit(
 // inside it and gives each of its letters an equal share (ComputeLigatureData,
 // gfxTextRun.cpp:238-322); here the first letter keeps the whole advance (ENGINE_FOLLOWUPS.md,
 // Emergency breaks inside a word).
-function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: number[], measurement: FontMeasurement, emojiCorrection: number): void {
+function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: Dense<number[]>, measurement: FontMeasurement, emojiCorrection: number): void {
   // Text measured under letter spacing has no optional ligature, and a context that can't
   // turn them off can't be asked.
   if (!measurement.state.shapesLetterSpaced || measurement.letterSpacing !== '0px') return
@@ -1306,9 +1307,9 @@ function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: nu
     const alone = getTextWidth(seg.slice(start, ends[i]), measurement, emojiCorrection)
     if (Math.round(((advances[i] ?? missing()) - alone) * 60) !== 0 && isLigature(seg.slice(i === 1 ? 0 : (ends[i - 2] ?? missing()), ends[i]), measurement)) {
       const advancesValue = (advances[first] ?? missing()) + (advances[i] ?? missing())
-      if ((first & 0x7fffffff) !== first || first > advances.length) throw new RangeError('index')
+      if ((first & 0x7fffffff) !== first || first >= advances.length) throw new RangeError('index')
       advances[first] = advancesValue
-      if ((i & 0x7fffffff) !== i || i > advances.length) throw new RangeError('index')
+      if ((i & 0x7fffffff) !== i || i >= advances.length) throw new RangeError('index')
       advances[i] = 0
     } else {
       first = i
@@ -1351,10 +1352,10 @@ function measureFitAdvances(
   measurement: FontMeasurement,
   emojiCorrection: number,
   followingSpaceWidth: number | null,
-): number[] {
+): Dense<number[]> {
   const prefixes = from === 'segment-prefixes'
   const pairs = from === 'pair-context'
-  const advances: number[] = []
+  const advances: Dense<number[]> = []
   let previousStart = 0
   let previousWidth = 0
   for (let i = 0, start = 0; i < count; start = ends[i++] ?? missing()) {
@@ -1380,7 +1381,7 @@ function measureFitAdvances(
   if (followingSpaceWidth !== null && !prefixes) {
     const idx = count - 1
     const advancesValue = (advances[idx] ?? missing()) + metrics.width - getSegmentMetrics(seg, measurement).width - followingSpaceWidth
-    if ((idx & 0x7fffffff) !== idx || idx > advances.length) throw new RangeError('index')
+    if ((idx & 0x7fffffff) !== idx || idx >= advances.length) throw new RangeError('index')
     advances[idx] = advancesValue
   }
   return advances

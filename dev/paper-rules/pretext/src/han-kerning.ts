@@ -182,15 +182,15 @@ export type HanKerningTrims = {
   // Per segment, the halts the page gives its characters that its Canvas width keeps: of its
   // first character after the text before it, of its last before the text after it, and of
   // pairs inside it that Canvas shapes as two words. Null without any.
-  widthTrims: number[] | null
+  widthTrims: Dense<number[]> | null
   // Per segment, the halt of its first character after the character before it, which a line
   // start adds back. Null without any.
-  lineStartExtras: number[] | null
+  lineStartExtras: Dense<number[]> | null
   // Per segment, the halt of its last character where the line ends after it. Null without any.
-  lineEndTrims: number[] | null
+  lineEndTrims: Dense<number[]> | null
   // Per segment, that halt where the scan gives no break after it, which only a line that
   // Blink retries between graphemes takes. Null without any.
-  overflowLineEndTrims: number[] | null
+  overflowLineEndTrims: Dense<number[]> | null
 }
 
 // The trims of an analysis' text segments, read from the characters before and after each. For a
@@ -205,12 +205,12 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
   if (data === null) return out
   const { flags, starts, normalized } = analysis
   const count = flags.length
-  const addWidthTrim = (i: number, trim: number): void => {
+  const addWidthTrim = (i: number, trim: number): Modifies<{ values: "any" }, void> => {
     out.widthTrims ??= zeros(to - from)
     const idx = i - from
     const widthTrimsStore = out.widthTrims
     const widthTrimsValue = (widthTrimsStore[idx] ?? missing()) + trim
-    if ((idx & 0x7fffffff) !== idx || idx > widthTrimsStore.length) throw new RangeError('index')
+    if ((idx & 0x7fffffff) !== idx || idx >= widthTrimsStore.length) throw new RangeError('index')
     widthTrimsStore[idx] = widthTrimsValue
   }
   for (let i = from; i < to; i++) {
@@ -224,7 +224,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
       out.lineStartExtras ??= zeros(to - from)
       const idx = i - from
       const lineStartExtrasStore = out.lineStartExtras
-      if ((idx & 0x7fffffff) !== idx || idx > lineStartExtrasStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx >= lineStartExtrasStore.length) throw new RangeError('index')
       lineStartExtrasStore[idx] = trim
       addWidthTrim(i, trim)
     }
@@ -254,14 +254,14 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
       const idx = i - from
       const lineEndTrimsStore = out.lineEndTrims
       const lineEndTrimsValue = getTrim(data, last, measurement)
-      if ((idx & 0x7fffffff) !== idx || idx > lineEndTrimsStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx >= lineEndTrimsStore.length) throw new RangeError('index')
       lineEndTrimsStore[idx] = lineEndTrimsValue
     } else {
       out.overflowLineEndTrims ??= zeros(to - from)
       const idx = i - from
       const overflowLineEndTrimsStore = out.overflowLineEndTrims
       const overflowLineEndTrimsValue = getTrim(data, last, measurement)
-      if ((idx & 0x7fffffff) !== idx || idx > overflowLineEndTrimsStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx >= overflowLineEndTrimsStore.length) throw new RangeError('index')
       overflowLineEndTrimsStore[idx] = overflowLineEndTrimsValue
     }
   }

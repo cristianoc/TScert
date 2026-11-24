@@ -198,8 +198,8 @@ theorem exitTypes_prefix {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
 /-- A successful head exit preserves its input summary table. -/
 theorem headExit_prefix {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
-    {carried : List (PromiseCalls.Implication ι)} {acc result : ExitsDone ι G}
-    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried acc = .ok result) :
+    {carried : List (PromiseCalls.Implication ι)} {freshOut : List Nat} {acc result : ExitsDone ι G}
+    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried freshOut acc = .ok result) :
     SumsPrefix acc.answers result.answers := by
   cases vacuous
   all_goals unfold headExit at h

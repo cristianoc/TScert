@@ -13,7 +13,7 @@ import type { Span } from "./span.mts";
  * spine, `grow` keeps every dense prefix of a spine, `any` allows every
  * change; on a value `extend` and `grow` are `scalar`, on a spine `init` and
  * `scalar` are `keep`. Fresh locations are unconstrained. */
-export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly spine: "keep" | "extend" | "grow" | "any" };
+export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly spine: "keep" | "extend" | "grow" | "any"; readonly view?: "keep" | "extend" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
 export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |

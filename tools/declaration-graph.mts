@@ -23,14 +23,14 @@ import { wildcardReadings, classInstance, computedAlias, literalDefaultName, com
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateSegmentsName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, byteSetName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, byteSetName, byteSubarrayName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { canvasGetters, canvasSetters, domSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, viewDefinitions, type TypeEntry } from "./library-types.mts";
+import { bufferDefinition, canvasGetters, canvasSetters, domSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, viewDefinitions, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -697,6 +697,10 @@ export interface OperationRequests {
    * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
    * which joins the values. */
   lengthReads?: readonly Span[];
+  /** The client's two-argument calls `e.subarray(begin, end)`. Each whose
+   * receiver TypeScript types as views of bytes only is reported to
+   * `byteRead` with `%ByteSubarray%`, which joins the values. */
+  subarrayCalls?: readonly Span[];
   /** The client's element writes `e[k] = v`, by their targets: each whose
    * object TypeScript types as views of bytes only and whose key as a number
    * is reported to `byteRead` with `%ByteSet%`, which writes it and joins
@@ -875,6 +879,8 @@ export interface TypeAnswers {
   fresh?: (span: Span) => void;
   /** The verifier's `SafeInt` (`resolvable.d.ts`), at a source name. */
   safeInt?: (span: Span) => void;
+  /** The verifier's `Dense` (`resolvable.d.ts`), at a source name. */
+  dense?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   staticType?: (span: Span, result: Answered<TypeTerm>) => void;
@@ -892,7 +898,7 @@ export interface TypeAnswers {
    * parameters' kinds (`parameterKinds`), where one has no type meaning: a
    * type application's declaration's, a call's one signature's. */
   meaningless?: (span: Span, positions: readonly ParameterKind[]) => void;
-  keyType?: (span: Span, keys: TypeTerm | null) => void;
+  keyType?: (span: Span, keys: Answered<TypeTerm | null>) => void;
   mappedType?: (span: Span, members: readonly MappedMember[] | null) => void;
   symbolName?: (span: Span, result: Answered<number | { literal: string; value: string | number }>) => void;
 }
@@ -1059,13 +1065,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // binds it to: the safe integers, wherever a type is read.
     const safeIntReference = (reference: ts.TypeReferenceNode): boolean =>
       ts.isIdentifier(reference.typeName) && verifierAlias(reference.typeName) === "SafeInt";
-    // Whether a form reads the verifier's `SafeInt`: it references it, or
-    // names a declaration outside the standard library and the installed
-    // packages that reads it, by a type reference, a `typeof` or a
-    // heritage clause. TypeScript reads `SafeInt` as `number`, so its
-    // evaluation of such a form is a contract with `SafeInt` erased.
-    const readsSafeInt = (node: Node, seen: Set<Node> = new Set()): boolean => {
-      if (seen.has(node)) return false;
+    // A reference to the verifier's `Dense`, by the declaration TypeScript
+    // binds it to: a dense array type, wherever a type is read.
+    const denseReference = (reference: ts.TypeReferenceNode): boolean =>
+      ts.isIdentifier(reference.typeName) && verifierAlias(reference.typeName) === "Dense";
+    // Whether a form reads the verifier's `SafeInt` or `Dense`: it references
+    // one, or names a declaration outside the standard library and the
+    // installed packages that reads one, by a type reference, a `typeof` or a
+    // heritage clause. TypeScript erases both (`SafeInt` to `number`, `Dense<T>`
+    // to `T`), so its evaluation of such a form is a contract with them erased.
+    const readsErasedAnnotation = (node: Node, seen: Set<Node> = new Set()): "SafeInt" | "Dense" | null => {
+      if (seen.has(node)) return null;
       seen.add(node);
       const nameOf = (n: Node): Identifier | null => {
         const name = ts.isTypeReferenceNode(n) ? n.typeName : ts.isTypeQueryNode(n) ? n.exprName
@@ -1075,16 +1085,21 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (ts.isQualifiedName(name)) return name.right;
         return ts.isPropertyAccessExpression(name) && ts.isIdentifier(name.name) ? name.name : null;
       };
-      let found = false;
+      let found: "SafeInt" | "Dense" | null = null;
       const visit = (n: Node): void => {
         if (found) return;
-        if (ts.isTypeReferenceNode(n) && safeIntReference(n)) { found = true; return; }
+        if (ts.isTypeReferenceNode(n)) {
+          if (safeIntReference(n)) { found = "SafeInt"; return; }
+          if (denseReference(n)) { found = "Dense"; return; }
+        }
         const name = nameOf(n);
         if (name) for (const d of targetOf(checker, name)?.declarations ?? []) {
           const declaration = d.resolve();
           const file = declaration?.getSourceFile();
-          if (declaration && file && !libraryFile(file) && !file.fileName.split(sep).includes("node_modules") &&
-              readsSafeInt(declaration, seen)) { found = true; return; }
+          if (declaration && file && !libraryFile(file) && !file.fileName.split(sep).includes("node_modules")) {
+            const inner = readsErasedAnnotation(declaration, seen);
+            if (inner) { found = inner; return; }
+          }
         }
         n.forEachChild(visit);
       };
@@ -1810,6 +1825,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         stated: part => statement(reading, part, null),
         fresh: part => statement(reading, part, null, "Fresh"),
         safeInt: safeIntReference,
+        dense: denseReference,
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
           return target && isTypeAlias(target) && associatedAlias(target) ? target : null;
@@ -2272,9 +2288,13 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       equation: reference => valueScope(reading, client, "an alias's equation").equation?.(reference) ?? null,
       // Each block type the form names, at the binders it closes over.
       captures: node => {
-        if (readsSafeInt(node))
+        const erased = readsErasedAnnotation(node);
+        if (erased === "SafeInt")
           throw Error("TypeScript evaluates this form reading the verifier's `SafeInt` as `number`, which erases it: " +
             "a computed type, a key type or a mapped type over `SafeInt` is outside the fragment");
+        if (erased === "Dense")
+          throw Error("TypeScript evaluates this form reading the verifier's `Dense<T>` as `T`, which erases it: " +
+            "a computed type, a key type or a mapped type over `Dense` is outside the fragment");
         const visit = (n: Node): void => {
           if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName))
             for (const d of typeDeclarationsOf(n.typeName))
@@ -2934,6 +2954,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
+            declaration.name.text === "Dense") {
+          typeAnswers.dense?.(span);
+          continue;
+        }
+        if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             (declaration.name.text === "Resolvable" || declaration.name.text === "Awaitable")) {
           resolutionContextAt ??= span;
           if (declaration.name.text === "Resolvable") typeAnswers.resolvable?.(span);
@@ -3370,6 +3395,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       if (!read || !ts.isPropertyAccessExpression(read)) throw declarationError(span, "TypeScript length read missing");
       const object = checker.getTypeAtLocation(read.expression);
       if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) viewRead(span, byteLengthName);
+    }
+    // `b.subarray(begin, end)` of a view of bytes.
+    for (const span of operationsRequested.subarrayCalls ?? []) {
+      const call = expressionAt(client, span);
+      if (!call || !ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression))
+        throw declarationError(span, "TypeScript subarray call missing");
+      const object = checker.getTypeAtLocation(call.expression.expression);
+      if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) {
+        defineOverlay(bufferDefinition);
+        viewRead(span, byteSubarrayName);
+      }
     }
     // `o.k` of an object TypeScript types as `object` narrowed by `in`
     // tests (or an annotation of that shape): the narrowing intersects
@@ -4418,9 +4454,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     for (const span of typesRequested.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
       try {
-        typeAnswers.keyType?.(span, node ? keyTypeOf(node) : null);
+        typeAnswers.keyType?.(span, { ok: true, value: node ? keyTypeOf(node) : null });
       } catch (error) {
-        refuseAt(span, error);
+        if (error instanceof DeclarationError) throw error;
+        typeAnswers.keyType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     for (const span of typesRequested.mappedTypes ?? []) {
@@ -4709,6 +4746,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
       fresh: (part, owner) => statement({ owner, externalReads: 0 }, part, owner, "Fresh"),
       safeInt: safeIntReference,
+      dense: denseReference,
       record: identity => {
         records.add(definitionKey(identity));
         observations.record?.(identity);
@@ -6208,6 +6246,8 @@ interface DeclarationElaborationContext {
   fresh: (reference: ts.TypeReferenceNode, owner: string) => boolean;
   /** Whether a reference names the verifier's `SafeInt`. */
   safeInt: (reference: ts.TypeReferenceNode) => boolean;
+  /** Whether a reference names the verifier's `Dense`. */
+  dense: (reference: ts.TypeReferenceNode) => boolean;
   /** A mapped type's keys as TypeScript computes them. */
   keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
@@ -6385,6 +6425,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     stated: part => context.stated(part, key),
     fresh: part => context.fresh(part, key),
     safeInt: context.safeInt,
+    dense: context.dense,
     ...(body ? { body } : {}),
     symbol,
     literalKey: context.literalKey,

@@ -90,14 +90,15 @@ theorem headImplies_checked {env : WalkEnv ι G I} {t : Target} {names : List Na
 implications, input and argument slots, and heap facts. -/
 theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed : Bool}
-    {carried : List (PromiseCalls.Implication ι)} {a b : ExitsDone ι G}
-    (h : headExit G I env l exit t tc Γ names store pushed false carried a = .ok b) :
+    {carried : List (PromiseCalls.Implication ι)} {freshOut : List Nat} {a b : ExitsDone ι G}
+    (h : headExit G I env l exit t tc Γ names store pushed false carried freshOut a = .ok b) :
     (∀ x ∈ (env.givenImplies[t.label]?).getD [], ∃ y ∈ carried,
       names[PointClaims.slot t.mapping x.test]? = some y.test ∧
       names[PointClaims.slot t.mapping x.target]? = some y.target ∧
       (y.type = x.type ∨ ∃ ans, ((subtypeUsing G I y.type x.type ans).1).value.isSome = true)) ∧
     (∀ p ∈ (env.givenInputs[t.label]?).getD [], names[PointClaims.slot t.mapping p.1]? = env.startNames[p.2]?) ∧
     (∀ j ∈ (env.givenArgs[t.label]?).getD [], names[PointClaims.slot t.mapping j]? = env.argName) ∧
+    (∀ j ∈ headFreshAt env t.label, (names[PointClaims.slot t.mapping j]?).any freshOut.contains = true) ∧
     ∃ req, env.given[t.label]! = some req ∧
       KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
         (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping
@@ -117,6 +118,9 @@ theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poi
   rename_i hargs
   split at h
   · cases h
+  rename_i hfresh
+  split at h
+  · cases h
   rename_i req hreq
   have hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
       (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping
@@ -129,7 +133,7 @@ theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poi
     simp only [timedKind, hf, Bool.not_false, ite_true] at h
     cases h
   have hi' : (headImplies G I env t names carried a.answers).1 = true := by simpa using hi
-  refine ⟨headImplies_checked hi', ?_, ?_, req, hreq, ?_⟩
+  refine ⟨headImplies_checked hi', ?_, ?_, ?_, req, hreq, ?_⟩
   · intro p hp
     have hn : ((env.givenInputs[t.label]?).getD []).any
         (fun p => names[PointClaims.slot t.mapping p.1]? != env.startNames[p.2]?) = false :=
@@ -140,6 +144,12 @@ theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poi
     have hn : ((env.givenArgs[t.label]?).getD []).any
         (fun j => names[PointClaims.slot t.mapping j]? != env.argName) = false :=
       Bool.eq_false_iff.mpr hargs
+    have hh := List.any_eq_false.mp hn j hj
+    simpa using hh
+  · intro j hj
+    have hn : (headFreshAt env t.label).any
+        (fun j => !(names[PointClaims.slot t.mapping j]?).any freshOut.contains) = false :=
+      Bool.eq_false_iff.mpr hfresh
     have hh := List.any_eq_false.mp hn j hj
     simpa using hh
   · exact hq

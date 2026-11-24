@@ -160,9 +160,13 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := SinglePass.timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := SinglePass.timedKind "meet tagged" fun _ =>
-      let nullish := ((projections.flatMap fun (o : HeapKnowledge.Knowledge) => o.values.flatMap fun f =>
+      let nullishPos := ((projections.flatMap fun (o : HeapKnowledge.Knowledge) => o.values.flatMap fun f =>
         (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
           (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
+      let nullish := (nullishPos ++ nullishPos.filterMap fun (z, g) =>
+        if (g == .null || g == .undef) && projections.any (fun o => HeapKnowledge.guardTags o z [] g.complement) then
+          some (z, g.complement)
+        else none).eraseDups
       if nullish.isEmpty then [] else
       let candidates := (projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with

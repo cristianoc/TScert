@@ -43,14 +43,15 @@ def passOutFreshChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (co
   (match node.expression with
     | .var i => (entry.names[i]?).any entry.fresh.contains
     | _ => false) ||
+    GraphCode.ArgumentRegionGraph.allocSpine node.expression ||
     ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
       SinglePass.stepDerivChecked G images codes sums c node stepK deriv)
 
 omit [Hashable ι] [Instantiates ι] in
-/-- **`outFresh`'s two cases**: a copy of a fresh slot, or a call stating a
-fresh result (`passCallFresh`) whose derivation passes `passDerivChecked`
-at the node's sequent. -/
+/-- **`outFresh`'s three cases**: a copy of a fresh slot, a spine allocation,
+or a call stating a fresh result (`passCallFresh`) whose derivation passes
+`passDerivChecked` at the node's sequent. -/
 theorem passOutFreshChecked_cases {G : NormalGraph ι} {images : InstanceImageCheck G}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node}
     {entry : SinglePass.State} {stepK : HeapKnowledge.Knowledge} {deriv : ProgramCertificates.Evidence ι}
@@ -58,15 +59,40 @@ theorem passOutFreshChecked_cases {G : NormalGraph ι} {images : InstanceImageCh
     (match node.expression with
       | .var i => (entry.names[i]?).any entry.fresh.contains
       | _ => false) = true ∨
+    GraphCode.ArgumentRegionGraph.allocSpine node.expression = true ∨
     (passCallFresh node deriv = true ∧
       passDerivChecked G images codes sums stepK ⟨c.context, node.expression, c.type⟩ deriv = true) := by
   simp only [passOutFreshChecked, Bool.or_eq_true, Bool.and_eq_true] at h
-  refine h.imp id fun ⟨⟨hf, ho⟩, hd⟩ => ?_
-  have hd' := hd
-  simp only [SinglePass.stepDerivChecked, Bool.and_eq_true] at hd'
-  refine ⟨?_, hd⟩
-  simp only [passCallFresh, Bool.and_eq_true]
-  exact ⟨⟨hf, ho⟩, hd'.1.1⟩
+  rcases h with (hc | ha) | ⟨⟨hf, ho⟩, hd⟩
+  · exact .inl hc
+  · exact .inr (.inl ha)
+  · have hd' := hd
+    simp only [SinglePass.stepDerivChecked, Bool.and_eq_true] at hd'
+    exact .inr (.inr ⟨by simp only [passCallFresh, Bool.and_eq_true]; exact ⟨⟨hf, ho⟩, hd'.1.1⟩, hd⟩)
+
+/-- **A spine allocation evaluates to a fresh value**: any normal run of an
+`allocSpine` term from a heap of length at least `m` yields a value whose
+spine field lies at or past `m` (`alloc_step`). -/
+theorem allocSpine_steps_fresh {t : Tm} (ha : GraphCode.ArgumentRegionGraph.allocSpine t = true)
+    {ρ : Env} {m : Nat} {h h' : Heap} {k : Nat} {v : Tm} (hm : m ≤ h.length)
+    (hst : Steps k h (instantiate 0 ρ t) h' v) (hv : isVal v = true) : FreshAt m v := by
+  have hinv : ∀ {k h t h' v}, Steps k h t h' v →
+      m ≤ h.length → (GraphCode.ArgumentRegionFresh.AllocShape t ∨ (isVal t = true ∧ FreshAt m t)) →
+      isVal v = true → FreshAt m v := by
+    intro k h t h' v hst
+    induction hst with
+    | refl =>
+      intro _ hi hv
+      rcases hi with hs | ⟨_, hf⟩
+      · rw [GraphCode.ArgumentRegionFresh.allocShape_not_val hs] at hv; cases hv
+      · exact hf
+    | next st _ ih =>
+      intro hm hi hv
+      rcases hi with hs | ⟨hvt, _⟩
+      · have hstep := GraphCode.ArgumentRegionFresh.alloc_step hm hs st
+        exact ih hstep.1 hstep.2 hv
+      · exact absurd st (value_no_step hvt)
+  exact hinv hst hm (.inl (GraphCode.ArgumentRegionGraph.allocSpine_shape ha ρ)) hv
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **The checked call disjunct gives a fresh result** (what D4 makes
@@ -216,8 +242,9 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
     obtain ⟨-, -, -, hret, -⟩ := footprintCheck_sound hfc
     refine ⟨fun hv => contKeeps_of (fun _ _ _ => .inr (hN hv)) fun hk' => ⟨hN hv, fun hr => ?_⟩,
       fun e hr => ?_⟩
-    · rcases passOutFreshChecked_cases (hret hk' hr) with hc | ⟨hcf, hdc⟩
+    · rcases passOutFreshChecked_cases (hret hk' hr) with hc | ha | ⟨hcf, hdc⟩
       · exact copyFresh hS he na.width hc hst
+      · exact allocSpine_steps_fresh ha hm hst hv
       · exact callFresh_of_checked hcf hdc hcodes hsums' hm he hkS hrf k h' t' hk hst hv
     · cases hh : na.node.handler with
       | none =>

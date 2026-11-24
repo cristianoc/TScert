@@ -143,8 +143,10 @@ call returns a `T`; on a normal return every previously allocated location
 keeps its contents but those `P` names, each changed at most as `P` says.
 `P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`,
 `"extend"`, `"grow"` or `"any"`) bounds changes to locations holding a
-value, `spines` the same for array spines, `"extend"` appending fresh
-cells at a spine's end, as `push` does, and `onThrow: true` makes the bound hold on a throw too;
+value, `spines` bounds array spines (and view spines when `views` is omitted),
+`"extend"` appending fresh cells at a spine's end, as `push` does, `views`
+bounds typed-array view spines independently of array spines, and `onThrow: true`
+makes the bound hold on a throw too;
 `{}` states that nothing previously allocated changes. `P` may instead be
 a type parameter in scope, `Modifies<E, T>`, which the verifier reads as
 letting every location change, at every instance of `E`; an application
@@ -265,6 +267,23 @@ function at(xs: number[], i: SafeInt): number {
 }
 ```
 
+### `Dense<T>`
+
+As a type, wherever an array type is written: an array with no holes
+(`presence: "dense"`), every index below its length holding a present
+element. TypeScript reads it as `T`; the verifier certifies density at
+every producer (`new Array<T>(n).fill(v)`, array literals, `slice`,
+`map`, `filter`, or `push` on a dense array) and uses it to keep every
+array spine unchanged across in-bounds writes (`i < xs.length`). A
+computed type, a key type or a mapped type reading `Dense` is refused,
+since TypeScript evaluates it reading `Dense<T>` as `T`.
+
+```ts
+function zeros(n: number): Modifies<{}, Fresh<Dense<number[]>>> {
+  return new Array<number>(n).fill(0);
+}
+```
+
 ## Experimental effect-language annotations
 
 Annotations read only by the experimental paper-rules prototype
@@ -337,8 +356,6 @@ states. The spelling beside each is a proposal, read by no reader.
 - **The frame of an overloaded declaration**, one `Modifies` per overload.
 - **The frame of a generic closure or method**:
   `<T,>(x: T): Modifies<{ values: "keep"; spines: "keep" }, T> => x`.
-- **Dense presence of an array that is no tuple**: a result with no hole
-  (`Dense<number[]>`).
 - **A record's exact own keys**: a spread or an absent key's read
   continuing at the prototype (`Exact<{ a: number }>`).
 - **Facts over a binding a closure captures before its initialization**:

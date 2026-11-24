@@ -91,8 +91,8 @@ theorem exitTypes_unsat {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd :
 /-- A head check preserves the satisfiability cache. -/
 theorem headExit_unsat {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι} {Γ : List (Ty ι)}
     {names : List Nat} {edgeStore : Store} {pushed vacuous : Bool} {carried : List (PromiseCalls.Implication ι)}
-    {acc acc' : ExitsDone ι G}
-    (h : headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
+    {freshOut : List Nat} {acc acc' : ExitsDone ι G}
+    (h : headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried freshOut acc = .ok acc') :
     acc'.unsat = acc.unsat := by
   unfold headExit at h
   repeat' (first | split at h | extract_lets at h)

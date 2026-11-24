@@ -108,7 +108,7 @@ theorem start_entered_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List
     passPreT G w (List.range inputs.length) ⟨ρ, s.h⟩ ctx start ρ m s := by
   obtain ⟨-, -, hnoimp, hargs, hinputs, hk⟩ := entryRefusal_ok hacc
   have hest : HeadEstablishes G (startGiven written entryIndices entrySeparation supplied) givenImplies
-      (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs ⟨ρ, s.h⟩ ρ s :=
+      (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs [] ⟨ρ, s.h⟩ ρ m s :=
     { facts := startGiven_holds hk he hs hi
       implies := by subst hnoimp; intro x hx; cases hx
       inputs := fun j q _ hjq _ => by have := hinputs _ hjq; simp only at this; rw [this]
@@ -116,7 +116,8 @@ theorem start_entered_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List
         have hsl := hargs j hj
         rw [hsl] at ha
         simp only [Option.bind_some] at ha
-        rw [range_get ha, range_get hq] }
+        rw [range_get ha, range_get hq]
+      fresh := fun _ h => by simp at h }
   refine ⟨⟨hv, ?_⟩, hctx ▸ he⟩
   rw [hentry, himp]
   refine (headEntry_holds List.nodup_range (fun x hx => ?_) (fun a ha => ?_) hest).1

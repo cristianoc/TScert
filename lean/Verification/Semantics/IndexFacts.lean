@@ -2247,17 +2247,22 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
     fun hs => (by simp [top] at hs)⟩
 
 /-- The change a closed footprint allows: below `any` no location holding an
-object changes, at most `init` none holding a number, `init` or `scalar` on a
-spine is `keep`, and `extend` or `grow` on a spine leaves each spine no
-shorter and within `maxArrayLength` where it was. -/
+object changes, at most `init` none holding a number; when both spine classes
+keep their spines, every spine is kept (`keep`), otherwise an array class that
+keeps array spines keeps every array spine's length (`length`), and `extend` or
+`grow` on array spines leaves each array spine no shorter and within
+`maxArrayLength` where it was. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
   ⟨Φ.value == .any, !(Φ.value.le .init),
     match Φ.spines.onSpine with
     | .keep => .keep
-    | .extend | .grow => .grow
-    | _ => .any⟩
+    | _ => match Φ.array.onSpine with
+      | .keep => .length
+      | .extend | .grow => .grow
+      | _ => .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
+  have hpArr := Footprints.Closed.holds_iff.mp hp
   replace hp := Footprints.Closed.holds_iff.mp (hp.mono (Footprints.Closed.le_ofSpines_spines Φ))
   refine ⟨fun l v hv ha => ?_, fun hs => ?_, fun hs => ?_⟩
   · obtain ⟨v', hv', hc⟩ := hp.2 l v hv
@@ -2266,7 +2271,7 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       case arr ls =>
         simp only [alters, ofClosed] at ha
         have hst : Φ.spines = .keep ∨ Φ.spines = .init ∨ Φ.spines = .scalar := by
-          cases hΦ : Φ.spines <;> simp_all [Footprints.Change.onSpine]
+          cases hΦ : Φ.spines <;> cases hΦa : Φ.array <;> simp_all [Footprints.Change.onSpine]
         simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
@@ -2275,7 +2280,7 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       case viewSpine f cs =>
         simp only [alters, ofClosed] at ha
         have hst : Φ.spines = .keep ∨ Φ.spines = .init ∨ Φ.spines = .scalar := by
-          cases hΦ : Φ.spines <;> simp_all [Footprints.Change.onSpine]
+          cases hΦ : Φ.spines <;> cases hΦa : Φ.array <;> simp_all [Footprints.Change.onSpine]
         simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
@@ -2293,13 +2298,29 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
         exact hc.defined_kept hva rfl
       all_goals simp [alters] at ha
     exact hkeep ▸ hv'
-  · revert hs; simp only [ofClosed]; split <;> simp
   · intro l ls hl
-    have hg : Φ.spines.le .grow = true := by
+    have hst : Φ.array = .keep ∨ Φ.array = .init ∨ Φ.array = .scalar := by
       revert hs; simp only [ofClosed]
-      cases hΦ : Φ.spines <;> simp [Footprints.Change.onSpine, Footprints.Change.le, Footprints.Change.rank]
-    obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
-    simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
+      cases hΦs : Φ.spines <;> cases hΦa : Φ.array <;> simp [Footprints.Change.onSpine]
+    obtain ⟨v', hv', hc⟩ := hpArr.2 l _ hl
+    have hat : Φ.at (.arr ls) = Φ.array := by
+      rw [Footprints.Closed.at_category]; rfl
+    rw [hat] at hc
+    have hkeep : v' = .arr ls := by
+      rcases hst with hst | hst | hst
+      · rw [hst] at hc; exact hc
+      · rw [hst] at hc; exact hc.init_spine
+      · rw [hst] at hc; exact hc.scalar_spine
+    exact ⟨ls, hkeep ▸ hv', rfl⟩
+  · intro l ls hl
+    have hg : Φ.array.le .grow = true := by
+      revert hs; simp only [ofClosed]
+      cases hΦs : Φ.spines <;> cases hΦa : Φ.array <;>
+        simp [Footprints.Change.onSpine, Footprints.Change.le, Footprints.Change.rank]
+    obtain ⟨v', hv', hc⟩ := hpArr.2 l _ hl
+    have hat : Φ.at (.arr ls) = Φ.array := by
+      rw [Footprints.Closed.at_category]; rfl
+    rw [hat] at hc
     rcases hc.mono hg with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
     · exact ⟨ls, hv', Nat.le_refl _, id⟩
     · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩
@@ -2334,7 +2355,7 @@ def Term.keptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Boo
   (match t.kind with
     | .value => true
     | .length => c.keepsLength || (t.path.isEmpty && first t.slot "[]")
-    | .view => !c.num
+    | .view => true
     | .strLength => t.path.isEmpty)
 
 /-- A change keeps what a path reads: each location it reads holds an object
@@ -2370,9 +2391,9 @@ theorem readPath_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') :
     all_goals simp [readPath] at hw
 
 /-- A change keeps what a kind of term reads of a value: a spine it keeps or
-keeps the length of, a number it keeps. -/
+keeps the length of, and an immutable view length or string length. -/
 theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term.Kind} {w : Val} {n : Int}
-    (hk : kindValue h k w = some n) (hlen : k = .length → c.keepsLength = true) (hview : k = .view → c.num = false) :
+    (hk : kindValue h k w = some n) (hlen : k = .length → c.keepsLength = true) :
     kindValue h' k w = some n := by
   cases k with
   | value => exact hk
@@ -2483,19 +2504,18 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
   have hkind' : (match kind with
       | .value => true
       | .length => c.keepsLength
-      | .view => !c.num
+      | .view => true
       | .strLength => true) = true := by
     cases kind with
     | value => rfl
     | strLength => rfl
-    | view => simpa using hkind
+    | view => rfl
     | length =>
       simp only [Bool.or_eq_true, Bool.and_eq_true, List.isEmpty_iff] at hkind
       rcases hkind with h1 | ⟨h2, h3⟩
       · simpa using h1
       · exact absurd ⟨rfl, h2, h3⟩ hfs
-  refine ⟨w, ?_, kindValue_kept hc hkw (fun he => by subst he; simpa using hkind')
-    (fun he => by subst he; simpa using hkind')⟩
+  refine ⟨w, ?_, kindValue_kept hc hkw (fun he => by subst he; simpa using hkind')⟩
   exact pathRead_kept hc hf (by simpa [Term.pathKeptBy] using hpath) hlast hw
 
 /-- Whether a change grows what a length term denotes: it keeps the term's

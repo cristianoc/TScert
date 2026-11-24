@@ -215,6 +215,9 @@ export type TermScope = {
   /** Whether a reference names the verifier's `SafeInt` (`resolvable.d.ts`),
    * by the declaration TypeScript binds it to: the safe integers. */
   safeInt?: (node: TypeReferenceNode) => Modifies<{ values: "any"; spines: "grow" }, boolean>;
+  /** Whether a reference names the verifier's `Dense` (`resolvable.d.ts`),
+   * by the declaration TypeScript binds it to: a dense array type. */
+  dense?: (node: TypeReferenceNode) => Modifies<{ values: "any"; spines: "grow" }, boolean>;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
   awaited?: AwaitedHook;
@@ -580,6 +583,13 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
     if (scope.safeInt?.(node)) {
       if (node.typeArguments?.length) return scope.fail(node, "`SafeInt` takes no type argument");
       return atom("safeInt");
+    }
+    if (scope.dense?.(node)) {
+      const [argument, ...others] = node.typeArguments ?? [];
+      if (!argument || others.length) return scope.fail(node, "`Dense` takes one array type argument: `Dense<T[]>`");
+      const inner = typeTerm(scope, argument);
+      if (inner.k !== "array") return scope.fail(argument, "`Dense` requires an array type: `Dense<T[]>` or `Dense<readonly T[]>`");
+      return { ...inner, presence: "dense", span };
     }
     if (scope.awaited?.(node)) {
       const [argument, ...others] = node.typeArguments ?? [];
@@ -1239,7 +1249,7 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   const stated = { ...frame, fresh: withFresh };
   if (withFresh && stated.regions.length)
     return scope.fail(footprint, "a fresh result beside spine regions is outside the fragment: a frame with spine regions states no fresh result");
-  if (!variable && stated.footprint.value === "any" && stated.footprint.spine === "any" && !stated.fresh)
+  if (!variable && stated.footprint.value === "any" && stated.footprint.spine === "any" && (stated.footprint.view ?? stated.footprint.spine) === "any" && !stated.fresh)
     return scope.fail(footprint, "`Modifies` letting every value and every spine change states nothing: a throw's heap is as unconstrained by it as a normal return's");
   return { stated, result: predicate ? result : withFresh && ts.isTypeReferenceNode(inner) ? freshResult(scope, inner) : type };
 }
@@ -1259,12 +1269,14 @@ function placed(scope: TermScope, node: TypeReferenceNode, at: Node | null, what
 function freshResult(scope: TermScope, node: TypeReferenceNode): Modifies<{ values: "any"; spines: "grow" }, TypeNode> {
   const [type, ...others] = node.typeArguments ?? [];
   if (!type || others.length) return scope.fail(node, "`Fresh` takes an array type: `Fresh<T>`");
-  const written = unwrap(type);
+  const raw = unwrap(type);
+  if (ts.isTypeReferenceNode(raw) && (scope.stated?.(raw) || scope.fresh?.(raw)))
+    return scope.fail(raw, "a frame and a fresh result are written `Modifies<P, Fresh<T>>`");
+  const [denseArg, ...denseOthers] = ts.isTypeReferenceNode(raw) && scope.dense?.(raw) ? raw.typeArguments ?? [] : [];
+  const written = denseArg && denseOthers.length === 0 ? unwrap(denseArg) : raw;
   const operand = ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword ? unwrap(written.type) : written;
   const array = ts.isArrayTypeNode(operand) || (ts.isTypeReferenceNode(operand) && ts.isIdentifier(operand.typeName) &&
     (operand.typeName.text === "Array" || operand.typeName.text === "ReadonlyArray") && operand.typeArguments?.length === 1);
-  if (ts.isTypeReferenceNode(written) && (scope.stated?.(written) || scope.fresh?.(written)))
-    return scope.fail(written, "a frame and a fresh result are written `Modifies<P, Fresh<T>>`");
   if (!array) return scope.fail(type, "`Fresh` states an array allocated by the call: its type is an array type");
   return type;
 }
@@ -1321,10 +1333,11 @@ const variableFrame: StatedFrame = { footprint: { value: "any", spine: "any" }, 
  * §3.1). */
 function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modifies<{ values: "any"; spines: "grow" }, StatedFrame> {
   const node = unwrap(written);
-  const shape = "a frame is written in place as a type literal `{ values?: c; spines?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"extend\", \"grow\", \"any\"";
+  const shape = "a frame is written in place as a type literal `{ values?: c; spines?: c; views?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"extend\", \"grow\", \"any\"";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
   let value: ClosedFootprint["value"] = "keep";
   let spine: ClosedFootprint["spine"] = "keep";
+  let view: ClosedFootprint["spine"] | undefined;
   let onThrow = false;
   const regions: SpineRegion[] = [];
   const seen = new Set<string>();
@@ -1340,6 +1353,7 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
     const text = literal && ts.isStringLiteral(literal) ? literal.text : null;
     if (ts.isIdentifier(member.name) && key === "values" && isChange(text)) value = onValue(text);
     else if (ts.isIdentifier(member.name) && key === "spines" && isChange(text)) spine = onSpine(text);
+    else if (ts.isIdentifier(member.name) && key === "views" && isChange(text)) view = onSpine(text);
     else if (ts.isIdentifier(member.name) && key === "onThrow" && literal?.kind === ts.SyntaxKind.TrueKeyword) onThrow = true;
     else if (ts.isStringLiteral(member.name) && locationKey(key)) {
       const classMap = ts.isTypeLiteralNode(type) && type.members.every(m =>
@@ -1358,13 +1372,13 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
         regions.push({ position: regionPosition(scope, member, field[1], at), path: field[2] === "" ? [] : [field[2].slice(1)],
           key: field[3] === "*" ? null : field[3], change: text });
       else if (field) return scope.fail(member, `a field region "${key}" is stated at a change: a class map at a field region is outside the fragment`);
-      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`onThrow\`, a parameter's spine region \`"x[*]"\` or \`"x.f[*]"\`, and a parameter's field region \`"x.g"\`, \`"x.*"\`, \`"x.f.g"\` or \`"x.f.*"\``);
+      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`views\`, \`onThrow\`, a parameter's spine region \`"x[*]"\` or \`"x.f[*]"\`, and a parameter's field region \`"x.g"\`, \`"x.*"\`, \`"x.f.g"\` or \`"x.f.*"\``);
     } else if (ts.isIdentifier(member.name) && (key === "value" || key === "store"))
-      return scope.fail(member, `\`${key}\` is no key of a frame: the class keys are \`values\` and \`spines\`, and a module cell is written \`"cell(${key})"\``);
-    else if (!ts.isIdentifier(member.name) || key === "values" || key === "spines" || key === "onThrow") return scope.fail(member, shape);
+      return scope.fail(member, `\`${key}\` is no key of a frame: the class keys are \`values\`, \`spines\` and \`views\`, and a module cell is written \`"cell(${key})"\``);
+    else if (!ts.isIdentifier(member.name) || key === "values" || key === "spines" || key === "views" || key === "onThrow") return scope.fail(member, shape);
     else return scope.fail(member, `\`${key}\` is no key of a frame: a location is a quoted key (\`"x.f"\`, \`"x[*]"\`, \`"x.*"\`), and a module cell is written \`"cell(${key})"\``);
   }
-  return { footprint: { value, spine }, onThrow, fresh: false, regions };
+  return { footprint: view === undefined ? { value, spine } : { value, spine, view }, onThrow, fresh: false, regions };
 }
 
 /** The call position of a spine region's root: a parameter of the function

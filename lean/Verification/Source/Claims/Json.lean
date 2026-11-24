@@ -645,6 +645,85 @@ def proposeConfinement {ι : Type} [DecidableEq ι] (inputsHoldAllocations : Boo
     if conf.framedNodes.isEmpty then none else some conf
   else none
 
+/-- Whether a node's expression yields a fresh spine (a copy of a fresh slot, a
+spine allocation, or a call/construction whose callee's signatures all declare a
+fresh result). Used only as an untrusted proposal for loop-head freshness
+(`proposeFreshHeads`); `SinglePass.headExit` checks every edge. -/
+def freshExprProposal {ι : Type} [DecidableEq ι] (G : NormalGraph ι)
+    (Γ : List (Ty ι)) (F : List Nat) (t : Tm) : Bool :=
+  (match t with
+    | .var i => F.contains i
+    | _ => false) ||
+  GraphCode.ArgumentRegionGraph.allocSpine t ||
+  match t with
+  | .invoke (.var f) _ _ =>
+    match Γ[f]? with
+    | some A =>
+      match PositiveRules.expand G A with
+      | [PositiveNormalization.Clause.arrs L S] | [PositiveNormalization.Clause.callable _ _ L S _] =>
+        !L.isEmpty && L.all (·.effect.schema.normal.freshResult) && S.all (·.effect.schema.normal.freshResult)
+      | _ => false
+    | none => false
+  | .construct (.var f) _ =>
+    match Γ[f]? with
+    | some A =>
+      match PositiveRules.expand G A with
+      | [PositiveNormalization.Clause.ctors L S _ _ _] =>
+        !L.isEmpty && L.all (·.effect.schema.normal.freshResult) && S.all (·.effect.schema.normal.freshResult)
+      | _ => false
+    | none => false
+  | _ => false
+
+/-- Propose fresh slots at each label of `P` via a forward intersection
+worklist from `start` (`start` always has `[]`). The proposal is untrusted:
+`SinglePass.headExit` checks every edge into every loop head. -/
+def proposeFreshHeads {ι : Type} [DecidableEq ι] (G : NormalGraph ι)
+    (P : ControlFlow.Program) (claims : List (CertificateProducer.PointClaim ι))
+    (start : Nat) : Array (List Nat) := Id.run do
+  let n := P.length
+  if n == 0 || start >= n then return #[]
+  let nodes := P.toArray
+  let cs := claims.toArray
+  let mut table : Array (Option (List Nat)) := Array.replicate n none
+  table := table.set! start (some [])
+  let mut queue : List Nat := [start]
+  let mut inQueue : Array Bool := Array.replicate n false
+  inQueue := inQueue.set! start true
+  let mut fuel := 20 * n + 100
+  while !queue.isEmpty && fuel > 0 do
+    fuel := fuel - 1
+    let some l := queue.head? | break
+    queue := queue.tail
+    inQueue := inQueue.set! l false
+    let some F := table.getD l none | continue
+    let some node := nodes[l]? | continue
+    let some c := cs[l]? | continue
+    let outF := freshExprProposal G c.context F node.expression
+    for ex in SinglePass.Exit.ofNode node do
+      let t := ex.target
+      if t.label < n && t.label != start then
+        let width := ((cs[t.label]?).map (·.context.length)).getD 0
+        let edgeF := (List.range width).filter fun j =>
+          let s := PointClaims.slot t.mapping j
+          if ex.isHandler then s > 0 && F.contains (s - 1)
+          else if ex.pushed then (s == 0 && outF) || (s > 0 && F.contains (s - 1))
+          else F.contains s
+        match table.getD t.label none with
+        | none =>
+          table := table.set! t.label (some edgeF)
+          if !inQueue.getD t.label false then
+            queue := t.label :: queue
+            inQueue := inQueue.set! t.label true
+        | some old =>
+          let inter := old.filter edgeF.contains
+          if inter.length < old.length then
+            table := table.set! t.label (some inter)
+            if !inQueue.getD t.label false then
+              queue := t.label :: queue
+              inQueue := inQueue.set! t.label true
+  if !queue.isEmpty then return #[]
+  return table.map (·.getD [])
+
 /-- Run a single-pass runner under an optional proposed confinement table,
 falling back to the unframed run if `checkWalkConfinement` refuses the untrusted
 proposal. -/
@@ -724,6 +803,7 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
   let givenImplies := main.implies
   let givenArgs := main.args
   let givenInputs := main.inputs
+  let givenFresh := proposeFreshHeads G r.program r.claims r.start
   -- A qualified body (`SourceRequest.checker`): the walk over the
   -- request's own graph and image check, at its checker and aliases;
   -- the request-level conditions a qualified body meets
@@ -878,19 +958,19 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
         SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
           givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
-          fr conf)
+          fr conf givenFresh)
       framed
       (probeTrace (framedProbeOf observe) fun L =>
         let framedAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) =>
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional false [] none givenFresh).1 with
           | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
           | _ => []
         let runAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) (fr : List (Nat × List Footprints.Footprint))
             (ob : Option Nat) => (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr none givenFresh).1
         framedProbeReport runAt framedAt r.candidates L observed)
       (proposeConfinement (f.fr.isInitialization i) G r.program r.claims r.start framed)
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional

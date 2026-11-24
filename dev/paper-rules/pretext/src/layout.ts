@@ -97,11 +97,6 @@ export type PrepareOptions = {
 
 // --- Public API ---
 
-// PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
-// `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
-// that changes nothing.
-function paperAssume(_fact: boolean, _issue: string): Modifies<{}, void> {}   // PAPER
-
 function prepareInternal(
   text: string,
   font: string,
@@ -115,7 +110,6 @@ function prepareInternal(
   const language = getPreparationLanguage(engineProfile)
   const analysis = analyzeText(text, engineProfile, options?.whiteSpace, wordBreak, language)
   const prepared = measureAnalysis(analysis, 0, analysis.flags.length, font, segments, letterSpacing, engineProfile, language, true, null)   // PAPER: the result through a local
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return prepared
 }
 

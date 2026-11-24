@@ -180,7 +180,7 @@ type ScriptRuns = { read: number, scripts: number, /** @stable */ readonly openB
 // that run has ended, among the last 32 opened, and closes the ones opened since; its own
 // stays open, so a second closing bracket goes back to that run too (OpenBracket,
 // CloseBracket and FixupStack, :431-489, :567-590).
-function readScriptRuns(runs: ScriptRuns, text: string, to: number): Modifies<{ values: "any"; spines: "grow"; "runs.openBrackets[*]": "any" }, number> {
+function readScriptRuns(runs: ScriptRuns, text: string, to: number): Modifies<{ values: "any"; views: "grow"; "runs.openBrackets[*]": "any" }, number> {
   const { openBrackets } = runs
   while (runs.read < to || (runs.scripts === ANY_SCRIPT && runs.read < text.length)) {
     const c = text.codePointAt(runs.read)
@@ -219,7 +219,7 @@ function readScriptRuns(runs: ScriptRuns, text: string, to: number): Modifies<{ 
 // space that has one script names that run, so the search back starts before the space, at
 // text[at - 2], and ends there; a closing bracket, or a character of several scripts, takes its
 // script from the runs before it, which are then read.
-function spaceSharesScriptRun(runs: ScriptRuns, text: string, at: number, end: number): Modifies<{ values: "any"; spines: "grow"; "runs.openBrackets[*]": "any" }, boolean> {
+function spaceSharesScriptRun(runs: ScriptRuns, text: string, at: number, end: number): Modifies<{ values: "any"; views: "grow"; "runs.openBrackets[*]": "any" }, boolean> {
   let scripts = getScriptFactsAt(text, at) & ANY_SCRIPT
   // A default ignorable with a script of its own, as U+3164, counts as the word's first letter.
   for (let first = at; scripts === ANY_SCRIPT && first + 1 < end && hasProperty(text.charCodeAt(first), DEFAULT_IGNORABLE); first++) scripts = getScriptFactsAt(text, first + 1) & ANY_SCRIPT
@@ -255,7 +255,7 @@ function spaceSharesScriptRun(runs: ScriptRuns, text: string, at: number, end: n
 // character is a letter of a cursive script; in Blink those whose first character is in a
 // run that resolves to one and isn't a no-break space. A rich item's text starts a run of
 // its own (ENGINE_FOLLOWUPS.md, Letter spacing).
-function getUnspacedGraphemes(text: string, start: number, end: number, graphemeTable: GraphemeTable, runs: ScriptRuns | null): Modifies<{ values: "any"; spines: "grow"; "runs.openBrackets[*]": "any" }, number[] | null> {
+function getUnspacedGraphemes(text: string, start: number, end: number, graphemeTable: GraphemeTable, runs: ScriptRuns | null): Modifies<{ values: "any"; views: "grow"; "runs.openBrackets[*]": "any" }, number[] | null> {
   const ends = new Int32Array(end - start)
   const count = findGraphemeEnds(graphemeTable, text, start, end, ends)
   let unspaced: number[] | null = null
@@ -270,9 +270,9 @@ function getUnspacedGraphemes(text: string, start: number, end: number, grapheme
 // The lists of a rich-inline paragraph's handle that each item's measurement adds its segments
 // to; `segmentFlags` has room for them from `widths.length` on.
 export type ParagraphLists = {
-  widths: number[]
-  segmentFlags: Uint8Array
-  breakableFitAdvances: (number[] | null)[]
+  readonly widths: Dense<number[]>
+  readonly segmentFlags: Uint8Array
+  readonly breakableFitAdvances: (number[] | null)[]
 }
 
 // PAPER: annotation
@@ -361,7 +361,12 @@ function getTextSegmentWidth(text: string, textMetrics: SegmentMetrics, measurem
 // copy of its part of the analysis and no lists of its own to copy from. The handle returned
 // holds those lists; what else it holds is the measured segments' alone, each list from the
 // first of them.
-/** @requires safeInteger(from) && 0 <= from && from <= to && safeInteger(to) && to <= analysis.flags.length && to <= analysis.starts.length && to <= analysis.texts.length */
+/**
+ * @requires safeInteger(from) && 0 <= from && from <= to && safeInteger(to) && to <= analysis.flags.length && to <= analysis.starts.length && to <= analysis.texts.length
+ * @requires paragraph === null || paragraph.widths !== paragraph.breakableFitAdvances
+ * @requires paragraph === null || segments === null || paragraph.widths !== segments
+ * @ensures paragraph !== null || result.segmentFlags.length === result.widths.length
+ */
 export function measureAnalysis(
   analysis: TextAnalysis,
   from: number,
@@ -390,7 +395,7 @@ export function measureAnalysis(
   // for them. With those stores a text's lists made by its caller weren't timed, so whether
   // they still have to be made here isn't known (RESEARCH.md, Keeping Work Bounded, JavaScript
   // Engines, under A list made where it is filled).
-  const widths: number[] = paragraph === null ? [] : paragraph.widths
+  const widths: Dense<number[]> = paragraph === null ? [] : paragraph.widths
   // An engine's scan makes one prepared segment per analysis segment, whose flags the
   // walkers, layout()'s count and rich-inline layout read where the scan gives no break.
   const segmentFlags = paragraph === null ? new Uint8Array(to - from) : paragraph.segmentFlags
@@ -440,7 +445,7 @@ export function measureAnalysis(
   // the scan breaks at every segment boundary, and layout() counts it with the
   // simple stepper where it doesn't (countPreparedLines).
   let simpleKinds = !hasLetterSpacing
-  let breakableLineStartExtras: (number[] | null)[] | null = null
+  let breakableLineStartExtras: Dense<(number[] | null)[]> | null = null
   let discretionaryHyphenContexts: number[] | null = null
   let previousJoinablePiece: string | null = null
   let previousJoinableMetrics: SegmentMetrics | null = null
@@ -456,8 +461,11 @@ export function measureAnalysis(
   // (RESEARCH.md, Keeping Work Bounded, JavaScript Engines, under A list made where it is
   // filled; Decisions Log, 2026-10-09, a paragraph's lists).
   /**
-   * @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && from <= mi && to <= flags.length && to <= starts.length && to <= texts.length && flags !== scriptRuns.openBrackets && starts !== scriptRuns.openBrackets && texts !== scriptRuns.openBrackets
-   * @invariant unspacedRuns === null || flags !== unspacedRuns.openBrackets && starts !== unspacedRuns.openBrackets && texts !== unspacedRuns.openBrackets
+   * @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(at) && 0 <= from && from <= mi && mi <= to && to <= flags.length && to <= starts.length && to <= texts.length && 0 <= base && base <= 4294967295 && at === base + mi - from && widths.length === at && flags !== scriptRuns.openBrackets && starts !== scriptRuns.openBrackets && texts !== scriptRuns.openBrackets && widths !== scriptRuns.openBrackets && widths !== breakableFitAdvances
+   * @invariant unspacedRuns === null || flags !== unspacedRuns.openBrackets && starts !== unspacedRuns.openBrackets && texts !== unspacedRuns.openBrackets && widths !== unspacedRuns.openBrackets
+   * @invariant discretionaryHyphenContexts === null || widths !== discretionaryHyphenContexts
+   * @invariant segments === null || widths !== segments
+   * @invariant paragraph !== null || base === 0 && at === mi - from && segmentFlags.length === to - from
    */
   for (let mi = from, at = base; mi < to; mi++, at++) {
     const text = texts[mi]!
@@ -466,7 +474,7 @@ export function measureAnalysis(
     let width = 0
     // Graphemes that take letter spacing after them.
     let spacingGraphemeCount = 0
-    let fitAdvances: number[] | null = null
+    let fitAdvances: Dense<number[]> | null = null
     switch (kind) {
       case TEXT: {
         // A control the engine hides takes no advance, only letter spacing.
@@ -508,7 +516,7 @@ export function measureAnalysis(
               spaceSharesScriptRun(scriptRuns, own, starts[mi]! - ownStart, starts[mi]! - ownStart + text.length)) {
               const idx = at - 1
               const widthsValue = (widths[idx] ?? missing()) + kerning.before
-              if ((idx & 0x7fffffff) !== idx || idx > widths.length) throw new RangeError('index')
+              if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
               widths[idx] = widthsValue
             }
           }
@@ -551,7 +559,7 @@ export function measureAnalysis(
           breakableLineStartExtras ??= new Array<number[] | null>(to - from).fill(null)
           const idx = mi - from
           const breakableLineStartExtrasStore = breakableLineStartExtras
-          if ((idx & 0x7fffffff) !== idx || idx > breakableLineStartExtrasStore.length) throw new RangeError('index')
+          if ((idx & 0x7fffffff) !== idx || idx >= breakableLineStartExtrasStore.length) throw new RangeError('index')
           breakableLineStartExtrasStore[idx] = startExtras
         }
         // The cached advances are shared by every occurrence of this text; only
@@ -561,7 +569,7 @@ export function measureAnalysis(
           const idx = fitAdvances.length - 1
           const fitAdvancesStore = fitAdvances
           const fitAdvancesValue = (fitAdvancesStore[idx] ?? missing()) + followingSpaceKerning
-          if ((idx & 0x7fffffff) !== idx || idx > fitAdvancesStore.length) throw new RangeError('index')
+          if ((idx & 0x7fffffff) !== idx || idx >= fitAdvancesStore.length) throw new RangeError('index')
           fitAdvancesStore[idx] = fitAdvancesValue
         }
         if (extraSpacings.length !== 0) {
@@ -569,7 +577,7 @@ export function measureAnalysis(
           for (let k = 0; k < extraSpacings.length; k++) {
             const fitAdvancesStore = fitAdvances
             const fitAdvancesValue = (fitAdvancesStore[k] ?? missing()) + extraSpacings[k]! * letterSpacing
-            if ((k & 0x7fffffff) !== k || k > fitAdvancesStore.length) throw new RangeError('index')
+            if ((k & 0x7fffffff) !== k || k >= fitAdvancesStore.length) throw new RangeError('index')
             fitAdvancesStore[k] = fitAdvancesValue
           }
         }
@@ -579,7 +587,7 @@ export function measureAnalysis(
             const idx = unspaced[k]!
             const fitAdvancesStore = fitAdvances
             const fitAdvancesValue = (fitAdvancesStore[idx] ?? missing()) - letterSpacing
-            if ((idx & 0x7fffffff) !== idx || idx > fitAdvancesStore.length) throw new RangeError('index')
+            if ((idx & 0x7fffffff) !== idx || idx >= fitAdvancesStore.length) throw new RangeError('index')
             fitAdvancesStore[idx] = fitAdvancesValue
           }
         }
@@ -664,11 +672,14 @@ export function measureAnalysis(
   if (engineProfile.hanKerning && textMayHanKern(own)) {
     hanKerning = getHanKerningTrims(fontMeasurement, analysis, from, to)
     const trims = hanKerning.widthTrims
-    if (trims !== null) for (let i = 0; i < trims.length; i++) {
-      const idx = base + i
-      const widthsValue = (widths[idx] ?? missing()) - trims[i]!
-      if ((idx & 0x7fffffff) !== idx || idx > widths.length) throw new RangeError('index')
-      widths[idx] = widthsValue
+    if (trims !== null) {
+      /** @invariant paragraph !== null || segmentFlags.length === widths.length */
+      for (let i = 0; i < trims.length; i++) {
+        const idx = base + i
+        const widthsValue = (widths[idx] ?? missing()) - trims[i]!
+        if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
+        widths[idx] = widthsValue
+      }
     }
   }
   // The loop above has measured every segment in the font, so text in a font that has measured
@@ -715,7 +726,7 @@ export function measureAnalysis(
 // its kana takes the same in its advances (getSegmentFit). `widths` holds segments [from, to)
 // of the analysis from `base`, a rich-inline item's in its paragraph's, and `extras` holds
 // them from index 0; a kana that starts an item takes no kerning with the item before it.
-function addKanaKerning(extras: number[] | null, widths: number[], base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): number[] | null {
+function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>, base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): Dense<number[]> | null {
   const { normalized, starts, flags } = analysis
   for (let i = from; i < to; i++) {
     if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT) continue
@@ -728,22 +739,22 @@ function addKanaKerning(extras: number[] | null, widths: number[], base: number,
       if (kerning === 0) continue
       if (k > start) {
         const widthsValue = (widths[at] ?? missing()) + kerning
-        if ((at & 0x7fffffff) !== at || at > widths.length) throw new RangeError('index')
+        if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
         widths[at] = widthsValue
       } else if (kerning > 0) {
         const idx = at - 1
         const widthsValue = (widths[idx] ?? missing()) + kerning
-        if ((idx & 0x7fffffff) !== idx || idx > widths.length) throw new RangeError('index')
+        if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
         widths[idx] = widthsValue
       } else {
         const widthsValue = (widths[at] ?? missing()) + kerning
-        if ((at & 0x7fffffff) !== at || at > widths.length) throw new RangeError('index')
+        if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
         widths[at] = widthsValue
         extras ??= zeros(to - from)
         const idx = i - from
         const extrasStore = extras
         const extrasValue = (extrasStore[idx] ?? missing()) - kerning
-        if ((idx & 0x7fffffff) !== idx || idx > extrasStore.length) throw new RangeError('index')
+        if ((idx & 0x7fffffff) !== idx || idx >= extrasStore.length) throw new RangeError('index')
         extrasStore[idx] = extrasValue
       }
     }
@@ -769,14 +780,14 @@ function addKanaKerning(extras: number[] | null, widths: number[], base: number,
 // a ZWSP, a soft hyphen or a character no line starts with doesn't yet (ENGINE_FOLLOWUPS.md,
 // Line edges).
 function addIdeographicSpaceHangs(
-  trims: number[] | null,
+  trims: Dense<number[]> | null,
   analysis: TextAnalysis,
   measurement: FontMeasurement,
   letterSpacing: number,
   hyphenWidth: number,
   from: number,
   to: number,
-): number[] | null {
+): Dense<number[]> | null {
   const { normalized, starts, flags } = analysis
   for (let i = from; i < to; i++) {
     const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
@@ -795,7 +806,7 @@ function addIdeographicSpaceHangs(
     const idx = i - from
     const trimsStore = trims
     const trimsValue = (trimsStore[idx] ?? missing()) + hang
-    if ((idx & 0x7fffffff) !== idx || idx > trimsStore.length) throw new RangeError('index')
+    if ((idx & 0x7fffffff) !== idx || idx >= trimsStore.length) throw new RangeError('index')
     trimsStore[idx] = trimsValue
   }
   return trims

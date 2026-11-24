@@ -38,9 +38,9 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
           promote) ∧
       («given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
-        (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
-        HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here i t pushed observed promote req
-          written cf gimp argName argSlots inputSlots hwidth hfresh ∧
+        (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat),
+        HeadExitChecked G images w startNames ctx stated l node c entry st ys ysE here outFresh i t pushed observed promote req
+          written cf gimp argName argSlots inputSlots freshSlots hwidth hfresh ∧
         (∀ y ∈ startNames, y < hfresh) ∧ (∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a))
   handler : ∀ t, node.handler = some t →
     HandlerExitChecked G images w startNames ctx stated «given» edgesIn l c entry st here outFresh TT thrown t
@@ -65,8 +65,8 @@ theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCh
   normal i t pushed observed promote hm := by
     obtain ⟨ysE, hE, hnh, hh⟩ := hc.normal i t pushed observed promote hm
     refine ⟨ysE, hE, fun hn => (hnh hn).reassign η, fun hg => ?_⟩
-    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc, hlt, ha⟩ := hh hg
-    exact ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc.reassign η, hlt, ha⟩
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, hc, hlt, ha⟩ := hh hg
+    exact ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, hc.reassign η, hlt, ha⟩
   handler t ht := (hc.handler t ht).reassign η
   thrownBelow := hc.thrownBelow
 
@@ -110,7 +110,7 @@ theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
         (mapNamesSound_of_lt fun slots hs => hc.widths i t pushed observed promote hm slots hs)
         hc.hereEmpty (fun _ _ _ _ h => hc.yieldsRead ▸ h.2.1) (fun _ _ _ _ h => hE ▸ h.2.1) ρ m
     | true =>
-      obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hh, hlt, hargs⟩ := hhd hg
+      obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, freshSlots, hwidth, hfresh, hh, hlt, hargs⟩ := hhd hg
       exact headExit_delivers hm hh hg hshape hsub hc.hereEmpty (fun _ _ _ _ h => hE ▸ h.2.1) hnd hlt hargs ρ m
   handler t ht ρ s' e hS he hsc hx :=
     handlerExit_delivers (hc.handler t ht) hsub (mapNamesSound_of_lt (hc.handlerWidth t ht))

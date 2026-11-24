@@ -2133,7 +2133,13 @@ The entries:
   `subarray`'s TypedArraySpeciesCreate reads the view's `constructor` and
   its `Symbol.species`, which the host assumption below makes the standard
   constructor and `%TypedArray%`'s getter, and constructs a fresh view over
-  the same memory. `fill` and `copyWithin` return the receiver. Each
+  the same memory; two-argument calls `b.subarray(begin, end)` on a view of
+  bytes lower mechanically to `%ByteSubarray%(b, begin, end)`, where when
+  both bounds are safe integers with
+  $`0 \le \mathit{begin} \le \mathit{end} \le \mathrm{view}(b)`$,
+  neither clamps and the returned view has length $`\mathit{end} - \mathit{begin}`$
+  (still sharing `b`'s `ArrayBuffer`, so no buffer disjointness is
+  stated). `fill` and `copyWithin` return the receiver. Each
   writes the view's elements alone. `fill`, `copyWithin` and `subarray`
   clamp each index to the view's bounds, a negative one counted from the
   end (ToIntegerOrInfinity, then the clamp of a relative index), and throw
