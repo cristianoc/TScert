@@ -2540,11 +2540,12 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
   let w ← get
   if w.changedValues || r.toOption.isNone then
     let x : PathEnd := if r.toOption.isNone then .all else .frame w.changedFrame
-    -- (`--force-proposals stale` keeps the cells' contents)
+    -- (`--force-proposals stale`, and `cells` as for every other step
+    -- (`cellsDeclared`), keep the cells' contents: the adversarial proposals)
     let reached := fun (n : String) => match x with
       | .frame Φ => !frameKeepsCell Φ n
       | _ => true
-    let reset := fun (n : String) => !w.force.contains "stale" &&
+    let reset := fun (n : String) => !w.force.contains "stale" && !w.force.contains "cells" &&
       env.inCell n && reached n
     ends x
     let unreached := surviving env [x]
