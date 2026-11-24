@@ -174,7 +174,7 @@ theorem walk_keeps {G : NormalGraph ι} {I : InstanceImageCheck G}
       refine ⟨fun stop' h => ?_, fun σ' reach h => ?_⟩
       · simp only [bind, Except.bind, hd] at h
         cases h
-      · simp only [bind, Except.bind, hd, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      · simp only [bind, Except.bind, hd, pure, Except.pure, Except.ok.injEq, SinglePass.dumpWalk, Prod.mk.injEq] at h
         obtain ⟨rfl, -⟩ := h
         exact hs ▸ Drives.keeps hk.1 (drives_of_drive _ _ _ hd)
 

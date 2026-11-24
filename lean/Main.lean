@@ -57,6 +57,7 @@ def main (args : List String) : IO UInt32 := do
   -- The work table recorded where profiling (`TSCERT_PROFILE`), written at
   -- the end (`RequestCli.writeWork`).
   Verification.SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
+  Verification.SinglePass.dumping.set (← IO.getEnv "TSCERT_DUMP").isSome
   let start ← IO.monoNanosNow
   try
     let code ← command start args

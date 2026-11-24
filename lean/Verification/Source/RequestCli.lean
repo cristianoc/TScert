@@ -436,6 +436,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let emit := fun (s : String) => if quiet then pure () else IO.eprintln s
   -- Per-kind timings only where asked (`TSCERT_PROFILE`).
   SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
+  SinglePass.dumping.set (← IO.getEnv "TSCERT_DUMP").isSome
   let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
   -- Every symbol key at its canonical number (`Fragment.canonicalSymbols`),
