@@ -30,6 +30,8 @@ assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-cursor-given", 
   "a visitor given the walker's cursor moves it past the array through its own alias");
 assert.ok(Number.isNaN(Number(runExample("invalid-invariant-local-index-lacking", "sum([1, 2])"))),
   "a body moving the index below 0 reads xs[-1]");
+assert.ok(Number.isNaN(Number(runExample("invalid-read-field-across-write", "pair([1], { at: 0 })"))),
+  "the write moves cursor.at to the length, and the second read reads past the end");
 assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant", "h([1], -1)"))),
   "the catch block's loop starts at the index the try block set, -1");
 

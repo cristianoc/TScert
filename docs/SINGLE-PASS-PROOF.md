@@ -821,6 +821,11 @@ The state after a step, proved:
   (`stateHolds_fresh_result`);
 - a read of a slot keeping its name: $`\eta'=\eta`$, the result
   slot $`i`$'s value (`stateHolds_reused_name`);
+- a read of a field $`f`$ of slot $`j`$ at the name $`y`$ of a read link
+  $`o.f\mapsto y`$ of the store, $`o`$ slot $`j`$'s name: $`\eta'=\eta`$,
+  the result $`\eta(y)`$, since the link holds at $`\eta`$ in the heap the
+  read starts from, a read is one step and evaluation is deterministic
+  (`link_read_value`, `Step_det`);
 - a copy: no step, the store unchanged, slot 0 named as
   slot $`i`$ (`stateHolds_copy`).
 
@@ -943,8 +948,8 @@ $`\mathrm{StateHolds}\ \mathit{st}_0\ I\ \mathit{start}\ E`$ at $`\rho,m,s`$;
 names and its implications below the fresh counter (`NamesBelow`); the
 entry's names no wider than the context; `EnvOk` of the context at
 $`\rho`$; `CodesSound`; the entry's summaries checked. Conclusion: the
-final summaries checked; `st.stepK` holds at $`\rho`$; $`r`$ an entry name
-with the counter kept, or the counter with the counter advanced; and for
+final summaries checked; `st.stepK` holds at $`\rho`$; $`r`$ below the
+counter with the counter kept, or the counter with the counter advanced; and for
 closed effects $`c_n,c_e`$ (`StepParts`, `StepExits`):
 
 - the local judgment of the node's term with normal post

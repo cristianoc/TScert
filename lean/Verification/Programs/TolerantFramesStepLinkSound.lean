@@ -207,16 +207,68 @@ theorem holds_empty {ρ : Env} {h : Heap} : HeapKnowledge.Holds {} ε ρ h := by
   refine ⟨?_, ?_, ?_, ?_, HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩ <;>
     simp [HeapFacts.Holds, HeapKnowledge.ValueHolds, HeapLinks.Holds, HeapSeparation.Holds]
 
-theorem resultOf_cases (t : Tm) (names : List Nat) (fresh : Nat) :
-    (∃ i, t = .var i ∧ names[i]? = some (resultOf t names fresh).1 ∧ (resultOf t names fresh).2 = fresh) ∨
-      ((resultOf t names fresh).1 = fresh ∧ (resultOf t names fresh).2 = fresh + 1) := by
-  unfold resultOf
+theorem resultOf_cases (t : Tm) (names : List Nat) (st : Store) (fresh : Nat) :
+    (∃ i, t = .var i ∧ names[i]? = some (resultOf t names st fresh).1 ∧ (resultOf t names st fresh).2 = fresh) ∨
+      (∃ f j o, t = .readAt f (.var j) ∧ names[j]? = some o ∧ st.readName o f = some (resultOf t names st fresh).1 ∧
+        (resultOf t names st fresh).2 = fresh) ∨
+      ((resultOf t names st fresh).1 = fresh ∧ (resultOf t names st fresh).2 = fresh + 1) := by
+  unfold resultOf SinglePass.resultName
   split
   · rename_i i
     split
     · rename_i x hx; exact .inl ⟨i, rfl, hx, rfl⟩
-    · exact .inr ⟨rfl, rfl⟩
-  · exact .inr ⟨rfl, rfl⟩
+    · exact .inr (.inr ⟨rfl, rfl⟩)
+  · rename_i f j
+    split
+    · rename_i y hy
+      obtain ⟨o, ho, hy⟩ := Option.bind_eq_some_iff.mp hy
+      exact .inr (.inl ⟨f, j, o, rfl, ho, hy, rfl⟩)
+    · exact .inr (.inr ⟨rfl, rfl⟩)
+  · exact .inr (.inr ⟨rfl, rfl⟩)
+
+/-- A read link the store's index lists under its object's name, through
+the field read. -/
+theorem readName_some {st : Store} {o : Nat} {f : PropKey} {y : Nat} (h : st.readName o f = some y) :
+    ∃ g : HeapLinks.Link, Atom.link g ∈ st.about o ∧ g.alias = false ∧ g.cell = o ∧ g.field = f ∧ g.value = y := by
+  unfold Store.readName at h
+  obtain ⟨a, ha, hfa⟩ := List.exists_of_findSome?_eq_some h
+  cases a with
+  | link g =>
+    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hfa
+    split at hfa
+    · rename_i hc
+      obtain ⟨⟨hal, hce⟩, hfe⟩ := hc
+      exact ⟨g, ha, hal, hce, hfe, Option.some.inj hfa⟩
+    · cases hfa
+  | _ => cases hfa
+
+/-- **A read through a read link gives the link's value**: where the read
+link `o.f ↦ y` holds in the heap `h` and every location of `h` holds a value,
+a run of the read of `f` from `o`'s value to a value ends at `y`'s. A read
+is one step (`ReadGave.step`) and evaluation is deterministic (`Step_det`). -/
+theorem link_read_value {g : HeapLinks.Link} {η : Env} {h h' : Heap} {k : Nat} {v : Tm}
+    (hl : HeapLinks.Holds [g] η h) (ha : g.alias = false) (hvals : ∀ (l : Nat) (u : Val), h[l]? = some u → isVal u = true)
+    (hs : Steps k h (.readAt g.field (η g.cell)) h' v) (hv : isVal v = true) : v = η g.value := by
+  have hg := hl g (List.mem_singleton_self g)
+  simp only [ha, Bool.false_eq_true, ite_false] at hg
+  obtain ⟨flds, c, oid, hc, hr⟩ : ∃ flds c oid, η g.cell = .objAt flds c oid ∧
+      HeapFacts.ReadGave flds g.field h (η g.value) := by
+    split at hg
+    · exact hg
+    · obtain ⟨flds, c, oid, l, hc, hlk, hh⟩ := hg
+      exact ⟨flds, c, oid, hc, HeapFacts.ReadGave.present hlk hh⟩
+  have hyv : isVal (η g.value) = true := by
+    unfold HeapFacts.ReadGave at hr
+    split at hr
+    · exact hvals _ _ hr
+    · rw [hr.2]; rfl
+  have st := hr.step (c := c) (oid := oid)
+  rw [hc] at hs
+  cases hs with
+  | refl => simp [isVal] at hv
+  | next s1 rest =>
+    obtain ⟨rfl, rfl⟩ := Step_det s1 st
+    exact PromiseCalls.steps_value hyv rest
 
 /-! ## The step's exits -/
 
@@ -343,7 +395,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
+    ((st.result < fresh ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
     ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut ε
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
@@ -357,7 +409,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     obtain ⟨i, hi, hty, hx⟩ := copiedOf_some hc
     have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
     have hv : isVal (ρ i) = true := (meaning_value (he.2 i _ hty)).1
-    refine ⟨hsum, by rw [hK]; exact holds_empty, .inl ⟨hr ▸ List.mem_of_getElem? hx, hfr⟩,
+    refine ⟨hsum, by rw [hK]; exact holds_empty, .inl ⟨hr ▸ hnb.1 _ (List.mem_of_getElem? hx), hfr⟩,
       Footprints.Closed.empty, Footprints.Closed.empty, ⟨?_, ?_, ?_⟩⟩
     · intro href _
       rw [hval, hO]
@@ -376,10 +428,11 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     · intro s' ha; exact stateHolds_throw hS w ha.1
   · obtain ⟨-, hs1⟩ := hss hsum
     -- The result's name: a slot's name its value holds, or the fresh one.
-    have hkv : ∀ k h' v, Steps k s.h (instantiate 0 ρ node.expression) h' v →
+    have hkv : ∀ k h' v, Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true →
         NamesBelow entry I start st.result ∨ η st.result = v := by
-      intro k h' v hsteps
-      rcases resultOf_cases node.expression entry.names fresh with ⟨i, hi, hx, -⟩ | ⟨hr1, -⟩
+      intro k h' v hsteps hvv
+      rcases resultOf_cases node.expression entry.names entry.store fresh with
+        ⟨i, hi, hx, -⟩ | ⟨f, j, o, hi, ho, hy, -⟩ | ⟨hr1, -⟩
       · right
         rw [hres]
         have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
@@ -389,10 +442,24 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         have hv : isVal (ρ i) = true := (meaning_value (he.2 i A hA)).1
         rw [PromiseCalls.steps_value hv hsteps]
         exact (hn i _ hx).symm
+      · -- A read through the read link the store holds: the link's value.
+        right
+        rw [hres]
+        obtain ⟨g, hg, hga, hgc, hgf, hgv⟩ := readName_some hy
+        have hl : HeapLinks.Holds [g] η s.h := hst (.link g) (about_storeAll hg)
+        have hval : instantiate 0 ρ node.expression = .readAt g.field (η g.cell) := by
+          rw [hi, hgf, hgc, ← hn j o ho]; simp [instantiate]
+        rw [hval] at hsteps
+        rw [← hgv]
+        exact (link_read_value hl hga (fun _ _ hu => Reach.heap_isVal hu) hsteps hvv).symm
       · left; rw [hres, hr1]; exact hnb
-    have hres' : (st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1) := by
-      rcases resultOf_cases node.expression entry.names fresh with ⟨i, -, hx, hf⟩ | ⟨hr1, hf⟩
-      · exact .inl ⟨hres ▸ List.mem_of_getElem? hx, hfresh.trans hf⟩
+    have hres' : (st.result < fresh ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1) := by
+      rcases resultOf_cases node.expression entry.names entry.store fresh with
+        ⟨i, -, hx, hf⟩ | ⟨f, j, o, -, -, hy, hf⟩ | ⟨hr1, hf⟩
+      · exact .inl ⟨hres ▸ hnb.1 _ (List.mem_of_getElem? hx), hfresh.trans hf⟩
+      · obtain ⟨g, hg, -, -, -, hgv⟩ := readName_some hy
+        refine .inl ⟨hres ▸ hgv ▸ hnb.2.1 (.link g) (about_storeAll hg) g.value ?_, hfresh.trans hf⟩
+        simp [Atom.names]
       · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
     have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf G c.context node.expression)) codes
         ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
@@ -402,11 +469,11 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
       · intro href hρ; rw [hO]; exact preserving_judgment_two (beq_iff_eq.mp hp) hok hsel hcodes hs1 heR hk.1 s.adm s.ok hρ href
-      · intro k h' v s' hsteps _ ha hh hout
+      · intro k h' v s' hsteps hv ha hh hout
         rw [hstore]
-        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
+        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps hv) ?_
         rw [hO] at hout
-        exact preserving_spine hn (hkv k h' v hsteps)
+        exact preserving_spine hn (hkv k h' v hsteps hv)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
     · have hpf : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect
@@ -416,11 +483,11 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       refine ⟨hs1, by rw [hK]; split; exact hk.2; exact PromiseCalls.holds_withInts hk.2 hk.1, hres', Footprints.Closed.top, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
       · intro href hρ; rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 heR hk.2 s.adm s.ok hρ href
-      · intro k h' v s' hsteps _ ha hh hout
+      · intro k h' v s' hsteps hv ha hh hout
         rw [hstore]
-        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
+        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps hv) ?_
         rw [hO] at hout
-        exact writing_spine w hn (hkv k h' v hsteps) hst (hh ▸ hout)
+        exact writing_spine w hn (hkv k h' v hsteps hv) hst (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
 
 omit [Instantiates ι] in
@@ -437,7 +504,7 @@ theorem stepChecked_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
+    ((st.result < fresh ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
     ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut ε
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
@@ -478,7 +545,7 @@ theorem checkedStep_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
+    ((st.result < fresh ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
     ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut ε
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s :=
@@ -509,7 +576,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
+    ((st.result < fresh ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
     ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut ε
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s :=

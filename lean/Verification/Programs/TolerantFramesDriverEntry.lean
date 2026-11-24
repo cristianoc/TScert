@@ -80,8 +80,12 @@ theorem checkedStep_store {pool fuel suggestions index codes aliases pc undefTy 
   · obtain ⟨out, pre, -, -, hres, hfresh, -, -, hpres, hwrit⟩ := hacc
     have hrl : st.result < st.fresh := by
       rw [hres, hfresh]
-      rcases resultOf_cases node.expression entry.names fresh with ⟨_, -, hx, hf⟩ | ⟨hr, hf⟩
+      rcases resultOf_cases node.expression entry.names entry.store fresh with
+        ⟨_, -, hx, hf⟩ | ⟨_, _, _, -, -, hy, hf⟩ | ⟨hr, hf⟩
       · rw [hf]; exact hn _ (List.mem_of_getElem? hx)
+      · rw [hf]
+        obtain ⟨g, hg, -, -, -, hgv⟩ := readName_some hy
+        exact hgv ▸ hs (.link g) (about_storeAll hg) g.value (by simp [SinglePass.Atom.names])
       · rw [hr, hf]; exact Nat.lt_succ_self _
     have hn' : ∀ x ∈ entry.names, x < st.fresh := fun x hx => Nat.lt_of_lt_of_le (hn x hx) hle
     have hs' := factsBelow_mono hs hle

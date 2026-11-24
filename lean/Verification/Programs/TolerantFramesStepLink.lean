@@ -118,14 +118,11 @@ def copiedOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State)
       entry.names[i]? else none
   | _ => none
 
-/-- The result's name and the next fresh name (lines 1311–1315): a slot's
-read keeps the slot's name. -/
-def resultOf (t : Tm) (names : List Nat) (fresh : Nat) : Nat × Nat :=
-  match t with
-  | .var i => match names[i]? with
-    | some x => (x, fresh)
-    | none => (fresh, fresh + 1)
-  | _ => (fresh, fresh + 1)
+/-- The result's name and the next fresh name (`SinglePass.resultName`): a
+slot's read keeps the slot's name, a field's read the name its read link
+gives. -/
+abbrev resultOf (t : Tm) (names : List Nat) (s : Store) (fresh : Nat) : Nat × Nat :=
+  SinglePass.resultName t names s fresh
 
 /-- **A step `checkedStep` accepts, read as its conditions**, at the
 evidence `effect` the search or the direct call returned, with the read
@@ -143,7 +140,7 @@ def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : Pass
   ∃ out pre, (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes sums).value =
       some out ∧
     passTreeCheck pc (kOf G c entry ms (wholeOf G c.context node.expression)) codes sums effect = some pre ∧
-    st.result = (resultOf node.expression entry.names fresh).1 ∧ st.fresh = (resultOf node.expression entry.names fresh).2 ∧
+    st.result = (resultOf node.expression entry.names entry.store fresh).1 ∧ st.fresh = (resultOf node.expression entry.names entry.store fresh).2 ∧
     st.copied = false ∧ st.stepEffect = some effect ∧
     ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf G c.context node.expression)) effect codes sums ==
         Footprints.Closed.empty) = true →
@@ -195,21 +192,6 @@ theorem passTreeCheck_pre {G : NormalGraph ι} {images : InstanceImageCheck G} {
     passTreeCheck pc k codes sums e = some (some p) := by
   unfold passTreeCheck; rw [← passTreeCode_eq, h]; simp only [Bool.not_eq_true'] at ht; simp [ht, hr]
 
-theorem resultOf_var {t : Tm} {names : List Nat} {fresh i x : Nat} (h1 : t = .var i)
-    (h2 : names[(match t with | .var i => i | _ => 0)]? = some x) : resultOf t names fresh = (x, fresh) := by
-  subst h1; simp only at h2; simp [resultOf, h2]
-
-theorem resultOf_other {t : Tm} {names : List Nat} {fresh : Nat}
-    (h : ∀ (i x : Nat), t = .var i → names[(match t with | .var i => i | _ => 0)]? = some x → False) :
-    resultOf t names fresh = (fresh, fresh + 1) := by
-  unfold resultOf
-  split
-  · rename_i i
-    split
-    · rename_i x hx; exact (h i x rfl hx).elim
-    · rfl
-  · rfl
-
 theorem wholeCheck_none {G : NormalGraph ι} {images : InstanceImageCheck G} {k : HeapKnowledge.Knowledge}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} : passWholeCheck G images k codes sums none = true := rfl
 
@@ -230,53 +212,26 @@ set_option hygiene false in
 result's name, the preserving delta or the writing step's checks. `TREE` the
 proof of `passTreeCheck`, `WHOLE` that of `passWholeCheck`. -/
 macro "step_tail " tree:term ", " whole:term : tactic => `(tactic| (
-  split at h
-  · rename_i i x hx1 hx2
-    gen_ite h as P with hP
-    rcases P with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
-    · first
-        | (gen_ite h as Q with hQ
-           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h)
-        | skip
-      close_errors
-      gen_discr h as WV with hWV
-      rcases WV with _ | out' <;> try dsimp only at h
-      close_errors
-      obtain ⟨rfl, -, rfl⟩ := h
-      subst hM hW
-      exact ⟨⟨out, _, hOV, $tree, (congrArg Prod.fst (resultOf_var hx1 hx2)).symm,
-        (congrArg Prod.snd (resultOf_var hx1 hx2)).symm, rfl, rfl,
-        fun ht => absurd (hP.symm.trans ht) (by decide),
-        fun _ => ⟨out', $whole, hWV, rfl, rfl, rfl⟩⟩, rfl⟩
-    · close_errors
-      obtain ⟨rfl, -, rfl⟩ := h
-      subst hM hW
-      exact ⟨⟨out, _, hOV, $tree, (congrArg Prod.fst (resultOf_var hx1 hx2)).symm,
-        (congrArg Prod.snd (resultOf_var hx1 hx2)).symm, rfl, rfl,
-        fun _ => ⟨rfl, rfl, rfl⟩, fun hf => absurd (hP.symm.trans hf) (by decide)⟩, rfl⟩
-  · rename_i hnv
-    gen_ite h as P with hP
-    rcases P with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
-    · first
-        | (gen_ite h as Q with hQ
-           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h)
-        | skip
-      close_errors
-      gen_discr h as WV with hWV
-      rcases WV with _ | out' <;> try dsimp only at h
-      close_errors
-      obtain ⟨rfl, -, rfl⟩ := h
-      subst hM hW
-      exact ⟨⟨out, _, hOV, $tree, (congrArg Prod.fst (resultOf_other hnv)).symm,
-        (congrArg Prod.snd (resultOf_other hnv)).symm, rfl, rfl,
-        fun ht => absurd (hP.symm.trans ht) (by decide),
-        fun _ => ⟨out', $whole, hWV, rfl, rfl, rfl⟩⟩, rfl⟩
-    · close_errors
-      obtain ⟨rfl, -, rfl⟩ := h
-      subst hM hW
-      exact ⟨⟨out, _, hOV, $tree, (congrArg Prod.fst (resultOf_other hnv)).symm,
-        (congrArg Prod.snd (resultOf_other hnv)).symm, rfl, rfl,
-        fun _ => ⟨rfl, rfl, rfl⟩, fun hf => absurd (hP.symm.trans hf) (by decide)⟩, rfl⟩))
+  gen_ite h as P with hP
+  rcases P with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
+  · first
+      | (gen_ite h as Q with hQ
+         rcases Q with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h)
+      | skip
+    close_errors
+    gen_discr h as WV with hWV
+    rcases WV with _ | out' <;> try dsimp only at h
+    close_errors
+    obtain ⟨rfl, -, rfl⟩ := h
+    subst hM hW
+    exact ⟨⟨out, _, hOV, $tree, rfl, rfl, rfl, rfl,
+      fun ht => absurd (hP.symm.trans ht) (by decide),
+      fun _ => ⟨out', $whole, hWV, rfl, rfl, rfl⟩⟩, rfl⟩
+  · close_errors
+    obtain ⟨rfl, -, rfl⟩ := h
+    subst hM hW
+    exact ⟨⟨out, _, hOV, $tree, rfl, rfl, rfl, rfl,
+      fun _ => ⟨rfl, rfl, rfl⟩, fun hf => absurd (hP.symm.trans hf) (by decide)⟩, rfl⟩))
 
 set_option hygiene false in
 /-- The step from its selected output on (`SinglePass.lean` 1273–1347): the
