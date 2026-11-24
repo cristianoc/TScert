@@ -1610,10 +1610,39 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
       let ys ← tested i tag false
       let zs ← throughFields i tag false
       pure (fewestLast (ys ++ zs))
+    | .arith .eq (.var i) (.var j) => do
+      let a ← compared i j
+      let b ← compared j i
+      pure (a ++ b)
     | t => match PromiseCalls.memberParts t with
       | some (ts, i) => if PromiseCalls.isMemberOn ts i t then memberYields ts i [true, false] else pure []
       | none => pure []
 where
+  /-- A strict comparison's yields about slot `a`
+  (`PromiseCalls.comparisonYield`): a membership test's, against the tags
+  of `b`'s type where it answers `true` and against `b`'s singleton where it
+  answers `false`; where the tags leave `a`'s whole type, `b`'s type, which
+  each tag's own rule may give (a family against its singletons). -/
+  compared (a b : Nat) : StateM (Answered G) (List (PromiseCalls.Yield ι)) := do
+    match Γ[b]? with
+    | none => pure []
+    | some B =>
+      let yes ← match PromiseCalls.equalityTags G B with
+        | some ts => do
+          let ys ← memberYields ts a [true]
+          let family : List (PromiseCalls.Yield ι) := match Γ[a]? with
+            | some A =>
+              if A != B && !ts.isEmpty && PromiseCalls.memberSlotSlice G A ts true == A &&
+                  ts.all (fun t => BranchRefinement.checkObservedSubUsing G images A B (.tag t true) {}) then
+                [{ conditional := true, target := a, type := B, evidence := some {} }]
+              else []
+            | none => []
+          pure (family ++ ys)
+        | none => pure []
+      let no ← match PromiseCalls.singletonTag G B with
+        | some t => memberYields [t] a [false]
+        | none => pure []
+      pure (yes ++ no)
   /-- A membership test's yields (`PromiseCalls.memberYield`): for each
   answer, the tested slot's type and the objects' a current read link says
   its value was read from, as the answer leaves them, where it leaves less;

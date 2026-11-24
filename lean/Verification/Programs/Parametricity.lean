@@ -313,12 +313,26 @@ theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y :
   simp only [check_fun_reassign]
   rfl
 
+theorem observedTag_reassign (Γ : List (List ι)) (y : PromiseCalls.Yield ι) (i : Nat) (tag : Tag) (q : Bool) :
+    PromiseCalls.observedTag (reassign G η) (images.reassign η) Γ y i tag q =
+      PromiseCalls.observedTag G images Γ y i tag q := by
+  unfold PromiseCalls.observedTag
+  simp only [checkObservedSub_reassign]
+
 theorem memberYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
     (ts : List Tag) (i : Nat) :
     PromiseCalls.memberYield (reassign G η) (images.reassign η) Γ links y ts i =
       PromiseCalls.memberYield G images Γ links y ts i := by
   unfold PromiseCalls.memberYield
-  simp only [check_fun_reassign]
+  simp only [check_fun_reassign, observedTag_reassign, fieldYield_reassign]
+  rfl
+
+theorem comparisonYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
+    (a b : Nat) :
+    PromiseCalls.comparisonYield (reassign G η) (images.reassign η) Γ links y a b =
+      PromiseCalls.comparisonYield G images Γ links y a b := by
+  unfold PromiseCalls.comparisonYield
+  simp only [memberYield_reassign]
   rfl
 
 theorem memberFollows_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (t : Tm) (y : PromiseCalls.Yield ι) :
@@ -332,8 +346,8 @@ theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Imp
     PromiseCalls.yieldFollows (reassign G η) (images.reassign η) Γ xs links t =
       PromiseCalls.yieldFollows G images Γ xs links t := by
   funext y
-  unfold PromiseCalls.yieldFollows PromiseCalls.yieldFollows.observed
-  simp only [checkObservedSub_reassign, fieldYield_reassign, memberFollows_reassign]
+  unfold PromiseCalls.yieldFollows
+  simp only [observedTag_reassign, fieldYield_reassign, memberFollows_reassign, comparisonYield_reassign]
 
 theorem promiseOf_reassign (e : ProgramCertificates.Evidence ι) :
     PromiseCalls.promiseOf (reassign G η) e = PromiseCalls.promiseOf G e := rfl

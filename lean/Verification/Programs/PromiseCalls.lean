@@ -328,6 +328,381 @@ theorem edgeImplications_holds {G : NormalGraph ι} {xs : List (Implication ι)}
       exact hy y hy' (fun _ => ht) (fun hf => by rw [hc.2] at hf; cases hf)
     · cases he
 
+/-! ### The tags of a strict comparison
+
+A strict comparison `x === y` is, where it answers `true`, a membership test
+of `x` against tags read off `y`'s type: each clause of the type has tags one
+of which holds of every value strictly equal to a member of the clause
+(`equalityTagsOf_sound`). Where `y`'s type is one value up to strict
+equality, it is, where it answers `false`, the failing test of that value's
+tag (`singletonTag_sound`). PROGRAM-TYPING.md, "A strict comparison". -/
+
+section EqualityTags
+open PositiveNormalization
+
+theorem numberEqual_symm (a b : UInt64) : numberEqual a b = numberEqual b a := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true']
+  constructor <;> rintro ⟨⟨h1, h2⟩, h3⟩ <;> exact ⟨⟨h2, h1⟩, h3.imp Eq.symm And.symm⟩
+
+/-- `Number::equal` is transitive: NaN equals nothing, and the zeros equal
+each other only. -/
+theorem numberEqual_trans {a b c : UInt64} (h1 : numberEqual a b = true) (h2 : numberEqual b c = true) :
+    numberEqual a c = true := by
+  simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at *
+  obtain ⟨⟨ha, -⟩, h1⟩ := h1
+  obtain ⟨⟨-, hc⟩, h2⟩ := h2
+  refine ⟨⟨ha, hc⟩, ?_⟩
+  rcases h1 with rfl | ⟨za, zb⟩ <;> rcases h2 with rfl | ⟨zb', zc⟩
+  · exact .inl rfl
+  · exact .inr ⟨zb', zc⟩
+  · exact .inr ⟨za, zb⟩
+  · exact .inr ⟨za, zc⟩
+
+/-- Two primitives the same value: the same term other than a number, or
+two numbers `Number::equal` relates. -/
+theorem sameValue_true {u v : Tm} (h : sameValue u v = true) :
+    (u = v ∧ ∀ b, v ≠ .num b) ∨ ∃ x y, u = .num x ∧ v = .num y ∧ numberEqual x y = true := by
+  unfold sameValue at h
+  split at h
+  all_goals first
+    | exact .inl ⟨rfl, by simp⟩
+    | exact .inr ⟨_, _, rfl, rfl, h⟩
+    | (simp only [beq_iff_eq] at h; subst h; exact .inl ⟨rfl, by simp⟩)
+    | cases h
+
+theorem sameValue_comm (u v : Tm) : sameValue u v = sameValue v u := by
+  have one : ∀ {u v : Tm}, sameValue u v = true → sameValue v u = true := by
+    intro u v h
+    rcases sameValue_true h with ⟨rfl, -⟩ | ⟨x, y, rfl, rfl, hxy⟩
+    · exact h
+    · simpa [sameValue, numberEqual_symm] using hxy
+  exact Bool.eq_iff_iff.mpr ⟨one, one⟩
+
+private theorem nonprim_value {a : Tm} (hv : isVal a = true) (hp : isPrim a = false) :
+    (∃ fs c i, a = .objAt fs c i) ∨ (∃ l, a = .arr l) ∨ ∃ f cs, a = .viewSpine f cs := by
+  cases a <;> simp_all [isVal, isPrim]
+
+/-- (E3) Strict equality is symmetric. -/
+theorem strictEquals_comm (a b : Tm) : strictEquals a b = strictEquals b a := by
+  unfold strictEquals
+  rw [Bool.and_comm (isVal a), Bool.or_comm (isPrim a), sameValue_comm a b]
+  split
+  · rfl
+  · split
+    · rfl
+    · rename_i hv hp
+      simp only [Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true, Bool.or_eq_true, not_or,
+        Bool.not_eq_true] at hv hp
+      rcases nonprim_value hv.1 hp.1 with ⟨fs, c, i, rfl⟩ | ⟨l, rfl⟩ | ⟨f, cs, rfl⟩ <;>
+      rcases nonprim_value hv.2 hp.2 with ⟨fs', c', j, rfl⟩ | ⟨l', rfl⟩ | ⟨f', cs', rfl⟩ <;>
+      first | rfl | exact congrArg some (Bool.eq_iff_iff.mpr ⟨fun h => beq_iff_eq.mpr (beq_iff_eq.mp h).symm,
+        fun h => beq_iff_eq.mpr (beq_iff_eq.mp h).symm⟩)
+
+/-- Two values strictly equal: a primitive the other is the same value of,
+or two objects of one identity. -/
+theorem strictEquals_true {u v : Tm} (h : strictEquals u v = some true) :
+    (isPrim v = true ∧ sameValue u v = true) ∨ ∃ fs c i fs' c', u = .objAt fs c i ∧ v = .objAt fs' c' i := by
+  unfold strictEquals at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i hp
+      simp only [Option.some.injEq] at h
+      refine .inl ⟨?_, h⟩
+      rcases sameValue_true h with ⟨rfl, -⟩ | ⟨x, y, -, rfl, -⟩
+      · simpa using hp
+      · rfl
+    · split at h <;> simp_all
+
+/-- **The tags of a clause** under strict equality: one of them holds of
+every value strictly equal to a member of the clause. A primitive clause's
+are its kind's test or its literals' equality tests; an object clause's are
+`isRef` and `isFun`, since strict equality compares objects by identity alone
+and every object passes one of the two, by its call code; a spine's are none,
+since strict equality answers `false` or nothing of one; `top` and `source`,
+which hold every value, have none to state. -/
+def equalityTagsOf {α : Type} : Clause α → Option (List Tag)
+  | .nul => some [.isNul]
+  | .undef => some [.isUndef]
+  | .bool => some [.isBool]
+  | .boolLit b => some [.boolEq b]
+  | .num => some [.isNum]
+  | .int => some [.isNum]
+  | .numLit k => some [.numEq k]
+  | .numIn S => some (S.map .numEq)
+  | .str => some [.isStr]
+  | .strLit s => some [.strEq s]
+  | .strIn S => some (S.map .strEq)
+  | .bigint => some [.isBigint]
+  | .bigintLit i => some [.bigintEq i]
+  | .symbol => some [.isSymbol]
+  | .symbolLit _ => some [.isSymbol]
+  | .refs .. => some [.isRef, .isFun]
+  | .dict .. => some [.isRef, .isFun]
+  | .arrs .. => some [.isRef, .isFun]
+  | .callable .. => some [.isRef, .isFun]
+  | .ctors .. => some [.isRef, .isFun]
+  | .view .. => some [.isRef, .isFun]
+  | .list .. => some []
+  | .pack .. => some []
+  | .top => none
+  | .source => none
+
+private theorem prim_shape {v : Tm} (h : isPrim v = true) : valueShape v ∈ [0, 1, 4, 5, 6, 9, 10] := by
+  cases v <;> simp_all [isPrim, valueShape]
+
+private theorem objAt_shape (fs : List (PropKey × Nat)) (cd : CallCode) (i : Nat) :
+    valueShape (.objAt fs cd i) ∈ [2, 3, 11, 13] := by
+  cases cd with
+  | graph _ _ _ _ _ kind _ _ => cases kind <;> simp [valueShape]
+  | _ => simp [valueShape]
+
+private theorem objAt_tags (fs : List (PropKey × Nat)) (cd : CallCode) (i : Nat) :
+    ∃ t ∈ [Tag.isRef, .isFun], tagHolds t (.objAt fs cd i) = true := by
+  cases cd <;> simp [tagHolds]
+
+/-- (E1) for one clause: a value strictly equal to a member of a clause
+passes one of the clause's tags. -/
+theorem equalityTagsOf_sound {α : Type} {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : Clause α}
+    {S : List Tag} {n W} {u v : Tm} (hS : equalityTagsOf c = some S) (hv : semWithArgs Ξ X P c n W v)
+    (heq : strictEquals u v = some true) : ∃ t ∈ S, tagHolds t u = true := by
+  by_cases htop : c = .top
+  · subst htop; cases hS
+  by_cases hsrc : c = .source
+  · subst hsrc; cases hS
+  have hsh := semWithArgs_shape htop hsrc hv
+  rcases strictEquals_true heq with ⟨hp, hs⟩ | ⟨fs, cd, i, fs', c', rfl, rfl⟩
+  · have hps := prim_shape hp
+    rcases sameValue_true hs with ⟨rfl, hnn⟩ | ⟨x, y, rfl, rfl, hxy⟩
+    · cases c <;> simp only [equalityTagsOf, Option.some.injEq] at hS <;> (first | subst hS | cases hS) <;>
+        (try (rw [hsh] at hps; simp [shape] at hps; done))
+      case nul => cases hv; exact ⟨.isNul, by simp, rfl⟩
+      case bool => rcases hv with rfl | rfl <;> exact ⟨.isBool, by simp, rfl⟩
+      case boolLit b => cases hv; exact ⟨.boolEq b, by simp, by cases b <;> rfl⟩
+      case num => obtain ⟨b, rfl⟩ := hv; exact absurd rfl (hnn b)
+      case numLit k => cases hv; exact absurd rfl (hnn k)
+      case undef => cases hv; exact ⟨.isUndef, by simp, rfl⟩
+      case str => obtain ⟨s, rfl⟩ := hv; exact ⟨.isStr, by simp, rfl⟩
+      case strLit s => cases hv; exact ⟨.strEq s, by simp, by simp [tagHolds]⟩
+      case bigint => obtain ⟨i, rfl⟩ := hv; exact ⟨.isBigint, by simp, rfl⟩
+      case symbol => obtain ⟨i, rfl⟩ := hv; exact ⟨.isSymbol, by simp, rfl⟩
+      case bigintLit i => cases hv; exact ⟨.bigintEq i, by simp, by simp [tagHolds]⟩
+      case symbolLit i => cases hv; exact ⟨.isSymbol, by simp, rfl⟩
+      case numIn bs => obtain ⟨b, -, rfl⟩ := hv; exact absurd rfl (hnn b)
+      case strIn ss => obtain ⟨s, hs', rfl⟩ := hv; exact ⟨.strEq s, List.mem_map.mpr ⟨s, hs', rfl⟩, by simp [tagHolds]⟩
+      case int => obtain ⟨b, rfl, -⟩ := hv; exact absurd rfl (hnn b)
+    · cases c <;> simp only [equalityTagsOf, Option.some.injEq] at hS <;> (first | subst hS | cases hS) <;>
+        (try (simp [valueShape, shape] at hsh; done))
+      case num => exact ⟨.isNum, by simp, rfl⟩
+      case int => exact ⟨.isNum, by simp, rfl⟩
+      case numLit k => cases hv; exact ⟨.numEq y, by simp, hxy⟩
+      case numIn bs => obtain ⟨b, hb, hb'⟩ := hv; cases hb'; exact ⟨.numEq y, List.mem_map.mpr ⟨y, hb, rfl⟩, hxy⟩
+  · have ho := objAt_shape fs' c' i
+    cases c <;> simp only [equalityTagsOf, Option.some.injEq] at hS <;> (first | subst hS | cases hS) <;>
+      first
+        | exact objAt_tags fs cd i
+        | (rw [hsh] at ho; simp [shape] at ho)
+
+/-- Whether a test reads the prototype chain: `key in o` alone. -/
+def tagReadsProto : Tag → Bool
+  | .hasKey _ => true
+  | _ => false
+
+theorem tagHoldsIn_of_readsProto {t : Tag} (ht : tagReadsProto t = false) (h : Heap) (v : Tm) :
+    tagHoldsIn h t v = tagHolds t v := by
+  cases t <;> first | rfl | simp [tagReadsProto] at ht
+
+theorem equalityTagsOf_readsProto {α : Type} {c : Clause α} {S : List Tag} (hS : equalityTagsOf c = some S) :
+    ∀ t ∈ S, tagReadsProto t = false := by
+  cases c <;> simp only [equalityTagsOf, Option.some.injEq, reduceCtorEq] at hS <;> subst hS <;>
+    simp [tagReadsProto]
+
+/-- Two tags with the same holders: number equality tests of `Number::equal`
+values, which ignores the sign of zero, or the same test. -/
+def sameHolders : Tag → Tag → Bool
+  | .numEq a, .numEq b => numberEqual a b
+  | a, b => a == b
+
+theorem sameHolders_holds {t t' : Tag} {u : Tm} (hs : sameHolders t t' = true)
+    (ht : tagHolds t u = true) : tagHolds t' u = true := by
+  unfold sameHolders at hs
+  split at hs
+  · cases u <;> simp only [tagHolds] at ht ⊢
+    all_goals first | exact numberEqual_trans ht hs | cases ht
+  · rw [beq_iff_eq] at hs; subst hs; exact ht
+
+/-- A list of tags, one of each class of `sameHolders`: `numEq(+0)` and
+`numEq(−0)` are one. -/
+def dedupTags : List Tag → List Tag
+  | [] => []
+  | t :: ts => if (dedupTags ts).any (sameHolders t) then dedupTags ts else t :: dedupTags ts
+
+theorem mem_dedupTags {t : Tag} : ∀ {ts : List Tag}, t ∈ dedupTags ts → t ∈ ts
+  | [], h => h
+  | s :: ts, h => by
+    unfold dedupTags at h
+    split at h
+    · exact List.mem_cons_of_mem _ (mem_dedupTags h)
+    · rcases List.mem_cons.mp h with rfl | h
+      · exact List.mem_cons_self
+      · exact List.mem_cons_of_mem _ (mem_dedupTags h)
+
+theorem dedupTags_holds {u : Tm} : ∀ {ts : List Tag} {t : Tag}, t ∈ ts → tagHolds t u = true →
+    ∃ t' ∈ dedupTags ts, tagHolds t' u = true
+  | s :: ts, t, hm, ht => by
+    unfold dedupTags
+    rcases List.mem_cons.mp hm with rfl | hm
+    · split
+      · rename_i hany
+        obtain ⟨t', ht', hs⟩ := List.any_eq_true.mp hany
+        exact ⟨t', ht', sameHolders_holds hs ht⟩
+      · exact ⟨t, List.mem_cons_self, ht⟩
+    · obtain ⟨t', ht', h'⟩ := dedupTags_holds hm ht
+      split
+      · exact ⟨t', ht', h'⟩
+      · exact ⟨t', List.mem_cons_of_mem _ ht', h'⟩
+
+/-- The tags of a list of clauses: each clause's, where every clause has them. -/
+def equalityTagsAll {α : Type} : List (Clause α) → Option (List Tag)
+  | [] => some []
+  | c :: cs => match equalityTagsOf c, equalityTagsAll cs with
+    | some a, some b => some (a ++ b)
+    | _, _ => none
+
+theorem equalityTagsAll_mem {α : Type} : ∀ {cs : List (Clause α)} {S : List Tag} {c : Clause α},
+    equalityTagsAll cs = some S → c ∈ cs → ∃ Sc, equalityTagsOf c = some Sc ∧ ∀ t ∈ Sc, t ∈ S
+  | d :: cs, S, c, h, hc => by
+    unfold equalityTagsAll at h
+    split at h
+    · rename_i a b ha hb
+      cases h
+      rcases List.mem_cons.mp hc with rfl | hc
+      · exact ⟨a, ha, fun t ht => List.mem_append_left _ ht⟩
+      · obtain ⟨Sc, hSc, hsub⟩ := equalityTagsAll_mem hb hc
+        exact ⟨Sc, hSc, fun t ht => List.mem_append_right _ (hsub t ht)⟩
+    · cases h
+
+theorem equalityTagsAll_readsProto {α : Type} : ∀ {cs : List (Clause α)} {S : List Tag},
+    equalityTagsAll cs = some S → ∀ t ∈ S, tagReadsProto t = false
+  | [], S, h, t, ht => by cases h; cases ht
+  | d :: cs, S, h, t, ht => by
+    unfold equalityTagsAll at h
+    split at h
+    · rename_i a b ha hb
+      cases h
+      rcases List.mem_append.mp ht with ht | ht
+      · exact equalityTagsOf_readsProto ha t ht
+      · exact equalityTagsAll_readsProto hb t ht
+    · cases h
+
+/-- **The tags of a type** under strict equality: its clauses' tags, one per
+class of `sameHolders`, where every label of the type is a clause row; none
+otherwise, since a parameter's members are no clause's. -/
+def equalityTags (G : NormalGraph ι) (B : Ty ι) : Option (List Tag) :=
+  if G.plainTy B then (equalityTagsAll (expand G B)).map dedupTags else none
+
+theorem equalityTags_readsProto {G : NormalGraph ι} {B : Ty ι} {S : List Tag}
+    (hS : equalityTags G B = some S) : ∀ t ∈ S, tagReadsProto t = false := by
+  unfold equalityTags at hS
+  split at hS
+  · obtain ⟨S', hS', rfl⟩ := Option.map_eq_some_iff.mp hS
+    exact fun t ht => equalityTagsAll_readsProto hS' t (mem_dedupTags ht)
+  · cases hS
+
+/-- (E1) A value strictly equal to a member of a type passes one of the
+type's tags. -/
+theorem equalityTags_sound {G : NormalGraph ι} {B : Ty ι} {S : List Tag} {n W} {u v : Tm}
+    (hS : equalityTags G B = some S) (hv : meaning G B n W v)
+    (heq : strictEquals u v = some true) : ∃ t ∈ S, tagHolds t u = true := by
+  unfold equalityTags at hS
+  split at hS
+  · rename_i hp
+    obtain ⟨S', hS', rfl⟩ := Option.map_eq_some_iff.mp hS
+    obtain ⟨c, hc, hcv, -⟩ := (expand_sem G B hp n W v).mp hv
+    obtain ⟨Sc, hSc, hsub⟩ := equalityTagsAll_mem hS' hc
+    obtain ⟨t, ht, hu⟩ := equalityTagsOf_sound hSc hcv heq
+    exact dedupTags_holds (hsub t ht) hu
+  · cases hS
+
+/-- **The tag of a singleton type**: the equality test of the one value, up
+to strict equality, every member of the type is: `null`, `undefined`, a
+number (`Number::equal` relates every literal of the type to the first, so
+both zeros are one), a string, a Boolean or a bigint. -/
+def singletonTag (G : NormalGraph ι) (A : Ty ι) : Option Tag :=
+  if !G.plainTy A then none else
+  match splitSets (expand G A) with
+  | [.nul] => some .isNul
+  | [.undef] => some .isUndef
+  | .numLit bits :: cs =>
+    if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
+    then some (.numEq bits) else none
+  | [.strLit s] => some (.strEq s)
+  | [.boolLit b] => some (.boolEq b)
+  | [.bigintLit i] => some (.bigintEq i)
+  | _ => none
+
+theorem singletonTag_readsProto {G : NormalGraph ι} {A : Ty ι} {t : Tag}
+    (ht : singletonTag G A = some t) : tagReadsProto t = false := by
+  unfold singletonTag at ht
+  split at ht
+  · cases ht
+  · split at ht <;> (try split at ht) <;> first | (cases ht; rfl) | cases ht
+
+/-- (E2) A value strictly unequal to a member of a singleton type fails the
+type's tag. -/
+theorem singletonTag_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {n W} {u v : Tm}
+    (ht : singletonTag G B = some t) (hv : meaning G B n W v)
+    (hne : strictEquals u v = some false) : tagHolds t u = false := by
+  unfold singletonTag at ht
+  split at ht
+  · cases ht
+  rename_i hp
+  simp only [Bool.not_eq_true', Bool.not_eq_false] at hp
+  obtain ⟨c, hc, hcv, -⟩ := (expand_sem G B hp n W v).mp hv
+  obtain ⟨e, he, hev⟩ := (elements_sem _ _ _ c n W v).mpr hcv
+  have hmem : e ∈ splitSets (expand G B) := List.mem_flatMap.mpr ⟨c, hc, he⟩
+  cases hu : tagHolds t u
+  · rfl
+  exfalso
+  revert hne
+  split at ht
+  · rename_i hs; rw [hs] at hmem; cases ht
+    simp at hmem; subst hmem; cases hev
+    cases u <;> simp [tagHolds] at hu; simp [strictEquals, isVal, isPrim, sameValue]
+  · rename_i hs; rw [hs] at hmem; cases ht
+    simp at hmem; subst hmem; cases hev
+    cases u <;> simp [tagHolds] at hu; simp [strictEquals, isVal, isPrim, sameValue]
+  · rename_i bits cs hs; rw [hs] at hmem
+    split at ht
+    · rename_i hall
+      cases ht
+      cases u <;> simp only [tagHolds, reduceCtorEq] at hu
+      rename_i x
+      have hb : ∃ b, v = .num b ∧ numberEqual bits b = true := by
+        rcases List.mem_cons.mp hmem with rfl | hm
+        · cases hev; refine ⟨bits, rfl, ?_⟩
+          simp only [numberEqual, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true, beq_iff_eq] at hu ⊢
+          simp_all
+        · have := List.all_eq_true.mp hall e hm
+          cases e <;> simp only [reduceCtorEq] at this
+          cases hev; exact ⟨_, rfl, this⟩
+      obtain ⟨b, rfl, hb⟩ := hb
+      simp [strictEquals, isVal, isPrim, sameValue, numberEqual_trans hu hb]
+    · cases ht
+  · rename_i s hs; rw [hs] at hmem; cases ht
+    simp at hmem; subst hmem; cases hev
+    cases u <;> simp [tagHolds] at hu; subst hu; simp [strictEquals, isVal, isPrim, sameValue]
+  · rename_i b hs; rw [hs] at hmem; cases ht
+    simp at hmem; subst hmem; cases hev
+    cases b <;> cases u <;> simp [tagHolds] at hu <;> simp [strictEquals, isVal, isPrim, sameValue]
+  · rename_i i hs; rw [hs] at hmem; cases ht
+    simp at hmem; subst hmem; cases hev
+    cases u <;> simp [tagHolds] at hu; subst hu; simp [strictEquals, isVal, isPrim, sameValue]
+  · cases ht
+
+end EqualityTags
+
 variable [DecidableEq ι]
 
 /-- A target implication follows on an edge mapping `m`: one the source
@@ -669,16 +1044,28 @@ theorem FieldSlices.eq_direct {G : NormalGraph ι} (s : FieldSlices G) : s = Fie
   cases s with
   | mk f h => subst h; rfl
 
+/-- What a tag test's answer `q` leaves of slot `i`'s type is within the
+yield's type, by the yield's evidence (`ObservedSub`): the single-tag rule,
+which narrows a family to the singleton it is tested against. -/
+@[nospecialize] def observedTag (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
+    (y : Yield ι) (i : Nat) (tag : Tag) (q : Bool) : Bool :=
+  match Γ[i]?, y.evidence with
+  | some A, some p => checkObservedSubUsing G images A y.type (.tag tag q) p
+  | _, _ => false
+
 /-- A membership test's yield (`memberOn`) about the tested slot, or about
 the object a current read link says its value was read from: where the test
 answered `q`, the labels `memberSlice` keeps of the slot's or the object's
-type are within the yield's type, by the yield's evidence. A yield of `true`
-is conditional; one of `false` is stated of that answer (`onFalse`). -/
+type are within the yield's type, by the yield's evidence. Where it answered
+`true`, also where each tag's own rule gives the yield's type, of the slot
+(`observedTag`) or of the object (`fieldYield`): whichever tag holds gives
+it. A yield of `true` is conditional; one of `false` is stated of that answer
+(`onFalse`). -/
 @[nospecialize] def memberYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
     (links : HeapLinks.Links) (y : Yield ι) (ts : List Tag) (i : Nat)
     (slices : FieldSlices G := FieldSlices.direct G) : Bool :=
   y.conditional == !y.onFalse && (Γ[i]?).isSome &&
-  match y.evidence with
+  ((match y.evidence with
   | none => false
   | some p =>
     (y.target == i && match Γ[i]? with
@@ -688,7 +1075,9 @@ is conditional; one of `false` is stated of that answer (`onFalse`). -/
       match Γ[g.cell]? with
       | some A => PositiveCertificates.checkUsing G images
           (slices.slice A g.field ts (!y.onFalse) y.type) y.type p
-      | none => false
+      | none => false) ||
+  (!y.onFalse && ts.all fun t =>
+    y.target == i && observedTag G images Γ y i t true || fieldYield G images Γ links y i t true))
 
 /-- Whether a yield follows from a node's membership test (`memberYield`). -/
 @[nospecialize] def memberFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
@@ -697,11 +1086,25 @@ is conditional; one of `false` is stated of that answer (`onFalse`). -/
   | some (ts, i) => isMemberOn ts i t && memberYield G images Γ links y ts i slices
   | none => false
 
+/-- **A strict comparison's yield** (`x_a === x_b`) about slot `a`, or about
+the object a current read link says its value was read from: that of a
+membership test of `a` against the tags of `b`'s type (`equalityTags`) where
+it answered `true`, and against the tag of `b`'s singleton type
+(`singletonTag`) where it answered `false` (PROGRAM-TYPING.md, "A strict
+comparison"). -/
+@[nospecialize] def comparisonYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
+    (links : HeapLinks.Links) (y : Yield ι) (a b : Nat) (slices : FieldSlices G := FieldSlices.direct G) : Bool :=
+  match Γ[b]? with
+  | some B => (if y.onFalse then (singletonTag G B).map ([·]) else equalityTags G B).any
+      fun ts => memberYield G images Γ links y ts a slices
+  | none => false
+
 /-- One yield of a node's expression, without a call: a slot read, whose value
 is the slot's, yields what an implication on the slot states; a tag test of a
 slot, read as a Boolean, yields where it answers `true` what its observation
 leaves of the slot, or of the object the slot's value was read from
-(`fieldYield`). -/
+(`fieldYield`); a strict comparison of two slots yields what a membership
+test of either does (`comparisonYield`). -/
 @[nospecialize] def yieldFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
     (xs : List (Implication ι)) (links : HeapLinks.Links) (t : Tm)
     (slices : FieldSlices G := FieldSlices.direct G) (y : Yield ι) : Bool :=
@@ -709,15 +1112,12 @@ leaves of the slot, or of the object the slot's value was read from
   | .var i => y.conditional && (Γ[i]?).isSome &&
       xs.any fun x => x.test == i && x.target == y.target && within x.type y.type
   | .ite (.test tag (.var i)) .tru .fls => y.conditional &&
-      (y.target == i && observed i tag true || fieldYield G images Γ links y i tag true)
+      (y.target == i && observedTag G images Γ y i tag true || fieldYield G images Γ links y i tag true)
   | .ite (.test tag (.var i)) .fls .tru => y.conditional &&
-      (y.target == i && observed i tag false || fieldYield G images Γ links y i tag false)
+      (y.target == i && observedTag G images Γ y i tag false || fieldYield G images Γ links y i tag false)
+  | .arith .eq (.var i) (.var j) =>
+      comparisonYield G images Γ links y i j slices || comparisonYield G images Γ links y j i slices
   | _ => false
-where
-  observed (i : Nat) (tag : Tag) (q : Bool) : Bool :=
-    match Γ[i]?, y.evidence with
-    | some A, some p => checkObservedSubUsing G images A y.type (.tag tag q) p
-    | _, _ => false
 
 /-- A safe run, strengthened by a property of every value it returns at a
 world reached from its own: the property holds of the values the run's own
@@ -776,6 +1176,25 @@ theorem steps_value {h v h' u m} (hv : isVal v = true) (run : Steps m h v h' u) 
   cases run with
   | refl => rfl
   | next st _ => exact absurd st (value_no_step hv)
+
+/-- (E4) A strict comparison of two values returns at once, in its heap, the
+Boolean `strictEquals` answers. -/
+theorem eq_run {h v w h' u m} (hv : isVal v = true) (hw : isVal w = true)
+    (run : Steps m h (.arith .eq v w) h' u) (hu : isVal u = true) :
+    h' = h ∧ ∃ q, strictEquals v w = some q ∧ u = boolVal q := by
+  cases run with
+  | refl => simp [isVal] at hu
+  | next st run =>
+    cases st with
+    | arithC1 s => exact absurd s (value_no_step hv)
+    | arithC2 _ s => exact absurd s (value_no_step hw)
+    | arithV hb =>
+      simp only [binop, ↓reduceIte, Option.map_eq_some_iff] at hb
+      obtain ⟨q, hq, rfl⟩ := hb
+      cases run with
+      | refl => exact ⟨rfl, q, hq, rfl⟩
+      | next st _ => exact absurd st (value_no_step (by cases q <;> rfl))
+    | arithThrow ht => simp [binopThrows] at ht
 
 theorem instantiate_memberOn (ρ : Env) (i : Nat) :
     ∀ ts : List Tag, instantiate 0 ρ (memberOn ts (.var i)) = memberOn ts (ρ i)
@@ -867,6 +1286,21 @@ theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     rcases hrun with ⟨ht', _⟩ | ⟨_, h1⟩
     · rw [hu] at ht'; cases ht'
     · exact h1
+  rw [Bool.or_eq_true] at hp
+  rcases hp with hp | hnew
+  rotate_left
+  · -- Each tag's own rule: the tag that holds gives the yield's type.
+    simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, List.all_eq_true,
+      Bool.or_eq_true, beq_iff_eq] at hnew
+    obtain ⟨hon, hall⟩ := hnew
+    obtain ⟨t, ht, htag⟩ := hyes (by simp [hon])
+    rcases hall t ht with ⟨rfl, hob⟩ | hfy
+    · unfold observedTag at hob
+      split at hob
+      · rename_i A p hA _
+        exact checkObservedSub_sound hob (m+1) W _ (he.2 _ A hA) (tagHolds_of_heap htag)
+      · cases hob
+    · exact fieldYield_sound hfy he hh hl htag
   split at hp
   · cases hp
   · rename_i p _
@@ -920,6 +1354,63 @@ theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · cases hp'
 
 
+private theorem option_any_some {α : Type} {p : α → Bool} {o : Option α} (h : o.any p = true) :
+    ∃ x, o = some x ∧ p x = true := by
+  cases o <;> simp_all
+
+/-- A strict comparison's yield holds where the comparison answered: its
+answer, by (E1) where `true` and (E2) where `false`, is a membership test's
+(`memberYield_sound`). -/
+theorem comparisonYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ links y a b}
+    (hf : comparisonYield G images Γ links y a b = true) {ρ m W h} {u : Tm}
+    (he : EnvOk G Γ ρ (m+1) W) (hh : HeapOk (m+1) W h) (hl : HeapLinks.Holds links ρ h)
+    (hq : ∃ q, strictEquals (ρ a) (ρ b) = some q ∧ u = boolVal q)
+    (hcond : y.conditional = true → u = .tru) (hneg : y.onFalse = true → u = .fls) :
+    meaning G y.type (m+1) W (ρ y.target) := by
+  unfold comparisonYield at hf
+  split at hf
+  · rename_i B hB
+    obtain ⟨ts, hts, hm⟩ := option_any_some hf
+    obtain ⟨q, hq, rfl⟩ := hq
+    have hcy : y.conditional = !y.onFalse := by
+      unfold memberYield at hm
+      simp only [Bool.and_eq_true, beq_iff_eq] at hm
+      exact hm.1.1
+    cases hon : y.onFalse
+    · rw [hon] at hts hcy
+      simp only [Bool.false_eq_true, ↓reduceIte] at hts
+      have hu := hcond (by simpa using hcy)
+      have hq' : q = true := by cases q <;> simp_all [boolVal]
+      subst hq'
+      obtain ⟨t, ht, htag⟩ := equalityTags_sound hts (he.2 b B hB) hq
+      refine memberYield_sound hm he hh hl (.inl ⟨hu, t, ht, ?_⟩) hcond hneg
+      rw [tagHoldsIn_of_readsProto (equalityTags_readsProto hts t ht)]
+      exact htag
+    · rw [hon] at hts
+      simp only [↓reduceIte, Option.map_eq_some_iff] at hts
+      obtain ⟨t, hst, rfl⟩ := hts
+      have hu := hneg hon
+      have hq' : q = false := by cases q <;> simp_all [boolVal]
+      subst hq'
+      have htag := singletonTag_sound hst (he.2 b B hB) hq
+      refine memberYield_sound hm he hh hl (.inr ⟨hu, fun t' ht' => ?_⟩) hcond hneg
+      rw [List.mem_singleton.mp ht', tagHoldsIn_of_readsProto (singletonTag_readsProto hst)]
+      exact htag
+  · cases hf
+
+/-- The slots a strict comparison's yield reads hold values. -/
+theorem comparisonYield_slots {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ links y a b}
+    (hf : comparisonYield G images Γ links y a b = true) :
+    (∃ A, Γ[a]? = some A) ∧ ∃ B, Γ[b]? = some B := by
+  unfold comparisonYield at hf
+  split at hf
+  · rename_i B hB
+    obtain ⟨ts, -, hm⟩ := option_any_some hf
+    unfold memberYield at hm
+    simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hm
+    exact ⟨hm.1.2, B, hB⟩
+  · cases hf
+
 theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ xs links t} {ys : List (Yield ι)}
     (hc : ys.all (yieldFollows G images Γ xs links t) = true) {ρ n W h} {T : Fam} {Q : Post}
     (he : EnvOk G Γ ρ n W) (hx : ImpliesOk G xs ρ n W) (hh : HeapOk n W h)
@@ -967,7 +1458,7 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
   · rename_i tag i
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hf
     obtain ⟨hcy, ⟨rfl, hob⟩ | hfy⟩ := hf
-    · unfold yieldFollows.observed at hob
+    · unfold observedTag at hob
       split at hob
       · rename_i A p hA _
         have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
@@ -988,7 +1479,7 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
   · rename_i tag i
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hf
     obtain ⟨hcy, ⟨rfl, hob⟩ | hfy⟩ := hf
-    · unfold yieldFollows.observed at hob
+    · unfold observedTag at hob
       split at hob
       · rename_i A p hA _
         have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
@@ -1006,6 +1497,24 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
       have htag : tagHoldsIn h tag (ρ i) = false := by
         cases htg : tagHoldsIn h tag (ρ i) <;> simp_all
       exact later (fieldYield_sound hfy he hh hl htag)
+  · rename_i i j
+    have hslots : ∀ {a b}, comparisonYield G images Γ links y a b = true → isVal (ρ a) = true ∧ isVal (ρ b) = true :=
+      fun hc => by
+        obtain ⟨⟨A, hA⟩, B, hB⟩ := comparisonYield_slots hc
+        exact ⟨(meaning_value (he.2 _ A hA)).1, (meaning_value (he.2 _ B hB)).1⟩
+    have hrun : ∀ {a b}, comparisonYield G images Γ links y a b = true →
+        ∃ q, strictEquals (ρ i) (ρ j) = some q ∧ u = boolVal q := fun hc => by
+      have ⟨hvi, hvj⟩ : isVal (ρ i) = true ∧ isVal (ρ j) = true := by
+        simp only [Bool.or_eq_true] at hf
+        rcases hf with hc' | hc'
+        · exact hslots hc'
+        · exact (hslots hc').symm
+      exact (eq_run hvi hvj (by simpa [instantiate] using run) hu).2
+    simp only [Bool.or_eq_true] at hf
+    rcases hf with hc | hc
+    · exact later (comparisonYield_sound hc he hh hl (hrun hc) hcond _hneg)
+    · obtain ⟨q, hq, hu'⟩ := hrun hc
+      exact later (comparisonYield_sound hc he hh hl ⟨q, by rw [strictEquals_comm]; exact hq, hu'⟩ hcond _hneg)
   · cases hf
 
 /-! ### A call at a promise signature -/
