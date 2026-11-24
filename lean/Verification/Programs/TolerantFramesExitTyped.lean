@@ -22,7 +22,8 @@ form the same at every reassigned graph (`subtypeUsing_reassign`,
 - `ExitTyped.reassign`, `ExitTyped.env`: the form at every reassigned
   graph, and the target's context typing the mapped environment from it,
   the subtype answers sound;
-- `vacuous_false`: an exit the pass finds vacuous meets no environment. -/
+- `vacuous_false`: an exit whose types the pass finds vacuous meets no
+  environment. -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
@@ -189,14 +190,21 @@ theorem ExitTyped.env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ �
     · exact her.2 j X hx
     · exact he.2 j X hx
 
-/-- **Whether the pass finds an exit vacuous** (`exitStep`'s `vacuous`):
-the node's own answer `here`, a pushed result of an empty type, or an
-observation impossible at the edge's slot 0. -/
-def vacuousOf (G : NormalGraph ι) (here : Bool) (A : Ty ι) (Γ : List (Ty ι)) (pushed : Bool)
+/-- **Whether the types of an exit meet no environment**: the node's own
+answer `here`, a pushed result of an empty type, or an observation
+impossible at the edge's slot 0. -/
+def vacuousTypes (G : NormalGraph ι) (here : Bool) (A : Ty ι) (Γ : List (Ty ι)) (pushed : Bool)
     (observed : Option BranchRefinement.Observation) : Bool :=
   match observed with
   | some o => (here || (pushed && ControlFlow.unsatisfiable G [A])) || (Γ[0]?).any (BranchRefinement.impossible G · o)
   | none => here || (pushed && ControlFlow.unsatisfiable G [A])
+
+/-- **Whether the pass finds an exit vacuous** (`exitStep`'s `vacuous`): its
+types meet no environment (`vacuousTypes`), or its facts `S` hold at none
+(`Store.impossible`). -/
+def vacuousOf (G : NormalGraph ι) (here : Bool) (A : Ty ι) (Γ : List (Ty ι)) (pushed : Bool)
+    (observed : Option BranchRefinement.Observation) (S : Store) : Bool :=
+  vacuousTypes G here A Γ pushed observed || S.impossible
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 theorem HereEmpty.reassign {G : NormalGraph ι} {C : List (Ty ι)} (h : HereEmpty G C) (η : MixedAssignment ι) :
@@ -213,12 +221,12 @@ theorem hereEmpty_false {G : NormalGraph ι} {C : List (Ty ι)} (h : HereEmpty G
       | succ j => simp at hj⟩
 
 omit [Hashable ι] [Instantiates ι] in
-/-- **A vacuous exit meets no environment**: where the node's `here`
+/-- **An exit whose types are vacuous meets no environment**: where the node's `here`
 answer states its context empty, no pushed environment of the claim's type
 and context with the exit's observation holds. -/
 theorem vacuous_false {G : NormalGraph ι} {here : Bool} {A : Ty ι} {C : List (Ty ι)} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    (hv : vacuousOf G here A (if pushed then A :: C else C) pushed observed = true)
+    (hv : vacuousTypes G here A (if pushed then A :: C else C) pushed observed = true)
     (hhere : here = true → HereEmpty G C) (hpo : observed.isSome = true → pushed = true)
     {ρ : Env} {s : IndexedHeap} {v : Tm} (he : EnvOk G (A :: C) (push v ρ) s.n s.W)
     (ho : ObservedOk observed promote v) : False := by
@@ -231,7 +239,7 @@ theorem vacuous_false {G : NormalGraph ι} {here : Bool} {A : Ty ι} {C : List (
         cases j with
         | zero => exact (Option.some.inj hj) ▸ he.2 0 A rfl
         | succ j => simp at hj⟩
-  unfold vacuousOf at hv
+  unfold vacuousTypes at hv
   cases observed with
   | none => exact hunsat hv
   | some o =>

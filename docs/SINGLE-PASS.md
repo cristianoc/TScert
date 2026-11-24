@@ -249,6 +249,15 @@ call's where `promiseYields` states them at an output the promise keeps,
 any other's each where `yieldFollows` accepts it; a slot read's yields are
 checked against the implications testing the slot's name.
 
+An edge is vacuous, and checks nothing (its types, its target's written
+assertion, a loop head's given facts and implications), where no
+environment meets it: its context, as the certificate checker's
+`vacuous-edge` ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#vacuous-edges)), or
+its facts, where the edge's store is impossible. Both are proved where the
+exit's delivery reads them (`vacuous_false`, `stateHolds_impossible`). A
+node whose entry store is impossible still checks its step; the false
+fact, naming no name, stays in the store of its exits.
+
 A node's claim type has the shape its continuation assumes, as the
 certificate checker checks it (`passShapeCheck'`): only Booleans at a
 `branchBind`, the Boolean at a `branch`.

@@ -103,13 +103,13 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys ysA ysE : List (PromiseCalls.Yield ι)) (here outFresh : Bool) (i : Nat) (t : Target) (pushed : Bool)
     (observed : Option BranchRefinement.Observation) (promote : Option Bool) : Prop where
-  typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
+  typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false →
     ExitTyped G images (exitCtx c pushed) (ctx t.label) t observed
       (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
       (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysE) (SinglePass.outAllOf G c st.stepOut)
         (i == 0))
       (SinglePass.outAllOf G c st.stepOut)
-  asserted : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ req, stated t.label = some req →
+  asserted : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false → ∀ req, stated t.label = some req →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (assertionSource G (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA)
           (SinglePass.outAllOf G c st.stepOut) (i == 0)) req
@@ -196,8 +196,17 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   have hYE := hE ρ m s' v hF
   obtain ⟨hS, _, hout, hfr⟩ := hF
   obtain ⟨hpo, hpp⟩ := ofNode_flags (List.mem_of_getElem? hm)
-  cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed with
-  | true => exact (vacuous_false (C := c.context) hvac hhere hpo he ho).elim
+  cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) with
+  | true =>
+    exfalso
+    rcases Bool.or_eq_true_iff.mp hvac with hty | himp
+    · exact vacuous_false (C := c.context) hty hhere hpo he ho
+    · -- The edge's facts hold at the edge's environment, and hold nowhere.
+      have heo : observed.isSome = true → EnvOk G (exitCtx c pushed) (push v ρ) s'.n s'.W := fun hs => by
+        have hp : pushed = true := hpo hs
+        subst hp; simpa [exitCtx] using he
+      exact stateHolds_impossible
+        (edgeStore_normal (Γ := exitCtx c pushed) (width := c.context.length) hS ho hpo hpp heo) himp
   | false =>
   obtain ⟨n, W, h, pos, adm, hh⟩ := s'
   cases n with
@@ -273,25 +282,25 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
     (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat) : Prop where
-  typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
+  typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false →
     ExitTyped G images (exitCtx c pushed) (ctx t.label) t observed
       (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
       (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysE) (SinglePass.outAllOf G c st.stepOut)
         (i == 0))
       (SinglePass.outAllOf G c st.stepOut)
-  implied : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ x ∈ gimp,
+  implied : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false → ∀ x ∈ gimp,
     ∃ y ∈ w.implies l ++ freshImplOf pushed false ysE entry.names st.result,
       (normalNames entry st pushed)[PointClaims.slot t.mapping x.test]? = some y.test ∧
       (normalNames entry st pushed)[PointClaims.slot t.mapping x.target]? = some y.target ∧
       (y.type = x.type ∨ ∃ a, ((subtypeUsing G images y.type x.type a).1).value.isSome = true)
-  inputs : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ p ∈ inputSlots,
+  inputs : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false → ∀ p ∈ inputSlots,
     (normalNames entry st pushed)[PointClaims.slot t.mapping p.1]? = startNames[p.2]?
-  args : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ j ∈ argSlots,
+  args : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false → ∀ j ∈ argSlots,
     (normalNames entry st pushed)[PointClaims.slot t.mapping j]? = argName
-  fresh : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ j ∈ freshSlots,
+  fresh : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false → ∀ j ∈ freshSlots,
     ((normalNames entry st pushed)[PointClaims.slot t.mapping j]?).any
       (if pushed && outFresh && !entry.fresh.contains st.result then st.result :: entry.fresh else entry.fresh).contains = true
-  query : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
+  query : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) = false →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (HeapKnowledge.withTypedLinks G (exitCtx c pushed) (ControlFlow.withTypedCells G (exitCtx c pushed) req t.mapping
         (materialize { names := normalNames entry st pushed, store := exitStore G c entry st pushed observed promote }
@@ -362,8 +371,17 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   have hYE := hE ρ m s' v hF
   obtain ⟨hS, _, hout, hfr⟩ := hF
   obtain ⟨hpo, hpp⟩ := ofNode_flags (List.mem_of_getElem? hm)
-  cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed with
-  | true => exact (vacuous_false (C := c.context) hvac hhere hpo he ho).elim
+  cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed (exitStore G c entry st pushed observed promote) with
+  | true =>
+    exfalso
+    rcases Bool.or_eq_true_iff.mp hvac with hty | himp
+    · exact vacuous_false (C := c.context) hty hhere hpo he ho
+    · -- The edge's facts hold at the edge's environment, and hold nowhere.
+      have heo : observed.isSome = true → EnvOk G (exitCtx c pushed) (push v ρ) s'.n s'.W := fun hs => by
+        have hp : pushed = true := hpo hs
+        subst hp; simpa [exitCtx] using he
+      exact stateHolds_impossible
+        (edgeStore_normal (Γ := exitCtx c pushed) (width := c.context.length) hS ho hpo hpp heo) himp
   | false =>
   obtain ⟨n, W, h, pos, adm, hh⟩ := s'
   cases n with
@@ -448,6 +466,12 @@ def handlerStore (G : NormalGraph ι) (c : PointClaim ι) (TT : Ty ι) (entry : 
   edgeStoreOf G (handlerCtx c TT) entry.store st.store (x :: entry.names) (st.result :: entry.names)
     c.context.length true true none none
 
+/-- **Whether the pass finds a handler exit vacuous** (`exitStep`'s
+`vacuous` at a handler): the node's own answer `here`, a thrown type no value
+meets, or the edge's facts `S` holding at no environment. -/
+def handlerVacuous (G : NormalGraph ι) (here : Bool) (TT : Ty ι) (S : Store) : Bool :=
+  (here || ControlFlow.unsatisfiable G [TT]) || S.impossible
+
 /-- The facts the handler edge's search reads (`exitTypes`' `ko`). -/
 def handlerSearchFacts (G : NormalGraph ι) (c : PointClaim ι) (TT : Ty ι) (entry : SinglePass.State) (st : Stepped ι)
     (x : Nat) (Δ : List (Ty ι)) (m : PointClaims.Mapping) : HeapKnowledge.Knowledge :=
@@ -477,12 +501,12 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     (l : Nat) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) (here outFresh : Bool) (TT : Ty ι)
     (x : Nat) (t : Target) : Prop where
   admits : ControlFlow.admitsAll G TT = true
-  typed : (here || ControlFlow.unsatisfiable G [TT]) = false →
+  typed : handlerVacuous G here TT (handlerStore G c TT entry st x) = false →
     SubtypesPass G images (handlerCtx c TT) (ctx t.label) (differing (handlerCtx c TT) (ctx t.label) t.mapping) ∨
       EdgeFound G images (ctx t.label)
         (PromiseCalls.intRefine G (handlerCtx c TT) (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping).indices)
         t none (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping)
-  asserted : «given» t.label = false → (here || ControlFlow.unsatisfiable G [TT]) = false → ∀ req,
+  asserted : «given» t.label = false → handlerVacuous G here TT (handlerStore G c TT entry st x) = false → ∀ req,
     stated t.label = some req →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (assertionSource G (handlerCtx c TT) req (handlerAssertFacts G c TT entry st x req t.mapping) t.mapping none) req
@@ -499,17 +523,17 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   head : «given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.Candidate)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (freshSlots : List Nat) (hwidth hfresh : Nat),
-    ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ y ∈ gimp, ∃ z ∈ w.implies l,
+    (handlerVacuous G here TT (handlerStore G c TT entry st x) = false → ∀ y ∈ gimp, ∃ z ∈ w.implies l,
       (x :: entry.names)[PointClaims.slot t.mapping y.test]? = some z.test ∧
       (x :: entry.names)[PointClaims.slot t.mapping y.target]? = some z.target ∧
       (z.type = y.type ∨ ∃ a, ((subtypeUsing G images z.type y.type a).1).value.isSome = true)) ∧
-    ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ p ∈ inputSlots,
+    (handlerVacuous G here TT (handlerStore G c TT entry st x) = false → ∀ p ∈ inputSlots,
       (x :: entry.names)[PointClaims.slot t.mapping p.1]? = startNames[p.2]?) ∧
-    ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ j ∈ argSlots,
+    (handlerVacuous G here TT (handlerStore G c TT entry st x) = false → ∀ j ∈ argSlots,
       (x :: entry.names)[PointClaims.slot t.mapping j]? = argName) ∧
-    ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ j ∈ freshSlots,
+    (handlerVacuous G here TT (handlerStore G c TT entry st x) = false → ∀ j ∈ freshSlots,
       ((x :: entry.names)[PointClaims.slot t.mapping j]?).any entry.fresh.contains = true) ∧
-    ((here || ControlFlow.unsatisfiable G [TT]) = false →
+    (handlerVacuous G here TT (handlerStore G c TT entry st x) = false →
       KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
         (HeapKnowledge.withTypedLinks G (handlerCtx c TT) (ControlFlow.withTypedCells G (handlerCtx c TT) req t.mapping
           (materialize { names := x :: entry.names, store := handlerStore G c TT entry st x } (c.context.length + 1)
@@ -545,15 +569,17 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s' := by
   have hTT : meaning G TT s'.n s'.W e := ControlFlow.admitsAll_sound hc.admits hx
   have heh : EnvOk G (handlerCtx c TT) (push e ρ) s'.n s'.W := he.push hTT
-  cases hvac : (here || ControlFlow.unsatisfiable G [TT]) with
+  cases hvac : handlerVacuous G here TT (handlerStore G c TT entry st x) with
   | true =>
     exfalso
-    rcases Bool.or_eq_true_iff.mp hvac with hh | hu
-    · exact hereEmpty_false (hhere hh) he
-    · exact unsatisfiable_sound hu (Γ := [TT]) (ρ := fun _ => e) ⟨fun _ => hsc, fun j X hj => by
-        cases j with
-        | zero => exact (Option.some.inj hj) ▸ hTT
-        | succ j => simp at hj⟩
+    rcases Bool.or_eq_true_iff.mp hvac with hvac | himp
+    · rcases Bool.or_eq_true_iff.mp hvac with hh | hu
+      · exact hereEmpty_false (hhere hh) he
+      · exact unsatisfiable_sound hu (Γ := [TT]) (ρ := fun _ => e) ⟨fun _ => hsc, fun j X hj => by
+          cases j with
+          | zero => exact (Option.some.inj hj) ▸ hTT
+          | succ j => simp at hj⟩
+    · exact stateHolds_impossible hS himp
   | false =>
   obtain ⟨n, W, h, pos, adm, hh⟩ := s'
   cases n with

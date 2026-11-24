@@ -61,7 +61,8 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
       a (.normal t pushed observed promote, i) = .ok b)
     (hh : env.isHead[t.label]! = true) :
     ∃ tc req, env.claimed[t.label]? = some tc ∧
-      (vacuousOf G en.here (env.claimed[l]!).type (exitCtx env.claimed[l]! pushed) pushed observed = false →
+      (vacuousOf G en.here (env.claimed[l]!).type (exitCtx env.claimed[l]! pushed) pushed observed
+        (exitStore G env.claimed[l]! en.entry sd.st pushed observed promote) = false →
         ExitTyped G I (exitCtx env.claimed[l]! pushed) tc.context t observed
           (exitSearchFacts G env.claimed[l]! en.entry sd.st pushed observed promote tc.context t.mapping)
           (refinedContext G env.claimed[l]! (env.nodes[l]!).continuation
@@ -69,7 +70,8 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
           (outAllOf G env.claimed[l]! sd.st.stepOut)) ∧
       HeadChecks env l t tc (exitCtx env.claimed[l]! pushed) (normalNames en.entry sd.st pushed)
         (exitStore G env.claimed[l]! en.entry sd.st pushed observed promote) pushed
-        (vacuousOf G en.here (env.claimed[l]!).type (exitCtx env.claimed[l]! pushed) pushed observed)
+        (vacuousOf G en.here (env.claimed[l]!).type (exitCtx env.claimed[l]! pushed) pushed observed
+        (exitStore G env.claimed[l]! en.entry sd.st pushed observed promote))
         (en.implies ++ freshImplOf pushed false (b.yields.getD []) en.entry.names sd.st.result)
         (if pushed && sd.outFresh && !en.entry.fresh.contains sd.st.result then sd.st.result :: en.entry.fresh else en.entry.fresh) req := by
   unfold exitStep at h
@@ -108,7 +110,7 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
       first, exitCtx, exitSearchFacts, exitStore, normalNames, exitWidth, Thunk.get] using hty
   · cases pushed <;> cases observed <;> simpa [hy, Γ, handler, ex, Exit.isHandler, Bool.false_eq_true, ite_false, push, Exit.pushed, c,
       target, Exit.target, obs, Exit.observed, store, names, pushedNames, entry, st, width, Exit.promote,
-      vacuous, unsatΓ, freshImpl, freshImplOf, exitCtx, exitStore, normalNames, vacuousOf] using hreq
+      vacuous, unsatΓ, freshImpl, freshImplOf, exitCtx, exitStore, normalNames, vacuousOf, vacuousTypes] using hreq
 
 /-- Handler type, assertion, and head checks exposed by execution. -/
 theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι} {sd : StepDone ι G}
@@ -116,7 +118,8 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     {a b : ExitsDone ι G} {t : Target}
     (h : exitStep G I env l en sd ysAll out a (.handler t, i) = .ok b) :
     ∃ tc, env.claimed[t.label]? = some tc ∧
-      ((en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false →
+      ((handlerVacuous G en.here (sd.thrownTy.getD [])
+        (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown)) = false →
         SubtypesPass G I (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context
           (differing (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context t.mapping) ∨
         EdgeFound G I tc.context (PromiseCalls.intRefine G (handlerCtx env.claimed[l]! (sd.thrownTy.getD []))
@@ -125,9 +128,11 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
       (env.isHead[t.label]! = true → ∃ req,
         HeadChecks env l t tc (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) (sd.thrown :: en.entry.names)
           (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown) true
-          (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) en.implies en.entry.fresh req) ∧
+          (handlerVacuous G en.here (sd.thrownTy.getD [])
+        (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown)) en.implies en.entry.fresh req) ∧
       (env.isHead[t.label]! = false →
-        (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false → ∀ req,
+        (handlerVacuous G en.here (sd.thrownTy.getD [])
+        (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown)) = false → ∀ req,
         env.stated[t.label]! = some req →
         KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
           (assertionSource G (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) req
@@ -146,7 +151,8 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
   · cases h
   rename_i a1 et
   simp only [typed] at ht
-  have htcheck : (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false →
+  have htcheck : (handlerVacuous G en.here (sd.thrownTy.getD [])
+        (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown)) = false →
       SubtypesPass G I (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context
         (differing (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context t.mapping) ∨
       EdgeFound G I tc.context (PromiseCalls.intRefine G (handlerCtx env.claimed[l]! (sd.thrownTy.getD []))
@@ -173,7 +179,7 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     · simpa only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, Bool.not_true, Bool.and_false,
         Bool.false_and, Bool.false_eq_true, ite_true, ite_false, List.append_nil,
         Γ, c, names, entry, target, Exit.target, store, st, pushedNames, width, push, Exit.pushed, obs,
-        Exit.observed, Exit.promote, vacuous, unsatΓ, handlerCtx, handlerStore] using hreq
+        Exit.observed, Exit.promote, vacuous, unsatΓ, handlerCtx, handlerStore, handlerVacuous] using hreq
     · exact Bool.noConfusion (hh.symm.trans hn)
   · rename_i hh
     split at h
@@ -355,10 +361,10 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
       refine ⟨req, written, cf, (s.env.givenImplies[t.label]?).getD [], s.env.argName,
         (s.env.givenArgs[t.label]?).getD [], (s.env.givenInputs[t.label]?).getD [], headFreshAt s.env t.label, width, fresh,
         ?_, ?_, ?_, ?_, ?_, entered, coherent, below, s.argumentInput⟩
-      · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hi] using checks.implied
-      · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hnames] using checks.inputs
-      · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.args
-      · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.fresh
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, ← hi] using checks.implied
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, ← hnames] using checks.inputs
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy] using checks.args
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy] using checks.fresh
       · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, ite_true] using checks.query
   exact checked.reassign η
 

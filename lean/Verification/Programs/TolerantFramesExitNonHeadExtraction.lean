@@ -52,12 +52,12 @@ theorem exitStep_nonHead_checked {env : WalkEnv ι G I} {l i : Nat} {en : Entere
     let transfer := edgeTransfer (normalNames en.entry sd.st pushed) t.mapping pushed false sd.outFresh
       en.entry sd.st.result (exitStore G c en.entry sd.st pushed observed promote) carried (env.live[t.label]!)
     ∃ tc, env.claimed[t.label]? = some tc ∧
-      (vacuousOf G en.here c.type (exitCtx c pushed) pushed observed = false →
+      (vacuousOf G en.here c.type (exitCtx c pushed) pushed observed (exitStore G c en.entry sd.st pushed observed promote) = false →
         ExitTyped G I (exitCtx c pushed) tc.context t observed
           (exitSearchFacts G c en.entry sd.st pushed observed promote tc.context t.mapping)
           (refinedContext G c node.continuation (yieldsAtSlots en.entry.names ysE)
             (outAllOf G c sd.st.stepOut) (i == 0)) (outAllOf G c sd.st.stepOut)) ∧
-      (vacuousOf G en.here c.type (exitCtx c pushed) pushed observed = false →
+      (vacuousOf G en.here c.type (exitCtx c pushed) pushed observed (exitStore G c en.entry sd.st pushed observed promote) = false →
         ∀ req, env.stated[t.label]! = some req →
           KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
             (assertionSource G Γr req (exitAssertFacts G c en.entry sd.st pushed observed promote req t.mapping)
@@ -90,7 +90,7 @@ theorem exitStep_nonHead_checked {env : WalkEnv ι G I} {l i : Nat} {en : Entere
     (en.implies ++ freshImpl) (env.live[target.label]!)
   cases h
   have hy := assertionExit_yields ha
-  have hv : vacuous = vacuousOf G en.here c.type (exitCtx c pushed) pushed observed := rfl
+  have hv : vacuous = vacuousOf G en.here c.type (exitCtx c pushed) pushed observed (exitStore G c en.entry sd.st pushed observed promote) := rfl
   have htype : vacuous = false →
       ExitTyped G I (exitCtx c pushed) tc.context t observed
         (exitSearchFacts G c en.entry sd.st pushed observed promote tc.context t.mapping)
@@ -237,7 +237,8 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
     exact hr
   have extension : WalkExtends (exitsWalk b) s.raw := hx.trans hext
   have typed : vacuousOf G s.en.here (r.node l hl).c.type
-      (exitCtx (r.node l hl).c pushed) pushed observed = false →
+      (exitCtx (r.node l hl).c pushed) pushed observed
+      (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote) = false →
       ExitTyped G I (exitCtx (r.node l hl).c pushed) (r.ctx t.label) t observed
         (exitSearchFacts G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote
           (r.ctx t.label) t.mapping)
@@ -247,7 +248,8 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
         (outAllOf G (r.node l hl).c s.sdK.st.stepOut) := by
     simpa only [hclaim, hentry, Site.sdK, hnode, targetContext] using ht
   have asserted : vacuousOf G s.en.here (r.node l hl).c.type
-      (exitCtx (r.node l hl).c pushed) pushed observed = false → ∀ req, r.stated t.label = some req →
+      (exitCtx (r.node l hl).c pushed) pushed observed
+      (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote) = false → ∀ req, r.stated t.label = some req →
       KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (r.ctx t.label))
         (assertionSource G (refinedContext G (r.node l hl).c (r.node l hl).node.continuation
           (yieldsAtSlots (r.node l hl).entry.names s.ysA)
@@ -256,7 +258,7 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
           t.mapping observed) req t.mapping = true := by
     intro hv req hr
     simp only [hclaim, hentry, Site.sdK, hnode, targetContext]
-    exact ha (by simpa only [hclaim] using hv) req (assertedTable req hr)
+    exact ha (by simpa only [hclaim, hentry, Site.sdK] using hv) req (assertedTable req hr)
   have pushedIn : IncomingRecorded r.w t.label
       (edgeTransfer (normalNames (r.node l hl).entry s.sdK.st pushed) t.mapping pushed false s.sd.outFresh
         (r.node l hl).entry s.sdK.st.result
