@@ -16,6 +16,11 @@ assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum(
 assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
 assert.equal(runExample("comparison-one-node", "(() => { const s = []; const n = order(s); return s.join(',') + ':' + n; })()"), "1,2:2",
   "each operand of a comparison runs once, in source order");
+assert.equal(runExample("invalid-comparison-family", "f(0, 0)"), 0, "x === k holds at 0, which is no 1");
+assert.equal(runExample("invalid-comparison-type-parameter", 'typeof f("a", "a", [])'), "undefined",
+  "x === y holds at a type parameter's \"a\", and the read past the empty array is undefined");
+assert.equal(runExample("invalid-comparison-object", "(() => { const c = new Cat(); return typeof f(c, c); })()"), "undefined",
+  "a === b holds at the Cat, whose length is undefined");
 assert.equal(runExample("invalid-call-keeps-unreached-paths", 'f({ tag: { k: "id" } })'), "pat",
   "flip changes the narrowed field k");
 assert.equal(runExample("invalid-call-alias-reaches-path", '(() => { const d = { tag: { k: "id" } }; return f(d, d.tag); })()'), "pat",
