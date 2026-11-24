@@ -3,6 +3,8 @@
 // `refused`, called in a loop, leaves it `boolean` at the loop's head and
 // after it; a module cell narrowed by a test is `boolean` again after a
 // call that may change a value.
+// A cell keeps its narrowing across a loop with no call and across a write
+// of another key.
 // Census functions:
 // guard-closure.mts#guardClosure, declaration-session.mts#collect.
 let flag: boolean = false;
@@ -31,4 +33,19 @@ export function counted(o: { n: number }): number {
     else r = 3;
   }
   return r;
+}
+let cache: Map<string, number> | null = null;
+export function reset(): void {
+  cache = new Map();
+}
+export function summed(xs: number[]): number {
+  if (cache === null) return 0;
+  let t = 0;
+  for (let i = 0; i < xs.length; i++) t += i;
+  return t + cache.size;
+}
+export function written(o: { n: number }): number {
+  if (cache === null) return 0;
+  o.n = 1;
+  return cache.size;
 }
