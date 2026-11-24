@@ -1787,10 +1787,15 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
   let mut out : Ty Tree := []
   for l in P do
     -- Construction at an optional field uses its value contract, without
-    -- the undefined contributed by an absent read.
+    -- the undefined contributed by an absent read; at a key a dictionary's
+    -- index admits, the index's value contract likewise.
     let named := match PositiveRules.expand G [l] with
-      | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
+      | [.refs fs [] vs os _ _ _] =>
         (Stored.views fs).lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type)
+      | [.dict fs [] vs _ os _ _ cells _] =>
+        let indexed := cells.filter (·.1.may k)
+        (Stored.views fs).lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type) <|>
+          (if indexed.isEmpty then none else some (norm (indexed.flatMap (·.2.2))))
       | _ => none
     let D ← match named with
       | some D => pure (some D)
