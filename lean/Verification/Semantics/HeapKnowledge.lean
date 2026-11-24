@@ -2525,16 +2525,19 @@ def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
     | _ => false) then as else
   let used := (linearTerms as).filter fun t => t.slots.any drop.contains
   if used.isEmpty then as else
-  let keep := fun (known : List (Linear.Fact Term)) (F : Linear.Fact Term) =>
+  -- Each derived fact is tested against the facts it was derived from
+  -- through a hash set of them.
+  let keep := fun (known : Std.HashSet (Linear.Fact Term)) (F : Linear.Fact Term) =>
     !known.contains F && F.vars.all (fun t => !t.slots.any drop.contains && termDefined as t)
   let groups := (as.filterMap fun a => match a.cond, a.fact with
     | some c, .linear _ => if drop.contains c then none else some (c, a.negated)
     | _, _ => none).eraseDups
-  as ++ ((Linear.eliminateAll (Linear.strengthen (linearFacts as)) used).filter (keep (linearFacts as))).map
-    (fun F => ⟨.linear F, none, false⟩) ++
+  as ++ ((Linear.eliminateAll (Linear.strengthen (linearFacts as)) used).filter
+      (keep (Std.HashSet.ofList (linearFacts as)))).map (fun F => ⟨.linear F, none, false⟩) ++
     groups.flatMap fun (c, neg) =>
       let known := linearFacts as ++ condFacts as c neg
-      ((Linear.eliminateAll (Linear.strengthen known) used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
+      ((Linear.eliminateAll (Linear.strengthen known) used).filter (keep (Std.HashSet.ofList known))).map
+        fun F => ⟨.linear F, some c, neg⟩
 
 theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
     IndexHolds ε (eliminateLinear drop as) ρ h := by

@@ -532,16 +532,27 @@ def subsume [DecidableEq V] [Hashable V] (rows : List (Row V)) : List (Row V) :=
       kept := kept.push r
   return kept.toList
 
-/-- The steps establishing `c·x ≤ d` from the held facts, where the search
+/-- What the search reads of the held facts whatever its goal: the
+tightening and strict steps (`preSteps`), the facts with their conclusions,
+and a row for each `≤` fact among them. -/
+structure Prepared (V : Type) where
+  pre : List (Step V)
+  facts : List (Fact V)
+  rows : List (Row V)
+
+/-- The held facts prepared for the search. -/
+def prepare [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : Prepared V :=
+  let (pre, facts) := preSteps known
+  { pre, facts, rows := facts.zipIdx.filterMap fun
+    | (.le F b, j) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
+    | (.ne _ _, _) => none }
+
+/-- The steps establishing `c·x ≤ d` from prepared facts, where the search
 finds them, within `limit` rows at every stage, each stage's subsumed rows
 left out (`subsume`). -/
-def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
-  let (pre, facts) := preSteps known
-  let rows0 : List (Row V) := facts.zipIdx.filterMap fun
-    | (.le F b, j) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
-    | (.ne _ _, _) => none
+def proveFrom [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (P : Prepared V) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
   let negGoal : Row V := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
-  let mut rows := negGoal :: rows0
+  let mut rows := negGoal :: P.rows
   for _ in [0:rowVarCount rows] do
     if rows.any fun r => r.form.isEmpty && r.bound < 0 then break
     match cheapestVar rows with
@@ -550,53 +561,83 @@ def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)]
       if rows.length > limit then return none
     | none => break
   match rows.find? fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal with
-  | some r => return some (pre ++ [.combine r.mult r.goal c d])
+  | some r => return some (P.pre ++ [.combine r.mult r.goal c d])
   | none =>
     -- The held facts alone meet no valuation: their sum `0 ≤ b`, `b < 0`,
     -- concludes the goal (`absurd`).
     match rows.find? fun r => r.form.isEmpty && r.bound < 0 && r.goal = 0 with
-    | some r => return some (pre ++ [.combine r.mult 1 [] r.bound, .absurd facts.length (.le c d)])
+    | some r => return some (P.pre ++ [.combine r.mult 1 [] r.bound, .absurd P.facts.length (.le c d)])
     | none => return none
 
-/-- The held facts connected to the goal's variables: those sharing a
-variable with the goal or with a fact already selected, so the elimination
-works over the facts that can matter. A goal naming no variable (a constant
-fact, which only facts no valuation meets entail besides a true one) is
-searched over every held fact. -/
-def relevant [DecidableEq V] (known : List (Fact V)) (goal : Fact V) : List (Fact V) := Id.run do
-  if goal.vars.isEmpty then return known
-  let mut vars := goal.vars
-  let mut chosen : List (Fact V) := []
-  for _ in List.range (known.length + 1) do
-    let more := known.filter fun F => !chosen.contains F && F.vars.any vars.contains
-    if more.isEmpty then break
-    chosen := chosen ++ more
-    vars := vars ++ more.flatMap (·.vars)
-  return known.filter chosen.contains
+/-- The steps establishing `c·x ≤ d` from the held facts (`proveFrom`). -/
+def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) :=
+  proveFrom (prepare known) c d limit
 
-theorem relevant_mem [DecidableEq V] {known : List (Fact V)} {goal F : Fact V}
-    (h : F ∈ relevant known goal) : F ∈ known := by
-  unfold relevant at h
+/-- The held facts connected to the variables `vars`: those sharing a
+variable with `vars` or with a fact already selected, in order, found
+through the facts by variable, so the elimination works over the facts that
+can matter. No variable selects every held fact. -/
+def relevantTo [DecidableEq V] [Hashable V] (known : List (Fact V)) (vars : List V) : List (Fact V) :=
+  if vars.isEmpty then known else Id.run do
+    let facts := known.toArray
+    let byVar : Std.HashMap V (Array Nat) := facts.zipIdx.foldl (init := {}) fun m (F, i) =>
+      F.vars.foldl (fun m x => m.alter x fun | some a => some (a.push i) | none => some #[i]) m
+    let mut chosen := Array.replicate facts.size false
+    let mut seen : Std.HashSet V := {}
+    let mut pending := vars
+    -- Each variable is pushed once with the goal or with the fact naming it.
+    for _ in [0:vars.length + known.foldl (fun n F => n + F.vars.length) 0 + 1] do
+      match pending with
+      | [] => break
+      | x :: rest =>
+        pending := rest
+        if !seen.contains x then
+          seen := seen.insert x
+          for i in byVar.getD x #[] do
+            if !chosen[i]! then
+              chosen := chosen.set! i true
+              pending := (facts[i]?.map (·.vars)).getD [] ++ pending
+    return (List.range facts.size).filterMap fun i => if chosen[i]?.getD false then facts[i]? else none
+
+theorem relevantTo_mem [DecidableEq V] [Hashable V] {known : List (Fact V)} {vars : List V} {F : Fact V}
+    (h : F ∈ relevantTo known vars) : F ∈ known := by
+  unfold relevantTo at h
   split at h
   · exact h
-  · exact (List.mem_filter.mp h).1
+  · obtain ⟨i, -, hi⟩ := List.mem_filterMap.mp h
+    revert hi
+    split
+    · intro hi; exact List.mem_toArray.mp (Array.mem_of_getElem? hi)
+    · intro hi; cases hi
+
+/-- The held facts connected to the goal's variables (`relevantTo`). A goal
+naming no variable (a constant fact, which only facts no valuation meets
+entail besides a true one) is searched over every held fact. -/
+def relevant [DecidableEq V] [Hashable V] (known : List (Fact V)) (goal : Fact V) : List (Fact V) :=
+  relevantTo known goal.vars
+
+theorem relevant_mem [DecidableEq V] [Hashable V] {known : List (Fact V)} {goal F : Fact V}
+    (h : F ∈ relevant known goal) : F ∈ known :=
+  relevantTo_mem h
 
 /-- Whether the facts `near` entail `goal`: it is one of them, or a
-certificate the search finds over them `check` accepts. -/
-def searchIn [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (goal : Fact V) : Bool :=
+certificate the search over `P` finds `check` accepts over them. Any `P`
+is sound, since `check` decides the certificate; the search finds what it
+finds over `near` where `P` is `prepare near`. -/
+def searchInFrom [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (P : Prepared V) (goal : Fact V) : Bool :=
   near.contains goal ||
   match goal with
   | .le c d =>
-    match prove near c d with
+    match proveFrom P c d with
     | some steps => match check near steps with
       | some out => out.contains goal
       | none => false
     | none => false
   | .ne _ _ => false
 
-theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
-    {goal : Fact V} (h : searchIn near goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v := by
-  unfold searchIn at h
+theorem searchInFrom_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
+    {P : Prepared V} {goal : Fact V} (h : searchInFrom near P goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v := by
+  unfold searchInFrom at h
   rcases Bool.or_eq_true_iff.mp h with h | h
   · exact hk goal (List.contains_iff_mem.mp h)
   · cases goal with
@@ -610,21 +651,35 @@ theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := 
         · cases h
       · cases h
 
-/-- The facts `near` with the strict bounds their inequalities give: for each
-`c·x ≠ d`, the bound `c·x ≤ d - 1` where the facts `nearOf` gives for it
-entail `c·x ≤ d`, and `-c·x ≤ -d - 1` where they entail `-c·x ≤ -d`
-(`searchIn`). -/
-def strengthenWith [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (nearOf : Fact V → List (Fact V))
-    (near : List (Fact V)) : List (Fact V) :=
+/-- Whether the facts `near` entail `goal` (`searchInFrom` over `prepare near`). -/
+def searchIn [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (goal : Fact V) : Bool :=
+  near.contains goal ||
+  match goal with
+  | .le c d =>
+    match prove near c d with
+    | some steps => match check near steps with
+      | some out => out.contains goal
+      | none => false
+    | none => false
+  | .ne _ _ => false
+
+theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
+    {goal : Fact V} (h : searchIn near goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v :=
+  searchInFrom_sound (P := prepare near) h hk
+
+/-- The facts `near` with the strict bounds their inequalities give, each
+bound kept where `decides` holds of it: for each `c·x ≠ d`, the bound
+`c·x ≤ d - 1` where `decides` holds of `c·x ≤ d`, and `-c·x ≤ -d - 1`
+where it holds of `-c·x ≤ -d`. -/
+def strengthenBy (decides : Fact V → Bool) (near : List (Fact V)) : List (Fact V) :=
   near ++ near.flatMap fun
     | .ne F d =>
-      (if searchIn (nearOf (.le F d)) (.le F d) then [.le F (d - 1)] else []) ++
-      (if searchIn (nearOf (.le (F.scale (-1)) (-d))) (.le (F.scale (-1)) (-d)) then [.le (F.scale (-1)) (-d - 1)] else [])
+      (if decides (.le F d) then [.le F (d - 1)] else []) ++
+      (if decides (.le (F.scale (-1)) (-d)) then [.le (F.scale (-1)) (-d - 1)] else [])
     | .le _ _ => []
 
-theorem strengthenWith_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int}
-    {nearOf : Fact V → List (Fact V)} {near : List (Fact V)}
-    (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v) : ∀ F ∈ strengthenWith nearOf near, F.Holds v := by
+theorem strengthenBy_holds {v : V → Int} {decides : Fact V → Bool} {near : List (Fact V)}
+    (hd : ∀ G, decides G = true → G.Holds v) (hk : ∀ F ∈ near, F.Holds v) : ∀ F ∈ strengthenBy decides near, F.Holds v := by
   intro G hG
   rcases List.mem_append.mp hG with hG | hG
   · exact hk G hG
@@ -637,26 +692,75 @@ theorem strengthenWith_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (
       · split at hG
         · rename_i he
           simp only [List.mem_singleton] at hG; subst hG
-          have := searchIn_sound he (hn _)
+          have := hd _ he
           show Form.eval v F ≤ d - 1
           simp only [Fact.Holds] at this; omega
         · cases hG
       · split at hG
         · rename_i he
           simp only [List.mem_singleton] at hG; subst hG
-          have := searchIn_sound he (hn _)
+          have := hd _ he
           show Form.eval v (F.scale (-1)) ≤ -d - 1
           simp only [Fact.Holds, Form.eval_scale] at this ⊢; omega
         · cases hG
 
+/-- The facts `near` with the strict bounds their inequalities give
+(`strengthenBy`), each bound searched over the facts `nearOf` gives for it
+(`searchIn`). -/
+def strengthenWith [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (nearOf : Fact V → List (Fact V))
+    (near : List (Fact V)) : List (Fact V) :=
+  strengthenBy (fun g => searchIn (nearOf g) g) near
+
+theorem strengthenWith_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int}
+    {nearOf : Fact V → List (Fact V)} {near : List (Fact V)}
+    (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v) : ∀ F ∈ strengthenWith nearOf near, F.Holds v :=
+  strengthenBy_holds (fun G he => searchIn_sound he (hn G)) hk
+
+/-- The facts connected to each disequality's variables (`relevantTo`), once
+for each list of variables a disequality names: both bounds of a
+disequality name its variables, and every disequality over the same
+variables is searched over the same facts. -/
+def nearTable [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) :
+    List (List V × List (Fact V) × Prepared V) :=
+  (dedupHash (known.filterMap fun | .ne F _ => some (F.map (·.1)) | .le _ _ => none)).map
+    fun vs => let near := relevantTo known vs; (vs, near, prepare near)
+
+theorem lookup_mem_snd {α β : Type} [BEq α] {l : List (α × β)} {a : α} {b : β} (h : l.lookup a = some b) :
+    ∃ k, (k, b) ∈ l := by
+  induction l with
+  | nil => cases h
+  | cons p t ih =>
+    obtain ⟨k, w⟩ := p
+    simp only [List.lookup] at h
+    split at h
+    · cases h; exact ⟨k, List.mem_cons_self⟩
+    · obtain ⟨k', hk⟩ := ih h; exact ⟨k', List.mem_cons_of_mem _ hk⟩
+
+theorem nearTable_mem [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {known : List (Fact V)} {vs : List V}
+    {near : List (Fact V)} {P : Prepared V} (h : (nearTable known).lookup vs = some (near, P)) : ∀ F ∈ near, F ∈ known := by
+  obtain ⟨k, hm⟩ := lookup_mem_snd h
+  obtain ⟨us, -, he⟩ := List.mem_map.mp hm
+  cases he
+  exact fun F hF => relevantTo_mem hF
+
 /-- The held facts with the strict bounds their inequalities give
-(`strengthenWith`), each searched over the facts connected to it. -/
+(`strengthenBy`), each searched over the facts connected to it, found and
+prepared once for each list of variables (`nearTable`). -/
 def strengthen [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Fact V) :=
-  strengthenWith (relevant known) known
+  let table := nearTable known
+  strengthenBy (fun g => match table.lookup g.vars with
+    | some (near, P) => searchInFrom near P g
+    | none => searchIn (relevant known g) g) known
 
 theorem strengthen_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)}
-    (hk : ∀ F ∈ known, F.Holds v) : ∀ F ∈ strengthen known, F.Holds v :=
-  strengthenWith_holds (fun _ _ hF => hk _ (relevant_mem hF)) hk
+    (hk : ∀ F ∈ known, F.Holds v) : ∀ F ∈ strengthen known, F.Holds v := by
+  unfold strengthen
+  refine strengthenBy_holds (fun g he => ?_) hk
+  revert he
+  split
+  · rename_i near P ht
+    exact fun he => searchInFrom_sound he fun F hF => hk F (nearTable_mem ht F hF)
+  · exact fun he => searchIn_sound he fun F hF => hk F (relevant_mem hF)
 
 /-! ## Prepared facts
 
