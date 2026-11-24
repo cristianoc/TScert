@@ -1246,7 +1246,6 @@ export function layoutNextRichInlineLineRange(
   const startSegmentIndex = lineEnd.segmentIndex
   const startGraphemeIndex = lineEnd.graphemeIndex
   const width = stepPreparedLineGeometryFromStart(data, lineEnd, safeWidth)   // PAPER: the handle through a local
-  paperAssume(flow.data.segmentFlags.length === flow.data.widths.length, "#356")   // PAPER: unsafe assume until #356
   if (width === null) return null
   return flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
     : createLine(flow, width, startSegmentIndex, startGraphemeIndex, lineEnd.segmentIndex, lineEnd.graphemeIndex)
@@ -1385,7 +1384,6 @@ export function walkRichInlineLineRanges<E extends AtMost<{ "prepared.**": "keep
   }
   const data = flow.data   // PAPER: the handle through a local
   return walkPreparedLinesRaw<Join<E, { "@state": "any" }>>(data, safeWidth, (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {   // PAPER: forwards E with confined module state
-    paperAssume(flow.data.segmentFlags.length === flow.data.widths.length, "#356")   // PAPER: unsafe assume until #356
     onLine(flow.onlyItem >= 0 ? createOnlyItemLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
       : createLine(flow, width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex))
   })

@@ -102,12 +102,12 @@ framing, subeffecting, and callback bound checking all reduce to one
 inclusion relation. To verify higher-order functions such as collection
 and text walkers, the language adds capture-rooted regions, type-driven
 declared reach ($\reach{\pi}{T}$), module-private confined state
-($\modstate{M}$), and bounded effect polymorphism via five rules
+($\modstate{M}$), and bounded effect polymorphism via six rules
 (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst},
-\ruleName{Confined}). On Pretext's line walkers, patterns W1--W5 derive
+\ruleName{Confined}, \ruleName{Callback-Inv}). On Pretext's line walkers, patterns W1--W5 derive
 directly given helper effects and local module confinement checks, and W6
 is an open-world API boundary assumption. TScert's verified footprint
-fragment $\Lang_0$ embeds directly into this language; all five rules are
+fragment $\Lang_0$ embeds directly into this language; all six rules are
 mechanized in Lean over an idealised heap model and exercised on Pretext
 through an experimental prototype mode.
 \end{abstract}
@@ -121,9 +121,10 @@ tiers:
 \item \textbf{Verified in TScert's calculus ($\Lang_0$):} Section~\ref{sec:l0}
   embeds TScert's existing footprint calculus into this language; verified
   rules cite their Lean theorem names inline.
-\item \textbf{Mechanized in an idealised heap model:} The five
-  effect-variable and confined-state rules (\ruleName{Bound},
-  \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst}, \ruleName{Confined})
+\item \textbf{Mechanized in an idealised heap model:} The six
+  effect-variable, confined-state, and scoped-callback rules (\ruleName{Bound},
+  \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst}, \ruleName{Confined},
+  \ruleName{Callback-Inv})
   are specified over an abstract semantics in the module
   \lean{Verification.Paper.EffectLanguage.Rules} and proved sound over a
   heap-extension model with confined module regions in the module
@@ -690,12 +691,13 @@ upper-bounds every transition of $E_2$ evaluated after an $E_1$-step
 \ruleName{Sub}, \ruleName{Call-Var}, and \ruleName{Fresh-Eff} are not
 stated as standalone Lean theorems in $\Lang_0$.}
 
-\subsection{Subeffecting, Effect-Variable, and Confined-State Rules}
+\subsection{Subeffecting, Effect-Variable, Confined-State, and Scoped-Callback Rules}
 
-The five rules below govern effect polymorphism and module-private
-confined state, corresponding one-to-one to \lean{BoundRule},
-\lean{AnchRule}, \lean{MeetRule}, \lean{InstRule}, and
-\lean{ConfinedRule} in \lean{Verification.Paper.EffectLanguage.Rules}.
+The six rules below govern effect polymorphism, module-private confined
+state, and scoped callback invariants, corresponding one-to-one to
+\lean{BoundRule}, \lean{AnchRule}, \lean{MeetRule}, \lean{InstRule},
+\lean{ConfinedRule}, and \lean{CallbackInvRule} in
+\lean{Verification.Paper.EffectLanguage.Rules}.
 Here $\Same(\Phi,h_0,h)$ holds when $\Phi$ assigns every location $l<m$
 the same change bound in $h$ as at call entry $h_0$, and
 $\kw{old}_{\mathcal{C}}=\kw{old}\cup\mathcal{C}$ denotes pre-entry
@@ -726,6 +728,13 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
   {\modstate{M}\text{ confined in }M \\
    \Phi\text{ has }\kw{else}:\any\text{ and every entry of }\Phi\text{ is externally rooted}}
   {\Anch(\{\modstate{M}:\any\},\rho,h_0)\qquad K;C\vdash_m \{\modstate{M}:\any\}\sqsubseteq\Phi}
+\\
+\inferrule*[left=Callback-Inv]
+  {P(h_0) \quad \mathrm{Preserves}(\Psi, P) \quad (\forall a,b.\;\mathrm{Act}(\Psi,a,b)\Rightarrow\Same(\Psi,a,b)) \\
+   K;C\vdash_m \Phi_{\mathrm{own}}\sqsubseteq\Psi \quad \Anch(\Phi_{\mathrm{own}},\rho,h_0) \\
+   K;C\vdash_m \Phi_{\mathrm{cb}}\sqsubseteq\Psi \quad \Anch(\Phi_{\mathrm{cb}},\rho,h_0) \\
+   \mathit{cb}\text{ does not escape }\mathit{fn}}
+  {\forall h.\;\mathrm{Steps}(\Phi_{\mathrm{own}},\Phi_{\mathrm{cb}},h_0,h)\Rightarrow P(h)}
 \end{mathpar}
 
 \begin{description}[leftmargin=1.5em,itemsep=2pt]
@@ -777,6 +786,17 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
   automatically satisfies any externally rooted callback bound with
   $\kw{else}:\any$, and preserves external handle invariants across
   helper calls.
+\item[\ruleName{Callback-Inv}] A caller invariant $P$ that holds at call
+  entry $h_0$ and is preserved by a self-stabilizing support effect $\Psi$
+  remains true at every heap reached by interleaving the callee's own steps
+  ($\Phi_{\mathrm{own}}$) and the callback's steps ($\Phi_{\mathrm{cb}}$)
+  whenever both are anchored and within $\Psi$ at $h_0$. When the callback
+  $\mathit{cb}$ does not escape the callee's dynamic extent (checked
+  syntactically in the prototype by requiring every reference to the
+  callback parameter to be a direct call, a nullish/truthiness test, or a
+  direct forward to another non-escaping parameter), every invocation of
+  $\mathit{cb}$ occurs in such a heap, so $\mathit{cb}$'s body may assume
+  $P$ over its captured variables on entry.
 \end{description}
 
 \begin{theorem}[Idealised model soundness]\label{thm:model}
@@ -793,8 +813,8 @@ confined module regions (\lean{ModuleRegion}):
 \item Joining confined module regions into an anchored effect preserves
   anchoring and inclusion (\lean{eff1\_add\_modules\_anchored},
   \lean{eff1\_add\_modules\_within}).
-\item All five rules \ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet},
-  \ruleName{Inst}, and \ruleName{Confined} are sound
+\item All six rules \ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet},
+  \ruleName{Inst}, \ruleName{Confined}, and \ruleName{Callback-Inv} are sound
   (\lean{model\_rules : (C : ModuleRegion) -> PaperRules (semantics C)}).
 \end{enumerate}
 \end{theorem}

@@ -236,5 +236,30 @@
       "outerForwardNested": "refused",
       "init": "accepted"
     }
+  },
+  "callback-inv.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "getBias": "accepted",
+      "readFlag": "accepted",
+      "readRichFlag": "accepted",
+      "idRich": "accepted",
+      "walkPreparedInner": "accepted",
+      "walkPreparedForward": "accepted",
+      "countLines": "accepted",
+      "stepLine": "accepted",
+      "useCountLines": "accepted",
+      "useStepLine": "accepted",
+      "collectWithLines": "accepted",
+      "walkRichRanges": "accepted",
+      "mutateBeforeCall": "refused",
+      "badWalker": "refused",
+      "callBadWalker": "refused",
+      "stashWalker": "accepted",
+      "callStashWalker": "refused",
+      "callSelfMutating": "refused",
+      "callViaAlias": "refused",
+      "init": "accepted"
+    }
   }
 }

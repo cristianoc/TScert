@@ -55,6 +55,15 @@ bounds. -/
 def Incl (S : Semantics) (Φ Ψ : S.Eff) (s : S.St) : Prop :=
   ∀ s', S.Act Φ s s' → S.Act Ψ s s'
 
+/-- A finite run from `s₀` to `s` whose steps are each bounded by `Φ₁` or `Φ₂`. -/
+inductive Steps (S : Semantics) (Φ₁ Φ₂ : S.Eff) : S.St → S.St → Prop where
+  | refl {s} : Steps S Φ₁ Φ₂ s s
+  | step {s₁ s₂ s₃} : (S.Act Φ₁ s₁ s₂ ∨ S.Act Φ₂ s₁ s₂) → Steps S Φ₁ Φ₂ s₂ s₃ → Steps S Φ₁ Φ₂ s₁ s₃
+
+/-- A predicate `P` is preserved by an effect `Ψ`: every `Ψ`-bounded step keeps `P`. -/
+def Preserves (S : Semantics) (Ψ : S.Eff) (P : S.St → Prop) : Prop :=
+  ∀ s s', P s → S.Act Ψ s s' → P s'
+
 end Semantics
 
 /-- **Bound**: an anchored instance within its bound at the call is
@@ -87,6 +96,25 @@ def ConfinedRule (S : Semantics) : Prop :=
   ∀ M s₀, S.Anchored (S.modEff M) s₀ ∧
     ∀ Φ, S.ModDisjoint M Φ s₀ → S.Within (S.modEff M) Φ s₀
 
+/-- **Callback-Inv** (scoped callback invariant): if a caller predicate `P`
+holds at the call state `s₀` and is preserved by a self-stabilizing support
+effect `Ψ` (every `Ψ`-bounded step keeps `P` and preserves `Ψ`'s own meaning
+`Same Ψ`), and both the callee's own effect `Φ_own` and the callback's effect
+`Φ_cb` are anchored at `s₀` and within `Ψ` at `s₀`, then `P` holds at every
+state `s` reached during a run interleaving `Φ_own`-bounded steps and
+`Φ_cb`-bounded steps. When the callback does not escape the call's dynamic
+extent, every invocation of the callback occurs in such a state, so the
+callback body may assume `P` on entry. -/
+def CallbackInvRule (S : Semantics) : Prop :=
+  ∀ (Φ_own Φ_cb Ψ : S.Eff) (P : S.St → Prop) (s₀ s : S.St),
+    P s₀ →
+    S.Preserves Ψ P →
+    (∀ a b, S.Act Ψ a b → S.Same Ψ a b) →
+    S.Within Φ_own Ψ s₀ → S.Anchored Φ_own s₀ →
+    S.Within Φ_cb Ψ s₀ → S.Anchored Φ_cb s₀ →
+    S.Steps Φ_own Φ_cb s₀ s →
+    P s
+
 /-- The rules the experimental mode applies. -/
 structure PaperRules (S : Semantics) : Prop where
   bound : BoundRule S
@@ -94,5 +122,6 @@ structure PaperRules (S : Semantics) : Prop where
   meet : MeetRule S
   inst : InstRule S
   confined : ConfinedRule S
+  callbackInv : CallbackInvRule S
 
 end Verification.Paper.EffectLanguage

@@ -1439,19 +1439,42 @@ the width of its claim's context, and the source span its source map gives
 it, where it gives one. -/
 abbrev LayerSite := Tm × Nat × Option (Nat × Nat)
 
+/-- A scoped closure site inside a unit's graph, as a supplied layer sees it:
+the enclosing unit's name and input count, the spans of the closure creation
+and enclosing call, the call's term and context types, the caller's entry
+knowledge right before the call, the caller slots holding each capture at the
+call, the closure's argument index in the call, and the first capture slot in
+the closure's entry frame. -/
+structure ClosureSite (ι : Type) where
+  unitName : String
+  unitInputs : Nat
+  closureSpan : Option (Nat × Nat)
+  callSpan : Option (Nat × Nat)
+  callTerm : Tm
+  callContext : List (Ty ι)
+  callKnowledge : Knowledge
+  captureSlots : List (Option Nat)
+  argIndex : Nat
+  captureOffset : Nat
+
 /-- A checker a caller supplies for a unit, by the unit's name, the number
 of its graph's inputs and its nodes' sites, over the ordinary checker: what
-`PassChecker.extended` runs. -/
-abbrev PassLayer := String → Nat → List LayerSite → ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
-  (G : NormalGraph ι) (images : InstanceImageCheck G), HeapExpressionRules.Checker G images →
-  HeapExpressionRules.Checker G images
+`PassChecker.extended` runs; plus optional hooks for deriving scoped closure
+entry facts from the enclosing call site. -/
+structure PassLayer where
+  checker : String → Nat → List LayerSite → ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G), HeapExpressionRules.Checker G images →
+    HeapExpressionRules.Checker G images
+  wantsClosure : String → Option (Nat × Nat) → Option (Nat × Nat) → Bool := fun _ _ _ => false
+  closureFacts : ∀ {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι],
+    NormalGraph ι → ClosureSite ι → List HeapKnowledge.IndexAtom := fun _ _ => []
 
 /-- The pass checker of a unit: the ordinary one, or a supplied layer over it. -/
 def PassChecker.ofLayer {G : NormalGraph ι} {images : InstanceImageCheck G} (layer : Option PassLayer) (name : String)
     (inputs : Nat) (sites : List LayerSite := []) : PassChecker G images :=
   match layer with
   | none => .ordinary
-  | some L => .extended (L name inputs sites G images (HeapExpressionRules.Checker.ordinary G images))
+  | some L => .extended (L.checker name inputs sites G images (HeapExpressionRules.Checker.ordinary G images))
 
 /-- **The start's written separation kept** in its given state
 (`startWritten`, `HeapSeparation.union`): each of its facts has a partner,

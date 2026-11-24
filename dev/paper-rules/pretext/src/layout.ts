@@ -165,7 +165,6 @@ export function layout(prepared: PreparedText, maxWidth: number, lineHeight: num
   // The resize hot path counts the same lines as `layoutWithLines()` without
   // building line ranges or text.
   const lineCount = countPreparedLines(getInternalPrepared(prepared), normalizeMaxWidth(maxWidth))
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return { lineCount, height: lineCount * lineHeight }
 }
 
@@ -306,7 +305,6 @@ function stepNextLine(
   const width = stepPreparedLineGeometryFromStart(internal, lineEnd, maxWidth)
   lineStart.segmentIndex = lineStartSegmentIndex   // PAPER: the line start through locals, written after the step
   lineStart.graphemeIndex = lineStartGraphemeIndex   // PAPER: the line start through locals, written after the step
-  paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
   return width === null ? null : Math.max(0, width)
 }
 
@@ -354,7 +352,6 @@ export function layoutWithLines(prepared: PreparedTextWithSegments, maxWidth: nu
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {
-      paperAssume(prepared.segmentFlags.length === prepared.widths.length, "#356")   // PAPER: unsafe assume until #356
       lines.push(createLayoutLine(
         prepared,
         width,
