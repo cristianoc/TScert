@@ -602,75 +602,53 @@ def regionJ : Region → Json
   | .path x p k => tagged "path" (obj ["x", "fields", "key"] [natJ x, strsJ p, keyJ k])
   | .pathFields x p => tagged "pathFields" (obj ["x", "fields"] [natJ x, strsJ p])
   | .pathCells x p => tagged "pathCells" (obj ["x", "fields"] [natJ x, strsJ p])
-  | .inCls r c => tagged "inCls" (obj ["region", "selector"] [regionJ r, selectorJ c])
   | .spine x p => tagged "spine" (obj ["x", "fields"] [natJ x, strsJ p])
 
-def regionDepth : Region → Nat
-  | .inCls r _ => regionDepth r + 1
-  | _ => 1
+def regionOf (j : Json) : Except String Region := do
+  let (k, v) ← tagOf j
+  under k <| match k with
+  | "field" => do
+    let [x, key] ← fields v ["x", "key"] | throw "field"
+    pure (.field (← under "x" (natOf x)) (← under "key" (keyOf key)))
+  | "fields" => do
+    let [x] ← fields v ["x"] | throw "fields"
+    pure (.fields (← under "x" (natOf x)))
+  | "cells" => do
+    let [x] ← fields v ["x"] | throw "cells"
+    pure (.cells (← under "x" (natOf x)))
+  | "cls" => .cls <$> selectorOf v
+  | "all" => pure .all
+  | "path" => do
+    let [x, p, key] ← fields v ["x", "fields", "key"] | throw "path"
+    pure (.path (← under "x" (natOf x)) (← under "fields" (listOf strOf p)) (← under "key" (keyOf key)))
+  | "pathFields" => do
+    let [x, p] ← fields v ["x", "fields"] | throw "pathFields"
+    pure (.pathFields (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+  | "pathCells" => do
+    let [x, p] ← fields v ["x", "fields"] | throw "pathCells"
+    pure (.pathCells (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+  | "spine" => do
+    let [x, p] ← fields v ["x", "fields"] | throw "spine"
+    pure (.spine (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+  | _ => throw "no region"
 
-def regionOf : Nat → Json → Except String Region
-  | 0, _ => .error "a region nested beyond the limit"
-  | n + 1, j => do
-    let (k, v) ← tagOf j
-    under k <| match k with
-    | "field" => do
-      let [x, key] ← fields v ["x", "key"] | throw "field"
-      pure (.field (← under "x" (natOf x)) (← under "key" (keyOf key)))
-    | "fields" => do
-      let [x] ← fields v ["x"] | throw "fields"
-      pure (.fields (← under "x" (natOf x)))
-    | "cells" => do
-      let [x] ← fields v ["x"] | throw "cells"
-      pure (.cells (← under "x" (natOf x)))
-    | "cls" => .cls <$> selectorOf v
-    | "all" => pure .all
-    | "path" => do
-      let [x, p, key] ← fields v ["x", "fields", "key"] | throw "path"
-      pure (.path (← under "x" (natOf x)) (← under "fields" (listOf strOf p)) (← under "key" (keyOf key)))
-    | "pathFields" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "pathFields"
-      pure (.pathFields (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
-    | "pathCells" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "pathCells"
-      pure (.pathCells (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
-    | "inCls" => do
-      let [r, c] ← fields v ["region", "selector"] | throw "inCls"
-      pure (.inCls (← under "region" (regionOf n r)) (← under "selector" (selectorOf c)))
-    | "spine" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "spine"
-      pure (.spine (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
-    | _ => throw "no region"
-
-theorem regionOf_regionJ (r : Region) : ∀ n, regionDepth r ≤ n → regionOf n (regionJ r) = .ok r := by
-  induction r with
-  | inCls r c ih =>
-    intro n hn
-    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [regionDepth] at hn; omega⟩
-    have h := ih m (by simp [regionDepth] at hn; omega)
-    simp [regionJ, regionOf, fields_obj, h] <;> try rfl
-  | _ =>
-    intro n hn
-    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [regionDepth] at hn; omega⟩
-    simp [regionJ, regionOf, fields_obj] <;> try rfl
+theorem regionOf_regionJ (r : Region) : regionOf (regionJ r) = .ok r := by
+  cases r <;> simp [regionJ, regionOf, fields_obj] <;> try rfl
 
 def entryJ (e : Region × Change) : Json := obj ["region", "change"] [regionJ e.1, changeJ e.2]
 
-def entryOf (n : Nat) (j : Json) : Except String (Region × Change) := do
+def entryOf (j : Json) : Except String (Region × Change) := do
   let [r, c] ← fields j ["region", "change"] | throw "a frame entry"
-  pure (← under "region" (regionOf n r), ← under "change" (changeOf c))
+  pure (← under "region" (regionOf r), ← under "change" (changeOf c))
 
 def frameJ (Φ : Footprint) : Json := listJ entryJ Φ
 
-def frameDepth (Φ : Footprint) : Nat := maxOf (fun e => regionDepth e.1) Φ
+def frameOf (j : Json) : Except String Footprint := listOf entryOf j
 
-def frameOf (n : Nat) (j : Json) : Except String Footprint := listOf (entryOf n) j
-
-theorem frameOf_frameJ (Φ : Footprint) (n : Nat) (h : frameDepth Φ ≤ n) : frameOf n (frameJ Φ) = .ok Φ := by
+theorem frameOf_frameJ (Φ : Footprint) : frameOf (frameJ Φ) = .ok Φ := by
   apply listOf_listJ
-  intro e he
-  have hd := Nat.le_trans (le_maxOf (fun e : Region × Change => regionDepth e.1) he) h
-  simp [entryJ, entryOf, fields_obj, regionOf_regionJ e.1 n hd]
+  intro e _
+  simp [entryJ, entryOf, fields_obj, regionOf_regionJ]
 
 /-! ## Paths, witnesses and literals -/
 
@@ -1101,7 +1079,6 @@ def formulaOk : FormulaSchema → Bool
 
 def formulaDepth : FormulaSchema → Nat
   | .and a b => max (formulaDepth a) (formulaDepth b) + 1
-  | .transition Φ => frameDepth Φ + 1
   | .operation q => postDepth q + 1
   | _ => 1
 
@@ -1123,7 +1100,7 @@ def formulaOf : Nat → Json → Except String FormulaSchema
     under k <| match k with
     | "transition" => do
       let [Φ] ← fields v ["effect"] | throw "transition"
-      pure (.transition (← under "effect" (frameOf n Φ)))
+      pure (.transition (← under "effect" (frameOf Φ)))
     | "operation" => do
       let [q] ← fields v ["post"] | throw "operation"
       pure (.operation (← under "post" (postOf n q)))
@@ -1155,7 +1132,7 @@ theorem formulaOf_formulaJ (F : FormulaSchema) (hF : formulaOk F = true) :
   | transition Φ =>
     intro n hn
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [formulaDepth] at hn; omega⟩
-    simp [formulaJ, formulaOf, fields_obj, frameOf_frameJ Φ m (by simp [formulaDepth] at hn; omega)] <;> try rfl
+    simp [formulaJ, formulaOf, fields_obj, frameOf_frameJ] <;> try rfl
   | operation q =>
     intro n hn
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [formulaDepth] at hn; omega⟩
@@ -1176,21 +1153,20 @@ theorem formulaOf_formulaJ (F : FormulaSchema) (hF : formulaOk F = true) :
 
 /-! ## Exits and effects -/
 
-def exitDepth (q : ExitSchema) : Nat := max (frameDepth q.frame) (maxOf formulaDepth q.ensures)
+def exitDepth (q : ExitSchema) : Nat := maxOf formulaDepth q.ensures
 
 def exitJ (q : ExitSchema) : Json := obj ["frame", "ensures"] [frameJ q.frame, listJ formulaJ q.ensures]
 
 def exitOf (n : Nat) (j : Json) : Except String ExitSchema := do
   let [Φ, E] ← fields j ["frame", "ensures"] | throw "an exit"
-  pure ⟨← under "frame" (frameOf n Φ), ← under "ensures" (listOf (formulaOf n) E)⟩
+  pure ⟨← under "frame" (frameOf Φ), ← under "ensures" (listOf (formulaOf n) E)⟩
 
 theorem exitOf_exitJ (q : ExitSchema) (hq : q.ensures.all formulaOk = true) (n : Nat) (hn : exitDepth q ≤ n) :
     exitOf n (exitJ q) = .ok q := by
-  have hf := frameOf_frameJ q.frame n (Nat.le_trans (Nat.le_max_left _ _) hn)
   have he := listOf_listJ (formulaOf n) formulaJ q.ensures fun F hF =>
     formulaOf_formulaJ F (List.all_eq_true.mp hq F hF) n
-      (Nat.le_trans (le_maxOf formulaDepth hF) (Nat.le_trans (Nat.le_max_right _ _) hn))
-  simp [exitJ, exitOf, fields_obj, hf, he]
+      (Nat.le_trans (le_maxOf formulaDepth hF) hn)
+  simp [exitJ, exitOf, fields_obj, frameOf_frameJ, he]
 
 def promiseJ : TypePromise → Json
   | .guards p => tagged "guards" (obj ["param"] [natJ p])
@@ -1418,7 +1394,7 @@ private def topFrame : Footprint := Parity.topEffect
 /-- An exceptional postcondition, a rest sequence, a nested conjunction and
 a transport with overrides and stable slots. -/
 private def sample : Effect :=
-  ⟨⟨⟨[(.cls ⟨true, false, false⟩, .keep), (.inCls (.pathFields 1 ["a"]) ⟨true, false, false⟩, .any),
+  ⟨⟨⟨[(.cls ⟨true, false, false⟩, .keep), (.pathFields 1 ["a"], .any),
         (.path 0 [] (.sym 3), .grow)],
       [.operation (.push 0 1 (.append (.fixed [.literal (.num 0x3ff0000000000000)]) (.restFrom 1))),
         .and (.operation (.fact .after 0 (.linear (.le [(.old .length 1 [], -9007199254740993)] 4))))

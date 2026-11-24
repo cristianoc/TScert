@@ -19,6 +19,20 @@ def actualsOf : Tm → List Tm
   | .construct _ args => args
   | _ => []
 
+/-- Valid references on a term give valid roots on the call environment of
+its receiver and actuals. -/
+theorem callEnv_rootsOk_of_refs {k : Nat} {W : WorldT k} {t : Tm} (href : RefsOk W t) :
+    RootsOk W (CallEffects.callEnv (receiverOf t) (actualsOf t)) := by
+  cases t with
+  | invoke f r args =>
+    have h := RefsOk_invoke.mp href
+    exact CallEffects.callEnv_rootsOk h.2.1 h.2.2
+  | construct f args =>
+    have h := RefsOk_construct.mp href
+    exact CallEffects.callEnv_rootsOk RefsOk_undef h.2
+  | _ =>
+    exact CallEffects.callEnv_rootsOk RefsOk_undef (fun _ h => nomatch h)
+
 /-- Operands already evaluated by source lowering. -/
 def valueTerm : Tm → Bool
   | .var _ => true
@@ -1777,7 +1791,9 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i eff hsel
     apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh href)
     -- The frame is within its closed bound (`Footprint.close_sound`).
-    have hc := Footprints.Footprint.close_sound (CallEffects.Effect.callPost_within hq)
+    have hc := Footprints.Footprint.close_sound
+      (Footprints.intrinsicClasses_ok hh (callEnv_rootsOk_of_refs href))
+      (CallEffects.Effect.callPost_within hq)
     exact (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp hc)).mono hp
   · cases hp
 
@@ -2027,12 +2043,11 @@ spine's length is kept below it and one longer at it. -/
 
 /-- **An element write's frame** (the note, Write-In and Write-End,
 `{x.spine: grow, x.cells: any}`), read at the node's slots: the spine
-location of the object in slot `i`, where it holds an array spine, within
-`s`, and the element cells that spine lists, where they hold values, within
-`any`. At a position the spine's contract requires, `s` is `keep`. -/
+location of the object in slot `i` within `s`, and the element cells that
+spine lists within `any`. At a position the spine's contract requires, `s`
+is `keep`. -/
 def elemWriteFrame (i : Nat) (s : Footprints.Change) : Footprints.Footprint :=
-  [((Footprints.Region.field i arraySpineKey).inCls .arrays, s),
-    ((Footprints.Region.cells i).inCls .values, .any)]
+  [(.field i arraySpineKey, s), (.cells i, .any)]
 
 /-- **What an element write leaves**, at the index value `ix`: its frame,
 and the written spine one past the index where that is beyond its length
@@ -2044,17 +2059,37 @@ def ElemWritten (i : Nat) (s : Footprints.Change) (ix : Tm) (ρ : Env) (h h' : H
     indexOfBits b = some idx → ∃ ls', h'[fl]? = some (.arr ls') ∧ ls'.length = max ls.length (idx + 1)
 
 /-- **The closed bound of an element write is a weakening of its frame**:
-`{x.spine: s, x.cells: any}` is within `{value: any, spine: s}`. -/
-theorem elemWriteFrame_closed {i : Nat} {s : Footprints.Change} {ρ : Env} {h h' : Heap}
-    (hp : Footprints.Post (elemWriteFrame i s) ρ h h') : (Footprints.Closed.ofSpines .any s).Holds h h' :=
-  Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp
-    (Footprints.Post.mono (cl := fun _ _ => none) (by cases s <;> rfl) (fun _ _ _ _ hc => by cases hc) hp))
+`{x.spine: s, x.cells: any}` is within `{value: any, spine: s}`, at a
+well-formed heap where slot `i` has valid references. -/
+theorem elemWriteFrame_closed {i : Nat} {s : Footprints.Change} {ρ : Env} {n : Nat} {W : WorldT n} {h h' : Heap}
+    (hh : HeapOk n W h) (hi : RefsOk W (ρ i))
+    (hp : Footprints.Post (elemWriteFrame i s) ρ h h') : (Footprints.Closed.ofSpines .any s).Holds h h' := by
+  refine Footprints.Closed.holds_iff.mpr ((Footprints.Closed.post_iff (ρ := ρ)).mp ?_)
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with rfl | ⟨e, he, hm, hch⟩
+  · exact .inl rfl
+  simp only [elemWriteFrame, List.mem_cons, List.not_mem_nil, or_false] at he
+  rcases he with rfl | rfl
+  · obtain ⟨role, hr, hb⟩ := Footprints.field_bound hi hm
+    have hcat := Shaped.category hh.2 hr hv
+    have hhas := Footprints.Region.bound_cats (.field i arraySpineKey) role.kind hb
+    simp only [Role.kind_category, Footprints.Region.cats, Footprints.keyClass, ite_true] at hhas
+    exact .inr ⟨(.cls .arrays, s), by simp [Footprints.Closed.fp, Footprints.Closed.ofSpines],
+      by simpa [Footprints.Region.mem, hv, Footprints.Selector.selects, hcat] using hhas, hch⟩
+  · obtain ⟨role, hr, hb⟩ := Footprints.cells_bound hh hm
+    have hcat := Shaped.category hh.2 hr hv
+    have hhas := Footprints.Region.bound_cats (.cells i) role.kind hb
+    simp only [Role.kind_category, Footprints.Region.cats] at hhas
+    exact .inr ⟨(.cls .values, .any), by simp [Footprints.Closed.fp, Footprints.Closed.ofSpines],
+      by simpa [Footprints.Region.mem, hv, Footprints.Selector.selects, hcat] using hhas, hch⟩
 
 /-- **Write-In keeps every spine's length**: where the index is below the
 written spine's length, every spine of the entry heap is one of the same
 length after. -/
-theorem ElemWritten.lengths {i : Nat} {s : Footprints.Change} {ix : Tm} {ρ : Env} {h h' : Heap}
-    {fl idx : Nat} {ls0 : List (Option Nat)} {b : UInt64}
+theorem ElemWritten.lengths {i : Nat} {s : Footprints.Change} {ix : Tm} {ρ : Env} {n : Nat} {W : WorldT n} {h h' : Heap}
+    {fl idx : Nat} {ls0 : List (Option Nat)} {b : UInt64} (hh : HeapOk n W h)
     (hw : ElemWritten i s ix ρ h h') (hs : Footprints.spineOf (ρ i) = some fl) (hls0 : h[fl]? = some (.arr ls0))
     (hb : ix = .num b) (hidx : indexOfBits b = some idx) (hlt : idx < ls0.length) :
     (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h' := by
@@ -2070,26 +2105,26 @@ theorem ElemWritten.lengths {i : Nat} {s : Footprints.Change} {ix : Tm} {ρ : En
     · exact ⟨ls, hv', rfl⟩
     · simp only [elemWriteFrame, List.mem_cons, List.not_mem_nil, or_false] at he
       rcases he with rfl | rfl
-      · simp only [Footprints.Region.mem, Bool.and_eq_true, beq_iff_eq] at hm
-        exact absurd (Option.some.inj (hm.1.symm.trans hs)) hf
-      · simp [Footprints.Region.mem, hl, Footprints.isArr] at hm
+      · simp only [Footprints.Region.mem, beq_iff_eq] at hm
+        exact absurd (Option.some.inj (hm.symm.trans hs)) hf
+      · have hna := (Footprints.HeapOk.categories hh).elems (by simpa [Footprints.Region.mem] using hm) hl
+        simp [Footprints.isArr] at hna
 
-/-- The spine location of the object in slot `i`, holding an array spine,
-is in the frame's spine region. -/
+/-- The spine location of the object in slot `i` is in the frame's spine
+region. -/
 theorem spine_mem_frame {ρ : Env} {i : Nat} {h : Heap} {fl : Nat} {ls : List (Option Nat)}
-    (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls)) :
-    ((Footprints.Region.field i arraySpineKey).inCls .arrays).mem ρ h fl = true := by
-  simp only [Footprints.Region.mem, Bool.and_eq_true, beq_iff_eq, hfl]
-  exact ⟨hs, rfl⟩
+    (hs : Footprints.spineOf (ρ i) = some fl) (_hfl : h[fl]? = some (.arr ls)) :
+    (Footprints.Region.field i arraySpineKey).mem ρ h fl = true := by
+  simpa [Footprints.Region.mem, Footprints.spineOf] using hs
 
-/-- A location the spine of the object in slot `i` lists, holding a value,
-is in the frame's cell region. -/
+/-- A location the spine of the object in slot `i` lists is in the frame's
+cell region. -/
 theorem cell_mem_frame {ρ : Env} {i : Nat} {h : Heap} {fl l : Nat} {ls : List (Option Nat)} {u : Val}
     (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls)) (hm : some l ∈ ls)
-    (hl : h[l]? = some u) (hu : Footprints.isArr u = false) :
-    ((Footprints.Region.cells i).inCls .values).mem ρ h l = true := by
+    (_hl : h[l]? = some u) (_hu : Footprints.isArr u = false) :
+    (Footprints.Region.cells i).mem ρ h l = true := by
   have hs' : (Footprints.fieldsOf (ρ i)).lookup arraySpineKey = some fl := hs
-  simp [Footprints.Region.mem, Footprints.spineCells, Footprints.entriesAt, hs', hfl, spineEntries, hm, hl, hu]
+  simp [Footprints.Region.mem, Footprints.spineCells, Footprints.entriesAt, hs', hfl, spineEntries, hm]
 
 /-- **A write at a listed cell is within the frame**: the spine put back
 unchanged and the cell, which held a value, written. -/
@@ -2497,7 +2532,7 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       (fun h' => (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h') n W h
       (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))) :=
   have hsp : Footprints.spineOf (ρ i) = some fl := by simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hfl
-  SafePostExc.weaken (fun _ _ hq => hq.lengths hsp hls0 hb0 hidx hlt)
+  SafePostExc.weaken (fun _ _ hq => hq.lengths hh hsp hls0 hb0 hidx hlt)
     (fun _ hq => by rw [hq]; exact Changes.length_refl _) (elem_var_write_core hk hj hi hst he hh hs)
 
 /-! ### An element write's step
@@ -2630,8 +2665,15 @@ theorem elemWriteStep_closed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (T
     {s : Footprints.Change} {T : Fam} {ρ n W h} (hc : elemWriteStep G Γ t = some (i, s))
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePostExc Ξ T (fun h' _ => (Footprints.Closed.ofSpines .any s).Holds h h')
-      (fun h' => (Footprints.Closed.ofSpines .any s).Holds h h') n W h (instantiate 0 ρ t) :=
-  SafePostExc.weaken (fun _ _ hq => elemWriteFrame_closed hq.1)
+      (fun h' => (Footprints.Closed.ofSpines .any s).Holds h h') n W h (instantiate 0 ρ t) := by
+  have hi : RefsOk W (ρ i) := by
+    have href := hs.refs
+    rcases elemWriteStep_cases hc with ⟨_, _, _, rfl, _, _, _, _, _⟩ | ⟨_, _, _, _, _, rfl, _, _, _, _, _⟩
+    · simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, RefsOk, refs, List.mem_append] at href
+      exact fun r hr => href r (.inl hr)
+    · simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, RefsOk, refs, List.mem_append] at href
+      exact fun r hr => href r (.inl hr)
+  exact SafePostExc.weaken (fun _ _ hq => elemWriteFrame_closed hh hi hq.1)
     (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl _ h) (elemWriteStep_sound hc he hh hs)
 
 /-- An element write within `Φ`: its closed grade `{value: any, spine: s}`

@@ -23,7 +23,6 @@ The bound is read from the region's form alone:
   (`HeapKnowledge.elementsOf`);
 - a class region holds the kinds of the categories its selector names
   (`Shaped.category`);
-- `inCls r c` holds the kinds of both `r`'s bound and `c`'s categories;
 - `all` holds every kind. -/
 namespace Verification.Footprints
 open HeapKnowledge
@@ -59,7 +58,6 @@ def Region.bound : Region → KindSet
   | .cells _ | .pathCells _ _ => KindSet.elems
   | .cls c => c.kinds
   | .all => KindSet.all
-  | .inCls r c => r.bound.inter c.kinds
   | .spine _ _ => KindSet.spines
 
 /-! ## Valid references along paths -/
@@ -225,21 +223,45 @@ theorem Region.bound_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
     split at hm
     · exact cells_bound hok hm
     · cases hm
-  | .inCls r c, l, hl, hm => by
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    obtain ⟨role, hr, hb⟩ := Region.bound_sound hok hρ r hl hm.1
-    have hc := hm.2
-    split at hc
-    · rename_i v hv
-      obtain ⟨role', hr', hc'⟩ := selects_bound hok hv hc
-      rw [hr] at hr'; cases hr'
-      exact ⟨role, hr, by simp [Region.bound, hb, hc']⟩
-    · cases hc
   | .spine x p, _, _, hm => by
     simp only [Region.mem] at hm
     split at hm
     · rename_i v hv; exact spine_bound (readPath_refs hok p (hρ x) hv) hm
     · cases hm
+
+/-- Every location kind in a region's bound has a category the region's
+`Region.cats` admits. -/
+theorem Region.bound_cats (r : Region) (k : Kind) (hb : r.bound.contains k = true) :
+    r.cats.has k.category = true := by
+  cases r with
+  | field _ key | path _ _ key =>
+    simp only [Region.bound, Region.cats, slotBound, keyClass] at hb ⊢
+    split at hb
+    · rename_i hk; simp only [hk, ite_true]
+      cases k <;> simp [KindSet.contains, KindSet.arraySpine] at hb <;> rfl
+    · rename_i hk; simp only [hk, ite_false]
+      cases k <;> simp [KindSet.contains, KindSet.fieldsAndCells] at hb <;> rfl
+  | fields _ | pathFields _ _ =>
+    cases k <;> simp [Region.bound, KindSet.contains, KindSet.fieldsAndCells] at hb <;> rfl
+  | cells _ | pathCells _ _ =>
+    cases k <;> simp [Region.bound, KindSet.contains, KindSet.elems] at hb <;> rfl
+  | spine _ _ =>
+    cases k <;> simp [Region.bound, KindSet.contains, KindSet.spines] at hb <;> rfl
+  | cls c => simpa [Region.bound, Region.cats, Selector.kinds] using hb
+  | all => exact Selector.has_all _
+
+/-- **The intrinsic class evidence holds at every well-formed state**
+(`Region.bound_sound`, `Shaped.category`). -/
+theorem intrinsicClasses_ok {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) : ClassOk intrinsicClasses ρ h := by
+  intro r c l hc hm hl
+  cases hc
+  obtain ⟨role, hr, hb⟩ := Region.bound_sound hok hρ r hl hm
+  obtain ⟨v, hv⟩ : ∃ v, h[l]? = some v := ⟨h[l], List.getElem?_eq_getElem hl⟩
+  have hcat := Shaped.category hok.2 hr hv
+  have hhas := Region.bound_cats r role.kind hb
+  simp only [Role.kind_category] at hhas
+  simp [Region.mem, hv, Selector.selects, hcat, hhas]
 
 /-- **Regions whose bounds hold no kind in common share no allocated
 location**, in a well-formed state. -/
@@ -291,11 +313,9 @@ the values they are read from (the note, Definition "Derivations": $`\pi.f`$
 and $`\pi'.g`$ with $`f\ne g`$ are disjoint). -/
 
 /-- **The key of a region's locations**, where the region's form fixes one:
-the key `k` of a field or a path's field `k` other than the spine key, and
-the key of `r` for its part in a class. -/
+the key `k` of a field or a path's field `k` other than the spine key. -/
 def Region.key? : Region → Option PropKey
   | .field _ k | .path _ _ k => if k = arraySpineKey then none else some k
-  | .inCls r _ => r.key?
   | _ => none
 
 /-- A slot under a key other than the spine key is a location of that
@@ -334,9 +354,6 @@ theorem Region.key_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
       · rename_i v hv
         exact slotRole_key hne (slotRole_of_refs (readPath_refs hok p (hρ x) hv) (by simpa using hm))
       · cases hm
-  | .inCls r c, k, l, hk, hm => by
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact Region.key_sound hok hρ r (by simpa [Region.key?] using hk) hm.1
   | .fields _, _, _, hk, _ | .cells _, _, _, hk, _ | .cls _, _, _, hk, _ | .all, _, _, hk, _
   | .pathFields _ _, _, _, hk, _ | .pathCells _ _, _, _, hk, _ | .spine _ _, _, _, hk, _ => by
     simp [Region.key?] at hk
@@ -390,18 +407,25 @@ theorem boundQuery_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} (hok : H
   · exact Region.apart_of_bound hok hρ hd hl hr hs
   · exact Region.apart_of_keys hok hρ hd hr hs
 
-/-- **The query by bounds separates every pair of a class region and a
-region's part in a disjoint class**, the part `inCls r c` against
-`cls c'` either way round. -/
-theorem boundQuery_inCls_cls (r : Region) {c c' : Selector} (hd : c.disjoint c' = true) :
-    boundQuery.disjoint (.inCls r c) (.cls c') = true ∧ boundQuery.disjoint (.cls c') (.inCls r c) = true := by
-  have h0 : ∀ k, (c.kinds.contains k && c'.kinds.contains k) = false := by
+/-- **The query by bounds separates every region from a class region of a
+disjoint category selector**, either way round (`Region.bound_cats`). -/
+theorem boundQuery_cats_cls (r : Region) {c' : Selector} (hd : r.cats.disjoint c' = true) :
+    boundQuery.disjoint r (.cls c') = true ∧ boundQuery.disjoint (.cls c') r = true := by
+  have h0 : ∀ k, (r.cats.kinds.contains k && c'.kinds.contains k) = false := by
     intro k
-    have := KindSet.isEmpty_iff.mp ((Selector.kinds_inter_isEmpty c c').trans hd) k
+    have := KindSet.isEmpty_iff.mp ((Selector.kinds_inter_isEmpty r.cats c').trans hd) k
     simpa using this
-  simp only [boundQuery, Region.bound, Bool.or_eq_true]
-  constructor <;> refine .inl (KindSet.isEmpty_iff.mpr fun k => ?_) <;> have := h0 k <;>
-    simp only [KindSet.contains_inter] <;> revert this <;>
-    cases r.bound.contains k <;> cases c.kinds.contains k <;> cases c'.kinds.contains k <;> simp
+  have hcls : (Region.cls c').bound = c'.kinds := rfl
+  simp only [boundQuery, hcls, Bool.or_eq_true]
+  constructor <;> refine .inl (KindSet.isEmpty_iff.mpr fun k => ?_) <;>
+    simp only [KindSet.contains_inter] <;> cases hr : r.bound.contains k
+  · simp
+  · have hcat : r.cats.kinds.contains k = true := by
+      simpa [Selector.kinds] using Region.bound_cats r k hr
+    have := h0 k; simp [hcat] at this; simp [this]
+  · simp
+  · have hcat : r.cats.kinds.contains k = true := by
+      simpa [Selector.kinds] using Region.bound_cats r k hr
+    have := h0 k; simp [hcat] at this; simp [this]
 
 end Verification.Footprints

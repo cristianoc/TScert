@@ -464,7 +464,7 @@ def InclusionEvidence.check (arena : AssertionArena) (K : AssertionRef) (Φ Ψ :
     InclusionEvidence → Bool
   | .refl => Φ == Ψ
   | .closed a b => Φ == a.fp && Ψ == b.fp && a.le b
-  | .regions => Footprint.le (fun _ _ => none) Φ Ψ
+  | .regions => Footprint.le noClassEvidence Φ Ψ
   | .byClass ws => (List.range Φ.length).all fun i => match Φ[i]?, ws[i]? with
     | some e, some w => match w.selector arena K e.1 with
       | some a => Ψ.any fun e' => match e'.1 with

@@ -335,7 +335,6 @@ type Region =
   | { cls: Selector } | "all"
   | { path: { x: Nat; fields: string[]; key: Key } }
   | { pathFields: { x: Nat; fields: string[] } } | { pathCells: { x: Nat; fields: string[] } }
-  | { inCls: { region: Region; selector: Selector } }
   | { spine: { x: Nat; fields: string[] } };
 type Frame = { region: Region; change: Change }[];
 type Path = { root: Nat; fields: string[] };

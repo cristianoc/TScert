@@ -700,8 +700,9 @@ is the class region of the selector `S`, read from the contents. A path
 `path x p k` is the own field `k` of the object it reads, `pathFields x p` that
 object's field locations and `pathCells x p` the element cells its spine
 lists; a read that fails denotes no location, and at the empty path they are
-`field`, `fields` and `cells`. `inCls r S` is the locations of `r` in the
-class region of `S`. `all` is every allocated location. -/
+`field`, `fields` and `cells`. `spine x p` selects the spine location of the
+value the path reads (`HeapKnowledge.elementsOf`). `all` is every allocated
+location. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
   | fields (x : Nat)
@@ -711,7 +712,6 @@ inductive Region where
   | path (x : Nat) (p : List String) (k : PropKey)
   | pathFields (x : Nat) (p : List String)
   | pathCells (x : Nat) (p : List String)
-  | inCls (r : Region) (c : Selector)
   /-- The spine location of the value the path reads (parity-interfaces I1,
   the selected spine): an array's or a typed array's
   (`HeapKnowledge.elementsOf`); a failed read or a value with no spine
@@ -735,9 +735,6 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | none => false
   | .pathCells x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (spineCells h v).contains (some l)
-    | none => false
-  | .inCls r c, l => r.mem ρ h l && match h[l]? with
-    | some v => c.selects v
     | none => false
   | .spine x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => HeapKnowledge.elementsOf v == some l
@@ -800,11 +797,9 @@ theorem field_mem_fields {ρ h x k l} (hk : k ≠ arraySpineKey) (hm : (Region.f
   simpa [Region.mem] using lookup_mem_fieldLocs hm hk
 
 /-- A region every location of which holds a spine where it is read: a class
-region, or a region's part in one, of a selector naming no value
-category. -/
+region of a selector naming no value category. -/
 def spineOnly : Region → Bool
   | .cls c => !c.value
-  | .inCls _ c => !c.value
   | _ => false
 
 theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Val} (hs : spineOnly r = true)
@@ -813,10 +808,29 @@ theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Val} (hs
   case cls c =>
     simp only [Bool.not_eq_true'] at hs
     exact Selector.selects_noValue hs (by simpa [Region.mem, hv] using hm)
-  case inCls r c =>
-    simp only [Bool.not_eq_true'] at hs
-    simp only [Region.mem, hv, Bool.and_eq_true] at hm
-    exact Selector.selects_noValue hs hm.2
+
+/-- The class a field key demands of its location's contents: an array
+spine for the array spine key, a value otherwise (`SlotRole`). -/
+def keyClass (k : PropKey) : Selector :=
+  if k = arraySpineKey then .arrays else .values
+
+/-- **The categories a region's locations may hold** at a well-formed state
+(`Region.bound_sound`, `intrinsicClasses_ok`): a field or path field its key's
+class, field locations and element cells values, a selected spine spines, a
+class region its selector, and `all` every category. -/
+def Region.cats : Region → Selector
+  | .field _ k | .path _ _ k => keyClass k
+  | .fields _ | .pathFields _ _ | .cells _ | .pathCells _ _ => .values
+  | .spine _ _ => .spines
+  | .cls S => S
+  | .all => .all
+
+/-- The `[]` slot of a value is the spine it selects. -/
+theorem elementsOf_of_lookup_spine {v : Val} {l : Nat}
+    (hs : (fieldsOf v).lookup arraySpineKey = some l) : HeapKnowledge.elementsOf v = some l := by
+  cases v with
+  | objAt fs c i => simp only [fieldsOf] at hs; simp [HeapKnowledge.elementsOf, hs]
+  | _ => simp [fieldsOf] at hs
 
 /-! ## Footprints and their meaning -/
 
@@ -858,37 +872,48 @@ theorem Post.empty_iff {ρ : Env} {h h' : Heap} : Post [] ρ h h' ↔ h.IsPrefix
     refine ⟨by simp, fun l v hv => ⟨v, ?_, .inl rfl⟩⟩
     rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
 
-abbrev ClassEvidence := Nat → PropKey → Option Selector
+/-- Class evidence: for any region, an optional selector that every allocated
+location of the region holds contents of (`ClassOk`). -/
+abbrev ClassEvidence := Region → Option Selector
+
+/-- The class evidence stating no class. -/
+def noClassEvidence : ClassEvidence := fun _ => none
+
+/-- The class evidence stating a single field's class. -/
+def fieldClass (x : Nat) (k : PropKey) (c : Selector) : ClassEvidence
+  | .field y k' => if y = x ∧ k' = k then some c else none
+  | _ => none
+
+/-- **The intrinsic class evidence**: every region's locations lie in its
+own categories (`Region.cats`). Holds at every well-formed state
+(`intrinsicClasses_ok`, `Semantics/RegionBounds.lean`). -/
+def intrinsicClasses : ClassEvidence := fun r => some r.cats
 
 /-- The class evidence holds at `h` for every location `h` has. -/
 def ClassOk (cl : ClassEvidence) (ρ : Env) (h : Heap) : Prop :=
-  ∀ x k c l, cl x k = some c → (fieldsOf (ρ x)).lookup k = some l → l < h.length →
+  ∀ r c l, cl r = some c → r.mem ρ h l = true → l < h.length →
     (Region.cls c).mem ρ h l = true
 
-/-- The inclusions read without recursion: equal regions, every region in
-`all`, a field under a key other than the spine key among its object's
-field locations and in the class its contents have by class evidence, such
-a path's field among the path object's field locations, and a class region
-in a larger one. -/
-def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
+theorem noClassEvidence_ok (ρ : Env) (h : Heap) : ClassOk noClassEvidence ρ h :=
+  fun _ _ _ hc => nomatch hc
+
+/-- **Region inclusion**: equal regions, every region in `all`, a field under a
+key other than the spine key among its object's field locations (at slot or
+path), a spine field in the selected spine, a class region in a larger one, and
+any region in a class region its class evidence justifies. -/
+def Region.sub (cl : ClassEvidence) (r s : Region) : Bool :=
   r == s || s == .all || match r, s with
     | .field x k, .fields y => x == y && k != arraySpineKey
-    | .field x k, .cls c => match cl x k with
+    | .path x [] k, .fields y => x == y && k != arraySpineKey
+    | .field x k, .pathFields y [] => x == y && k != arraySpineKey
+    | .path x p k, .pathFields y q => x == y && p == q && k != arraySpineKey
+    | .field x k, .spine y [] => x == y && k == arraySpineKey
+    | .path x p k, .spine y q => x == y && p == q && k == arraySpineKey
+    | .cls a, .cls b => a.sub b
+    | r, .cls c => match cl r with
       | some c' => c'.sub c
       | none => false
-    | .cls a, .cls b => a.sub b
-    | .path x p k, .pathFields y q => x == y && p == q && k != arraySpineKey
     | _, _ => false
-
-/-- Region inclusion: `subBase`, and the part of `r` of class `c` in `s`
-where `r` is, in `cls c`, and in `s`'s part of class `c` where `r` is in
-`s`. -/
-def Region.sub (cl : ClassEvidence) : Region → Region → Bool
-  | .inCls r c, s => Region.sub cl r s || (match s with
-      | .cls c' => c.sub c'
-      | .inCls s' c' => c.sub c' && Region.sub cl r s'
-      | _ => false) || Region.subBase cl (.inCls r c) s
-  | r, s => Region.subBase cl r s
 
 /-- **Selector inclusion is class-region inclusion.** -/
 theorem class_subset_sound {a b : Selector} (hab : a.sub b = true) {ρ h l}
@@ -907,25 +932,36 @@ theorem class_disjoint_sound {a b : Selector} (hab : a.disjoint b = true) {ρ h 
   · exact Selector.selects_disjoint hab ha
   · rfl
 
-theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
-    (hs : Region.subBase cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
+theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
+    (hs : Region.sub cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
     (hm : r.mem ρ h l = true) : s.mem ρ h l = true := by
-  unfold Region.subBase at hs
+  unfold Region.sub at hs
   simp only [Bool.or_eq_true, beq_iff_eq] at hs
   rcases hs with (rfl | rfl) | hs
   · exact hm
   · simpa [Region.mem] using hl
-  · cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
+  · have byCl : ∀ c, (match cl r with | some c' => c'.sub c | none => false) = true →
+        (Region.cls c).mem ρ h l = true := by
+      intro c hcl
+      cases hcr : cl r with
+      | none => rw [hcr] at hcl; cases hcl
+      | some c' => rw [hcr] at hcl; exact class_subset_sound hcl (hc r c' l hcr hm hl)
+    cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
     case field.fields x k y =>
       simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs; obtain ⟨rfl, hk⟩ := hs
       exact field_mem_fields hk hm
-    case field.cls x k c =>
-      split at hs
-      · rename_i c' hc'
-        simp only [Region.mem, beq_iff_eq] at hm
-        exact class_subset_sound hs (hc x k c' l hc' hm hl)
-      · cases hs
-    case cls.cls a b => exact class_subset_sound hs hm
+    case path.fields x p k y =>
+      cases p with
+      | nil =>
+        simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs; obtain ⟨rfl, hk⟩ := hs
+        exact field_mem_fields hk (by simpa using hm)
+      | cons _ _ => simp only [Bool.false_eq_true] at hs
+    case field.pathFields x k y q =>
+      cases q with
+      | nil =>
+        simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs; obtain ⟨rfl, hk⟩ := hs
+        simpa using field_mem_fields hk hm
+      | cons _ _ => simp only [Bool.false_eq_true] at hs
     case path.pathFields x p k y q =>
       simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs
       obtain ⟨⟨rfl, rfl⟩, hk⟩ := hs
@@ -935,33 +971,31 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         simp only [beq_iff_eq] at hm
         simpa using lookup_mem_fieldLocs hm hk
       · cases hm
-
-theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
-    (hs : Region.sub cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
-    (hm : r.mem ρ h l = true) : s.mem ρ h l = true := by
-  induction r generalizing s with
-  | inCls r c ih =>
-    simp only [Region.sub, Bool.or_eq_true] at hs
-    have hm' := hm
-    simp only [Region.mem, Bool.and_eq_true] at hm'
-    rcases hs with (hs | hs) | hs
-    · exact ih hs hm'.1
-    · cases s <;> (try simp only [Bool.false_eq_true] at hs)
-      case cls c' =>
-        simp only [Region.mem] at hm' ⊢
-        split at hm'
-        · exact Selector.selects_sub hs hm'.2
-        · cases hm'.2
-      case inCls s' c' =>
-        simp only [Bool.and_eq_true] at hs
-        simp only [Region.mem, Bool.and_eq_true] at hm' ⊢
-        refine ⟨ih hs.2 hm'.1, ?_⟩
-        split at hm'
-        · exact Selector.selects_sub hs.1 hm'.2
-        · cases hm'.2
-    · exact Region.subBase_mem hs hc hl hm
-  | field | fields | cells | cls | all | path | pathFields | pathCells | spine =>
-    exact Region.subBase_mem (by simpa [Region.sub] using hs) hc hl hm
+    case field.spine x k y q =>
+      cases q with
+      | nil =>
+        simp only [Bool.and_eq_true, beq_iff_eq] at hs; obtain ⟨rfl, rfl⟩ := hs
+        simp only [Region.mem, HeapKnowledge.readPath, beq_iff_eq] at hm ⊢
+        exact elementsOf_of_lookup_spine hm
+      | cons _ _ => simp only [Bool.false_eq_true] at hs
+    case path.spine x p k y q =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hs
+      obtain ⟨⟨rfl, rfl⟩, rfl⟩ := hs
+      simp only [Region.mem] at hm ⊢
+      split at hm
+      · rename_i v hv
+        simp only [beq_iff_eq] at hm ⊢
+        exact elementsOf_of_lookup_spine hm
+      · cases hm
+    case cls.cls a b => exact class_subset_sound hs hm
+    case field.cls c => exact byCl c hs
+    case fields.cls c => exact byCl c hs
+    case cells.cls c => exact byCl c hs
+    case all.cls c => exact byCl c hs
+    case path.cls c => exact byCl c hs
+    case pathFields.cls c => exact byCl c hs
+    case pathCells.cls c => exact byCl c hs
+    case spine.cls c => exact byCl c hs
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
 def Footprint.le (cl : ClassEvidence) (Φ Ψ : Footprint) : Bool :=

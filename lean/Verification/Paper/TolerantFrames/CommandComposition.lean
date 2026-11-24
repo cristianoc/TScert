@@ -208,8 +208,8 @@ theorem CommandSummary.handle_sound {arena : AssertionArena} {P P₂ : Assertion
 /-! ## Choice -/
 
 /-- The class evidence stating no class: it holds at every heap. -/
-theorem classOk_none (ρ : Env) (h : Heap) : ClassOk (fun _ _ => none) ρ h :=
-  fun _ _ _ _ hc => by cases hc
+theorem classOk_none (ρ : Env) (h : Heap) : ClassOk noClassEvidence ρ h :=
+  noClassEvidence_ok ρ h
 
 /-- **The join of two exit specifications**: the join of the frames, and
 the postconditions both state, with `extra`, formulas checked to follow
@@ -223,7 +223,7 @@ each one's formulas. -/
 theorem ExitSpec.weakens_join {arena : AssertionArena} {P : Assertion} {q q' : ExitSpec} {extra : List Formula}
     (h : Consequence arena q.facts extra) (h' : Consequence arena q'.facts extra) :
     q.Weakens arena P (q.join q' extra) ∧ q'.Weakens arena P (q.join q' extra) := by
-  have hcl : ∀ η m (st : IndexedHeap), P η m st → ClassOk (fun _ _ => none) η st.h :=
+  have hcl : ∀ η m (st : IndexedHeap), P η m st → ClassOk noClassEvidence η st.h :=
     fun η _ st _ => classOk_none η st.h
   obtain ⟨c₁, c₂⟩ := Footprint.covers_join q.frame q'.frame
   refine ⟨ExitSpec.weakens_of hcl (c₁.le _) ?_, ExitSpec.weakens_of hcl (c₂.le _) ?_⟩

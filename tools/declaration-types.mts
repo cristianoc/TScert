@@ -27,8 +27,7 @@ export type Selector = { readonly value: boolean; readonly array: boolean; reado
 /** A region of locations, read at the call's entry (`Footprints.Region`):
  * a field, the fields or the cells of the value at position
  * `x`, a content class, every location, the same through the data fields
- * `fields`, a region within a class, and the spine the
- * value through `fields` selects. */
+ * `fields`, and the spine the value through `fields` selects. */
 export type Region =
   | { readonly field: { readonly x: number; readonly key: Key } }
   | { readonly fields: { readonly x: number } }
@@ -38,7 +37,6 @@ export type Region =
   | { readonly path: { readonly x: number; readonly fields: readonly string[]; readonly key: Key } }
   | { readonly pathFields: { readonly x: number; readonly fields: readonly string[] } }
   | { readonly pathCells: { readonly x: number; readonly fields: readonly string[] } }
-  | { readonly inCls: { readonly region: Region; readonly selector: Selector } }
   | { readonly spine: { readonly x: number; readonly fields: readonly string[] } };
 /** A frame: the regions an exit may change, each with its change
  * (`Footprints.Footprint`). */

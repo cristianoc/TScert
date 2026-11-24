@@ -52,48 +52,104 @@ private def g₀ : Heap := [.arr []]
 private def g : Heap := [.nul]
 private def Φp : Footprint := [(.field 0 "k", .any)]
 private def Φq : Footprint := [(.cls .values, .any)]
-private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some .values else none
+private def valueK : ClassEvidence := fieldClass 0 "k" .values
 /-- Rebasing evidence stating nothing. -/
 private def noLinks : RebaseEvidence := { link := fun _ => none, agree := fun _ _ => false }
 
-/-- `g` holds no object and no spine: its contents categories hold. -/
-private theorem g_categories : HeapCategories g where
-  fields l₀ v _ _ _ hv hl _ := by
-    have : v = .nul := by
-      cases l₀ with
-      | zero => simpa [g] using hv.symm
-      | succ n => simp [g] at hv
-    subst this; simp [fieldsOf] at hl
-  cells s ls _ _ hs _ _ := by
-    cases s with
-    | zero => simp [g, spineEntries] at hs
-    | succ n => simp [g] at hs
-  views l₀ _ _ _ _ _ _ hv _ := by
-    cases l₀ with
-    | zero => simp [g] at hv
-    | succ n => simp [g] at hv
+/-- `g = [.nul]` satisfies the intrinsic categories at `fieldK`: location 0
+holds `null` (a value), and `"k"` is a non-spine field. -/
+private theorem g_categories : ClassOk intrinsicClasses fieldK g := by
+  intro r c l hc hm hl
+  cases hc
+  have hl0 : l = 0 := by simp [g] at hl; omega
+  subst hl0
+  cases r with
+  | field x k =>
+    by_cases hx : x = 0
+    · subst hx
+      by_cases hk : k = "k"
+      · subst hk; decide
+      · have hne : (k == "k") = false := beq_eq_false_iff_ne.mpr hk
+        simp [Region.mem, fieldK, fieldsOf, List.lookup, hne] at hm
+    · simp [Region.mem, fieldK, hx, fieldsOf] at hm
+  | fields x =>
+    simp [Region.mem, Region.cats, g, Selector.selects, contentsCategory, Selector.has]
+  | cells x =>
+    simp [Region.mem, Region.cats, g, Selector.selects, contentsCategory, Selector.has]
+  | cls s => exact hm
+  | all => simp [Region.mem, Region.cats, g, Selector.selects, contentsCategory, Selector.has]
+  | path x p k =>
+    cases p with
+    | nil =>
+      by_cases hx : x = 0
+      · subst hx
+        by_cases hk : k = "k"
+        · subst hk; decide
+        · have hne : (k == "k") = false := beq_eq_false_iff_ne.mpr hk
+          simp [Region.mem, HeapKnowledge.readPath, fieldK, fieldsOf, List.lookup, hne] at hm
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx, fieldsOf] at hm
+    | cons f p =>
+      by_cases hx : x = 0
+      · subst hx
+        simp only [Region.mem, HeapKnowledge.readPath, fieldK, ite_true] at hm
+        cases hfk : ([("k", 0)] : List (PropKey × Nat)).lookup (.str f) with
+        | none => simp [hfk] at hm
+        | some l' =>
+          have hl' : l' = 0 := by
+            simp only [List.lookup] at hfk
+            split at hfk <;> simp_all
+          subst hl'
+          cases p with
+          | nil => simp [hfk, g, HeapKnowledge.readPath, fieldsOf] at hm
+          | cons _ _ => simp [hfk, g, HeapKnowledge.readPath] at hm
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx] at hm
+  | pathFields x p =>
+    simp [Region.mem, Region.cats, g, Selector.selects, contentsCategory, Selector.has]
+  | pathCells x p =>
+    simp [Region.mem, Region.cats, g, Selector.selects, contentsCategory, Selector.has]
+  | spine x p =>
+    cases p with
+    | nil =>
+      by_cases hx : x = 0
+      · subst hx; exact absurd hm (by decide)
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx, HeapKnowledge.elementsOf] at hm
+    | cons f p =>
+      by_cases hx : x = 0
+      · subst hx
+        simp only [Region.mem, HeapKnowledge.readPath, fieldK, ite_true] at hm
+        cases hfk : ([("k", 0)] : List (PropKey × Nat)).lookup (.str f) with
+        | none => simp [hfk] at hm
+        | some l' =>
+          have hl' : l' = 0 := by
+            simp only [List.lookup] at hfk
+            split at hfk <;> simp_all
+          subst hl'
+          cases p <;> simp [hfk, g, HeapKnowledge.readPath, HeapKnowledge.elementsOf] at hm
+      · simp [Region.mem, HeapKnowledge.readPath, fieldK, hx] at hm
 
-private theorem noLinks_ok (σ ρ₀ : Env) (a : Heap) : RebaseOk noLinks σ ρ₀ a g where
+private theorem noLinks_ok (ρ₀ : Env) (a : Heap) : RebaseOk noLinks fieldK ρ₀ a g where
   link := by intro _ _ _ h; simp [noLinks] at h
   agree := by intro _ _ h; simp [noLinks] at h
   fresh := by intro _ _ h; exact absurd h (by simp [noLinks])
   categories := g_categories
 
 theorem valueK_ok_current : ClassOk valueK fieldK g := by
-  intro x k c l hc hl _
-  simp only [valueK] at hc
-  split at hc
-  · rename_i hxk
-    obtain ⟨rfl, rfl⟩ := hxk
-    cases hc
-    simp [fieldK, fieldsOf] at hl
-    subst hl
-    decide
-  · cases hc
+  intro r c l hc hm _
+  cases r <;> simp only [valueK, fieldClass] at hc
+  case field x k =>
+    split at hc
+    · rename_i hxk
+      obtain ⟨rfl, rfl⟩ := hxk
+      cases hc
+      simp [Region.mem, fieldK, fieldsOf] at hm
+      subst hm
+      decide
+    · cases hc
+  all_goals cases hc
 
 theorem valueK_fails_entry : ¬ ClassOk valueK fieldK g₀ := by
   intro h
-  have := h 0 "k" .values 0 (by simp [valueK]) (by simp [fieldK, fieldsOf]) (by decide)
+  have := h (.field 0 "k") .values 0 (by simp [valueK, fieldClass]) (by simp [Region.mem, fieldK, fieldsOf]) (by decide)
   exact absurd this (by decide)
 
 /-- Composition with class evidence valid at the current heap, instead of the
@@ -105,7 +161,7 @@ theorem current_heap_compose_false :
   intro H
   have h := H Φp [] Φq valueK fieldK fieldK g₀ g g noLinks
     (postB_iff.mp (by decide)) (Post.refl _ _ _)
-    (noLinks_ok _ _ _) (by decide) valueK_ok_current
+    (noLinks_ok _ _) (by decide) valueK_ok_current
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-- `Post.compose_at` itself cannot be applied to the witness: applied with
@@ -117,7 +173,7 @@ theorem compose_needs_entry_evidence :
   rintro ⟨cl, hle, hc⟩
   have h := Post.compose_at (Ψ := []) (σ := fieldK) (h := g) (h' := g) (postB_iff.mp (by decide))
     (Post.refl _ _ _)
-    (noLinks_ok _ _ _) hle hc
+    (noLinks_ok _ _) hle hc
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Freshness of a spine says nothing of its elements
@@ -269,7 +325,7 @@ selects no location of a well-formed state: its bound under the evidence
 is empty. -/
 
 private def noKnowledge : SepEvidence := {}
-private def spineK : SepEvidence := { cl := fun x k => if x = 0 ∧ k = "k" then some .spines else none }
+private def spineK : SepEvidence := { cl := fieldClass 0 "k" .spines }
 private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
 #guard !stable noKnowledge cellK.support [(.cls .values, .any)]
@@ -339,7 +395,7 @@ and that array's cells are element cells. -/
 private def runsFrame : Footprint :=
   [(.cls .values, .any), (.cls .spines, .keep),
    (.path 1 ["openBrackets"] arraySpineKey, .any), (.pathCells 1 ["openBrackets"], .any)]
-private def flagsSpine : ClassEvidence := fun x k => if x = 0 ∧ k = arraySpineKey then some .spines else none
+private def flagsSpine : ClassEvidence := fieldClass 0 arraySpineKey .spines
 private def runsK : SepEvidence :=
   { cl := flagsSpine
     facts := [.spines (1, ["openBrackets"]) (0, [])] }
@@ -349,6 +405,6 @@ private def runsK : SepEvidence :=
 #guard !stable { runsK with facts := [] } (FactKind.dense 0 1).support runsFrame
 -- The cells are element cells and `flags`'s spine an array spine: their
 -- bounds are apart, and the class evidence adds nothing.
-#guard stable { runsK with cl := fun _ _ => none } (FactKind.dense 0 1).support runsFrame
+#guard stable { runsK with cl := noClassEvidence } (FactKind.dense 0 1).support runsFrame
 
 end Verification.Footprints.Controls

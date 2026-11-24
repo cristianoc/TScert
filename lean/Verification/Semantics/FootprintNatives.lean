@@ -501,7 +501,7 @@ support kept by every footprint it is checked under. -/
 def noSep : SepEvidence := {}
 
 theorem noSep_holds (ρ : Env) (h : Heap) : noSep.Holds id ρ h :=
-  ⟨fun _ _ _ _ h => by simp [noSep] at h, ⟨fun _ _ h => by simp [noSep] at h, fun _ _ h => by simp [noSep] at h⟩,
+  ⟨noClassEvidence_ok ρ h, ⟨fun _ _ h => by simp [noSep] at h, fun _ _ h => by simp [noSep] at h⟩,
     fun _ _ h => h, fun _ h => by simp [noSep] at h, fun _ h => by simp [noSep] at h⟩
 
 /-- **The stable set for the elements fact**: a footprint keeping every

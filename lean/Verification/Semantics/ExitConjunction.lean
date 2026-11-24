@@ -255,8 +255,8 @@ def frameMeet? (Φ Ψ : Footprint) : Option Footprint :=
 the location's contents. -/
 private theorem class_mem {r : Region} (hr : r.isClass = true) {ρ : Env} {h : Heap} {l : Nat} {v : Val}
     (hv : h[l]? = some v) : r.mem ρ h l = true ↔ r.cats.has (contentsCategory v) = true := by
-  refine ⟨Region.cats_mem hv, fun hk => ?_⟩
   cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hr
+  refine ⟨Region.cats_mem_cls hv, fun hk => ?_⟩
   simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
 
 /-- **A location's change allowed by a footprint** is one its class bound

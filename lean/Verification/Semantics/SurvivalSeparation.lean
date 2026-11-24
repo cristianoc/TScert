@@ -125,7 +125,7 @@ def knowledgeEvidence (k : Knowledge) : SepEvidence :=
 
 theorem knowledgeEvidence_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
     (knowledgeEvidence k).Holds id ρ h := by
-  refine ⟨fun _ _ _ _ hc => by simp [knowledgeEvidence] at hc,
+  refine ⟨noClassEvidence_ok ρ h,
     ⟨fun _ _ hc => by simp [knowledgeEvidence] at hc, fun _ _ hc => by simp [knowledgeEvidence] at hc⟩,
     fun _ _ hij => hij, hk.2.2.1, fun e he => ?_⟩
   simp only [knowledgeEvidence, List.mem_append] at he
@@ -184,18 +184,13 @@ def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .pathCells x p => match σ x with | some y => .pathCells y p | none => .all
   | .cls c => .cls c
   | .all => .all
-  | .inCls r c => .inCls (r.renameM σ) c
   | .spine x p => match σ x with | some y => .spine y p | none => .all
 
 theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l : Nat}
     (hσ : ∀ i j, σ i = some j → ρ j = env i) (hl : l < h.length) :
     ∀ r : Region, r.mem env h l = true → (r.renameM σ).mem ρ h l = true := by
   intro r
-  induction r with
-  | inCls r c ih =>
-    intro hm
-    simp only [Region.renameM, Region.mem, Bool.and_eq_true] at hm ⊢
-    exact ⟨ih hm.1, hm.2⟩
+  cases r with
   | cls | all => intro hm; exact hm
   | _ =>
     intro hm

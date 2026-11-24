@@ -50,7 +50,7 @@ theorem _root_.Verification.Footprints.Change.le_refl (c : Change) : c.le c = tr
   cases c <;> rfl
 
 theorem _root_.Verification.Footprints.Region.sub_refl (cl : ClassEvidence) (r : Region) : Region.sub cl r r = true := by
-  cases r <;> simp [Region.sub, Region.subBase]
+  cases r <;> simp [Region.sub]
 
 theorem _root_.Verification.Footprints.Footprint.le_of_subset {cl : ClassEvidence} {Φ Ψ : Footprint} (h : ∀ e ∈ Φ, e ∈ Ψ) :
     Footprint.le cl Φ Ψ = true :=
@@ -199,7 +199,6 @@ other locations. -/
 def _root_.Verification.Footprints.Region.atLocation : Region → Bool
   | .field .. | .fields _ | .cls _ | .all => true
   | .path _ [] _ | .pathFields _ [] | .spine _ [] => true
-  | .inCls r _ => r.atLocation
   | _ => false
 
 /-- **A region reading the heap at the location alone selects an old
@@ -209,7 +208,7 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
   have hgl : h[l]? = h₀[l]? := by
     obtain ⟨t, rfl⟩ := hp
     exact List.getElem?_append_left hl
-  induction R with
+  cases R with
   | field | fields => rfl
   | all =>
     have hlh : l < h.length := Nat.lt_of_lt_of_le hl hp.length_le
@@ -218,7 +217,6 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
   | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | pathFields _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | spine _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
-  | inCls r _ ih => simp only [Region.atLocation] at hR; simp only [Region.mem, ih hR, hgl]
   | cells | pathCells => simp [Region.atLocation] at hR
 
 /-- **An allocation alone meets an exceptional exit stating no
@@ -257,10 +255,10 @@ theorem Exits.allocStable_of {x : Exits ExitSchema}
     x.AllocStable := by
   refine ⟨fun c r args s₀ s₁ s₂ v hadm hprefix h => ?_,
     fun r args s₀ s₁ v hadm hprefix => Exits.exitPost_exceptional_prefix he hadm hprefix⟩
-  refine Exits.compose_entry (Φ := []) (cl := fun _ _ => none) ⟨hadm, Post.of_prefix _ _ hprefix⟩
+  refine Exits.compose_entry (Φ := []) (cl := noClassEvidence) ⟨hadm, Post.of_prefix _ _ hprefix⟩
     (Rebases.of_prefix fun e he l hl hm => by
       rwa [← Region.mem_prefix (List.all_eq_true.mp (hfr c) e he) hprefix hl])
-    (Footprint.le_refl _ _) (fun _ _ _ _ hc => by cases hc) ?_ h
+    (Footprint.le_refl _ _) (noClassEvidence_ok _ _) ?_ h
   intro u z hF F hFm
   have hens' := hens c
   cases c <;>

@@ -157,8 +157,7 @@ theorem grow_path_typed {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {m :
 /-! ## Class evidence -/
 
 /-- The evidence that `x`'s field `k` holds a value, not a spine. -/
-def valueClass (x : Nat) (k : PropKey) : ClassEvidence := fun y k' =>
-  if y = x ∧ k' = k then some .values else none
+def valueClass (x : Nat) (k : PropKey) : ClassEvidence := fieldClass x k .values
 
 /-- **A field of source-value type holds a value**: the class evidence a
 footprint inclusion reads at that field holds at every heap meeting the
@@ -167,25 +166,28 @@ theorem valueClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     {W : WorldT (n + 1)} {h : Heap} {x : Nat} {Ref : Ty ι} {k : PropKey} (he : EnvOk G Γ ρ (n + 1) W)
     (hx : Γ[x]? = some Ref) (hs : sourceField G (expand G Ref) k = true) (hh : HeapOk (n + 1) W h) :
     ClassOk (valueClass x k) ρ h := by
-  intro y k' c l hc hl _
-  unfold valueClass at hc
-  split at hc
-  · rename_i hyk
-    obtain ⟨rfl, rfl⟩ := hyk
-    cases hc
-    obtain ⟨B, _, A, hmem, hsrc, hbag⟩ := sourceField_sound hs (he.2 y Ref hx)
-    obtain ⟨flds, code, oid, hv, -, hrec⟩ := hbag
-    obtain ⟨flds1, fl, cc, oid', hproj, hfd, hlookup, hagree⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec
-    cases hproj
-    rw [hv] at hl
-    simp only [fieldsOf, hfd, Option.some.injEq] at hl
-    subst hl
-    obtain ⟨w, hw, hcw⟩ := hh.1.2 fl cc hlookup
-    have hwsrc := sourceTy_sound hsrc ((hagree 0 (by omega) _ w).mp (hcw 0 (by omega)))
-    simp only [Region.mem, hw]
-    cases w <;> simp_all [isSourceVal, isArr]
-  · cases hc
+  intro r c l hc hm _
+  cases r <;> simp only [valueClass, fieldClass] at hc
+  case field y k' =>
+    split at hc
+    · rename_i hyk
+      obtain ⟨rfl, rfl⟩ := hyk
+      cases hc
+      have hl : (fieldsOf (ρ y)).lookup k' = some l := by simpa [Region.mem] using hm
+      obtain ⟨B, _, A, hmem, hsrc, hbag⟩ := sourceField_sound hs (he.2 y Ref hx)
+      obtain ⟨flds, code, oid, hv, -, hrec⟩ := hbag
+      obtain ⟨flds1, fl, cc, oid', hproj, hfd, hlookup, hagree⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec
+      cases hproj
+      rw [hv] at hl
+      simp only [fieldsOf, hfd, Option.some.injEq] at hl
+      subst hl
+      obtain ⟨w, hw, hcw⟩ := hh.1.2 fl cc hlookup
+      have hwsrc := sourceTy_sound hsrc ((hagree 0 (by omega) _ w).mp (hcw 0 (by omega)))
+      simp only [Region.mem, hw]
+      cases w <;> simp_all [isSourceVal, isArr]
+    · cases hc
+  all_goals cases hc
 
 /-- **A spine field of a `.list` type holds a spine**: the spine-class
 evidence (`denseClass`) from typing, without a density fact. -/
@@ -193,23 +195,26 @@ theorem spineClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     {W : WorldT (n + 1)} {h : Heap} {x : Nat} {Ref : Ty ι} (he : EnvOk G Γ ρ (n + 1) W)
     (hx : Γ[x]? = some Ref) (hs : spineListField G (expand G Ref) arraySpineKey = true)
     (hh : HeapOk (n + 1) W h) : ClassOk (denseClass x) ρ h := by
-  intro y k' c l hc hl _
-  unfold denseClass at hc
-  split at hc
-  · rename_i hyk
-    obtain ⟨rfl, rfl⟩ := hyk
-    cases hc
-    obtain ⟨L, st, cc, hL, hst, hlookup, hagree⟩ := spineListField_at he hx hs
-    have hl' : st = l := by
-      simp only [spineOf] at hst
-      rw [hst] at hl
-      exact Option.some.inj hl
-    subst hl'
-    obtain ⟨u, hu, hcu⟩ := hh.1.2 st cc hlookup
-    obtain ⟨T, hT⟩ := spineListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
-    obtain ⟨ls, rfl, -⟩ := hT
-    simp [Region.mem, hu, isArr]
-  · cases hc
+  intro r c l hc hm _
+  cases r <;> simp only [denseClass, fieldClass] at hc
+  case field y k' =>
+    split at hc
+    · rename_i hyk
+      obtain ⟨rfl, rfl⟩ := hyk
+      cases hc
+      have hl : (fieldsOf (ρ y)).lookup arraySpineKey = some l := by simpa [Region.mem] using hm
+      obtain ⟨L, st, cc, hL, hst, hlookup, hagree⟩ := spineListField_at he hx hs
+      have hl' : st = l := by
+        simp only [spineOf] at hst
+        rw [hst] at hl
+        exact Option.some.inj hl
+      subst hl'
+      obtain ⟨u, hu, hcu⟩ := hh.1.2 st cc hlookup
+      obtain ⟨T, hT⟩ := spineListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
+      obtain ⟨ls, rfl, -⟩ := hT
+      simp [Region.mem, hu, isArr]
+    · cases hc
+  all_goals cases hc
 
 /-- Antitonicity from typing: a footprint within another by the value-class
 evidence of a typed field gives inclusion of actions from every state of the

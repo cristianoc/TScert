@@ -13,8 +13,7 @@ after Definition "Support": $`\{x[\ast]{:}\,\mathsf{grow},\ y[\ast]{:}\,\mathsf{
 `x`'s array spine at `grow`, which lists only its old cells and cells past
 the heap's end, and `y`'s at `keep`. -/
 def apartGrowSupport (x y : Nat) : Footprints.Footprint :=
-  [((Footprints.Region.field x arraySpineKey).inCls .arrays, .grow),
-    ((Footprints.Region.field y arraySpineKey).inCls .arrays, .keep)]
+  [(.field x arraySpineKey, .grow), (.field y arraySpineKey, .keep)]
 
 /-- A value's region lies in the heap: its array spine's location and the
 cells it lists below the heap's length. -/
@@ -31,9 +30,9 @@ theorem apartGrow_supports (x y : Nat) :
   obtain ⟨sy, ys, hsy, hys, hylt, hyb⟩ := hc
   obtain ⟨sa, xs, sb, ys0, hra, hrb, hsep⟩ := hA
   obtain ⟨rfl, rfl⟩ := regionOf_unique hrb (.inr ⟨sy, rfl, hsy, hys⟩)
-  have hmy : ((Footprints.Region.field y arraySpineKey).inCls .arrays).mem ρ h sy = true := by
-    simp [Footprints.Region.mem, Footprints.spineOf_lookup hsy, hys, Footprints.Selector.selects]; rfl
-  obtain ⟨vy, hvy, hky⟩ := hs ((Footprints.Region.field y arraySpineKey).inCls .arrays, .keep)
+  have hmy : (Footprints.Region.field y arraySpineKey).mem ρ h sy = true := by
+    simp [Footprints.Region.mem, Footprints.spineOf_lookup hsy]
+  obtain ⟨vy, hvy, hky⟩ := hs (.field y arraySpineKey, .keep)
     (by simp [apartGrowSupport]) sy _ hmy hys
   simp only [Footprints.Change.Holds] at hky
   subst hky
@@ -41,9 +40,9 @@ theorem apartGrow_supports (x y : Nat) :
       ∀ l, InRegion sa' xs' l → InRegion sa xs l ∨ h.length ≤ l := by
     rcases hra with ⟨rfl, hv⟩ | ⟨sx, rfl, hsx, hxs⟩
     · exact ⟨none, xs, .inl ⟨rfl, hv⟩, fun l hl => .inl hl⟩
-    · have hmx : ((Footprints.Region.field x arraySpineKey).inCls .arrays).mem ρ h sx = true := by
-        simp [Footprints.Region.mem, Footprints.spineOf_lookup hsx, hxs, Footprints.Selector.selects]; rfl
-      obtain ⟨vx, hvx, hkx⟩ := hs ((Footprints.Region.field x arraySpineKey).inCls .arrays, .grow)
+    · have hmx : (Footprints.Region.field x arraySpineKey).mem ρ h sx = true := by
+        simp [Footprints.Region.mem, Footprints.spineOf_lookup hsx]
+      obtain ⟨vx, hvx, hkx⟩ := hs (.field x arraySpineKey, .grow)
         (by simp [apartGrowSupport]) sx _ hmx hxs
       rcases hkx with rfl | ⟨ls, ls', heq, rfl, -, hnew, -⟩ | hsc | ⟨f, cs, cs', hvw, -⟩
       · exact ⟨some sx, xs, .inr ⟨sx, rfl, hsx, hvx⟩, fun l hl => .inl hl⟩

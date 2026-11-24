@@ -376,14 +376,15 @@ theorem run_sound_checked_confined (hrun : RunTraversedC ι) (hyield : NodesYiel
           fun node hm => Confinement.refsOk_tmRefsBelow ho ((GraphCode.goto_refs hgo).1 node.expression (mem_program_expr (hP.symm ▸ hm)))
         obtain ⟨X, hX⟩ := hreg G I c after admits hp r
           ⟨dead, hd, hgiven, hmerging, σ, reach, hw, hweq, hst_eq⟩ η hη Φ regions exc hr
+        have hcat := Footprints.intrinsicClasses_ok ho (GraphCode.goto_refs hgo).2
         have hf : regionFields (Target.regionOf c.regional) = GraphCode.ArgumentPathTracking.stableFields regions := by
           simp [regionFields, hr]
         exact keeps_postExc (hP ▸ nodesChecked_confined_U (hwalk_of η hη ⟨envOf L d, h⟩ h.length htbP)
             (regionFields (Target.regionOf c.regional)) h)
-          confinedPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => ⟨hu.1.1.1.1, hf ▸ hu.2⟩) (hP ▸ (hX ⟨envOf L d, h⟩ h).2))
+          confinedPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => ⟨hu.1.1.1.1, hf ▸ hu.2⟩) (hP ▸ (hX ⟨envOf L d, h⟩ h hcat).2))
           (fun _ _ _ h => h) n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
           (fun hq ha' ho' => hstartU η hη (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
-          (hX ⟨envOf L d, h⟩ h).1
+          (hX ⟨envOf L d, h⟩ h hcat).1
       asserted := fun η hη n W h ρ he hPn hρ l k hl j h' ρ' hj hrun => by
         obtain ⟨hv, hs, hi, ha, ho⟩ := he
         cases n with

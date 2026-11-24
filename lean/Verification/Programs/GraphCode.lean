@@ -582,12 +582,15 @@ theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : 
 /-- **A selected call's transition is within the bound below the mark**
 where its grade is below the bound (`Footprint.boundBelow_sound`). -/
 theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
-    {eff : CallEffects.Effect} {h h' : Heap} (hF : FreshOk F b ρ)
+    {eff : CallEffects.Effect} {n : Nat} {W : WorldT n} {h h' : Heap} (hF : FreshOk F b ρ)
+    (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t))
     (hle : (Footprints.Footprint.boundBelow (freshPositions F t) eff.frame).le Φ = true)
     (hq : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
       h h') :
     Φ.HoldsOn (· < b) h h' :=
-  (Footprints.Footprint.boundBelow_sound hq (freshPositions_sound hF)).mono hle
+  (Footprints.Footprint.boundBelow_sound
+    (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+    hq (freshPositions_sound hF)).mono hle
 
 /-- **A selected call's local effect on a throw**: the closed bound below
 the invocation's mark of its signature's exceptional-exit frame (the note's
@@ -644,12 +647,15 @@ its exceptional grade is below the bound: the throw read at heaps gives the
 exceptional exit's frame (`Effect.callExc_frame`), within its closed bound
 below the mark (`Footprint.boundBelow_sound`). -/
 theorem selectedThrowWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
-    {eff : CallEffects.Effect} {n : Nat} {h h' : Heap} (hF : FreshOk F b ρ)
+    {eff : CallEffects.Effect} {n k : Nat} {W : WorldT k} {h h' : Heap} (hF : FreshOk F b ρ)
+    (hh : HeapOk k W h) (href : RefsOk W (instantiate 0 ρ t))
     (hle : (Footprints.Footprint.boundBelow (freshPositions F t) (eff.summary n).exceptional.frame).le Φ = true)
     (hq : eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
       h h') :
     Φ.HoldsOn (· < b) h h' :=
-  (Footprints.Footprint.boundBelow_sound (CallEffects.Effect.callExc_frame n hq)
+  (Footprints.Footprint.boundBelow_sound
+    (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+    (CallEffects.Effect.callExc_frame n hq)
     (freshPositions_sound hF)).mono hle
 
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
@@ -1407,7 +1413,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             cases heff'
             exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
         rw [hterm'] at hs hsel
-        exact HeapObservations.weaken (fun h'' v hq => selectedWithin_sound hF hsel (CallEffects.Effect.callPost_within hq)) hs
+        exact HeapObservations.weaken (fun h'' v hq => selectedWithin_sound hF hheap href hsel (CallEffects.Effect.callPost_within hq)) hs
       · cases hsel
   -- The node's value.
   by_cases hcf : callFresh G images sums c t = true
@@ -1485,7 +1491,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
           exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
       rw [hterm'] at hs hsel
       exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun h'' hq => selectedThrowWithin_sound hF hsel hq) hs
+        (fun h'' hq => selectedThrowWithin_sound hF hheap href hsel hq) hs
     · cases hsel
 
 /-- A node within the bound on normal return, and on a throw where its

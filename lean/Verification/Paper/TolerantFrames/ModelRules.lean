@@ -121,9 +121,9 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hρ 
     simp only [k, List.mem_singleton] at ha
     subst ha
     exact hap
-  have hb : ∀ z, (knowledgeQuery k).disjoint ((Region.field z arraySpineKey).inCls .arrays) (.cls .values) = true :=
-    fun z => knowledgeQuery_bound k (boundQuery_inCls_cls _ (by decide)).1
-  have hs : (knowledgeQuery k).disjoint ((Region.field y arraySpineKey).inCls .arrays)
+  have hb : ∀ z, (knowledgeQuery k).disjoint (.field z arraySpineKey) (.cls .values) = true :=
+    fun z => knowledgeQuery_bound k (boundQuery_cats_cls (.field z arraySpineKey) rfl).1
+  have hs : (knowledgeQuery k).disjoint (.field y arraySpineKey)
       (.field x arraySpineKey) = true := by
     simp [k, knowledgeQuery, SepEvidence.query, knowledgeEvidence, knowledgeSeps, factSeps, SepEvidence.byFact,
       arraySite, sameSite, pathViews, separationFacts, HeapLinks.aliases]

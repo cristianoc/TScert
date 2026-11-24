@@ -650,7 +650,7 @@ theorem run_sound_checkedR (hrun : RunTraversedC ι) (hnear : LinearNearFuelEq) 
         (returnsEnsured_of_walk hp (fun l hl => (hd l hl).1) hη hne ε m).toRF F (framedRet S) RetE
       regions := fun Φ regions exc hr => by
         obtain ⟨X, hX⟩ := hreg G I c after admits hp r ⟨dead, hd, hgiven, hmerging, hrecord⟩ η hη Φ regions exc hr
-        exact ⟨X, fun ε h₀ => ⟨(hX ε h₀).1, (hX ε h₀).2.toRF F (framedRet S) RetE⟩⟩
+        exact ⟨X, fun ε h₀ hcat => ⟨(hX ε h₀ hcat).1, (hX ε h₀ hcat).2.toRF F (framedRet S) RetE⟩⟩
       labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩
   exact nodesChecked_of_walkJR (r.traversed.reassign η)
     (stepEdgesSound_of_yieldsR

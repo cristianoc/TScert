@@ -79,17 +79,20 @@ theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.req
 /-! ## Coverage of schemas -/
 
 /-- **Frame inclusion** (the note's effect order on frames): every entry of
-`Φ` lies in one of `Ψ`'s (`Footprint.le`, with no class claim on fields), or
-`Ψ`'s class entries let every location change (`⊤` within `Ψ`). -/
+`Φ` lies in one of `Ψ`'s (`Footprint.le`, under intrinsic region categories),
+or `Ψ`'s class entries let every location change (`⊤` within `Ψ`). -/
 def frameIncluded (Φ Ψ : Footprints.Footprint) : Bool :=
-  Footprints.Footprint.le (fun _ _ => none) Φ Ψ || Footprints.Footprint.le (fun _ _ => none) Parity.topEffect Ψ
+  Footprints.Footprint.le Footprints.intrinsicClasses Φ Ψ ||
+    Footprints.Footprint.le Footprints.intrinsicClasses Parity.topEffect Ψ
 
-/-- **An included frame's actions are actions of the including one.** -/
+/-- **An included frame's actions are actions of the including one**, at a
+state whose intrinsic category bounds hold. -/
 theorem frameIncluded_sound {Φ Ψ : Footprints.Footprint} (h : frameIncluded Φ Ψ = true) {η : Env}
-    {s s' : TolerantFrames.IndexedHeap} (ha : Parity.EffectAction Φ η s s') : Parity.EffectAction Ψ η s s' := by
-  have mono : ∀ {Φ' : Footprints.Footprint}, Footprints.Footprint.le (fun _ _ => none) Φ' Ψ = true →
+    {s s' : TolerantFrames.IndexedHeap} (hc : Footprints.ClassOk Footprints.intrinsicClasses η s.h)
+    (ha : Parity.EffectAction Φ η s s') : Parity.EffectAction Ψ η s s' := by
+  have mono : ∀ {Φ' : Footprints.Footprint}, Footprints.Footprint.le Footprints.intrinsicClasses Φ' Ψ = true →
       Parity.EffectAction Φ' η s s' → Parity.EffectAction Ψ η s s' :=
-    fun hle ha' => ⟨ha'.1, Footprints.Post.mono hle (fun _ _ _ _ hc => by cases hc) ha'.2⟩
+    fun hle ha' => ⟨ha'.1, Footprints.Post.mono hle hc ha'.2⟩
   rcases Bool.or_eq_true_iff.mp h with h | h
   · exact mono h ha
   · exact mono h (Parity.EffectAction.top ha.1)
@@ -134,7 +137,7 @@ entails it at every call and completion (`Exits.Entails`). -/
 theorem Exits.covers_entails {x y : Exits ExitSchema} (h : x.covers y = true) : x.Entails y := by
   simp only [Exits.covers, Bool.and_eq_true] at h
   obtain ⟨⟨⟨hxc, hyc⟩, hn⟩, he⟩ := h
-  intro c r args s s' v hx
+  intro c r args s s' v hr hx
   have hc : (x.get c).covers (y.get c) = true := by cases c <;> assumption
   simp only [ExitSchema.covers, Bool.and_eq_true] at hc
   have hN : max (args.length + 1) x.slots ≤ max (args.length + 1) (max x.slots y.slots) := by omega
@@ -142,7 +145,7 @@ theorem Exits.covers_entails {x y : Exits ExitSchema} (h : x.covers y = true) : 
   have hxN := (instantiate_completion hxc (c := c) (r := r) (v := v) (m := s.h.length) (s := s) (s' := s') hN).mpr hx
   refine (instantiate_completion hyc (c := c) (r := r) (v := v) (m := s.h.length) (s := s) (s' := s') hN').mp ?_
   obtain ⟨hfr, hens⟩ := hxN
-  refine ⟨frameIncluded_sound hc.1 hfr, fun F hF => ?_⟩
+  refine ⟨frameIncluded_sound hc.1 (Footprints.intrinsicClasses_ok s.ok hr) hfr, fun F hF => ?_⟩
   obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
   obtain ⟨F, hF', himp⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2 G hG)
   exact postImplies_sound himp (hens _ (List.mem_map_of_mem hF'))
@@ -172,7 +175,7 @@ theorem Effect.bindCovers_covers {n : Nat} {a b : Effect} (h : a.bindCovers n b 
   simp only [Effect.bindCovers, Bool.and_eq_true] at h; exact h.2
 
 theorem Effect.Covers.refl (e : Effect) : e.Covers e :=
-  ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h⟩
+  ⟨fun _ _ _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h⟩
 
 /-- Two executions' results combine as the results of their operands do. -/
 theorem Effect.cross_result (e : Effect) {B C D : Fam} {a : Tm} {n}
@@ -205,7 +208,8 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
   exact ⟨result, hi, SafePostExcV.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun _ _ _ _ _ hp => he.1.exitPostW hp) (fun _ _ _ _ _ hp => he.1.exitPostW hp) hs⟩
+    (fun _ _ _ _ _ hp => he.1.exitPostW (callEnv_rootsOk hrr har) hp)
+    (fun _ _ _ _ _ hp => he.1.exitPostW (callEnv_rootsOk hrr har) hp) hs⟩
 
 theorem PromiseWith.weaken {Ξ : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -276,7 +280,8 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
   exact ⟨result, hc, SafePostExcV.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun _ _ _ _ _ hp => he.1.exitPostW hp) (fun _ _ _ _ _ hp => he.1.exitPostW hp) hs⟩
+    (fun _ _ _ _ _ hp => he.1.exitPostW (callEnv_rootsOk (by simp [RefsOk, refs]) har) hp)
+    (fun _ _ _ _ _ hp => he.1.exitPostW (callEnv_rootsOk (by simp [RefsOk, refs]) har) hp) hs⟩
 
 theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
     (hexc : Agree Ξ Ξ' n)
@@ -461,8 +466,8 @@ theorem PromiseWith.combine {effect other target Acc Rc B C D k W v}
   have hent := Exits.covers_entails hcov
   have hmeet := @Exits.exitPost_meet _ _ hca hcb
   exact SafePostExcV.weaken
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (callEnv_rootsOk hrr har) (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (callEnv_rootsOk hrr har) (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
     hsafe
 
 /-- Binding saves a receiver and argument prefix, then forwards without
@@ -530,7 +535,7 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
         let s0 : TolerantFrames.IndexedHeap := ⟨p + 1, _, heap, Nat.succ_pos _, hu', hh'⟩
         have hq' := hq s0.pos s0.adm s0.ok h4 h5 h6
         exact Exits.exitPost_entry (s := s0) (Effect.drop_arenaFree _ effect c) ⟨Nat.le_succ _, WExt_refl _⟩ rfl
-          (Effect.drop_exits hq')
+          (Effect.drop_exits (callEnv_rootsOk (RefsOk_trunc _ hobj.2.1) hall') hq')
       exact SafePostExcV.weaken (back .normal) (back .exceptional) hsafe
 
 /-- **A call at a signature's exits from the invocation's entry** (the
