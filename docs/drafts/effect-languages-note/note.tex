@@ -1179,7 +1179,27 @@ type-driven declared reach ($\reach{\pi}{T}$) with key-based disjointness
 and anchored effect variables handle mutable cursors, nested array
 handles, and container-mutating callbacks without prohibiting aliasing.
 
-\begin{thebibliography}{15}\small\itemsep1pt
+\paragraph{Ownership and Rust verifiers.}
+Ownership type systems such as Rust's enforce aliasing-XOR-mutability
+at the language level, making W1, W2, and W4 largely free: a shared
+borrow \code{\&PreparedLineData}, an unborrowed local cursor, and an
+\code{FnMut} callback rule out handle and cursor mutation without
+effect polymorphism, and disjoint closure captures cover W3 when
+fields are accessed directly. Deductive and refinement verifiers for
+Rust---including Prusti~\cite{prusti}, Creusot~\cite{creusot},
+Flux~\cite{flux}, and Verus~\cite{verus}---leverage this ownership
+discipline to eliminate most aliasing up front, focusing SMT reasoning
+on arithmetic bounds, loop invariants, and \code{FnMut} contracts.
+The trade-off is stylistic and structural: binary exclusivity
+(\code{\&T} vs.\ \code{\&mut T}) forbids shared monotonic updates such
+as $\grow$ across a live walker, breaks split borrows across
+\code{\&mut self} helpers, and pushes transparent private caches (W5)
+into interior mutability or explicit ghost permissions. TScert targets
+the dual setting---idiomatic TypeScript with unrestricted aliasing---using
+anchored effect polymorphism and the change lattice $\Delta$ to
+recover framing without imposing an ownership discipline on source code.
+
+\begin{thebibliography}{19}\small\itemsep1pt
 \bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 11 November 2026.
 \bibitem{patterns} TScert Working Note. \emph{Tolerant frames in practice: Pretext's patterns}.
 \bibitem{fp} TScert. \emph{Footprints: stable operations for the facts constructs rely on}. \texttt{docs/FOOTPRINTS.md}.
@@ -1195,6 +1215,10 @@ handles, and container-mutating callbacks without prohibiting aliasing.
 \bibitem{chugh} R.~Chugh, D.~Herman, R.~Jhala. Dependent types for JavaScript. OOPSLA 2012.
 \bibitem{vekris} P.~Vekris, B.~Cosman, R.~Jhala. Refinement types for TypeScript. PLDI 2016.
 \bibitem{javert} J.~Fragoso Santos, P.~Maksimovi\'c, D.~Naud\v{z}i\=unien\.e, T.~Wood, P.~Gardner. JaVerT: JavaScript verification toolchain. POPL 2018.
+\bibitem{prusti} V.~Astrauskas, P.~M\"uller, F.~Poli, A.~J.~Summers. Leveraging Rust types for modular specification and verification. OOPSLA 2019.
+\bibitem{creusot} X.~Denis, J.-H.~Jourdan, C.~March\'e. Creusot: a foundry for the deductive verification of Rust programs. ICFEM 2022.
+\bibitem{flux} N.~Lehmann, A.~T.~Geller, N.~Vazou, R.~Jhala. Flux: liquid types for Rust. PLDI 2023.
+\bibitem{verus} A.~Lattuada, T.~Hance, C.~Cho, M.~Brun, I.~Subasinghe, Y.~Zhou, J.~Howell, B.~Parno, C.~Hawblitzel. Verus: verifying Rust programs using linear ghost types. OOPSLA 2023.
 \end{thebibliography}
 
 \end{document}
