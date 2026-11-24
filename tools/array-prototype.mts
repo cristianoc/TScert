@@ -691,21 +691,23 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
  * SameValueZero and run no code, `keys`, `values`, `entries` and
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
- * that change a collection or a date (`add`, `set`, `delete`, `clear`,
- * `setTime`) state `{value: scalar, spine: keep}`: they compare keys by
- * SameValueZero or take a number, run no code, and write only the receiver's
- * internal slots, which no location of the model holds, and a `Set`'s and a
- * `Map`'s `size`, a readonly view holding a number, which they set to a
- * number: no location holding an object or a spine changes. A `WeakMap`'s `set`
- * and `delete` state the empty footprint: it has no `size`. `forEach`, which
- * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
- * footprints"). */
+ * that change a `Set` or a `Map` (`add`, `set`, `delete`, `clear`) state
+ * `{this.size: scalar}` (`changesSize`, whose closed bound is
+ * `{value: scalar, spine: keep}`): they compare keys by SameValueZero, run no
+ * code, and write only the receiver's internal slots, which no location of the
+ * model holds, and the receiver's own `size`, a readonly view holding a
+ * number, which they set to a number. `Date`'s `setTime` takes a number, runs
+ * no code, and states `{value: scalar, spine: keep}` (`changesValues`). A
+ * `WeakMap`'s `set` and `delete` state the empty footprint: it has no `size`.
+ * `forEach`, which calls its callback, states none (SOURCE-CONTRACTS.md,
+ * "Native footprints"). */
 const changesValues = footprintEffect({ value: "scalar", spine: "keep" });
+const changesSize = frameEffect([{ region: { field: { x: 0, key: "size" } }, change: "scalar" }]);
 export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
   ["Set", [
-    { name: "add", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.add", "top"), signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
-    { name: "clear", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.clear", "top"), signature: "clear(): void;", effect: changesValues },
-    { name: "delete", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.delete", "top"), signature: "delete(value: T): boolean;", effect: changesValues },
+    { name: "add", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.add", "top"), signature: "add(value: T): this;", resultIsReceiver: true, effect: changesSize },
+    { name: "clear", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.clear", "top"), signature: "clear(): void;", effect: changesSize },
+    { name: "delete", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.delete", "top"), signature: "delete(value: T): boolean;", effect: changesSize },
     { name: "forEach", from: "Set", trust: withinB("ECMA-262 sec-set.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
@@ -742,8 +744,8 @@ export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<st
     { name: "[Symbol.toStringTag]", from: "WeakMap", trust: withinB("ECMA-262 sec-weakmap.prototype-%symbol.tostringtag%", "top"), signature: "readonly [Symbol.toStringTag]: string;" },
   ]],
   ["Map", [
-    { name: "clear", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.clear", "top"), signature: "clear(): void;", effect: changesValues },
-    { name: "delete", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.delete", "top"), signature: "delete(key: K): boolean;", effect: changesValues },
+    { name: "clear", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.clear", "top"), signature: "clear(): void;", effect: changesSize },
+    { name: "delete", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.delete", "top"), signature: "delete(key: K): boolean;", effect: changesSize },
     { name: "forEach", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.foreach", "top"),
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
@@ -751,7 +753,7 @@ export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<st
     { name: "get", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.get", "top"), signature: "get(key: K): V | undefined;", effect: emptyEffect },
     { name: "has", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.has", "top"), signature: "has(key: K): boolean;", effect: emptyEffect },
     { name: "set", from: "Map", trust: withinB("ECMA-262 sec-map.prototype.set", "top"), signature: "set(key: K, value: V): this;", resultIsReceiver: true,
-      effect: changesValues },
+      effect: changesSize },
     { name: "size", from: "Map", trust: withinB("ECMA-262 sec-get-map.prototype.size", "top"), signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", trust: withinB("ECMA-262 sec-map.prototype-%symbol.tostringtag%", "top"), signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", trust: withinB("ECMA-262 sec-map.prototype-%symbol.iterator%", "top"), signature: "[Symbol.iterator](): MapIterator<[K, V]>;",

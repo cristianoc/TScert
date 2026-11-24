@@ -3510,12 +3510,15 @@ that structure. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
 `toString` and `toISOString`, and for a `WeakMap`'s `set` and `delete`
-([weak tables](#weak-tables)); `{value: any, spine: keep}` for the members
-that change a `Set`, a `Map` or a date, `add`, `set`, `delete`, `clear` and
-`setTime`, which compare by SameValueZero or take a number, run no code and
-write only the receiver's internal slots, which no location of the model
-holds, and change a collection's `size`, a readonly view the model holds as a
-number, so they state `{value: scalar, spine: keep}`; none for
+([weak tables](#weak-tables)); the receiver-scoped frame
+`{this.size: scalar}` (closed bound `{value: scalar, spine: keep}`) for the
+members that change a `Set` or a `Map`, `add`, `set`, `delete` and `clear`,
+which compare by SameValueZero, run no code, and write only the receiver's
+internal slots, which no location of the model holds, and the receiver's own
+`size`, a readonly view the model holds as a number (these members are emitted
+as readonly fields taking the collection interface as receiver so calls pass
+the receiver directly as slot 0); `{value: scalar, spine: keep}` for `Date`'s
+`setTime`; none for
 `forEach`, which calls a callback. `new Set` and `new Map` of an array, of a
 host collection or of nothing state the empty footprint on their construct
 signatures: they read the array or the collection through the host's iterator
@@ -3562,8 +3565,11 @@ lookup gives what its signature states, `V | undefined`, a value the table
 held, which met `V` when `set` stored it and meets it in every later world;
 no fact of the program relates a lookup to an earlier `set`, so a later `get`
 needs nothing the footprint drops. `Map`'s and `Set`'s changes are not alike:
-they change `size`, a readonly view the model holds, and keep
-`{value: scalar, spine: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
+they change the receiver's `size`, a readonly view the model holds, and state
+`{this.size: scalar}` (closed bound `{value: scalar, spine: keep}`). The cases
+are `weak-map-set-keeps-facts`, `map-set-receiver-size-keeps-facts`,
+`invalid-map-set-invalidates-size`, `invalid-map-alias-invalidates-size` and
+`invalid-set-add-invalidates-size`. A weak key is an object (including a function) or a
 non-registered symbol. `set` throws `TypeError` for every other key;
 `get` returns `undefined`, and `has` and `delete` return `false` for such
 keys. The overlay retains TypeScript's key parameter, so calls outside
@@ -3692,7 +3698,8 @@ where the native is modelled, and audited otherwise:
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
 | `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap`, and `reduce`, `reduceRight` with an initial value, at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
 | `new Set`, `new Map` of an array, a host collection or nothing | the empty footprint | they read the array or the collection through the host's iterator and allocate (audited) |
-| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, spine: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a spine changes (audited) |
+| `Set` and `Map` `add`, `set`, `delete`, `clear` | `{this.size: scalar}` (closed bound `{value: scalar, spine: keep}`) | they compare keys by SameValueZero, run no code, and write only the receiver's internal slots, which no location of the model holds, and the receiver's own `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no other field, object or spine changes (audited) |
+| `Date` `setTime` | `{value: scalar, spine: keep}` | takes a number, runs no code, and writes only the receiver's internal time value, which no location of the model holds (ECMA-262, `Date.prototype.setTime`): no location holding an object or a spine changes (audited) |
 
 
 #### Map result length

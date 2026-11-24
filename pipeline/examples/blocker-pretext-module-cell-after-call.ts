@@ -1,14 +1,9 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
-// with the rewrites of issue #94): measurement.ts#clearMeasurementCaches,
-// line-breaks.ts#unpackClasses (two cells filled by `??=` with calls
-// between, then read).
-// Refusal: reject: source expression obligation: no derivation of its
-// node-typing claim, a write at a module cell's contract.
-// A module cell tested against `null`, then a method of a `Map` it holds
-// called, then a field of the cell written: the call may write any location
-// its receiver's spine is not known apart from, and a module's cell is
-// separated from no location, so past the call the cell is read at its
-// contract, `State | null`.
+// with the rewrites of issue #94): measurement.ts#clearMeasurementCaches.
+// A module cell tested against `null`, then `Map.prototype.clear` called on a
+// `Map` it holds, then a field of the cell written: `clear` states
+// `{this.size: scalar}`, a field region disjoint from module cells, so the
+// cell's non-null narrowing survives the call and the field write verifies.
 type State = { fonts: Map<string, number>; segments: number };
 
 let state: State | null = null;
