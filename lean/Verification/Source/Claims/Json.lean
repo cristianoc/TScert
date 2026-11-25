@@ -154,6 +154,9 @@ structure FilePlans where
   function's footprint and transfers, or `none` where they establish
   nothing. A later planning reads an entry only for the same inputs. -/
   proposed : ProposalMemo := {}
+  /-- Non-recursive functions whose own proposal run (`PassProposals.proposeOne`)
+  refused at an open plan (`none`), with no forced proposals or stand-ins. -/
+  proposalRefused : List String := []
 
 /-- A group's dependencies on the wire: the groups its members reach, where
 its code names a qualified read, the module runs, and the module units the
@@ -464,15 +467,15 @@ the framed node's supports taken again (`framedAt`, with `framed`), as the
 member's run settles (`inferredNext`); each run's outcome and what it left
 out, and at `observed` the settled walk's entry and step facts. -/
 def framedProbeSettle {ι : Type}
-    (runAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
-    (framedAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Footprints.Footprint))
+    (runAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Confinement.FrameSpec) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Confinement.FrameSpec))
     (cands₀ : List (Nat × List HeapKnowledge.Candidate)) (observed : Option Nat) (framed : Bool) : String := Id.run do
   let mut cands := cands₀
   let mut lines : List String := []
   for _ in List.range 12 do
     let fr := if framed then framedAt cands else []
     let o := runAt cands fr none
-    lines := lines ++ [s!"    run (framed {fr.map fun (p : Nat × List Footprints.Footprint) => p.2.length}): {o}{outcomeLacks o}"]
+    lines := lines ++ [s!"    run (framed {fr.map fun (p : Nat × List Confinement.FrameSpec) => p.2.length}): {o}{outcomeLacks o}"]
     match o with
     | .refused _ (some (t, xs)) _ =>
       let held := (cands.filter (·.1 == t)).flatMap (·.2)
@@ -494,15 +497,15 @@ walk `runAt` once with node `L` framed keeping the produced support of each
 index fact on its entry (`framedAt`) and once with none, the facts a
 refused edge lacks, and each walk settled (`framedProbeSettle`). -/
 def framedProbeReport {ι : Type}
-    (runAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
-    (framedAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Footprints.Footprint))
+    (runAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Confinement.FrameSpec) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.Candidate) → List (Nat × List Confinement.FrameSpec))
     (cands : List (Nat × List HeapKnowledge.Candidate)) (L : Nat) (observed : Option Nat) : String :=
   let fr := framedAt cands
-  s!"framed probe: node {L} keeps {fr.map fun (p : Nat × List Footprints.Footprint) => p.2.length} supports\n  ordinary walk: {runAt cands [] none}{outcomeLacks (runAt cands [] none)}\n  framed walk: {runAt cands fr none}{outcomeLacks (runAt cands fr none)}\n  settled ordinary:\n{framedProbeSettle runAt framedAt cands observed false}\n  settled framed:\n{framedProbeSettle runAt framedAt cands observed true}"
+  s!"framed probe: node {L} keeps {fr.map fun (p : Nat × List Confinement.FrameSpec) => p.2.length} supports\n  ordinary walk: {runAt cands [] none}{outcomeLacks (runAt cands [] none)}\n  framed walk: {runAt cands fr none}{outcomeLacks (runAt cands fr none)}\n  settled ordinary:\n{framedProbeSettle runAt framedAt cands observed false}\n  settled framed:\n{framedProbeSettle runAt framedAt cands observed true}"
 
 /-- **A framed probe's trace**: no framed node, the main walk unchanged;
 at a framed probe of node `L`, its report printed. -/
-def probeTrace (probe : Option Nat) (report : Nat → String) : List (Nat × List Footprints.Footprint) :=
+def probeTrace (probe : Option Nat) (report : Nat → String) : List (Nat × List Confinement.FrameSpec) :=
   match probe with
   | none => []
   | some L => dbgTrace (report L) fun _ => []
@@ -639,10 +642,10 @@ close over them: its calls may read and write every one, so it frames
 none. -/
 def proposeConfinement {ι : Type} [DecidableEq ι] (inputsHoldAllocations : Bool) (G : NormalGraph ι)
     (P : ControlFlow.Program) (claims : List (CertificateProducer.PointClaim ι)) (start : Nat)
-    (framed : List (Nat × List Footprints.Footprint)) : Option LocalConfinement.Table :=
+    (framed : List (Nat × List Confinement.FrameSpec)) : Option LocalConfinement.Table :=
   if framed.isEmpty && !inputsHoldAllocations then
     let conf := LocalConfinement.propose G P claims start
-    if conf.framedNodes.isEmpty then none else some conf
+    if conf.framedNodes.isEmpty && conf.outsideNodes.isEmpty then none else some conf
   else none
 
 /-- Whether a node's expression yields a fresh spine (a copy of a fresh slot, a
@@ -728,9 +731,9 @@ def proposeFreshHeads {ι : Type} [DecidableEq ι] (G : NormalGraph ι)
 falling back to the unframed run if `checkWalkConfinement` refuses the untrusted
 proposal. -/
 def runWithConfinement {ι A : Type}
-    (runWith : List (Nat × List Footprints.Footprint) → Option LocalConfinement.Table →
+    (runWith : List (Nat × List Confinement.FrameSpec) → Option LocalConfinement.Table →
       SinglePass.Outcome ι × SinglePass.Counts × A × SinglePass.Trace)
-    (framed probe : List (Nat × List Footprints.Footprint))
+    (framed probe : List (Nat × List Confinement.FrameSpec))
     (conf? : Option LocalConfinement.Table) :
     SinglePass.Outcome ι × SinglePass.Counts × A × SinglePass.Trace :=
   match conf? with
@@ -755,7 +758,7 @@ without `fallback`, a walk leaving its footprint's bound is refused. -/
 def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := []) (fallback : Bool := true)
+    (framed : List (Nat × List Confinement.FrameSpec) := []) (fallback : Bool := true)
     (layer : Option SinglePass.PassLayer := none) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
       (CertificateProducer.Answered (StoreView.graph f.F.store))) := do
@@ -965,9 +968,9 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional false [] none givenFresh).1 with
-          | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
+          | .observed o => [(L, o.before.indices.filterMap fun a => (a.fact.support? {}).map Confinement.FrameSpec.footprint)]
           | _ => []
-        let runAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) (fr : List (Nat × List Footprints.Footprint))
+        let runAt := fun (cands : List (Nat × List HeapKnowledge.Candidate)) (fr : List (Nat × List Confinement.FrameSpec))
             (ob : Option Nat) => (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases (SinglePass.PassChecker.ofLayer layer name r.inputs.length (layerSites r.program r.claims r.sourceMap)) sumsAnswers reference debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr none givenFresh).1

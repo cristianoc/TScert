@@ -2205,4 +2205,127 @@ theorem mergeParts_lookup_a {G : NormalGraph ι} {B : List ι} {d : List PropKey
     have hne : (k != arraySpineKey) = true := by simpa using hsp
     simp [hne, hl, heapVal, hv, hval]
 
+theorem mergeParts_lookup_a_none {G : NormalGraph ι} {B : List ι} {d : List PropKey} {k : PropKey}
+    (hn : srcNever G B d k = true) {n : Nat} {W : WorldT n} {h : Heap} {a b : Val} {ps : List (PropKey × Tm)}
+    (hb : meaning G B n W b) (hp : mergeParts h d a b = some ps)
+    {fs : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (ha : a = .objAt fs cd oid) (hl : fs.lookup k = none) :
+    ps.lookup k = none := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  rw [lookup_mergeData, srcNever_sound hn hb hqb, Option.none_or]
+  rw [ha] at hpa
+  unfold ownAll at hpa
+  cases cd <;> simp only [reduceCtorEq] at hpa
+  split at hpa
+  · cases hpa
+  · simp only [Option.some.injEq] at hpa
+    subst hpa
+    rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun x => x != arraySpineKey) fs k]
+    split <;> simp [hl]
+
+theorem mergeParts_proto_none {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) {fs : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (ha : a = .objAt fs cd oid) (hl : fs.lookup CallArguments.protoField = none) :
+    ps.lookup CallArguments.protoField = none := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  have hqb_none : (qb.filter fun e => !d.contains e.1).lookup CallArguments.protoField = none := by
+    cases hq : (qb.filter fun e => !d.contains e.1).lookup CallArguments.protoField with
+    | none => rfl
+    | some v =>
+      have hmem := mem_of_lookup hq
+      obtain ⟨hmem_qb, _⟩ := List.mem_filter.mp hmem
+      cases b with
+      | objAt fb cb oidb =>
+        have hlk := ownData_lookup hqb CallArguments.protoField
+        rw [proto_not_copied, spineData_lookup_none (.inl proto_not_index)] at hlk
+        simp only [Bool.false_eq_true, ite_false, Option.map_none, Option.none_or] at hlk
+        have := lookup_of_mem (ownData_nodup hqb) hmem_qb
+        rw [hlk] at this; cases this
+      | str s =>
+        simp only [ownData, Option.some.injEq] at hqb; subst hqb
+        obtain ⟨hi, _, _⟩ := stringData_lookup hq
+        rw [proto_not_index] at hi; cases hi
+      | nul | undef | tru | fls | num _ | bigint _ | sym _ =>
+        simp only [ownData, Option.some.injEq] at hqb; subst hqb
+        cases hmem_qb
+      | _ => simp [ownData] at hqb
+  rw [lookup_mergeData, hqb_none, Option.none_or]
+  rw [ha] at hpa
+  unfold ownAll at hpa
+  cases cd <;> simp only [reduceCtorEq] at hpa
+  split at hpa
+  · cases hpa
+  · simp only [Option.some.injEq] at hpa
+    subst hpa
+    rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun x => x != arraySpineKey) fs CallArguments.protoField]
+    split <;> simp [hl]
+
+/-- Whether every clause of accumulator `A` never holds key `k`. -/
+@[nospecialize] def accNever (G : NormalGraph ι) (A : List ι) (k : PropKey) : Bool :=
+  G.plainTy A && (expand G A).all fun c => match objOf c with
+    | some o => o.neverA k
+    | none => false
+
+theorem accNever_sound {G : NormalGraph ι} {A : List ι} {k : PropKey}
+    (hn : accNever G A k = true) {n : Nat} {W : WorldT n} {h : Heap} {a : Val} {pa : List (PropKey × Tm)}
+    (ha : meaning G A n W a) (hp : ownAll h a = some pa) : pa.lookup k = none := by
+  simp only [accNever, Bool.and_eq_true, List.all_eq_true] at hn
+  obtain ⟨c, hc, hsa⟩ := (expand_sem G A hn.1 n W a).mp ha
+  have hs := hn.2 c hc
+  cases ho : objOf c with
+  | none => rw [ho] at hs; cases hs
+  | some o =>
+    rw [ho] at hs
+    obtain ⟨fa, oida, rfl, hfa⟩ := objFacts_of_sem ho hsa
+    exact acc_never hfa hp hs
+
+theorem mergeParts_lookup_b_none {G : NormalGraph ι} {A : List ι} {d : List PropKey} {k : PropKey}
+    (hn : accNever G A k = true) {n : Nat} {W : WorldT n} {h : Heap} {a b : Val} {ps : List (PropKey × Tm)}
+    (ha : meaning G A n W a) (hp : mergeParts h d a b = some ps)
+    {fs : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (hb : b = .objAt fs cd oid) (hni : indexKey k = false) (hl : fs.lookup k = none) :
+    ps.lookup k = none := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  rw [lookup_mergeData, accNever_sound hn ha hpa]
+  rw [hb] at hqb
+  have hqb_none : (qb.filter fun e => !d.contains e.1).lookup k = none := by
+    rw [lookup_filter_key (fun x => !d.contains x) qb k]
+    split
+    · rw [ownData_lookup hqb k, spineData_lookup_none (.inl hni), hl]
+      split <;> rfl
+    · rfl
+  rw [hqb_none]; rfl
+
+theorem mergeParts_proto_none_acc {G : NormalGraph ι} {A : List ι} {h : Heap} {d : List PropKey} {a b : Val} {ps : List (PropKey × Tm)}
+    (hn : accNever G A CallArguments.protoField = true) {n : Nat} {W : WorldT n}
+    (ha : meaning G A n W a) (hp : mergeParts h d a b = some ps) :
+    ps.lookup CallArguments.protoField = none := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hp
+  obtain ⟨pa, hpa, qb, hqb, rfl⟩ := hp
+  have hqb_none : (qb.filter fun e => !d.contains e.1).lookup CallArguments.protoField = none := by
+    cases hq : (qb.filter fun e => !d.contains e.1).lookup CallArguments.protoField with
+    | none => rfl
+    | some v =>
+      have hmem := mem_of_lookup hq
+      obtain ⟨hmem_qb, _⟩ := List.mem_filter.mp hmem
+      cases b with
+      | objAt fb cb oidb =>
+        have hlk := ownData_lookup hqb CallArguments.protoField
+        rw [proto_not_copied, spineData_lookup_none (.inl proto_not_index)] at hlk
+        simp only [Bool.false_eq_true, ite_false, Option.map_none, Option.none_or] at hlk
+        have := lookup_of_mem (ownData_nodup hqb) hmem_qb
+        rw [hlk] at this; cases this
+      | str s =>
+        simp only [ownData, Option.some.injEq] at hqb; subst hqb
+        obtain ⟨hi, _, _⟩ := stringData_lookup hq
+        rw [proto_not_index] at hi; cases hi
+      | nul | undef | tru | fls | num _ | bigint _ | sym _ =>
+        simp only [ownData, Option.some.injEq] at hqb; subst hqb
+        cases hmem_qb
+      | _ => simp [ownData] at hqb
+  rw [lookup_mergeData, hqb_none, Option.none_or, accNever_sound hn ha hpa]
+
 end Verification.ObjectMerge

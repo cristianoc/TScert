@@ -147,7 +147,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   regional : Option SinglePass.Regional
   /-- The framed nodes with the supports their returns keep
   (`SinglePass.framedAt`); none by default. -/
-  framed : List (Nat × List Footprints.Footprint) := []
+  framed : List (Nat × List Confinement.FrameSpec) := []
   /-- Checked local-object confinement table, when framing confined local
   objects across arbitrary-effect calls; none by default. -/
   confinement : Option LocalConfinement.Table := none
@@ -180,7 +180,7 @@ def RunCall.framedF {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall
 
 /-- The supports the call's framed node `l` keeps; none at another node. -/
 def RunCall.framedS {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) (l : Nat) :
-    List Footprints.Footprint :=
+    List Confinement.FrameSpec :=
   (SinglePass.framedAt c.framed l).getD []
 
 /-- A regional option's bound, regions and throw flag. -/

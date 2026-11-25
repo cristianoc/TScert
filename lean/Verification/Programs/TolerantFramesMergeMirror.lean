@@ -160,21 +160,27 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := SinglePass.timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := SinglePass.timedKind "meet tagged" fun _ =>
+      let taggedSlots := tagged.filterMap mergedNames.idxOf?
       let nullishPos := ((projections.flatMap fun (o : HeapKnowledge.Knowledge) => o.values.flatMap fun f =>
-        (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
-          (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
+        if f.contents == {} then [] else
+        let cls := HeapLinks.aliases o.links f.slot
+        if !cls.any taggedSlots.contains then [] else
+        (tags.filter fun g => HeapKnowledge.onlyTag f.contents g).flatMap fun g =>
+          cls.map (·, g))).eraseDups.filter fun (z, g) =>
+            !projections.all (fun o => HeapKnowledge.guardTags o z [] g)
       let nullish := (nullishPos ++ nullishPos.filterMap fun (z, g) =>
         if (g == .null || g == .undef) && projections.any (fun o => HeapKnowledge.guardTags o z [] g.complement) then
           some (z, g.complement)
         else none).eraseDups
       if nullish.isEmpty then [] else
+      let commonSet : Std.HashSet HeapKnowledge.IndexAtom := common.indices.foldl (·.insert ·) {}
       let indexCands := projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
-        if a.cond.isSome || common.indices.contains a then [] else match a.fact with
+        if a.cond.isSome || commonSet.contains a then [] else match a.fact with
         | .either .. => []
         | .guarded s [] t B =>
             let cls := HeapLinks.aliases p.links s
             nullish.filterMap fun (z, g) =>
-              if !cls.contains z then none
+              if !g.isPositive || !cls.contains z || g == t.complement then none
               else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
               else match B with
                 | .guarded s' [] t' _ =>
@@ -190,10 +196,10 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
         | .str f =>
           let cls := HeapLinks.aliases p.links l.value
           nullish.filterMap fun (z, g) =>
-            if cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
+            if g.isPositive && cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
             else none
         | .sym _ => []
-      let candidates := (indexCands ++ linkCands).eraseDups
+      let candidates := (CertificateProducer.keepFirst {} (indexCands ++ linkCands)).2.toList
       flat.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
     return joined ++ tagged
   let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
@@ -201,17 +207,25 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
   let disjoined : List HeapKnowledge.IndexAtom := SinglePass.timedKind "meet disjoined" fun _ =>
     let disjNameCands := SinglePass.mergeDisjCandidates live phiNames met diffs views
     if disjNameCands.isEmpty then [] else
-    let candidates := (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
+    let candidates := (CertificateProducer.keepFirst {} (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
       | some (.index x) => some x
-      | _ => none).eraseDups
-    candidates.filter fun a =>
-      let slots := a.fact.slots.eraseDups
-      views.all fun ps =>
-        let p0 := (SinglePass.materialize ps width slots false).1
-        let p := { p0 with indices := p0.indices.filter fun x =>
-          x == a || match x.fact with | .either _ _ => a.fact.hasAtIndex && x.fact.hasAtIndex | _ => true }
-        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-          p.indices [a] none
+      | _ => none)).2.toList
+    if candidates.isEmpty then [] else
+    let slots := (candidates.flatMap (·.fact.slots)).eraseDups
+    let (withAt, plain) := candidates.partition (·.fact.hasAtIndex)
+    let viewsK := views.map fun ps => (SinglePass.materialize ps width slots false).1
+    let keptPlain := if plain.isEmpty then [] else
+      let plainSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList plain
+      let plainViews := viewsK.map fun p =>
+        { p with indices := p.indices.filter fun x =>
+          plainSet.contains x || match x.fact with | .either _ _ => false | _ => true }
+      plainViews.foldl (fun cs p => HeapKnowledge.indicesFilter p cs false) plain
+    let keptAt := if withAt.isEmpty then [] else
+      let atViews := viewsK.map fun p =>
+        { p with indices := p.indices.filter fun x =>
+          withAt.contains x || match x.fact with | .either _ _ => x.fact.hasAtIndex | _ => true }
+      atViews.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) withAt
+    keptPlain ++ keptAt
   guarded0 ++ disjoined
 
 /-- The guarded facts, renamed from slots to the merge's names, added. -/

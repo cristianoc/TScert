@@ -919,19 +919,39 @@ theorem direct_sound {K : Known V} {v : V → Int} {goal : Fact V} (hK : K.Holds
       exact hK _ (Array.mem_of_getElem? h)
     · cases h
 
+/-- Whether the facts `near`, prepared as `P`, entail `goal`, alone or with
+the strict bounds their inequalities give. When `goal` names a variable,
+`near` is already every disequality's relevant subset, so each bound reuses `P`
+instead of re-preparing `near`; when no disequality tightens, the second search
+is skipped. -/
+def entailsNearFrom (nearOf : Fact V → List (Fact V)) (near : List (Fact V)) (P : Prepared V) (goal : Fact V) : Bool :=
+  searchInFrom near P goal ||
+    (near.any (fun | .ne _ _ => true | .le _ _ => false) &&
+      let s := if goal.vars.isEmpty then strengthenWith nearOf near else strengthenBy (fun g => searchInFrom near P g) near
+      s.length != near.length && searchIn s goal)
+
+theorem entailsNearFrom_sound {v : V → Int} {nearOf : Fact V → List (Fact V)} {near : List (Fact V)}
+    {P : Prepared V} {goal : Fact V}
+    (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v)
+    (h : entailsNearFrom nearOf near P goal = true) : goal.Holds v := by
+  unfold entailsNearFrom at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact searchInFrom_sound h hk
+  · have h2 := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp h).2).2
+    refine searchIn_sound h2 ?_
+    split
+    · exact strengthenWith_holds hn hk
+    · exact strengthenBy_holds (fun G he => searchInFrom_sound he hk) hk
+
 /-- Whether the facts `near` entail `goal`, alone or with the strict bounds
 their inequalities give, each searched over the facts `nearOf` gives. -/
 def entailsNear (nearOf : Fact V → List (Fact V)) (near : List (Fact V)) (goal : Fact V) : Bool :=
-  searchIn near goal ||
-    (near.any (fun | .ne _ _ => true | .le _ _ => false) && searchIn (strengthenWith nearOf near) goal)
+  entailsNearFrom nearOf near (prepare near) goal
 
 theorem entailsNear_sound {v : V → Int} {nearOf : Fact V → List (Fact V)} {near : List (Fact V)} {goal : Fact V}
     (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v) (h : entailsNear nearOf near goal = true) :
-    goal.Holds v := by
-  unfold entailsNear at h
-  rcases Bool.or_eq_true_iff.mp h with h | h
-  · exact searchIn_sound h hk
-  · exact searchIn_sound (Bool.and_eq_true_iff.mp h).2 (strengthenWith_holds hn hk)
+    goal.Holds v :=
+  entailsNearFrom_sound hn hk h
 
 /-- The search below position `lim`: over the facts connected to the goal,
 alone or strengthened, each disequality's bounds searched over the same facts

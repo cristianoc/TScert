@@ -149,9 +149,14 @@ partial def Fact.text : Fact → String
   | .readLink c v f => s!"{v} === {c}.{f}"
   | .element v a i => s!"{v} === {a}[{i}]"
   | .fieldRead gs v o f =>
-    let tag := fun (t : HeapKnowledge.GuardTag) => match t with
-      | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
-    String.join (gs.map fun (g, p, t) => s!"{String.intercalate "." (g :: p)} === {tag t} || ") ++ s!"{v} === {o}.{f}"
+    let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
+      let path := String.intercalate "." (g :: p)
+      match t with
+      | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
+      | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
+      | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
+      | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
+    String.join (gs.map guardStr) ++ s!"{v} === {o}.{f}"
   | .apart gs a pa b pb =>
     let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
       let path := String.intercalate "." (g :: p)
@@ -186,8 +191,11 @@ partial def Fact.text : Fact → String
     -- `Σpos - Σneg ≤ d` as `Σpos ≤ Σneg + d`, constants on the right.
     s!"{side pos 0} <= {side neg l.bound}"
   | .every gs a pa (sn, sp, _) body =>
-    let tag := fun (t : HeapKnowledge.GuardTag) => match t with
-      | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
+    let guardCond := fun (path : String) (t : HeapKnowledge.GuardTag) => match t with
+      | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
+      | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
+      | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
+      | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
     let arr := String.intercalate "." (a :: pa)
     let v := fun (b : BodyKey) => match b with
       | .index => "i" | .elem => s!"{arr}[i]" | .offset d => s!"{arr}[i + {d}]"
@@ -198,10 +206,10 @@ partial def Fact.text : Fact → String
       | .lin ts d =>
         " + ".intercalate (ts.map fun (b, c) => if c == 1 then v b else s!"{c} * {v b}") ++ s!" <= {d}"
       | .guarded (.self ep) g b =>
-        s!"{String.intercalate "." (s!"{arr}[i]" :: ep)} === {tag g} || " ++ clause b
+        guardCond (String.intercalate "." (s!"{arr}[i]" :: ep)) g ++ clause b
       | .guarded (.parallel n p ep) g b =>
-        s!"{String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)} === {tag g} || " ++ clause b
-    String.join (gs.map fun (g, p, t) => s!"{String.intercalate "." (g :: p)} === {tag t} || ") ++
+        guardCond (String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)) g ++ clause b
+    String.join (gs.map fun (g, p, t) => guardCond (String.intercalate "." (g :: p)) t) ++
       s!"forall i < {String.intercalate "." (sn :: sp)}.length of {arr}: " ++ " && ".intercalate (body.map clause)
 
 /-- Terms added, coefficients merged, zeros dropped. -/

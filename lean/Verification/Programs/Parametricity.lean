@@ -473,7 +473,7 @@ theorem releaseTypedGuarded_reassign (Γ : List (Ty ι)) :
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩
   | ⟨.either _ _, _, _⟩ | ⟨.element _ _ _, _, _⟩ | ⟨.fieldRead _ _ _, _, _⟩
-  | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ => by
+  | ⟨.every _ _ _ _, _, _⟩ | ⟨.atIndex _ _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ | ⟨.same _ _, _, _⟩ => by
     simp [HeapKnowledge.releaseTypedGuarded]
 
 omit [DecidableEq ι] in

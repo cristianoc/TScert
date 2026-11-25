@@ -959,7 +959,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             }
             if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && kind !== "int")
               throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
-            if (kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
+            if (ep.length > 0 && kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
             if (arr === a.array) return ep.length === 0 ? "elem" : { project: { kind: "value", path: ep } };
             return { parallel: { slot: ap.position, path: arrFields, kind: "value", elemPath: ep } };
           }

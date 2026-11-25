@@ -507,6 +507,13 @@ theorem restateAtIndex_named {ls : HeapLinks.Links} {dropped : Nat → Bool} {as
                 exact hdropTerm ha (fun z hz => by
                   simp only [hf, IndexFact.slots]
                   exact List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨.free t, hbd, hz⟩))) ht' x hzx
+              | parallel s1 p1 k1 ep1 =>
+                cases hmap
+                simp only [Bound.slots, List.mem_singleton] at hzx
+                subst hzx
+                exact .inl ⟨a, ha, by
+                  simp only [Atom.names, hf, IndexFact.slots]
+                  exact List.mem_append_left _ (List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨Bound.parallel x p1 k1 ep1, hbd, by simp [Bound.slots]⟩)))⟩
               | index | elem | offset _ | project _ _ => cases hmap; simp [Bound.slots] at hzx
           · cases hab
         · cases hab

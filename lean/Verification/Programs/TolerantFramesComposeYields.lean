@@ -49,22 +49,22 @@ at framed returns", $`\mathrm{Ret}_l`$ with no invariant kept): an
 evaluation of the framed node `l` from the heap `h` to the heap `h'`, at its
 environment `ρ`, changes the regions of each support of `S l` within their
 changes (`Supported`). -/
-def framedRet (S : Nat → List Footprints.Footprint) : Nat → Env → Heap → Heap → Prop :=
-  fun l ρ h h' => ∀ T ∈ S l, Footprints.Supported T ρ h h'
+def framedRet (S : Nat → List Confinement.FrameSpec) : Nat → Env → Heap → Heap → Prop :=
+  fun l ρ h h' => ∀ T ∈ S l, T.Supported ρ h h'
 
 /-- **A framed node's return keeps the facts its supports support** (the
 note's Definition "Support"): where each support of `Ss` holds of the
 transition from `h` to `h'` at `ρ`, each index atom of the entry's
 knowledge whose produced support lies in one of them holds after it, past
 the result (`IndexFact.support?_supports`, `supported_sub`). -/
-theorem framedKept_holds {Ss : List Footprints.Footprint} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
-    {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h) (hS : ∀ T ∈ Ss, Footprints.Supported T ρ h h') :
+theorem framedKept_holds {Ss : List Confinement.FrameSpec} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
+    {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h) (hS : ∀ S ∈ Ss, S.Supported ρ h h') :
     ∀ a ∈ framedKept Ss k, AtomHolds ε a (push v ρ) h' := by
   have hcov : ∀ {T : Footprints.Footprint}, SinglePass.footprintSupportedIn Ss T = true →
       Footprints.Supported T ρ h h' := by
     intro T hT
     obtain ⟨S, hSm, hall⟩ := List.any_eq_true.mp hT
-    exact Confinement.entryCoveredBy_supported (hS S hSm) hall
+    exact Confinement.FrameSpec.covers_supported (hS S hSm) hall
   intro a ha
   simp only [SinglePass.framedKept, List.mem_append, List.mem_map] at ha
   rcases ha with ((⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩) | ⟨e, he, rfl⟩) | ⟨idx, hidx, rfl⟩
@@ -116,21 +116,21 @@ theorem framedKept_holds {Ss : List Footprints.Footprint} {k : HeapKnowledge.Kno
 /-- **What a framed node's exits read beside the step's output**: at a
 framed node `l`, the facts of the step's input `st.stepK` its supports
 keep (`framedKept`); nothing at another node. -/
-def framedK (F : Nat → Bool) (S : Nat → List Footprints.Footprint) (l : Nat) (stepK : HeapKnowledge.Knowledge) :
+def framedK (F : Nat → Bool) (S : Nat → List Confinement.FrameSpec) (l : Nat) (stepK : HeapKnowledge.Knowledge) :
     Env → Heap → Prop :=
   fun ρ' h' => F l = true → ∀ a ∈ framedKept (S l) stepK, AtomHolds ε a ρ' h'
 
 /-- The framed nodes of the list `fr` (`SinglePass.framedAt`). -/
-def framedFOf (fr : List (Nat × List Footprints.Footprint)) : Nat → Bool := fun l => (SinglePass.framedAt fr l).isSome
+def framedFOf (fr : List (Nat × List Confinement.FrameSpec)) : Nat → Bool := fun l => (SinglePass.framedAt fr l).isSome
 
 /-- The supports the framed nodes of the list `fr` keep. -/
-def framedSOf (fr : List (Nat × List Footprints.Footprint)) : Nat → List Footprints.Footprint :=
+def framedSOf (fr : List (Nat × List Confinement.FrameSpec)) : Nat → List Confinement.FrameSpec :=
   fun l => (SinglePass.framedAt fr l).getD []
 
 /-- **What a framed node's exits read holds the facts its store keeps**:
 where `framedK` holds at the node `l` of the list `fr`, the atoms
 `SinglePass.keptStep` adds to the store after the step hold. -/
-theorem keptHolds_of_framedK {fr : List (Nat × List Footprints.Footprint)} {l : Nat}
+theorem keptHolds_of_framedK {fr : List (Nat × List Confinement.FrameSpec)} {l : Nat}
     {stepK : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
     (hK : framedK (ε := ε) (framedFOf fr) (framedSOf fr) l stepK ρ h) :
     ∀ a ∈ (((SinglePass.framedAt fr l).map (fun Ss => SinglePass.framedKept Ss stepK)).getD []),
@@ -231,7 +231,7 @@ theorem stepEdgesSound_of_yieldsR {G : NormalGraph ι} {images : InstanceImageCh
     {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {Tres : Fam} {m : Nat} {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    {Tres : Fam} {m : Nat} {F : Nat → Bool} {S : Nat → List Confinement.FrameSpec}
     {RetE : Nat → Env → Heap → Heap → Prop}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
       ∃ ys, NodeYieldedR G w startNames ε ctx stated given edgesIn Tres m l r.node r.c r.entry r.st ys
@@ -400,7 +400,7 @@ theorem nodeYieldedR_of_checks {G : NormalGraph ι} {images : InstanceImageCheck
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {goal : Goal ι} {ensures : List HeapKnowledge.IndexFact} {m l : Nat} {node : Node} {c : PointClaim ι}
     {entry : SinglePass.State} {st : Stepped ι} {ys : List (PromiseCalls.Yield ι)}
-    {fr : List (Nat × List Footprints.Footprint)}
+    {fr : List (Nat × List Confinement.FrameSpec)}
     (hc : NodeYieldChecks G images codes sums w startNames goal ensures l node c entry st ys)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) (hsub : SubtypeAnswersSound G images)
     (hx : NodeExitsY G w startNames ε ctx stated given edgesIn m l node c entry
@@ -585,7 +585,7 @@ read, at a node `l` with `F l`, the facts of the step's input the supports
 `S l` keep (`NodeYieldedR` at `framedK`). -/
 def _root_.Verification.TolerantFrames.Target.RunCall.AcceptsFramed {G : NormalGraph ι} {I : InstanceImageCheck G}
     (c : Target.RunCall G I) (after : Answered G) (admits : MixedAssignment ι → Prop) (F : Nat → Bool)
-    (S : Nat → List Footprints.Footprint) : Prop :=
+    (S : Nat → List Confinement.FrameSpec) : Prop :=
   c.AcceptsWalk after ∧ (RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
     ∀ ε m l (hl : r.w.visited l),
       ∃ ys, NodeYieldedR (reassign G η) r.w (List.range c.inputs.length) ε r.ctx r.stated r.given r.edgesIn
@@ -611,7 +611,7 @@ framed returns (`GraphGuaranteeR` at `F`, the returns `framedRet S` and any
 throw's return premise). -/
 def RunSoundFramed : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G)
-    (admits : MixedAssignment ι → Prop) (F : Nat → Bool) (S : Nat → List Footprints.Footprint)
+    (admits : MixedAssignment ι → Prop) (F : Nat → Bool) (S : Nat → List Confinement.FrameSpec)
     (RetE : Nat → Env → Heap → Heap → Prop),
     c.AcceptsFramed after admits F S → Target.CheckerScope G I c.passChecker admits →
     CodesSound G c.codes → SummariesSound G I after.summaries.toList →

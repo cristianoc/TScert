@@ -45,36 +45,8 @@ predecessor carries (`GraphCode.trackTable`'s propagation, each node's width
 its claimed context's). Untrusted: the pass checks every edge into a head
 against the pairs there. -/
 def inputsTable (P : ControlFlow.Program) (widths : Array Nat) (start : Nat) (seed : GraphCode.Tracked) :
-    List (Option GraphCode.Tracked) := Id.run do
-  let mut table : Array (Option GraphCode.Tracked) := Array.replicate P.length none
-  table := table.set! start (some seed)
-  for _ in List.range (2 * P.length + 2) do
-    let mut changed := false
-    for (node, l) in P.zipIdx do
-      let some here := table.getD l none | continue
-      -- A variable read pushes the slot's own value at position 0 on normal
-      -- pushing edges (such as `tagBind` narrowing a parameter in place),
-      -- while a handler edge pushes the thrown value.
-      let varResult : GraphCode.Tracked := match node.expression with
-        | .var s => here.filterMap fun p => if p.1 == s then some (0, p.2) else none
-        | _ => []
-      let normalEdges := (GraphCode.edgesOf node.continuation none).map (·, true)
-      let handlerEdges := node.handler.toList.map fun t => ((t, true), false)
-      for (e, isNormal) in normalEdges ++ handlerEdges do
-        let sources := if e.2 then
-            (if isNormal then varResult else []) ++ GraphCode.shiftTracked here
-          else here
-        let carried := (List.range (widths.getD e.1.label 0)).flatMap fun i =>
-          sources.filterMap fun p => if p.1 == PointClaims.slot e.1.mapping i then some (i, p.2) else none
-        let current := table.getD e.1.label none
-        let merged := match current with
-          | none => some carried
-          | some old => some (old.filter carried.contains)
-        if merged != current then
-          table := table.set! e.1.label merged
-          changed := true
-    if !changed then break
-  return table.toList
+    List (Option GraphCode.Tracked) :=
+  GraphCode.trackTableWithWidths P widths start seed
 
 /-- **The implications a statement entry is proposed to hold**
 (`PromiseCalls.Implication`, the given lines' `implies`): of each
