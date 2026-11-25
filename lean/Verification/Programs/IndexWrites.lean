@@ -5618,20 +5618,25 @@ indices (`j < xs.length` when `allowParallelA` holds) across a dense append on
         ((allowParallelA && p'.isEmpty && aCls.contains s') || spineDisjointFromA G Γ k a s' p') &&
         (k' != .length || (p'.isEmpty && ep.isEmpty && elemSpinesDisjointFromA G Γ a s')))
 
-/-- Release unconditional guarded facts of `k` whose guard `(s, [], tag)` (at the
-outermost level or immediately under one slot guard) fails when `¬ tag.holds (ρ g)`. -/
-def assumeGuardFalse (k : Knowledge) (g : Nat) (tag : GuardTag) : Knowledge :=
+/-- The guard tags that hold once `¬ tag.holds (ρ g)` is assumed: the complement
+of `tag` on the empty path of every slot linked to `g`. -/
+def guardFalseTags (k : Knowledge) (g : Nat) (tag : GuardTag) : Nat → List String → GuardTag → Bool :=
   let r := HeapLinks.rep (HeapLinks.classes k.links)
-  let rg := r g
-  let extra := k.indices.filterMap fun a => match a.cond, a.fact with
-    | none, .guarded s [] t B =>
-      if t == tag && r s == rg then some { fact := B }
-      else match B with
-        | .guarded s2 [] t2 B2 =>
-          if t2 == tag && r s2 == rg then some { fact := .guarded s [] t B2 } else none
-        | _ => none
-    | _, _ => none
+  fun s p t => p.isEmpty && t == tag.complement && r s == r g
+
+/-- Assume `¬ tag.holds (ρ g)`: add, for each unconditional atom of `k`, the
+fact `releaseFact` leaves once every guard `(s, [], tag)` over a slot linked
+to `g` is released, at any depth of the fact's guards. -/
+def assumeGuardFalse (k : Knowledge) (g : Nat) (tag : GuardTag) : Knowledge :=
+  let extra := k.indices.filterMap fun a => match a.cond with
+    | none => (releaseFact (guardFalseTags k g tag) (fun s p => (s, p)) a.fact).map
+        fun F => ({ fact := F } : IndexAtom)
+    | some _ => none
   if extra.isEmpty then k else { k with indices := k.indices ++ extra.filter (!k.indices.contains ·) }
+
+private theorem GuardTag.complement_holds_of_not {t : GuardTag} {v : Val}
+    (h : ¬ t.holds v) : t.complement.holds v := by
+  cases t <;> simp_all [GuardTag.complement, GuardTag.holds]
 
 private theorem assumeGuardFalse_holds {k : Knowledge} {g : Nat} {tag : GuardTag} {ρ : Env} {h : Heap}
     (hk : Holds k ε ρ h) (hng : ¬ tag.holds (ρ g)) : Holds (assumeGuardFalse k g tag) ε ρ h := by
@@ -5649,43 +5654,14 @@ private theorem assumeGuardFalse_holds {k : Knowledge} {g : Nat} {tag : GuardTag
       | some _ => simp [hbc] at hbm
       | none =>
         have hbf := hk.2.2.2.2.2 b hb (fun _ hc' => by rw [hbc] at hc'; cases hc')
-        cases hfact : b.fact with
-        | guarded s p t B =>
-          cases p with
-          | cons _ _ => simp [hbc, hfact] at hbm
-          | nil =>
-            simp only [hbc, hfact] at hbm
-            split at hbm
-            · rename_i hcond
-              simp only [Option.some.injEq] at hbm; subst hbm
-              simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-              obtain ⟨rfl, hreq⟩ := hcond
-              rw [hfact] at hbf
-              obtain ⟨v, hv, hor⟩ := hbf
-              simp only [readGuard, Option.some.injEq] at hv; subst hv
-              have hsg : ρ s = ρ g := by rw [← hrep s, hreq, hrep g]
-              exact hor.resolve_left (hsg ▸ hng)
-            · cases hB : B with
-              | guarded s2 p2 t2 B2 =>
-                cases p2 with
-                | cons _ _ => simp [hB] at hbm
-                | nil =>
-                  simp only [hB] at hbm
-                  split at hbm
-                  · rename_i hcond2
-                    simp only [Option.some.injEq] at hbm; subst hbm
-                    simp only [Bool.and_eq_true, beq_iff_eq] at hcond2
-                    obtain ⟨rfl, hreq⟩ := hcond2
-                    rw [hfact, hB] at hbf
-                    obtain ⟨v1, hv1, hor1⟩ := hbf
-                    refine ⟨v1, hv1, hor1.imp id fun h2 => ?_⟩
-                    obtain ⟨v2, hv2, hor2⟩ := h2
-                    simp only [readGuard, Option.some.injEq] at hv2; subst hv2
-                    have hsg : ρ s2 = ρ g := by rw [← hrep s2, hreq, hrep g]
-                    exact hor2.resolve_left (hsg ▸ hng)
-                  · cases hbm
-              | _ => simp [hB] at hbm
-        | _ => simp [hbc, hfact] at hbm
+        simp only [hbc] at hbm
+        obtain ⟨F, hF, rfl⟩ := Option.map_eq_some_iff.mp hbm
+        refine releaseFact_holds (ld := fun s p => (s, p)) (fun _ _ => rfl) ?_ hF hbf
+        intro s p t ht
+        simp only [guardFalseTags, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+        obtain ⟨⟨rfl, rfl⟩, hreq⟩ := ht
+        have hsg : ρ s = ρ g := by rw [← hrep s, hreq, hrep g]
+        exact ⟨ρ s, rfl, hsg ▸ GuardTag.complement_holds_of_not hng⟩
 
 /-- Peel leading empty-path slot guards from a fact. -/
 def peelSlotGuards : IndexFact → List (Nat × GuardTag) × IndexFact
@@ -5836,13 +5812,21 @@ private def clauseReadsElem : LinearClause Bound → Bool
 
 /-- Express a body clause over `a` referencing a single parallel array `s'` apart from `a`
 at index `i` as a guarded `atIndex` fact on `s'`, so both `element` witnesses and covering
-interval `every` facts on `s'` can discharge it without an unconditional `element` read. -/
+interval `every` facts on `s'` can discharge it without an unconditional `element` read.
+
+The guard's tag is one `undefined` does not meet (`holdsUndef = false`): an
+`atIndex` guard is met at a hole when its tag holds of `undefined`, while a
+body clause's guard needs a present cell, so only such a tag carries the
+`atIndex` fact back to the body clause. The `atIndex` form guards the
+element's own value and carries an unguarded linear body, so the parallel
+guard reads `s'[i]` directly (empty element path, `s'` a slot) over a
+linear clause. -/
 @[nospecialize] def bodyClauseAsAtIndex [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
     (k : Knowledge) (a i selfSlot : Nat) : BodyClause → Option IndexFact
   | .guarded (.self ep) tag b =>
     (bodyClauseAsAtIndex G Γ k a i selfSlot b).map (.guarded selfSlot ep tag)
   | .guarded (.parallel s' [] []) tag (.clause c) =>
-    if (tag == .null || tag == .tru || tag == .fls) && spineDisjointFromA G Γ k a s' [] then
+    if !tag.holdsUndef && spineDisjointFromA G Γ k a s' [] then
       let s'Cls := HeapLinks.aliases k.links s'
       match c.mapVars (boundForAtIndex s'Cls i selfSlot) with
       | some c' => if clauseReadsElem c' then some (.atIndex s' [] (.value i) (some tag) c') else none
@@ -6481,8 +6465,7 @@ private theorem bodyClauseAsAtIndex_sound [DecidableEq ι] {G : NormalGraph ι} 
       subst hieq
       rcases hrest with ⟨l, u, hl, hu, htg⟩ | ⟨_, hgu⟩ | hc'
       · exact .inl ⟨u, by simp [ElemTarget.read, readPath, hel', hls', hl, hu, readGuard], htg⟩
-      · exfalso
-        cases tag <;> simp [GuardTag.holds] at htagPos hgu
+      · exact absurd hgu (GuardTag.not_holds_undef (by simpa using htagPos))
       · obtain ⟨l, u, hl, hu⟩ := clauseReadsElem_present hre hc'
         refine .inr ⟨fun _ => ⟨u, by simp [ElemTarget.read, readPath, hel', hls', hl, hu, readGuard]⟩, ?_⟩
         refine (LinearClause.holdsAt_mapVars hmap fun x _ y hy => ?_).mp hc'

@@ -2,7 +2,7 @@
 
 This draft analyses three expressive-power limits of quantified array facts (`IndexFact.every`):
 
-1. **#396 — Interval quantification** ($`\mathit{lo} \le i < \mathit{hi}`$), motivated by lazy mid-loop parallel-array allocation (gap case `quantified-suffix-null-gap`, [prepare.ts](../../dev/paper-rules/pretext/src/prepare.ts)).
+1. **#396 — Interval quantification** ($`\mathit{lo} \le i < \mathit{hi}`$), motivated by lazy mid-loop parallel-array allocation (case `quantified-suffix-null`, [prepare.ts](../../dev/paper-rules/pretext/src/prepare.ts)).
 2. **#397 — Shifted parallel indexing** ($`q[i + \Delta]`$), motivated by sub-range builders copying a 0-indexed list into a base-shifted destination (gap case `quantified-offset-parallel-gap`, [rich-inline.ts](../../dev/paper-rules/pretext/src/rich-inline.ts)).
 3. **#398 — Bitmask-guarded body clauses** ($`(f[i] \mathbin{\&} m) = c`$), motivated by patching an array entry under a `Uint8Array` kind-bit guard (gap case `quantified-bitmask-guard-gap`, [rich-inline.ts](../../dev/paper-rules/pretext/src/rich-inline.ts)).
 

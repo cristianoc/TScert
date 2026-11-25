@@ -1053,6 +1053,18 @@ $`k`$ (`every-write`, proved: `boundedOverwrite_sound`).
      {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-write}
 ```
 
+An interval fact $`\forall a\le i<b.\ \Phi`$ is kept the same way, the
+fact holding at $`k`$ also where $`K\vdash b\le k`$ or $`K\vdash k<a`$. An
+in-bounds write where none of these conditions holds keeps the fact's two
+parts, $`\forall a\le i<k.\ \Phi`$ where $`K\vdash k\le b`$ and
+$`\forall k+1\le i<b.\ \Phi`$ where $`K\vdash a\le k+1`$, each holding at
+every index other than $`k`$ (proved: `everyOverwrittenList_holds`).
+
+```math
+\frac{(\forall a\le i<b.\ \Phi)\in\Sigma\quad \mathrm{framed}_a(z,\Phi)\quad K\vdash k<|a|\quad K\vdash k\le b\quad K\vdash a\le k+1}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \forall a\le i<k.\ \Phi,\ \forall k+1\le i<b.\ \Phi}\ \textsf{every-split}
+```
+
 Across a growth of $`a`$'s spine, the length of a slot apart from $`a`$ is
 kept (`growFirst`), so `every-grow` keeps a fact reading nothing of $`a`$'s
 region too.
@@ -1063,8 +1075,15 @@ states apart, a literal's spine apart from every array slot, carried along
 every edge to the slots whose mappings read them, those every predecessor
 carries; at each loop head, the pairs of array slots of an allocation whose
 array the loop writes an element of. Each is a proposal: Lean checks each
-loop head's region facts on every edge into it. A fact naming a binding the
-statement assigns is dropped. Across a push, a linear fact is translated by
+loop head's region facts on every edge into it. A loop whose body calls a
+function stating a fresh array region (some fixed or variadic call or
+construct signature of the callee's type, as `%ArrayFilled%` does for
+`new Array(n).fill(v)`) also proposes, at its head,
+$`x=\mathrm{null}\lor\mathrm{apart}(a,x)`$ for every slot $`x`$ whose type
+admits `null` and an array, and every other array slot $`a`$: the search
+takes every such pair, each checked on every edge (case
+`quantified-suffix-null`). A fact naming a binding the statement assigns is
+dropped. Across a push, a linear fact is translated by
 the append relation where each other length it names is of an array apart
 from the receiver (`growFirst`). Cases: positives
 `quantified-freshness-write` and `quantified-freshness-builder` (a fresh

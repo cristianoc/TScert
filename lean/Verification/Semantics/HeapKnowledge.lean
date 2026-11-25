@@ -3606,6 +3606,60 @@ theorem bodyClauseEntails_sound {lt : Term → Term} {as : List IndexAtom} {lbod
           · exact h'.2
           · exact hbf G hG
 
+/-- Whether a quantified body clause, read at one index, gives an `atIndex`
+fact with guard `guard` and (lifted) body `lbody`: a linear clause entailing
+`lbody`, or a chain of guards on the element itself, each with tag `guard`,
+ending in a clause that entails `lbody` or one that cannot hold. -/
+def everyBodyGivesAtIndex (lt : Term → Term) (as : List IndexAtom) (guard : Option GuardTag)
+    (lbody : LinearClause Bound) : BodyClause → Bool
+  | .clause F' => bodyClauseEntails lt as (renameClause (liftBound lt) F') lbody
+  | .guarded (.self []) g inner =>
+    guard == some g && (impossibleBody inner || everyBodyGivesAtIndex lt as guard lbody inner)
+  | .guarded .. => false
+
+theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {ρ : Env} {h : Heap}
+    {ls : List (Option Nat)} {i : Nat} {guard : Option GuardTag} {body : LinearClause Bound}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t) (ha : IndexHolds ε as ρ h)
+    (hlift : ∀ C : LinearClause Bound,
+      (renameClause (liftBound lt) C).HoldsAt (boundValue ε ρ h ls i) ↔ C.HoldsAt (boundValue ε ρ h ls i)) :
+    ∀ {B : BodyClause}, everyBodyGivesAtIndex lt as guard (renameClause (liftBound lt) body) B = true →
+      B.HoldsAt ε ρ h ls i →
+      match guard with
+      | some g => (∃ l v, ls[i]? = some (some l) ∧ h[l]? = some v ∧ g.holds v) ∨
+          (ls[i]? = some none ∧ g.holds .undef) ∨ body.HoldsAt (boundValue ε ρ h ls i)
+      | none => body.HoldsAt (boundValue ε ρ h ls i) := by
+  intro B
+  induction B with
+  | clause F' =>
+    intro hf hB
+    simp only [everyBodyGivesAtIndex] at hf
+    have hb : body.HoldsAt (boundValue ε ρ h ls i) :=
+      (hlift body).mp (bodyClauseEntails_sound hlt ha hf ((hlift F').mpr hB))
+    cases guard with
+    | none => exact hb
+    | some _ => exact .inr (.inr hb)
+  | guarded tgt g inner ih =>
+    intro hf hB
+    cases tgt with
+    | parallel _ _ _ => simp [everyBodyGivesAtIndex] at hf
+    | self ep =>
+      cases ep with
+      | cons _ _ => simp [everyBodyGivesAtIndex] at hf
+      | nil =>
+        simp only [everyBodyGivesAtIndex, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hf
+        obtain ⟨rfl, hcase⟩ := hf
+        rcases hB with ⟨v, hv, hgv⟩ | ⟨-, hinner⟩
+        · simp only [ElemTarget.read] at hv
+          split at hv
+          · rename_i l hli
+            obtain ⟨u, hu, hrg⟩ := Option.bind_eq_some_iff.mp hv
+            simp only [readGuard, Option.some.injEq] at hrg; subst hrg
+            exact .inl ⟨l, u, hli, hu, hgv⟩
+          · cases hv
+        · rcases hcase with himp | hmatch
+          · exact (impossibleBody_sound himp hinner).elim
+          · exact ih hmatch hinner
+
 /-- Whether an indexed-element fact `atIndex s p idx guard body` follows from
 the source atoms `as`: by matching an existing `atIndex` (at a shared array
 site, equal index, compatible guard and entailed body), by introducing from a
@@ -3642,14 +3696,7 @@ def atIndexFollows (M : Nat → List Nat) (ls : HeapLinks.Links)
           Linear.entailsWith bf br (lstart.leFact (.ofTerm lidx)) &&
           Linear.entailsWith bf br ((IndexBound.ofTerm lidx).leFact lstop 1) &&
           Linear.entailsWith bf br (.le [(lidx, 1), (llen, -1)] (-1)) &&
-          everyBody.any fun
-            | .clause F' => bodyClauseEntails lt as (renameClause (liftBound lt) F') lbody
-            | .guarded (.self []) g inner =>
-              guard == some g &&
-                (impossibleBody inner || match inner with
-                  | .clause F' => bodyClauseEntails lt as (renameClause (liftBound lt) F') lbody
-                  | .guarded .. => false)
-            | .guarded .. => false
+          everyBody.any (everyBodyGivesAtIndex lt as guard lbody)
       | _ => false
   | _ => false
 
@@ -3796,39 +3843,8 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
       obtain ⟨i, rfl⟩ : ∃ i : Nat, zi = (i : Int) := ⟨zi.toNat, by omega⟩
       obtain ⟨B', hB', hFeq⟩ := List.any_eq_true.mp hmem
       have hBi := hall i (by omega) (by omega) B' hB'
-      cases B' with
-      | clause F' =>
-        have hB : body.HoldsAt (boundValue ε ρ h ls0 i) :=
-          (hliftBody ls0 i body).mp (bodyClauseEntails_sound hlt ha hFeq ((hliftBody ls0 i F').mpr hBi))
-        refine ⟨w, sto, ls0, i, hw', hsto, by rw [hls0]; rfl, hzi0, by omega, ?_⟩
-        cases guard with
-        | none => exact hB
-        | some _ => exact .inr (.inr hB)
-      | guarded tgt g inner =>
-        cases tgt with
-        | parallel _ _ _ => simp at hFeq
-        | self ep =>
-          cases ep with
-          | cons _ _ => simp at hFeq
-          | nil =>
-            simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hFeq
-            obtain ⟨rfl, hcase⟩ := hFeq
-            refine ⟨w, sto, ls0, i, hw', hsto, by rw [hls0]; rfl, hzi0, by omega, ?_⟩
-            rcases hBi with ⟨v, hv, hgv⟩ | ⟨-, hinner⟩
-            · simp only [ElemTarget.read] at hv
-              split at hv
-              · rename_i l hli
-                obtain ⟨u, hu, hrg⟩ := Option.bind_eq_some_iff.mp hv
-                simp only [readGuard, Option.some.injEq] at hrg; subst hrg
-                exact .inl ⟨l, u, hli, hu, hgv⟩
-              · cases hv
-            · rcases hcase with himp | hmatch
-              · exact (impossibleBody_sound himp hinner).elim
-              · cases inner with
-                | guarded _ _ _ => cases hmatch
-                | clause F' =>
-                  exact .inr (.inr ((hliftBody ls0 i body).mp
-                    (bodyClauseEntails_sound hlt ha hmatch ((hliftBody ls0 i F').mpr hinner))))
+      refine ⟨w, sto, ls0, i, hw', hsto, by rw [hls0]; rfl, hzi0, by omega, ?_⟩
+      exact everyBodyGivesAtIndex_sound hlt ha (hliftBody ls0 i) hFeq hBi
     | _ => rw [hfa] at hm; simp at hm
   | _ => simp [atIndexFollows] at hf
 

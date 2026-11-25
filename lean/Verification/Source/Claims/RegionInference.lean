@@ -283,16 +283,22 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   let table : Array (Option (List (Nat × Nat × Nat))) :=
     if written.isEmpty then Array.replicate P.length none
     else carryForward P r.start width (fun l => if written.contains l then allocates l else []) false
-  -- Also detect loops that allocate a fresh-region array (`freshRegionResult`, e.g. `new Array(n).fill(v)`)
-  -- into a nullable array slot `x`: propose `x === null || apart(a, x)` for each array slot `a` at the head.
+  -- Loops that call a function stating a fresh array region (`freshRegionResult`,
+  -- e.g. `new Array(n).fill(v)`) and hold a nullable array slot `x`: propose
+  -- `x === null || apart(a, x)` for each other array slot `a` at the head. A call
+  -- qualifies when some signature (fixed or variadic, call or construct) of its
+  -- callee's type states the fresh region; each proposal is checked on every edge.
+  let statesFreshRegion : PositiveNormalization.Clause (List ι) → Bool
+    | .arrs L V | .callable _ _ L V _ =>
+      L.any (·.effect.schema.normal.freshRegionResult) || V.any (·.effect.schema.normal.freshRegionResult)
+    | .ctors S V .. =>
+      S.any (·.effect.schema.normal.freshRegionResult) || V.any (·.effect.schema.normal.freshRegionResult)
+    | _ => false
+  let calleeStatesFreshRegion (l f : Nat) : Bool :=
+    ((ctxOf l)[f]?).any fun F => (PositiveRules.expand G F).any statesFreshRegion
   let hasFreshRegionCall (l : Nat) : Bool := match A[l]? with
     | some node => match node.expression with
-      | .invoke (.var f) _ _ => match (ctxOf l)[f]? with
-        | some F => match PositiveRules.expand G F with
-          | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
-              L.any fun p => p.effect.schema.normal.freshRegionResult
-          | _ => false
-        | none => false
+      | .invoke (.var f) _ _ | .construct (.var f) _ => calleeStatesFreshRegion l f
       | _ => false
     | none => false
   let nullableArraySlot (Γ : List (Ty ι)) (s : Nat) : Bool := match Γ[s]? with

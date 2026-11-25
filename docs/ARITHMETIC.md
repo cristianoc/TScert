@@ -631,7 +631,8 @@ Several tags of one kind state their conjunction.
 K &::= G\ \texttt{||}\ K \mid C\\
 G &::= P\ \texttt{===}\ \mathtt{null} \mid P\ \texttt{===}\ \mathtt{undefined} \mid P\ \texttt{===}\ \mathtt{true} \mid P\ \texttt{===}\ \mathtt{false}\\
 C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ D\ \mathtt{of}\ P\texttt{:}\ B \mid \mathtt{forall}\ D\ \texttt{<=}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ D\ \texttt{<=}\ x\ \texttt{<}\ D\ \mathtt{of}\ P\texttt{:}\ B\\
-D &::= n \mid -n \mid P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid D + n \mid D - n\\
+D &::= n \mid -n \mid S \mid S + n \mid S - n\\
+S &::= P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length})\\
 A &::= \mathtt{safeInteger}(P) \mid \mathtt{safeInteger}(I) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P \mid P[Q]\ \texttt{===}\ t \mid P[Q]\ \texttt{!==}\ t\\
 I &::= P[Q] \mid P[Q].p\\
 E &::= n \mid P \mid P.\mathtt{length} \mid I \mid I.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid n\cdot I \mid n\cdot I.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
@@ -1431,7 +1432,13 @@ retains the value a slot's type states where it admits `null` alone or
 `undefined` alone, which an edge widening the slot's type would otherwise
 lose. So `const hyphenWidths = items === undefined ? null :
 items.hyphenWidths` states `hyphenWidths === null || hyphenWidths.length ===
-widths.length` on each arm.
+widths.length` on each arm. The candidates a join proposes are a search,
+each kept only where every predecessor entails it: a predecessor's
+quantified fact or region separation, alone and under each tag of a slot
+some predecessor's atom is guarded by; a predecessor's fact under the
+tag of a slot some predecessor holds one tag of, and an element or linear
+fact under two such tags. A candidate has at most two leading slot
+guards.
 
 **Frame conditions.** A change $`\chi`$ preserves a guarded fact where it
 preserves its guard's read and its body (proved):
@@ -1548,24 +1555,36 @@ numeric data path requires its own `safeInteger(xs[i].offset)` atom.
 Projected terms are instantiated by `every-read` with the read value as
 their root; mapping and heap extension preserve their meaning (proved).
 
-An interval clause `forall lo <= i < hi of P: B` (and the shorthands
-`forall i < hi of P: B` with $`a=0`$ and `forall lo <= i in P: B` with
-$`b=|P|`$ or $`\mathrm{view}(P)`$) uses the same quantified fact with affine
-bounds `IndexBound` (a constant, a term, or a term plus or minus a constant).
-Each bound term states `safeInteger` when it names a value; length paths and
-in a postcondition `old(P)` or `old(P.length)` are terms too. A standalone
-element-tag body `P[i] === t` or `P[i].p === t` (for `t` one of `null`,
-`undefined`, `true`, `false`) elaborates to a guarded falsum
-(`BodyClause.guarded target t (0 <= -1)`), so the clause holds at index $`i`$
-when the element (or its path) has tag $`t`$. Entailment weakens an interval
-to any subinterval ($`a\le a'`$ and $`b'\le b`$, `everySubinterval`), derives
-any empty interval ($`b\le a`$ or $`b\le 0`$, `everyEmpty`) over a defined
-spine, and discharges a guarded body clause from a covering element-tag
-quantifier (`everyGuards`). Overwriting an in-bounds element at index $`i`$
-preserves an interval quantifier over $`[a, b)`$ by splitting it into the
-prefix $`[a, i)`$ and suffix $`[i+1, b)`$ (`everyOverwrittenList`), and a
-dense append at index $`i`$ extends a slot-guarded quantified invariant whose
-parallel body clause follows via `atIndex` (`bodyClauseAsAtIndex`).
+An interval clause `forall lo <= i < hi of P: B` states the quantified fact
+with $`a`$ and $`b`$ the bounds `lo` and `hi`; `forall i < hi of P: B` has
+$`a=0`$, and `forall lo <= i in P: B` has $`b=|P|`$ of an array or
+$`b=\mathrm{view}(P)`$ of a typed array. A bound is an integer constant, or
+one term $`S`$ of [the grammar](#the-clause-language) plus or minus an
+integer constant. The fact holds only where each bound denotes an integer;
+the clause states no other fact of a bound. A body atom `P[i] === t` or
+`P[i].p === t`, with $`t`$ one of `null`, `undefined`, `true`, `false`,
+states the guarded clause $`P[i]=t\lor\bot`$: at each index of the interval
+the read evaluates and gives $`t`$.
+
+**Subintervals.** Every entailment of index facts (an edge, a loop head, a
+return, a call's precondition) derives a quantified fact over a subinterval
+of the same array: from a source quantified fact whose body facts give the
+target's, with the target's bounds $`a'`$ and $`b'`$ defined and entailed
+within the source's (proved). A prefix is the instance $`a=a'=0`$, equal
+bounds the instance $`a'=a`$, $`b'=b`$.
+
+```math
+\frac{\forall a\le i<b.\ \Phi\qquad K\vdash a',\,b'\ \text{defined}\qquad K\vdash a\le a'\qquad K\vdash b'\le b}
+     {\forall a'\le i<b'.\ \Phi}\ \textsf{every-subinterval}
+```
+
+An in-bounds write at index $`k`$ keeps an interval fact over the written
+array as its two parts $`[a,k)`$ and $`[k+1,b)`$
+([quantified facts across a write](FOOTPRINTS.md#element-regions)). A dense
+append at index $`k`$ extends a quantified fact under a slot's tag whose
+body reads a parallel array apart from the appended one, where the body at
+$`k`$ follows from an element read of that array at $`k`$ or from a
+quantified fact over it whose interval contains $`k`$.
 
 **Reading an element.** The bounded signature of
 $`\%\mathsf{ElementAt}\%`$ ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length))
@@ -1698,18 +1717,6 @@ $`\mathit{chunks}`$.
      {K\vdash \Phi}\ \textsf{goal-read}
 ```
 
-**Prefix weakening.** Every entailment of index facts (an edge, a loop
-head, a return, a call's precondition) derives a quantified fact over a
-shorter prefix of the same array: from a source quantified fact whose body
-facts give the target's, a bound $`t`$ the facts state defined and entail
-at most the source's bound $`u`$ (`HeapKnowledge.everyPrefix`, proved
-`everyPrefix_sound`). Equal bounds are its instance.
-
-```math
-\frac{\forall i<u.\ \Phi\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
-     {\forall i<t.\ \Phi}\ \textsf{every-prefix}
-```
-
 **Element guards over a prefix.** A quantified clause over $`Q`$ whose
 guard $`T = g`$ has a contradictory continuation (a constant linear clause
 or a disjunction of them) states that the read $`T`$ yields tag $`g`$ at
@@ -1739,14 +1746,16 @@ comparison is skipped (`quantified-array-fill-null`). With
 index is not covered, and the return is refused
 (`invalid-quantified-array-fill-short`).
 
-**Empty arrays.** A quantified fact over an array of length zero holds for
+**Empty intervals.** A quantified fact over an empty interval holds for
 any body (proved). Its body terms need no interpretation, since no index
-is below the bound. The edge checker establishes that the length term is
-defined and at most zero; array lengths are nonnegative.
+lies in the interval. The edge checker establishes that the path reads an
+array or a typed array, that both bounds are defined, and that the upper
+bound is at most the lower bound or at most zero; an array of length zero
+is the instance $`a=0`$, $`b=|x.p|`$.
 
 ```math
-\frac{K\vdash |x.p|=0}
-     {\Sigma,\ \forall i<|x.p|.\ \Phi}\ \textsf{every-empty}
+\frac{K\vdash \mathrm{elems}(x.p)\ \text{defined}\qquad K\vdash a,\,b\ \text{defined}\qquad K\vdash b\le a\ \lor\ K\vdash b\le 0}
+     {\Sigma,\ \forall a\le i<b.\ \Phi}\ \textsf{every-empty}
 ```
 
 An array literal without spreads states its result's length equal to its
@@ -1968,10 +1977,24 @@ normal exit's postconditions (`Effect.callPost_appends`,
 is `PromiseCalls.everyWritten`, with `writtenBody`, added by `writeKept` in
 `withEnsures` (proved: `every_written`, `writeKept_holds`), from the exact
 write `CallEffects.ExactWrite`. A loop head's proposed quantified fact is
-`HeadInference.Fact.every`.
+`HeadInference.Fact.every`. An interval's bounds are `IndexBound` (an
+optional term and an integer offset), and a body atom `P[i] === t` is
+`BodyClause.guarded target t (0 <= -1)`. `every-subinterval` is
+`HeapKnowledge.everySubinterval` (proved: `everySubinterval_sound`); a
+guarded body discharged from a covering element-tag quantifier is
+`everyGuards` (proved: `everyGuards_sound`). The dense append's parallel
+body at $`k`$ is `IndexWrites.bodyClauseAsAtIndex` (proved:
+`bodyClauseAsAtIndex_sound`), which restates the body clause as an indexed
+fact $`\mathrm{at}(Q,k,t,c)`$ over the parallel array $`Q`$: where $`Q[k]`$ is
+a hole that fact holds when $`\mathrm{undefined}`$ meets $`t`$, and a body
+clause's guard needs a present cell, so the guard's tag is one
+$`\mathrm{undefined}`$ does not meet. The indexed fact guards the element's
+own value over a linear clause, so the body clause read this way guards
+$`Q[k]`$ itself, $`Q`$ a slot, over a linear clause, a stated limit.
 
-`every-empty` is the `every` branch of `HeapKnowledge.linearFollows`
-(proved: `linearFollows_sound`). `IndexWrites.emptyArrayAtoms` states an
+`every-empty` is `HeapKnowledge.everyEmpty`, which `everyEntailed` tries
+beside `everySubinterval` and `everyGuards` (proved: `everyEmpty_sound`,
+`everyEntailed_sound`). `IndexWrites.emptyArrayAtoms` states an
 empty literal's length (proved: `emptyArrayAtoms_holds`, by its finite
 execution); `Checker.emptyArrays` adds those facts and fresh locations.
 
