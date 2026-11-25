@@ -1329,6 +1329,205 @@ theorem lowerBodyClause_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl :
         simp only [hp] at hw
         rw [lowerRoot_path hl hr hp]; exact hw
 
+/-- A read link (optional or not) preserves array-spine reads in both directions:
+a missing optional field yields `undefined`, which has no element spine. -/
+theorem bridgeReads_elements {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {c v : Nat} {f : String} (hm : (c, f, v) ∈ bridgeReads ls) {p : List String} {w : Val} {st : Nat} :
+    (readPath h (ρ c) (f :: p) = some w ∧ elementsOf w = some st) ↔
+      (readPath h (ρ v) p = some w ∧ elementsOf w = some st) := by
+  constructor
+  · rintro ⟨hw, hst⟩
+    exact ⟨bridgeReads_path hl hm hw, hst⟩
+  · rintro ⟨hw, hst⟩
+    refine ⟨?_, hst⟩
+    obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hm
+    split at hgm
+    · cases hgm
+    · rename_i ha
+      split at hgm
+      · rename_i f' hf'
+        simp only [Option.some.injEq, Prod.mk.injEq] at hgm
+        obtain ⟨rfl, rfl, rfl⟩ := hgm
+        have hlg := hl g hg
+        simp only [ha, Bool.false_eq_true, ite_false] at hlg
+        cases ho : g.optional
+        · simp only [ho, Bool.false_eq_true, ite_false] at hlg
+          obtain ⟨flds, cd, oid, l, he, hlk, hv⟩ := hlg
+          rw [hf'] at hlk
+          rw [he, readPath_cons hlk hv]
+          exact hw
+        · simp only [ho, ite_true] at hlg
+          obtain ⟨flds, cd, oid, he, hr⟩ := hlg
+          rw [hf'] at hr
+          unfold HeapFacts.ReadGave at hr
+          cases hlk : flds.lookup (.str f') with
+          | some l =>
+            rw [hlk] at hr
+            rw [he, readPath_cons hlk hr]
+            exact hw
+          | none =>
+            rw [hlk] at hr
+            rw [hr.2] at hw
+            cases p with
+            | nil =>
+              simp only [readPath, Option.some.injEq] at hw
+              subst hw
+              simp [elementsOf] at hst
+            | cons _ _ => simp [readPath] at hw
+      · cases hgm
+
+/-- An array root `(s, p)` lowered along read links `(c, f, v)` as far as they
+go, normalizing through alias representatives `r`. -/
+def lowerRootAll (r : Nat → Nat) (reads : List (Nat × String × Nat)) : Nat → Nat → List String → Nat × List String
+  | 0, s, p => (r s, p)
+  | _ + 1, s, [] => (r s, [])
+  | n + 1, s, f :: p =>
+    let rs := r s
+    match reads.find? (fun g => g.2.1 == f && r g.1 == rs) with
+    | some (_, _, v) => lowerRootAll r reads n v p
+    | none => (rs, f :: p)
+
+theorem lowerRootAll_elements {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) :
+    ∀ n s p w st,
+      (readPath h (ρ (lowerRootAll r (bridgeReads ls) n s p).1) (lowerRootAll r (bridgeReads ls) n s p).2 = some w ∧
+        elementsOf w = some st) ↔
+      (readPath h (ρ s) p = some w ∧ elementsOf w = some st) := by
+  intro n
+  induction n with
+  | zero => intro s p w st; simp only [lowerRootAll, hr]
+  | succ n ih =>
+    intro s p w st
+    cases p with
+    | nil => simp only [lowerRootAll, hr]
+    | cons f p =>
+      simp only [lowerRootAll]
+      split
+      · rename_i c f' v hfind
+        have hm := List.mem_of_find?_eq_some hfind
+        have hgf := List.find?_some hfind
+        simp only [Bool.and_eq_true, beq_iff_eq] at hgf
+        obtain ⟨rfl, hrc⟩ := hgf
+        have heq : ρ c = ρ s := by rw [← hr c, hrc, hr]
+        rw [ih, ← bridgeReads_elements hl hm, heq]
+      · simp only [hr]
+
+/-- A body variable lowered through read links and alias representatives `r`. -/
+def lowerBoundAll (r : Nat → Nat) (reads : List (Nat × String × Nat)) (n : Nat) : Bound → Bound
+  | .parallel s p k ep => let (s', p') := lowerRootAll r reads n s p; .parallel s' p' k ep
+  | .free t => .free (lowerTermAll r reads n t)
+  | b => b
+
+theorem lowerBoundAll_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) {ls' : List (Option Nat)} {i : Nat} (n : Nat) (b : Bound) :
+    boundValue ε ρ h ls' i (lowerBoundAll r (bridgeReads ls) n b) = boundValue ε ρ h ls' i b := by
+  cases b with
+  | index | elem | offset _ | project _ _ => rfl
+  | free t => exact lowerTermAll_eq hl hr n t
+  | parallel s p k ep =>
+    simp only [lowerBoundAll, boundValue]
+    cases hp : readPath h (ρ s) p with
+    | none =>
+      cases hp' : readPath h (ρ (lowerRootAll r (bridgeReads ls) n s p).1)
+          (lowerRootAll r (bridgeReads ls) n s p).2 with
+      | none => rfl
+      | some a' =>
+        cases he' : elementsOf a' with
+        | none => simp only [he']
+        | some st' =>
+          have hbad := (lowerRootAll_elements hl hr n s p a' st').mp ⟨hp', he'⟩
+          rw [hp] at hbad; cases hbad.1
+    | some a =>
+      cases he : elementsOf a with
+      | none =>
+        cases hp' : readPath h (ρ (lowerRootAll r (bridgeReads ls) n s p).1)
+            (lowerRootAll r (bridgeReads ls) n s p).2 with
+        | none => simp only [he]
+        | some a' =>
+          cases he' : elementsOf a' with
+          | none => simp only [he, he']
+          | some st' =>
+            obtain ⟨h1, _⟩ := (lowerRootAll_elements hl hr n s p a' st').mp ⟨hp', he'⟩
+            rw [hp, Option.some.injEq] at h1; subst h1
+            simp only [he, reduceCtorEq] at he'
+      | some st =>
+        have hok := (lowerRootAll_elements hl hr n s p a st).mpr ⟨hp, he⟩
+        simp only [hok.1, hok.2]
+
+/-- An element guard target lowered through read links and alias representatives `r`. -/
+def lowerTargetAll (r : Nat → Nat) (reads : List (Nat × String × Nat)) (n : Nat) : ElemTarget → ElemTarget
+  | .self ep => .self ep
+  | .parallel s p ep => let (s', p') := lowerRootAll r reads n s p; .parallel s' p' ep
+
+theorem lowerTargetAll_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) {ls' : List (Option Nat)} {i : Nat} (n : Nat) (t : ElemTarget) :
+    (lowerTargetAll r (bridgeReads ls) n t).read ρ h ls' i = t.read ρ h ls' i := by
+  cases t with
+  | self ep => rfl
+  | parallel s p ep =>
+    simp only [lowerTargetAll, ElemTarget.read]
+    cases hp : readPath h (ρ s) p with
+    | none =>
+      cases hp' : readPath h (ρ (lowerRootAll r (bridgeReads ls) n s p).1)
+          (lowerRootAll r (bridgeReads ls) n s p).2 with
+      | none => rfl
+      | some a' =>
+        cases he' : elementsOf a' with
+        | none => simp only [he']
+        | some st' =>
+          have hbad := (lowerRootAll_elements hl hr n s p a' st').mp ⟨hp', he'⟩
+          rw [hp] at hbad; cases hbad.1
+    | some a =>
+      cases he : elementsOf a with
+      | none =>
+        cases hp' : readPath h (ρ (lowerRootAll r (bridgeReads ls) n s p).1)
+            (lowerRootAll r (bridgeReads ls) n s p).2 with
+        | none => simp only [he]
+        | some a' =>
+          cases he' : elementsOf a' with
+          | none => simp only [he, he']
+          | some st' =>
+            obtain ⟨h1, _⟩ := (lowerRootAll_elements hl hr n s p a' st').mp ⟨hp', he'⟩
+            rw [hp, Option.some.injEq] at h1; subst h1
+            simp only [he, reduceCtorEq] at he'
+      | some st =>
+        have hok := (lowerRootAll_elements hl hr n s p a st).mpr ⟨hp, he⟩
+        simp only [hok.1, hok.2]
+
+/-- A body clause lowered through read links and alias representatives `r`. -/
+def lowerBodyClauseAll (r : Nat → Nat) (reads : List (Nat × String × Nat)) (n : Nat) : BodyClause → BodyClause
+  | .clause F => .clause (renameClause (lowerBoundAll r reads n) F)
+  | .guarded t g b => .guarded (lowerTargetAll r reads n t) g (lowerBodyClauseAll r reads n b)
+
+theorem lowerBodyClauseAll_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) {ls' : List (Option Nat)} {i : Nat} (n : Nat) :
+    ∀ B : BodyClause, (lowerBodyClauseAll r (bridgeReads ls) n B).HoldsAt ε ρ h ls' i ↔ B.HoldsAt ε ρ h ls' i
+  | .clause F =>
+    LinearClause.holdsAt_mapVars (renameClause_mapVars (lowerBoundAll r (bridgeReads ls) n) F) fun x _ y hy => by
+      simp only [Function.comp_apply, Option.some.injEq] at hy
+      subst hy
+      exact lowerBoundAll_eq hl hr n x
+  | .guarded t g b => by
+    simp only [lowerBodyClauseAll, BodyClause.HoldsAt, lowerTargetAll_eq hl hr n t, lowerBodyClauseAll_iff hl hr n b]
+
+/-- A body clause with every current slot renamed by a total map `f`. -/
+def mapBodyClause (f : Nat → Nat) : BodyClause → BodyClause
+  | .clause F => .clause (renameClause (Bound.mapTotal f) F)
+  | .guarded t g b => .guarded (t.mapTotal f) g (mapBodyClause f b)
+
+theorem mapBodyClause_mapM (f : Nat → Nat) :
+    ∀ B : BodyClause, B.mapM (some ∘ f) = some (mapBodyClause f B)
+  | .clause F => by
+    simp only [BodyClause.mapM, Bound.mapM_total, renameClause_mapVars, Option.map_some, mapBodyClause]
+  | .guarded t g b => by
+    simp only [BodyClause.mapM, ElemTarget.mapM_total, mapBodyClause_mapM f b, mapBodyClause]
+    rfl
+
+theorem mapBodyClause_iff {f : Nat → Nat} {ρ : Env} {h : Heap} {ls' : List (Option Nat)} {i : Nat} (B : BodyClause) :
+    (mapBodyClause f B).HoldsAt ε ρ h ls' i ↔ B.HoldsAt ε (fun s => ρ (f s)) h ls' i :=
+  BodyClause.holdsAt_mapM (mapBodyClause_mapM f B) fun _ _ _ ht => by
+    simp only [Function.comp_apply, Option.some.injEq] at ht; subst ht; rfl
+
 /-- A quantified fact restated through a read of slot `0`, where the read
 restates its array, its bound or a body term. -/
 def readEvery (reads : List (Nat × String × Nat)) (a : IndexAtom) : Option IndexAtom :=
@@ -2798,24 +2997,160 @@ theorem fieldReadFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {F 
     simp [readPath, hlk, hlv]
   | _ => simp [fieldReadFollows] at hf
 
+/-- Whether `gStop ≤ sStop` holds modulo the read bridge `lt` under `t`'s
+condition: directly by syntactic equality of bridged terms, or by linear
+entailment from `a`'s bridged linear facts with `gStop` defined. -/
+def bridgedStopLe (lt : Term → Term) (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom)
+    (t : IndexAtom) (gStop sStop : Term) : Bool :=
+  let lg := lt gStop
+  let ls := lt sStop
+  lg == ls || (bridgedDefined lt a lg &&
+    match t.cond with
+    | none => Linear.entailsWith (bridgeFacts lt (linearRaw a)) (bridgeFacts lt (rangesRaw a)) (.le [(lg, 1), (ls, -1)] 0)
+    | some c' => (M (PointClaims.slot m c')).any fun c =>
+        Linear.entailsWith (bridgeFacts lt (linearRaw a ++ condFacts a c t.negated))
+          (bridgeFacts lt (rangesRaw a)) (.le [(lg, 1), (ls, -1)] 0))
+
+theorem bridgedStopLe_sound {lt : Term → Term} {M : Nat → List Nat} {m : PointClaims.Mapping}
+    {a : List IndexAtom} {t : IndexAtom} {gStop sStop : Term} {n : Int} {ρ : Env} {h : Heap}
+    (hlt : ∀ u, termValue ε ρ h (lt u) = termValue ε ρ h u)
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (ha : IndexHolds ε a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated)
+    (hsn : termValue ε ρ h sStop = some n) (hle : bridgedStopLe lt M m a t gStop sStop = true) :
+    ∃ n', termValue ε ρ h gStop = some n' ∧ n' ≤ n := by
+  unfold bridgedStopLe at hle
+  rcases Bool.or_eq_true_iff.mp hle with hsyn | hlin
+  · refine ⟨n, ?_, Int.le_refl n⟩
+    rw [← hlt gStop, beq_iff_eq.mp hsyn, hlt sStop, hsn]
+  · simp only [Bool.and_eq_true] at hlin
+    obtain ⟨hdef, hent⟩ := hlin
+    obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp (bridgedDefined_sound hlt ha hdef)
+    have hg' : termValue ε ρ h gStop = some n' := (hlt gStop).symm.trans hn'
+    have hsn' : termValue ε ρ h (lt sStop) = some n := (hlt sStop).trans hsn
+    have hfact : (Linear.Fact.le [(lt gStop, 1), (lt sStop, -1)] 0).Holds (termValuation ε ρ h) := by
+      split at hent
+      · exact Linear.entailsWith_sound hent (bridgeFacts_holds hlt (linearRaw_holds ha))
+          (bridgeFacts_holds hlt (rangesRaw_holds ha))
+      · rename_i c' hc'
+        obtain ⟨c, hc, hent⟩ := List.any_eq_true.mp hent
+        have hcv : tagHolds .truthy (ρ c) = !t.negated := by
+          rw [hM _ _ hc]; exact hcond c' hc'
+        have hkn : ∀ G ∈ linearRaw a ++ condFacts a c t.negated, G.Holds (termValuation ε ρ h) := by
+          intro G hG
+          rcases List.mem_append.mp hG with hG | hG
+          · exact linearRaw_holds ha G hG
+          · exact condFacts_holds ha hcv G hG
+        exact Linear.entailsWith_sound hent (bridgeFacts_holds hlt hkn)
+          (bridgeFacts_holds hlt (rangesRaw_holds ha))
+    simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn', hsn', Option.getD_some] at hfact
+    exact ⟨n', hg', by omega⟩
+
+/-- **Quantified fact lowering through read links**: a target `every(s', p', stop', body')`
+follows from a source `every(x, q, st, b)` when, after lowering array roots,
+stop terms, parallel targets, and body clauses through `ls` and its alias
+classes, the roots match, every lowered goal clause appears in the lowered
+source body, and the goal's stop term equals or is at most the source's stop
+term modulo read links. -/
+def everyLinkedFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (m : PointClaims.Mapping)
+    (a : List IndexAtom) (t : IndexAtom) : Bool :=
+  match t.fact with
+  | .every s' p' stop' body' =>
+    let reads := bridgeReads ls
+    if reads.isEmpty then false else
+    let r := HeapLinks.rep (HeapLinks.classes ls)
+    let n := reads.length
+    let lr := lowerRootAll r reads n
+    let ltTerm := lowerTermAll r reads n
+    let lb := lowerBodyClauseAll r reads n
+    let lt := fun u => liftTerm r reads n (lowerTermAll r reads n u)
+    let f := PointClaims.slot m
+    let gRoot := lr (f s') p'
+    let gStop := ltTerm (stop'.mapM' f)
+    let gBody := body'.map fun C => lb (mapBodyClause f C)
+    a.any fun src => condFollows M m src t && match src.fact with
+      | .every x q st b =>
+        lr x q == gRoot &&
+          (let sBody := b.map lb; gBody.all fun G => sBody.contains G) &&
+          (ltTerm st == gStop || bridgedStopLe lt M m a t gStop st)
+      | _ => false
+  | _ => false
+
+theorem everyLinkedFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {m : PointClaims.Mapping}
+    {a : List IndexAtom} {t : IndexAtom} {ρ : Env} {h : Heap}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds ε a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated)
+    (hf : everyLinkedFollows M ls m a t = true) : t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
+  unfold everyLinkedFollows at hf
+  split at hf
+  · rename_i s' p' stop' body' hfact
+    rw [hfact]
+    dsimp only at hf
+    split at hf
+    · cases hf
+    · obtain ⟨src, hsrc, hm⟩ := List.any_eq_true.mp hf
+      simp only [Bool.and_eq_true] at hm
+      obtain ⟨hcd, hm⟩ := hm
+      have hS := ha src hsrc (condFollows_cond hM hcd hcond)
+      split at hm
+      · rename_i x q st b hsf
+        rw [hsf] at hS
+        simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.contains_iff_mem] at hm
+        obtain ⟨⟨hroot, hbody⟩, hstop⟩ := hm
+        obtain ⟨w, sto, ls', n, hw, hsto, hls', hn, hall⟩ := hS
+        have hr : ∀ z, ρ (HeapLinks.rep (HeapLinks.classes ls) z) = ρ z :=
+          HeapLinks.rep_eq (HeapLinks.classes_one hl)
+        have hlt : ∀ u, termValue ε ρ h (liftTerm (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+            (bridgeReads ls).length (lowerTermAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+            (bridgeReads ls).length u)) = termValue ε ρ h u := fun u =>
+          (liftTerm_eq hl hr _ _).trans (lowerTermAll_eq hl hr _ _)
+        have hpath : readPath h (PointClaims.mapEnv m ρ s') p' = some w ∧ elementsOf w = some sto := by
+          have h1 := (lowerRootAll_elements hl hr (bridgeReads ls).length x q w sto).mpr ⟨hw, hsto⟩
+          rw [hroot] at h1
+          exact (lowerRootAll_elements hl hr (bridgeReads ls).length (PointClaims.slot m s') p' w sto).mp h1
+        have hgStopEq : termValue ε ρ h (lowerTermAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+            (bridgeReads ls).length (stop'.mapM' (PointClaims.slot m))) =
+            termValue ε (PointClaims.mapEnv m ρ) h stop' := by
+          rw [lowerTermAll_eq hl hr]
+          exact termValue_mapM' fun _ => rfl
+        have hStopRes : ∃ n', termValue ε (PointClaims.mapEnv m ρ) h stop' = some n' ∧ n' ≤ n := by
+          rcases Bool.or_eq_true_iff.mp hstop with hsyn | hle
+          · refine ⟨n, ?_, Int.le_refl n⟩
+            rw [← hgStopEq, ← beq_iff_eq.mp hsyn, lowerTermAll_eq hl hr, hn]
+          · obtain ⟨n', hn', hle'⟩ := bridgedStopLe_sound hlt hM ha hcond hn hle
+            exact ⟨n', hgStopEq.symm.trans hn', hle'⟩
+        obtain ⟨n', hn', hle'⟩ := hStopRes
+        refine ⟨w, sto, ls', n', hpath.1, hpath.2, hls', hn', fun i hi C' hC' => ?_⟩
+        have hmem := hbody _ (List.mem_map.mpr ⟨C', hC', rfl⟩)
+        obtain ⟨C, hC, hCeq⟩ := List.mem_map.mp hmem
+        have hCi := (lowerBodyClauseAll_iff hl hr (bridgeReads ls).length C).mpr (hall i (by omega) C hC)
+        rw [hCeq] at hCi
+        exact (mapBodyClause_iff (f := PointClaims.slot m) C').mp
+          ((lowerBodyClauseAll_iff hl hr (bridgeReads ls).length _).mp hCi)
+      · cases hm
+  · cases hf
+
 /-- A fact follows from the atoms, read at their own slots: an unconditional
 atom it follows from (`factFollows`), a spine separation the atoms state
-at sites its paths share (`spineFollows`), or a field read a link states
-(`fieldReadFollows`). -/
+at sites its paths share (`spineFollows`), a field read a link states
+(`fieldReadFollows`), or a quantified fact lowered through read links
+(`everyLinkedFollows`). -/
 def baseFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (as : List IndexAtom) (F : IndexFact) : Bool :=
   as.any (fun s => s.cond.isNone && factFollows M none s.fact F) || spineFollows M none ls as { fact := F } ||
-    fieldReadFollows M ls F
+    fieldReadFollows M ls F || (match F with | .every .. => everyLinkedFollows M ls none as { fact := F } | _ => false)
 
 theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : List IndexAtom} {F : IndexFact} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
     (hf : baseFollows M ls as F = true) (ha : IndexHolds ε as ρ h) : F.HoldsAt ε ρ h := by
-  rcases Bool.or_eq_true_iff.mp hf with hf | hf
+  rcases Bool.or_eq_true_iff.mp hf with hf | hev
   · rcases Bool.or_eq_true_iff.mp hf with hf | hf
-    · obtain ⟨s, hs, hm⟩ := List.any_eq_true.mp hf
-      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-      exact factFollows_sound (m := none) hM hm.2 (ha s hs fun b hb => by rw [hm.1] at hb; cases hb)
-    · exact spineFollows_sound (m := none) hM hl hf ha
-  · exact fieldReadFollows_sound hM hl hf
+    · rcases Bool.or_eq_true_iff.mp hf with hf | hf
+      · obtain ⟨s, hs, hm⟩ := List.any_eq_true.mp hf
+        simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+        exact factFollows_sound (m := none) hM hm.2 (ha s hs fun b hb => by rw [hm.1] at hb; cases hb)
+      · exact spineFollows_sound (m := none) hM hl hf ha
+    · exact fieldReadFollows_sound hM hl hf
+  · cases hF : F <;> rw [hF] at hev <;> simp at hev
+    exact everyLinkedFollows_sound (m := none) hM hl ha (fun _ hc => by cases hc) hev
 
 /-- Unwraps any leading guards of a fact whose complementary guard holds under
 `tags` (directly or lowered through `ld`). -/
@@ -3243,7 +3578,7 @@ def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag �
   let reads := bridgeReads ls
   let greads := guardReads ls
   let lt := fun t => liftTerm r reads reads.length (lowerTermAll r reads reads.length t)
-  let lg := liftGuard r greads greads.length
+  let lg := fun s p => let (s', p') := lowerGuard greads r greads.length s p; liftGuard r greads greads.length s' p'
   let ld := lowerGuard greads r greads.length
   let past := if a.any (fun x => x.cond.isNone && match x.fact with | .either _ (.pastSafe _) => true | _ => false)
     then releasePast a else []
@@ -3367,7 +3702,8 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
       have hlt : ∀ u, termValue ε ρ h ((guardPrep ls tags a).lt u) = termValue ε ρ h u :=
         fun u => (liftTerm_eq hl hr _ _).trans (lowerTermAll_eq hl hr _ _)
       have hlg : ∀ s p, readGuard h (ρ ((guardPrep ls tags a).lg s p).1) ((guardPrep ls tags a).lg s p).2 =
-          readGuard h (ρ s) p := liftGuard_eq hl hr _
+          readGuard h (ρ s) p := fun s p =>
+        (liftGuard_eq hl hr _ _ _).trans (lowerGuard_eq hl hr _ s p)
       have hld : ∀ s p, readGuard h (ρ ((guardPrep ls tags a).ld s p).1) ((guardPrep ls tags a).ld s p).2 =
           readGuard h (ρ s) p := lowerGuard_eq hl hr _
       have haug := guardPrep_aug_holds hl htags ha
@@ -3548,7 +3884,7 @@ def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat
     (match t.fact with | .linear .. | .every .. | .bound .. | .int .. => linearFollowsIn K.get M m a B.get t | _ => false) ||
     (t.cond.isNone && match t.fact with | .guarded .. | .either .. | .linear .. | .atIndex .. | .spineApart .. => guardFollowsWith G.get M m ls tags a t | _ => false) ||
     spineFollows M m ls a t || guardBodyFollows M m a t ||
-    (match t.fact with | .every .. => everyPrefix K.get M m a t | _ => false) || sameFollows M m t
+    (match t.fact with | .every .. => everyPrefix K.get M m a t || everyLinkedFollows M ls m a t | _ => false) || sameFollows M m t
 
 /-- Whether every value in a value set satisfies a guard tag (including the empty set). -/
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
@@ -3677,7 +4013,10 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hev
   case inr =>
     cases htf : t.fact <;> rw [htf] at hev <;> simp at hev
-    rw [← htf]; exact everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
+    rw [← htf]
+    rcases hev with hev | hev
+    · exact everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
+    · exact everyLinkedFollows_sound hM hl ha hcond hev
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
@@ -3756,7 +4095,7 @@ def indicesFilter (k : Knowledge) (cs : List IndexAtom) (useCases : Bool := true
     (match t.fact with | .linear .. | .every .. | .bound .. | .int .. => linearFollowsIn K.get M none a B.get t | _ => false) ||
     gFollows t ||
     spineFollows M none ls a t ||
-    (match t.fact with | .every .. => everyPrefix K.get M none a t | _ => false)
+    (match t.fact with | .every .. => everyPrefix K.get M none a t || everyLinkedFollows M ls none a t | _ => false)
 
 theorem indicesFilter_sub {k : Knowledge} {cs : List IndexAtom} {useCases : Bool} {t : IndexAtom}
     (ht : t ∈ indicesFilter k cs useCases) : t ∈ cs := by
@@ -3780,7 +4119,10 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hev
     case inr =>
       cases htf : t.fact <;> rw [htf] at hev <;> simp at hev
-      rw [← htf]; exact hmap ▸ everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
+      rw [← htf]
+      rcases hev with hev | hev
+      · exact hmap ▸ everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
+      · exact hmap ▸ everyLinkedFollows_sound hM hl ha hcond hev
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hst
     case inr => exact hmap ▸ spineFollows_sound hM hl hst ha
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hgf
