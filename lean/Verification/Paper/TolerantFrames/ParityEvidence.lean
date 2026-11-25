@@ -1118,7 +1118,7 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
           fun _ t ht => termValue_now (hnow t ht)
         have hF : (IndexFact.linear F).HoldsAt ⟨η, s.h⟩ η s.h :=
           factAt_congr (fun t ht => hkept s.h t ht) ((sat_atom hn).mp hA)
-        have hF' := hsup η m s s' ha (fun _ _ _ _ _ _ _ hf => by cases hf) hF hS
+        have hF' := hsup η m s s' ha ⟨(fun _ _ _ _ _ _ _ hf => nomatch hf), (fun _ _ _ _ ha => nomatch ha)⟩ hF hS
         exact (sat_atom hn).mpr (factAt_congr (fun t ht => (hkept s'.h t ht).symm) hF')
       · cases hT
     · cases h

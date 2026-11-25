@@ -58,7 +58,8 @@ def Region.bound : Region → KindSet
   | .cells _ | .pathCells _ _ => KindSet.elems
   | .cls c => c.kinds
   | .all => KindSet.all
-  | .spine _ _ | .elemSpines _ _ => KindSet.spines
+  | .spine _ _ => KindSet.spines
+  | .elemSpines _ _ => KindSet.arraySpine
 
 /-! ## Valid references along paths -/
 
@@ -239,7 +240,7 @@ theorem Region.bound_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
         simp only at ho
         split at ho
         · rename_i u hu
-          exact spine_bound (hok.refs_at hu) ho
+          simpa [Region.bound, slotBound] using field_bound (k := arraySpineKey) (hok.refs_at hu) ho
         · cases ho
     · cases hm
 
@@ -259,8 +260,10 @@ theorem Region.bound_cats (r : Region) (k : Kind) (hb : r.bound.contains k = tru
     cases k <;> simp [Region.bound, KindSet.contains, KindSet.fieldsAndCells] at hb <;> rfl
   | cells _ | pathCells _ _ =>
     cases k <;> simp [Region.bound, KindSet.contains, KindSet.elems] at hb <;> rfl
-  | spine _ _ | elemSpines _ _ =>
+  | spine _ _ =>
     cases k <;> simp [Region.bound, KindSet.contains, KindSet.spines] at hb <;> rfl
+  | elemSpines _ _ =>
+    cases k <;> simp [Region.bound, KindSet.contains, KindSet.arraySpine] at hb <;> rfl
   | cls c => simpa [Region.bound, Region.cats, Selector.kinds] using hb
   | all => exact Selector.has_all _
 

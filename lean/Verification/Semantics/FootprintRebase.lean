@@ -249,7 +249,7 @@ def rebase (ev : RebaseEvidence) : Region → List Region
   | .spine s p => match ev.path s p with
     | some (x, q) => [.spine x q]
     | none => [.cls .spines]
-  | .elemSpines _ _ => [.cls .spines]
+  | .elemSpines _ _ => [.cls .arrays]
 
 def rebaseAll (ev : RebaseEvidence) (Ψ : Footprint) : Footprint :=
   Ψ.flatMap fun e => (rebase ev e.1).map (·, e.2)
