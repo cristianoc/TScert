@@ -19,10 +19,10 @@ open SinglePass in
 /-- The facts `materialize` reads (its `atoms`): every fact of the store with
 `whole`, else the facts its worklist collects from the index by name
 (`SinglePass.selectFrom`). -/
-def selectedAtoms (st : State) (slots : List Nat) (whole : Bool) (chain : Bool) : List Atom :=
+def selectedAtoms (st : State) (slots : List Nat) (whole chain observeElements : Bool) : List Atom :=
   let given := slots.filterMap fun s => st.names[s]?
   if whole then st.store.toList else
-    (selectFrom st.store chain (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
+    (selectFrom st.store (Atom.selectionThrough chain observeElements) (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
 
 /-- `materialize`'s alias links: each slot below `d` holding a name a slot
 before it holds, related to that first slot. -/
@@ -64,12 +64,12 @@ def materializeFrom (st : State) (d : Nat) («given» : List Nat) (atoms : List 
   (ofAtoms (pairs.map (·.2) ++ extra ++ aliasLinks) d, pairs, table)
 
 /-- `materialize` is `materializeFrom` at its selected facts. -/
-theorem materialize_eq (st : State) (d : Nat) (slots : List Nat) (whole chain : Bool) :
-    SinglePass.materialize st d slots whole chain =
-      materializeFrom st d (slots.filterMap fun s => st.names[s]?) (selectedAtoms st slots whole chain) whole := rfl
+theorem materialize_eq (st : State) (d : Nat) (slots : List Nat) (whole chain observeElements : Bool) :
+    SinglePass.materialize st d slots whole chain observeElements =
+      materializeFrom st d (slots.filterMap fun s => st.names[s]?) (selectedAtoms st slots whole chain observeElements) whole := rfl
 
-theorem selectedAtoms_whole (st : State) (slots : List Nat) (chain : Bool) :
-    selectedAtoms st slots true chain = st.store.toList := rfl
+theorem selectedAtoms_whole (st : State) (slots : List Nat) (chain observeElements : Bool) :
+    selectedAtoms st slots true chain observeElements = st.store.toList := rfl
 
 /-- **The slot table gives, for each name, a slot holding it.** -/
 theorem slotTable_get {names : List Nat} {want : Std.HashSet Nat} {whole : Bool} {n i : Nat}
@@ -313,8 +313,8 @@ theorem materializeFrom_table {st : State} {d : Nat} {given : List Nat} {atoms :
 /-- The selective facts are drawn from the index by name: each fact
 `selectedAtoms` returns without `whole` is listed by `Store.about` of some
 name. -/
-def SelectedFromIndex (st : State) (slots : List Nat) (chain : Bool) : Prop :=
-  ∀ a ∈ selectedAtoms st slots false chain, ∃ n, a ∈ st.store.about n
+def SelectedFromIndex (st : State) (slots : List Nat) (chain observeElements : Bool) : Prop :=
+  ∀ a ∈ selectedAtoms st slots false chain observeElements, ∃ n, a ∈ st.store.about n
 
 theorem foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β) :
     ∀ (l : List α) (b : β), P b → (∀ a ∈ l, ∀ b, P b → P (f b a)) → P (l.foldl f b)
@@ -324,9 +324,9 @@ theorem foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β) :
 
 /-- **One round keeps only facts the index lists**: a fact a round keeps is
 listed under a frontier name. -/
-theorem selectRound_about (s : Store) (chain : Bool) (frontier : List Nat) (seen : Std.HashSet Nat)
+theorem selectRound_about (s : Store) (through : Atom → List Nat) (frontier : List Nat) (seen : Std.HashSet Nat)
     (kept : Std.HashSet Atom) (out : Array Atom) (h : ∀ a ∈ out.toList, ∃ n, a ∈ s.about n) :
-    ∀ a ∈ (SinglePass.selectRound s chain frontier seen kept out).2.2.2.toList, ∃ n, a ∈ s.about n := by
+    ∀ a ∈ (SinglePass.selectRound s through frontier seen kept out).2.2.2.toList, ∃ n, a ∈ s.about n := by
   let P : List Nat × Std.HashSet Nat × Std.HashSet Atom × Array Atom → Prop :=
     fun b => ∀ a ∈ b.2.2.2.toList, ∃ n, a ∈ s.about n
   refine foldl_inv P _ frontier _ h fun x _ acc hacc => foldl_inv P _ (s.about x) acc hacc fun a ha b hb => ?_
@@ -374,21 +374,22 @@ theorem selectValues_about (s : Store) (seen : Std.HashSet Nat) (kept : Std.Hash
     | _ => exact hc
 
 /-- **The selective worklist keeps only facts the index lists.** -/
-theorem selectFrom_about (s : Store) (chain : Bool) :
+theorem selectFrom_about (s : Store) (through : Atom → List Nat) :
     ∀ (fuel : Nat) (frontier : List Nat) (seen : Std.HashSet Nat) (kept : Std.HashSet Atom) (out : Array Atom),
       (∀ a ∈ out.toList, ∃ n, a ∈ s.about n) →
-      ∀ a ∈ (SinglePass.selectFrom s chain fuel frontier seen kept out).toList, ∃ n, a ∈ s.about n
+      ∀ a ∈ (SinglePass.selectFrom s through fuel frontier seen kept out).toList, ∃ n, a ∈ s.about n
   | 0, _, seen, kept, out, h => selectValues_about s seen kept out h
   | fuel + 1, frontier, seen, kept, out, h => by
     unfold SinglePass.selectFrom
     split
     · exact selectValues_about s seen kept out h
-    · exact selectFrom_about s chain fuel _ _ _ _ (selectRound_about s chain frontier seen kept out h)
+    · exact selectFrom_about s through fuel _ _ _ _ (selectRound_about s through frontier seen kept out h)
 
 /-- **Every fact the selective worklist returns is listed by the index**
 (`SelectedFromIndex`). -/
-theorem selectedFromIndex (st : State) (slots : List Nat) (chain : Bool) : SelectedFromIndex st slots chain :=
-  selectFrom_about st.store chain _ _ _ _ _ (fun a h => by simp at h)
+theorem selectedFromIndex (st : State) (slots : List Nat) (chain observeElements : Bool) :
+    SelectedFromIndex st slots chain observeElements :=
+  selectFrom_about st.store (Atom.selectionThrough chain observeElements) _ _ _ _ _ (fun a h => by simp at h)
 
 section Materialize
 variable {ι : Type}
@@ -409,12 +410,13 @@ theorem stateHolds_materialize_whole {G : NormalGraph ι} {st : State} {implies 
 drawn from the index by name (`selectedFromIndex`). -/
 theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List (PromiseCalls.Implication ι)}
     {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} 
-    (hS : StateHolds G st implies start ε ρ m s) (d : Nat) (slots : List Nat) (chain : Bool) :
-    HeapKnowledge.Holds (SinglePass.materialize st d slots false chain).1 ε ρ s.h := by
+    (hS : StateHolds G st implies start ε ρ m s) (d : Nat) (slots : List Nat) (chain : Bool)
+    (observeElements : Bool := false) :
+    HeapKnowledge.Holds (SinglePass.materialize st d slots false chain observeElements).1 ε ρ s.h := by
   obtain ⟨η, hn, hst, -⟩ := hS
   rw [materialize_eq]
   refine materializeFrom_holds hn fun a ha => ?_
-  obtain ⟨n, hn⟩ := selectedFromIndex st slots chain a ha
+  obtain ⟨n, hn⟩ := selectedFromIndex st slots chain observeElements a ha
   exact hst a (about_storeAll hn)
 
 /-- **The knowledge a step's rule reads holds** (`kE` and, over every fact, `kE'` in

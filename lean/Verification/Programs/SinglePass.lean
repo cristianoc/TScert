@@ -528,6 +528,14 @@ def elementDependencies : HeapKnowledge.IndexFact → List Nat
   | .guarded _ _ _ body => elementDependencies body
   | _ => []
 
+/-- The selector for ordinary steps and for observations that can use
+element reads and quantified facts together. -/
+def Atom.selectionThrough (chain observeElements : Bool) (a : Atom) : List Nat :=
+  if observeElements then match a with
+    | .index x => a.through chain ++ elementDependencies x.fact
+    | _ => a.through chain
+  else a.through chain
+
 /-- One round of the selective worklist: each fact over a frontier name
 not yet kept, kept in order; each name it chains through not yet seen,
 seen and on the next frontier. -/
@@ -567,12 +575,8 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain 
     (observeElements : Bool := false) :
     Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat := timedKind (if whole then "materialize whole" else "materialize") fun _ =>
   let given := slots.filterMap fun s => st.names[s]?
-  let through := if observeElements then fun a => match a with
-    | .index x => a.through chain ++ elementDependencies x.fact
-    | _ => a.through chain
-    else Atom.through chain
   let atoms : List Atom := if whole then st.store.toList else
-    (selectFrom st.store through (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
+    (selectFrom st.store (Atom.selectionThrough chain observeElements) (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
   let want : Std.HashSet Nat := atoms.foldl (fun acc a => a.names.foldl (·.insert ·) acc)
     (given.foldl (·.insert ·) {})
   let table := slotTable st.names want whole

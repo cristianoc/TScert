@@ -370,8 +370,9 @@ theorem slotTable_keys {names : List Nat} {want : Std.HashSet Nat} {whole : Bool
     · exact hst.2
 
 /-- **`materialize`'s table names the state's slot names.** -/
-theorem materialize_table_keys (st : State) (d : Nat) (slots : List Nat) (whole chain : Bool) :
-    KeysIn st.names (SinglePass.materialize st d slots whole chain).2.2 := by
+theorem materialize_table_keys (st : State) (d : Nat) (slots : List Nat) (whole chain : Bool)
+    (observeElements : Bool := false) :
+    KeysIn st.names (SinglePass.materialize st d slots whole chain observeElements).2.2 := by
   unfold SinglePass.materialize SinglePass.timedKind
   exact slotTable_keys
 
@@ -448,12 +449,12 @@ theorem edgeStoreOf_below {G : NormalGraph ι} {Γ : List (ProgramTyping.Ty ι)}
   split
   · exact dropHeap_below we he _
   · split
-    · have ht := materialize_table_keys { names, store } (if pushed then width + 1 else width) [0] false true
-      generalize SinglePass.materialize { names, store } (if pushed then width + 1 else width) [0] false = M at ht ⊢
+    · have ht := materialize_table_keys { names, store } (if pushed then width + 1 else width) [0] false true (observeElements := true)
+      generalize SinglePass.materialize { names, store } (if pushed then width + 1 else width) [0] false (observeElements := true) = M at ht ⊢
       obtain ⟨k, pairs, table⟩ := M
       exact applyDelta_below hs _ _ _ (back_below hn ht)
-    · have ht := materialize_table_keys { names := pushedNames, store } (width + 1) [0] false true
-      generalize SinglePass.materialize { names := pushedNames, store } (width + 1) [0] false = M at ht ⊢
+    · have ht := materialize_table_keys { names := pushedNames, store } (width + 1) [0] false true (observeElements := true)
+      generalize SinglePass.materialize { names := pushedNames, store } (width + 1) [0] false (observeElements := true) = M at ht ⊢
       obtain ⟨k, pairs, table⟩ := M
       exact applyDelta_below hs _ _ _ (back_below hp ht)
     · exact hs
