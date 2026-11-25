@@ -488,9 +488,16 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a read link names '{cell}' as its object, which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a read link names '{value}' as its value, which is no value binding")
-  let elements ← ((fc.entryElements.lookup node.source.1).getD []).mapM fun (value, arr, idx) =>
+  let elements ← ((fc.entryElements.lookup node.source.1).getD []).mapM fun (guards, value, arr, idx) =>
     match valueSlot scope value, valueSlot scope arr, valueSlot scope idx with
-    | some v, some a, some i => pure ({ fact := .element v a i } : HeapKnowledge.IndexAtom)
+    | some v, some a, some i => do
+      let gs ← guards.mapM fun (g, path, tag) => match valueSlot scope g with
+        | some z => pure (z, path, tag)
+        | none => do throw (locatedRefusal (← table) node.source .entryClaim
+            s!"an element-read guard names '{g}', which is no value binding")
+      let fact := gs.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
+        (HeapKnowledge.IndexFact.element v a i)
+      pure ({ fact } : HeapKnowledge.IndexAtom)
     | none, _, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"an element read names '{value}' as its value, which is no value binding")
     | _, none, _ => do throw (locatedRefusal (← table) node.source .entryClaim

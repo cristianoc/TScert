@@ -31,6 +31,9 @@ inductive BodyClaim where
   | either (left right : BodyClaim)
   | guarded (target : ElemTargetRef) (tag : HeapKnowledge.GuardTag) (body : BodyClaim)
 
+/-- An element read proposed at a statement entry, with its guards. -/
+abbrev ElementClaim := List (String × List String × HeapKnowledge.GuardTag) × String × String × String
+
 /-- A proposed quantified fact: its leading guards, an array a value binding's name and path
 read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
 abbrev EveryClaim := List (String × List String × HeapKnowledge.GuardTag) ×
@@ -75,8 +78,8 @@ structure PointData (ι : Type) where
   /-- At a statement entry, the read links proposed: `(cell, value, field)`,
   stating that `value` holds the value read from `cell.field`. -/
   entryLinks : List (Nat × List (String × String × String)) := []
-  /-- At a statement entry, the element reads proposed: `(value, array, index)`. -/
-  entryElements : List (Nat × List (String × String × String)) := []
+  /-- At a statement entry, the element reads proposed: `(guards, value, array, index)`. -/
+  entryElements : List (Nat × List ElementClaim) := []
   /-- At a statement entry, the guarded field-read facts proposed:
   `(guards, value, object, field)`. -/
   entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
@@ -131,7 +134,7 @@ structure Function (ι : Type) where
   entryApart : List (Nat × List (String × String)) := []
   entrySpinesApart : List (Nat × List SpinesApartClaim) := []
   entryLinks : List (Nat × List (String × String × String)) := []
-  entryElements : List (Nat × List (String × String × String)) := []
+  entryElements : List (Nat × List ElementClaim) := []
   entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []

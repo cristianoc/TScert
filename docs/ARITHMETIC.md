@@ -1609,7 +1609,16 @@ entailed equal to $`k`$ for $`Q[i]`$, turning each element guard into a
 guarded fact on $`r`$ or $`r'`$ (`HeapKnowledge.instantiateEvery`, proved by
 `instantiateEvery_holds`). Subsequent narrowing (`r !== null`) releases the
 guarded body facts (`HeapKnowledge.unguardedInstances`, proved by
-`unguardedInstances_holds`). Across calls and heap transitions, a body
+`unguardedInstances_holds`). For a nullable read such as
+`const row = rows[i] ?? null`, inference can propose
+`row === null || row === rows[i]` at a loop head. The incoming edges
+check that identity. In a branch that excludes null and discharges the
+quantifier's guards, the element identity and the quantified fact supply
+the witnesses for `every-read`. For a quantifier with an independent
+prefix bound, inference proposes its body at an index only where the facts
+put that index at least zero and below the prefix bound.
+
+Across calls and heap transitions, a body
 projecting an element's length depends on the array's element spines region
 (`Footprints.Region.elemSpines`, proved by `Survival.every_supported`).
 

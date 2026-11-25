@@ -83,8 +83,8 @@ inductive Fact where
   | guarded (guards : List (String × List String × HeapKnowledge.GuardTag)) (l : Lin)
   /-- A read link: `value` holds the value read from `cell.field`. -/
   | readLink (cell value field : String)
-  /-- An element read: `value` holds `array[index]`. -/
-  | element (value array index : String)
+  /-- Unless a guard holds, `value` holds `array[index]`. -/
+  | element (guards : List (String × List String × HeapKnowledge.GuardTag)) (value array index : String)
   /-- A guarded field read: unless a guard holds, `value` holds `object.field`. -/
   | fieldRead (guards : List (String × List String × HeapKnowledge.GuardTag)) (value object field : String)
   deriving BEq, Inhabited
@@ -96,7 +96,7 @@ def Fact.names : Fact → List String
   | .guarded gs l => gs.map (·.1) ++ l.terms.map (·.1.1)
   | .every gs a _ stop body => gs.map (·.1) ++ a :: stop.1 :: body.flatMap BodyFact.names
   | .readLink c v _ => [c, v]
-  | .element v a i => [v, a, i]
+  | .element gs v a i => gs.map (·.1) ++ [v, a, i]
   | .fieldRead gs v o _ => gs.map (·.1) ++ [v, o]
 
 /-- The claim the producer would write for the fact. -/
@@ -134,8 +134,8 @@ def Fact.linkClaim : Fact → Option (String × String × String)
   | _ => none
 
 /-- The element read the producer would write for the fact. -/
-def Fact.elementClaim : Fact → Option (String × String × String)
-  | .element v a i => some (v, a, i)
+def Fact.elementClaim : Fact → Option SourceClaims.ElementClaim
+  | .element gs v a i => some (gs, v, a, i)
   | _ => none
 
 /-- The guarded field read the producer would write for the fact. -/
@@ -143,20 +143,21 @@ def Fact.fieldReadClaim : Fact → Option (List (String × List String × HeapKn
   | .fieldRead gs v o f => some (gs, v, o, f)
   | _ => none
 
+private def guardText (guard : String × List String × HeapKnowledge.GuardTag) : String :=
+  let (g, p, t) := guard
+  let path := String.intercalate "." (g :: p)
+  match t with
+  | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
+  | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
+  | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
+  | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
+
 /-- The fact as `@invariant` text. -/
 partial def Fact.text : Fact → String
   | .int n => s!"safeInteger({n})"
   | .readLink c v f => s!"{v} === {c}.{f}"
-  | .element v a i => s!"{v} === {a}[{i}]"
-  | .fieldRead gs v o f =>
-    let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
-      let path := String.intercalate "." (g :: p)
-      match t with
-      | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
-      | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
-      | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
-      | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
-    String.join (gs.map guardStr) ++ s!"{v} === {o}.{f}"
+  | .element gs v a i => String.join (gs.map guardText) ++ s!"{v} === {a}[{i}]"
+  | .fieldRead gs v o f => String.join (gs.map guardText) ++ s!"{v} === {o}.{f}"
   | .apart gs a pa b pb =>
     let guardStr := fun ((g, p, t) : String × List String × HeapKnowledge.GuardTag) =>
       let path := String.intercalate "." (g :: p)
@@ -598,7 +599,7 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
     | .write _ (.str g) obj _ => g == f && match pathOf obj with | some (r, []) => r == o | _ => true
     | .objectAssign .. => true
     | _ => false
-  | .element _ a _ =>
+  | .element _ _ a _ =>
     !es.any (fun | .elemWrite .. | .indexWrite .. => true | _ => false) && !(touched es).contains a
   -- A separation of spines: kept unless a field its paths read is written
   -- (`linear_facts.ml:skept`, a path's identity changed only by a write).
@@ -667,6 +668,9 @@ def Ctx.unguarded (ctx : Ctx) (c : Expr) (pos : Bool) (forced : Bool := false) :
       if gs.isEmpty then [] else
       let rest := gs.filter (!failed.contains ·)
       if rest.length == gs.length then [] else [.every rest a pa stop body]
+    | .element gs v a i =>
+      let rest := gs.filter (!failed.contains ·)
+      if rest.length == gs.length then [] else [.element rest v a i]
     | .fieldRead gs v o f =>
       if gs.isEmpty then [] else
       let rest := gs.filter (!failed.contains ·)
@@ -1440,26 +1444,31 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
         | none => []
   if let some (arr, ap, idx, nullable) := elemPathOf init then
     if arr != x && idx != x && hasEveryOn arr then
-      if !nullable && ap.isEmpty then ctx := ctx.add [.element x arr idx]
+      let readGuards : List (String × List String × HeapKnowledge.GuardTag) :=
+        if nullable then [(x, [], .null)] else []
+      if ap.isEmpty then ctx := ctx.add [.element readGuards x arr idx]
       let parLookup := fun (a : String) (pa : List String) =>
         if a == arr && pa == ap then some x
         else if pa.isEmpty then ctx.findSome? fun
-          | .element v b j => if b == a && j == idx then some v else none
+          | .element [] v b j => if b == a && j == idx then some v else none
           | _ => none
         else none
       let inst := ctx.flatMap fun
-        | .every gs a pa _ body =>
-          let extraGs := if nullable then [(x, [], .null)] else []
-          if a == arr && pa == ap then
-            let gs' := if nullable then extraGs else gs
-            body.flatMap (instBody x parLookup idx gs')
-          else if pa.isEmpty then
-            (ctx.filterMap fun
-              | .element v b j => if b == a && j == idx then some v else none
-              | _ => none).flatMap fun v =>
-              let gs' := if nullable then extraGs else gs
-              body.flatMap (instBody v parLookup idx gs')
-          else []
+        | .every gs a pa stop body =>
+          let full := stop == (a, pa, .length) || stop == (a, pa, .view)
+          let i : Key := (idx, [], .value)
+          if !full && !(ctx.entails ⟨[(i, -1)], 0⟩ && ctx.entails ⟨[(i, 1), (stop, -1)], -1⟩) then []
+          else
+            -- A non-null result of the nullable read entails a non-nullish receiver.
+            let gs := if nullable then gs.filter fun (g, p, t) =>
+              !(g == arr && p == ap && (t == .null || t == .undef)) else gs
+            let gs' := (gs ++ readGuards).eraseDups
+            if a == arr && pa == ap then body.flatMap (instBody x parLookup idx gs')
+            else if pa.isEmpty then
+              (ctx.filterMap fun
+                | .element [] v b j => if b == a && j == idx then some v else none
+                | _ => none).flatMap fun v => body.flatMap (instBody v parLookup idx gs')
+            else []
         | _ => []
       if !inst.isEmpty then ctx := ctx.add inst
   -- (a nullable field read `x = c ? null : obj.f`: guarded field-read fact)
