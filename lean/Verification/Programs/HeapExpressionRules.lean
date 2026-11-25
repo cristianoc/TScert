@@ -1867,14 +1867,550 @@ theorem tyArrayOrNonObj_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} 
   obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A ht.1 n W w).mp hm
   exact clauseArrayOrNonObj_sound (ht.2 c hc) hsem he
 
+/-! ## Type-disjoint array spine apartness
+
+Two array objects whose spine contracts are incompatible cannot hold the same
+spine location in a well-formed world at sufficient step-index budget: if one
+side fixes an invariant (writable) spine contract `S₁` and the other requires
+`S₂` (writable or readonly), then any depth-1 spine accepted by `S₁` must be
+accepted by `S₂`. When `S₁` accepts a spine whose element contract at some
+position is inhabited at depth 0 by a value excluded by `S₂`'s element type at
+that position (or whose length exceeds `S₂`'s bound), the two spines differ. -/
+
+/-- A concrete value witnessing that a primitive clause is inhabited at depth 0
+in any world, requiring no heap locations. -/
+def clauseWitness {α : Type} : PositiveNormalization.Clause α → Option Val
+  | .nul => some .nul
+  | .undef => some .undef
+  | .bool => some .tru
+  | .boolLit b => some (if b then .tru else .fls)
+  | .num => some (.num 0)
+  | .int => some (.num 0)
+  | .numLit b => some (.num b)
+  | .numIn (b :: _) => some (.num b)
+  | .str => some (.str "")
+  | .strLit s => some (.str s)
+  | .strIn (s :: _) => some (.str s)
+  | .bigint => some (.bigint 0)
+  | .bigintLit z => some (.bigint z)
+  | .symbol => some (.sym 0)
+  | .symbolLit s => some (.sym s)
+  | _ => none
+
+private theorem clauseWitness_sound {G : NormalGraph ι} {c : PositiveNormalization.Clause (Ty ι)}
+    {v : Val} (hw : clauseWitness c = some v) (W : WorldT 0) :
+    clauseSem G c 0 W v := by
+  have hinv : c.carriesInvariant = false → builtinInvariant G (builtinValues G) c 0 W v := by
+    intro h; unfold builtinInvariant; cases G.builtins <;> simp [h]
+  cases c with
+  | nul => cases hw; exact ⟨rfl, hinv rfl⟩
+  | undef => cases hw; exact ⟨rfl, hinv rfl⟩
+  | bool => cases hw; exact ⟨Or.inl rfl, hinv rfl⟩
+  | boolLit b => cases hw; exact ⟨rfl, hinv rfl⟩
+  | num => cases hw; exact ⟨⟨0, rfl⟩, hinv rfl⟩
+  | int => cases hw; exact ⟨⟨0, rfl, by decide⟩, hinv rfl⟩
+  | numLit b => cases hw; exact ⟨rfl, hinv rfl⟩
+  | numIn bs =>
+    cases bs with
+    | nil => cases hw
+    | cons b bs => cases hw; exact ⟨⟨b, List.mem_cons_self .., rfl⟩, hinv rfl⟩
+  | str => cases hw; exact ⟨⟨"", rfl⟩, hinv rfl⟩
+  | strLit s => cases hw; exact ⟨rfl, hinv rfl⟩
+  | strIn ss =>
+    cases ss with
+    | nil => cases hw
+    | cons s ss => cases hw; exact ⟨⟨s, List.mem_cons_self .., rfl⟩, hinv rfl⟩
+  | bigint => cases hw; exact ⟨⟨0, rfl⟩, hinv rfl⟩
+  | bigintLit z => cases hw; exact ⟨rfl, hinv rfl⟩
+  | symbol => cases hw; exact ⟨⟨0, rfl⟩, hinv rfl⟩
+  | symbolLit s => cases hw; exact ⟨rfl, hinv rfl⟩
+  | _ => simp [clauseWitness] at hw
+
+/-- Whether `E₁` has a depth-0 primitive witness whose clause has an empty meet
+with every clause of `E₂`: then some value meets `E₁` at depth 0 and does not
+meet `E₂` at depth 0. -/
+@[nospecialize] def elemWitnessExcluded (G : NormalGraph ι) (E₁ E₂ : Ty ι) : Bool :=
+  G.plainTy E₁ && G.plainTy E₂ &&
+    let ds := expand G E₂
+    (expand G E₁).any fun c => (clauseWitness c).isSome && BranchRefinement.meetsNone [c] ds
+
+theorem elemWitnessExcluded_sound {G : NormalGraph ι} {E₁ E₂ : Ty ι}
+    (h : elemWitnessExcluded G E₁ E₂ = true) (W : WorldT 0) :
+    ∃ v : Val, meaning G E₁ 0 W v ∧ ¬ meaning G E₂ 0 W v := by
+  simp only [elemWitnessExcluded, Bool.and_eq_true, List.any_eq_true] at h
+  obtain ⟨⟨hp1, hp2⟩, c, hc, hw, hnone⟩ := h
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hw
+  refine ⟨v, (expand_sem G E₁ hp1 0 W v).mpr ⟨c, hc, clauseWitness_sound hv W⟩, fun h2 => ?_⟩
+  obtain ⟨d, hd, hdv⟩ := (expand_sem G E₂ hp2 0 W v).mp h2
+  have hm := (meetLists_row G _ _ _ [c] (expand G E₂) 0 W v).mpr
+    ⟨⟨c, List.mem_singleton_self c, clauseWitness_sound hv W⟩, ⟨d, hd, hdv⟩⟩
+  rw [BranchRefinement.meetsNone_iff.mp hnone] at hm
+  obtain ⟨_, hm, _⟩ := hm
+  cases hm
+
+/-- Whether a tuple contract `t` rejects a dense spine of length `len` whose
+position `idx < len` carries element contract `E₁` at depth 1. -/
+@[nospecialize] def tupleRejectsAt (G : NormalGraph ι) (t : PositiveNormalization.Tuple (Ty ι))
+    (idx len : Nat) (E₁ : Ty ι) : Bool :=
+  decide (len < t.required.length) ||
+    (t.rest.isNone && decide (t.required.length + t.optional.length < len)) ||
+    match positionTy t idx with
+    | some E₂ => elemWitnessExcluded G E₁ E₂
+    | none => false
+
+private theorem tupleRejectsAt_sound {G : NormalGraph ι} {t : PositiveNormalization.Tuple (Ty ι)}
+    {idx len : Nat} {E₁ : Ty ι} {W' : WorldT 1} {ls : List (Option Nat)} {l : Nat}
+    (hrej : tupleRejectsAt G t idx len E₁ = true) (hlen : ls.length = len)
+    (hidx : ls[idx]? = some (some l)) (hl : lookup W' l = some (res (meaning G E₁)))
+    (hlist : listT (tupleFams (meaning G) t) 1 W' (.arr ls)) : False := by
+  obtain ⟨ls', heq, -, hmin, -, hmax, hreq, hopt, hrest, -⟩ := hlist
+  cases heq
+  simp only [tupleRejectsAt, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq,
+    Option.isNone_iff_eq_none] at hrej
+  rcases hrej with (hlt | ⟨hrn, hgt⟩) | hpos
+  · simp [tupleFams] at hmin; omega
+  · have := hmax (by simp [tupleFams, hrn]); simp [tupleFams] at this; omega
+  · cases hpt : positionTy t idx with
+    | none => rw [hpt] at hpos; cases hpos
+    | some E₂ =>
+      rw [hpt] at hpos
+      have hag : ∀ (j : Nat) (hj : j < 1) (W₀ : WorldT j) (u : Val),
+          SlotContract t.readonly (res (meaning G E₁) j hj W₀ u) (meaning G E₂ j W₀ u) := by
+        unfold positionTy at hpt
+        cases hr : t.required[idx]? with
+        | some A =>
+          rw [hr] at hpt; cases hpt
+          obtain ⟨l', c', hl', hW', hag⟩ := hreq idx (meaning G E₂) (by simp [tupleFams, hr])
+          rw [hidx] at hl'; cases hl'; rw [hl] at hW'; cases hW'
+          exact hag
+        | none =>
+          rw [hr] at hpt
+          have hge1 : t.required.length ≤ idx := by
+            have := List.getElem?_eq_none_iff.mp hr; omega
+          cases ho : t.optional[idx - t.required.length]? with
+          | some A =>
+            rw [ho] at hpt; cases hpt
+            have hadd : t.required.length + (idx - t.required.length) = idx := by omega
+            obtain ⟨c', hW', hag⟩ := hopt (idx - t.required.length) (meaning G E₂) l
+              (by simp [tupleFams, ho]) (by simpa [tupleFams, hadd] using hidx)
+            rw [hl] at hW'; cases hW'
+            exact hag
+          | none =>
+            rw [ho] at hpt
+            by_cases hge2 : t.required.length + t.optional.length ≤ idx
+            · simp only [hge2, ite_true] at hpt
+              obtain ⟨E, c', htr, hW', hag⟩ := hrest idx l (by simpa [tupleFams] using hge2) hidx
+              simp only [tupleFams, hpt, Option.map_some, Option.some.injEq] at htr
+              subst htr; rw [hl] at hW'; cases hW'
+              exact hag
+            · simp only [hge2, ite_false] at hpt
+              cases hpt
+      obtain ⟨v₀, hv1, hv2⟩ := elemWitnessExcluded_sound hpos (ofEntries [])
+      exact hv2 ((hag 0 Nat.zero_lt_one (ofEntries []) v₀).1 hv1)
+
+/-- Whether every clause of `S₂` rejects a dense spine of length `len` whose
+position `idx` has contract `E₁`. -/
+@[nospecialize] def spineClausesRejectAt (G : NormalGraph ι) (S₂ : Ty ι)
+    (idx len : Nat) (E₁ : Ty ι) : Bool :=
+  G.plainTy S₂ && (expand G S₂).all fun
+    | .list t ts => (t :: ts).any fun u => tupleRejectsAt G u idx len E₁
+    | _ => false
+
+/-- Whether an invariant spine type `S₁` admits a depth-1 dense spine that `S₂`
+rejects: then `S₁` cannot imply `S₂` at depth 1. -/
+@[nospecialize] def spineRefutes (G : NormalGraph ι) (S₁ S₂ : Ty ι) : Bool :=
+  G.plainTy S₁ && G.plainTy S₂ &&
+    (expand G S₁).any fun
+      | .list t [] =>
+        let r := t.required.length
+        let m := r + t.optional.length
+        (match t.rest with
+         | some E₁ => decide (m < maxArrayLength) && spineClausesRejectAt G S₂ m (m + 1) E₁
+         | none => false) ||
+        (decide (r ≤ maxArrayLength) &&
+          (List.range r).any fun idx => match t.required[idx]? with
+            | some E₁ => spineClausesRejectAt G S₂ idx r E₁
+            | none => false)
+      | _ => false
+
+private theorem listT_of_entries {G : NormalGraph ι} {t : PositiveNormalization.Tuple (Ty ι)}
+    {Ts : List (Ty ι)} (hmax : Ts.length ≤ maxArrayLength)
+    (hreq_len : t.required.length ≤ Ts.length)
+    (hrest_len : t.rest = none → Ts.length ≤ t.required.length + t.optional.length)
+    (hreq_at : ∀ (i : Nat) (A : Ty ι), t.required[i]? = some A → Ts[i]? = some A)
+    (hopt_at : ∀ (i : Nat) (A : Ty ι), t.optional[i]? = some A → i + t.required.length < Ts.length →
+      Ts[t.required.length + i]? = some A)
+    (hrest_at : ∀ (i : Nat), t.required.length + t.optional.length ≤ i → i < Ts.length →
+      ∃ E, t.rest = some E ∧ Ts[i]? = some E) :
+    let W' : WorldT 1 := ofEntries (Ts.map fun T => (.elem, res (meaning G T)))
+    listT (tupleFams (meaning G) t) 1 W' (.arr (elemSlots 0 Ts.length)) := by
+  intro W'
+  have hlu : ∀ (i : Nat) (A : Ty ι), Ts[i]? = some A → lookup W' i = some (res (meaning G A)) := by
+    intro i A hi
+    simp only [W', lookup, toList, entries_ofEntries, List.map_map, List.getElem?_map, hi,
+      Option.map_some, Function.comp_apply]
+  have hnod : none ∉ elemSlots 0 Ts.length := by
+    intro hmem
+    obtain ⟨_, _, h⟩ := List.mem_map.mp hmem
+    cases h
+  refine ⟨elemSlots 0 Ts.length, rfl, fun j _ => SpinePresence.of_dense hnod j,
+    by simpa [tupleFams, elemSlots] using hreq_len,
+    by simpa [elemSlots] using hmax,
+    fun hr => by
+      have htn : t.rest = none := by
+        cases htr : t.rest <;> simp [tupleFams, htr] at hr ⊢
+      simpa [tupleFams, elemSlots] using hrest_len htn,
+    ?_, ?_, ?_, elemSlots_distinct 0 Ts.length⟩
+  · intro i A hA
+    simp only [tupleFams, List.getElem?_map, Option.map_eq_some_iff] at hA
+    obtain ⟨A₀, hA₀, rfl⟩ := hA
+    have hi : i < Ts.length := Nat.lt_of_lt_of_le (List.getElem?_eq_some_iff.mp hA₀).1 hreq_len
+    refine ⟨i, res (meaning G A₀), ?_, hlu i A₀ (hreq_at i A₀ hA₀),
+      fun _ _ _ _ => SlotContract.refl _ _⟩
+    simp [elemSlots_getElem?, hi]
+  · intro i A l hA hl
+    simp only [tupleFams, List.getElem?_map, Option.map_eq_some_iff] at hA
+    obtain ⟨A₀, hA₀, rfl⟩ := hA
+    simp only [tupleFams, List.length_map, elemSlots_getElem?] at hl
+    split at hl
+    · rename_i hlt
+      simp only [Option.some.injEq, Nat.zero_add] at hl
+      subst hl
+      exact ⟨res (meaning G A₀), hlu _ A₀ (hopt_at i A₀ hA₀ (by omega)),
+        fun _ _ _ _ => SlotContract.refl _ _⟩
+    · cases hl
+  · intro i l hge hl
+    simp only [tupleFams, List.length_map] at hge
+    simp only [elemSlots_getElem?] at hl
+    split at hl
+    · rename_i hlt
+      simp only [Option.some.injEq, Nat.zero_add] at hl
+      subst hl
+      obtain ⟨E₀, htr, hTs⟩ := hrest_at i hge hlt
+      exact ⟨meaning G E₀, res (meaning G E₀), by simp [tupleFams, htr], hlu i E₀ hTs,
+        fun _ _ _ _ => SlotContract.refl _ _⟩
+    · cases hl
+
+private theorem spineClausesRejectAt_sound {G : NormalGraph ι} {S₂ : Ty ι}
+    {idx len : Nat} {E₁ : Ty ι} {W' : WorldT 1} {ls : List (Option Nat)} {l : Nat}
+    (hrej : spineClausesRejectAt G S₂ idx len E₁ = true) (hlen : ls.length = len)
+    (hidx : ls[idx]? = some (some l)) (hl : lookup W' l = some (res (meaning G E₁)))
+    (hS₂ : meaning G S₂ 1 W' (.arr ls)) : False := by
+  simp only [spineClausesRejectAt, Bool.and_eq_true, List.all_eq_true] at hrej
+  obtain ⟨c, hc, hcv, -⟩ := (expand_sem G S₂ hrej.1 1 W' (.arr ls)).mp hS₂
+  have hcr := hrej.2 c hc
+  cases c with
+  | list t ts =>
+    simp only [List.any_eq_true] at hcr
+    obtain ⟨u, hu, htu⟩ := hcr
+    rcases List.mem_cons.mp hu with rfl | hu
+    · exact tupleRejectsAt_sound htu hlen hidx hl hcv.1
+    · exact tupleRejectsAt_sound htu hlen hidx hl (hcv.2 u hu)
+  | _ => simp at hcr
+
+theorem spineRefutes_sound {G : NormalGraph ι} {S₁ S₂ : Ty ι}
+    (href : spineRefutes G S₁ S₂ = true)
+    (himp : ∀ (W' : WorldT 1) (v : Val), meaning G S₁ 1 W' v → meaning G S₂ 1 W' v) : False := by
+  simp only [spineRefutes, Bool.and_eq_true, List.any_eq_true] at href
+  obtain ⟨⟨hp1, -⟩, c, hc, hcase⟩ := href
+  cases c with
+  | list t ts =>
+    cases ts with
+    | cons _ _ => simp at hcase
+    | nil =>
+      simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hcase
+      have hinv : ∀ (W' : WorldT 1) (v : Val), builtinInvariant G (builtinValues G) (.list t []) 1 W' v := by
+        intro _ _; unfold builtinInvariant; cases G.builtins <;> simp [Clause.carriesInvariant]
+      rcases hcase with hrest_case | ⟨hrmax, hreq_case⟩
+      · cases htr : t.rest with
+        | none => rw [htr] at hrest_case; simp at hrest_case
+        | some E₁ =>
+          rw [htr] at hrest_case
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at hrest_case
+          obtain ⟨hmlt, hrej⟩ := hrest_case
+          let Ts := t.required ++ t.optional ++ [E₁]
+          let W' : WorldT 1 := ofEntries (Ts.map fun T => (.elem, res (meaning G T)))
+          have hTslen : Ts.length = t.required.length + t.optional.length + 1 := by simp [Ts]; omega
+          have hlist : listT (tupleFams (meaning G) t) 1 W' (.arr (elemSlots 0 Ts.length)) :=
+            listT_of_entries (by omega) (by omega) (fun h => by rw [htr] at h; cases h)
+              (fun i A hA => by
+                have hi : i < t.required.length := (List.getElem?_eq_some_iff.mp hA).1
+                simp only [Ts, List.append_assoc]
+                rw [List.getElem?_append_left hi]; exact hA)
+              (fun i A hA _ => by
+                have hi : i < t.optional.length := (List.getElem?_eq_some_iff.mp hA).1
+                simp only [Ts]
+                rw [List.getElem?_append_left (by simp; omega), List.getElem?_append_right (Nat.le_add_right ..)]
+                simpa [Nat.add_sub_cancel_left] using hA)
+              (fun i hge hlt => by
+                have hi : i = t.required.length + t.optional.length := by omega
+                subst hi
+                refine ⟨E₁, htr, ?_⟩
+                simp only [Ts]
+                rw [List.getElem?_append_right (by simp)]
+                simp)
+          have hS₁ : meaning G S₁ 1 W' (.arr (elemSlots 0 Ts.length)) :=
+            (expand_sem G S₁ hp1 1 W' _).mpr ⟨.list t [], hc, ⟨hlist, fun _ h => by cases h⟩, hinv W' _⟩
+          have hS₂ := himp W' _ hS₁
+          let m := t.required.length + t.optional.length
+          have hidx : (elemSlots 0 Ts.length)[m]? = some (some m) := by
+            rw [elemSlots_getElem?]; simp [hTslen, m]
+          have hl : lookup W' m = some (res (meaning G E₁)) := by
+            simp only [W', lookup, toList, entries_ofEntries, List.map_map, List.getElem?_map, Ts]
+            rw [List.getElem?_append_right (by simp [m])]
+            simp [m]
+          exact spineClausesRejectAt_sound hrej (by simp [elemSlots, hTslen]) hidx hl hS₂
+      · obtain ⟨idx, hidx_mem, hrej_case⟩ := List.any_eq_true.mp hreq_case
+        have hidx_lt : idx < t.required.length := List.mem_range.mp hidx_mem
+        cases hA : t.required[idx]? with
+        | none => rw [hA] at hrej_case; cases hrej_case
+        | some E₁ =>
+          rw [hA] at hrej_case
+          let Ts := t.required
+          let W' : WorldT 1 := ofEntries (Ts.map fun T => (.elem, res (meaning G T)))
+          have hlist : listT (tupleFams (meaning G) t) 1 W' (.arr (elemSlots 0 Ts.length)) :=
+            listT_of_entries hrmax (Nat.le_refl _) (fun _ => Nat.le_add_right ..)
+              (fun _ _ h => h) (fun _ _ _ h => by simp [Ts] at h; omega)
+              (fun _ hge hlt => by simp [Ts] at hlt; omega)
+          have hS₁ : meaning G S₁ 1 W' (.arr (elemSlots 0 Ts.length)) :=
+            (expand_sem G S₁ hp1 1 W' _).mpr ⟨.list t [], hc, ⟨hlist, fun _ h => by cases h⟩, hinv W' _⟩
+          have hS₂ := himp W' _ hS₁
+          have hidx : (elemSlots 0 Ts.length)[idx]? = some (some idx) := by
+            rw [elemSlots_getElem?]; simp [Ts, hidx_lt]
+          have hl : lookup W' idx = some (res (meaning G E₁)) := by
+            simp only [W', lookup, toList, entries_ofEntries, List.map_map, List.getElem?_map,
+              Function.comp_apply, Ts, hA, Option.map_some]
+          exact spineClausesRejectAt_sound hrej_case (by simp [elemSlots, Ts]) hidx hl hS₂
+  | _ => simp at hcase
+
+/-- What a clause states of an object's array spine (`"[]"`): impossible (no
+member holds an array spine), an invariant (writable) spine type, a readonly
+view spine type, or unconstrained. -/
+inductive SpineInfo (ι : Type) where
+  | impossible
+  | invariant (S : Ty ι)
+  | readonly (S : Ty ι)
+  | unknown
+
+/-- Extract what a clause says of `arraySpineKey`. -/
+def clauseSpineInfo : PositiveNormalization.Clause (Ty ι) → SpineInfo ι
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
+  | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .numIn _ | .strIn _ | .int
+  | .list _ _ | .pack _ _ => .impossible
+  | .refs a _ vs _ _ ks _ =>
+    match (Stored.views a).lookup arraySpineKey with
+    | some S => .invariant S
+    | none => match vs.lookup arraySpineKey with
+      | some S => .readonly S
+      | none => if ks.any fun K => !K.admits arraySpineKey then .impossible else .unknown
+  | _ => .unknown
+
+private theorem clauseSpineInfo_sound {G : NormalGraph ι} {c : PositiveNormalization.Clause (Ty ι)}
+    {k : Nat} {W : WorldT k} {u : Val} {s : Nat}
+    (hsem : clauseSem G c k W u) (hs : Footprints.spineOf u = some s) :
+    match clauseSpineInfo c with
+    | .impossible => False
+    | .invariant S => ∃ c_s : Ctr k, lookup W s = some c_s ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (v : Val), c_s j hj W' v ↔ meaning G S j W' v
+    | .readonly S => ∃ c_s : Ctr k, lookup W s = some c_s ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (v : Val), c_s j hj W' v → meaning G S j W' v
+    | .unknown => True := by
+  have hobj_of_spine : ∀ {v : Val}, Footprints.spineOf v = some s →
+      ∃ flds cd oid, v = .objAt flds cd oid ∧ flds.lookup arraySpineKey = some s := by
+    intro v hv; cases v <;> simp_all [Footprints.spineOf, Footprints.fieldsOf]
+  obtain ⟨flds, cd, oid, rfl, hfl⟩ := hobj_of_spine hs
+  cases c with
+  | nul | undef | numLit _ | strLit _ | bigintLit _ | symbolLit _ => cases hsem.1
+  | boolLit b => cases b <;> cases hsem.1
+  | bool => rcases hsem.1 with h | h <;> cases h
+  | num | str | bigint | symbol => obtain ⟨_, h⟩ := hsem.1; cases h
+  | numIn _ | strIn _ => obtain ⟨_, _, h⟩ := hsem.1; cases h
+  | int => obtain ⟨_, h, -⟩ := hsem.1; cases h
+  | list _ _ => obtain ⟨_, h, -⟩ := hsem.1.1; cases h
+  | pack _ _ => exact hsem.1.elim
+  | refs a bs vs os ms ks st =>
+    simp only [clauseSpineInfo]
+    cases ha : (Stored.views a).lookup arraySpineKey with
+    | some S =>
+      obtain ⟨r, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup ha)
+      obtain ⟨flds', l', c_s, oid', heq, hfl', hW, hag⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S, hm, rfl⟩) hsem.1.1.1
+      cases heq; rw [hfl] at hfl'; cases hfl'
+      exact ⟨c_s, hW, hag⟩
+    | none =>
+      cases hv : vs.lookup arraySpineKey with
+      | some S =>
+        obtain ⟨flds', l', c_s, oid', heq, hfl', hW, hag⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hv, rfl⟩)
+            (by decide) hsem.1.2.1
+        cases heq; rw [hfl] at hfl'; cases hfl'
+        exact ⟨c_s, hW, hag⟩
+      | none =>
+        simp only
+        cases hex : ks.any fun K => !K.admits arraySpineKey with
+        | true =>
+          simp only [ite_true]
+          obtain ⟨K, hKm, hna⟩ := List.any_eq_true.mp hex
+          have hown := hsem.1.2.2.2.2.1 K hKm
+          obtain ⟨flds', oid', heq, hadm⟩ := hown
+          cases heq
+          have := hadm (arraySpineKey, s) (PositiveRules.mem_of_lookup hfl)
+          simp [this] at hna
+        | false => simp only [Bool.false_eq_true, ite_false]
+  | _ => simp [clauseSpineInfo]
+
+/-- Whether two clauses cannot share an array spine at budget ≥ 2. -/
+@[nospecialize] def clausesSpineApart (G : NormalGraph ι)
+    (c d : PositiveNormalization.Clause (Ty ι)) : Bool :=
+  match clauseSpineInfo c, clauseSpineInfo d with
+  | .impossible, _ | _, .impossible => true
+  | .invariant S₁, .invariant S₂ => spineRefutes G S₁ S₂ || spineRefutes G S₂ S₁
+  | .invariant S₁, .readonly S₂ => spineRefutes G S₁ S₂
+  | .readonly S₁, .invariant S₂ => spineRefutes G S₂ S₁
+  | _, _ => false
+
+/-- Whether no value of `A` and value of `B` can share an array spine at
+budget ≥ 2 (`typesSpineApart_sound`). -/
+@[nospecialize] def typesSpineApart (G : NormalGraph ι) (A B : Ty ι) : Bool :=
+  G.plainTy A && G.plainTy B &&
+    (expand G A).all fun c => (expand G B).all fun d => clausesSpineApart G c d
+
+theorem typesSpineApart_sound {G : NormalGraph ι} {A B : Ty ι}
+    {k₁ k₂ n : Nat} {W : WorldT n} (hk₁ : 2 ≤ k₁) (hk₁n : k₁ ≤ n) (hk₂ : 2 ≤ k₂) (hk₂n : k₂ ≤ n)
+    {u w : Val} {s t : Nat}
+    (hdis : typesSpineApart G A B = true)
+    (hu : meaning G A k₁ (trunc k₁ hk₁n W) u)
+    (hw : meaning G B k₂ (trunc k₂ hk₂n W) w)
+    (hsu : Footprints.spineOf u = some s)
+    (hsw : Footprints.spineOf w = some t) : s ≠ t := by
+  intro hst; subst hst
+  simp only [typesSpineApart, Bool.and_eq_true, List.all_eq_true] at hdis
+  obtain ⟨⟨hpA, hpB⟩, hall⟩ := hdis
+  obtain ⟨c, hc, hcu⟩ := (expand_sem G A hpA k₁ _ u).mp hu
+  obtain ⟨d, hd, hdw⟩ := (expand_sem G B hpB k₂ _ w).mp hw
+  have hcd := hall c hc d hd
+  have hi1 := clauseSpineInfo_sound hcu hsu
+  have hi2 := clauseSpineInfo_sound hdw hsw
+  have sameCtr : ∀ {c₁ : Ctr k₁} {c₂ : Ctr k₂},
+      lookup (trunc k₁ hk₁n W) s = some c₁ → lookup (trunc k₂ hk₂n W) s = some c₂ →
+      ∀ (W' : WorldT 1) (v : Val), c₁ 1 (by omega) W' v ↔ c₂ 1 (by omega) W' v := by
+    intro c₁ c₂ hl1 hl2 W' v
+    obtain ⟨c0, h0, rfl⟩ := lookup_trunc_inv hk₁n W s c₁ hl1
+    obtain ⟨c0', h0', rfl⟩ := lookup_trunc_inv hk₂n W s c₂ hl2
+    rw [h0] at h0'; cases h0'; exact Iff.rfl
+  unfold clausesSpineApart at hcd
+  cases hc1 : clauseSpineInfo c <;> rw [hc1] at hi1 hcd <;>
+  cases hd1 : clauseSpineInfo d <;> rw [hd1] at hi2 hcd <;>
+  simp only [Bool.false_eq_true, Bool.or_eq_true] at hcd
+  · exact hi1
+  · exact hi1
+  · exact hi1
+  · exact hi1
+  · exact hi2
+  · obtain ⟨c₁, hl1, hag1⟩ := hi1
+    obtain ⟨c₂, hl2, hag2⟩ := hi2
+    rcases hcd with h12 | h21
+    · exact spineRefutes_sound h12 fun W' v hv =>
+        (hag2 1 (by omega) W' v).mp ((sameCtr hl1 hl2 W' v).mp ((hag1 1 (by omega) W' v).mpr hv))
+    · exact spineRefutes_sound h21 fun W' v hv =>
+        (hag1 1 (by omega) W' v).mp ((sameCtr hl1 hl2 W' v).mpr ((hag2 1 (by omega) W' v).mpr hv))
+  · obtain ⟨c₁, hl1, hag1⟩ := hi1
+    obtain ⟨c₂, hl2, hag2⟩ := hi2
+    exact spineRefutes_sound hcd fun W' v hv =>
+      hag2 1 (by omega) W' v ((sameCtr hl1 hl2 W' v).mp ((hag1 1 (by omega) W' v).mpr hv))
+  · exact hi2
+  · obtain ⟨c₁, hl1, hag1⟩ := hi1
+    obtain ⟨c₂, hl2, hag2⟩ := hi2
+    exact spineRefutes_sound hcd fun W' v hv =>
+      hag1 1 (by omega) W' v ((sameCtr hl1 hl2 W' v).mpr ((hag2 1 (by omega) W' v).mpr hv))
+  · exact hi2
+
+/-- The possible types of the value reached by reading field path `p` from a
+value of one of the types `Ts`, stepping one field at a time via `fieldOperand`
+and `fieldTys`. -/
+@[nospecialize] def stepPathTys [DecidableEq ι] (G : NormalGraph ι) :
+    List (Ty ι) → List String → Option (List (Ty ι))
+  | Ts, [] => some Ts
+  | Ts, f :: q =>
+    if Ts.all fun A => fieldOperand (expand G A) (.str f) then
+      stepPathTys G (Ts.flatMap fun A => fieldTys (expand G A) (.str f)) q
+    else none
+
+/-- The possible types of reading path `p` from slot `x` in `Γ`. -/
+@[nospecialize] def pathTys [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (x : Nat) (p : List String) : Option (List (Ty ι)) :=
+  match Γ[x]? with
+  | some A => stepPathTys G [A] p
+  | none => none
+
+private theorem stepPathTys_sound [DecidableEq ι] {G : NormalGraph ι} {n : Nat} {W : WorldT n}
+    {h : Heap} (hh : HeapOk n W h) :
+    ∀ (p : List String) (k : Nat), p.length ≤ k → ∀ (hkn : k ≤ n) (Ts Us : List (Ty ι)) (v w : Val),
+      stepPathTys G Ts p = some Us →
+      (∃ A ∈ Ts, meaning G A k (trunc k hkn W) v) →
+      HeapKnowledge.readPath h v p = some w →
+      ∃ B ∈ Us, meaning G B (k - p.length) (trunc (k - p.length) (Nat.le_trans (Nat.sub_le k p.length) hkn) W) w
+  | [], k, _, hkn, Ts, Us, v, w, hst, hv, hr => by
+    simp only [stepPathTys, Option.some.injEq] at hst; subst hst
+    simp only [HeapKnowledge.readPath, Option.some.injEq] at hr; subst hr
+    simpa using hv
+  | f :: q, k, hk, hkn, Ts, Us, v, w, hst, ⟨A, hA, hvA⟩, hr => by
+    simp only [stepPathTys] at hst
+    split at hst
+    · rename_i hall
+      have hfo := List.all_eq_true.mp hall A hA
+      cases k with
+      | zero => simp at hk
+      | succ k' =>
+        obtain ⟨El, flds, code, oid, l, c, hv', hfd, hW, himp, hEl⟩ := fieldOperand_typed hfo hvA
+        rw [hv'] at hr
+        simp only [HeapKnowledge.readPath, hfd] at hr
+        cases hlu : h[l]? with
+        | none => rw [hlu] at hr; cases hr
+        | some u =>
+          rw [hlu] at hr
+          obtain ⟨c0, hW0, rfl⟩ := lookup_trunc_inv hkn W l c hW
+          obtain ⟨u', hu', hm⟩ := hh.1.2 l c0 hW0
+          rw [hlu] at hu'; cases hu'
+          have huEl : meaning G El k' (trunc k' (by omega) W) u :=
+            himp k' (Nat.lt_succ_self k') (trunc k' (by omega) W) u (hm k' (by omega))
+          have hih := stepPathTys_sound hh q k' (by simp at hk; omega) (by omega)
+            (Ts.flatMap fun A => fieldTys (expand G A) (.str f)) Us u w hst
+            ⟨El, List.mem_flatMap.mpr ⟨A, hA, hEl⟩, huEl⟩ hr
+          have hcast : ∀ m (hm : m ≤ n), m = k' - q.length →
+              ∃ B ∈ Us, meaning G B m (trunc m hm W) w := by rintro _ _ rfl; exact hih
+          exact hcast _ _ (by simp)
+    · cases hst
+
+theorem pathTys_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    {x : Nat} {p : List String} {Us : List (Ty ι)} {w : Val}
+    (hp : p.length ≤ n) (ht : pathTys G Γ x p = some Us)
+    (hr : HeapKnowledge.readPath h (ρ x) p = some w) :
+    ∃ B ∈ Us, meaning G B (n - p.length) (trunc (n - p.length) (Nat.sub_le n p.length) W) w := by
+  unfold pathTys at ht
+  cases hΓ : Γ[x]? with
+  | none => rw [hΓ] at ht; cases ht
+  | some A =>
+    rw [hΓ] at ht
+    have hv : meaning G A n (trunc n (Nat.le_refl n) W) (ρ x) := by
+      have := he.2 x A hΓ
+      have hteq : trunc n (Nat.le_refl n) W = W := by
+        unfold trunc
+        rw [List.map_id'' (fun ⟨_, _⟩ => rfl)]
+        exact ofEntries_entries W
+      rwa [hteq]
+    exact stepPathTys_sound hh p n hp (Nat.le_refl n) [A] Us (ρ x) w ht ⟨A, List.mem_singleton_self A, hv⟩ hr
+
 /-- Whether reading path `p` (depth ≤ 1) from slot `x` in `Γ` always yields an
-array spine (never a view spine) whenever `elementsOf` succeeds. -/
+array spine (never a view spine) whenever `elementsOf` succeeds: every type
+the read can have (`pathTys`) is an array or no object. -/
 @[nospecialize] def arrayPathOf [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
     (x : Nat) (p : List String) : Bool :=
-  match Γ[x]?, p with
-  | some A, [] => tyArrayOrNonObj G A
-  | some A, [f] => fieldOperand (expand G A) (.str f) && (fieldTys (expand G A) (.str f)).all (tyArrayOrNonObj G)
-  | _, _ => false
+  decide (p.length ≤ 1) && match pathTys G Γ x p with
+    | some Us => Us.all (tyArrayOrNonObj G)
+    | none => false
 
 theorem arrayPathOf_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
@@ -1882,31 +2418,96 @@ theorem arrayPathOf_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     ∀ x p w st, arrayPathOf G Γ x p = true → HeapKnowledge.readPath h (ρ x) p = some w →
       HeapKnowledge.elementsOf w = some st → Footprints.spineOf w = some st := by
   intro x p w st ha hr hel
-  unfold arrayPathOf at ha
-  cases hΓ : Γ[x]? with
-  | none => rw [hΓ] at ha; cases ha
-  | some A =>
-    rw [hΓ] at ha
-    cases p with
-    | nil =>
-      simp only [HeapKnowledge.readPath, Option.some.injEq] at hr; subst hr
-      exact tyArrayOrNonObj_sound ha (he.2 x A hΓ) hel
-    | cons f q =>
-      cases q with
-      | nil =>
-        simp only [Bool.and_eq_true, List.all_eq_true] at ha
-        obtain ⟨El, flds, code, oid, l, c, hv, hfd, hW, himp, hEl⟩ :=
-          fieldOperand_typed ha.1 (he.2 x A hΓ)
-        rw [hv] at hr
-        simp only [HeapKnowledge.readPath, hfd] at hr
-        cases hlu : h[l]? with
-        | none => rw [hlu] at hr; cases hr
-        | some u =>
-          rw [hlu] at hr; cases hr
-          obtain ⟨u', hu', hm⟩ := hh.1.2 l c hW
-          rw [hlu] at hu'; cases hu'
-          exact tyArrayOrNonObj_sound (ha.2 El hEl) (himp 0 (Nat.zero_lt_succ n) _ w (hm 0 (Nat.zero_lt_succ n))) hel
-      | cons _ _ => cases ha
+  simp only [arrayPathOf, Bool.and_eq_true, decide_eq_true_eq] at ha
+  obtain ⟨hp, ha⟩ := ha
+  cases hT : pathTys G Γ x p with
+  | none => rw [hT] at ha; cases ha
+  | some Us =>
+    rw [hT, List.all_eq_true] at ha
+    obtain ⟨B, hB, hwB⟩ := pathTys_sound he hh (by omega) hT hr
+    exact tyArrayOrNonObj_sound (ha B hB) hwB hel
+
+/-- Whether the types along paths `(x, p)` and `(y, q)` guarantee their array
+spines are disjoint (`typesPathSpinesApart_sound`). -/
+@[nospecialize] def typesPathSpinesApart [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (x : Nat) (p : List String) (y : Nat) (q : List String) : Bool :=
+  match pathTys G Γ x p, pathTys G Γ y q with
+  | some Ts, some Us => Ts.all fun A => Us.all fun B => typesSpineApart G A B
+  | _, _ => false
+
+theorem typesPathSpinesApart_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    {x y : Nat} {p q : List String} {u w : Val} {s t : Nat}
+    (hp : p.length + 2 ≤ n) (hq : q.length + 2 ≤ n)
+    (hdis : typesPathSpinesApart G Γ x p y q = true)
+    (hu : HeapKnowledge.readPath h (ρ x) p = some u)
+    (hw : HeapKnowledge.readPath h (ρ y) q = some w)
+    (hsu : Footprints.spineOf u = some s)
+    (hsw : Footprints.spineOf w = some t) : s ≠ t := by
+  unfold typesPathSpinesApart at hdis
+  cases hT : pathTys G Γ x p with
+  | none => rw [hT] at hdis; cases hdis
+  | some Ts =>
+    rw [hT] at hdis
+    cases hU : pathTys G Γ y q with
+    | none => rw [hU] at hdis; cases hdis
+    | some Us =>
+      rw [hU] at hdis
+      simp only [List.all_eq_true] at hdis
+      obtain ⟨A, hA, huA⟩ := pathTys_sound he hh (by omega) hT hu
+      obtain ⟨B, hB, hwB⟩ := pathTys_sound he hh (by omega) hU hw
+      exact typesSpineApart_sound (by omega) (Nat.sub_le n p.length) (by omega) (Nat.sub_le n q.length)
+        (hdis A hA B hB) huA hwB hsu hsw
+
+/-- The separation query from type-disjoint array spines at paths of depth at
+most 2, sound at any world of budget ≥ 4 (`typeSpineQuery_sound`). -/
+@[nospecialize] def typeSpineQuery [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) :
+    Footprints.SepQuery :=
+  ⟨fun r s =>
+    let pair := fun (a b : Nat × List String) =>
+      decide (a.2.length ≤ 2) && decide (b.2.length ≤ 2) && typesPathSpinesApart G Γ a.1 a.2 b.1 b.2
+    match Footprints.spineSite r, Footprints.spineSite s with
+    | some x, some y => pair x y
+    | some x, none => match Footprints.selectedSpineSite s with
+      | some y => pair x y
+      | none => false
+    | none, some y => match Footprints.selectedSpineSite r with
+      | some x => pair x y
+      | none => false
+    | none, none => false⟩
+
+theorem typeSpineQuery_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {ρ : Env} {nw : Nat} {W : WorldT (nw + 4)} {h : Heap}
+    (he : EnvOk G Γ ρ (nw + 4) W) (hh : HeapOk (nw + 4) W h) (hρ : RootsOk W ρ) :
+    (typeSpineQuery G Γ).Sound ρ h := by
+  intro r s l _ hd hr hs
+  simp only [typeSpineQuery] at hd
+  split at hd
+  · rename_i x y hx hy
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hd
+    obtain ⟨u, hu, hul⟩ := Footprints.spineSite_mem hx hr
+    obtain ⟨w, hw, hwl⟩ := Footprints.spineSite_mem hy hs
+    exact typesPathSpinesApart_sound he hh (by omega) (by omega) hd.2 hu hw hul hwl rfl
+  · rename_i x hx _
+    split at hd
+    · rename_i y hy
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hd
+      obtain ⟨u, hu, hul⟩ := Footprints.spineSite_mem hx hr
+      have hrole := Footprints.spineSite_role hh hρ hx hr
+      obtain ⟨w, hw, hwl⟩ := Footprints.selectedSpineSite_array_mem hh hρ hrole hy hs
+      exact typesPathSpinesApart_sound he hh (by omega) (by omega) hd.2 hu hw hul hwl rfl
+    · cases hd
+  · rename_i y _ hy
+    split at hd
+    · rename_i x hx
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hd
+      have hrole := Footprints.spineSite_role hh hρ hy hs
+      obtain ⟨u, hu, hul⟩ := Footprints.selectedSpineSite_array_mem hh hρ hrole hx hr
+      obtain ⟨w, hw, hwl⟩ := Footprints.spineSite_mem hy hs
+      exact typesPathSpinesApart_sound he hh (by omega) (by omega) hd.2 hu hw hul hwl rfl
+    · cases hd
+  · cases hd
 
 /-- **A stable field's location holds its value at every exit of a run**
 (`stable-first`), normal or thrown: the assertion that each first field
@@ -2023,11 +2624,20 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
               have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
               simpa only [List.getElem?_set_ne hne] using hy
             · exact hy
-          | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
+          | project k p =>
+            simp only [boundValue] at hy ⊢
+            split at hy
+            · rename_i l' hl0
+              have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
+              rw [List.getElem?_set_ne hne]
+              obtain ⟨u, hu, ht⟩ := Option.bind_eq_some_iff.mp hy
+              exact Option.bind_eq_some_iff.mpr ⟨u, hu, termValue_kept hc firstKept_none hky ht⟩
+            · cases hy
+          | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
           | free t => exact termValue_kept (ε := ε) hc hf hky hy
         · cases y with
-          | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
-          | free t => simp [Bound.grownBy, Term.grownBy, hspine] at hgy
+          | index | elem | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
+          | project _ _ | free _ => simp [Bound.grownBy, Term.grownBy, hspine] at hgy
   · cases hk
 
 /-! ## A field's contents across a write (`weak-update`)

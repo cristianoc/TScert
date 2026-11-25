@@ -1,7 +1,8 @@
 // Pushing `null` or a non-empty `number[]` onto `(number[] | null)[]`
 // preserves `forall i in chunks: chunks[i] === null || 1 <= chunks[i].length`;
-// pushing onto an inner `number[]` cannot alias the outer `(number[] | null)[]`
-// spine because their element types are disjoint. Safe (run under Node).
+// The inner `number[]` and outer `(number[] | null)[]` have incompatible
+// writable spine contracts even when empty. A push on a row already in the
+// outer array preserves its lower length bound at every occurrence.
 /**
  * @invariant forall i in this.chunks: this.chunks[i] === null || 1 <= this.chunks[i].length
  */
