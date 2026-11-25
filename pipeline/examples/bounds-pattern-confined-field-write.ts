@@ -3,9 +3,6 @@
 // `fragment.width = s`, a write of a field of a fresh object, whose location
 // is no element of `items` and no spine of `widths`.
 // Pretext: rich-inline.ts createLine (12 sites), setEmptyObjectFacts (7).
-// Gap: a quantified fact is kept across a field write only where the written
-// value meets its body; the field's region being apart from the fact's
-// support is not used, with the fact a precondition or a loop invariant.
 type Fragment = { item: number; width: number };
 
 /** @requires forall i in items: safeInteger(items[i]) && 0 <= items[i] && items[i] < widths.length */

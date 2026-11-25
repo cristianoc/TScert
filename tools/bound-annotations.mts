@@ -903,11 +903,12 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           return { arr, elemPath: rest === "" ? [] : rest.slice(1).split(".") };
         };
         const resolvedElemGuards: { target: ElemTarget; arr: string; arrFields: string[]; elemPath: string[]; tag: GuardTag }[] = [];
-        const elemExcludedBy = (limit: number, arrKey: string, arrRoot: string, arrFields: string[]): Excluded => (depth) =>
+        const elemExcludedBy = (limit: number, arrKey: string, arrRoot: string, arrFields: string[], elemPath: string[]): Excluded => (depth) =>
           depth <= arrFields.length
             ? excludedBy(guards, guards.length, arrRoot)(depth)
             : resolvedElemGuards.slice(0, limit).flatMap(g =>
-                g.arr === arrKey && g.arrFields.length + 1 + g.elemPath.length === depth ? [g.tag] : []);
+                g.arr === arrKey && g.arrFields.length + 1 + g.elemPath.length === depth &&
+                g.elemPath.every((field, i) => elemPath[i] === field) ? [g.tag] : []);
         for (const g of a.elemGuards) {
           const parsedElem = splitIndexed(g.path);
           if (parsedElem === null)
@@ -918,7 +919,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           const arrKind = ap.at(arrFields, excludedBy(guards, guards.length, arrRoot));
           if (arrKind !== "array" && arrKind !== "view")
             throw new ClauseError(`the element guard ${g.path} indexes ${arr}, which is not an array or a typed array`);
-          if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields),
+          if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, elemPath),
               g.tag === "undefined") === null)
             throw new ClauseError(`the element path ${g.path} has no field contract`);
           const target: ElemTarget = arr === a.array
@@ -949,7 +950,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
               throw new ClauseError(`${key} indexes ${arr}, which is not an array or a typed array`);
             const length = fullPath.at(-1) === "length";
             const ep = length ? fullPath.slice(0, -1) : fullPath;
-            const kind = ap.at([...arrFields, "[]", ...ep], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields));
+            const kind = ap.at([...arrFields, "[]", ...ep], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, ep));
             if (length) {
               if (kind !== "array" && kind !== "view" && kind !== "string")
                 throw new ClauseError(`the element path ${key} has no length contract`);

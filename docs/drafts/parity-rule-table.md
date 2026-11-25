@@ -75,7 +75,7 @@ Each fixture below needs more than rule Loop with its frame.
 | Fixture | What its source requires |
 |---|---|
 | `bounds-pattern-grow-upper-refused` | `paths`: separation of an allocation through stable paths; `straight`: transfer without a loop |
-| `bounds-pattern-fresh-field-write-refused` | preservation by support across a field write, usable as a loop frame, of a quantified fact over a typed array that also reads another array's length; `everyFrame` gives part of it |
+| `bounds-pattern-confined-field-write` | preservation by support across a field write, usable as a loop frame, of a quantified fact over a typed array that also reads another array's length |
 | `written-ensures-push-refused` | an inferred invariant of a counter and a length, the exact Push consequence, arithmetic, and reasoning at the loop's exit |
 | `bounds-pattern-postfix-prefix-refused` | extension of a changing quantified prefix across a view write, a fact of the invariant |
 | `blocker-for-of-fresh-record` | the separation of a replacement record, which the note places outside its established derivations |

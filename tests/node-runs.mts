@@ -3450,6 +3450,9 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-guarded-element-length", ["positive"]),
     "JSON.stringify([lastAdvance({ advances: [[3, 7], null], extras: null }, 0), lastAdvance({ advances: [[3, 7], null], extras: null }, 1), sumWithExtras({ advances: [[3, 7]], extras: [[1, 2]] }, 0), sumWithExtras({ advances: [[3, 7]], extras: null }, 0)])"),
     "[7,0,13,10]", "quantified-guarded-element-length: guarded element length and parallel-array extras");
+  assert.throws(() => runExample(negative("invalid-quantified-sibling-element-guard"),
+    "rightLength([{ left: [], right: null }], 0)"), /TypeError/,
+    "testing left leaves right null, and reading its length throws");
   assert.equal(runExample(negative("invalid-quantified-guarded-element-length"),
     "String(lastOrZero([[]], 0))"),
     "NaN", "invalid-quantified-guarded-element-length: empty inner array reads index -1 (undefined + 1 = NaN)");
