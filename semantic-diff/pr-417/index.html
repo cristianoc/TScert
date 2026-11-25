@@ -1,0 +1,277 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-417"><code>2d72501e34addf6011f492ba2076d89362668cee..pr-417</code></a><ul><li>1 commit</li><li>changes: 1 Trust, 1 Definition, 1 Rule, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">A fresh whole-array fill sets every index below its length to the evaluated argument; the contract states the argument's tag (null, undefined, true, false) at each index.</span></li></ul></li></ul></section>
+<h2 id="g-pr-417"><code>2d72501e34addf6011f492ba2076d89362668cee..pr-417</code></h2><article class="card" id="c-92fa23196"><header><div><div class="sha">92fa23196 · Cristiano Calcagno · Nov 25, 11:39</div><h3>State fill's element tag and entail guarded quantified clauses from known element tags</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>attachEmptyExtras</code> (issue #393) returns <code>new Array(chunks.length).fill(null)</code> and states <code>forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length</code>. It was refused: &quot;a return of 'attachEmptyExtras' does not establish the postcondition&quot;. The fill's contract stated only the result's length, no rule derived a guarded quantified clause from an element tag known over a prefix, and a guarded clause required its guard's read to yield a value even where JavaScript evaluates it to <code>undefined</code> (<code>chunks[i]</code> at a hole) and the continuation decides the clause. Combines #411's second commit with #405/#407.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">fresh array fill: the stored elements</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>new Array(n).fill(v)</code> states a fresh result of length n.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>It also states, for each tag t among null, undefined, true and false: v !== t, or every result index below the length holds t. The fresh fill defines each index below n with v and runs no client code.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Lean semantics: a guarded body clause at index i</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span>⟦<var>T</var> <span class="m-rel">=</span> <var>g</var> ∨ <var>φ</var>⟧ᵢ ⟺ <span class="m-bind">∃</span> <var>w</var>. <span class="m-text">read</span>ᵢ(<var>T</var>) <span class="m-rel">=</span> <var>w</var> ∧ (<var>g</var>(<var>w</var>) ∨ ⟦<var>φ</var>⟧ᵢ)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span>⟦<var>T</var> <span class="m-rel">=</span> <var>g</var> ∨ <var>φ</var>⟧ᵢ ⟺ (<span class="m-bind">∃</span> <var>w</var>. <span class="m-text">read</span>ᵢ(<var>T</var>) <span class="m-rel">=</span> <var>w</var> ∧ <var>g</var>(<var>w</var>)) ∨ <span class="m-text">(eval</span>ᵢ(<var>T</var>) ∧ ⟦<var>φ</var>⟧ᵢ)</span></div><div class="row"><span><span class="m-text">eval</span>ᵢ(<var>P</var>[<var>i</var>]) <span class="m-rel">=</span> <span class="m-lit">true</span>, <span class="m-text">for the quantified array's own element without a</span></span></div><div class="row cont"><span><span class="m-text">data path</span><span class="m-rel">:</span> <span class="m-text">JavaScript reads every index of an array, a hole or an</span></span></div><div class="row cont"><span><span class="m-text">index past the end as</span> <span class="m-lit">undefined</span></span></div><div class="row"><span><span class="m-text">eval</span>ᵢ(<var>T</var>) ⟺ <span class="m-bind">∃</span> <var>w</var>. <span class="m-text">read</span>ᵢ(<var>T</var>) <span class="m-rel">=</span> <var>w</var>, <span class="m-text">for a data path</span> <var>P</var>[<var>i</var>].<var>f</var> <span class="m-text">(throws on a</span></span></div><div class="row cont"><span><span class="m-text">nullish element) and a parallel read</span> <var>Q</var>[<var>i</var>] <span class="m-text">(throws on a nullish</span> <var>Q</var>)</span></div><div class="row"><span><var>T</var> <span class="m-text">is the read</span> <var>P</var>[<var>i</var>] <span class="m-text">or</span> <var>Q</var>[<var>i</var>] <span class="m-text">with a data path</span>; <var>g</var> <var>a</var> <span class="m-kw">tag</span>; <var>φ</var> <span class="m-text">the</span></span></div><div class="row"><span><span class="m-text">continuation, whose own reads are part of</span> ⟦<var>φ</var>⟧ᵢ.</span></div><div class="row"><span><span class="m-text">This is JavaScript's truth of</span> <code class="m-code"><span class="tk-t">T</span> === g || φ</code><span class="m-rel">:</span> <span class="m-text">the read evaluates, and</span></span></div><div class="row"><span><span class="m-text">its value has the tag or the continuation holds</span>. <span class="m-text">The split is the one</span></span></div><div class="row"><span><span class="m-text">JavaScript makes between a read that cannot throw and one that can</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean rules: element guards over a prefix</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span> <var>j</var>&lt;<var>u</var>. (<var>Q</var>[<var>j</var>] <span class="m-rel">=</span> <var>g</var> ∨ ⊥)</span><span><var>K</var> <span class="m-rel">⊢</span> <var>t</var> <span class="m-text">defined</span></span><span><var>K</var> <span class="m-rel">⊢</span> <var>t</var> <span class="m-rel">≤</span> <var>u</var></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span> <var>i</var>&lt;<var>t</var> <span class="m-op">of</span> <var>P</var>. (<var>P</var>[<var>i</var>] <span class="m-rel">=</span> <var>h</var> ∨ <var>Q</var>[<var>i</var>] <span class="m-rel">=</span> <var>g</var> ∨ <var>φ</var>)</div></div></div><span class="rule-name">(every-guard)</span></div><div class="formulas"><div class="row"><span><span class="m-text">A target clause's guard holds through a source guard on the same read</span></span></div><div class="row"><span><span class="m-text">(same array up to aliases, same data path) whose continuation is a</span></span></div><div class="row"><span><span class="m-text">contradiction</span>. <span class="m-text">Otherwise its read must evaluate</span>, <var>P</var>[<var>i</var>] <span class="m-text">always and any</span></span></div><div class="row"><span><span class="m-text">other read by a source guard on the same read, and its continuation</span></span></div><div class="row"><span><span class="m-text">holds by the same rule</span>. <span class="m-text">Source and target may read the index's array or</span></span></div><div class="row"><span><span class="m-text">a parallel one, with or without a data path</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, element guards</span></h4><p>the meaning of a guarded</p><div class="prose"><p>body clause and the rule every-guard, with attachEmptyExtras as the example. SOURCE-CONTRACTS.md states the fill's element tags.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-array-fill-null-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">becomes quantified-array-fill-null</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;number[] | null&gt;(n).fill(null)` creates an array of length `n`</span>
+<span class="tk-c">// whose every element is `null`, which vacuously establishes a guarded</span>
+<span class="tk-c">// parallel-array invariant against any array of length `n`. Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @ensures result.length === chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachEmptyExtras(chunks: (number[] | <span class="tk-k">null</span>)[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <mark><span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>)</mark>;
+}</pre></details></li><li><details><summary><code>quantified-array-fill-null</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">attachEmptyExtras verbatim, the reversed guard order, the array itself, an object literal</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;T&gt;(n).fill(null)` makes an array of length `n` whose every element</span>
+<span class="tk-c">// is `null` (`%ArrayFilled%`'s all-tag postcondition). A guarded quantified</span>
+<span class="tk-c">// clause whose guard tests that array's element holds through the guard, in</span>
+<span class="tk-c">// either guard order, over the array itself, over a parallel array, and inside</span>
+<span class="tk-c">// an object literal. Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @ensures result.length === chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachEmptyExtras(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/** @ensures result.length === chunks.length
+ *  @ensures forall i in chunks: result[i] === null || chunks[i] === null || chunks[i].length &lt;= result[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachNullExtras(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(n) &amp;&amp; 0 &lt;= n
+ * @ensures result.length === n
+ * @ensures forall i in result: result[i] === null || 1 &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> makeEmptySlots(n: number): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/**
+ * @invariant this.extras.length === this.chunks.length
+ * @invariant forall i in this.chunks: this.chunks[i] === null || this.extras[i] === null || this.chunks[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkExtras</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachEmptyExtrasBox(chunks: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">ChunkExtras</span> {
+  <span class="tk-k">const</span> extras = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>);
+  <span class="tk-k">return</span> { chunks, extras };
+}</pre></details></li><li><details><summary><code>invalid-quantified-array-fill-null</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a fill with [] states no null element</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;number[] | null&gt;(chunks.length).fill([])` fills every element with</span>
+<span class="tk-c">// an empty array rather than `null`, so the guarded parallel-array postcondition</span>
+<span class="tk-c">// is refused: reading `extras[0][1]` for `chunks = [[1, 2]]` yields `undefined`</span>
+<span class="tk-c">// at `number` (run under Node).</span>
+<span class="tk-c">/**
+ * @ensures result.length === chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachWrongFill(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill([]);
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; chunks.length
+ * @requires extras.length === chunks.length
+ * @requires forall j in chunks: chunks[j] === null || extras[j] === null || chunks[j].length &lt;= extras[j].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readLastExtra(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  extras: (number[] | <span class="tk-k">null</span>)[],
+  i: number,
+): number {
+  <span class="tk-k">const</span> c = chunks[i]!;
+  <span class="tk-k">const</span> e = extras[i]!;
+  <span class="tk-k">if</span> (c === <span class="tk-k">null</span> || e === <span class="tk-k">null</span> || c.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> e[c.length - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>invalid-quantified-array-fill-short</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a fill one shorter than chunks leaves the last index uncovered</span></summary><pre class="code"><span class="tk-c">// A null fill one element shorter than `chunks` leaves the last index of the</span>
+<span class="tk-c">// guarded domain outside the filled array: `result[i]` is `undefined` there,</span>
+<span class="tk-c">// so the clause compares `chunks[i].length` with `undefined.length`. Under</span>
+<span class="tk-c">// Node, `readLastExtra([[1, 2]], attachShortExtras([[1, 2]]), 0)` throws a</span>
+<span class="tk-c">// TypeError.</span>
+<span class="tk-c">/**
+ * @requires 1 &lt;= chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachShortExtras(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length - <span class="tk-n">1</span>).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; chunks.length
+ * @requires forall j in chunks: chunks[j] === null || extras[j] === null || chunks[j].length &lt;= extras[j].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readLastExtra(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  extras: (number[] | <span class="tk-k">null</span>)[],
+  i: number,
+): number {
+  <span class="tk-k">const</span> c = chunks[i]!;
+  <span class="tk-k">const</span> e = extras[i]!;
+  <span class="tk-k">if</span> (c === <span class="tk-k">null</span> || e === <span class="tk-k">null</span> || c.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> e[c.length - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>quantified-element-guard-prefix</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">known null elements and null data paths, same and parallel arrays</span></summary><pre class="code"><span class="tk-c">/** @requires chunks.length &lt;= extras.length
+ *  @requires forall j in extras: extras[j] === null || 1 &lt;= 0
+ *  @ensures forall j in chunks: result[j] === null || chunks[j] === null || chunks[j].length &lt;= result[j].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> keepNullExtras(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  extras: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> extras;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= rows.length
+ *  @requires forall j in rows: rows[j] === null || 1 &lt;= 0
+ *  @ensures forall j in result: result[j] === null || 2 &lt;= result[j].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> keepNullRows(rows: (number[] | <span class="tk-k">null</span>)[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> rows;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Row</span> = { tail: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires 0 &lt;= rows.length
+ *  @requires forall j in rows: rows[j].tail === null || 1 &lt;= 0
+ *  @ensures forall j in rows: rows[j].tail === null || 2 &lt;= rows[j].tail.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> keepNullTails(rows: <span class="tk-t">Row</span>[]): <span class="tk-t">Row</span>[] {
+  <span class="tk-k">return</span> rows;
+}
+
+<span class="tk-c">/** @requires chunks.length &lt;= rows.length
+ *  @requires forall j in rows: rows[j].tail === null || 1 &lt;= 0
+ *  @ensures forall j in chunks: chunks[j] === null || result[j].tail === null || chunks[j].length &lt;= result[j].tail.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> keepNullParallelTails(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  rows: <span class="tk-t">Row</span>[],
+): <span class="tk-t">Row</span>[] {
+  <span class="tk-k">return</span> rows;
+}</pre></details></li><li><details><summary><code>invalid-quantified-element-guard-prefix</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the all-null array may be shorter than the domain</span></summary><pre class="code"><span class="tk-c">// Under Node, shortExtras([[3]], [])[0] is undefined. Neither disjunct</span>
+<span class="tk-c">// guards the absent entry before the comparison reads its length.</span>
+<span class="tk-c">/** @requires forall j in extras: extras[j] === null || 1 &lt;= 0
+ *  @ensures forall j in chunks: result[j] === null || chunks[j] === null || chunks[j].length &lt;= result[j].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shortExtras(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  extras: (number[] | <span class="tk-k">null</span>)[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> extras;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">readLastExtra([[<span class="tk-n">1</span>, <span class="tk-n">2</span>]], attachWrongFill([[<span class="tk-n">1</span>, <span class="tk-n">2</span>]]), <span class="tk-n">0</span>) is <span class="tk-k">undefined</span></span><span class="ln">under <span class="tk-t">Node</span>; readLastExtra([[<span class="tk-n">1</span>, <span class="tk-n">2</span>]], attachShortExtras([[<span class="tk-n">1</span>, <span class="tk-n">2</span>]]), <span class="tk-n">0</span>)</span><span class="ln">throws a <span class="tk-t">TypeError</span>; the clause <span class="tk-k">of</span> shortExtras([[<span class="tk-n">3</span>]], []) throws a</span><span class="ln"><span class="tk-t">TypeError</span>.</span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>The new meaning implies JavaScript's truth of the clause at every state where the bound array is an array. Every theorem reading a guarded body clause (renaming, framing, heap extension, lowering through read links, object merges, composition at calls, element-read instantiation) is re-proved against it, and the verifier builds with no sorry, axiom or warning. The rule's proof uses the source's tag where its continuation is impossible, the source's read where its target is not its own element, and alias equality of the two reads. mode8Accepted_sound and its premise are unchanged.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build, lake build verifier and both axiom checks; tsc; tools/unchecked.mts; tests/json-field-names.mts; tests/docs.mts; tests/node-runs.mts; tests/builtin-trust.mts; run-cases for quantified (39/39), guarded (27/27), every (21/21), invariant (35/35), ensures (16/16), pretext (71/71) and array-fill (12/12), all as expected. make test not run.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.BodyClause.HoldsAt · Verification.HeapKnowledge.ElemTarget.ownElement · Verification.HeapKnowledge.ElemTarget.mapM_ownElement · Verification.HeapKnowledge.everyEntailed_sound · Verification.HeapKnowledge.instantiateBodyClause_holds · Verification.HeapKnowledge.bodyClauseFollows_sound</dd><dt>Trust</dt><dd><span class="trust">A fresh whole-array fill sets every index below its length to the evaluated argument; the contract states the argument's tag (null, undefined, true, false) at each index.</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-array-fill-null</span> <span class="test pos">quantified-element-guard-prefix</span> <span class="test neg">invalid-quantified-array-fill-null</span> <span class="test neg">invalid-quantified-array-fill-short</span> <span class="test neg">invalid-quantified-element-guard-prefix</span></dd></dl>
+<details><summary>15 files changed, 618 insertions(+), 130 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                                 |  49 +++
+ docs/SOURCE-CONTRACTS.md                           |  11 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  78 +++--
+ lean/Verification/Semantics/HeapKnowledge.lean     | 339 +++++++++++++++++----
+ lean/Verification/Semantics/IndexFacts.lean        |  40 ++-
+ lean/Verification/Semantics/StepRelations.lean     |   7 +-
+ pipeline/cases.mts                                 |   7 +-
+ .../examples/invalid-quantified-array-fill-null.ts |  29 ++
+ .../invalid-quantified-array-fill-short.ts         |  29 ++
+ .../invalid-quantified-element-guard-prefix.ts     |  10 +
+ .../examples/quantified-array-fill-null-gap.ts     |  10 -
+ pipeline/examples/quantified-array-fill-null.ts    |  45 +++
+ .../examples/quantified-element-guard-prefix.ts    |  35 +++
+ tests/node-runs.mts                                |  20 +-
+ tools/intrinsics.mts                               |  39 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
