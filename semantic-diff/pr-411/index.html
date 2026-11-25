@@ -1,0 +1,257 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-411"><code>fbd37c34dfedea1a89f2316299c5a87c897f44e7..pr-411</code></a><ul><li>2 commits</li><li>changes: 2 Rule, 1 Trust, 1 Definition</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span> <span class="chip">parser</span> <span class="chip">docs</span></li><li>new trust: <span class="trust">%ArrayFilled% guarded all-tag element postconditions (null, undefined, true, false; ECMA-262 Array.prototype.fill, audited in docs/SOURCE-CONTRACTS.md)</span></li><li>wire: none</li></ul></li></ul></section>
+<h2 id="g-pr-411"><code>fbd37c34dfedea1a89f2316299c5a87c897f44e7..pr-411</code></h2><article class="card" id="c-3bc832a4b"><header><div><div class="sha">3bc832a4b · Cristiano Calcagno · Nov 25, 07:41</div><h3>Lower goal quantified facts through read links (#391)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Returning an object literal such as <code>{ chunks }</code>, <code>{ chunks, extras }</code>, or <code>{ inner: { chunks } }</code> records non-optional read links from the fresh object's fields to the initializer slots, while the quantified <code>every</code> invariants stay rooted at the initializer slots. Goal checking in <code>indicesCheckWith</code>, <code>baseFollows</code>, and <code>indicesFilter</code> did not lower goal <code>IndexFact.every</code> roots, stop terms, parallel targets, or body clauses through <code>HeapLinks</code>, so field-rooted quantified postconditions on object literals were refused.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">HeapKnowledge: read-link lowering for quantified goals</span></h4><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">lowerRootAll</code>, <code class="m-code">lowerBoundAll</code>, <code class="m-code">lowerTargetAll</code>, <span class="m-text">and</span></span></div><div class="row"><span><code class="m-code">lowerBodyClauseAll</code> <span class="m-text">lower array roots, parallel targets, free terms, and</span></span></div><div class="row"><span><span class="m-text">body clauses across arbitrarily many read links modulo alias classes</span>,</span></div><div class="row"><span><span class="m-text">proved exact (bidirectional) for array-spine reads</span> <span class="m-text">in</span></span></div><div class="row"><span><code class="m-code">bridgeReads_elements</code>, <code class="m-code">lowerRootAll_elements</code>, <span class="m-text">and</span></span></div><div class="row"><span><code class="m-code">lowerBodyClauseAll_iff</code>. <code class="m-code">everyLinkedFollows</code> <span class="m-text">(proved sound by</span></span></div><div class="row"><span><code class="m-code">everyLinkedFollows_sound</code>) <span class="m-text">checks a target <code class="m-code"><span class="tk-t">IndexFact</span>.every</code> against</span></span></div><div class="row"><span><span class="m-text">source <code class="m-code">every</code> atoms by lowering both sides and comparing roots, body</span></span></div><div class="row"><span><span class="m-text">clauses, and stop terms (exact or prefix-weakened via</span> <code class="m-code">bridgedStopLe</code>),</span></div><div class="row"><span><span class="m-text">wired into <code class="m-code">indicesCheckWith</code>, <code class="m-code">baseFollows</code> (covering guarded and</span></span></div><div class="row"><span><span class="m-text">disjunctive goals), and</span> <code class="m-code">indicesFilter</code>. <code class="m-code">guardPrep</code> <span class="m-text">composes</span> <code class="m-code">lowerGuard</code></span></div><div class="row"><span><span class="m-text">before <code class="m-code">liftGuard</code> so shared field values normalize to one canonical guard</span></span></div><div class="row"><span><span class="m-text">path</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-object-literal-every</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">single, guarded parallel, and nested object-literal quantified invariants verify through read links</span></summary><pre class="code"><span class="tk-c">// Returning a fresh object literal `{ chunks }` (or `{ chunks, extras }`, or</span>
+<span class="tk-c">// a nested literal `{ inner: { chunks } }`) when the wrapped arrays already</span>
+<span class="tk-c">// satisfy quantified invariants discharges the field-rooted postconditions</span>
+<span class="tk-c">// (including guarded and parallel `every` clauses) by lowering goal `every`</span>
+<span class="tk-c">// roots, stop terms, parallel targets, and body clauses through `HeapLinks`.</span>
+<span class="tk-c">// Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkBox</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/** @requires forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapChunks(chunks: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">ChunkBox</span> {
+  <span class="tk-k">return</span> { chunks };
+}
+
+<span class="tk-c">/**
+ * @invariant this.extras === null || this.extras.length === this.chunks.length
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ * @invariant this.extras === null || forall i in this.chunks: this.chunks[i] === null || this.extras[i] === null || this.chunks[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ParallelChunkBox</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/**
+ * @requires extras === null || extras.length === chunks.length
+ * @requires forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length
+ * @requires extras === null || forall i in chunks: chunks[i] === null || extras[i] === null || chunks[i].length &lt;= extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapParallelBox(
+  chunks: (number[] | <span class="tk-k">null</span>)[],
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>,
+): <span class="tk-t">ParallelChunkBox</span> {
+  <span class="tk-k">return</span> { chunks, extras };
+}
+
+<span class="tk-c">/**
+ * @invariant forall i in this.inner.chunks: this.inner.chunks[i] === null || 1 &lt;= this.inner.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">NestedChunkBox</span> = {
+  inner: <span class="tk-t">ChunkBox</span>;
+};
+
+<span class="tk-c">/** @requires forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapNested(chunks: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">NestedChunkBox</span> {
+  <span class="tk-k">const</span> inner = { chunks };
+  <span class="tk-k">return</span> { inner };
+}</pre></details></li><li><details><summary><code>invalid-quantified-object-literal-every</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">wrapping an unchecked array violates <code>ChunkBox</code>'s invariant and reads <code>undefined</code> at <code>number</code> under Node</span></summary><pre class="code"><span class="tk-c">// Returning `{ chunks }` when `chunks` does not satisfy `ChunkBox`'s</span>
+<span class="tk-c">// quantified invariant is refused: wrapping `[[]]` produces a `ChunkBox` whose</span>
+<span class="tk-c">// `lastInChunk` reads index `-1` (`undefined` at `number`, run under Node).</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkBox</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapUnchecked(chunks: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">ChunkBox</span> {
+  <span class="tk-k">return</span> { chunks };
+}
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; box.chunks.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastInChunk(box: <span class="tk-t">ChunkBox</span>, i: number): number {
+  <span class="tk-k">const</span> c = box.chunks[i]!;
+  <span class="tk-k">if</span> (c === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> c[c.length - <span class="tk-n">1</span>]!;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every new definition and entailment check is proved sound in <code>Verification.Semantics.HeapKnowledge</code> with zero <code>sorry</code>, zero warnings, and zero project axioms; <code>SourceClaimJson.PassUnit.mode8Accepted_sound</code> is unchanged.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p><code>lake build verifier</code>, <code>node pipeline/run-cases.mts quantified-object-literal-every</code>, <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>, <code>node tools/unchecked.mts</code>, <code>node tests/node-runs.mts</code>, <code>node tests/docs.mts</code>, and <code>node tests/axiom-check-imports.mts</code> pass.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.bridgeReads_elements · Verification.HeapKnowledge.lowerRootAll_elements · Verification.HeapKnowledge.lowerBodyClauseAll_iff · Verification.HeapKnowledge.bridgedStopLe_sound · Verification.HeapKnowledge.everyLinkedFollows_sound</dd><dt>Wire</dt><dd>none</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-object-literal-every</span> <span class="test neg">invalid-quantified-object-literal-every</span></dd></dl>
+<details><summary>6 files changed, 438 insertions(+), 35 deletions(-)</summary><pre class="code"> lean/Verification/Semantics/HeapKnowledge.lean     | 372 ++++++++++++++++++++-
+ pipeline/cases.mts                                 |   3 +-
+ .../invalid-quantified-object-literal-every.ts     |  20 ++
+ .../quantified-object-literal-every-gap.ts         |  16 -
+ .../examples/quantified-object-literal-every.ts    |  52 +++
+ tests/node-runs.mts                                |  10 +-</pre></details>
+</article>
+<article class="card" id="c-cf5c3010c"><header><div><div class="sha">cf5c3010c · Cristiano Calcagno · Nov 25, 07:52</div><h3>Add all-tag postcondition to %ArrayFilled% and prove vacuous every entailment (#393)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>new Array&lt;T&gt;(n).fill(null)</code> lowers to <code>%ArrayFilled%(%ArrayLength%(n), null)</code>, whose intrinsic contract stated only <code>result.length === n</code> and not that every element holds the fill value. In addition, <code>HeapKnowledge</code> had no rule discharging a guarded single-array or parallel-array <code>IndexFact.every</code> clause vacuously from an all-tag array (<code>forall j in b: b[j] === tag</code>) with <code>stop &lt;= b.length</code>, and <code>BodyClause.HoldsAt</code> required an explicit cell read for outer empty-<code>elemPath</code> guards even when an inner guard already held.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">intrinsics: <code>%ArrayFilled%</code> guarded all-tag element facts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>%ArrayFilled%</code> stated only <code>result.length === n</code> in its normal-exit <code>ensures</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>For each primitive guard tag <code>t</code> in <code>{null, undefined, true, false}</code>, <code>%ArrayFilled%</code> also states the guarded quantified fact <code>val !== t || forall i in result: result[i] === t</code> (encoded with the existing <code>IndexFact.guarded</code>, <code>IndexFact.every</code>, and <code>BodyClause.guarded</code> over an unsatisfiable linear clause <code>0 &lt;= -1</code>), discharged by <code>dischargeGuards</code> whenever the fill value's tag is known.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">IndexFacts: disjunctive empty-path element guards</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">BodyClause</span>.<span class="tk-t">HoldsAt</span></code> <span class="m-text">for <code class="m-code">.guarded t g b</code> required <code class="m-code">t.read = some w</code> even</span></span></div><div class="row"><span><span class="m-text">when <code class="m-code">b</code> held and</span> <code class="m-code">t.elemPath = []</code>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">BodyClause</span>.<span class="tk-t">HoldsAt</span></code> <span class="m-text">requires <code class="m-code">t.read = some w</code> on the <code class="m-code">b</code> branch only when</span></span></div><div class="row"><span><code class="m-code">t.elemPath ≠ []</code>, <span class="m-text">matching <code class="m-code"><span class="tk-t">IndexFact</span>.guarded</code> where</span> <code class="m-code">readGuard h v [] = some v</code></span></div><div class="row"><span><span class="m-text">always exists on instantiation</span> (<code class="m-code">instantiateBodyClause_holds</code>).</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">HeapKnowledge: vacuous discharge of guarded quantified clauses</span></h4><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">LinearClause</span>.isFalsum</code>, <code class="m-code"><span class="tk-t">BodyClause</span>.forcedGuard?</code>, <code class="m-code">bodyClauseVacuous</code>,</span></div><div class="row"><span><span class="m-text">and <code class="m-code">everyVacuousFollows</code> (proved sound by</span> <code class="m-code">everyVacuousFollows_sound</code>)</span></div><div class="row"><span><span class="m-text">extract unconditional all-tag element facts from <code class="m-code">every</code> atoms whose body</span></span></div><div class="row"><span><span class="m-text">guards an unsatisfiable linear clause, and discharge any single-array or</span></span></div><div class="row"><span><span class="m-text">parallel-array <code class="m-code">every</code> clause guarded by that tag (nested under empty-path</span></span></div><div class="row"><span><span class="m-text">guards) whenever <code class="m-code">stop &lt;= b.length</code> modulo <code class="m-code"><span class="tk-t">HeapLinks</span></code>, wired into</span></span></div><div class="row"><span><code class="m-code">indicesCheckWith</code>, <code class="m-code">baseFollows</code>, <span class="m-text">and</span> <code class="m-code">indicesFilter</code>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-array-fill-null</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>new Array(n).fill(null)</code> discharges single-array, parallel-array, and object-literal-wrapped guarded <code>every</code> invariants</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;number[] | null&gt;(n).fill(null)` creates an array of length `n`</span>
+<span class="tk-c">// whose every element is `null`, vacuously discharging guarded single-array,</span>
+<span class="tk-c">// parallel-array, and object-literal-wrapped quantified invariants. Safe (run</span>
+<span class="tk-c">// under Node).</span>
+<span class="tk-c">/**
+ * @ensures result.length === chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachEmptyExtras(chunks: (number[] | <span class="tk-k">null</span>)[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(n) &amp;&amp; 0 &lt;= n
+ * @ensures result.length === n
+ * @ensures forall i in result: result[i] === null || 1 &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> makeEmptySlots(n: number): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill(<span class="tk-k">null</span>);
+}
+
+<span class="tk-c">/**
+ * @invariant this.extras.length === this.chunks.length
+ * @invariant forall i in this.chunks: this.chunks[i] === null || this.extras[i] === null || this.chunks[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkExtras</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachEmptyExtrasBox(chunks: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">ChunkExtras</span> {
+  <span class="tk-k">const</span> extras = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill(<span class="tk-k">null</span>);
+  <span class="tk-k">return</span> { chunks, extras };
+}</pre></details></li><li><details><summary><code>invalid-quantified-array-fill-null</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>new Array(n).fill([])</code> does not establish the all-<code>null</code> postcondition and reads <code>undefined</code> at <code>number</code> under Node</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;number[] | null&gt;(chunks.length).fill([])` fills every element with</span>
+<span class="tk-c">// an empty array rather than `null`, so the guarded parallel-array postcondition</span>
+<span class="tk-c">// is refused: reading `extras[0][1]` for `chunks = [[1, 2]]` yields `undefined`</span>
+<span class="tk-c">// at `number` (run under Node).</span>
+<span class="tk-c">/**
+ * @ensures result.length === chunks.length
+ * @ensures forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length &lt;= result[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> attachWrongFill(chunks: (number[] | <span class="tk-k">null</span>)[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(chunks.length).fill([]);
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; chunks.length
+ * @requires extras.length === chunks.length
+ * @requires forall j in chunks: chunks[j] === null || extras[j] === null || chunks[j].length &lt;= extras[j].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readLastExtra(chunks: (number[] | <span class="tk-k">null</span>)[], extras: (number[] | <span class="tk-k">null</span>)[], i: number): number {
+  <span class="tk-k">const</span> c = chunks[i]!;
+  <span class="tk-k">const</span> e = extras[i]!;
+  <span class="tk-k">if</span> (c === <span class="tk-k">null</span> || e === <span class="tk-k">null</span> || c.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> e[c.length - <span class="tk-n">1</span>]!;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>BodyClause.HoldsAt</code>, all framing/renaming/instantiation theorems, and <code>everyVacuousFollows_sound</code> are proved in Lean with zero <code>sorry</code>, zero warnings, and zero project axioms; <code>SourceClaimJson.PassUnit.mode8Accepted_sound</code> is unchanged. The <code>%ArrayFilled%</code> guarded all-tag postcondition is an audited native specification matching ECMA-262 <code>ArrayCreate</code> and <code>Array.prototype.fill</code> (<code>docs/SOURCE-CONTRACTS.md</code>).</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p><code>lake build verifier</code>, <code>node pipeline/run-cases.mts quantified</code> (35/35), <code>node pipeline/run-cases.mts array-fill</code> (9/9), <code>node pipeline/run-cases.mts object-spread</code> (22/22), <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>, <code>node tools/unchecked.mts</code>, <code>node tests/json-field-names.mts</code>, <code>node tests/builtin-trust.mts</code>, <code>node tests/docs.mts</code>, <code>node tests/axiom-check-imports.mts</code>, and <code>node tests/node-runs.mts</code> pass.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.ElemTarget.elemPath · Verification.HeapKnowledge.BodyClause.HoldsAt · Verification.HeapKnowledge.LinearClause.isFalsum_sound · Verification.HeapKnowledge.BodyClause.forcedGuard?_sound · Verification.HeapKnowledge.bodyClauseVacuous_sound · Verification.HeapKnowledge.everyVacuousFollows_sound</dd><dt>Wire</dt><dd>none</dd><dt>Trust</dt><dd><span class="trust">%ArrayFilled% guarded all-tag element postconditions (null, undefined, true, false; ECMA-262 Array.prototype.fill, audited in docs/SOURCE-CONTRACTS.md)</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-array-fill-null</span> <span class="test neg">invalid-quantified-array-fill-null</span></dd></dl>
+<details><summary>11 files changed, 540 insertions(+), 128 deletions(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md                           |   9 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  78 ++--
+ lean/Verification/Semantics/HeapKnowledge.lean     | 412 ++++++++++++++++++---
+ lean/Verification/Semantics/IndexFacts.lean        |  35 +-
+ lean/Verification/Semantics/StepRelations.lean     |   7 +-
+ pipeline/cases.mts                                 |   3 +-
+ .../examples/invalid-quantified-array-fill-null.ts |  23 ++
+ .../examples/quantified-array-fill-null-gap.ts     |  10 -
+ pipeline/examples/quantified-array-fill-null.ts    |  34 ++
+ tests/node-runs.mts                                |  10 +-
+ tools/intrinsics.mts                               |  47 ++-</pre></details>
+</article>
+</main></body></html>
