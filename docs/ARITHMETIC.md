@@ -1656,6 +1656,19 @@ at most the source's bound $`u`$ (`HeapKnowledge.everyPrefix`, proved
      {\forall i<t.\ \Phi}\ \textsf{every-prefix}
 ```
 
+**Element guards over a prefix.** A guarded body holds at an index where
+its element read yields the guard's tag. A quantified clause whose guard
+has a contradictory linear body supplies that read and tag throughout its
+prefix. It establishes a guarded target whose domain ends within that
+prefix, where the array binding the target's index has an element spine.
+The source and target guards must name the same array and element path.
+The binder can be a different array for a parallel guard. The checker
+proves the contradiction for constant linear clauses and disjunctions of
+such contradictions (`HeapKnowledge.everyEntailed_sound`). For example,
+when `chunks.length <= extras.length` and every element of `extras` is
+null, a clause over `chunks` guarded first by `extras[i] === null` holds
+because the comparison on the two elements is skipped at each index.
+
 **Empty arrays.** A quantified fact over an array of length zero holds for
 any body (proved). Its body terms need no interpretation, since no index
 is below the bound. The edge checker establishes that the length term is
