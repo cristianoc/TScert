@@ -51,6 +51,22 @@ assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeE
 
 assert.throws(() => runExample("invalid-native-length-indexof", 'absent(["a"], "b")'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-filled", 'past(1)'), /TypeError/);
+// The zero-argument slice()'s stated postconditions (`shallowCopy`,
+// `freshRegion`, SOURCE-CONTRACTS.md): a distinct array of the receiver's
+// length, the same element at each index, holes kept, and its cells its own.
+{
+  const row = [1];
+  const xs: (number[] | null)[] = [row, null];
+  xs.length = 3;
+  const copy = xs.slice();
+  assert.notEqual(copy, xs);
+  assert.equal(copy.length, xs.length);
+  assert.ok(copy[0] === row && copy[1] === null && !(2 in copy), "slice keeps each element and each hole at its index");
+  copy[0] = [];
+  assert.equal(xs[0], row, "a write to the copy's cell leaves the receiver's");
+}
+assert.equal(runExample("native-slice-fresh", "headAt([[1]], 0)"), "1");
+assert.throws(() => runExample("invalid-native-slice-shallow", "headAfterRowPop([[1]], 0)"), /TypeError/);
 assert.equal(runExample("invalid-written-ensures-body", "typeof short(1)[0]"), "undefined",
   "a false written result length returns an absent element");
 assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { widths: [] }; measure(l, 2); return l.widths.length; })()"), 3,

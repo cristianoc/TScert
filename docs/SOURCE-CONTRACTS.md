@@ -3199,7 +3199,11 @@ states `fresh`, `freshRegion`, `shallowCopy`, and `result.length === this.length
 (audited against ECMA-262 `Array.prototype.slice`: on an ordinary extensible
 array with standard prototype, `ArraySpeciesCreate` allocates a fresh ordinary
 array whose spine and present element cells are freshly allocated, copying each
-present index verbatim and preserving holes and length). `find`, `findIndex`, `filter`, `some`, `every`,
+present index verbatim and preserving holes and length). The cases
+`native-slice-fresh` (a write to the copy keeps the receiver's quantified
+bound) and `invalid-native-slice-shallow` (the copy's elements are the
+receiver's) test this boundary, and `tests/node-runs.mts` checks the four
+postconditions under Node. `find`, `findIndex`, `filter`, `some`, `every`,
 `forEach`, `flatMap`, and `reduce` and `reduceRight` with an initial value,
 call a callback; each reads the length once and the
 receiver's own numeric keys, data properties (`numericOwn`), and allocates
