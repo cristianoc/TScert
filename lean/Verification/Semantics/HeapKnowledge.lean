@@ -1415,12 +1415,21 @@ def lowerEveryAt (reads : List (Nat × String × Nat)) (s : Nat) (p : List Strin
 body use the same read links as the array and bound. -/
 def lowerRequiredEvery (ls : HeapLinks.Links) : IndexFact → IndexFact
   | .every s p st body => lowerEveryAt (plainReads ls) s p st body
+  | .guarded s p g B => .guarded s p g (lowerRequiredEvery ls B)
+  | .either A B => .either (lowerRequiredEvery ls A) (lowerRequiredEvery ls B)
   | F => F
+
+/-- Whether a fact contains a quantified body, including below a guard. -/
+def IndexFact.hasEvery : IndexFact → Bool
+  | .every .. => true
+  | .guarded _ _ _ B => B.hasEvery
+  | .either A B => A.hasEvery || B.hasEvery
+  | _ => false
 
 theorem lowerRequiredEvery_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
     (hl : HeapLinks.Holds ls ρ h) (F : IndexFact) :
     (lowerRequiredEvery ls F).HoldsAt ε ρ h ↔ F.HoldsAt ε ρ h := by
-  cases F with
+  induction F with
   | every s p st body =>
     simp only [lowerRequiredEvery, lowerEveryAt, IndexFact.HoldsAt, lowerRequiredRoot_eq hl,
       lowerTerm_eq hl (fun _ hg => plainReads_bridge hg)]
@@ -1432,6 +1441,8 @@ theorem lowerRequiredEvery_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
       refine ⟨w, sp, entries, n, hw, hs, he, hn, fun i hi B hB => ?_⟩
       obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hB
       exact (lowerRequiredBody_iff hl A).mpr (hb i hi A hA)
+  | guarded s p t B ih => simp only [lowerRequiredEvery, IndexFact.HoldsAt, ih]
+  | either A B ha hb => simp only [lowerRequiredEvery, IndexFact.HoldsAt, ha, hb]
   | _ => rfl
 
 /-- A quantified fact restated through a read of slot `0`, where the read

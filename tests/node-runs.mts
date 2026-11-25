@@ -3482,6 +3482,9 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-object-literal-every", ["positive"]),
     "JSON.stringify(wrapChunks([[1, 2], null]))"),
     '{"chunks":[[1,2],null]}', "the literal's chunks field keeps the input's contents");
+  assert.equal(runExample(ofKind("quantified-object-literal-every", ["positive"]),
+    "JSON.stringify([wrapOptionalPaired([[1]], null), wrapOptionalPaired([[1]], [[2]])])"),
+    '[{"chunks":[[1]],"extras":null},{"chunks":[[1]],"extras":[[2]]}]', "the guarded return preserves both input arrays");
   assert.equal(runExample(negative("invalid-quantified-object-literal-every"),
     "typeof wrapOther([[1]], [[]]).chunks[0][0]"),
     "undefined", "the unrelated array has an empty row and breaks the promised invariant");

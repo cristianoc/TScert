@@ -24,3 +24,17 @@ export type PairedChunks = {
 export function wrapPaired(chunks: (number[] | null)[], extras: (number[] | null)[]): PairedChunks {
   return { chunks, extras };
 }
+
+/** @invariant this.extras === null || forall i in this.chunks: this.chunks[i] === null || this.extras[i] === null || this.chunks[i].length <= this.extras[i].length */
+export type OptionalPairedChunks = {
+  chunks: (number[] | null)[];
+  extras: (number[] | null)[] | null;
+};
+
+/** @requires extras === null || forall i in chunks: chunks[i] === null || extras[i] === null || chunks[i].length <= extras[i].length */
+export function wrapOptionalPaired(
+  chunks: (number[] | null)[],
+  extras: (number[] | null)[] | null,
+): OptionalPairedChunks {
+  return { chunks, extras };
+}

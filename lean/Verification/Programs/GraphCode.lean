@@ -1161,7 +1161,7 @@ def returnEntails (k : HeapKnowledge.Knowledge) (t : Tracked) (ens : List HeapKn
   let m := returnMapping t ens
   let check := HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags k) (HeapLinks.aliases k.links) k.links k.indices
   namesTracked t ens && (check (ens.map fun F => ⟨F, none, false⟩) m ||
-    (ens.any (fun | .every .. => true | _ => false) &&
+    (ens.any HeapKnowledge.IndexFact.hasEvery &&
       ens.all fun F => check [⟨F, none, false⟩] m ||
         check [⟨HeapKnowledge.lowerRequiredEvery k.links (F.map (slot m)), none, false⟩] none))
 
