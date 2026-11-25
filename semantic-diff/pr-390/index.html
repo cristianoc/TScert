@@ -1,0 +1,418 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-390"><code>1e5527447555ea08bc14dfb9b7aa47c0eaca14b6..pr-390</code></a><ul><li>3 commits</li><li>changes: 3 Definition, 3 Rule, 1 Lowering, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></li><li>wire: added BodyClause.guarded, ElemTarget (self/parallel), Bound.parallel, and Region.elemSpines across TS and Lean codecs</li><li>wire: none</li></ul></li></ul></section>
+<h2 id="g-pr-390"><code>1e5527447555ea08bc14dfb9b7aa47c0eaca14b6..pr-390</code></h2><article class="card" id="c-9b06eedd7"><header><div><div class="sha">9b06eedd7 · Cristiano Calcagno · Nov 25, 06:16</div><h3>Prove guarded element-length and parallel-array invariants in SinglePass</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Quantified clauses over arrays of nullable nested arrays (such as <code>forall i in a: a[i] === null || 1 &lt;= a[i].length</code> and <code>b === null || forall i in a: a[i] === null || b[i] === null || a[i].length &lt;= b[i].length</code>) could not be stated or discharged in the proved SinglePass verifier because: - quantified clauses (<code>Fact.every</code>) supported only bare linear/disjunctive bodies over a single array, not element nullability guards or parallel reads of a second array at the same index; - optional-property links were lowered as non-optional at loop heads, dropping guarded invariants on optional object properties across loop back-edges; - bare-slot guarded facts stayed locked when branch narrowing refined the slot's type in Γ (e.g. <code>extras === null ? ... : extras[g]!</code>) without recording a ValueSet fact; - <code>nearStep</code> collected guarded and disjunctive facts into <code>linearNear</code>'s 40-fact budget before reaching linear bounds at large loop merges; - guarded field reads (<code>x === null || ...</code>) and element spines needed footprint survival and merge-point tracking across nullable guards and effect-bounded callbacks.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">semantics: quantified body clauses, parallel targets, element-spine region</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">BodyClause covered only linear inequalities, disequalities, and binary</span></span></div><div class="row"><span><span class="m-text">disjunctions over a single array's element; Bound carried no parallel</span></span></div><div class="row"><span><span class="m-text">array target; Footprints</span>.<span class="m-text">Region had no element-spine region; IndexFact</span></span></div><div class="row"><span><span class="m-text">had no guarded-surviving fieldRead link</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Adds BodyClause</span>.<span class="m-text">guarded (guarding a body clause by an element's or</span></span></div><div class="row"><span><span class="m-text">parallel element's nullability tag) with ElemTarget</span> (.<span class="m-text">self</span> / .<span class="m-text">parallel</span>),</span></div><div class="row"><span><span class="m-con">Bound</span>.<span class="m-text">parallel (reading a second array's element or element length at the</span></span></div><div class="row"><span><span class="m-text">same quantified index), Footprints</span>.<span class="m-con">Region</span>.<span class="m-text">elemSpines (all element spines</span></span></div><div class="row"><span><span class="m-text">of an array path, kept by spine-preserving effects), and</span></span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-text">fieldRead (recording</span> <var>v</var> <span class="m-rel">=</span> <var>c</var>.<var>f</var> <span class="m-text">so guarded field reads survive</span></span></div><div class="row"><span><span class="m-text">control-flow merges and reach traversal</span>).</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">SinglePass: guarded element instantiation, type-directed guard release, and guarded merges</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <span class="m-text">From <code class="m-code">forall i <span class="tk-k">in</span> a: (a[i] === t || ...)</code> (or parallel</span> <code class="m-code">b[i] === t || ...</code>),</span></div><div class="row cont"><span><span class="m-text">instantiating at an element binding <code class="m-code">x = a[i]</code> (or</span> <code class="m-code">a?.[i] ?? <span class="tk-k">null</span></code> /</span></div><div class="row cont"><span><code class="m-code">a[i] ?? <span class="tk-k">null</span></code> / <span class="m-text">ternary) yields a guarded fact on <code class="m-code">x</code> (and parallel</span> <code class="m-code">y = b[i]</code>),</span></div><div class="row cont"><span><span class="m-text">released once <code class="m-code">x</code> (and <code class="m-code">y</code>) is narrowed away from</span> <span class="m-text">tag</span> <code class="m-code">t</code>.</span></div><div class="row"><span>- <span class="m-text">From <code class="m-code">Γ[s]</code> excluding tag <code class="m-code">t</code> (checked via</span> <code class="m-code"><span class="tk-t">HeapKnowledge</span>.typeExcludes</code>,</span></div><div class="row cont"><span><span class="m-text">proved sound from <code class="m-code">answers_sound</code>), unconditional bare-slot guarded facts</span></span></div><div class="row cont"><span><span class="m-text">guarded by <code class="m-code">s !== t</code> are released</span> <span class="m-text">in</span> <code class="m-code"><span class="tk-t">HeapKnowledge</span>.unguardedByTypes</code>.</span></div><div class="row"><span>- <span class="m-text">At control-flow joins, <code class="m-code">mergeGuarded</code> preserves nested guarded facts</span>,</span></div><div class="row cont"><span><span class="m-text">joins <code class="m-code">fieldRead</code> links from non-alias non-optional links, and narrows</span></span></div><div class="row cont"><span><span class="m-text">guarded clauses through</span> <code class="m-code">indicesFilter</code>.</span></div><div class="row"><span>- <code class="m-code">nearStep</code> <span class="m-text">filters <code class="m-code">linearNear</code> to linear</span>/<span class="m-text">int</span>/<span class="m-text">length</span>/<span class="m-text">index</span>/<span class="m-text">bound facts</span></span></div><div class="row cont"><span>(<code class="m-code">nearRelevant</code>) <span class="m-text">so guarded</span>/<span class="m-text">disjunctive facts do not crowd out linear</span></span></div><div class="row cont"><span><span class="m-text">bounds at loop merges</span>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">Region</span>.elemSpines</code> <span class="m-text">support and survival rules prove guarded element-length</span></span></div><div class="row cont"><span><span class="m-text">and parallel-array quantified facts survive spine-preserving steps and</span></span></div><div class="row cont"><span><span class="m-text">disjoint writes, including element-spine framing</span> <span class="m-text">in</span> <code class="m-code"><span class="tk-t">EffectLanguage</span>/<span class="tk-t">Model</span></code>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">loop-head read links and head inference for coalesced element reads</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-con">Flow</span>.<span class="m-text">lean proposed all loop-head readLinks with <code class="m-code">optional := <span class="tk-k">false</span></code>, so</span></span></div><div class="cond"><span class="tgt"><span class="m-text">optional properties failed entry checking at loop heads</span>.</span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-t">HeadInference</span>.elemPathOf</code> <span class="m-text">did not recognize <code class="m-code">a[i] ?? <span class="tk-k">null</span></code> or</span> <code class="m-code">a?.[i] ?? <span class="tk-k">null</span></code>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-con">Flow</span>.<span class="m-text">lean sets</span> <code class="m-code">optional := !<span class="tk-t">HeapExpressionRules</span>.fieldOperand (expand <span class="tk-t">G</span> <span class="tk-t">A</span>) (.str field)</code></span></div><div class="cond"><span class="tgt"><span class="m-text">so optional properties carry <code class="m-code">optional := <span class="tk-k">true</span></code> links across loops</span>;</span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-t">HeadInference</span>.elemPathOf</code> <span class="m-text">recognizes direct indexing</span>, <code class="m-code">%<span class="tk-t">ElementAt</span>%</code>/<code class="m-code">%<span class="tk-t">ByteAt</span>%</code>,</span></div><div class="cond"><span class="tgt"><span class="m-text">ternary</span> <span class="m-lit">null</span> <span class="m-text">guards, optional coalesce, and plain coalesce to instantiate</span></span></div><div class="cond"><span class="tgt"><span class="m-text">guarded</span>/<span class="m-text">parallel quantified clauses at loop heads</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">bound annotations and fragment wire</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>StatedFact / BodyFact wire had no guarded body clause or parallel target, and Region wire had no <code>elemSpines</code> form.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Extends <code>tools/bound-annotations.mts</code>, <code>tools/declaration-types.mts</code>, <code>tools/fact-text.mts</code>, <code>tools/diagnostic.mts</code>, <code>pipeline/verify-source.mts</code>, and Lean <code>EffectCodec</code>/<code>Wire</code> with guarded clauses, parallel targets, and <code>elemSpines</code> (all 17 JSON field-name comparisons agree).</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, ANNOTATIONS.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>docs/ARITHMETIC.md</code> documented single-array quantified clauses without element guards or parallel arrays; <code>docs/ANNOTATIONS.md</code> listed only bare quantified clauses under <code>@requires</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Documents guarded element-length and parallel-array quantified clauses in <code>docs/ARITHMETIC.md#quantified-clauses</code> and <code>docs/ANNOTATIONS.md</code>, updating the cases list.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-guarded-element-length</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">proves guarded element length and parallel-array length invariants</span></summary><pre class="code"><span class="tk-c">// Guarded quantified element-length and parallel-array invariants</span>
+<span class="tk-c">// (ARITHMETIC.md, &quot;Quantified clauses&quot;): each non-null entry of `advances`</span>
+<span class="tk-c">// has length at least 1, and when `extras !== null` each non-null entry of</span>
+<span class="tk-c">// `extras` is at least as long as the corresponding entry of `advances`.</span>
+
+<span class="tk-c">/** @invariant this.extras === null || this.advances.length &lt;= this.extras.length
+ *  @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ *  @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">SegmentTable</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; table.advances.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastAdvance(table: <span class="tk-t">SegmentTable</span>, i: number): number {
+  <span class="tk-k">const</span> row = table.advances[i];
+  <span class="tk-k">if</span> (row === <span class="tk-k">undefined</span> || row === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> row[row.length - <span class="tk-n">1</span>]!;
+}
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; table.advances.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumWithExtras(table: <span class="tk-t">SegmentTable</span>, i: number): number {
+  <span class="tk-k">const</span> { advances } = table;
+  <span class="tk-k">const</span> row = advances[i];
+  <span class="tk-k">if</span> (row === <span class="tk-k">undefined</span> || row === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> extras = table.extras?.[i] ?? <span class="tk-k">null</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> g = <span class="tk-n">0</span>; g &lt; row.length; g++) {
+    total += row[g]! + (extras === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : extras[g]!);
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-quantified-guarded-element-length</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refuses omitted null guard (returns NaN under Node)</span></summary><pre class="code"><span class="tk-c">// Unsafe counterpart to quantified-guarded-element-length: `0 &lt;= xs[i].length`</span>
+<span class="tk-c">// admits an empty inner array, so `row[row.length - 1]!` reads index `-1`</span>
+<span class="tk-c">// (`undefined` at `number`, returning `NaN` under Node).</span>
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length
+ *  @requires forall j in xs: xs[j] === null || 0 &lt;= xs[j].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastOrZero(xs: (number[] | <span class="tk-k">null</span>)[], i: number): number {
+  <span class="tk-k">const</span> row = xs[i]!;
+  <span class="tk-k">if</span> (row === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> row[row.length - <span class="tk-n">1</span>]! + <span class="tk-n">1</span>;
+}</pre></details></li><li><details><summary><code>invalid-quantified-parallel-length</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refuses reversed parallel length bound (returns NaN under Node)</span></summary><pre class="code"><span class="tk-c">// Unsafe counterpart to parallel-array element length: `xs[j].length &lt;= ys[j].length + 1`</span>
+<span class="tk-c">// lets `ys[j]` be one element shorter than `xs[j]`, so reading `e[g]!` at the</span>
+<span class="tk-c">// last index of `row` reads `undefined` at `number` (`NaN` under Node).</span>
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length
+ *  @requires ys === null || xs.length &lt;= ys.length
+ *  @requires ys === null || forall j in xs: xs[j] === null || ys[j] === null || xs[j].length &lt;= ys[j].length + 1 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumShortExtras(xs: (number[] | <span class="tk-k">null</span>)[], ys: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>, i: number): number {
+  <span class="tk-k">const</span> row = xs[i]!;
+  <span class="tk-k">if</span> (row === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> e = ys === <span class="tk-k">null</span> ? <span class="tk-k">null</span> : ys[i]!;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> g = <span class="tk-n">0</span>; g &lt; row.length; g++) {
+    total += row[g]! + (e === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : e[g]!);
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>guarded-field-read-merge</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">proves optional/nullable field read merges across loop heads</span></summary><pre class="code"><span class="tk-c">// Guarded nullable parallel-array length invariant through an optional nested</span>
+<span class="tk-c">// object field (`opt === undefined || opt.extras === null || ...`): extracting</span>
+<span class="tk-c">// `const extras = opt === undefined ? null : opt.extras` preserves the guarded</span>
+<span class="tk-c">// length bound across the ternary merge and a loop.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">OptionalExtras</span> = {
+  extras: number[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/** @invariant this.opt === undefined || this.opt.extras === null || this.widths.length &lt;= this.opt.extras.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Handle</span> = {
+  widths: number[];
+  opt?: <span class="tk-t">OptionalExtras</span>;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> totalWithOptionalExtras(h: <span class="tk-t">Handle</span>): number {
+  <span class="tk-k">const</span> { widths } = h;
+  <span class="tk-k">const</span> opt = h.opt;
+  <span class="tk-k">const</span> extras = opt === <span class="tk-k">undefined</span> ? <span class="tk-k">null</span> : opt.extras;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i
+   *  @invariant extras === null || widths.length &lt;= extras.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) {
+    total += widths[i]! + (extras === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : extras[i]!);
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>All new semantics, survival, merge, and type-directed guard-release rules are proved in Lean with zero sorry, zero project axioms, and zero warnings (<code>Verification.Tests.AxiomCheck</code> and <code>Verification.Paper.TolerantFrames.Tests.AxiomCheck</code> both pass). <code>mode8Accepted_sound</code> and its CLI premise are unchanged. <code>PaperRulesPrototype.lean</code> stays a thin <code>PassLayer</code> adding only <code>.fieldRead</code> reach and <code>.elemSpines</code> framing consistent with <code>EffectLanguage/Model.lean</code>.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>Verification.Semantics.IndexFacts.ElemTarget · Verification.Semantics.IndexFacts.BodyClause.guarded · Verification.Semantics.IndexFacts.Bound.parallel · Verification.Semantics.Footprints.Region.elemSpines · Verification.Semantics.HeapKnowledge.IndexFact.fieldRead · Verification.Semantics.HeapKnowledge.typeExcludes · Verification.Semantics.HeapKnowledge.unguardedByTypes_holds · Verification.Programs.Parametricity.unguardedByTypes_reassign · Verification.Programs.SinglePass.nearRelevant · Verification.Programs.TolerantFramesMergeGuarded.joinGuarded_holds · Verification.Programs.TolerantFramesMergeGuarded.mem_foldl_indicesFilter_holds · Verification.Paper.EffectLanguage.Model.closedOut_region_disjoint</dd><dt>Wire</dt><dd>added BodyClause.guarded, ElemTarget (self/parallel), Bound.parallel, and Region.elemSpines across TS and Lean codecs</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-guarded-element-length</span> <span class="test neg">invalid-quantified-guarded-element-length</span> <span class="test neg">invalid-quantified-parallel-length</span> <span class="test pos">guarded-field-read-merge</span></dd></dl>
+<details><summary>36 files changed, 2800 insertions(+), 759 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    8 +-
+ docs/ARITHMETIC.md                                 |   45 +-
+ lean/PaperRulesPrototype.lean                      |   35 +-
+ .../Verification/Programs/CertificateProducer.lean |   11 +-
+ .../Verification/Programs/HeapExpressionRules.lean |   23 +-
+ lean/Verification/Programs/IndexWrites.lean        |   20 +-
+ lean/Verification/Programs/Parametricity.lean      |   29 +-
+ lean/Verification/Programs/PromiseCalls.lean       |  125 ++-
+ lean/Verification/Programs/SinglePass.lean         |   58 +-
+ .../Programs/TolerantFramesMaterialize.lean        |   31 +-
+ .../Programs/TolerantFramesMergeGuarded.lean       |   43 +-
+ .../Programs/TolerantFramesMergeMirror.lean        |   35 +-
+ .../Programs/TolerantFramesStoreOpsNames.lean      |   40 +-
+ lean/Verification/Semantics/HeapKnowledge.lean     | 1150 ++++++++++++++++----
+ lean/Verification/Semantics/IndexFacts.lean        |  802 +++++++++-----
+ lean/Verification/Semantics/StepRelations.lean     |   64 +-
+ lean/Verification/Semantics/Survival.lean          |  302 ++++-
+ lean/Verification/Source/Claims/FragmentFront.lean |   12 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  242 +++-
+ lean/Verification/Source/Claims/MemberSettle.lean  |    2 +-
+ lean/Verification/Source/Claims/Wire.lean          |    2 +-
+ lean/Verification/Source/EffectCodec.lean          |   78 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   72 +-
+ lean/Verification/Source/SourceClaims.lean         |   31 +-
+ pipeline/cases.mts                                 |    4 +
+ pipeline/examples/guarded-field-read-merge.ts      |   27 +
+ .../invalid-quantified-guarded-element-length.ts   |   11 +
+ .../examples/invalid-quantified-parallel-length.ts |   17 +
+ .../examples/quantified-guarded-element-length.ts  |   33 +
+ pipeline/verify-source.mts                         |   14 +-
+ tests/node-runs.mts                                |   12 +
+ tools/bound-annotations.mts                        |  102 +-
+ tools/declaration-types.mts                        |   20 +-
+ tools/diagnostic.mts                               |   37 +-
+ tools/fact-text.mts                                |   15 +
+ tools/type-graph.mts                               |    7 +-</pre></details>
+</article>
+<article class="card" id="c-9b023329d"><header><div><div class="sha">9b023329d · Cristiano Calcagno · Nov 25, 06:16</div><h3>Prove object-spread guarded/every transfer, outside-Priv framing, and batched guarded entailment</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Supporting guarded and quantified array invariants across realistic object updates, locally confined helper loops, and large module interfaces in SinglePass required three general soundness-proved capabilities alongside targeted performance and lowering fixes: - Object spreads <code>{ ...p, ... }</code> dropped guarded and quantified (<code>every</code>) field-rooted invariants on non-overridden keys, and Flow/MemberSettle dropped read-links into guarded facts across copies. - Calls whose mutations stay inside locally allocated confined objects/arrays (e.g. <code>lengths.push(...)</code>) still invalidated quantified <code>every</code> invariants on caller-reachable parameters outside the confined set (<code>Priv</code>), because <code>LocalConfinement</code> framed only regions inside <code>Priv</code> rather than regions outside <code>Priv</code>. - <code>guardEntailsIn</code> recursed separately per guarded atom sharing the same guard <code>(lg s p, t)</code>, causing exponential blowup on large module interfaces (&gt;60s timeout) and preventing multi-fact entailment under a shared guard; similarly <code>meet disjoined</code> materialized per candidate instead of once per view, and <code>establishChecked</code> re-checked non-recursive unannotated units already refused at an open plan during proposal. - <code>indicesCheckWith</code> omitted <code>.spineApart</code> from complementary-guard elimination, <code>lowerAtoms</code> dropped <code>.spineApart</code> lowering when chained with guarded lowering, and <code>bound-annotations.mts</code> rejected typed-array element paths with <code>ep.length === 0</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Confinement and LocalConfinement: outside-of-Priv FrameSpec</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">LocalConfinement</span></code> <span class="m-text">carried only</span> <code class="m-code">framed : <span class="tk-t">List</span> (<span class="tk-t">Nat</span> × <span class="tk-t">List</span> <span class="tk-t">Footprints</span>.<span class="tk-t">Footprint</span>)</code></span></div><div class="row"><span><span class="m-text">for calls that do not mention any confined holder, framing regions inside</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">Priv</span></code>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Confinement</span>.<span class="tk-t">FrameSpec</span></code> <span class="m-text">unifies <code class="m-code">.footprint <span class="tk-t">F</span></code> and</span> <code class="m-code">.outside width holders</code></span></div><div class="row"><span><span class="m-text">(every region rooted at a slot <code class="m-code">&lt; width</code> outside <code class="m-code">holders</code>, proved sound</span></span></div><div class="row"><span><span class="m-text">by <code class="m-code"><span class="tk-t">Confinement</span>.outside_supported</code> whenever a call keeps all locations</span></span></div><div class="row"><span><span class="m-text">outside</span> <code class="m-code"><span class="tk-t">Priv</span></code>). <code class="m-code"><span class="tk-t">LocalConfinement</span>.<span class="tk-t">Table</span></code> <span class="m-text">adds <code class="m-code">outsideNodes</code>, checked by</span></span></div><div class="row"><span><code class="m-code">checkNode</code> <span class="m-text">and proved sound in <code class="m-code">checkNode_sound_normal</code> and</span></span></div><div class="row"><span><code class="m-code">checkNode_sound_handler</code>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">SinglePass: object-spread guarded/every preservation and batched guarded entailment</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <code class="m-code"><span class="tk-t">ObjectMerge</span></code> <span class="m-text">transfers field-rooted <code class="m-code">.guarded</code> and <code class="m-code">.every</code> index facts</span></span></div><div class="row cont"><span><span class="m-text">across <code class="m-code">{ ...p, ... }</code> on non-overridden keys (proved sound</span> <span class="m-text">in</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">HeapExpressionRules</span></code> <span class="m-text">and</span> <code class="m-code"><span class="tk-t">ObjectMerge</span></code>).</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">HeapKnowledge</span>.guardEntailsIn</code> <span class="m-text">collects all guarded bodies sharing</span></span></div><div class="row cont"><span><code class="m-code">(lg s p, t)</code> <span class="m-text">into a single recursive check (proved sound</span> <span class="m-text">in</span></span></div><div class="row cont"><span><code class="m-code">guardEntailsIn_sound</code>), <span class="m-text">using <code class="m-code">sameGuardBodies</code> and lazy</span> <code class="m-code"><span class="tk-t">GuardPrep</span></code></span></div><div class="row cont"><span><span class="m-text">complementary pairs; <code class="m-code">indicesCheckWith</code> includes</span> <code class="m-code">.spineApart</code> <span class="m-kw">in</span></span></div><div class="row cont"><span><span class="m-text">complementary-guard elimination, and <code class="m-code">indicesFilter</code> indexes direct hits</span></span></div><div class="row cont"><span><span class="m-text">with <code class="m-code"><span class="tk-t">Std</span>.<span class="tk-t">HashSet</span></code> and optional</span> <code class="m-code">useCases</code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">SinglePass</span></code> (<code class="m-code">mergeDisjCandidates</code> / <code class="m-code">meet disjoined</code>) <span class="m-text">adds a</span> 2-<span class="m-text">view</span></span></div><div class="row cont"><span><span class="m-text">fast path and batches per-view materialization through</span> <code class="m-code">indicesFilter</code></span></div><div class="row cont"><span><span class="m-text">(proved sound via <code class="m-code">mem_foldl_indicesFilter_holds</code>), mirrored</span> <span class="m-text">in</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">TolerantFramesMergeMirror</span></code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">FragmentFront</span>.establishChecked</code> <span class="m-text">skips singleton unannotated</span></span></div><div class="row cont"><span><span class="m-text">non-recursive units whose proposal already </span><span class="refused">refused</span><span class="m-text"> at an open plan</span>,</span></div><div class="row cont"><span><span class="m-text">avoiding redundant re-checks during module-interface generation</span>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">TolerantFramesStoreOpsNames</span>.restateAtIndex</code> <span class="m-text">handles</span> <code class="m-code"><span class="tk-t">Bound</span>.parallel</code>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>object-spread-guarded-every</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">object spread <code>{ ...p, extra }</code> preserves guarded and quantified field-rooted invariants</span></summary><pre class="code"><span class="tk-c">// Object spread `{ ...p, extra }` preserves guarded and quantified invariants</span>
+<span class="tk-c">// on every non-overridden key of `p`.</span>
+<span class="tk-c">/** @invariant this.extras === null || this.widths.length &lt;= this.extras.length
+ *  @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ *  @invariant this.chunkExtras === null || forall i in this.chunks: this.chunks[i] === null || this.chunkExtras[i] === null || this.chunks[i].length &lt;= this.chunkExtras[i].length
+ */</span>
+<span class="tk-k">type</span> <span class="tk-t">Base</span> = {
+  widths: number[];
+  extras: number[] | <span class="tk-k">null</span>;
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  chunkExtras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+<span class="tk-k">type</span> <span class="tk-t">Extended</span> = <span class="tk-t">Base</span> &amp; { extra: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> extend(p: <span class="tk-t">Base</span>, extra: number): <span class="tk-t">Extended</span> {
+  <span class="tk-k">const</span> result = { ...p, extra };
+  <span class="tk-k">return</span> result;
+}
+
+<span class="tk-c">/** @requires safeInteger(i) */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readFirstChunk(p: <span class="tk-t">Extended</span>, i: number): number {
+  <span class="tk-k">if</span> (i &lt; <span class="tk-n">0</span> || i &gt;= p.chunks.length) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> c = p.chunks[i];
+  <span class="tk-k">if</span> (c === <span class="tk-k">undefined</span> || c === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> c[<span class="tk-n">0</span>]!;
+}</pre></details></li><li><details><summary><code>invalid-object-spread-guarded-every</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">overriding <code>chunkExtras: [[]]</code> breaks quantified parallel-length invariant (run under Node: <code>r1.chunkExtras[0][0]</code> is <code>undefined</code>)</span></summary><pre class="code"><span class="tk-c">// Object spread `{ ...p, chunkExtras: [[]] }` overrides `chunkExtras` and does</span>
+<span class="tk-c">// not preserve the quantified parallel-length invariant from `p`.</span>
+<span class="tk-c">/** @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ *  @invariant this.chunkExtras === null || forall i in this.chunks: this.chunks[i] === null || this.chunkExtras[i] === null || this.chunks[i].length &lt;= this.chunkExtras[i].length
+ */</span>
+<span class="tk-k">type</span> <span class="tk-t">Base</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  chunkExtras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+<span class="tk-k">type</span> <span class="tk-t">Extended</span> = <span class="tk-t">Base</span> &amp; { extra: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> extendBroken(p: <span class="tk-t">Base</span>, extra: number): <span class="tk-t">Extended</span> {
+  <span class="tk-k">const</span> result = { ...p, chunkExtras: [[]], extra };
+  <span class="tk-k">return</span> <mark>result</mark>;
+}</pre></details></li><li><details><summary><code>confined-outside-push-every</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>.push()</code> on confined local array preserves quantified invariants on parameter outside <code>Priv</code></span></summary><pre class="code"><span class="tk-c">// A `.push()` on a locally allocated array modifies only the confined array</span>
+<span class="tk-c">// itself, so quantified invariants on a parameter object outside the confined</span>
+<span class="tk-c">// set survive the loop without explicit apartness.</span>
+<span class="tk-c">/** @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length */</span>
+<span class="tk-k">type</span> <span class="tk-t">Bag</span> = { chunks: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> collectLengths(bag: <span class="tk-t">Bag</span>): { bag: <span class="tk-t">Bag</span>; lengths: number[] } {
+  <span class="tk-k">const</span> lengths: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; bag.chunks.length; i++) {
+    <span class="tk-k">const</span> c = bag.chunks[i];
+    lengths.push(c === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : c.length);
+  }
+  <span class="tk-k">return</span> { bag, lengths };
+}</pre></details></li><li><details><summary><code>invalid-confined-outside-push-every</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>.push([])</code> on unconfined parameter array breaks quantified invariant (run under Node: <code>b2.chunks[1][0]</code> is <code>undefined</code>)</span></summary><pre class="code"><span class="tk-c">// Pushing onto an unconfined parameter array that may alias `bag.chunks`</span>
+<span class="tk-c">// invalidates `bag`'s quantified element-length invariant.</span>
+<span class="tk-c">/** @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length */</span>
+<span class="tk-k">type</span> <span class="tk-t">Bag</span> = { chunks: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> pushAliased(bag: <span class="tk-t">Bag</span>, target: (number[] | <span class="tk-k">null</span>)[]): <span class="tk-t">Bag</span> {
+  target.push([]);
+  <span class="tk-k">return</span> <mark>bag</mark>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>All new definitions, rules, and survival theorems are proved in the <code>Verification</code> library with zero sorry, zero warnings, and zero project axioms (<code>Verification.Tests.AxiomCheck</code> and <code>Verification.Paper.TolerantFrames.Tests.AxiomCheck</code> pass); <code>SourceClaimJson.PassUnit.mode8Accepted_sound</code> is unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.Confinement.FrameSpec · Verification.Confinement.outsideRegion · Verification.Confinement.outside_supported · Verification.Confinement.FrameSpec.covers_supported · Verification.LocalConfinement.checkNode_sound_normal · Verification.LocalConfinement.checkNode_sound_handler · Verification.HeapKnowledge.guardEntailsIn_sound · Verification.HeapKnowledge.mem_foldl_indicesFilter_holds</dd><dt>Wire</dt><dd>none</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">object-spread-guarded-every</span> <span class="test neg">invalid-object-spread-guarded-every</span> <span class="test pos">confined-outside-push-every</span> <span class="test neg">invalid-confined-outside-push-every</span></dd></dl>
+<details><summary>30 files changed, 2084 insertions(+), 682 deletions(-)</summary><pre class="code"> lean/Verification/Programs/GraphCode.lean          |  94 ++-
+ .../Verification/Programs/HeapExpressionRules.lean | 415 +++++++---
+ lean/Verification/Programs/LocalConfinement.lean   | 552 ++++++++++---
+ lean/Verification/Programs/ObjectMerge.lean        | 123 +++
+ lean/Verification/Programs/Parametricity.lean      |   2 +-
+ lean/Verification/Programs/SinglePass.lean         | 104 ++-
+ .../Verification/Programs/SinglePassDiagnosis.lean |   2 +-
+ .../Programs/TolerantFramesComposeYields.lean      |  26 +-
+ .../Programs/TolerantFramesConfined.lean           |  51 +-
+ .../Programs/TolerantFramesGuaranteeTarget.lean    |   4 +-
+ .../Programs/TolerantFramesMergeGuarded.lean       |  36 +-
+ .../Programs/TolerantFramesMergeMirror.lean        |  46 +-
+ .../Programs/TolerantFramesStoreOpsNames.lean      |   7 +
+ lean/Verification/Semantics/Confinement.lean       | 185 +++++
+ lean/Verification/Semantics/HeapKnowledge.lean     | 867 +++++++++++++++------
+ lean/Verification/Semantics/IndexFacts.lean        |  12 +-
+ lean/Verification/Semantics/Linear.lean            |  34 +-
+ lean/Verification/Source/Claims/FragmentFront.lean |  32 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  24 +-
+ lean/Verification/Source/Claims/Json.lean          |  31 +-
+ lean/Verification/Source/Claims/MemberSettle.lean  |  32 +-
+ .../Verification/Source/Claims/PassUnitMember.lean |   6 +-
+ .../Source/Claims/PassUnitMemberRun.lean           |   4 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   3 +
+ pipeline/cases.mts                                 |   8 +-
+ pipeline/examples/confined-outside-push-every.ts   |  14 +
+ .../invalid-confined-outside-push-every.ts         |   9 +
+ .../invalid-object-spread-guarded-every.ts         |  15 +
+ pipeline/examples/object-spread-guarded-every.ts   |  26 +
+ tools/bound-annotations.mts                        |   2 +-</pre></details>
+</article>
+<article class="card" id="c-7383839ad"><header><div><div class="sha">7383839ad · Cristiano Calcagno · Nov 25, 06:15</div><h3>Restrict quantified array-spine framing to array spines and support confined element writes</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Two framing limitations prevented quantified invariants on ordinary arrays from surviving loops that mutate typed arrays or multiple locally allocated arrays: - <code>Region.elemSpines</code> was bounded as <code>KindSet.spines</code> (arrays and typed-array views together), and <code>everyCells</code> / <code>parallelCells</code> used <code>Region.spine</code> even when the array path's type or length term established an ordinary JS array. As a result, a <code>Uint8Array</code> byte write (whose frame modifies only view spines) invalidated quantified element-length and parallel-array invariants on ordinary arrays. - <code>LocalConfinement</code> did not recognize element writes (<code>a[i] = v</code>) on confined locally allocated arrays, and its greedy post-pass over escaping allocations scored only <code>framed</code> call counts rather than prioritizing <code>outside</code> nodes (mutations whose effects stay inside the confined set so every caller-reachable parameter outside the set is framed). In addition, <code>HeadInference.Fact.keptAcross</code> dropped quantified facts at loop heads on any <code>.elemWrite</code> or <code>.indexWrite</code> rather than letting the pass check them.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">semantics: array-spine precision for elemSpines, everyCells, and parallelCells</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Region</span>.elemSpines</code> <span class="m-text">selected both array and view spines</span> (<code class="m-code"><span class="tk-t">KindSet</span>.spines</code>);</span></div><div class="row"><span><code class="m-code">everyCells</code> <span class="m-text">and <code class="m-code">parallelCells</code> always demanded <code class="m-code"><span class="tk-t">Region</span>.spine</code> (both array</span></span></div><div class="row"><span><span class="m-text">and view spines</span>).</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Region</span>.elemSpines</code> <span class="m-text">selects array spines alone (<code class="m-code">arraySpineKey</code>, bounded by</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">KindSet</span>.arraySpine</code> <span class="m-text">and class</span> <code class="m-code">.arrays</code>). <code class="m-code"><span class="tk-t">ReadContext</span></code> <span class="m-text">adds</span></span></div><div class="row"><span><code class="m-code">arrayPath : <span class="tk-t">Nat</span> -&gt; <span class="tk-t">List</span> <span class="tk-t">String</span> -&gt; <span class="tk-t">Bool</span></code> <span class="m-text">(discharged by</span> <code class="m-code">arrayPathOf <span class="tk-t">G</span> Γ</code>,</span></div><div class="row"><span><span class="m-text">proved sound by <code class="m-code">arrayPathOf_sound</code>), letting <code class="m-code">everyCells</code> (also when</span></span></div><div class="row"><span><code class="m-code">stop = <span class="tk-t">Term</span>.now .length s p</code>) <span class="m-text">and <code class="m-code">parallelCells</code> demand only</span></span></div><div class="row"><span><code class="m-code">.path s p arraySpineKey</code> <span class="m-text">for ordinary arrays while keeping <code class="m-code">.spine</code> for</span></span></div><div class="row"><span><span class="m-text">typed arrays so aliased <code class="m-code"><span class="tk-t">Uint8Array</span></code> writes still invalidate typed-array</span></span></div><div class="row"><span><span class="m-text">quantified bounds</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">SinglePass: confined array element writes and outside-first confinement proposal</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <code class="m-code"><span class="tk-t">LocalConfinement</span></code> <span class="m-text">recognizes element writes on confined owned arrays</span></span></div><div class="row cont"><span>(<code class="m-code">isConfArrElemWrite</code>), <span class="m-text">proving in <code class="m-code">elemWriteKeep_sound</code> that they keep</span></span></div><div class="row cont"><span><span class="m-text">all locations outside the confined set and therefore qualify as</span></span></div><div class="row cont"><span><code class="m-code">outsideNodes</code> <span class="m-kw">in</span> <code class="m-code">checkNode</code> <span class="m-text">and</span> <code class="m-code">nodePostNCore</code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">LocalConfinement</span>.propose</code> <span class="m-text">scores candidate escaping allocations</span></span></div><div class="row cont"><span><span class="m-text">lexicographically by <code class="m-code">(outside.length, framed.length)</code> so multi-array</span></span></div><div class="row cont"><span><span class="m-text">confined loops frame outside parameter invariants</span>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">HeadInference</span>.<span class="tk-t">Fact</span>.keptAcross</code> <span class="m-text">retains <code class="m-code">.every</code> proposals across</span></span></div><div class="row cont"><span><code class="m-code">.elemWrite</code> <span class="m-text">and <code class="m-code">.indexWrite</code> for the pass to verify or refuse</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>every-view-write-keeps</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Uint8Array writes keep quantified array-length and parallel-array invariants on ordinary arrays</span></summary><pre class="code"><span class="tk-c">// Typed-array byte writes (`Uint8Array`) modify only view spines, so</span>
+<span class="tk-c">// quantified array-length and parallel-array invariants on ordinary arrays</span>
+<span class="tk-c">// survive across a loop writing a `Uint8Array`.</span>
+<span class="tk-c">/**
+ * @invariant this.chunks.length === this.flags.length
+ * @invariant this.extras === null || this.chunks.length &lt;= this.extras.length
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ * @invariant this.extras === null || forall i in this.chunks: this.chunks[i] === null || this.extras[i] === null || this.chunks[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = {
+  flags: <span class="tk-t">Uint8Array</span>;
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> markNonNull(table: <span class="tk-t">Table</span>): <span class="tk-t">Table</span> {
+  <span class="tk-k">const</span> { flags, chunks } = table;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; chunks.length; i++) {
+    <span class="tk-k">if</span> (chunks[i] !== <span class="tk-k">null</span>) flags[i] = <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> table;
+}</pre></details></li><li><details><summary><code>invalid-view-write-every-view</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">aliased Uint8Array write invalidates quantified bound over typed-array elements (run under Node: returns undefined)</span></summary><pre class="code"><span class="tk-c">// A write through a `Uint8Array` can alias another `Uint8Array` (e.g. a</span>
+<span class="tk-c">// subarray view), so a quantified upper bound over a `Uint8Array`'s elements</span>
+<span class="tk-c">// must NOT survive an unseparated `Uint8Array` write.</span>
+<span class="tk-c">/**
+ * @requires 0 &lt; xs.length &amp;&amp; 0 &lt; other.length &amp;&amp; 0 &lt; table.length
+ * @requires forall i in xs: safeInteger(xs[i]) &amp;&amp; 0 &lt;= xs[i] &amp;&amp; xs[i] &lt; table.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> writeViewAliased(xs: <span class="tk-t">Uint8Array</span>, other: <span class="tk-t">Uint8Array</span>, table: number[]): number {
+  other[<span class="tk-n">0</span>] = <span class="tk-n">99</span>;
+  <span class="tk-k">return</span> <mark>table[xs[<span class="tk-n">0</span>]!]</mark>!;
+}</pre></details></li><li><details><summary><code>confined-multi-arr-outside-every</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">multi-array confined pushes and element writes keep outside quantified invariants</span></summary><pre class="code"><span class="tk-c">// Multiple locally allocated arrays mutated by `.push()` and element writes</span>
+<span class="tk-c">// inside a loop, then returned and stored on fields after the loop, leave</span>
+<span class="tk-c">// quantified invariants on parameter objects outside the confined set intact.</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.data.chunks: this.data.chunks[i] === null || 1 &lt;= this.data.chunks[i].length
+ * @invariant this.data.extras === null || forall i in this.data.chunks: this.data.chunks[i] === null || this.data.extras[i] === null || this.data.chunks[i].length &lt;= this.data.extras[i].length
+ */</span>
+<span class="tk-k">type</span> <span class="tk-t">Holder</span> = {
+  data: {
+    chunks: (number[] | <span class="tk-k">null</span>)[];
+    extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+  };
+  starts: number[] | <span class="tk-k">null</span>;
+  ends: number[] | <span class="tk-k">null</span>;
+  marks: number[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildSummaries(h: <span class="tk-t">Holder</span>): { starts: number[]; ends: number[]; marks: number[] } {
+  <span class="tk-k">const</span> { chunks } = h.data;
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">const</span> ends: number[] = [];
+  <span class="tk-k">const</span> marks: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; chunks.length; i++) {
+    <span class="tk-k">const</span> c = chunks[i];
+    starts.push(c === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : c.length);
+    ends.push(i);
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; marks.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    marks[i] = c === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">const</span> out = { starts, ends, marks };
+  h.starts = starts;
+  h.ends = ends;
+  h.marks = marks;
+  <span class="tk-k">return</span> out;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every change to <code>Region.elemSpines</code>, <code>RegionBounds</code>, <code>ReadContext.arrayPath</code>, <code>arrayPathOf_sound</code>, <code>Survival</code>, <code>SurvivalSeparation</code>, <code>PromiseCalls</code>, <code>Parametricity</code>, <code>Confinement</code>, <code>EffectLanguage/Model</code>, and <code>LocalConfinement.elemWriteKeep_sound</code> is proved in Lean with zero sorry, zero project axioms, and zero warnings. <code>mode8Accepted_sound</code> and its CLI premise are unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.Semantics.Footprints.Region.elemSpines · Verification.Semantics.RegionBounds.Region.bound_sound · Verification.Semantics.Survival.ReadContext · Verification.Semantics.Survival.everyCells · Verification.Semantics.Survival.parallelCells · Verification.Programs.HeapExpressionRules.arrayPathOf_sound · Verification.Programs.Parametricity.arrayPathOf_reassign · Verification.Programs.LocalConfinement.elemWriteKeep_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">every-view-write-keeps</span> <span class="test neg">invalid-view-write-every-view</span> <span class="test pos">confined-multi-arr-outside-every</span></dd></dl>
+<details><summary>19 files changed, 541 insertions(+), 299 deletions(-)</summary><pre class="code"> lean/Verification/Paper/EffectLanguage/Model.lean  |   2 +-
+ .../Paper/TolerantFrames/ParityEvidence.lean       |   2 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  99 +++-
+ lean/Verification/Programs/LocalConfinement.lean   | 497 +++++++++++----------
+ lean/Verification/Programs/Parametricity.lean      |   6 +-
+ lean/Verification/Programs/PromiseCalls.lean       |  35 +-
+ .../Programs/TolerantFramesComposeYields.lean      |   2 +-
+ lean/Verification/Semantics/Confinement.lean       |   2 +-
+ lean/Verification/Semantics/FootprintRebase.lean   |   2 +-
+ lean/Verification/Semantics/Footprints.lean        |   5 +-
+ lean/Verification/Semantics/RegionBounds.lean      |   9 +-
+ lean/Verification/Semantics/Survival.lean          |  89 ++--
+ .../Verification/Semantics/SurvivalSeparation.lean |   2 +-
+ lean/Verification/Source/Claims/HeadInference.lean |   2 +-
+ pipeline/cases.mts                                 |   3 +
+ .../examples/confined-multi-arr-outside-every.ts   |  35 ++
+ pipeline/examples/every-view-write-keeps.ts        |  22 +
+ pipeline/examples/invalid-view-write-every-view.ts |  11 +
+ tests/node-runs.mts                                |  15 +</pre></details>
+</article>
+</main></body></html>
