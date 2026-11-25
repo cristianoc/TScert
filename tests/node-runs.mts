@@ -3338,6 +3338,11 @@ for (const [file, call] of [
       record(null, 2, []), shared(2), total(3), 1 in counted(2)]);
   })()`), '[["RangeError","RangeError"],[1,1],[],[null,null,[7]],true,[null,[8]],[],[{"count":2},{"count":2}],3,true]',
     "array-fill: an invalid length throws before the value is computed, the value is computed once, every index holds it");
+  assert.deepEqual(runPlain(ofKind("quantified-array-fill-null", ["positive"]), "attachNullExtras([[3], null])"), [null, null],
+    "each filled position is null");
+  assert.deepEqual(runPlain(negative("invalid-quantified-array-fill-null"),
+    "(() => { const chunks = [[3]]; const extras = attachEmptyRows(chunks); return [chunks.length === extras.length, chunks[0].length <= extras[0].length]; })()"),
+    [true, false], "equal array lengths alone cannot establish the parallel body");
   assert.throws(() => runExample(negative("invalid-array-fill-read-before"), "firstFixed(2)"), /TypeError/,
     "the hole read before the fill is undefined");
   assert.throws(() => runExample(negative("invalid-array-fill-partial"), "digits(2)"), /TypeError/,
