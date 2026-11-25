@@ -3492,9 +3492,23 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
     "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
     '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");
-  assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
-    "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
-    "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");
+  assert.equal(runExample(ofKind("quantified-array-fill-null", ["positive"]),
+    "JSON.stringify([attachEmptyExtras([[1, 2], null]), attachNullExtras([[3]]), makeEmptySlots(2), attachEmptyExtrasBox([[1, 2], null])])"),
+    '[[null,null],[null],[null,null],{"chunks":[[1,2],null],"extras":[null,null]}]',
+    "quantified-array-fill-null (#393): every element of new Array(n).fill(null) is null");
+  assert.equal(runExample(negative("invalid-quantified-array-fill-null"),
+    "typeof readLastExtra([[1, 2]], attachWrongFill([[1, 2]]), 0)"),
+    "undefined", "invalid-quantified-array-fill-null (#393): a fill with [] reads undefined at number");
+  assert.equal(runExample(ofKind("quantified-element-guard-prefix", ["positive"]),
+    "JSON.stringify([keepNullExtras([[1]], [null, null]), keepNullRows([null]), keepNullTails([{ tail: null }]), keepNullParallelTails([[1]], [{ tail: null }])])"),
+    '[[null,null],[null],[{"tail":null}],[{"tail":null}]]',
+    "quantified-element-guard-prefix (#393): known null elements and null element fields, on the same and a parallel array");
+  assert.equal(runExample(negative("invalid-quantified-element-guard-prefix"),
+    thrown("(() => { const chunks = [[3]]; const r = shortExtras(chunks, []); return r[0] === null || chunks[0] === null || chunks[0].length <= r[0].length; })()")),
+    "TypeError", "invalid-quantified-element-guard-prefix (#393): the stated clause throws past the end of a shorter all-null array");
+  assert.throws(() => runExample(negative("invalid-quantified-array-fill-short"),
+    "readLastExtra([[1, 2]], attachShortExtras([[1, 2]]), 0)"), /TypeError/,
+    "invalid-quantified-array-fill-short (#393): a fill one shorter than chunks leaves undefined in the guarded domain");
   assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
     "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
     '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");

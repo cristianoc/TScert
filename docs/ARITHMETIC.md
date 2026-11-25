@@ -1602,6 +1602,26 @@ project a parallel array's element at the same index (`Q[i].length`,
  *  @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length <= this.extras[i].length */
 ```
 
+A guarded body clause $`T = g \lor \varphi`$ at an index $`i`$, with
+$`T`$ the element read `P[i]` or `Q[i]` and its data path, holds as
+JavaScript evaluates the expression: the read yields a value with tag
+$`g`$, or the read evaluates and $`\varphi`$ holds, the reads of
+$`\varphi`$ being part of its meaning
+(`IndexFacts.BodyClause.HoldsAt`).
+
+```math
+[\![T = g \lor \varphi]\!]_i \iff (\exists w.\ \mathrm{read}_i(T) = w \land g(w)) \lor (\mathrm{eval}_i(T) \land [\![\varphi]\!]_i)
+```
+
+The quantified array's own element `P[i]` evaluates at every index, since
+JavaScript reads any index of an array, a hole or an index past the end as
+`undefined` (`ElemTarget.ownElement`). Any other read evaluates where it
+yields a value: a data path `P[i].f` throws on a nullish element and a
+parallel read `Q[i]` throws on a nullish `Q`. At a hole the model's read
+of `P[i]` yields no value, so the clause holds there through
+$`\varphi`$ alone, which JavaScript's `undefined` also satisfies unless
+$`g`$ is `undefined`.
+
 At an element read $`\mathrm{element}(r,a,k)`$, `every-read` instantiates
 each guarded body clause with $`r`$ for $`P[i]`$ and any read
 $`\mathrm{element}(r',b,k')`$ of the parallel array $`b`$ at an index
@@ -1673,6 +1693,35 @@ at most the source's bound $`u`$ (`HeapKnowledge.everyPrefix`, proved
 \frac{\forall i<u.\ \Phi\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
      {\forall i<t.\ \Phi}\ \textsf{every-prefix}
 ```
+
+**Element guards over a prefix.** A quantified clause over $`Q`$ whose
+guard $`T = g`$ has a contradictory continuation (a constant linear clause
+or a disjunction of them) states that the read $`T`$ yields tag $`g`$ at
+each index of its prefix $`u`$. A target quantified clause over $`P`$ with
+bound $`t`$, where $`t`$ is defined, $`P`$ has an element spine and
+$`t \le u`$ is entailed, holds where each body clause is established at
+every index: a guard on the same read (the same array up to aliases, read
+from the index's array or a parallel one, and the same data path) is
+established through the source's tag; otherwise the target guard's read
+must evaluate, by being `P[i]` or by a source guard on the same read
+witnessing it, and its continuation is established by the same rule. A
+source guard witnesses its read whatever its continuation unless that read
+is its own array's element, which evaluates without a witness
+(`HeapKnowledge.everyEntailed_sound`).
+
+```math
+\frac{\forall j<u.\ (Q[j] = g \lor \bot)\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
+     {\forall i<t\ \text{of}\ P.\ (P[i] = h \lor Q[i] = g \lor \varphi)}\ \textsf{every-guard}
+```
+
+For example, `new Array(chunks.length).fill(null)` states every element
+of its result `null`, and a return of it establishes
+`forall i in chunks: chunks[i] === null || result[i] === null || chunks[i].length <= result[i].length`:
+at each index `chunks[i]` evaluates, `result[i]` is `null`, and the
+comparison is skipped (`quantified-array-fill-null`). With
+`chunks.length` one more than the filled length, `result[i]` at the last
+index is not covered, and the return is refused
+(`invalid-quantified-array-fill-short`).
 
 **Empty arrays.** A quantified fact over an array of length zero holds for
 any body (proved). Its body terms need no interpretation, since no index

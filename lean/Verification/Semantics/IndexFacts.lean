@@ -860,6 +860,15 @@ inductive ElemTarget where
 
 namespace ElemTarget
 
+/-- Whether the target is the quantified array's own element read with no
+field path, `xs[i]`. JavaScript evaluates that read at every index of an
+array (a hole and an index past the end read `undefined`), so it cannot
+fail; a field step (`xs[i].f`) fails on a nullish element and a parallel
+array's read (`ys[i]`) fails on a nullish base. -/
+def ownElement : ElemTarget → Bool
+  | .self [] => true
+  | _ => false
+
 def slots : ElemTarget → List Nat
   | .self _ => []
   | .parallel s _ _ => [s]
@@ -867,6 +876,13 @@ def slots : ElemTarget → List Nat
 def mapM (f : Nat → Option Nat) : ElemTarget → Option ElemTarget
   | .self ep => some (.self ep)
   | .parallel s p ep => (f s).map fun s' => .parallel s' p ep
+
+theorem mapM_ownElement {f : Nat → Option Nat} {t t' : ElemTarget} (h : t.mapM f = some t') :
+    t'.ownElement = t.ownElement := by
+  cases t with
+  | self ep => cases h; rfl
+  | parallel s p ep =>
+    obtain ⟨s', _, rfl⟩ := Option.map_eq_some_iff.mp h; rfl
 
 def mapTotal (f : Nat → Nat) : ElemTarget → ElemTarget
   | .self ep => .self ep
@@ -1005,10 +1021,16 @@ def boundValue (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) 
     | none => none
   | .free t => termValue ε ρ h t
 
-/-- Whether a body clause holds at index `i` of spine elements `ls`. -/
+/-- Whether a body clause holds at index `i` of spine elements `ls`. A guarded
+clause `t === g || b` holds as JavaScript evaluates it: the guard's read
+yields a value satisfying `g`, or the read evaluates and `b` holds. The read
+evaluates where it yields a value; the quantified array's own element `xs[i]`
+evaluates at every index (`ElemTarget.ownElement`). -/
 def BodyClause.HoldsAt (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : BodyClause → Prop
   | .clause c => c.HoldsAt (boundValue ε ρ h ls i)
-  | .guarded t g b => ∃ w, t.read ρ h ls i = some w ∧ (g.holds w ∨ b.HoldsAt ε ρ h ls i)
+  | .guarded t g b =>
+    (∃ w, t.read ρ h ls i = some w ∧ g.holds w) ∨
+    ((t.ownElement = false → ∃ w, t.read ρ h ls i = some w) ∧ b.HoldsAt ε ρ h ls i)
 
 theorem ElemTarget.read_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : List (Option Nat)} {i : Nat}
     {t : ElemTarget} {w : Val} (hr : t.read ρ h ls i = some w) : t.read ρ (h ++ vs) ls i = some w := by
@@ -1092,7 +1114,8 @@ theorem boundValue_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : List (Opti
 theorem BodyClause.holdsAt_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause}, B.HoldsAt ε ρ h ls i → B.HoldsAt ε ρ (h ++ vs) ls i
   | .clause _, hB => LinearClause.holdsAt_extend (fun _ _ _ hm => boundValue_extend vs hm) hB
-  | .guarded t _ _, ⟨w, hw, hor⟩ => ⟨w, t.read_extend vs hw, hor.imp id (holdsAt_extend vs)⟩
+  | .guarded t _ _, .inl ⟨w, hw, hg⟩ => .inl ⟨w, t.read_extend vs hw, hg⟩
+  | .guarded t _ _, .inr ⟨hp, hb⟩ => .inr ⟨fun hne => let ⟨w, hw⟩ := hp hne; ⟨w, t.read_extend vs hw⟩, holdsAt_extend vs hb⟩
 
 theorem BodyClause.holdsAt_mapM {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B B' : BodyClause}, B.mapM f = some B' →
@@ -1125,8 +1148,9 @@ theorem BodyClause.holdsAt_mapM {f : Nat → Option Nat} {ρ ρ' : Env} {h : Hea
         obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp ht
         have hρ := hf s (List.mem_append_left _ (by simp [ElemTarget.slots])) s' hs'
         simp only [ElemTarget.read, hρ]
+    have hep := ElemTarget.mapM_ownElement ht
     have ih := holdsAt_mapM (h := h) (ls := ls) (i := i) hb (fun s hs => hf s (List.mem_append_right _ hs))
-    simp only [BodyClause.HoldsAt, htr, ih]
+    simp only [BodyClause.HoldsAt, htr, hep, ih]
 
 theorem BodyClause.holdsAt_congr {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause}, (∀ s ∈ B.slots, ρ s = ρ' s) →
@@ -1269,9 +1293,11 @@ theorem BodyClause.holdsAt_frame {ρ : Env} {h h' : Heap} {ls : List (Option Nat
       (∀ b ∈ B.vars, ∀ z, boundValue ε ρ h ls i b = some z → boundValue ε ρ h' ls i b = some z) →
       B.HoldsAt ε ρ h ls i → B.HoldsAt ε ρ h' ls i
   | .clause _, _, hb, hB => LinearClause.holdsAt_extend hb hB
-  | .guarded t _ _, ht, hb, ⟨w, hw, hor⟩ =>
-    ⟨w, ht t (List.mem_cons_self ..) w hw,
-      hor.imp id (holdsAt_frame (fun t' ht' => ht t' (List.mem_cons_of_mem _ ht')) hb)⟩
+  | .guarded t _ _, ht, _, .inl ⟨w, hw, hg⟩ =>
+    .inl ⟨w, ht t (List.mem_cons_self ..) w hw, hg⟩
+  | .guarded t _ _, ht, hb, .inr ⟨hp, hB⟩ =>
+    .inr ⟨fun hne => let ⟨w, hw⟩ := hp hne; ⟨w, ht t (List.mem_cons_self ..) w hw⟩,
+      holdsAt_frame (fun t' ht' => ht t' (List.mem_cons_of_mem _ ht')) hb hB⟩
 
 /-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw spine
 lists its element cells and has no spine cell; an array object has its spine

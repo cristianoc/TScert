@@ -1069,7 +1069,7 @@ theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : L
   | .clause c, hC, D, hD => by
     obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hD
     exact P.clause_holds hs hC d hd
-  | .guarded t g b, ⟨w, hw, hor⟩, D, hD => by
+  | .guarded t g b, hB, D, hD => by
     simp only [Composer.bodyClause] at hD
     cases hm : t.mapM P.slot with
     | none => simp [hm] at hD
@@ -1082,7 +1082,10 @@ theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : L
         | parallel s p ep =>
           obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hm
           simp only [ElemTarget.read, hs.slot s s' hs']
-      exact ⟨w, htr ▸ hw, hor.imp id fun hb => bodyClause_holds hs hb d hd⟩
+      have hep : t'.ownElement = t.ownElement := ElemTarget.mapM_ownElement hm
+      rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
+      · exact .inl ⟨w, htr ▸ hw, hg⟩
+      · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, htr ▸ hw⟩, bodyClause_holds hs hb d hd⟩
 
 /-- **Composition is sound for every form of fact** (proved): where a post
 fact holds at the callee's states and the composition's assumptions hold of
