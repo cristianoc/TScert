@@ -66,11 +66,6 @@ cases (33 with an exact case, 31 with a close one, 6 with none), read on
   the bound is kept. In `bounds-pattern-grow-upper-refused`, `paths` (a
   fresh `lists.widths` apart from `a.flags`) and `straight` (one call under
   `flags !== out && starts !== out`) are refused.
-- **C3, a quantified fact across a write to a disjoint object** (the
-  patterns' row 6, the typed-array example). The frame theorem keeps it,
-  the support being disjoint from the write.
-  `bounds-pattern-fresh-field-write-refused` drops a `forall` over `items`
-  across `fragment.width = s` on a fresh object.
 - **C4, the note's first example as written.** The aliasing example
   writes `out[j]` with no guard; the verifier refuses such a write
   (`invalid-index-write-no-compare`). The guarded form
