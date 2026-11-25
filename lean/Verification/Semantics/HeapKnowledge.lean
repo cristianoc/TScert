@@ -405,11 +405,16 @@ theorem bodyClauseFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping}
     obtain ⟨hps, hmap⟩ := hm
     refine (LinearClause.holdsAt_mapVars hmap fun y _ x hx => ?_).mp hF
     exact boundFollows_sound hM (hps _ (lookup_mem' hx))
-  | .guarded t g B, .guarded t' g' B', hm, ⟨w, hw, hor⟩ => by
+  | .guarded t g B, .guarded t' g' B', hm, hB => by
     simp only [bodyClauseFollows, Bool.and_eq_true, beq_iff_eq] at hm
-    obtain ⟨⟨ht, rfl⟩, hB⟩ := hm
-    exact ⟨w, (elemTargetFollows_sound hM ht).symm.trans hw,
-      hor.imp id (bodyClauseFollows_sound hM hB)⟩
+    obtain ⟨⟨ht, rfl⟩, hB'⟩ := hm
+    have hep : t'.elemPath = t.elemPath := by
+      cases t <;> cases t' <;> simp_all [elemTargetFollows, ElemTarget.elemPath]
+    have htr := elemTargetFollows_sound (h := h) (ls := ls) (i := i) hM ht
+    rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
+    · exact .inl ⟨w, htr.symm.trans hw, hg⟩
+    · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, htr.symm.trans hw⟩,
+        bodyClauseFollows_sound hM hB' hb⟩
   | .clause _, .guarded _ _ _, hm, _ | .guarded _ _ _, .clause _, hm, _ => by
     simp [bodyClauseFollows] at hm
 
@@ -1317,17 +1322,23 @@ theorem lowerBodyClause_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl :
         rw [lowerTerm_eq (ε := ε) hl hr t]; exact hm
     exact (LinearClause.holdsAt_mapVars (renameClause_mapVars (lowerBound reads) F) fun x _ y hy => by
       simp only [Function.comp_apply, Option.some.injEq] at hy; subst hy; rfl).mpr hF'
-  | .guarded t g b, ⟨w, hw, hor⟩ => by
-    refine ⟨w, ?_, hor.imp id (lowerBodyClause_holds hl hr)⟩
-    cases t with
-    | self ep => exact hw
-    | parallel s p ep =>
-      simp only [lowerTarget, ElemTarget.read] at hw ⊢
-      cases hp : readPath h (ρ s) p with
-      | none => simp [hp] at hw
-      | some a =>
-        simp only [hp] at hw
-        rw [lowerRoot_path hl hr hp]; exact hw
+  | .guarded t g b, hB => by
+    have hread : ∀ w, t.read ρ h ls' i = some w → (lowerTarget reads t).read ρ h ls' i = some w := by
+      intro w hw
+      cases t with
+      | self ep => exact hw
+      | parallel s p ep =>
+        simp only [lowerTarget, ElemTarget.read] at hw ⊢
+        cases hp : readPath h (ρ s) p with
+        | none => simp [hp] at hw
+        | some a =>
+          simp only [hp] at hw
+          rw [lowerRoot_path hl hr hp]; exact hw
+    have hep : (lowerTarget reads t).elemPath = t.elemPath := by cases t <;> rfl
+    rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
+    · exact .inl ⟨w, hread w hw, hg⟩
+    · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, hread w hw⟩,
+        lowerBodyClause_holds hl hr hb⟩
 
 /-- A read link (optional or not) preserves array-spine reads in both directions:
 a missing optional field yields `undefined`, which has no element spine. -/
@@ -1494,6 +1505,10 @@ theorem lowerTargetAll_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : Hea
         have hok := (lowerRootAll_elements hl hr n s p a st).mpr ⟨hp, he⟩
         simp only [hok.1, hok.2]
 
+theorem lowerTargetAll_elemPath (r : Nat → Nat) (reads : List (Nat × String × Nat)) (n : Nat) (t : ElemTarget) :
+    (lowerTargetAll r reads n t).elemPath = t.elemPath := by
+  cases t <;> rfl
+
 /-- A body clause lowered through read links and alias representatives `r`. -/
 def lowerBodyClauseAll (r : Nat → Nat) (reads : List (Nat × String × Nat)) (n : Nat) : BodyClause → BodyClause
   | .clause F => .clause (renameClause (lowerBoundAll r reads n) F)
@@ -1508,7 +1523,8 @@ theorem lowerBodyClauseAll_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl 
       subst hy
       exact lowerBoundAll_eq hl hr n x
   | .guarded t g b => by
-    simp only [lowerBodyClauseAll, BodyClause.HoldsAt, lowerTargetAll_eq hl hr n t, lowerBodyClauseAll_iff hl hr n b]
+    simp only [lowerBodyClauseAll, BodyClause.HoldsAt, lowerTargetAll_eq hl hr n t,
+      lowerTargetAll_elemPath, lowerBodyClauseAll_iff hl hr n b]
 
 /-- A body clause with every current slot renamed by a total map `f`. -/
 def mapBodyClause (f : Nat → Nat) : BodyClause → BodyClause
@@ -3129,14 +3145,266 @@ theorem everyLinkedFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {
       · cases hm
   · cases hf
 
+/-- Whether a linear clause is unsatisfiable (`0 ≤ d` with `d < 0`, or `0 ≠ 0`). -/
+def LinearClause.isFalsum {V : Type} : LinearClause V → Bool
+  | .atom (.le [] d) => decide (d < 0)
+  | .atom (.ne [] d) => decide (d = 0)
+  | .either A B => A.isFalsum && B.isFalsum
+  | _ => false
+
+theorem LinearClause.isFalsum_sound {V : Type} {val : V → Option Int} :
+    ∀ {C : LinearClause V}, C.isFalsum = true → C.HoldsAt val → False
+  | .atom (.le [] d), hf, h => by
+    simp only [LinearClause.isFalsum, decide_eq_true_eq] at hf
+    have hh := h.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval] at hh
+    omega
+  | .atom (.ne [] d), hf, h => by
+    simp only [LinearClause.isFalsum, decide_eq_true_eq] at hf
+    have hh := h.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval] at hh
+    omega
+  | .atom (.le (_ :: _) _), hf, _ | .atom (.ne (_ :: _) _), hf, _ => by
+    simp [LinearClause.isFalsum] at hf
+  | .either A B, hf, h => by
+    simp only [LinearClause.isFalsum, Bool.and_eq_true] at hf
+    exact h.elim (isFalsum_sound hf.1) (isFalsum_sound hf.2)
+
+/-- The element guard that a body clause unconditionally forces when its body is
+unsatisfiable (`LinearClause.isFalsum`). -/
+def BodyClause.forcedGuard? : BodyClause → Option (ElemTarget × GuardTag)
+  | .guarded t g (.clause c) => if c.isFalsum then some (t, g) else none
+  | _ => none
+
+theorem BodyClause.forcedGuard?_sound {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
+    {B : BodyClause} {t : ElemTarget} {g : GuardTag} (hf : B.forcedGuard? = some (t, g))
+    (hB : B.HoldsAt ε ρ h ls i) : ∃ w, t.read ρ h ls i = some w ∧ g.holds w := by
+  cases B with
+  | clause _ => simp [BodyClause.forcedGuard?] at hf
+  | guarded t' g' b =>
+    cases b with
+    | guarded _ _ _ => simp [BodyClause.forcedGuard?] at hf
+    | clause c =>
+      simp only [BodyClause.forcedGuard?] at hf
+      split at hf
+      · rename_i hc
+        simp only [Option.some.injEq, Prod.mk.injEq] at hf
+        obtain ⟨rfl, rfl⟩ := hf
+        rcases hB with hhit | ⟨-, hfalse⟩
+        · exact hhit
+        · exact (LinearClause.isFalsum_sound hc hfalse).elim
+      · cases hf
+
+/-- Whether a lowered body clause `G` (for an array whose lowered root is
+`gRoot`) is vacuously discharged by knowing that every index below the stop
+bound of the lowered array root `bRoot` holds a value satisfying `tag`. -/
+def bodyClauseVacuous (gRoot bRoot : Nat × List String) (tag : GuardTag) : BodyClause → Bool
+  | .clause _ => false
+  | .guarded t g b =>
+    let hits := g == tag && match t with
+      | .self [] => gRoot == bRoot
+      | .parallel s p [] => (s, p) == bRoot
+      | _ => false
+    hits || (t.elemPath.isEmpty && bodyClauseVacuous gRoot bRoot tag b)
+
+theorem bodyClauseVacuous_sound {ρ : Env} {h : Heap} {gRoot bRoot : Nat × List String} {tag : GuardTag}
+    {wg wb : Val} {stg stb : Nat} {lsg lsb : List (Option Nat)} {i : Nat}
+    (hgRoot : readPath h (ρ gRoot.1) gRoot.2 = some wg ∧ elementsOf wg = some stg ∧ h[stg]?.bind spineEntries = some lsg)
+    (hbRoot : readPath h (ρ bRoot.1) bRoot.2 = some wb ∧ elementsOf wb = some stb ∧ h[stb]?.bind spineEntries = some lsb)
+    (htag : ∃ w, (ElemTarget.self []).read ρ h lsb i = some w ∧ tag.holds w) :
+    ∀ {G : BodyClause}, bodyClauseVacuous gRoot bRoot tag G = true → G.HoldsAt ε ρ h lsg i
+  | .clause _, hv => by simp [bodyClauseVacuous] at hv
+  | .guarded t g b, hv => by
+    simp only [bodyClauseVacuous, Bool.or_eq_true] at hv
+    rcases hv with hhit | hrec
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hhit
+      obtain ⟨rfl, ht⟩ := hhit
+      apply Or.inl
+      obtain ⟨w, hw, htw⟩ := htag
+      cases t with
+      | self ep =>
+        cases ep with
+        | cons _ _ => simp at ht
+        | nil =>
+          simp only [beq_iff_eq] at ht
+          subst ht
+          have hweq : wg = wb := Option.some.inj (hgRoot.1.symm.trans hbRoot.1)
+          subst hweq
+          have hsteq : stg = stb := Option.some.inj (hgRoot.2.1.symm.trans hbRoot.2.1)
+          subst hsteq
+          have hlseq : lsg = lsb := Option.some.inj (hgRoot.2.2.symm.trans hbRoot.2.2)
+          subst hlseq
+          exact ⟨w, hw, htw⟩
+      | parallel s p ep =>
+        cases ep with
+        | cons _ _ => simp at ht
+        | nil =>
+          simp only [beq_iff_eq] at ht
+          have hs : s = bRoot.1 := congrArg Prod.fst ht
+          have hp : p = bRoot.2 := congrArg Prod.snd ht
+          subst hs; subst hp
+          refine ⟨w, ?_, htw⟩
+          simp only [ElemTarget.read, hbRoot.1, hbRoot.2.1, hbRoot.2.2]
+          exact hw
+    · simp only [Bool.and_eq_true, List.isEmpty_iff] at hrec
+      exact Or.inr ⟨fun hne => absurd hrec.1 hne, bodyClauseVacuous_sound hgRoot hbRoot htag hrec.2⟩
+
+/-- **Vacuous discharge of guarded quantified clauses**: from an all-tag
+quantified fact `forall j < st_b: b[j] === tag` (`BodyClause.forcedGuard?`) and
+`stop' ≤ st_b`, discharges any single-array or parallel-array `every` clause
+guarded by `b[i] === tag` (nested under empty-`elemPath` guards), modulo read
+links `ls`. -/
+def everyVacuousFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (m : PointClaims.Mapping)
+    (a : List IndexAtom) (t : IndexAtom) : Bool :=
+  match t.fact with
+  | .every s' p' stop' body' =>
+    if body'.isEmpty || !a.any (fun src => match src.fact with | .every .. => true | _ => false) then false else
+    let reads := bridgeReads ls
+    let r := HeapLinks.rep (HeapLinks.classes ls)
+    let n := reads.length
+    let lr := lowerRootAll r reads n
+    let ltTerm := lowerTermAll r reads n
+    let lb := lowerBodyClauseAll r reads n
+    let lt := fun u => liftTerm r reads n (lowerTermAll r reads n u)
+    let f := PointClaims.slot m
+    let gRoot := lr (f s') p'
+    let gStop := ltTerm (stop'.mapM' f)
+    let gBody := body'.map fun C => lb (mapBodyClause f C)
+    let spineKnown := bridgedDefined lt a (lt (.now .length (f s') p')) ||
+      a.any fun src => condFollows M m src t && match src.fact with
+        | .every x q _ _ => lr x q == gRoot
+        | _ => false
+    spineKnown && gBody.all fun G =>
+      a.any fun src => condFollows M m src t && match src.fact with
+        | .every x q st b =>
+          let bRoot := lr x q
+          (ltTerm st == gStop || bridgedStopLe lt M m a t gStop st) &&
+            b.any fun C => match (lb C).forcedGuard? with
+              | some (.self [], tag) => bodyClauseVacuous gRoot bRoot tag G
+              | _ => false
+        | _ => false
+  | _ => false
+
+theorem everyVacuousFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {m : PointClaims.Mapping}
+    {a : List IndexAtom} {t : IndexAtom} {ρ : Env} {h : Heap}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds ε a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated)
+    (hf : everyVacuousFollows M ls m a t = true) : t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
+  unfold everyVacuousFollows at hf
+  split at hf
+  · rename_i s' p' stop' body' hfact
+    rw [hfact]
+    dsimp only at hf
+    split at hf
+    · cases hf
+    · rename_i hne
+      simp only [Bool.or_eq_true, List.isEmpty_iff, not_or] at hne
+      simp only [Bool.and_eq_true, List.all_eq_true] at hf
+      obtain ⟨hspine, hclauses⟩ := hf
+      have hr : ∀ z, ρ (HeapLinks.rep (HeapLinks.classes ls) z) = ρ z :=
+        HeapLinks.rep_eq (HeapLinks.classes_one hl)
+      have hlt : ∀ u, termValue ε ρ h (liftTerm (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+          (bridgeReads ls).length (lowerTermAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+          (bridgeReads ls).length u)) = termValue ε ρ h u := fun u =>
+        (liftTerm_eq hl hr _ _).trans (lowerTermAll_eq hl hr _ _)
+      have hgStopEq : termValue ε ρ h (lowerTermAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+          (bridgeReads ls).length (stop'.mapM' (PointClaims.slot m))) =
+          termValue ε (PointClaims.mapEnv m ρ) h stop' := by
+        rw [lowerTermAll_eq hl hr]
+        exact termValue_mapM' fun _ => rfl
+      -- Establish the target array's spine.
+      have hTargetSpine : ∃ wg stg lsg,
+          readPath h (PointClaims.mapEnv m ρ s') p' = some wg ∧ elementsOf wg = some stg ∧
+          h[stg]?.bind spineEntries = some lsg := by
+        rcases Bool.or_eq_true_iff.mp hspine with hdef | hev
+        · have hts := bridgedDefined_sound hlt ha hdef
+          rw [hlt] at hts
+          obtain ⟨w, _, hw, hk, _⟩ := termValue_isSome hts rfl
+          obtain ⟨sto, ls', hsto, hls', -, -⟩ := lengthOf_spine hk
+          exact ⟨w, sto, ls', hw, elementsOf_spine hsto, by rw [hls']; rfl⟩
+        · obtain ⟨src, hsrc, hm⟩ := List.any_eq_true.mp hev
+          simp only [Bool.and_eq_true] at hm
+          obtain ⟨hcd, hm⟩ := hm
+          have hS := ha src hsrc (condFollows_cond hM hcd hcond)
+          split at hm
+          · rename_i x q st b hsf
+            rw [hsf] at hS
+            obtain ⟨w, sto, ls', _, hw, hsto, hls', _, _⟩ := hS
+            have h1 := (lowerRootAll_elements hl hr (bridgeReads ls).length x q w sto).mpr ⟨hw, hsto⟩
+            rw [beq_iff_eq.mp hm] at h1
+            have h2 := (lowerRootAll_elements hl hr (bridgeReads ls).length (PointClaims.slot m s') p' w sto).mp h1
+            exact ⟨w, sto, ls', h2.1, h2.2, hls'⟩
+          · cases hm
+      obtain ⟨wg, stg, lsg, hwg, hstg, hlsg⟩ := hTargetSpine
+      have hgRoot : readPath h (ρ (lowerRootAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+          (bridgeReads ls).length (PointClaims.slot m s') p').1)
+          (lowerRootAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+          (bridgeReads ls).length (PointClaims.slot m s') p').2 = some wg ∧
+          elementsOf wg = some stg ∧ h[stg]?.bind spineEntries = some lsg := by
+        have h1 := (lowerRootAll_elements hl hr (bridgeReads ls).length (PointClaims.slot m s') p' wg stg).mpr
+          ⟨hwg, hstg⟩
+        exact ⟨h1.1, h1.2, hlsg⟩
+      -- Helper: any clause in `body'` witnesses `stop'` and holds for every `i < n'`.
+      have hWitness : ∀ C' ∈ body', ∃ n', termValue ε (PointClaims.mapEnv m ρ) h stop' = some n' ∧
+          ∀ i : Nat, (i : Int) < n' → C'.HoldsAt ε (PointClaims.mapEnv m ρ) h lsg i := by
+        intro C' hC'
+        have hmem := hclauses _ (List.mem_map.mpr ⟨C', hC', rfl⟩)
+        obtain ⟨src, hsrc, hm⟩ := List.any_eq_true.mp hmem
+        simp only [Bool.and_eq_true] at hm
+        obtain ⟨hcd, hm⟩ := hm
+        have hS := ha src hsrc (condFollows_cond hM hcd hcond)
+        split at hm
+        · rename_i x q st b hsf
+          rw [hsf] at hS
+          simp only [Bool.and_eq_true] at hm
+          obtain ⟨hstop, hvac⟩ := hm
+          obtain ⟨wb, stb, lsb, nb, hwb, hstb, hlsb, hnb, hall⟩ := hS
+          have hStopRes : ∃ n', termValue ε (PointClaims.mapEnv m ρ) h stop' = some n' ∧ n' ≤ nb := by
+            rcases Bool.or_eq_true_iff.mp hstop with hsyn | hle
+            · refine ⟨nb, ?_, Int.le_refl nb⟩
+              rw [← hgStopEq, ← beq_iff_eq.mp hsyn, lowerTermAll_eq hl hr, hnb]
+            · obtain ⟨n', hn', hle'⟩ := bridgedStopLe_sound hlt hM ha hcond hnb hle
+              exact ⟨n', hgStopEq.symm.trans hn', hle'⟩
+          obtain ⟨n', hn', hle'⟩ := hStopRes
+          obtain ⟨C, hC, hCv⟩ := List.any_eq_true.mp hvac
+          split at hCv
+          · rename_i tag hfg
+            have hbRoot : readPath h (ρ (lowerRootAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+                (bridgeReads ls).length x q).1)
+                (lowerRootAll (HeapLinks.rep (HeapLinks.classes ls)) (bridgeReads ls)
+                (bridgeReads ls).length x q).2 = some wb ∧
+                elementsOf wb = some stb ∧ h[stb]?.bind spineEntries = some lsb := by
+              have h1 := (lowerRootAll_elements hl hr (bridgeReads ls).length x q wb stb).mpr ⟨hwb, hstb⟩
+              exact ⟨h1.1, h1.2, hlsb⟩
+            refine ⟨n', hn', fun i hi => ?_⟩
+            have hCi := (lowerBodyClauseAll_iff hl hr (bridgeReads ls).length C).mpr (hall i (by omega) C hC)
+            have htag := BodyClause.forcedGuard?_sound hfg hCi
+            have hG := bodyClauseVacuous_sound (ε := ε) hgRoot hbRoot htag hCv
+            exact (mapBodyClause_iff (f := PointClaims.slot m) C').mp
+              ((lowerBodyClauseAll_iff hl hr (bridgeReads ls).length _).mp hG)
+          · cases hCv
+        · cases hm
+      cases hbd : body' with
+      | nil => exact absurd hbd hne.1
+      | cons C0 rest =>
+        obtain ⟨n', hn', _⟩ := hWitness C0 (by simp [hbd])
+        refine ⟨wg, stg, lsg, n', hwg, hstg, hlsg, hn', fun i hi C' hC' => ?_⟩
+        obtain ⟨n'', hn'', hhold⟩ := hWitness C' (by rw [hbd]; exact hC')
+        have heq : n' = n'' := Option.some.inj (hn'.symm.trans hn'')
+        subst heq
+        exact hhold i hi
+  · cases hf
+
 /-- A fact follows from the atoms, read at their own slots: an unconditional
 atom it follows from (`factFollows`), a spine separation the atoms state
 at sites its paths share (`spineFollows`), a field read a link states
 (`fieldReadFollows`), or a quantified fact lowered through read links
-(`everyLinkedFollows`). -/
+(`everyLinkedFollows`) or discharged vacuously from an all-tag array
+(`everyVacuousFollows`). -/
 def baseFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (as : List IndexAtom) (F : IndexFact) : Bool :=
   as.any (fun s => s.cond.isNone && factFollows M none s.fact F) || spineFollows M none ls as { fact := F } ||
-    fieldReadFollows M ls F || (match F with | .every .. => everyLinkedFollows M ls none as { fact := F } | _ => false)
+    fieldReadFollows M ls F ||
+    (match F with | .every .. => everyLinkedFollows M ls none as { fact := F } || everyVacuousFollows M ls none as { fact := F } | _ => false)
 
 theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : List IndexAtom} {F : IndexFact} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
@@ -3150,7 +3418,9 @@ theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : Li
       · exact spineFollows_sound (m := none) hM hl hf ha
     · exact fieldReadFollows_sound hM hl hf
   · cases hF : F <;> rw [hF] at hev <;> simp at hev
-    exact everyLinkedFollows_sound (m := none) hM hl ha (fun _ hc => by cases hc) hev
+    rcases hev with hev | hev
+    · exact everyLinkedFollows_sound (m := none) hM hl ha (fun _ hc => by cases hc) hev
+    · exact everyVacuousFollows_sound (m := none) hM hl ha (fun _ hc => by cases hc) hev
 
 /-- Unwraps any leading guards of a fact whose complementary guard holds under
 `tags` (directly or lowered through `ld`). -/
@@ -3884,7 +4154,7 @@ def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat
     (match t.fact with | .linear .. | .every .. | .bound .. | .int .. => linearFollowsIn K.get M m a B.get t | _ => false) ||
     (t.cond.isNone && match t.fact with | .guarded .. | .either .. | .linear .. | .atIndex .. | .spineApart .. => guardFollowsWith G.get M m ls tags a t | _ => false) ||
     spineFollows M m ls a t || guardBodyFollows M m a t ||
-    (match t.fact with | .every .. => everyPrefix K.get M m a t || everyLinkedFollows M ls m a t | _ => false) || sameFollows M m t
+    (match t.fact with | .every .. => everyPrefix K.get M m a t || everyLinkedFollows M ls m a t || everyVacuousFollows M ls m a t | _ => false) || sameFollows M m t
 
 /-- Whether every value in a value set satisfies a guard tag (including the empty set). -/
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
@@ -4014,9 +4284,10 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
   case inr =>
     cases htf : t.fact <;> rw [htf] at hev <;> simp at hev
     rw [← htf]
-    rcases hev with hev | hev
+    rcases hev with (hev | hev) | hev
     · exact everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
     · exact everyLinkedFollows_sound hM hl ha hcond hev
+    · exact everyVacuousFollows_sound hM hl ha hcond hev
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
@@ -4095,7 +4366,7 @@ def indicesFilter (k : Knowledge) (cs : List IndexAtom) (useCases : Bool := true
     (match t.fact with | .linear .. | .every .. | .bound .. | .int .. => linearFollowsIn K.get M none a B.get t | _ => false) ||
     gFollows t ||
     spineFollows M none ls a t ||
-    (match t.fact with | .every .. => everyPrefix K.get M none a t || everyLinkedFollows M ls none a t | _ => false)
+    (match t.fact with | .every .. => everyPrefix K.get M none a t || everyLinkedFollows M ls none a t || everyVacuousFollows M ls none a t | _ => false)
 
 theorem indicesFilter_sub {k : Knowledge} {cs : List IndexAtom} {useCases : Bool} {t : IndexAtom}
     (ht : t ∈ indicesFilter k cs useCases) : t ∈ cs := by
@@ -4120,9 +4391,10 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
     case inr =>
       cases htf : t.fact <;> rw [htf] at hev <;> simp at hev
       rw [← htf]
-      rcases hev with hev | hev
+      rcases hev with (hev | hev) | hev
       · exact hmap ▸ everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
       · exact hmap ▸ everyLinkedFollows_sound hM hl ha hcond hev
+      · exact hmap ▸ everyVacuousFollows_sound hM hl ha hcond hev
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hst
     case inr => exact hmap ▸ spineFollows_sound hM hl hst ha
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hgf
@@ -6160,49 +6432,69 @@ theorem instantiateBodyClause_holds {K : Linear.Known Term} {ls_links : HeapLink
                 simp only [hli, hpres' l hli, Option.bind_some] at hn
                 simpa [termValue, termAt, Bool.false_eq_true, ite_false] using hn
     | free t => cases ht; exact hn
-  | .guarded (.self ep) tag b, G, hinst, ⟨w, hw, hor⟩ => by
+  | .guarded (.self ep) tag b, G, hinst, hB => by
     obtain ⟨b', hb', rfl⟩ := Option.map_eq_some_iff.mp hinst
-    simp only [ElemTarget.read] at hw
-    cases hli : ls[i]? with
-    | none => simp [hli] at hw
-    | some o =>
-      cases o with
+    have hself : ∀ w, (ElemTarget.self ep).read ρ h ls i = some w → readGuard h (ρ r) ep = some w := by
+      intro w hw
+      simp only [ElemTarget.read] at hw
+      cases hli : ls[i]? with
       | none => simp [hli] at hw
-      | some l =>
-        simp only [hli] at hw
-        obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
-        have hveq : v = ρ r := Option.some.inj (hv.symm.trans (hpres l hli))
-        subst hveq
-        exact ⟨w, hrg, hor.imp id (instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb')⟩
-  | .guarded (.parallel s' p' ep) tag b, G, hinst, ⟨w, hw, hor⟩ => by
+      | some o =>
+        cases o with
+        | none => simp [hli] at hw
+        | some l =>
+          simp only [hli] at hw
+          obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+          have hveq : v = ρ r := Option.some.inj (hv.symm.trans (hpres l hli))
+          subst hveq
+          exact hrg
+    rcases hB with ⟨w, hw, htag⟩ | ⟨hpath, hb⟩
+    · exact ⟨w, hself w hw, .inl htag⟩
+    · have hbH := instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb' hb
+      cases ep with
+      | nil => exact ⟨ρ r, rfl, .inr hbH⟩
+      | cons f p =>
+        obtain ⟨w, hw⟩ := hpath (by simp [ElemTarget.elemPath])
+        exact ⟨w, hself w hw, .inr hbH⟩
+  | .guarded (.parallel s' p' ep) tag b, G, hinst, hB => by
     simp only [instantiateBodyClause, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at hinst
     obtain ⟨r', hr', b', hb', rfl⟩ := hinst
-    simp only [ElemTarget.read] at hw
-    cases hrp : readPath h (ρ s') p' with
-    | none => simp [hrp] at hw
-    | some a =>
-      simp only [hrp] at hw
-      cases hea : elementsOf a with
-      | none => simp [hea] at hw
-      | some st' =>
-        simp only [hea] at hw
-        cases hls' : h[st']?.bind spineEntries with
-        | none => simp [hls'] at hw
-        | some ls' =>
-          simp only [hls'] at hw
-          obtain ⟨-, hpres', -⟩ := parallelSlot_read hK hl ha hki hr' hrp hea hls'
-          cases hli : ls'[i]? with
-          | none => simp [hli] at hw
-          | some o =>
-            cases o with
+    have hpar : ∀ w, (ElemTarget.parallel s' p' ep).read ρ h ls i = some w → readGuard h (ρ r') ep = some w := by
+      intro w hw
+      simp only [ElemTarget.read] at hw
+      cases hrp : readPath h (ρ s') p' with
+      | none => simp [hrp] at hw
+      | some a =>
+        simp only [hrp] at hw
+        cases hea : elementsOf a with
+        | none => simp [hea] at hw
+        | some st' =>
+          simp only [hea] at hw
+          cases hls' : h[st']?.bind spineEntries with
+          | none => simp [hls'] at hw
+          | some ls' =>
+            simp only [hls'] at hw
+            obtain ⟨-, hpres', -⟩ := parallelSlot_read hK hl ha hki hr' hrp hea hls'
+            cases hli : ls'[i]? with
             | none => simp [hli] at hw
-            | some l =>
-              simp only [hli] at hw
-              obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
-              have hveq : v = ρ r' := Option.some.inj (hv.symm.trans (hpres' l hli))
-              subst hveq
-              exact ⟨w, hrg, hor.imp id (instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb')⟩
+            | some o =>
+              cases o with
+              | none => simp [hli] at hw
+              | some l =>
+                simp only [hli] at hw
+                obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+                have hveq : v = ρ r' := Option.some.inj (hv.symm.trans (hpres' l hli))
+                subst hveq
+                exact hrg
+    rcases hB with ⟨w, hw, htag⟩ | ⟨hpath, hb⟩
+    · exact ⟨w, hpar w hw, .inl htag⟩
+    · have hbH := instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb' hb
+      cases ep with
+      | nil => exact ⟨ρ r', rfl, .inr hbH⟩
+      | cons f p =>
+        obtain ⟨w, hw⟩ := hpath (by simp [ElemTarget.elemPath])
+        exact ⟨w, hpar w hw, .inr hbH⟩
 
 theorem instantiateEvery_holds {K : Thunk (Linear.Known Term)} {ls_links : HeapLinks.Links} {as : List IndexAtom} {cls : List Nat}
     {r x k : Nat} {ρ : Env} {h : Heap}

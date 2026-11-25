@@ -94,7 +94,7 @@
  * `undefined`: neither reads its receiver, and a string or a symbol argument
  * converts without running code. */
 import { join } from "node:path";
-import type { CallEffect, IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, GuardTag, IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import { buffer, viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
@@ -729,15 +729,42 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       ] }) } }),
     // A fresh array whose every index below the length holds the value: it
     // stores the value without reading it, and writes nothing it did not
-    // allocate; its spine is the call's.
-    [arrayFilledName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
-      type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
-        effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
-          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
-            [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
-          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, -1],
-            [{ kind: "value", slot: 2, path: [] }, 1]], bound: 0 } } } },
-        ] }) } }),
+    // allocate; its spine is the call's. When the fill value (slot 3) is one of
+    // the primitive guard tags (`null`, `undefined`, `true`, `false`), every
+    // index below the length holds that tag (stated as a guarded `every` whose
+    // inner clause is unsatisfiable, discharged by `dischargeGuards` when the
+    // fill value's tag is known).
+    [arrayFilledName]: () => {
+      const fillTags: readonly (readonly [GuardTag, GuardTag])[] = [
+        ["notNull", "null"],
+        ["notUndefined", "undefined"],
+        ["notTrue", "true"],
+        ["notFalse", "false"],
+      ];
+      return { typeParams: [{ name: "T", bound: null, resolution: null }],
+        type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
+          effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
+            { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
+              [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
+            { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, -1],
+              [{ kind: "value", slot: 2, path: [] }, 1]], bound: 0 } } } },
+            ...fillTags.map(([guard, elemTag]): IndexFact => ({
+              guarded: {
+                slot: 3,
+                path: [],
+                tag: guard,
+                body: {
+                  every: {
+                    slot: 0,
+                    path: [],
+                    stop: { kind: "length", slot: 0, path: [] },
+                    body: [{ guarded: { target: { self: { path: [] } }, tag: elemTag, body: { le: { form: [], bound: -1 } } } }],
+                  },
+                },
+              },
+            })),
+          ] }) } };
+    },
     [urlHrefName]: () => ({ typeParams: [],
       type: { ...fn([atom("string"), either(atom("string"), atom("undefined"))], atom("string")), effect: emptyEffect } }),
     [pathToFileHrefName]: () => ({ typeParams: [], type: fn([atom("string")], atom("string")) }),

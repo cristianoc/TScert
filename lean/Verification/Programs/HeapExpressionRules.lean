@@ -1275,44 +1275,58 @@ private theorem mergeBodyClause_holds [DecidableEq ι] {G : NormalGraph ι} {Γ 
                 exact Option.bind_eq_some_iff.mpr
                   ⟨v, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
                     HeapKnowledge.termValue_extend _ ht⟩
-  | .guarded t g B, C', m, hm, ⟨w, hw, hor⟩ => by
+  | .guarded t g B, C', m, hm, hB => by
     simp only [mergeBodyClause, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq, Prod.mk.injEq] at hm
     obtain ⟨⟨mb, B'⟩, hB', -, rfl⟩ := hm
     have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
       simp [List.append_assoc]
-    refine ⟨w, ?_, hor.imp id (mergeBodyClause_holds hb he hk hh hparts hB')⟩
-    cases t with
-    | self ep =>
-      rw [hext_eq]
-      exact HeapKnowledge.ElemTarget.read_extend _ hw
-    | parallel s1 p1 ep1 =>
-      simp only [mergeTarget, HeapKnowledge.ElemTarget.read] at hw ⊢
-      cases hrp : HeapKnowledge.readPath h (ρ s1) p1 with
-      | none => simp [hrp] at hw
-      | some arr =>
-        simp only [hrp] at hw
-        rw [merge_readPath_eq hb he hk hh hparts hrp]
-        cases hea : HeapKnowledge.elementsOf arr with
-        | none => simp [hea] at hw
-        | some st' =>
-          simp only [hea] at hw
-          cases hls' : h[st']?.bind spineEntries with
-          | none => simp [hls'] at hw
-          | some ls' =>
-            simp only [hls'] at hw
-            simp only [hea, hext_eq, HeapKnowledge.spineEntries_extend _ hls']
-            cases hli : ls'[i]? with
-            | none => simp [hli] at hw
-            | some o =>
-              cases o with
+    have hread : ∀ w, t.read ρ h ls i = some w →
+        (mergeTarget (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+          (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+          (fun f => copiedKey (.str f) && !d.contains (.str f)) t).2.read
+          (push (Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)) ρ)
+          (h ++ ps.map Prod.snd ++ [.nul]) ls i = some w := by
+      intro w hw
+      cases t with
+      | self ep =>
+        rw [hext_eq]
+        exact HeapKnowledge.ElemTarget.read_extend _ hw
+      | parallel s1 p1 ep1 =>
+        simp only [mergeTarget, HeapKnowledge.ElemTarget.read] at hw ⊢
+        cases hrp : HeapKnowledge.readPath h (ρ s1) p1 with
+        | none => simp [hrp] at hw
+        | some arr =>
+          simp only [hrp] at hw
+          rw [merge_readPath_eq hb he hk hh hparts hrp]
+          cases hea : HeapKnowledge.elementsOf arr with
+          | none => simp [hea] at hw
+          | some st' =>
+            simp only [hea] at hw
+            cases hls' : h[st']?.bind spineEntries with
+            | none => simp [hls'] at hw
+            | some ls' =>
+              simp only [hls'] at hw
+              simp only [hea, hext_eq, HeapKnowledge.spineEntries_extend _ hls']
+              cases hli : ls'[i]? with
               | none => simp [hli] at hw
-              | some l =>
-                simp only [hli] at hw
-                obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
-                exact Option.bind_eq_some_iff.mpr
-                  ⟨v, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
-                    HeapKnowledge.readGuard_extend _ hrg⟩
+              | some o =>
+                cases o with
+                | none => simp [hli] at hw
+                | some l =>
+                  simp only [hli] at hw
+                  obtain ⟨v', hv', hrg⟩ := Option.bind_eq_some_iff.mp hw
+                  exact Option.bind_eq_some_iff.mpr
+                    ⟨v', by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv').1]; exact hv',
+                      HeapKnowledge.readGuard_extend _ hrg⟩
+    have hep : (mergeTarget (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+        (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+        (fun f => copiedKey (.str f) && !d.contains (.str f)) t).2.elemPath = t.elemPath := by
+      cases t <;> rfl
+    rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hB⟩
+    · exact .inl ⟨w, hread w hw, hg⟩
+    · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, hread w hw⟩,
+        mergeBodyClause_holds hb he hk hh hparts hB' hB⟩
 
 private theorem merge_readGuard_eq [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
     {d : List PropKey} {a b : Nat} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {ps : List (PropKey × Tm)}

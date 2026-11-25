@@ -4506,11 +4506,14 @@ evaluated (`array-fill`, run under Node).
 
 On a normal return, `%ArrayLength%` states its result equal to its argument,
 a safe integer between zero and $`2^{32}-1`$. `%ArrayFilled%` states its
-result's length equal to its first argument. The check runs before the fill
+result's length equal to its first argument and, for each primitive guard tag
+$`t \in \{\mathtt{null}, \mathtt{undefined}, \mathtt{true}, \mathtt{false}\}`$,
+the guarded quantified fact that when its second argument is $`t`$, every index
+below the result's length holds $`t`$. The check runs before the fill
 value's evaluation, so a reassignment during that evaluation cannot alter
 the saved length. The fill has no bounds to coerce and the fresh receiver
-cannot be reached by client code; it defines exactly those indices and
-returns that receiver (audited). The
+cannot be reached by client code; it defines exactly those indices with the
+fill value and returns that receiver (audited). The
 [call-ensures rule](ARITHMETIC.md#postconditions) proves that the stated
 facts hold in the knowledge after each call.
 

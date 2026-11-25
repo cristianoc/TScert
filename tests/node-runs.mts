@@ -3489,9 +3489,13 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
     "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
     '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");
-  assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
-    "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
-    "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");
+  assert.equal(runExample(ofKind("quantified-array-fill-null", ["positive"]),
+    "JSON.stringify([attachEmptyExtras([[1, 2], null]), makeEmptySlots(2), attachEmptyExtrasBox([[1, 2], null])])"),
+    '[[null,null],[null,null],{"chunks":[[1,2],null],"extras":[null,null]}]',
+    "quantified-array-fill-null (#393): safe new Array(n).fill(null) vacuous single, parallel, and boxed every");
+  assert.equal(runExample(negative("invalid-quantified-array-fill-null"),
+    "typeof readLastExtra([[1, 2]], attachWrongFill([[1, 2]]), 0)"),
+    "undefined", "invalid-quantified-array-fill-null (#393): filling with [] breaks parallel length invariant and reads undefined");
   assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
     "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
     '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");
