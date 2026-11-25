@@ -1160,10 +1160,20 @@ function factOf(f: StatedFact): IndexFact {
     if (v === "index" || v === "elem") return v;
     if ("offset" in v) return { offset: { delta: v.offset.delta } };
     if ("project" in v) return { project: { kind: v.project.kind, slot: 0, path: [...v.project.path] } };
+    if ("parallel" in v)
+      return { parallel: { slot: v.parallel.slot, path: [...v.parallel.path], kind: v.parallel.kind, elemPath: [...v.parallel.elemPath] } };
     return term(v.free.t);
   };
-  const body = (b: BodyFact): BodyFormula => "either" in b ? { either: { left: body(b.either.left), right: body(b.either.right) } }
-    : "le" in b ? { form: form(b.le.form, variable), bound: b.le.bound, ne: false } : { form: form(b.ne.form, variable), bound: b.ne.bound, ne: true };
+  const body = (b: BodyFact): BodyFormula => {
+    if ("guarded" in b) {
+      const t = b.guarded.target;
+      const target = "self" in t ? { self: { path: [...t.self.path] } }
+        : { parallel: { slot: t.parallel.slot, path: [...t.parallel.path], elemPath: [...t.parallel.elemPath] } };
+      return { guarded: { target, tag: b.guarded.tag, body: body(b.guarded.body) } };
+    }
+    if ("either" in b) return { either: { left: body(b.either.left), right: body(b.either.right) } };
+    return "le" in b ? { form: form(b.le.form, variable), bound: b.le.bound, ne: false } : { form: form(b.ne.form, variable), bound: b.ne.bound, ne: true };
+  };
   if ("linear" in f) {
     const fact = f.linear.fact;
     return { linear: { fact: "le" in fact ? { le: { form: form(fact.le.form, term), bound: fact.le.bound } }

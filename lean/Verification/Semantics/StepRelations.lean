@@ -589,6 +589,7 @@ def stops (stop : Term) : List Term :=
 /-- A body variable as a variable of the step. -/
 def bodyVar : Bound → Option BodyVar
   | .free t => (P.var t).map .step
+  | .parallel s p k ep => (P.slot s).map fun s' => .bound (.parallel s' p k ep)
   | b => some (.bound b)
 
 /-- A step's body variable read back after the step: a bound variable of
@@ -611,7 +612,7 @@ def atom (F : Linear.Fact Bound) : List (Linear.Fact Bound) :=
   match F.mapVars P.bodyVar with
   | none => []
   | some F' =>
-    let locals := F.vars.filter fun | .free _ => false | _ => true
+    let locals := F'.vars.filterMap fun | .bound b => some b | _ => none
     let allowed := definedOf P.kept P.before P.rel ++ F'.vars.filterMap fun
       | .step (.after u) => some u
       | _ => none
@@ -624,6 +625,13 @@ facts its alternatives compose to. -/
 def clause : LinearClause Bound → List (LinearClause Bound)
   | .atom F => (P.atom F).map .atom
   | .either A B => (clause A).flatMap fun a => (clause B).map (.either a ·)
+
+/-- A guarded body clause composed. -/
+def bodyClause : BodyClause → List BodyClause
+  | .clause c => (P.clause c).map .clause
+  | .guarded t g b => match t.mapM P.slot with
+    | some t' => (bodyClause b).map (.guarded t' g)
+    | none => []
 
 /-- The disjunction of two facts neither of which is `isFalsum`: two bounds
 on one linear form are the larger bound; any other two are their
@@ -659,14 +667,14 @@ def fact : IndexFact → List IndexFact
     | none => []
   | .every s p stop body => if P.absentSlot s || P.absent stop then [falsum] else
     match P.slot s with
-    | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
+    | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.bodyClause)
     | none => []
   | .atIndex s p idx guard body =>
     if P.absentSlot s || P.absent idx then [falsum] else
     if idx.atEntry || body.vars.any (fun | .free t => t.atEntry | _ => false) then []
     else ((IndexFact.atIndex s p idx guard body).mapM P.slot).toList
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
-  | F@(.element _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) | F@(.same _ _) =>
+  | F@(.element _ _ _) | F@(.fieldRead _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) | F@(.same _ _) =>
     if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
 
 end Composer
@@ -852,9 +860,13 @@ theorem Composer.stops_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {stop : Term
   · cases hst
 
 theorem boundValue_local {ε ε' : EntryState} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
-    {b : Bound} (hb : ∀ t, b ≠ .free t) : boundValue ε ρ h ls i b = boundValue ε' ρ' h ls i b := by
+    {b : Bound} (hb : ∀ t, b ≠ .free t) (hp : ∀ s p k ep, b ≠ .parallel s p k ep) :
+    boundValue ε ρ h ls i b = boundValue ε' ρ' h ls i b := by
   cases b with
   | free t => exact absurd rfl (hb t)
+  | parallel s p k ep => exact absurd rfl (hp s p k ep)
+  | project k p =>
+    simp only [boundValue, termValue, termAt, Bool.false_eq_true, ite_false]
   | _ => rfl
 
 /-- What a body variable denotes at an index of a spine, after the step. -/
@@ -889,6 +901,14 @@ theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (O
         obtain ⟨z, hz, rfl⟩ := hy
         obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 _ hx)
         exact (P.var_val hs hz hn).trans hn.symm
+      | parallel s p k ep =>
+        simp only [Composer.bodyVar, Option.map_eq_some_iff] at hy
+        obtain ⟨s', hs', rfl⟩ := hy
+        simp only [bv, BodyVar.val, boundValue, hs.slot s s' hs', termValue, termAt, Bool.false_eq_true, ite_false]
+      | project k p =>
+        simp only [Composer.bodyVar, Option.some.injEq] at hy
+        subst hy
+        simp only [bv, BodyVar.val, boundValue, termValue, termAt, Bool.false_eq_true, ite_false]
       | _ =>
         simp only [Composer.bodyVar, Option.some.injEq] at hy
         subst hy
@@ -915,10 +935,15 @@ theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (O
         split at hyz
         · rename_i hc
           cases hyz
-          obtain ⟨hbF, hloc⟩ := List.mem_filter.mp (List.contains_iff_mem.mp hc)
-          have hnf : ∀ t, z ≠ .free t := by intro t ht; subst ht; simp at hloc
-          rw [boundValue_local (ε' := ε₀) (ρ' := τ) hnf]
-          exact hF.1 z hbF
+          obtain ⟨y', hy', hy'b⟩ := List.mem_filterMap.mp (List.contains_iff_mem.mp hc)
+          cases y' with
+          | step _ => cases hy'b
+          | bound b' =>
+            simp only [Option.some.injEq] at hy'b; subst hy'b
+            obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hm (.bound b') hy'
+            have hbv := hmap x hx (.bound b') hxy
+            simp only [bv, BodyVar.val] at hbv
+            rw [hbv]; exact hF.1 x hx
         · cases hyz
       | step x =>
         cases x with
@@ -1038,6 +1063,27 @@ theorem readsAbsent_not (hs : P.Sound ε ε₀ ρ h ρ' τ h') {F : IndexFact} (
     · rw [hs.absentSlot k ha] at hk; cases hk
   | _ => simp [Composer.readsAbsent] at ha
 
+theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (Option Nat)} {i : Nat} :
+    ∀ {C : BodyClause}, C.HoldsAt ε₀ τ h' ls i →
+      ∀ D ∈ P.bodyClause C, D.HoldsAt ε ρ' h' ls i
+  | .clause c, hC, D, hD => by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hD
+    exact P.clause_holds hs hC d hd
+  | .guarded t g b, ⟨w, hw, hor⟩, D, hD => by
+    simp only [Composer.bodyClause] at hD
+    cases hm : t.mapM P.slot with
+    | none => simp [hm] at hD
+    | some t' =>
+      simp only [hm] at hD
+      obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hD
+      have htr : t'.read ρ' h' ls i = t.read τ h' ls i := by
+        cases t with
+        | self ep => cases hm; rfl
+        | parallel s p ep =>
+          obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hm
+          simp only [ElemTarget.read, hs.slot s s' hs']
+      exact ⟨w, htr ▸ hw, hor.imp id fun hb => bodyClause_holds hs hb d hd⟩
+
 /-- **Composition is sound for every form of fact** (proved): where a post
 fact holds at the callee's states and the composition's assumptions hold of
 the step, every fact it composes to holds after the step, at the caller's
@@ -1121,7 +1167,7 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
       obtain ⟨n', hn', hle⟩ := P.stops_bound hs hn st hst
       refine ⟨w, sto, ls, n', by rw [hs.slot s s' hs']; exact hw, hsto, hls, hn', fun i hi C hC => ?_⟩
       obtain ⟨C0, hC0, hC⟩ := List.mem_flatMap.mp hC
-      exact P.clause_holds hs (hall i (by omega) C0 hC0) C hC
+      exact P.bodyClause_holds hs (hall i (by omega) C0 hC0) C hC
     · cases hD
   | atIndex s p idx guard body =>
     intro hF D hD

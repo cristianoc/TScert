@@ -139,20 +139,31 @@ a root at the empty path, closed under the read links `y = x.f` of a key
 under alias links. The paper's reach follows the access paths of the type;
 the knowledge gives the slots the body read along them. -/
 def reachPairs (k : Knowledge) (roots : List (Nat × List AccPath)) : List (Nat × List AccPath × List String) :=
+  let freads : List (Nat × Nat × String) := k.indices.filterMap fun atom =>
+    if atom.cond.isSome then none else
+    match atom.fact with
+    | .guarded v [] t (.fieldRead v' c f) =>
+      if v == v' && (t == .null || t == .undef) then some (v, c, f) else none
+    | .fieldRead v c f => some (v, c, f)
+    | _ => none
   let start := roots.map fun (s, acc) => (s, acc, ([] : List String))
-  let step := fun (rs : List (Nat × List AccPath × List String)) => rs ++ k.links.flatMap fun l =>
-    rs.filterMap fun (s, acc, a) =>
-      if l.alias then
-        if s == l.cell then some (l.value, acc, a) else if s == l.value then some (l.cell, acc, a) else none
-      else match l.field with
-        | .str f => if s == l.cell && acc.any (fun e => e.path == a && e.keys.contains f) then some (l.value, acc, a ++ [f]) else none
-        | .sym _ => none
+  let step := fun (rs : List (Nat × List AccPath × List String)) => rs ++
+    k.links.flatMap (fun l =>
+      rs.filterMap fun (s, acc, a) =>
+        if l.alias then
+          if s == l.cell then some (l.value, acc, a) else if s == l.value then some (l.cell, acc, a) else none
+        else match l.field with
+          | .str f => if s == l.cell && acc.any (fun e => e.path == a && e.keys.contains f) then some (l.value, acc, a ++ [f]) else none
+          | .sym _ => none) ++
+    freads.flatMap fun (v, c, f) =>
+      rs.filterMap fun (s, acc, a) =>
+        if s == c && acc.any (fun e => e.path == a && e.keys.contains f) then some (v, acc, a ++ [f]) else none
   let rec go : Nat → List (Nat × List AccPath × List String) → List (Nat × List AccPath × List String)
     | 0, rs => rs
     | n + 1, rs =>
       let next := (step rs).eraseDups
       if next.length == rs.length then rs else go n next
-  go (k.links.length + 1) start.eraseDups
+  go (k.links.length + freads.length + 1) start.eraseDups
 
 /-- A key the type declares at an access path, the spine's where it is an
 array there. -/
@@ -252,8 +263,9 @@ every one keeps survive. -/
 def keptBy (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   let q := Footprints.knowledgeQuery k
   let sameSlot := fun (x y : Nat) => x == y || (HeapLinks.aliases k.links x).contains y
-  let keeps := fun (S : Footprints.Footprint) => !effs.isEmpty && effs.all fun c =>
-    S.all (keepsPair q sameSlot c.fresh c.bound c.otherwise (inReach (reachPairs k c.roots)) c.modChange)
+  let prepared := effs.map fun c => (c, inReach (reachPairs k c.roots))
+  let keeps := fun (S : Footprints.Footprint) => !prepared.isEmpty && prepared.all fun (c, reach) =>
+    S.all (keepsPair q sameSlot c.fresh c.bound c.otherwise reach c.modChange)
   let idx := k.indices.filter fun a => !a.fact.envOnly &&
     match a.fact.support? (.ofFirst stable) with
     | some S => keeps S
@@ -653,7 +665,8 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
             then [("unit", unit), ("acceptedUnderPaperRules", true), ("assumed", "paperKeptFactsSurvive"),
                   ("assumes", assumesJson)]
             else [("unit", unit), ("accepted", true)])))
-        | .error reason => IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", (reason.take 400).toString)]))
+        | .error reason =>
+          IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", (reason.take 400).toString)]))
     return 0
 
 def main (args : List String) : IO UInt32 := do

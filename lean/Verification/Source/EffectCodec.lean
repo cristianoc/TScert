@@ -806,6 +806,7 @@ def boundJ : Bound → Json
   | .elem => "elem"
   | .offset d => tagged "offset" (obj ["delta"] [natJ d])
   | .project k p => tagged "project" (obj ["kind", "path"] [kindJ k, strsJ p])
+  | .parallel s p k ep => tagged "parallel" (obj ["slot", "path", "kind", "elemPath"] [natJ s, strsJ p, kindJ k, strsJ ep])
   | .free t => tagged "free" (obj ["t"] [termJ t])
 
 def boundOf (j : Json) : Except String Bound := do
@@ -819,6 +820,10 @@ def boundOf (j : Json) : Except String Bound := do
   | "project" => do
     let [kd, p] ← fields v ["kind", "path"] | throw "project"
     pure (.project (← under "kind" (kindOf kd)) (← under "path" (listOf strOf p)))
+  | "parallel" => do
+    let [s, p, kd, ep] ← fields v ["slot", "path", "kind", "elemPath"] | throw "parallel"
+    pure (.parallel (← under "slot" (natOf s)) (← under "path" (listOf strOf p))
+      (← under "kind" (kindOf kd)) (← under "elemPath" (listOf strOf ep)))
   | "free" => do
     let [t] ← fields v ["t"] | throw "free"
     pure (.free (← under "t" (termOf t)))
@@ -826,6 +831,25 @@ def boundOf (j : Json) : Except String Bound := do
 
 @[simp] theorem boundOf_boundJ (b : Bound) : boundOf (boundJ b) = .ok b := by
   cases b <;> simp [boundJ, boundOf, fields_obj] <;> try rfl
+
+def elemTargetJ : ElemTarget → Json
+  | .self p => tagged "self" (obj ["path"] [strsJ p])
+  | .parallel s p ep => tagged "parallel" (obj ["slot", "path", "elemPath"] [natJ s, strsJ p, strsJ ep])
+
+def elemTargetOf (j : Json) : Except String ElemTarget := do
+  let (k, v) ← tagOf j
+  under k <| match k with
+  | "self" => do
+    let [p] ← fields v ["path"] | throw "self"
+    pure (.self (← under "path" (listOf strOf p)))
+  | "parallel" => do
+    let [s, p, ep] ← fields v ["slot", "path", "elemPath"] | throw "parallel"
+    pure (.parallel (← under "slot" (natOf s)) (← under "path" (listOf strOf p))
+      (← under "elemPath" (listOf strOf ep)))
+  | _ => throw "an element target"
+
+@[simp] theorem elemTargetOf_elemTargetJ (t : ElemTarget) : elemTargetOf (elemTargetJ t) = .ok t := by
+  cases t <;> simp [elemTargetJ, elemTargetOf, fields_obj] <;> try rfl
 
 /-- A linear fact over variables a codec writes. -/
 def linearJ {V : Type} (vJ : V → Json) : Linear.Fact V → Json
@@ -882,12 +906,47 @@ theorem clauseOf_clauseJ {V : Type} (vOf : Json → Except String V) (vJ : V →
     have hb := ihb m (by simp [clauseDepth] at hn; omega)
     simp [clauseJ, clauseOf, fields_obj, ha, hb] <;> try rfl
 
+def bodyClauseDepth : BodyClause → Nat
+  | .clause c => clauseDepth c
+  | .guarded _ _ b => bodyClauseDepth b + 1
+
+def bodyClauseJ : BodyClause → Json
+  | .clause c => clauseJ boundJ c
+  | .guarded t g b => tagged "guarded" (obj ["target", "tag", "body"] [elemTargetJ t, guardJ g, bodyClauseJ b])
+
+def bodyClauseOf : Nat → Json → Except String BodyClause
+  | 0, _ => .error "a body clause nested beyond the limit"
+  | n + 1, j => do
+    let (k, v) ← tagOf j
+    match k with
+    | "guarded" => under k do
+      let [t, g, b] ← fields v ["target", "tag", "body"] | throw "guarded"
+      pure (.guarded (← under "target" (elemTargetOf t)) (← under "tag" (guardOf g))
+        (← under "body" (bodyClauseOf n b)))
+    | _ => .clause <$> clauseOf boundOf (n + 1) j
+
+theorem bodyClauseOf_bodyClauseJ (B : BodyClause) : ∀ n, bodyClauseDepth B ≤ n →
+    bodyClauseOf n (bodyClauseJ B) = .ok B := by
+  induction B with
+  | clause c =>
+    intro n hn
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by cases c <;> simp [bodyClauseDepth, clauseDepth] at hn <;> omega⟩
+    have hc := clauseOf_clauseJ boundOf boundJ boundOf_boundJ c (m + 1) hn
+    cases c with
+    | atom F => cases F <;> simp [bodyClauseJ, bodyClauseOf, clauseJ, linearJ] <;> rw [← linearJ, ← clauseJ] <;> simp [hc]
+    | either a b => simp [bodyClauseJ, bodyClauseOf, clauseJ] <;> rw [← clauseJ] <;> simp [hc]
+  | guarded t g b ih =>
+    intro n hn
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [bodyClauseDepth] at hn; omega⟩
+    have hb := ih m (by simp [bodyClauseDepth] at hn; omega)
+    simp [bodyClauseJ, bodyClauseOf, fields_obj, hb] <;> try rfl
+
 /-! ## Index facts -/
 
 def factDepth : IndexFact → Nat
   | .either a b => max (factDepth a) (factDepth b) + 1
   | .guarded _ _ _ b => factDepth b + 1
-  | .every _ _ _ body => maxOf (clauseDepth (V := Bound)) body + 1
+  | .every _ _ _ body => maxOf bodyClauseDepth body + 1
   | .atIndex _ _ _ _ body => clauseDepth (V := Bound) body + 1
   | _ => 1
 
@@ -901,8 +960,9 @@ def factJ : IndexFact → Json
   | .either a b => tagged "either" (obj ["left", "right"] [factJ a, factJ b])
   | .guarded k p g b => tagged "guarded" (obj ["slot", "path", "tag", "body"] [natJ k, strsJ p, guardJ g, factJ b])
   | .element v x k => tagged "element" (obj ["value", "array", "index"] [natJ v, natJ x, natJ k])
+  | .fieldRead v o f => tagged "fieldRead" (obj ["value", "object", "field"] [natJ v, natJ o, Json.str f])
   | .every k p stop body => tagged "every"
-      (obj ["slot", "path", "stop", "body"] [natJ k, strsJ p, termJ stop, listJ (clauseJ boundJ) body])
+      (obj ["slot", "path", "stop", "body"] [natJ k, strsJ p, termJ stop, listJ bodyClauseJ body])
   | .atIndex k p idx g body => tagged "atIndex"
       (obj ["slot", "path", "index", "guard", "body"] [natJ k, strsJ p, termJ idx, optJ guardJ g, clauseJ boundJ body])
   | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
@@ -943,10 +1003,13 @@ def factOf : Nat → Json → Except String IndexFact
     | "element" => do
       let [a, x, i] ← fields v ["value", "array", "index"] | throw "element"
       pure (.element (← under "value" (natOf a)) (← under "array" (natOf x)) (← under "index" (natOf i)))
+    | "fieldRead" => do
+      let [a, o, f] ← fields v ["value", "object", "field"] | throw "fieldRead"
+      pure (.fieldRead (← under "value" (natOf a)) (← under "object" (natOf o)) (← under "field" (strOf f)))
     | "every" => do
       let [s, p, st, b] ← fields v ["slot", "path", "stop", "body"] | throw "every"
       pure (.every (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "stop" (termOf st))
-        (← under "body" (listOf (clauseOf boundOf n) b)))
+        (← under "body" (listOf (bodyClauseOf n) b)))
     | "atIndex" => do
       let [s, p, idx, g, b] ← fields v ["slot", "path", "index", "guard", "body"] | throw "atIndex"
       pure (.atIndex (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "index" (termOf idx))
@@ -979,8 +1042,8 @@ theorem factOf_factJ (F : IndexFact) : ∀ n, factDepth F ≤ n → factOf n (fa
   | every k p stop body =>
     intro n hn
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [factDepth] at hn; omega⟩
-    have hb := listOf_listJ (clauseOf boundOf m) (clauseJ boundJ) body fun c hc =>
-      clauseOf_clauseJ boundOf boundJ boundOf_boundJ c m
+    have hb := listOf_listJ (bodyClauseOf m) bodyClauseJ body fun c hc =>
+      bodyClauseOf_bodyClauseJ c m
         (Nat.le_trans (le_maxOf _ hc) (by simp [factDepth] at hn; omega))
     simp [factJ, factOf, fields_obj, hb] <;> try rfl
   | atIndex k p idx g body =>
@@ -1430,7 +1493,10 @@ private def sample : Effect :=
     ⟨topFrame, [.transport ⟨1, [(3, .path ⟨0, []⟩), (3, .literal .undef)], true, [2, 2]⟩,
       .operation (.freshSpine 0)]⟩⟩,
     some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
-    [.every 1 ["x"] (.now .length 1 ["x"]) [.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))],
+    [.every 1 ["x"] (.now .length 1 ["x"]) [.clause (.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))),
+      .guarded (.self []) .null (.guarded (.parallel 2 ["y"] []) .null
+        (.clause (.atom (.le [(.project .length [], 1), (.parallel 2 ["y"] .length [], -1)] 0))))],
+     .fieldRead 1 2 "f",
       .apart 1 2, .same 0 2]⟩
 
 -- An assertion-arena reference does not serialize, at any depth.

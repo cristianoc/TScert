@@ -119,6 +119,7 @@ export type IndexFact = { index: { slot: number } } | { length: { array: number;
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
+  { fieldRead: { value: number; object: number; field: string } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
   { atIndex: { slot: number; path: string[]; index: LinearTerm; guard: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse" | null; body: BodyFormula } } |
   { apart: { slot: number; other: number } } |
@@ -134,9 +135,12 @@ function integer(v: Json | undefined): Integer {
   throw Error("a linear fact's integer");
 }
 /** A variable of a quantified fact's body: the index, the element, or a term. */
+export type BodyTarget = { self: { path: string[] } } | { parallel: { slot: number; path: string[]; elemPath: string[] } };
 export type BodyFormula = { form: [BodyVariable, Integer][]; bound: Integer; ne: boolean } |
-  { either: { left: BodyFormula; right: BodyFormula } };
-export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
+  { either: { left: BodyFormula; right: BodyFormula } } |
+  { guarded: { target: BodyTarget; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: BodyFormula } };
+export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm } |
+  { parallel: { slot: number; path: string[]; kind: LinearTerm["kind"]; elemPath: string[] } };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
@@ -613,8 +617,32 @@ function indexFact(f: Json | undefined): IndexFact {
     const e = record(record(f,["element"]).element,["value","array","index"]);
     return { element: { value: nat(e.value), array: nat(e.array), index: nat(e.index) } };
   }
+  if ("fieldRead" in f) {
+    const r = record(record(f,["fieldRead"]).fieldRead,["value","object","field"]);
+    if (typeof r.field !== "string") throw Error("a fieldRead's field");
+    return { fieldRead: { value: nat(r.value), object: nat(r.object), field: r.field } };
+  }
   if ("every" in f || "atIndex" in f) {
+    const strs = (v: Json): string[] => {
+      if (!Array.isArray(v) || !v.every((x: Json) => typeof x === "string")) throw Error("a quantified path");
+      return v.filter((x: Json): x is string => typeof x === "string");
+    };
+    const bodyTarget = (t: Json): BodyTarget => {
+      if (typeof t === "object" && t !== null && !Array.isArray(t) && "self" in t) {
+        const s = record(record(t,["self"]).self,["path"]);
+        return { self: { path: strs(s.path) } };
+      }
+      const p = record(record(t,["parallel"]).parallel,["slot","path","elemPath"]);
+      return { parallel: { slot: nat(p.slot), path: strs(p.path), elemPath: strs(p.elemPath) } };
+    };
     const bodyFormula = (b: Json): BodyFormula => {
+      if (typeof b === "object" && b !== null && !Array.isArray(b) && "guarded" in b) {
+        const g = record(record(b,["guarded"]).guarded,["target","tag","body"]);
+        if (g.tag !== "null" && g.tag !== "undefined" && g.tag !== "true" && g.tag !== "false" &&
+            g.tag !== "notNull" && g.tag !== "notUndefined" && g.tag !== "notTrue" && g.tag !== "notFalse")
+          throw Error("an element guard's tag");
+        return { guarded: { target: bodyTarget(g.target), tag: g.tag, body: bodyFormula(g.body) } };
+      }
       if (typeof b === "object" && b !== null && !Array.isArray(b) && "either" in b) {
         const e = record(record(b,["either"]).either,["left","right"]);
         return { either: { left: bodyFormula(e.left), right: bodyFormula(e.right) } };
@@ -625,6 +653,11 @@ function indexFact(f: Json | undefined): IndexFact {
         if (typeof x === "object" && x !== null && !Array.isArray(x) && "project" in x) {
           const p = record(record(x,["project"]).project,["kind","path"]);
           return { project: linearTerm({ kind: p.kind, path: p.path, slot: 0 }) };
+        }
+        if (typeof x === "object" && x !== null && !Array.isArray(x) && "parallel" in x) {
+          const p = record(record(x,["parallel"]).parallel,["slot","path","kind","elemPath"]);
+          const k = linearTerm({ kind: p.kind, path: p.elemPath, slot: 0 }).kind;
+          return { parallel: { slot: nat(p.slot), path: strs(p.path), kind: k, elemPath: strs(p.elemPath) } };
         }
         return linearTerm(record(record(x,["free"]).free,["t"]).t);
       });

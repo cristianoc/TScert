@@ -1626,10 +1626,11 @@ def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (s : Nat) (g : PropKey)
 its new value satisfies that body too. This also covers an element location
 that aliases the written cell; no separation is assumed. -/
 def fieldEveryBody (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
-    (v : Nat) : LinearClause Bound → Bool
-  | .either _ _ => false
-  | .atom F => (F.vars.all fun b => match b with
-      | .index | .offset _ | .project _ _ => false
+    (v : Nat) : BodyClause → Bool
+  | .guarded _ _ _ => false
+  | .clause (.either _ _) => false
+  | .clause (.atom F) => (F.vars.all fun b => match b with
+      | .index | .offset _ | .project _ _ | .parallel _ _ _ _ => false
       | _ => true) && bodyKeptBy chg first (.atom F) &&
     match F.mapVars (some ∘ Bound.inst 0 v) with
     | some G => G.vars.all (fun t => termDefined as t && t.keptBy chg first) && entailsKnown as G
@@ -1657,8 +1658,11 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
     have hl' : (h.set l (ρ v))[sto]?.bind spineEntries = some ls := by
       obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hl
       rw [hc.1 sto u hu (by cases u <;> simp_all [spineEntries, Changes.alters])]; exact hue
-    refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj F hF => ?_⟩
-    have hB := List.all_eq_true.mp hb F hF
+    refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj B hF => ?_⟩
+    have hB := List.all_eq_true.mp hb B hF
+    cases B with
+    | guarded _ _ _ => cases hB
+    | clause F =>
     cases F with
     | either A B => cases hB
     | atom F =>
@@ -1679,10 +1683,11 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
           | index => have := List.all_eq_true.mp hno .index hy; contradiction
           | offset d => have := List.all_eq_true.mp hno (.offset d) hy; contradiction
           | project k p => have := List.all_eq_true.mp hno (.project k p) hy; contradiction
+          | parallel s p k ep => have := List.all_eq_true.mp hno (.parallel s p k ep) hy; contradiction
           | elem => simp [Bound.inst, termValue_value, boundValue, elementInt, hloc, hlt]
           | free t => rfl
         · cases hnew
-      · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj (.atom F) hF)
+      · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj (.clause (.atom F)) hF)
         · cases y with
           | index => exact hy
           | elem =>
@@ -1692,10 +1697,10 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
               have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
               simpa only [List.getElem?_set_ne hne] using hy
             · exact hy
-          | project _ _ | offset _ => simp [Bound.keptBy] at hky
+          | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
           | free t => exact termValue_kept (ε := ε) hc hf hky hy
         · cases y with
-          | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
+          | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
           | free t => simp [Bound.grownBy, Term.grownBy, hspine] at hgy
   · cases hk
 

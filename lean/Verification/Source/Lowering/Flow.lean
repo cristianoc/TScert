@@ -32,12 +32,19 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
   | .every p path stop body => do
     let (slot, pre) ← now p
     let stop ← stop.reroot now entry
-    let body ← body.mapM fun f => f.mapVars fun
-      | .free t => (t.reroot now entry).map HeapKnowledge.Bound.free
-      | .index => some .index
-      | .elem => some .elem
-      | .offset d => some (.offset d)
-      | .project k p => some (.project k p)
+    let rec rerootBody : HeapKnowledge.BodyClause → Option HeapKnowledge.BodyClause
+      | .clause f => (f.mapVars fun
+          | .free t => (t.reroot now entry).map HeapKnowledge.Bound.free
+          | .parallel s' p' k ep => (now s').map fun (sl, pr) => .parallel sl (pr ++ p') k ep
+          | .index => some .index
+          | .elem => some .elem
+          | .offset d => some (.offset d)
+          | .project k p => some (.project k p)).map .clause
+      | .guarded (.self ep) g b => (rerootBody b).map (.guarded (.self ep) g)
+      | .guarded (.parallel s' p' ep) g b => do
+          let (sl, pr) ← now s'
+          pure (.guarded (.parallel sl (pr ++ p') ep) g (← rerootBody b))
+    let body ← body.mapM rerootBody
     pure (.every slot (pre ++ path) stop body)
   | .atIndex p path idx guard body => do
     let (slot, pre) ← now p
@@ -390,7 +397,8 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | some (x, pre) => pure (x, pre ++ path)
     | none => throw (locatedRefusal (← table) node.source .entryClaim
         s!"a quantified fact names '{name}', which is no value binding or cell")
-  let rec bodyClause : SourceClaims.BodyClaim → Compiler (HeapKnowledge.LinearClause HeapKnowledge.Bound)
+  let tbl ← table
+  let rec linearBody : SourceClaims.BodyClaim → Compiler (HeapKnowledge.LinearClause HeapKnowledge.Bound)
     | .linear terms bound => do
       let form ← terms.mapM fun (v, c) => do
         let b : HeapKnowledge.Bound ← match v with
@@ -398,15 +406,27 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .elem => pure .elem
           | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
+          | .parallel n path kind ep => do let (z, r) ← root n path; pure (.parallel z r kind ep)
           | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
         pure (b, c)
       pure (.atom (.le form bound))
-    | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
-  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun ((name, path), (sn, sp, sk), body) => do
+    | .either A B => do pure (.either (← linearBody A) (← linearBody B))
+    | .guarded .. => throw (locatedRefusal tbl node.source .entryClaim
+        "an element guard may not appear inside a disjunction")
+  let rec bodyClause : SourceClaims.BodyClaim → Compiler HeapKnowledge.BodyClause
+    | .guarded (.self ep) g b => do pure (.guarded (.self ep) g (← bodyClause b))
+    | .guarded (.parallel n path ep) g b => do
+      let (z, r) ← root n path
+      pure (.guarded (.parallel z r ep) g (← bodyClause b))
+    | c => .clause <$> linearBody c
+  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun (guards, (name, path), (sn, sp, sk), body) => do
+    let gs ← guards.mapM fun (g, gp, tag) => do let (z, r) ← root g gp; pure (z, r, tag)
     let (x, p) ← root name path
     let (y, q) ← root sn sp
     let body ← body.mapM bodyClause
-    pure ({ fact := .every x p (HeapKnowledge.Term.now sk y q) body } : HeapKnowledge.IndexAtom)
+    let fact := gs.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
+      (HeapKnowledge.IndexFact.every x p (HeapKnowledge.Term.now sk y q) body)
+    pure ({ fact } : HeapKnowledge.IndexAtom)
   -- The region facts the producer proposes (FOOTPRINTS.md, "Element
   -- regions"): both sides value bindings; a claim naming any other is
   -- refused rather than dropped.
@@ -453,15 +473,43 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- require. Each atom once: two claimed facts may lower to one atom (a
   -- cell's value term stated an integer and bounded by `2^53 - 1`), and an
   -- atom the invariant states is required.
+  let G := SourceTypes.graph (← table)
   let readLinks ← ((fc.entryLinks.lookup node.source.1).getD []).mapM fun (cell, value, field) =>
     match valueSlot scope cell, valueSlot scope value with
-    | some x, some y => pure (⟨x, y, false, .str field, false⟩ : HeapLinks.Link)
+    | some x, some y =>
+      let opt := match Γ[x]? with
+        | some A => !HeapExpressionRules.fieldOperand (PositiveRules.expand G A) (.str field)
+        | none => false
+      pure (⟨x, y, false, .str field, opt⟩ : HeapLinks.Link)
     | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a read link names '{cell}' as its object, which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a read link names '{value}' as its value, which is no value binding")
+  let elements ← ((fc.entryElements.lookup node.source.1).getD []).mapM fun (value, arr, idx) =>
+    match valueSlot scope value, valueSlot scope arr, valueSlot scope idx with
+    | some v, some a, some i => pure ({ fact := .element v a i } : HeapKnowledge.IndexAtom)
+    | none, _, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"an element read names '{value}' as its value, which is no value binding")
+    | _, none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"an element read names '{arr}' as its array, which is no value binding")
+    | _, _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"an element read names '{idx}' as its index, which is no value binding")
+  let fieldReads ← ((fc.entryFieldReads.lookup node.source.1).getD []).mapM fun (guards, value, obj, field) =>
+    match valueSlot scope value, valueSlot scope obj with
+    | some v, some o => do
+      let gs ← guards.mapM fun (g, path, tag) => match valueSlot scope g with
+        | some z => pure (z, path, tag)
+        | none => do throw (locatedRefusal (← table) node.source .entryClaim
+            s!"a field-read guard names '{g}', which is no value binding")
+      let fact := gs.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
+        (HeapKnowledge.IndexFact.fieldRead v o field)
+      pure ({ fact } : HeapKnowledge.IndexAtom)
+    | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a field-read fact names '{value}' as its value, which is no value binding")
+    | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a field-read fact names '{obj}' as its object, which is no value binding")
   let invariant := invariant.eraseDups
-  let indexCandidates := (bounds ++ linear ++ quantified ++ apart ++ spinesApart).eraseDups.filter
+  let indexCandidates := (bounds ++ linear ++ quantified ++ apart ++ spinesApart ++ elements ++ fieldReads).eraseDups.filter
     (!invariant.contains ·)
   let linkCandidates := readLinks.eraseDups.filter (!links.contains ·)
   let candidates := indexCandidates.map HeapKnowledge.Candidate.index ++ linkCandidates.map HeapKnowledge.Candidate.link

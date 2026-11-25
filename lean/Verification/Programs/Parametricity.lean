@@ -458,14 +458,39 @@ theorem elementsCall_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : Co
     rfl
   · rfl
 
+omit [DecidableEq ι] in
+theorem typeExcludes_reassign (A : Ty ι) (t : HeapKnowledge.GuardTag) :
+    HeapKnowledge.typeExcludes (reassign G η) A t = HeapKnowledge.typeExcludes G A t := rfl
+
+omit [DecidableEq ι] in
+theorem releaseTypedGuarded_reassign (Γ : List (Ty ι)) :
+    ∀ a : HeapKnowledge.IndexAtom,
+      HeapKnowledge.releaseTypedGuarded (reassign G η) Γ a = HeapKnowledge.releaseTypedGuarded G Γ a
+  | ⟨.guarded s [] t B, none, _⟩ => by
+    simp only [HeapKnowledge.releaseTypedGuarded, typeExcludes_reassign]
+    cases Γ[s]? <;> simp only [releaseTypedGuarded_reassign Γ { fact := B }]
+  | ⟨.guarded _ (_ :: _) _ _, none, _⟩ | ⟨.guarded _ _ _ _, some _, _⟩
+  | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
+  | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩
+  | ⟨.either _ _, _, _⟩ | ⟨.element _ _ _, _, _⟩ | ⟨.fieldRead _ _ _, _, _⟩
+  | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ => by
+    simp [HeapKnowledge.releaseTypedGuarded]
+
+omit [DecidableEq ι] in
+theorem unguardedByTypes_reassign (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) :
+    HeapKnowledge.unguardedByTypes (reassign G η) Γ k = HeapKnowledge.unguardedByTypes G Γ k := by
+  have h : HeapKnowledge.releaseTypedGuarded (reassign G η) Γ = HeapKnowledge.releaseTypedGuarded G Γ :=
+    funext (releaseTypedGuarded_reassign G η Γ)
+  simp only [HeapKnowledge.unguardedByTypes, h]
+
 theorem requiresApp_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (p : ProgramCertificates.Evidence ι) :
     PromiseCalls.requiresApp (reassign G η) (images.reassign η) k codes sums p =
       PromiseCalls.requiresApp G images k codes sums p := by
   unfold PromiseCalls.requiresApp
   split
-  · simp only [LocalRequires_reassign, checkTree_reassign]
-  · simp only [LocalRequires_reassign, checkTree_reassign]
+  · simp only [LocalRequires_reassign, checkTree_reassign, unguardedByTypes_reassign]
+  · simp only [LocalRequires_reassign, checkTree_reassign, unguardedByTypes_reassign]
   · rfl
 
 /-- The refinement by integer facts reads no assignment. -/

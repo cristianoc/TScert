@@ -1857,13 +1857,13 @@ theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t 
     (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
     decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
-    preconditionHolds k eff j.term
+    preconditionHolds (HeapKnowledge.unguardedByTypes G j.context k) eff j.term
   -- A construction at a construct signature stating a precondition, alike.
   | .node j (.construct eff) ps =>
     (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
     decide (LocalUsing G images j (.construct eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
-    preconditionHolds k eff j.term
+    preconditionHolds (HeapKnowledge.unguardedByTypes G j.context k) eff j.term
   | _ => false
 
 /-- `requiresApp` as the compiled verifier runs it (`requiresApp_eq_fast`):
@@ -1876,13 +1876,13 @@ def requiresAppFast (G : NormalGraph ι) (images : InstanceImageCheck G)
     (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
     decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
-    preconditionHolds k eff j.term
+    preconditionHolds (HeapKnowledge.unguardedByTypes G j.context k) eff j.term
   | .node j (.construct eff) ps =>
     (eff.requires.isSome || !eff.pre.isEmpty) &&
     (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
     decide (LocalUsing G images j (.construct eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
-    preconditionHolds k eff j.term
+    preconditionHolds (HeapKnowledge.unguardedByTypes G j.context k) eff j.term
   | _ => false
 
 @[csimp] theorem requiresApp_eq_fast : @requiresApp = @requiresAppFast := by
@@ -1925,7 +1925,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
       simp only [claim] at he href ⊢
-      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have hq := preconditionHolds_sound hreq (HeapKnowledge.unguardedByTypes_holds he hk) (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
@@ -1942,7 +1942,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
       simp only [claim] at he href ⊢
-      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have hq := preconditionHolds_sound hreq (HeapKnowledge.unguardedByTypes_holds he hk) (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
@@ -1976,7 +1976,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
       simp only [claim] at he href ⊢
-      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have hq := preconditionHolds_sound hreq (HeapKnowledge.unguardedByTypes_holds he hk) (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
@@ -1993,7 +1993,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
       simp only [claim] at he href ⊢
-      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have hq := preconditionHolds_sound hreq (HeapKnowledge.unguardedByTypes_holds he hk) (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
@@ -2544,7 +2544,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
   refine ⟨fun x n hk hx => ?_, fun x n hgx hx => ?_⟩
   · cases x with
     | index => exact hx
-    | project _ _ | offset _ => simp [Bound.keptBy] at hk
+    | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hk
     | free t => exact termValue_kept (ε := ε) hc hf hk hx
     | elem =>
       simp only [boundValue, elementInt] at hx ⊢
@@ -2559,7 +2559,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
         · simp [intValue] at hwn
       · cases hx
   · cases x with
-    | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgx
+    | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgx
     | free t => exact termValue_grown (ε := ε) hc hf hgx hx
 
 open HeapKnowledge in
@@ -2569,8 +2569,8 @@ the receiver's, extended with its old elements at their indices, or one the
 growth keeps. -/
 theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {r : Tm}
     (hg : CallEffects.ReceiverGrows r h h') (hf : FirstKept first ρ h h')
-    {s : Nat} {p : List String} {st : Term} {body : List (LinearClause Bound)}
-    (hst : st.keptBy growChanges first = true) (hb : body.all (bodyKeptBy growChanges first) = true)
+    {s : Nat} {p : List String} {st : Term} {body : List BodyClause}
+    (hst : st.keptBy growChanges first = true) (hb : body.all (bodyClauseKeptBy growChanges first) = true)
     (hF : (IndexFact.every s p st body).HoldsAt ε ρ h) : (IndexFact.every s p st body).HoldsAt ε ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   have hc := receiverGrows_changes hg
@@ -2583,9 +2583,13 @@ theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {
     · simp only [spineEntries, Option.some.injEq] at hue; subst hue
       exact ⟨ls', by rw [hls']; rfl, hp⟩
   refine ⟨w, sto, ls', n, readPath_kept hc p (ρ s) w hw (Or.inr hwa) (fun _ => rfl), hsto, hls',
-    termValue_kept hc hf hst hn, fun i hi F hF => ?_⟩
-  obtain ⟨hk, hgr⟩ := boundValue_grown i hg hf hp
-  exact LinearClause.holdsAt_monotone hk hgr (List.all_eq_true.mp hb F hF) (hall i hi F hF)
+    termValue_kept hc hf hst hn, fun i hi B hB => ?_⟩
+  have hbk := List.all_eq_true.mp hb B hB
+  cases B with
+  | guarded _ _ _ => simp [bodyClauseKeptBy] at hbk
+  | clause F =>
+    obtain ⟨hk, hgr⟩ := boundValue_grown i hg hf hp
+    exact LinearClause.holdsAt_monotone hk hgr hbk (hall i hi (.clause F) hB)
 
 /-- What a body variable of a quantified fact over the slot `i`'s array
 denotes at the value of the slot `a` appended to it: the index its old
@@ -2595,6 +2599,7 @@ def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
   | .elem => .value a
   | .offset _ => .value a
   | .project k p => (HeapKnowledge.Term.now k a p)
+  | .parallel _ _ _ _ => .value a
   | .free t => t
 
 open HeapKnowledge in
@@ -2606,8 +2611,8 @@ growth keeps each body fact. -/
 theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {i x : Nat}
     (hg : CallEffects.ReceiverGrows (ρ i) h h') (ha : CallEffects.ReceiverAppends (ρ i) [ρ x] h h')
     (hf : FirstKept first ρ h h') (hx : (intValue (ρ x)).isSome)
-    {body : List (LinearClause Bound)} (hb : body.all (bodyKeptBy growChanges first) = true)
-    (hnew : ∀ F ∈ body, F.HoldsAt (fun b => termValue ε ρ h (appendTerm i x b)))
+    {body : List BodyClause} (hb : body.all (bodyClauseKeptBy growChanges first) = true)
+    (hnew : ∀ B ∈ body, match B with | .clause F => F.HoldsAt (fun b => termValue ε ρ h (appendTerm i x b)) | .guarded _ _ _ => False)
     (hF : (IndexFact.every i [] (.length i) body).HoldsAt ε ρ h) :
     (IndexFact.every i [] (.length i) body).HoldsAt ε ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
@@ -2629,17 +2634,20 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
     rcases hg sto _ hls2 with hk | ⟨-, ls0, ls1, he, hls1, hp, hm⟩
     · rw [hk] at hls'; cases hls'; simp at hlen
     · cases he; rw [hls1] at hls'; cases hls'; exact ⟨hp, hm⟩
-  refine ⟨ρ i, sto, ls', ls'.length, rfl, elementsOf_spine hs2, by rw [hls']; rfl, ?_, fun j hj F hF => ?_⟩
+  refine ⟨ρ i, sto, ls', ls'.length, rfl, elementsOf_spine hs2, by rw [hls']; rfl, ?_, fun j hj B hB => ?_⟩
   · simp only [termValue_length]; exact lengthOf_of_spine hs2 hls' hmax
   obtain ⟨hk, hgr⟩ := boundValue_grown j hg hf hp
-  have hbF := List.all_eq_true.mp hb F hF
+  have hbF := List.all_eq_true.mp hb B hB
+  cases B with
+  | guarded _ _ _ => simp [bodyClauseKeptBy] at hbF
+  | clause F =>
   by_cases hj' : j < ls.length
-  · exact LinearClause.holdsAt_monotone hk hgr hbF (hall j (by exact_mod_cast hj') F hF)
+  · exact LinearClause.holdsAt_monotone hk hgr hbF (hall j (by exact_mod_cast hj') (.clause F) hB)
   · have hjl : j = ls.length := by simp only [List.length_singleton] at hlen; omega
     subst hjl
     have hc := receiverGrows_changes hg
     refine LinearClause.holdsAt_monotone (val := fun b => termValue ε ρ h (appendTerm i x b)) (fun y n hky hy => ?_)
-      (fun y n hgy hy => ?_) hbF (hnew F hF)
+      (fun y n hgy hy => ?_) hbF (hnew (.clause F) hB)
     · cases y with
       | index =>
         simp only [appendTerm, termValue_length, hn, Option.some.injEq] at hy
@@ -2648,10 +2656,10 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
         simp only [appendTerm, termValue_value] at hy
         simp only [Nat.add_zero] at hl
         simp only [boundValue, elementInt, hl, hlv, Option.bind_some, hy]
-      | project _ _ | offset _ => simp [Bound.keptBy] at hky
+      | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept (ε := ε) hc hf hky hy
     · cases y with
-      | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
       | free t => exact termValue_grown (ε := ε) hc hf hgy hy
 
 open HeapKnowledge in
@@ -2659,16 +2667,22 @@ open HeapKnowledge in
 appended to the slot `i`'s array: the fact with the index read as the
 array's old length and the element as the slot's value, each of its terms
 but that length defined. -/
-def appendedBody (as : List IndexAtom) (i a : Nat) : LinearClause Bound → Bool
-  | .either _ _ => false
-  | .atom F => match F.mapVars (some ∘ appendTerm i a) with
+def appendedBody (as : List IndexAtom) (i a : Nat) : BodyClause → Bool
+  | .guarded _ _ _ => false
+  | .clause (.either _ _) => false
+  | .clause (.atom F) => match F.mapVars (some ∘ appendTerm i a) with
     | some G => G.vars.all (fun t => t == Term.length i || termDefined as t) && entailsKnown as G
     | none => false
 
 open HeapKnowledge in
 theorem appendedBody_sound {as : List IndexAtom} {ρ : Env} {h : Heap} {i a : Nat}
-    (he : IndexHolds ε as ρ h) (hlen : (termValue ε ρ h (Term.length i)).isSome) {F : LinearClause Bound}
-    (hF : appendedBody as i a F = true) : F.HoldsAt (fun b => termValue ε ρ h (appendTerm i a b)) := by
+    (he : IndexHolds ε as ρ h) (hlen : (termValue ε ρ h (Term.length i)).isSome) {B : BodyClause} :
+    appendedBody as i a B = true →
+    match B with | .clause F => F.HoldsAt (fun b => termValue ε ρ h (appendTerm i a b)) | .guarded _ _ _ => False := by
+  intro hF
+  cases B with
+  | guarded _ _ _ => cases hF
+  | clause F =>
   cases F with
   | either A B => cases hF
   | atom F =>
@@ -2689,14 +2703,14 @@ theorem appendedBody_sound {as : List IndexAtom} {ρ : Env} {h : Heap} {i a : Na
 
 open HeapKnowledge in
 /-- Whether a call growing its receiver's spine keeps a quantified atom of
-its entry `k`: each body fact kept by the growth (`bodyKeptBy`), and its
+its entry `k`: each body fact kept by the growth (`bodyClauseKeptBy`), and its
 bound kept (`every-grow`) or, for the call `x.push(a)` of one actual a safe
 integer, the fact over `x`'s whole array, each body fact stated of the value
 at the old length (`every-push`). -/
 def everyGrown (k : Knowledge) (t : Tm) (a : IndexAtom) : Bool :=
   match a.fact with
   | .every s p st body =>
-    body.all (bodyKeptBy growChanges (growFirst k t)) &&
+    body.all (bodyClauseKeptBy growChanges (growFirst k t)) &&
       (st.keptBy growChanges (growFirst k t) ||
         match t with
         | .invoke _ (.var i) [.var x] => s == i && p.isEmpty && st == Term.length i && intSlot k.indices x &&
@@ -2877,9 +2891,10 @@ open HeapKnowledge in
 /-- Whether the atoms `as` state a body fact of the value of the slot `x`
 written at the index the slot `i` holds: the fact with the index read as `i`
 and the element as `x`, each term defined and kept by the write. -/
-def writtenBody (as : List IndexAtom) (i x : Nat) : LinearClause Bound → Bool
-  | .either _ _ => false
-  | .atom F => (F.vars.all fun v => match v with | .offset _ => false | _ => true) &&
+def writtenBody (as : List IndexAtom) (i x : Nat) : BodyClause → Bool
+  | .guarded _ _ _ => false
+  | .clause (.either _ _) => false
+  | .clause (.atom F) => (F.vars.all fun v => match v with | .offset _ | .parallel _ _ _ _ => false | _ => true) &&
     match F.mapVars (some ∘ Bound.inst i x) with
     | some G => G.vars.all (fun t => termDefined as t && t.keptBy writeChanges (fun _ _ => false)) && entailsKnown as G
     | none => false
@@ -2893,7 +2908,7 @@ def everyWritten (k : Knowledge) (b i x : Nat) (a : IndexAtom) : Bool :=
   match a.fact with
   | .every s [] st body =>
     (s == b || (HeapLinks.aliases k.links b).contains s) &&
-      st.keptBy writeChanges (fun _ _ => false) && body.all (bodyKeptBy writeChanges (fun _ _ => false)) &&
+      st.keptBy writeChanges (fun _ _ => false) && body.all (bodyClauseKeptBy writeChanges (fun _ _ => false)) &&
       intSlot k.indices i &&
       (entailsKnown k.indices (.le [(st, 1), (.value i, -1)] 0) || body.all (writtenBody k.indices i x))
   | _ => false
@@ -2906,7 +2921,7 @@ def writtenPrefix (k : Knowledge) (b i x : Nat) (a : IndexAtom) (next : Term) : 
   | .every s [] st body =>
     if (s == b || (HeapLinks.aliases k.links b).contains s) &&
         termDefined k.indices next && next.keptBy writeChanges (fun _ _ => false) &&
-        body.all (bodyKeptBy writeChanges (fun _ _ => false)) &&
+        body.all (bodyClauseKeptBy writeChanges (fun _ _ => false)) &&
         entailsKnown k.indices (.le [(next, 1), (.value i, -1)] 1) &&
         entailsKnown k.indices (.le [(.value i, 1), (st, -1)] 0) &&
         body.all (writtenBody k.indices i x)
@@ -2935,12 +2950,12 @@ open HeapKnowledge in
 (`every-write`): each element at another index is the same location, holding
 the same number; the element at the index is the written value, which meets
 the body or lies past the bound. -/
-theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List (LinearClause Bound)}
+theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List BodyClause}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
     (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind}
     (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h' ∧ CallEffects.ExactPre k [ρ b, ρ i, ρ x])
     (hst : st.keptBy writeChanges (fun _ _ => false) = true)
-    (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
+    (hb : body.all (bodyClauseKeptBy writeChanges (fun _ _ => false)) = true)
     (hnew : entailsKnown as (.le [(st, 1), (.value i, -1)] 0) = true ∨ body.all (writtenBody as i x) = true)
     (hF : (IndexFact.every s [] st body).HoldsAt ε ρ h) : (IndexFact.every s [] st body).HoldsAt ε ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
@@ -2950,8 +2965,11 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
   simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
   have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
   have hn' := termValue_kept hc firstKept_none hst hn
-  refine ⟨ρ s, sto, ls', n, rfl, hsto, hls', hn', fun j hj' F hF => ?_⟩
-  have hbF := List.all_eq_true.mp hb F hF
+  refine ⟨ρ s, sto, ls', n, rfl, hsto, hls', hn', fun j hj' B hB => ?_⟩
+  have hbF := List.all_eq_true.mp hb B hB
+  cases B with
+  | guarded _ _ _ => simp [bodyClauseKeptBy] at hbF
+  | clause F =>
   by_cases hji : j = i0
   · subst hji
     rcases hnew with hent | hbody
@@ -2959,7 +2977,7 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, termValue_value, hki,
         Option.getD_some] at this
       omega
-    · have hwb := List.all_eq_true.mp hbody F hF
+    · have hwb := List.all_eq_true.mp hbody (.clause F) hB
       cases F with
       | either A B => cases hwb
       | atom F =>
@@ -2983,11 +3001,12 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
           | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
             CallEffects.ElementKind.intValue_convert]
           | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
+          | parallel s p kd ep => have := List.all_eq_true.mp hvalid (.parallel s p kd ep) hy; simp at this
           | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, ite_false,
             CallEffects.ElementKind.readPath_convert]
           | free t => rfl
         | none => simp [hG] at hwb
-  · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
+  · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' (.clause F) hB)
     · cases y with
       | index => exact hy
       | elem =>
@@ -2998,17 +3017,17 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
           obtain ⟨l'', hl'', hu'⟩ := hj j hji l' u hl' hu
           simp only [hl'', hu', Option.bind_some, hum]
         · cases hy
-      | project _ _ | offset _ => simp [Bound.keptBy] at hky
+      | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept (ε := ε) hc firstKept_none hky hy
     · cases y with
-      | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
       | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
 
 open HeapKnowledge in
 /-- **An exact element write establishes a prefix through its index**
 Every target index other than the written index belongs to the old prefix;
 the written index holds the value checked against the body. -/
-theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next : Term} {body : List (LinearClause Bound)}
+theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next : Term} {body : List BodyClause}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
     (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind}
     (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h' ∧ CallEffects.ExactPre k [ρ b, ρ i, ρ x])
@@ -3016,7 +3035,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
     (hcover : entailsKnown as (.le [(next, 1), (.value i, -1)] 1) = true)
     (hstart : entailsKnown as (.le [(.value i, 1), (st, -1)] 0) = true)
     (hst : next.keptBy writeChanges (fun _ _ => false) = true)
-    (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
+    (hb : body.all (bodyClauseKeptBy writeChanges (fun _ _ => false)) = true)
     (hbody : body.all (writtenBody as i x) = true)
     (hF : (IndexFact.every s [] st body).HoldsAt ε ρ h) : (IndexFact.every s [] next body).HoldsAt ε ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
@@ -3031,11 +3050,14 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
   have hbegin := entailsKnown_sound he hstart
   simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn0, hn, termValue_value, hki,
     Option.getD_some] at hcoverage hbegin
-  refine ⟨ρ s, sto, ls', n', rfl, hsto, hls', hn', fun j hj' F hF => ?_⟩
-  have hbF := List.all_eq_true.mp hb F hF
+  refine ⟨ρ s, sto, ls', n', rfl, hsto, hls', hn', fun j hj' B hB => ?_⟩
+  have hbF := List.all_eq_true.mp hb B hB
+  cases B with
+  | guarded _ _ _ => simp [bodyClauseKeptBy] at hbF
+  | clause F =>
   by_cases hji : j = i0
   · subst hji
-    have hwb := List.all_eq_true.mp hbody F hF
+    have hwb := List.all_eq_true.mp hbody (.clause F) hB
     cases F with
     | either A B => cases hwb
     | atom F =>
@@ -3059,11 +3081,12 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
         | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
             CallEffects.ElementKind.intValue_convert]
         | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
+        | parallel s p kd ep => have := List.all_eq_true.mp hvalid (.parallel s p kd ep) hy; simp at this
         | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, ite_false,
             CallEffects.ElementKind.readPath_convert]
         | free t => rfl
       | none => simp [hG] at hwb
-  · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j (by omega) F hF)
+  · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j (by omega) (.clause F) hB)
     · cases y with
       | index => exact hy
       | elem =>
@@ -3074,10 +3097,10 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
           obtain ⟨l'', hl'', hu'⟩ := hj j hji l' u hl' hu
           simp only [hl'', hu', Option.bind_some, hum]
         · cases hy
-      | project _ _ | offset _ => simp [Bound.keptBy] at hky
+      | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept (ε := ε) hc firstKept_none hky hy
     · cases y with
-      | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ | parallel _ _ _ _ | offset _ => simp [Bound.grownBy] at hgy
       | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
 
 open HeapKnowledge in

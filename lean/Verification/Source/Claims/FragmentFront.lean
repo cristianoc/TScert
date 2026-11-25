@@ -401,7 +401,9 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
       entryFacts := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
       entrySpinesApart := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.spinesClaim)
       entryEvery := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim)
-      entryLinks := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.linkClaim) }
+      entryLinks := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.linkClaim)
+      entryElements := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.elementClaim)
+      entryFieldReads := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.fieldReadClaim) }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
@@ -413,8 +415,14 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
         entryFacts := r.entryFacts ++ row.entryFacts.filter (fun (pos, _) => !r.entryFacts.any (·.1 == pos))
         entrySpinesApart := r.entrySpinesApart ++
           row.entrySpinesApart.filter (fun (pos, _) => !r.entrySpinesApart.any (·.1 == pos))
+        entryEvery := r.entryEvery ++
+          row.entryEvery.filter (fun (pos, _) => !r.entryEvery.any (·.1 == pos))
         entryLinks := r.entryLinks ++
-          row.entryLinks.filter (fun (pos, _) => !r.entryLinks.any (·.1 == pos)) }
+          row.entryLinks.filter (fun (pos, _) => !r.entryLinks.any (·.1 == pos))
+        entryElements := r.entryElements ++
+          row.entryElements.filter (fun (pos, _) => !r.entryElements.any (·.1 == pos))
+        entryFieldReads := r.entryFieldReads ++
+          row.entryFieldReads.filter (fun (pos, _) => !r.entryFieldReads.any (·.1 == pos)) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,
