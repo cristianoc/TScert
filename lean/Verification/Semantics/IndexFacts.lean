@@ -2931,16 +2931,26 @@ theorem LinearClause.holdsAt_monotone {val val' : V → Option Int} {kept grown 
     exact hF.imp (ihA hA) (ihB hB)
 
 /-- Whether a change keeps what a body variable denotes (`Term.keptBy`): the
-index and the element are read apart. -/
+index and the element are read apart, and an element projection is kept where
+the change keeps that term read from the element value. -/
 def Bound.keptBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
-  | .project _ _ | .parallel _ _ _ _ | .offset _ => false
+  | .index | .elem => true
+  | .project k p => (Term.now k 0 p).keptBy c (fun _ _ => false)
+  | .parallel _ _ _ _ | .offset _ => false
   | .free t => t.keptBy c first
-  | _ => true
 
-/-- Whether a change grows what a body variable denotes (`Term.grownBy`). -/
+/-- Whether a change grows what a body variable denotes (`Term.grownBy`): a
+free length term or a projected element's length term grown by the change. -/
 def Bound.grownBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
+  | .project k p => (Term.now k 0 p).grownBy c (fun _ _ => false)
   | .free t => t.grownBy c first
   | _ => false
+
+/-- Whether a change keeps what an element guard target reads at an index whose
+element cell it keeps. -/
+def ElemTarget.keptBy : ElemTarget → Bool
+  | .self ep => ep.isEmpty
+  | .parallel _ _ _ => false
 
 /-- Whether a change keeps a body fact of a quantified fact at an index whose
 element it keeps: each term kept, or grown at a coefficient at most `0`. -/
@@ -2949,10 +2959,22 @@ def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : LinearClause Bo
 
 /-- Whether a change keeps a body clause of a quantified fact at an index whose
 element it keeps: an unguarded linear clause kept by `bodyKeptBy`, or a guarded
-clause whose target is kept. -/
+clause whose target and body are kept. -/
 def bodyClauseKeptBy (c : Changes) (first : Nat → String → Bool) : BodyClause → Bool
   | .clause F => bodyKeptBy c first F
-  | .guarded _ _ _ => false
+  | .guarded t _ b => t.keptBy && bodyClauseKeptBy c first b
+
+theorem BodyClause.holdsAt_monotone {c : Changes} {first : Nat → String → Bool}
+    {ρ : Env} {h h' : Heap} {ls ls' : List (Option Nat)} {i : Nat}
+    (ht : ∀ (t : ElemTarget), t.keptBy = true → ∀ w, t.read ρ h ls i = some w → t.read ρ h' ls' i = some w)
+    (hk : ∀ (x : Bound) n, x.keptBy c first = true → boundValue ε ρ h ls i x = some n → boundValue ε ρ h' ls' i x = some n)
+    (hg : ∀ (x : Bound) n, x.grownBy c first = true → boundValue ε ρ h ls i x = some n →
+      ∃ n', boundValue ε ρ h' ls' i x = some n' ∧ n ≤ n') :
+    ∀ {B : BodyClause}, bodyClauseKeptBy c first B = true → B.HoldsAt ε ρ h ls i → B.HoldsAt ε ρ h' ls' i
+  | .clause _, hm, hF => LinearClause.holdsAt_monotone hk hg hm hF
+  | .guarded t _ _, hm, ⟨w, hw, hor⟩ => by
+    simp only [bodyClauseKeptBy, Bool.and_eq_true] at hm
+    exact ⟨w, ht t hm.1 w hw, hor.imp id (holdsAt_monotone ht hk hg hm.2)⟩
 
 namespace IndexFact
 

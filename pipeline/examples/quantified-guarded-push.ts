@@ -26,7 +26,11 @@ export function buildChunks(widths: number[]): (number[] | null)[] {
   return chunks;
 }
 
-export function appendNonEmpty(bag: ChunkBag, row: number[], w: number): ChunkBag {
+export function appendNonEmpty(
+  bag: ChunkBag,
+  row: number[],
+  w: number,
+): ChunkBag {
   row.push(w);
   bag.chunks.push(row);
   return bag;

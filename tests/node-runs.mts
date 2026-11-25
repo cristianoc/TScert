@@ -3488,9 +3488,15 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
     "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
     "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");
-  assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
-    "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
-    '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");
+  assert.equal(runExample(ofKind("quantified-guarded-push", ["positive"]),
+    "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4), (() => { const r = [1]; return appendNonEmpty({ chunks: [r] }, r, 4); })()])"),
+    '[[null,[3]],{"chunks":[[1],[2,4]]},{"chunks":[[1,4],[1,4]]}]', "quantified-guarded-push (#394): safe guarded push, disjoint inner push, and aliased inner element growth");
+  assert.equal(runExample(negative("invalid-quantified-guarded-push"),
+    "typeof buildEmpty([1])[0][0]"),
+    "undefined", "invalid-quantified-guarded-push (#394): pushing [] violates guarded 1 <= e.length invariant");
+  assert.equal(runExample(negative("invalid-quantified-guarded-push-alias"),
+    "(() => { const c = [[1]]; return typeof pushAliasedChunks({ chunks: c }, c).chunks[1][0]; })()"),
+    "undefined", "invalid-quantified-guarded-push-alias (#394): pushing [] onto aliased (number[] | null)[] breaks ChunkBag invariant");
   assert.equal(runExample(ofKind("quantified-dense-append-write-gap", ["gap"]),
     "String(copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]))"),
     "14", "quantified-dense-append-write-gap (#395): safe lockstep dense-append write");
