@@ -121,11 +121,6 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   return { path, records };
 }
 
-/** The importer's check by units (`invokeWorker`): its worker stage's
- * result, and, where the module interfaces its imports read could not be
- * established, why: the checks are then those at ordinary contracts. */
-export type CheckedUnits = { run: WorkerRun; interfaceFailure: string | null };
-
 /** The file worker's protocol (`WorkerProtocol`): the parts are the units
  * its preparation line names, in order; a request names units, or null for
  * every one; an answer is a unit's verdict line. */
@@ -138,74 +133,53 @@ export const fileWorkerProtocol: WorkerProtocol = {
   partOf: (answer: string): string => decodeVerdictLine(answer.trim()).unit,
 };
 
-/** A unit member's name as a selection names it: a function's name, or
- * `:init` for the module's initialization (mirrors `Json.memberName`). */
-const selectionMemberName = (member: string): string =>
-  member === "init" ? ":init" : (member.split("@")[0] ?? member);
-
-/** The selection names of units in `attempt` that were semantically refused at
- * ordinary contracts, or `null` where preparation or a worker part failed
- * operationally so retrying at module interfaces cannot help. */
-function refusedSelectionNames(attempt: WorkerRun): string[] | null {
-  const { preparation } = attempt;
-  if ((preparation.execution !== "executed" && preparation.execution !== "replayed") || preparation.status !== 0)
-    return null;
-  const names: string[] = [];
-  for (const part of attempt.parts) {
-    if (part.execution === "failed" && part.error?.message.startsWith("memory limit") !== true)
-      return null;
-    if (part.execution !== "executed" && part.execution !== "replayed") continue;
-    const verdict = decodeVerdictLine(part.stdout.trim());
-    if ("accepted" in verdict && verdict.accepted) continue;
-    for (const member of verdict.members) names.push(selectionMemberName(member));
-  }
-  return [...new Set(names)];
+/** The interfaces a check reads: those of the modules the units `names`
+ * selects reach, each component's check run before its parents'
+ * (`prepareInterfaces`), or, for a fragment with no modules, none. A failure
+ * of an interface stage (a timeout, a refusal, an operational failure)
+ * propagates: no check runs without the interfaces its imports read. */
+function interfacesFor(fragment: string, names: string, options: InterfaceOptions,
+    hasModules: boolean): PreparedInterfaces {
+  if (hasModules || options.ownModule !== undefined) return prepareInterfaces(fragment, { ...options, names });
+  mkdirSync(options.work, { recursive: true });
+  const path = join(options.work, "interfaces.json");
+  writeFileSync(path, canonical({ modules: [] }));
+  return { path, records: [] };
 }
+
+const fragmentHasModules = (fragment: string): boolean =>
+  array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0;
 
 /** The importer's check by units: the file worker (`--file-worker 8`) of the
  * units `names` selects (comma-separated, `""` every unit) and those their
- * verdicts rest on. The worker prepares the file once and checks its units
- * one after another, each unit's result an entry of its own and each with its
- * own limit, so a unit over its limit costs only its own verdict and its
- * dependents' (`invokeWorker`). Unless own-module publication or forced
- * proposals are requested, the file is checked at ordinary import contracts
- * first; module interfaces are prepared only for the modules reached by units
- * semantically refused there, and where those stages fail (a timeout, a
- * refusal), the checks at ordinary contracts stand with that failure: a unit
- * accepted there is accepted with no stronger module fact. */
+ * verdicts rest on, at the module interfaces those units reach
+ * (`interfacesFor`), prepared before it. The worker prepares the file once
+ * and checks its units one after another, each unit's result an entry of its
+ * own and each with its own limit, so a unit over its limit costs only its
+ * own verdict and its dependents' (`invokeWorker`). Where the interface
+ * stages fail, no unit is checked: the error thrown names that failure, and
+ * the file's units have no verdict. */
 export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions,
-    hasModules: boolean = array(object(json(readFileSync(fragment, "utf8"))).modules).length > 0): CheckedUnits {
+    hasModules: boolean = fragmentHasModules(fragment)): WorkerRun {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  const check = (path: string): WorkerRun => invokeWorker(verifierCall(verifier,
-    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--file-worker", String(options.mode),
-      fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);
-  const ordinary = join(options.work, "ordinary-interfaces.json");
-  writeFileSync(ordinary, canonical({ modules: [] }));
-  if (!hasModules) return { run: check(ordinary), interfaceFailure: null };
-  // Mirror `verifyWithInterfaces`: check at ordinary contracts first unless
-  // explicit own-module publication or forced proposals require interfaces.
-  const attempt = options.ownModule === undefined && options.force.length === 0 ? check(ordinary) : undefined;
-  let interfaceNames = names;
-  if (attempt !== undefined) {
-    const refused = refusedSelectionNames(attempt);
-    if (refused === null || refused.length === 0) return { run: attempt, interfaceFailure: null };
-    interfaceNames = refused.join(",");
-  }
   let interfaces: PreparedInterfaces;
   try {
-    interfaces = prepareInterfaces(fragment, { ...options, names: interfaceNames });
+    interfaces = interfacesFor(fragment, names, options, hasModules);
   } catch (error) {
-    return { run: attempt ?? check(ordinary), interfaceFailure: error instanceof Error ? error.message : String(error) };
+    throw Error(`the module interfaces its imports read were not established: ${
+      error instanceof Error ? error.message : String(error)}`);
   }
-  if (array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
-    return { run: attempt ?? check(ordinary), interfaceFailure: null };
-  return { run: check(interfaces.path), interfaceFailure: null };
+  return invokeWorker(verifierCall(verifier,
+    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--file-worker", String(options.mode),
+      fragment, interfaces.path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);
 }
 
 /** The importer is one process stage, with every file it reads an explicit
- * input role. */
+ * input role, at the module interfaces the units `names` selects reach
+ * (`interfacesFor`), prepared before it; an own-module publication's
+ * importer reads only the interfaces of the fragment's own modules. */
 export function verifyWithInterfaces(fragment: string, key: string, names: string,
     options: InterfaceOptions): { run: Invoked; interfaces: PreparedInterfaces } {
   mkdirSync(options.work, { recursive: true });
@@ -213,25 +187,7 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
   // Raw refusal text is an additional diagnostic on standard error. Key
   // the observation as well, since the store replays that stream.
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  const check = (path: string): Invoked => invokeProcess(verifierCall(verifier,
-    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--verify-interface-stage", String(options.mode),
-      fragment, path, key, String(options.fuel), names], environment),
-    options.invocation);
-  // A completed importer check at ordinary contracts needs no stronger
-  // module facts. This publishes only that check, never a module interface.
-  // Explicit own-module publication always runs the canonical computation.
-  const ordinary = join(options.work, "ordinary-interfaces.json");
-  writeFileSync(ordinary, canonical({ modules: [] }));
-  const attempt = options.ownModule === undefined && options.force.length === 0 ? check(ordinary) : undefined;
-  if (attempt?.status === 0)
-    return { run: attempt, interfaces: { path: ordinary, records: [] } };
-  if (attempt !== undefined && attempt.status !== 1)
-    throw Error(`importer stage ${attempt.record.execution}: ${attempt.stderr}`);
-  if (attempt !== undefined && array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0)
-    return { run: attempt, interfaces: { path: ordinary, records: [] } };
-  const interfaces = prepareInterfaces(fragment, { ...options, names });
-  if (attempt !== undefined && array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
-    return { run: attempt, interfaces };
+  const interfaces = interfacesFor(fragment, names, options, fragmentHasModules(fragment));
   let importerInterfaces = interfaces.path;
   if (options.ownModule !== undefined) {
     const locations = array(object(json(readFileSync(fragment, "utf8"))).modules).map((m) => string(object(m).location));
@@ -240,6 +196,9 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
     importerInterfaces = join(options.work, "importer-interfaces.json");
     writeFileSync(importerInterfaces, canonical({ modules }));
   }
-  const run = check(importerInterfaces);
+  const run = invokeProcess(verifierCall(verifier,
+    ["--subtype-rounds", String(options.rounds), ...proposalArgs(options.force), "--verify-interface-stage", String(options.mode),
+      fragment, importerInterfaces, key, String(options.fuel), names], environment),
+    options.invocation);
   return { run, interfaces };
 }

@@ -193,7 +193,11 @@ what a refusal reports.
 ### The pipeline entry point
 
 `pipeline/verify-source.mts` runs parsing, the module-interface stages a
-file's imports need and the pass (`--file-worker 8`). Each
+file's imports need and the pass (`--file-worker 8`). The interface stages
+run first, for the modules the selected units reach, and the pass checks
+the file once at their interfaces; where an interface stage fails (over its
+limit, refused or failed), no unit has a verdict and the outcome is an
+error naming that failure. Each
 subprocess has a log and a time limit. `--project` selects the strict
 TypeScript project configuration. The pipeline cases use this entry point.
 

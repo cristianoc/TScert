@@ -171,7 +171,7 @@ const mutationControl = (name: string, body: () => Promise<void>): void => {
 };
 let mutated: string | null = null;
 /** The pass of the mutation verifier over an import-free `fragment` (its
- * importer stage at the ordinary contracts), the mutation `name` selected. */
+ * importer stage at an empty interfaces document), the mutation `name` selected. */
 function mutatedPass(fragment: string, name: string, force: readonly string[] = []): Pass {
   const program = must(mutated, "the mutation verifier");
   const work = runDirectory("single-pass-mutation-");
@@ -257,7 +257,7 @@ control("worker order: a unit's line whatever units the worker checked before it
 control("probe settings leave the production verdict intact", async (): Promise<void> => {
   const artifacts = run("field-equality-union");
   const fragment = fragmentOf(artifacts);
-  const interfaces = join(artifacts, "ordinary-interfaces.json");
+  const interfaces = join(artifacts, "empty-interfaces.json");
   writeFileSync(interfaces, '{"modules":[]}');
   const args = ["--verify-interface-stage", "8", fragment, interfaces, sourceKey(artifacts), "12", ""];
   const plain = spawnSync(verifierBuild, args, { encoding: "utf8", env: {} });
@@ -2808,10 +2808,14 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   const after = runAt(changed, null);
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
-  const ordinaryOnly = runAt(join(root, "pipeline", "examples", "value-imports.ts"), resolve(root, "pipeline/imports-project"));
-  assert.equal(ordinaryOnly.outcome.status, "verified", "value-imports verifies at ordinary import contracts");
-  assert.ok(!ordinaryOnly.records.some((r) => r.stage === "interface-plan" || r.stage === "module-interface"),
-    "value-imports skips interface-plan and module-interface when ordinary contracts suffice");
+  // A file with modules: its interface stages run before any of its pass
+  // stage's records, so its units are checked once, at those interfaces.
+  const importing = runAt(join(root, "pipeline", "examples", "value-imports.ts"), resolve(root, "pipeline/imports-project"));
+  assert.equal(importing.outcome.status, "verified", "value-imports verifies at its module interfaces");
+  const stagesRun = importing.records.map((r) => r.stage);
+  assert.ok(stagesRun.includes("interface-plan") && stagesRun.includes("pass") &&
+    stagesRun.lastIndexOf("interface-plan") < stagesRun.indexOf("pass"),
+    `value-imports: its interface stages, then its pass stage: ${JSON.stringify(stagesRun)}`);
   say("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
     "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; after an eviction " +
     "every stage executes to the same outcome; a changed source executes its stages");

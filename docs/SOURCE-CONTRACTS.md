@@ -965,15 +965,15 @@ module's own signature with that effect. Its code is then known to discard
 further actuals, so it may be passed where a signature binding more
 parameters is expected.
 
-**The run.** The pipeline first checks the importer with every import at
-its ordinary signature (`verifyWithInterfaces`,
-`pipeline/module-interfaces.mts`); a unit that verifies so needs no
-module's entry. Where that check refuses a unit, it computes the
-interfaces of the components the importer's reads reach, each a process
-stage of [the stage store](STAGE-STORE.md#replay-and-trust)
-(`--module-interface-plan`, `--module-interface`), and checks the importer
-again over them (`--verify-interface-stage`). An entry not established
-leaves its import at the ordinary signature. Dense `map` needs a callback
+**The run.** The pipeline computes the interfaces of the components the
+selected units' reads reach, each a process stage of
+[the stage store](STAGE-STORE.md#replay-and-trust)
+(`--module-interface-plan`, `--module-interface`), then checks the
+importer once over them (`--file-worker 8`; `verifyByUnits`,
+`pipeline/module-interfaces.mts`). An entry not established leaves its
+import at the ordinary signature. Where an interface stage fails (over its
+limit, refused or failed), the importer is not checked: none of its units
+has a verdict, and the file's outcome is an error naming that failure. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 
