@@ -519,14 +519,23 @@ def Atom.through (chain : Bool) (a : Atom) : List Nat := match a with
     | _ => []
   | _ => []
 
+/-- The array and index of an element read, or the array of a quantified
+fact. Observations select these witnesses together to instantiate the
+body after a guard is discharged. -/
+def elementDependencies : HeapKnowledge.IndexFact → List Nat
+  | .element _ a i => [a, i]
+  | .every a _ _ _ => [a]
+  | .guarded _ _ _ body => elementDependencies body
+  | _ => []
+
 /-- One round of the selective worklist: each fact over a frontier name
 not yet kept, kept in order; each name it chains through not yet seen,
 seen and on the next frontier. -/
-def selectRound (s : Store) (chain : Bool) (frontier : List Nat) (seen : Std.HashSet Nat)
+def selectRound (s : Store) (through : Atom → List Nat) (frontier : List Nat) (seen : Std.HashSet Nat)
     (kept : Std.HashSet Atom) (out : Array Atom) : List Nat × Std.HashSet Nat × Std.HashSet Atom × Array Atom :=
   frontier.foldl (fun acc x => (s.about x).foldl (fun (next, seen, kept, out) a =>
     if kept.contains a then (next, seen, kept, out) else
-    (a.through chain).foldl (fun (next, seen, kept, out) y =>
+    (through a).foldl (fun (next, seen, kept, out) y =>
       if seen.contains y then (next, seen, kept, out) else (y :: next, seen.insert y, kept, out))
       (next, seen, kept.insert a, out.push a)) acc) ([], seen, kept, out)
 
@@ -543,22 +552,27 @@ def selectValues (s : Store) (seen : Std.HashSet Nat) (kept : Std.HashSet Atom) 
 /-- The selective worklist (`selectRound`) from `frontier` until a round
 finds no new name: each round with a next frontier keeps a new fact, so a
 fuel of the store's size and two never runs out. -/
-def selectFrom (s : Store) (chain : Bool) : Nat → List Nat → Std.HashSet Nat → Std.HashSet Atom → Array Atom → Array Atom
+def selectFrom (s : Store) (through : Atom → List Nat) : Nat → List Nat → Std.HashSet Nat → Std.HashSet Atom → Array Atom → Array Atom
   | 0, _, seen, kept, out => selectValues s seen kept out
   | fuel + 1, frontier, seen, kept, out =>
     if frontier.isEmpty then selectValues s seen kept out else
-    let (next, seen, kept, out) := selectRound s chain frontier seen kept out
-    selectFrom s chain fuel next seen kept out
+    let (next, seen, kept, out) := selectRound s through frontier seen kept out
+    selectFrom s through fuel next seen kept out
 
 /-- The knowledge a step reads, at slots: the facts over the names of
 `slots` and over the names those facts mention, a name out of scope
 eliminated from the linear facts. With `whole`, every fact. The store's
 facts with their images, for the step's delta, and the table of slots. -/
-def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain : Bool := true) :
+def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain : Bool := true)
+    (observeElements : Bool := false) :
     Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat := timedKind (if whole then "materialize whole" else "materialize") fun _ =>
   let given := slots.filterMap fun s => st.names[s]?
+  let through := if observeElements then fun a => match a with
+    | .index x => a.through chain ++ elementDependencies x.fact
+    | _ => a.through chain
+    else Atom.through chain
   let atoms : List Atom := if whole then st.store.toList else
-    (selectFrom st.store chain (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
+    (selectFrom st.store through (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
   let want : Std.HashSet Nat := atoms.foldl (fun acc a => a.names.foldl (·.insert ·) acc)
     (given.foldl (·.insert ·) {})
   let table := slotTable st.names want whole
@@ -1995,11 +2009,13 @@ def edgeStoreOf (G : NormalGraph ι) (Γ : List (Ty ι)) (entryStore store : Sto
   match observed, promote with
   | some o, _ =>
     let (k, pairs, table) := materialize { names, store } (if pushed then width + 1 else width) [0] false
+      (observeElements := true)
     let k' := HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ k 0 o)
     let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
     applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => names[i]?
   | none, some q =>
     let (k, pairs, table) := materialize { names := pushedNames, store } (width + 1) [0] false
+      (observeElements := true)
     let k' := HeapKnowledge.withElements (HeapKnowledge.promoteTruthy k 0 q)
     let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
     applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => pushedNames[i]?
