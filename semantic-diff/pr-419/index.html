@@ -1,0 +1,401 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-419"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-419</code></a><ul><li>1 commit</li><li>changes: 1 Definition, 1 Rule, 1 Check, 1 Trust, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">%ArrayFilled% normal exit states freshRegion (spine and element cells allocated during the call)</span></li><li>wire: every adds affine IndexBound start/stop; OperationPost adds freshRegion</li></ul></li></ul></section>
+<h2 id="g-pr-419"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-419</code></h2><article class="card" id="c-e05c90c37"><header><div><div class="sha">e05c90c37 · Cristiano Calcagno · Nov 25, 15:00</div><h3>Support interval quantified clauses and standalone element-tag bodies (#396)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>buildLazyExtras allocates <code>extras</code> lazily mid-loop via <code>new Array(n).fill(null)</code>, writes <code>extras[i] = ex</code> only when <code>adv !== null &amp;&amp; ex !== null</code>, and appends <code>adv</code> to <code>advances</code> on every iteration. It failed with <code>source ensures refusal at [1943,1963): a return of 'buildLazyExtras' does not establish the postcondition</code>: proving the paired length invariant on iterations where <code>ex === null</code> requires knowing <code>extras[j] === null</code> on the unwritten suffix <code>i &lt;= j &lt; n</code>, which prefix-only quantification (<code>0 &lt;= j &lt; stop</code>) could not state, and preserving <code>advances</code>'s quantified facts across <code>extras[i] = ex</code> requires knowing that <code>new Array(n).fill(null)</code> allocates fresh element cells as well as a fresh spine.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">quantified index fact</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-bind">∀</span> <var>i</var> &lt; <var>t</var>. <var>Φ</var>(<var>i</var>) <span class="m-text">over a single upper bound term</span> <var>t</var>, <span class="m-text">with implicit lower</span></span></div><div class="row"><span><span class="m-text">bound</span> 0.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-bind">∀</span> <var>a</var> <span class="m-rel">≤</span> <var>i</var> &lt; <var>b</var>. <var>Φ</var>(<var>i</var>) <span class="m-text">over affine bounds a</span>, <var>b</var> <span class="m-rel">∈</span> <span class="m-op">Option</span>(<span class="m-con">Term</span>) × <span class="m-op">ℤ</span></span></div><div class="row"><span><span class="m-text">(optional base term plus integer offset)</span>. <span class="m-text">A standalone element-tag</span></span></div><div class="row"><span><span class="m-text">body <code class="m-code"><span class="tk-t">P</span>[i] === tag</code> (or <code class="m-code"><span class="tk-t">P</span>[i].p === tag</code>) for</span> <code class="m-code"><span class="tk-k">null</span></code>, <code class="m-code"><span class="tk-k">undefined</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-k">true</span></code> <span class="m-text">or <code class="m-code"><span class="tk-k">false</span></code> elaborates to the guarded falsum</span></span></div><div class="row"><span><code class="m-code">target === tag ∨ (<span class="tk-n">0</span> ≤ -<span class="tk-n">1</span>)</code>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">interval subinterval, empty interval, and overwrite split</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span> <var>a</var> <span class="m-rel">≤</span> <var>i</var> &lt; <var>b</var>. <var>Φ</var></span><span><var>a</var> <span class="m-rel">≤</span> <var>a'</var></span><span><var>b'</var> <span class="m-rel">≤</span> <var>b</var></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span> <var>a'</var> <span class="m-rel">≤</span> <var>i</var> &lt; <var>b'</var>. <var>Φ</var></div></div></div><span class="rule-name">(every-subinterval)</span></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">elems</span>(<var>x</var>.<var>p</var>) <span class="m-text">defined</span></span><span>(<var>b</var> <span class="m-rel">≤</span> <var>a</var> ∨ <var>b</var> <span class="m-rel">≤</span> 0)</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span> <var>a</var> <span class="m-rel">≤</span> <var>i</var> &lt; <var>b</var>. <var>Φ</var></div></div></div><span class="rule-name">(every-empty)</span></div><div class="formulas"><div class="row"><span><span class="m-text">In-bounds overwrite <code class="m-code">a[i] = v</code> splits an interval fact over</span></span></div><div class="row"><span><code class="m-code">[start, stop)</code> <span class="m-text">into <code class="m-code">[start, i)</code> and <code class="m-code">[i + <span class="tk-n">1</span>, stop)</code>, preserving</span></span></div><div class="row"><span><span class="m-text">both halves where <code class="m-code">a[i]</code> is overwritten and keeping the full</span></span></div><div class="row"><span><span class="m-text">interval when <code class="m-code">i</code> lies outside</span> <code class="m-code">[start, stop)</code>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">guarded entailment, dense append, and join propagation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> an indexed append <code>a[i] = v</code></span><span class="tgt"><span class="m-text">extends only unguarded <code class="m-code">every</code> facts over non-nullable array element types and checks parallel bodies only through an unconditional <code class="m-code">element</code> witness; guarded entailment releases only outermost known-false guards and runs complementary-guard elimination only at the top level</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> an indexed append <code>a[i] = v</code></span><span class="tgt"><span class="m-text">peels and re-wraps leading slot guards, checks parallel bodies either directly or as a guarded <code class="m-code">atIndex</code> fact over a parallel array (discharged by either an <code class="m-code">element</code> read or a covering interval <code class="m-code">every</code> fact), and extracts homogeneous element types from unions with primitives</span> (<code class="m-code"><span class="tk-t">T</span>[] | <span class="tk-k">null</span></code>). <span class="m-text">Guarded entailment recurses beneath outer guards when releasing known-false guards and applies complementary-guard elimination after peeling target guards</span>. <span class="m-text">Loop-head region inference proposes <code class="m-code">x === <span class="tk-k">null</span> ∨ apart(a, x)</code> for nullable array slots in loops calling a fresh-region allocator</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">%ArrayFilled% normal exit</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>new Array(n).fill(v)</code> states <code>freshSpine</code> (a fresh spine location).</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>new Array(n).fill(v)</code> states <code>freshSpine</code> and <code>freshRegion</code> (both the spine location and every present element cell lie at or above the pre-call heap length, so the array's region is apart from every pre-existing array whose spine the call's frame keeps). Audited against ECMA-262 ArrayCreate and Array.prototype.fill: no client code holds the newly allocated array before <code>fill</code> returns it.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">every index fact and freshRegion operation post</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>every</code> carries <code>{ slot, path, stop: LinearTerm, body }</code>; <code>OperationPost</code> carries <code>freshSpine</code> and <code>freshObject</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>every</code> carries <code>{ slot, path, start: IndexBound, stop: IndexBound, body }</code> with <code>IndexBound = { base: LinearTerm | null, offset: Integer }</code>; <code>OperationPost</code> adds <code>{ freshRegion: { x: Nat } }</code>.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md, REQUEST-PROTOCOL.md, SOURCE-CONTRACTS.md</span></h4><div class="prose"><p>Document interval quantifier syntax (<code>forall lo &lt;= i &lt; hi of P: B</code>, <code>forall lo &lt;= i in P: B</code>), affine bounds, standalone element-tag bodies, interval entailment and overwrite splitting, the updated wire format, and <code>%ArrayFilled%</code>'s <code>freshRegion</code> postcondition.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-suffix-null</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">lazy parallel allocation (buildLazyExtras), interval reads, subinterval weakening, overwrite split, empty interval, and standalone bool/null tags</span></summary><pre class="code"><span class="tk-c">// Lazy allocation of a parallel array mid-loop (`prepare.ts:559-564, 633`) and</span>
+<span class="tk-c">// general interval quantified clauses (`forall lo &lt;= j &lt; hi of P: ...`,</span>
+<span class="tk-c">// `forall lo &lt;= j in P: ...`) with standalone element-tag bodies (`xs[j] === null`).</span>
+<span class="tk-c">// Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @invariant this.extras === null || this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">LazyParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/**
+ * @requires srcAdvances.length === srcExtras.length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 &lt;= srcAdvances[i].length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || srcExtras[i] === null || srcAdvances[i].length &lt;= srcExtras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildLazyExtras(
+  srcAdvances: (number[] | <span class="tk-k">null</span>)[],
+  srcExtras: (number[] | <span class="tk-k">null</span>)[],
+): <span class="tk-t">LazyParallel</span> {
+  <span class="tk-k">const</span> n = srcAdvances.length;
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">let</span> extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; safeInteger(n) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= n &amp;&amp; advances.length === i
+   * @invariant extras === null || extras.length === n
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant extras === null || forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant extras === null || forall i &lt;= j &lt; n of extras: extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> adv = srcAdvances[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> ex = srcExtras[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> (adv !== <span class="tk-k">null</span> &amp;&amp; ex !== <span class="tk-k">null</span>) {
+      extras ??= <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill(<span class="tk-k">null</span>);
+      <span class="tk-k">const</span> store = extras;
+      <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= store.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+      store[i] = ex;
+    }
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    advances[i] = adv;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(lo) &amp;&amp; safeInteger(hi) &amp;&amp; safeInteger(k)
+ * @requires 0 &lt;= lo &amp;&amp; lo &lt;= k &amp;&amp; k &lt; hi &amp;&amp; hi &lt;= xs.length
+ * @requires forall lo &lt;= j &lt; hi of xs: safeInteger(xs[j]) &amp;&amp; 0 &lt;= xs[j] &amp;&amp; xs[j] &lt; table.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readInInterval(
+  xs: number[],
+  table: number[],
+  lo: number,
+  hi: number,
+  k: number,
+): number {
+  <span class="tk-k">const</span> idx = xs[k]!;
+  <span class="tk-k">return</span> table[idx]!;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(lo) &amp;&amp; safeInteger(hi) &amp;&amp; 0 &lt;= lo &amp;&amp; lo + 2 &lt;= hi &amp;&amp; hi &lt;= xs.length
+ * @requires forall lo &lt;= j &lt; hi of xs: safeInteger(xs[j]) &amp;&amp; 0 &lt;= xs[j] &amp;&amp; xs[j] &lt; table.length
+ * @ensures forall lo + 1 &lt;= j &lt; hi - 1 of xs: safeInteger(xs[j]) &amp;&amp; 0 &lt;= xs[j] &amp;&amp; xs[j] &lt; table.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shrinkInterval(
+  xs: number[],
+  table: number[],
+  lo: number,
+  hi: number,
+): number {
+  <span class="tk-k">return</span> table[xs[lo + <span class="tk-n">1</span>]!]!;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(lo) &amp;&amp; safeInteger(k) &amp;&amp; 0 &lt;= lo &amp;&amp; lo &lt;= k &amp;&amp; k &lt; xs.length
+ * @requires forall lo &lt;= j in xs: safeInteger(xs[j]) &amp;&amp; 0 &lt;= xs[j] &amp;&amp; xs[j] &lt; table.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readLowerBounded(
+  xs: number[],
+  table: number[],
+  lo: number,
+  k: number,
+): number {
+  <span class="tk-k">return</span> table[xs[k]!]!;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length
+ * @requires forall j in xs: xs[j] === null
+ * @ensures forall 0 &lt;= j &lt; i of xs: xs[j] === null
+ * @ensures forall i + 1 &lt;= j &lt; xs.length of xs: xs[j] === null
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> overwriteSplitsNulls(
+  xs: (number[] | <span class="tk-k">null</span>)[],
+  i: number,
+  val: number[],
+): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= xs.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  xs[i] = val;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= xs.length
+ * @ensures forall i &lt;= j &lt; i of xs: xs[j] === null
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> emptyIntervalVacuous(
+  xs: (number[] | <span class="tk-k">null</span>)[],
+  i: number,
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> xs;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(lo) &amp;&amp; safeInteger(hi) &amp;&amp; 0 &lt;= lo &amp;&amp; lo &lt;= hi &amp;&amp; hi &lt;= flags.length
+ * @requires forall lo &lt;= j &lt; hi of flags: flags[j] === false
+ * @ensures forall lo &lt;= j &lt; hi of flags: flags[j] === false || 1 &lt;= values[j].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> standaloneBoolTag(
+  flags: boolean[],
+  values: number[][],
+  lo: number,
+  hi: number,
+): boolean[] {
+  <span class="tk-k">return</span> flags;
+}</pre></details></li><li><details><summary><code>invalid-quantified-suffix-null</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">filling extras with <code>[]</code> instead of <code>null</code> breaks the suffix and paired length invariants</span></summary><pre class="code"><span class="tk-c">// Negative control for issue #396: allocating `extras` filled with `[]`</span>
+<span class="tk-c">// instead of `null` leaves unwritten suffix entries non-null and empty,</span>
+<span class="tk-c">// violating `LazyParallel`'s paired length bound (`advances[i].length &lt;= extras[i].length`).</span>
+<span class="tk-c">// Unsafe under Node: `buildLazyExtrasWrongFill([[1, 2], [3, 4]], [[10, 20], null])`</span>
+<span class="tk-c">// produces `advances[1].length === 2 &gt; extras[1].length === 0`.</span>
+<span class="tk-c">/**
+ * @invariant this.extras === null || this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">LazyParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/**
+ * @requires srcAdvances.length === srcExtras.length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 &lt;= srcAdvances[i].length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || srcExtras[i] === null || srcAdvances[i].length &lt;= srcExtras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildLazyExtrasWrongFill(
+  srcAdvances: (number[] | <span class="tk-k">null</span>)[],
+  srcExtras: (number[] | <span class="tk-k">null</span>)[],
+): <span class="tk-t">LazyParallel</span> {
+  <span class="tk-k">const</span> n = srcAdvances.length;
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">let</span> extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; safeInteger(n) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= n &amp;&amp; advances.length === i
+   * @invariant extras === null || extras.length === n
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant extras === null || forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant extras === null || forall i &lt;= j &lt; n of extras: extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> adv = srcAdvances[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> ex = srcExtras[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> (adv !== <span class="tk-k">null</span> &amp;&amp; ex !== <span class="tk-k">null</span>) {
+      extras ??= <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill([]);
+      <span class="tk-k">const</span> store = extras;
+      <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= store.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+      store[i] = ex;
+    }
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    advances[i] = adv;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}</pre></details></li><li><details><summary><code>invalid-quantified-suffix-overwrite-past</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">writing <code>store[i + 1] = []</code> clobbers the unwritten null suffix <code>[i + 1, n)</code></span></summary><pre class="code"><span class="tk-c">// Negative control for issue #396: overwriting `store[i + 1] = []` inside the</span>
+<span class="tk-c">// loop clobbers the unwritten suffix `[i + 1, n)`, so the next iteration with</span>
+<span class="tk-c">// `srcExtras[i + 1] === null` violates `advances[i + 1].length &lt;= extras[i + 1].length`.</span>
+<span class="tk-c">// Unsafe under Node: `buildLazyExtrasWritePast([[1, 2], [3, 4]], [[10, 20], null])`</span>
+<span class="tk-c">// produces `advances[1].length === 2 &gt; extras[1].length === 0`.</span>
+<span class="tk-c">/**
+ * @invariant this.extras === null || this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">LazyParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>;
+};
+
+<span class="tk-c">/**
+ * @requires srcAdvances.length === srcExtras.length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 &lt;= srcAdvances[i].length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || srcExtras[i] === null || srcAdvances[i].length &lt;= srcExtras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildLazyExtrasWritePast(
+  srcAdvances: (number[] | <span class="tk-k">null</span>)[],
+  srcExtras: (number[] | <span class="tk-k">null</span>)[],
+): <span class="tk-t">LazyParallel</span> {
+  <span class="tk-k">const</span> n = srcAdvances.length;
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">let</span> extras: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; safeInteger(n) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= n &amp;&amp; advances.length === i
+   * @invariant extras === null || extras.length === n
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant extras === null || forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant extras === null || forall i &lt;= j &lt; n of extras: extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> adv = srcAdvances[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> ex = srcExtras[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> (adv !== <span class="tk-k">null</span> &amp;&amp; ex !== <span class="tk-k">null</span>) {
+      extras ??= <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill(<span class="tk-k">null</span>);
+      <span class="tk-k">const</span> store = extras;
+      <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= store.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+      store[i] = ex;
+      <span class="tk-k">if</span> (i + <span class="tk-n">1</span> &lt; store.length) {
+        <span class="tk-k">const</span> next = i + <span class="tk-n">1</span>;
+        <span class="tk-k">if</span> ((next &amp; 0x7fffffff) !== next || next &gt;= store.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+        store[next] = [];
+      }
+    }
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    advances[i] = adv;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}</pre></details></li><li><details><summary><code>invalid-quantified-interval-outside</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">reading <code>xs[lo - 1]</code> below the interval lower bound <code>lo</code> reads out of bounds</span></summary><pre class="code"><span class="tk-c">// Negative control for issue #396: an interval quantifier `forall lo &lt;= j &lt; hi`</span>
+<span class="tk-c">// does not bound index `lo - 1` below the lower bound.</span>
+<span class="tk-c">// Unsafe under Node: `readBeforeLowerBound([99, 0], [42], 1, 2)` reads `table[99]`</span>
+<span class="tk-c">// (`undefined` at `number`), returning `NaN`.</span>
+<span class="tk-c">/**
+ * @requires safeInteger(lo) &amp;&amp; safeInteger(hi)
+ * @requires 1 &lt;= lo &amp;&amp; lo &lt; hi &amp;&amp; hi &lt;= xs.length
+ * @requires forall lo &lt;= j &lt; hi of xs: safeInteger(xs[j]) &amp;&amp; 0 &lt;= xs[j] &amp;&amp; xs[j] &lt; table.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readBeforeLowerBound(
+  xs: number[],
+  table: number[],
+  lo: number,
+  hi: number,
+): number {
+  <span class="tk-k">const</span> idx = xs[lo - <span class="tk-n">1</span>]!;
+  <span class="tk-k">return</span> table[idx]! + <span class="tk-n">1</span>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Interval quantification (<code>IndexBound</code>, <code>IndexFact.every</code>), subinterval weakening, empty intervals, guarded falsum discharge, nested guard release, peeled complementary-guard elimination, interval overwrite splitting, guarded dense-append with <code>atIndex</code> parallel discharge, <code>FreshRegionAt</code> / <code>freshCallApart</code>, and nullable <code>arrayElemType</code> are proved in Lean with zero sorry, zero project axioms, and <code>mode8Accepted_sound</code> unchanged. Loop-head guarded <code>apart</code> proposals are search candidates verified on every incoming edge.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p><code>lake build Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck verifier</code> (1031 jobs, 0 warnings); <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>; <code>node tools/unchecked.mts</code> (0 errors); <code>node tests/json-field-names.mts</code> (17 comparisons agree); <code>node tests/docs.mts</code> (87 documents, 0 problems); <code>node tests/axiom-check-imports.mts</code>; <code>node tests/node-runs.mts</code> (all positive and negative examples run under Node); <code>node pipeline/run-cases.mts quantified</code> (49/49), <code>array-fill</code> (10/10), <code>apart</code> (14/14).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.IndexBound · Verification.HeapKnowledge.IndexFact.every · Verification.HeapKnowledge.everySubinterval_sound · Verification.HeapKnowledge.everyEmpty_sound · Verification.HeapKnowledge.everyGuards_sound · Verification.HeapKnowledge.releaseFact_holds · Verification.HeapKnowledge.peelComplementaryElim_sound · Verification.Footprints.FreshRegionAt · Verification.PromiseCalls.freshCallApart_holds · Verification.IndexWrites.everyOverwrittenList_holds · Verification.IndexWrites.bodyClauseAsAtIndex_sound · Verification.IndexWrites.arrayElemType_sound · Verification.IndexWrites.writeAtoms_after</dd><dt>Wire</dt><dd>every adds affine IndexBound start/stop · OperationPost adds freshRegion</dd><dt>Trust</dt><dd><span class="trust">%ArrayFilled% normal exit states freshRegion (spine and element cells allocated during the call)</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-suffix-null</span> <span class="test neg">invalid-quantified-suffix-null</span> <span class="test neg">invalid-quantified-suffix-overwrite-past</span> <span class="test neg">invalid-quantified-interval-outside</span></dd></dl>
+<details><summary>46 files changed, 3113 insertions(+), 1198 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    7 +-
+ docs/ARITHMETIC.md                                 |   46 +-
+ docs/REQUEST-PROTOCOL.md                           |    5 +-
+ docs/SOURCE-CONTRACTS.md                           |    7 +-
+ .../Paper/TolerantFrames/ParityDerivations.lean    |    2 +
+ .../Verification/Programs/CertificateProducer.lean |    7 +
+ .../Verification/Programs/HeapExpressionRules.lean |   53 +-
+ lean/Verification/Programs/IndexWrites.lean        | 1280 ++++++++++++++------
+ lean/Verification/Programs/Parametricity.lean      |   51 +-
+ lean/Verification/Programs/PromiseCalls.lean       |  322 +++--
+ lean/Verification/Programs/SinglePass.lean         |   40 +-
+ .../Programs/TolerantFramesMergeMirror.lean        |   36 +-
+ .../Programs/TolerantFramesStoreOpsNames.lean      |   37 +-
+ lean/Verification/Semantics/AssertionScopes.lean   |    2 +-
+ lean/Verification/Semantics/ClosedFootprints.lean  |    5 +
+ lean/Verification/Semantics/ContractExits.lean     |    7 +
+ lean/Verification/Semantics/ExitRenaming.lean      |    5 +
+ lean/Verification/Semantics/ExitSchemas.lean       |    1 +
+ lean/Verification/Semantics/ExitSummaries.lean     |    5 +
+ lean/Verification/Semantics/FormulaScopes.lean     |    3 +
+ lean/Verification/Semantics/HeapKnowledge.lean     | 1115 ++++++++++-------
+ lean/Verification/Semantics/IndexFacts.lean        |  475 ++++++--
+ lean/Verification/Semantics/StepRelations.lean     |  130 +-
+ lean/Verification/Semantics/Survival.lean          |   67 +-
+ lean/Verification/Semantics/TwoStateFormulas.lean  |    4 +
+ lean/Verification/Source/Claims/HeadInference.lean |   63 +-
+ lean/Verification/Source/Claims/MemberSettle.lean  |    2 +-
+ .../Source/Claims/RegionInference.lean             |   43 +-
+ lean/Verification/Source/Claims/Wire.lean          |    2 +-
+ lean/Verification/Source/EffectCodec.lean          |   33 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   17 +-
+ lean/Verification/Source/SourceClaims.lean         |    8 +-
+ pipeline/cases.mts                                 |    8 +-
+ .../invalid-quantified-interval-outside.ts         |   18 +
+ ...ll-gap.ts =&gt; invalid-quantified-suffix-null.ts} |   23 +-
+ .../invalid-quantified-suffix-overwrite-past.ts    |   53 +
+ pipeline/examples/quantified-suffix-null.ts        |  130 ++
+ pipeline/verify-source.mts                         |    4 +-
+ tests/node-runs.mts                                |   16 +-
+ tools/bound-annotations.mts                        |  129 +-
+ tools/declaration-types.mts                        |    8 +-
+ tools/diagnostic.mts                               |   11 +-
+ tools/fact-text.mts                                |   18 +-
+ tools/intrinsics.mts                               |    4 +-
+ tools/library-globals.mts                          |    2 +-
+ tools/type-graph.mts                               |    7 +-</pre></details>
+</article>
+</main></body></html>
