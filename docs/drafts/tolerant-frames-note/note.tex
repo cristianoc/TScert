@@ -235,7 +235,11 @@ updates $l_0$. Class: \emph{value}.
 \item[Spine location, kind $\kS$] One for each indexed collection,
 holding its \emph{spine}: the sequence $\sigma=\langle c_0,\ldots,c_{n-1}\rangle$
 of element cells and holes in index order, with length $\len\sigma=n$
-and listed cells $\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$. For
+and listed cells $\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$. An
+array's spine lists each cell once: $c_i=c_j\ne\circ$ implies $i=j$, so a
+write to the cell at one index leaves every other index's element
+unchanged
+\status{Lean: \lean{listT\_distinct}, a conjunct of the array contract \lean{listT}}. For
 \code{a} above the spine is $\langle l_0,\circ,l_2\rangle$;
 \code{a.push(40)} allocates a fresh element cell $l_3$ and updates the
 spine to $\langle l_0,\circ,l_2,l_3\rangle$; \code{a.length = 1}
@@ -1578,15 +1582,16 @@ required for normal-return soundness
 \status{Lean: \lean{elem\_var\_write\_length}, \lean{keepsLengths}, \lean{boundedLength\_sound} for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for \textsc{Write-End}; \lean{ReceiverAppends}, \lean{ReceiverGrows} (assumed) and \lean{receiverExtendFrame}, \lean{Effect.callPost\_receiverExtendFrame} for \textsc{Push}; \lean{elemWriteFrame}, \lean{ElemWritten}, \lean{elemWriteStep\_sound} for element writes}.
 
 \paragraph{Writes that keep or extend a fact.}
-Three value-dependent rules preserve or extend facts across writes that
+Four value-dependent rules preserve or extend facts across writes that
 may alias the observed locations. For variables $x,y$ ($x$ an array in
-\textsc{Push-Every}), typed array $b$ of format $t$, value set $V$,
+\textsc{Push-Every} and \textsc{Write-Every}), typed array $b$ of format $t$, value set $V$,
 $\mathit{SafeInt}$ variables $n,k$, and body $\varphi(i,v)$ over $i$, one
 element term $v$, and step-preserved terms:
 {\small\begin{displaymath}
 \begin{array}{@{}ll@{}}
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
 \textsc{Push-Every} & \hoare{(\forall i<n.\ \varphi(i,x[i]))\wedge n=\len x\wedge\varphi(n,v)}{\code{x.push(v)}}{\forall i<n+1.\ \varphi(i,x[i])}\\[3pt]
+\textsc{Write-Every} & \hoare{(\forall i<n.\ \varphi(i,x[i]))\wedge 0\le k<\len x\wedge(n\le k\vee\varphi(k,v))}{\code{x[k] = v}}{\forall i<n.\ \varphi(i,x[i])}\\[3pt]
 \textsc{View-Every} & \{(\forall i<n.\ \varphi(i,b[i]))\wedge 0\le k<\len b\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
  & \qquad\{(\forall i<n.\ \varphi(i,b[i]))\wedge(k=n\Rightarrow\forall i<n+1.\ \varphi(i,b[i]))\}
 \end{array}
@@ -1594,13 +1599,16 @@ element term $v$, and step-preserved terms:
 In \textsc{Write-Kept}, even if \code{x.g} aliases \code{y.f}, the
 written value $v\in V$ preserves $y.f\in V$ (for instance, \code{b.v = 3}
 preserves $a.v\notin\{\code{null}\}$). \textsc{Push-Every} extends a
-quantified array invariant via \textsc{Push}, and \textsc{View-Every}
+quantified array invariant via \textsc{Push}. \textsc{Write-Every} keeps
+one across an overwrite inside the array: $x$'s spine lists each cell
+once, so the write changes the element at $k$ alone, and the new element
+meets the body there or lies past the bound. \textsc{View-Every}
 preserves or extends a typed-array prefix via \textsc{View-Write} (e.g.\
 filling \code{b[n] = n} on an \code{Int32Array} of length $\le 2^{31}$
-with $\forall i<n.\ b[i]=i$). All three instantiate one principle: a
+with $\forall i<n.\ b[i]=i$). All four instantiate one principle: a
 property holding across a family of locations survives a write whenever
 it holds of the written value at every reachable target
-\status{Lean: \lean{keptCells\_holds}; \lean{every\_appended}, \lean{appendKept\_holds} for appended safe integers; \lean{every\_written}, \lean{every\_written\_prefix}, \lean{writeKept\_holds} for format-unchanged integers; no standalone theorem states the general principle}.
+\status{Lean: \lean{keptCells\_holds}; \lean{every\_appended}, \lean{appendKept\_holds} for appended safe integers; \lean{boundedOverwrite\_sound} for \textsc{Write-Every}; \lean{every\_written}, \lean{every\_written\_prefix}, \lean{writeKept\_holds} for format-unchanged integers; no standalone theorem states the general principle}.
 
 Spine growth alone does not preserve quantified element facts (a growing
 spine could replace cells at old indices; Section~\ref{sec:semantics}).
