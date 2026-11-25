@@ -955,12 +955,37 @@ def listT (T : TupleF) : Fam := fun k W v =>
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (A j W' u)) ∧
     (∀ (i l : Nat), T.required.length + T.optional.length ≤ i → ls[i]? = some (some l) →
       ∃ (E : Fam) (c : Ctr k), T.rest = some E ∧ lookup W l = some c ∧
-        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (E j W' u))
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (E j W' u)) ∧
+    (∀ (i j l : Nat), i ≠ j → ls[i]? = some (some l) → ls[j]? ≠ some (some l))
+
+/-- Distinct indices of a spine under a tuple contract list distinct element cells. -/
+theorem listT_distinct {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)}
+    (h : listT T k W (.arr ls)) : ∀ (i j l : Nat), i ≠ j → ls[i]? = some (some l) → ls[j]? ≠ some (some l) := by
+  obtain ⟨ls', he, -, -, -, -, -, -, -, hdist⟩ := h
+  cases he; exact hdist
+
+/-- Every cell a spine under a tuple contract lists is a location of the world. -/
+theorem listT_lookup {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)}
+    (h : listT T k W (.arr ls)) : ∀ l, some l ∈ ls → ∃ c, lookup W l = some c := by
+  obtain ⟨ls', heq, -, -, -, -, hreq, hopt, hrest, -⟩ := h
+  cases heq
+  intro l hl
+  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hl
+  by_cases h1 : i < T.required.length
+  · obtain ⟨l', c, hl', hw, -⟩ := hreq i _ (List.getElem?_eq_getElem h1)
+    rw [hi] at hl'; cases hl'; exact ⟨c, hw⟩
+  · by_cases h2 : i < T.required.length + T.optional.length
+    · have hk : T.required.length + (i - T.required.length) = i := by omega
+      obtain ⟨c, hw, -⟩ := hopt (i - T.required.length) _ l
+        (List.getElem?_eq_getElem (by omega)) (by rw [hk]; exact hi)
+      exact ⟨c, hw⟩
+    · obtain ⟨E, c, -, hw, -⟩ := hrest i l (by omega) hi
+      exact ⟨c, hw⟩
 
 theorem listT_adm (T : TupleF) : Adm (listT T) := by
   refine ⟨?_, ?_⟩
-  · rintro n W v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
-    refine ⟨ls, rfl, (fun j hj => hd j (by omega)), hlen, hmax, hbound, ?_, ?_, ?_⟩
+  · rintro n W v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩
+    refine ⟨ls, rfl, (fun j hj => hd j (by omega)), hlen, hmax, hbound, ?_, ?_, ?_, hdist⟩
     · intro i A hA
       obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
       exact ⟨l, _, hl, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
@@ -970,8 +995,8 @@ theorem listT_adm (T : TupleF) : Adm (listT T) := by
     · intro i l hi hl
       obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
       exact ⟨E, _, hE, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
-  · rintro n W W' hx v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
-    refine ⟨ls, rfl, hd, hlen, hmax, hbound, ?_, ?_, ?_⟩
+  · rintro n W W' hx v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩
+    refine ⟨ls, rfl, hd, hlen, hmax, hbound, ?_, ?_, ?_, hdist⟩
     · intro i A hA
       obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
       exact ⟨l, c, hl, WExt_lookup hx hw, hag⟩
@@ -1048,6 +1073,41 @@ theorem SpinePresence.grow {T : TupleF} {ls : List (Option Nat)} {k m j : Nat}
 theorem elemSlots_dense (base n : Nat) : none ∉ elemSlots base n := by
   simp [elemSlots]
 
+theorem elemSlots_distinct (base n : Nat) :
+    ∀ (i j l : Nat), i ≠ j → (elemSlots base n)[i]? = some (some l) → (elemSlots base n)[j]? ≠ some (some l) := by
+  intro i j l hij hi hj
+  rw [elemSlots_getElem?] at hi hj
+  split at hi
+  · split at hj
+    · have h1 := Option.some.inj (Option.some.inj hi)
+      have h2 := Option.some.inj (Option.some.inj hj)
+      omega
+    · contradiction
+  · contradiction
+
+theorem placeAt_distinct {ls : List (Option Nat)} {k m : Nat}
+    (hd : ∀ (i j l : Nat), i ≠ j → ls[i]? = some (some l) → ls[j]? ≠ some (some l))
+    (hfresh : some m ∉ ls) :
+    ∀ (i j l : Nat), i ≠ j → (placeAt ls k m)[i]? = some (some l) → (placeAt ls k m)[j]? ≠ some (some l) := by
+  intro i j l hij hi hj
+  rw [placeAt_getElem?] at hi hj
+  split at hi
+  · rename_i hik
+    cases Option.some.inj (Option.some.inj hi)
+    subst hik
+    rw [ite_eq_right (Ne.symm hij)] at hj
+    split at hj
+    · exact hfresh (List.mem_of_getElem? hj)
+    · split at hj <;> cases hj
+  · split at hi
+    · split at hj
+      · cases Option.some.inj (Option.some.inj hj)
+        exact hfresh (List.mem_of_getElem? hi)
+      · split at hj
+        · exact hd i j l hij hi hj
+        · split at hj <;> cases hj
+    · split at hi <;> cases hi
+
 theorem placeAt_length (ls : List (Option Nat)) (k m : Nat) :
     (placeAt ls k m).length = ls.length + (k + 1 - ls.length) := by
   simp [placeAt, List.length_set, List.length_append, List.length_replicate]
@@ -1064,7 +1124,8 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
   have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
     fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
   refine ⟨_, rfl, (fun j _ => SpinePresence.of_dense (elemSlots_dense _ _) j), by simp [elemSlots, hreq],
-    by simp [elemSlots, hmax], fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
+    by simp [elemSlots, hmax], fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_,
+    elemSlots_distinct base As.length⟩
   · intro i A hA
     have hi : i < As.length := by
       have := (List.getElem?_eq_some_iff.mp hA).1; omega
@@ -1104,9 +1165,10 @@ spine stays dense because nothing is skipped. -/
 theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)} {k m : Nat} {A : Fam}
     (h : listT T n W (.arr ls)) (hpos : positionFam T k = some A)
     (hhole : (ls[k]?).bind id = none) (hk : k ≤ ls.length) (hkmax : k < maxArrayLength)
+    (hfresh : some m ∉ ls)
     (hm : lookup W m = some (res A)) :
     listT T n W (.arr (placeAt ls k m)) := by
-  obtain ⟨ls', he, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := h
+  obtain ⟨ls', he, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩ := h
   cases he
   have hnamed : T.rest = none → k < T.required.length + T.optional.length := by
     intro hn
@@ -1119,7 +1181,8 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
         · rw [hn] at hpos; cases hpos
         · cases hpos
   refine ⟨_, rfl, (fun j hj => SpinePresence.grow (hd j hj) hk), by rw [placeAt_length]; omega,
-    by rw [placeAt_length]; omega, fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
+    by rw [placeAt_length]; omega, fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_,
+    placeAt_distinct hdist hfresh⟩
   · intro i A' hA
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA
     have hik : i ≠ k := by

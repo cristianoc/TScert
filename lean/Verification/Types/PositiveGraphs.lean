@@ -563,8 +563,8 @@ theorem listT_builtinSpine {U : Fam} {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
       ∀ j (W : WorldT j) u, A j W u → U j W u)
     {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : builtinSpineT U k W v := by
-  obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := h
-  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
+  obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩ := h
+  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_, hdist⟩
   intro i l _ hl
   refine ⟨U, ?_⟩
   simp only [true_and]
@@ -589,8 +589,8 @@ theorem listT_builtinSpine {U : Fam} {T : TupleF}
 /-- A spine of the built-ins reads its element type below the level. -/
 theorem builtinSpineT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
     builtinSpineT U n W v → builtinSpineT U' n W v := by
-  rintro ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
-  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
+  rintro ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩
+  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_, hdist⟩
   intro i l hi hl
   obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
   cases hE
@@ -1542,7 +1542,7 @@ theorem mixedMeaning_not_sourceValid :
     refine ⟨.list ⟨[], [], none, false, .dense⟩ [], by simp [NormalGraph.clauses, NormalGraph.plain,
       NormalGraph.params], ⟨⟨[], rfl, fun _ h => absurd h (Nat.not_lt_zero _), by simp [tupleFams],
       by simp [maxArrayLength], by simp [tupleFams], by simp [tupleFams], by simp [tupleFams],
-      by simp [tupleFams]⟩, by simp⟩, ?_⟩
+      by simp [tupleFams], by simp⟩, by simp⟩, ?_⟩
     simp [builtinInvariant, Clause.carriesInvariant]
   have := ((h emptySpineGraph _ [0]).2 0 (ofEntries []) _ hm).1
   simp [isSourceVal] at this

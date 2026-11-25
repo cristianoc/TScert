@@ -47,7 +47,7 @@ theorem spineF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat
     (h : spineF k W (.arr ls)) (hl : ls[i]? = some (some l)) :
     ∃ c : Ctr k, lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
       c j hj W' u ↔ srcF j W' u := by
-  obtain ⟨ls', he, -, -, -, -, -, -, hrest⟩ := h
+  obtain ⟨ls', he, -, -, -, -, -, -, hrest, -⟩ := h
   cases he
   obtain ⟨E, c, hE, hw, hag⟩ := hrest i l (by simp [anyTuple]) hl
   simp only [anyTuple, Option.some.injEq] at hE
@@ -58,13 +58,14 @@ theorem spineF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat
 spine holds, a fresh cell of the source values' contract listed there; holes
 may open before it. -/
 theorem spineF_grow {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i m : Nat}
-    (h : spineF k W (.arr ls)) (hi : i < maxArrayLength) (hm : lookup W m = some (res srcF)) :
+    (h : spineF k W (.arr ls)) (hi : i < maxArrayLength) (hfresh : some m ∉ ls)
+    (hm : lookup W m = some (res srcF)) :
     spineF k W (.arr (placeAt ls i m)) := by
-  obtain ⟨ls', he, -, -, hmax, -, -, -, hrest⟩ := h
+  obtain ⟨ls', he, -, -, hmax, -, -, -, hrest, hdist⟩ := h
   cases he
   refine ⟨_, rfl, fun _ _ => by simp [SpinePresence, anyTuple], by simp [anyTuple],
     by rw [placeAt_length]; omega, fun hn => by simp [anyTuple] at hn, fun i A hA => by simp [anyTuple] at hA,
-    fun i A l hA => by simp [anyTuple] at hA, ?_⟩
+    fun i A l hA => by simp [anyTuple] at hA, ?_, placeAt_distinct hdist hfresh⟩
   intro i' l hi' hl
   rw [placeAt_getElem?] at hl
   split at hl
@@ -307,7 +308,8 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
       (HeapOk_trunc n3 _ _ ho2)
       (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (by simpa using hrfl2) (fun j hj => by
         show cfl j _ _ _
-        refine (hagf j (by omega) _ _).mpr (spineF_grow ?_ (indexOfBits_lt hidx) ?_)
+        refine (hagf j (by omega) _ _).mpr (spineF_grow ?_ (indexOfBits_lt hidx) (fun hm => by
+          have := (ho.spine_cells hfl hm).2; omega) ?_)
         · refine (listT_adm anyTuple).mono j _ _ ?_ _ (hst j (by omega))
           rw [trunc_trunc]
           have := WExt_trunc (Nat.le_of_lt hj) (WExt_trunc (Nat.le_succ n3) hx2)
@@ -683,7 +685,8 @@ theorem aliasWorld_adm (n : Nat) : WorldAdm (aliasWorld n) := by
 theorem aliasSpine (n : Nat) : spineF n (aliasWorld n) (.arr [some 1]) := by
   refine ⟨_, rfl, fun _ _ => by simp [SpinePresence, anyTuple], by simp [anyTuple], by decide,
     fun hn => by simp [anyTuple] at hn, fun i A hA => by simp [anyTuple] at hA,
-    fun i A l hA => by simp [anyTuple] at hA, ?_⟩
+    fun i A l hA => by simp [anyTuple] at hA, ?_, fun i j l hij hi hj => by
+      rcases i with _ | i <;> rcases j with _ | j <;> simp_all⟩
   intro i l _ hl
   rcases i with _ | i <;> simp at hl
   subst hl

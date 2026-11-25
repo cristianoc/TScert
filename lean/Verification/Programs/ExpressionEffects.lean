@@ -1940,7 +1940,7 @@ theorem listT_slot {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)
     (h : listT T k W (.arr ls)) (hl : ls[i]? = some (some l)) (hA : positionFam T i = some A) :
     ∃ c : Ctr k, lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
       c j hj W' u → A j W' u := by
-  obtain ⟨ls', heq, -, -, -, -, hreq, hopt, hrest⟩ := h
+  obtain ⟨ls', heq, -, -, -, -, hreq, hopt, hrest, -⟩ := h
   cases heq
   unfold positionFam at hA
   split at hA

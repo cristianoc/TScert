@@ -1535,9 +1535,9 @@ theorem spineOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
   refine ⟨s, hs, (unfold_plain hplain n W v).mpr ⟨c, hc, ?_, ?_⟩⟩
   · split at hcv
     · rename_i T
-      obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := hv
+      obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest, hdist⟩ := hv
       refine ⟨⟨ls, rfl, hd, by simp [tupleFams], hmax, by simp [tupleFams],
-        fun i A hA => by simp [tupleFams] at hA, fun i A l hA => by simp [tupleFams] at hA, ?_⟩, by simp⟩
+        fun i A hA => by simp [tupleFams] at hA, fun i A l hA => by simp [tupleFams] at hA, ?_, hdist⟩, by simp⟩
       intro i l hi hl
       obtain ⟨E, c', hE, hw, hag⟩ := hrest i l hi hl
       cases hE
