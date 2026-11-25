@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-401"><code>fbd37c34dfedea1a89f2316299c5a87c897f44e7..pr-401</code></a><ul><li>2 commits</li><li>changes: 2 Check</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-401"><code>fbd37c34dfedea1a89f2316299c5a87c897f44e7..pr-401</code></a><ul><li>3 commits</li><li>changes: 2 Check, 1 Tooling</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></li></ul></li></ul></section>
 <h2 id="g-pr-401"><code>fbd37c34dfedea1a89f2316299c5a87c897f44e7..pr-401</code></h2><article class="card" id="c-ac23bd3e5"><header><div><div class="sha">ac23bd3e5 · Cristiano Calcagno · Nov 25, 07:26</div><h3>Check quantified return facts through required field reads</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Returning { chunks } exposes the same array as result.chunks. The return check could read lengths through that field, but could not use the established fact about every element of chunks for result.chunks.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Check <span class="target">quantified facts at a return</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a return</span><span class="tgt"><span class="m-text">check the quantified fact at its written array path</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a return</span><span class="tgt"><span class="m-text">also check a restatement of the array, bound and body through required field reads</span>. <span class="m-text">A required field's location and the slot it was read into give the same value for the rest of the path</span>.</span></div></div></figure></div>
@@ -191,5 +191,16 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  lean/Verification/Semantics/HeapKnowledge.lean       | 13 ++++++++++++-
  pipeline/examples/quantified-object-literal-every.ts | 14 ++++++++++++++
  tests/node-runs.mts                                  |  3 +++</pre></details>
+</article>
+<article class="card" id="c-46e77bec5"><header><div><div class="sha">46e77bec5 · Cristiano Calcagno · Nov 25, 07:28</div><h3>Prove the materialization used by branch observations</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Branch observations can select related element reads and quantified facts. The proof of materialization expected the old selector's Boolean argument, so the library build stopped at the materialization proof before the pipeline and Pretext jobs ran.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">materialization proof: selection policy</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">The proof of fact selection was stated for the old Boolean argument.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">For any policy that chooses the next name, every selected fact comes</span><span class="ln">from the store index. The ordinary and observation policies both use</span><span class="ln">that proof. Slot names and branch-edge knowledge use the observation</span><span class="ln">materialization where the runtime does.</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>Verification.TolerantFrames.selectFrom_about · Verification.TolerantFrames.stateHolds_materialize · Verification.TolerantFrames.edgeStore_observed · Verification.TolerantFrames.edgeStore_promote</dd></dl>
+<details><summary>6 files changed, 51 insertions(+), 43 deletions(-)</summary><pre class="code"> lean/Verification/Programs/SinglePass.lean         | 14 +++++---
+ lean/Verification/Programs/TolerantFramesEdge.lean | 20 +++++------
+ .../Programs/TolerantFramesMaterialize.lean        | 40 ++++++++++++----------
+ .../Programs/TolerantFramesMergeGuarded.lean       |  2 +-
+ .../Programs/TolerantFramesStepLinkSound.lean      |  5 +--
+ .../Programs/TolerantFramesStoreOpsBelowNames.lean | 13 +++----</pre></details>
 </article>
 </main></body></html>
