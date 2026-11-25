@@ -244,7 +244,15 @@ def carryForward (P : ControlFlow.Program) (start : Nat) (width : Nat → Nat)
   return table
 
 /-- All call effects of a callee type `A` matching argument count `arity`,
-covering both fixed (`arrows`) and variadic (`variadic`) signatures. -/
+covering both fixed (`arrows`) and variadic (`variadic`) signatures. This is a
+proposal-side approximation of overload selection: proposals are computed
+before the pass, from the callee's type alone, while the pass reads the
+signature elaboration selected from the call's evidence
+(`ExpressionEffects.selectedEffect`); elaboration selects inline per call
+form (`Synthesis`) and states no selection function this could share. A
+proposal is a candidate, kept at a point only where every edge into it
+establishes it, so one made from a signature the call does not select
+changes no verdict. -/
 @[nospecialize] private def matchingCallEffects {ι : Type} (G : PositiveGraphs.NormalGraph ι)
     (A : Ty ι) (arity : Nat) : Option (List CallEffects.Effect) :=
   let cs := PositiveRules.expand G A
