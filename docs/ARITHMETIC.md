@@ -1933,6 +1933,12 @@ compared with no `safeInteger(...)` (`safe-int-loop-invariant`). The invariant s
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.
 
+On leaving a block, head inference eliminates the departing bindings
+from linear facts before forgetting them. For example, when both output
+arrays have length `i`, it proposes that their lengths agree after the
+loop-local `i` goes out of scope. Each proposed relation is checked
+before it is used at a following loop head.
+
 **Implementation.** The front end reads the tag before the loop
 (`loopInvariantTags`, `clauseRoots`, `loopBindings` in
 `tools/bound-annotations.mts`), asks TypeScript the type of each named
