@@ -114,13 +114,13 @@ holds in every well-formed heap. -/
 theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hρ : RootsOk s.W ρ)
     (hys : (spineOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) :
     Box (growOne x) (ApartAt x y) ρ m s := by
-  let k : HeapKnowledge.Knowledge := { indices := [⟨.apart x y, none, false⟩] }
+  let k : HeapKnowledge.Knowledge := { indices := [⟨.apart x [] y [], none, false⟩] }
   have hk : HeapKnowledge.Holds k ⟨ρ, s.h⟩ ρ s.h := by
     refine ⟨by simp [k, HeapFacts.Holds], by simp [k, HeapKnowledge.ValueHolds], by simp [k, HeapLinks.Holds],
       by simp [k, HeapSeparation.Holds], by simp [k, HeapKnowledge.ElemsHolds], fun a ha _ => ?_⟩
     simp only [k, List.mem_singleton] at ha
     subst ha
-    exact hap
+    exact ⟨ρ x, ρ y, rfl, rfl, hap⟩
   have hb : ∀ z, (knowledgeQuery k).disjoint (.field z arraySpineKey) (.cls .values) = true :=
     fun z => knowledgeQuery_bound k (boundQuery_cats_cls (.field z arraySpineKey) rfl).1
   have hs : (knowledgeQuery k).disjoint (.field y arraySpineKey)

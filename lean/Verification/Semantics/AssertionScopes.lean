@@ -694,6 +694,7 @@ def OperationPostF.scoped (sc : Scope) : OperationPost → Bool
   | .elementsWhen x _ y _ => decide (x < sc.after) && decide (y < sc.after)
   | .spineExtends x => decide (x < sc.before)
   | .viewWrite x i v _ => decide (x < sc.before) && decide (i < sc.before) && decide (v < sc.before)
+  | .shallowCopy x x' => decide (x < sc.before) && decide (x' < sc.after)
 
 /-- **A formula reads runtime slots within its scope**: assertions by the
 identity check (their binders' eigenvariables apart), linear facts by their

@@ -65,6 +65,23 @@ function linear<V>(form: readonly (readonly [V, Integer])[], bound: Integer, ne:
   return `${left.join(" + ") || "0"} ${ne ? "!==" : "<="} ${right.join(" + ") || "0"}`;
 }
 
+function shiftText(sh: { terms: [LinearTerm, Integer][]; offset: Integer }, base: string | null, name: Namer): string {
+  const parts: string[] = base === null ? [] : [base];
+  for (const [t, coeff] of sh.terms) {
+    const c = BigInt(coeff);
+    if (c === 0n) continue;
+    const text = term(t, name);
+    if (c === 1n) parts.push(parts.length === 0 ? text : `+ ${text}`);
+    else if (c === -1n) parts.push(parts.length === 0 ? `-${text}` : `- ${text}`);
+    else if (c > 0n) parts.push(parts.length === 0 ? `${c} * ${text}` : `+ ${c} * ${text}`);
+    else parts.push(parts.length === 0 ? `-${-c} * ${text}` : `- ${-c} * ${text}`);
+  }
+  const off = BigInt(sh.offset);
+  if (off > 0n) parts.push(parts.length === 0 ? String(off) : `+ ${off}`);
+  else if (off < 0n) parts.push(parts.length === 0 ? String(off) : `- ${-off}`);
+  return parts.join(" ") || "0";
+}
+
 /** A quantified fact's body variable: the index `k`, the element `e`, the
  * element at `k + d` of the array, a term over the element, or a term. */
 function bodyVariable(v: BodyVariable, array: string, name: Namer): string {
@@ -77,7 +94,7 @@ function bodyVariable(v: BodyVariable, array: string, name: Namer): string {
   }
   if ("parallel" in v) {
     const arr = pathText(v.parallel.slot, v.parallel.path, name);
-    const at = [`${arr}[k]`, ...v.parallel.elemPath].join(".");
+    const at = [`${arr}[${shiftText(v.parallel.shift, "k", name)}]`, ...v.parallel.elemPath].join(".");
     return termKindText(v.parallel.kind, at);
   }
   return term(v, name);
@@ -86,7 +103,8 @@ function body(f: BodyFormula, array: string, name: Namer): string {
   if ("guarded" in f) {
     const g = f.guarded;
     const tgt = "self" in g.target ? ["e", ...g.target.self.path].join(".")
-      : [`${pathText(g.target.parallel.slot, g.target.parallel.path, name)}[k]`, ...g.target.parallel.elemPath].join(".");
+      : [`${pathText(g.target.parallel.slot, g.target.parallel.path, name)}[${shiftText(g.target.parallel.shift, "k", name)}]`,
+        ...g.target.parallel.elemPath].join(".");
     if (!("guarded" in g.body) && !("either" in g.body) && g.body.form.length === 0 && !g.body.ne &&
         (typeof g.body.bound === "number" ? g.body.bound < 0 : BigInt(g.body.bound) < 0n)) {
       const holds = g.tag === "notNull" ? "!== null" : g.tag === "notUndefined" ? "!== undefined"
@@ -123,19 +141,26 @@ export function indexFact(f: IndexFact, name: Namer): string | null {
     return `${pathText(g.slot, g.path, name)} ${cond} → ${indexFact(g.body, name) ?? "true"}`;
   }
   if ("element" in f)
-    return `${name(f.element.value)} === ${asOperand(name(f.element.array))}[${name(f.element.index)}]`;
+    return `${name(f.element.value)} === ${asOperand(name(f.element.array))}[${shiftText(f.element.index, null, name)}]`;
   if ("fieldRead" in f)
     return `${name(f.fieldRead.value)} === ${asOperand(name(f.fieldRead.object))}.${f.fieldRead.field}`;
-  if ("apart" in f) return `apart(${name(f.apart.slot)}, ${name(f.apart.other)})`;
+  if ("apart" in f) {
+    const a = f.apart;
+    return `apart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;
+  }
   if ("same" in f) return `${name(f.same.slot)} === ${name(f.same.other)}`;
   if ("spineApart" in f) {
     const a = f.spineApart;
     return `apart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;
   }
+  if ("elemSpineApart" in f) {
+    const a = f.elemSpineApart;
+    return `elemSpineApart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;
+  }
   if ("atIndex" in f) {
     const e = f.atIndex;
     const array = pathText(e.slot, e.path, name);
-    const elem = `${array}[${term(e.index, name)}]`;
+    const elem = `${array}[${shiftText(e.index, null, name)}]`;
     const b = body(e.body, array, name);
     if (e.guard === null) return `at ${elem}: ${b}`;
     const cond = e.guard === "notNull" ? "=== null" : e.guard === "notUndefined" ? "=== undefined"

@@ -9,6 +9,14 @@ open ProgramTyping LabelStore
 
 abbrev Candidate (ι : Type) := Except String (Ty ι)
 
+/-- An affine index shift over source names (`Σ c·t + offset`). -/
+structure ShiftRef where
+  terms : List ((String × List String × HeapKnowledge.Term.Kind) × Int) := []
+  offset : Int := 0
+  deriving Repr, BEq, Inhabited
+
+def ShiftRef.zero : ShiftRef := ⟨[], 0⟩
+
 /-- A variable of a proposed quantified fact's body (ARITHMETIC.md,
 "Quantified clauses"): the index, the element at it, or a term rooted at a
 value binding's name, its path the named fields read from it in turn. -/
@@ -17,13 +25,13 @@ inductive BodyRef where
   | elem
   | offset (delta : Nat)
   | project (kind : HeapKnowledge.Term.Kind) (path : List String)
-  | parallel (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind) (elemPath : List String)
+  | parallel (name : String) (path : List String) (shift : ShiftRef) (kind : HeapKnowledge.Term.Kind) (elemPath : List String)
   | term (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind)
   deriving Repr, Inhabited
 
 inductive ElemTargetRef where
   | self (elemPath : List String)
-  | parallel (name : String) (path : List String) (elemPath : List String)
+  | parallel (name : String) (path : List String) (shift : ShiftRef) (elemPath : List String)
   deriving Repr, Inhabited
 
 inductive BodyClaim where

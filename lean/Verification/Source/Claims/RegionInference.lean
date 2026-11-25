@@ -243,19 +243,69 @@ def carryForward (P : ControlFlow.Program) (start : Nat) (width : Nat → Nat)
             queue := t.label :: queue
   return table
 
+/-- All call effects of a callee type `A` matching argument count `arity`,
+covering both fixed (`arrows`) and variadic (`variadic`) signatures. -/
+@[nospecialize] private def matchingCallEffects {ι : Type} (G : PositiveGraphs.NormalGraph ι)
+    (A : Ty ι) (arity : Nat) : Option (List CallEffects.Effect) :=
+  let cs := PositiveRules.expand G A
+  if cs.isEmpty then none else
+  let perClause : Option (List (List CallEffects.Effect)) := cs.mapM fun
+    | .arrs arrows variadic | .callable _ _ arrows variadic _ =>
+      let effs :=
+        (arrows.filterMap fun (⟨_, ps, _, eff⟩ : CallEffects.Arrow (Ty ι)) => if ps.length == arity then some eff else none) ++
+        (variadic.filterMap fun (⟨_, (ps, _), _, eff⟩ : CallEffects.RestArrow (Ty ι)) => if ps.length ≤ arity then some eff else none)
+      if effs.isEmpty then none else some effs
+    | _ => none
+  perClause.map List.flatten
+
+/-- Whether an expression is a call whose callee's matching signatures all
+state a fresh array region (`ExitSchema.freshRegionResult`). -/
+@[nospecialize] private def freshRegionCall {ι : Type} (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι)) :
+    Tm → Bool
+  | .invoke (.var f) _ args =>
+    match Γ[f]?.bind (matchingCallEffects G · args.length) with
+    | some effs => !effs.isEmpty && effs.all (·.schema.normal.freshRegionResult)
+    | none => false
+  | _ => false
+
+/-- Whether an expression is a call whose callee's matching signatures all
+state a fresh array spine (`ExitSchema.freshResult`). -/
+@[nospecialize] private def freshSpineCall {ι : Type} (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι)) :
+    Tm → Bool
+  | .invoke (.var f) _ args =>
+    match Γ[f]?.bind (matchingCallEffects G · args.length) with
+    | some effs => !effs.isEmpty && effs.all (·.schema.normal.freshResult)
+    | none => false
+  | _ => false
+
+/-- The receiver slot whose array spine a node grows via a call whose matching
+signatures all state receiver extension (`PromiseCalls.statesExtension`, e.g. `push`). -/
+@[nospecialize] private def spineGrown {ι : Type} (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι)) :
+    Tm → Option Nat
+  | .invoke (.var f) (.var w) args =>
+    match Γ[f]?.bind (matchingCallEffects G · args.length) with
+    | some effs =>
+      if !effs.isEmpty && effs.all PromiseCalls.statesExtension then some w else none
+    | none => none
+  | _ => none
+
 /-- **The region separations at a unit's loop heads**: the pairs of slots
-whose regions an allocation states apart (`IndexWrites.regionAtoms`, a
-literal's spine apart from every array slot), each with its allocation,
+whose regions an allocation or fresh-region call states apart
+(`IndexWrites.regionAtoms`, `freshRegionCall`), each with its allocation,
 carried along every edge to the slots whose mappings read them, those every
 predecessor carries; at each loop head, the pairs of array slots
-(`IndexWrites.arraySlot`) of an allocation (a literal, or a split array
-wrapper, `IndexWrites.freshApart`) where the allocation's array or either
-slot's array is written at an element somewhere in the unit
+(`IndexWrites.arraySlot`) of an allocation (a literal, a split array wrapper,
+`IndexWrites.freshApart`, or a fresh-region call) where the allocation's array
+or either slot's array is written at an element somewhere in the unit
 (`elementWritten`: the write keeps a quantified fact over an array apart from
-it, `IndexWrites.overwriteAtoms`), as `IndexFact.apart`; and, in a loop
-calling a function that states a fresh array region, each nullable array
-slot `x` guarded apart from every other array slot. With
-`force` (`--force-proposals head-apart`), each such side also stated apart from
+it, `IndexWrites.overwriteAtoms`), as `IndexFact.apart`, together with any
+path-level `spineApart` candidate already proposed for a written slot upgraded
+to `IndexFact.apart`; for each fresh-spine array grown in a loop
+(`spineGrown`), any `spineApart` candidate for that grown slot upgraded to
+`IndexFact.elemSpineApart`; and, in a loop calling a function that states a
+fresh array region, each nullable array slot `x` guarded apart from every
+other array slot. With `force` (`--force-proposals head-apart`), each written
+side also stated apart from
 itself, the adversarial pair the pass's edge check refuses. -/
 def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := false) :
     List (Nat × List HeapKnowledge.Candidate) := Id.run do
@@ -264,11 +314,15 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   let ctxOf := fun (l : Nat) => ((r.claims[l]?).map (·.context)).getD []
   let width := fun (l : Nat) => (ctxOf l).length
   let heads := (SinglePass.loopHeads P.toArray r.start).1
-  -- (no element write in the unit: no pair to propose)
   let A := P.toArray
   let writeNodes : List (Nat × Nat) := (List.range A.size).filterMap fun l => ((A[l]?).bind (elementWritten ·.expression)).map (l, ·)
-  if writeNodes.isEmpty then return []
+  let growNodes : List (Nat × Nat) := (List.range A.size).filterMap fun l => ((A[l]?).bind fun n => spineGrown G (ctxOf l) n.expression).map (l, ·)
+  if writeNodes.isEmpty && growNodes.isEmpty then return []
   let bodies := (r.cuts.filter (heads.getD · false)).map fun h => (h, loopBody P h)
+  let grows := bodies.map fun (h, body) =>
+    let inner := fun (l : Nat) => bodies.any fun (h', b) => h' != h && body.getD h' false && b.getD l false
+    (h, growNodes.filter fun (p : Nat × Nat) => body.getD p.1 false && !inner p.1)
+  -- Region-apart allocations for element-written arrays.
   let isArrayWrap := fun (Γ : List (Ty ι)) (e : Tm) => match e with
     | .makeAt .absent [s, p] [.var 0, .var proto] =>
       s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length) && IndexWrites.spineSlot G Γ 0
@@ -282,9 +336,13 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
     let atoms :=
       if isArrayWrap Γ node.expression then IndexWrites.freshApart G Γ
       else IndexWrites.regionAtoms G Γ {} node.expression
-    atoms.filterMap fun a => match a.fact with
-      | .apart x y => some (x, y, l)
-      | _ => none).getD []
+    let lit := atoms.filterMap fun a => match a.fact with
+      | .apart x [] y [] => some (x, y, l)
+      | _ => none
+    let call := if freshRegionCall G Γ node.expression then
+        (IndexWrites.arrayPartners G Γ).map fun y => (0, y + 1, l)
+      else []
+    lit ++ call).getD []
   -- The slot each allocation's result is carried to, then the allocations
   -- written at an element anywhere in the unit. Carry every allocation's
   -- apart pairs so pairs where either side is written survive to loop heads.
@@ -295,6 +353,14 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   let table : Array (Option (List (Nat × Nat × Nat))) :=
     if written.isEmpty then Array.replicate P.length none
     else carryForward P r.start width allocates false
+  -- Fresh-spine allocations for grown loops.
+  let isFreshSpine := fun (l : Nat) => ((A[l]?).map fun node =>
+    let Γ := ctxOf l
+    !(IndexWrites.regionAtoms G Γ {} node.expression).isEmpty || freshSpineCall G Γ node.expression).getD false
+  let heldSpine := if grows.all (·.2.isEmpty) then #[] else
+    carryForward P r.start width (fun l => if isFreshSpine l then [(0, 0, l)] else []) true
+  let grownOrigsAt := fun (h : Nat) => ((grows.find? (·.1 == h)).map (·.2)).getD [] |>.flatMap fun (l, w) =>
+    ((heldSpine.getD l none).getD []).filterMap fun (a, _, o) => if a == w then some o else none
   -- Loops that call a function stating a fresh array region (`freshRegionResult`,
   -- e.g. `new Array(n).fill(v)`) and hold a nullable array slot `x`: propose
   -- `x === null || apart(a, x)` for each other array slot `a` at the head. A call
@@ -331,6 +397,23 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
       | none => []
     let ps := ps.eraseDups
     let ps := ps ++ (if force then (ps.map (·.1)).eraseDups.map fun a => (a, a) else [])
+    let pathCands : List HeapKnowledge.Candidate :=
+      ((r.candidates.filter (·.1 == h)).flatMap (·.2)).filterMap fun
+        | .index ⟨.spineApart x px y py, none, false⟩ =>
+          if (writtenSlots.contains x && px.isEmpty) || (writtenSlots.contains y && py.isEmpty) then
+            some (HeapKnowledge.Candidate.index { fact := .apart x px y py })
+          else none
+        | _ => none
+    let elemCands : List HeapKnowledge.Candidate :=
+      let grownOrigs := grownOrigsAt h
+      if grownOrigs.isEmpty then [] else
+      let grownSlots := ((heldSpine.getD h none).getD []).filterMap fun (a, _, o) =>
+        if grownOrigs.contains o then some a else none
+      ((r.candidates.filter (·.1 == h)).flatMap (·.2)).flatMap fun
+        | .index ⟨.spineApart x px y py, none, false⟩ =>
+          (if grownSlots.contains x && px.isEmpty then [HeapKnowledge.Candidate.index { fact := .elemSpineApart x [] y py }] else []) ++
+          (if grownSlots.contains y && py.isEmpty then [HeapKnowledge.Candidate.index { fact := .elemSpineApart y [] x px }] else [])
+        | _ => []
     let bodyHasFresh := match bodies.find? (·.1 == h) with
       | some (_, body) => (List.range A.size).any fun l => body.getD l false && hasFreshRegionCall l
       | none => false
@@ -338,10 +421,10 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
       let arrs := (List.range Γ.length).filter (IndexWrites.arraySlot G Γ)
       let nulls := (List.range Γ.length).filter (nullableArraySlot Γ)
       nulls.flatMap fun x => arrs.filterMap fun a =>
-        if a == x then none else some (HeapKnowledge.Candidate.index { fact := .guarded x [] .null (.apart a x) })
-    let cands := ps.map (fun (a, b) => HeapKnowledge.Candidate.index { fact := .apart a b }) ++ guardedApart
+        if a == x then none else some (HeapKnowledge.Candidate.index { fact := .guarded x [] .null (.apart a [] x []) })
+    let cands := (ps.map (fun (a, b) => HeapKnowledge.Candidate.index { fact := .apart a [] b [] }) ++
+      pathCands ++ elemCands ++ guardedApart).eraseDups
     if cands.isEmpty then none else some (h, cands)
-
 end
 
 /-- The plans with the loop heads of each unit of `group` proposed the region

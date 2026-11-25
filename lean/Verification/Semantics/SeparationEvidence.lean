@@ -330,6 +330,9 @@ inductive SepFact where
   /-- $`\mathrm{apart}(x, y)`$: the arrays the two paths read share no
   location, spine or cell (`RegionsApart`). -/
   | arrays (a b : Nat × List String)
+  /-- The spine of path `a` is distinct from the spine of every element stored
+  in path `b` (`PathElemSpinesApart`). -/
+  | elemSpines (a b : Nat × List String)
   /-- The fields `F` of slot `x` (every own location where `none`) and the
   field `g` of slot `y` are different locations (`HeapSeparation.Apart`). -/
   | locs (x : Nat) (F : Option (List PropKey)) (y : Nat) (g : PropKey)
@@ -344,7 +347,46 @@ def SepFact.Holds (ρ : Env) (h : Heap) : SepFact → Prop
       spineOf u = some l → spineOf w = some l → False
   | .arrays a b => ∀ u w l, readPath h (ρ a.1) a.2 = some u → readPath h (ρ b.1) b.2 = some w →
       Plain u → Plain w → ArrayPart h u l → ArrayPart h w l → False
+  | .elemSpines a b => ∀ u w l, readPath h (ρ a.1) a.2 = some u → readPath h (ρ b.1) b.2 = some w →
+      Plain w → spineOf u = some l →
+      ∀ c, some c ∈ spineCells h w → ∀ e, h[c]? = some e → spineOf e = some l → False
   | .locs x F y g => HeapSeparation.Apart ρ x F y g
+
+theorem spineCells_of_plain {h : Heap} {w : Val} (hp : Plain w) {c : Nat}
+    (hc : some c ∈ spineCells h w) :
+    ∃ st ls, elementsOf w = some st ∧ h[st]?.bind spineEntries = some ls ∧ some c ∈ ls := by
+  simp only [spineCells, List.mem_append] at hc
+  rcases hc with hc | hc
+  · cases hl : (fieldsOf w).lookup arraySpineKey with
+    | none => rw [hl] at hc; simp [entriesAt] at hc
+    | some st =>
+      rw [hl] at hc; simp only [entriesAt] at hc
+      cases hls : h[st]?.bind spineEntries with
+      | none => rw [hls] at hc; simp at hc
+      | some ls =>
+        rw [hls] at hc
+        have hsp : spineOf w = some st := by cases w <;> simp_all [spineOf, fieldsOf]
+        exact ⟨st, ls, elementsOf_of_spineOf hsp, hls, by simpa using hc⟩
+  · cases hd : descriptorSpine w with
+    | none => rw [hd] at hc; simp [entriesAt] at hc
+    | some st =>
+      have hsp : spineOf w = none := hp.resolve_right (by rw [hd]; simp)
+      rw [hd] at hc; simp only [entriesAt] at hc
+      cases hls : h[st]?.bind spineEntries with
+      | none => rw [hls] at hc; simp at hc
+      | some ls =>
+        rw [hls] at hc
+        have hel : elementsOf w = some st := by
+          cases w with
+          | objAt fs cd oid =>
+            simp only [spineOf, fieldsOf] at hsp
+            cases cd with
+            | view s' _ _ =>
+              simp only [descriptorSpine, Option.some.injEq] at hd; subst hd
+              simp [elementsOf, hsp]
+            | _ => simp [descriptorSpine] at hd
+          | _ => simp [descriptorSpine] at hd
+        exact ⟨st, ls, hel, hls, by simpa using hc⟩
 
 /-- A value with valid references is plain. -/
 theorem plain_of_refs {n : Nat} {W : WorldT n} {u : Val} (hu : RefsOk W u) : Plain u := by
@@ -459,6 +501,11 @@ def SepEvidence.byFact (E : SepEvidence) (r s : Region) : SepFact → Bool
     | some x, some y => sameSite E.links (pathViews E.links x.1 x.2) (pathViews E.links a.1 a.2) &&
         sameSite E.links (pathViews E.links y.1 y.2) (pathViews E.links b.1 b.2)
     | _, _ => false
+  | .elemSpines a b => match spineSite r, s with
+    | some x, .elemSpines y q =>
+        sameSite E.links (pathViews E.links x.1 x.2) (pathViews E.links a.1 a.2) &&
+        sameSite E.links (pathViews E.links y q) (pathViews E.links b.1 b.2)
+    | _, _ => false
   | .locs x F y g => match fieldSite r, fieldSite s with
     | some (sx, o), some (sy, some g') =>
       (slotsOf E.links sx.1 sx.2).contains x && (match o with
@@ -533,6 +580,32 @@ theorem SepEvidence.byFact_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} 
       have hpw := plain_of_refs (readPath_refs hok y.2 (hρ y.1) hw)
       rw [sameSite_read hl hb.1] at hu; rw [sameSite_read hl hb.2] at hw
       exact hF u w l hu hw hpu hpw hul hwl
+    · cases hb
+  | elemSpines a b =>
+    simp only [SepEvidence.byFact] at hb
+    split at hb
+    · rename_i x y q hx
+      simp only [Bool.and_eq_true] at hb
+      obtain ⟨u, hu, hul⟩ := spineSite_mem hx hr
+      simp only [Region.mem] at hs
+      cases hw : readPath h (ρ y) q with
+      | none => rw [hw] at hs; cases hs
+      | some w =>
+        rw [hw] at hs
+        simp only [List.any_eq_true] at hs
+        obtain ⟨o, ho, hm⟩ := hs
+        cases o with
+        | none => cases hm
+        | some c =>
+          dsimp only at hm
+          cases he : h[c]? with
+          | none => rw [he] at hm; cases hm
+          | some e =>
+            rw [he] at hm
+            simp only [beq_iff_eq] at hm
+            have hpw := plain_of_refs (readPath_refs hok q (hρ y) hw)
+            rw [sameSite_read hl hb.1] at hu; rw [sameSite_read hl hb.2] at hw
+            exact hF u w l hu hw hpw hul c ho e he (by simpa [spineOf] using hm)
     · cases hb
   | locs x F y g =>
     simp only [SepEvidence.byFact] at hb

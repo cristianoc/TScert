@@ -92,7 +92,7 @@ theorem factAt_tag (s : TwoState) (p : Phase) (F : Linear.Fact Term) :
 
 /-- Whether a post reads the entry state. -/
 def OperationPostF.readsBefore : OperationPost → Bool
-  | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .spineExtends .. | .viewWrite .. => true
+  | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .spineExtends .. | .viewWrite .. | .shallowCopy .. => true
   | _ => false
 
 /-- The conjunction of a list of formulas. -/
@@ -309,6 +309,7 @@ def OperationPostF.shift : OperationPost → OperationPost
   | .elementsWhen x v y R => .elementsWhen (x + 1) v (y + 1) R
   | .spineExtends x => .spineExtends x
   | .viewWrite x i v f => .viewWrite x i v f
+  | .shallowCopy x x' => .shallowCopy x (x' + 1)
 
 /-- **`F'` is `F` with the valuation of phase `p` read one slot further**:
 assertions by the shift substitution of the slots below `n`, terms of phase
@@ -1474,6 +1475,7 @@ theorem OperationPostF.holds_shift (s : TwoState) (x : Val) (q : OperationPost) 
   | elementsWhen _ _ _ _ => rfl
   | spineExtends _ => rfl
   | viewWrite _ _ _ _ => rfl
+  | shallowCopy _ _ => rfl
 
 theorem OperationPostF.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
     q.Holds (s.withEnv .before η) ↔ q.Holds s := by

@@ -119,13 +119,16 @@ export type IndexFact = { index: { slot: number } } | { length: { array: number;
   { linear: { fact: { le: { form: [LinearTerm, Integer][]; bound: Integer } } | { ne: { form: [LinearTerm, Integer][]; bound: Integer } } } } |
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } } |
-  { element: { value: number; array: number; index: number } } |
+  { element: { value: number; array: number; index: IndexShift } } |
   { fieldRead: { value: number; object: number; field: string } } |
   { every: { slot: number; path: string[]; start: IndexBound; stop: IndexBound; body: BodyFormula[] } } |
-  { atIndex: { slot: number; path: string[]; index: LinearTerm; guard: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse" | null; body: BodyFormula } } |
-  { apart: { slot: number; other: number } } |
+  { atIndex: { slot: number; path: string[]; index: IndexShift; guard: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse" | null; body: BodyFormula } } |
+  { apart: { slot: number; path: string[]; other: number; otherPath: string[] } } |
   { same: { slot: number; other: number } } |
-  { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
+  { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } } |
+  { elemSpineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
+/** An affine index shift (`HeapKnowledge.IndexShift`). */
+export type IndexShift = { terms: [LinearTerm, Integer][]; offset: Integer };
 /** An integer of a linear fact, its bound or a coefficient: a safe integer,
  * or past that range the decimal digits the writer states it by. */
 export type Integer = number | string;
@@ -136,12 +139,12 @@ function integer(v: Json | undefined): Integer {
   throw Error("a linear fact's integer");
 }
 /** A variable of a quantified fact's body: the index, the element, or a term. */
-export type BodyTarget = { self: { path: string[] } } | { parallel: { slot: number; path: string[]; elemPath: string[] } };
+export type BodyTarget = { self: { path: string[] } } | { parallel: { slot: number; path: string[]; shift: IndexShift; elemPath: string[] } };
 export type BodyFormula = { form: [BodyVariable, Integer][]; bound: Integer; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } } |
   { guarded: { target: BodyTarget; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: BodyFormula } };
 export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm } |
-  { parallel: { slot: number; path: string[]; kind: LinearTerm["kind"]; elemPath: string[] } };
+  { parallel: { slot: number; path: string[]; shift: IndexShift; kind: LinearTerm["kind"]; elemPath: string[] } };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
@@ -600,8 +603,12 @@ function indexFact(f: Json | undefined): IndexFact {
       body: indexFact(g.body) } };
   }
   if ("apart" in f) {
-    const r = record(record(f,["apart"]).apart,["slot","other"]);
-    return { apart: { slot: nat(r.slot), other: nat(r.other) } };
+    const r = record(record(f,["apart"]).apart,["slot","path","other","otherPath"]);
+    const fields = (p: Json): string[] => {
+      if (!Array.isArray(p) || !p.every((x: Json) => typeof x === "string")) throw Error("a region separation's path");
+      return p.filter((x: Json): x is string => typeof x === "string");
+    };
+    return { apart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
   }
   if ("same" in f) {
     const r = record(record(f,["same"]).same,["slot","other"]);
@@ -615,9 +622,26 @@ function indexFact(f: Json | undefined): IndexFact {
     };
     return { spineApart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
   }
+  if ("elemSpineApart" in f) {
+    const r = record(record(f,["elemSpineApart"]).elemSpineApart,["slot","path","other","otherPath"]);
+    const fields = (p: Json): string[] => {
+      if (!Array.isArray(p) || !p.every((x: Json) => typeof x === "string")) throw Error("an element-spine separation's path");
+      return p.filter((x: Json): x is string => typeof x === "string");
+    };
+    return { elemSpineApart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
+  }
+  const indexShift = (s: Json | undefined): IndexShift => {
+    const r = record(s, ["terms", "offset"]);
+    if (!Array.isArray(r.terms)) throw Error("an index shift's terms");
+    const terms: [LinearTerm, Integer][] = r.terms.map((pair): [LinearTerm, Integer] => {
+      if (!Array.isArray(pair) || pair.length !== 2) throw Error("an index shift's term");
+      return [linearTerm(pair[0]), integer(pair[1])];
+    });
+    return { terms, offset: integer(r.offset) };
+  };
   if ("element" in f) {
     const e = record(record(f,["element"]).element,["value","array","index"]);
-    return { element: { value: nat(e.value), array: nat(e.array), index: nat(e.index) } };
+    return { element: { value: nat(e.value), array: nat(e.array), index: indexShift(e.index) } };
   }
   if ("fieldRead" in f) {
     const r = record(record(f,["fieldRead"]).fieldRead,["value","object","field"]);
@@ -634,8 +658,8 @@ function indexFact(f: Json | undefined): IndexFact {
         const s = record(record(t,["self"]).self,["path"]);
         return { self: { path: strs(s.path) } };
       }
-      const p = record(record(t,["parallel"]).parallel,["slot","path","elemPath"]);
-      return { parallel: { slot: nat(p.slot), path: strs(p.path), elemPath: strs(p.elemPath) } };
+      const p = record(record(t,["parallel"]).parallel,["slot","path","shift","elemPath"]);
+      return { parallel: { slot: nat(p.slot), path: strs(p.path), shift: indexShift(p.shift), elemPath: strs(p.elemPath) } };
     };
     const bodyFormula = (b: Json): BodyFormula => {
       if (typeof b === "object" && b !== null && !Array.isArray(b) && "guarded" in b) {
@@ -661,9 +685,9 @@ function indexFact(f: Json | undefined): IndexFact {
           return { project: linearTerm({ kind: p.kind, path: p.path, slot: 0 }) };
         }
         if (typeof x === "object" && x !== null && !Array.isArray(x) && "parallel" in x) {
-          const p = record(record(x,["parallel"]).parallel,["slot","path","kind","elemPath"]);
+          const p = record(record(x,["parallel"]).parallel,["slot","path","shift","kind","elemPath"]);
           const k = linearTerm({ kind: p.kind, path: p.elemPath, slot: 0 }).kind;
-          return { parallel: { slot: nat(p.slot), path: strs(p.path), kind: k, elemPath: strs(p.elemPath) } };
+          return { parallel: { slot: nat(p.slot), path: strs(p.path), shift: indexShift(p.shift), kind: k, elemPath: strs(p.elemPath) } };
         }
         return linearTerm(record(record(x,["free"]).free,["t"]).t);
       });
@@ -689,7 +713,7 @@ function indexFact(f: Json | undefined): IndexFact {
         e.guard !== "notNull" && e.guard !== "notUndefined" && e.guard !== "notTrue" && e.guard !== "notFalse")
       throw Error("an indexed-element fact's guard");
     return { atIndex: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
-      index: linearTerm(e.index), guard: e.guard, body: bodyFormula(e.body) } };
+      index: indexShift(e.index), guard: e.guard, body: bodyFormula(e.body) } };
   }
   if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
   else if ("length" in f) {

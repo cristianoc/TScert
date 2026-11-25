@@ -169,6 +169,7 @@ def renameOperation {S S' : Type} (R : Renaming) (seq : S → Option S') :
   | .elementsWhen x v y P => do pure (.elementsWhen (← R.after x) v (← R.after y) P)
   | .spineExtends x => (R.before x).map .spineExtends
   | .viewWrite x i v g => do pure (.viewWrite (← R.before x) (← R.before i) (← R.before v) g)
+  | .shallowCopy x x' => do pure (.shallowCopy (← R.before x) (← R.after x'))
 
 /-- **A renamed operation post holds where the original does**, at agreeing
 interpretations, its push arguments denoting the same values. -/
@@ -244,6 +245,10 @@ theorem holds_renameOperation {R : Renaming} {s s' : TwoState} (hs : R.Agrees s 
     obtain ⟨a, hx, hq⟩ := bind_some hq; obtain ⟨b, hi, hq⟩ := bind_some hq
     obtain ⟨c, hv, hq⟩ := bind_some hq; cases hq
     simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, hs.post, hb _ _ hx, hb _ _ hi, hb _ _ hv]
+  | shallowCopy x x' =>
+    simp only [renameOperation, Option.bind_eq_bind, Option.pure_def] at hq
+    obtain ⟨a, hx, hq⟩ := bind_some hq; obtain ⟨b, hx', hq⟩ := bind_some hq; cases hq
+    simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, hs.post, hb _ _ hx, ha _ _ hx']
 
 /-! ## Formulas -/
 

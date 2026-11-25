@@ -32,7 +32,7 @@ def ReadContext.Holds (c : ReadContext) (ρ : Env) (h h' : Heap) : Prop :=
   (∀ x k fs cd o l v, c.stable x k = true → ρ x = .objAt fs cd o → fs.lookup k = some l →
     h[l]? = some v → h'[l]? = some v) ∧
   (∀ x p w st, c.arrayPath x p = true → readPath h (ρ x) p = some w →
-    elementsOf w = some st → spineOf w = some st)
+    elementsOf w = some st → spineOf w = some st ∧ ∀ ls, h[st]?.bind spineEntries = some ls → h[st]? = some (.arr ls))
 
 /-- The context keeping the first fields `first` states, string keys. -/
 def ReadContext.ofFirst (first : Nat → String → Bool) : ReadContext where
@@ -414,29 +414,45 @@ theorem linearSupport_supports (c : ReadContext) (F : Linear.Fact Term) :
 
 /-- A value's region (`RegionOf`) is kept where its spine location keeps its
 contents. -/
-theorem regionOf_supported {x : Nat} {ρ : Env} {h h' : Heap} {st : Option Nat} {cells : List (Option Nat)}
-    (hs : Supported [(.field x arraySpineKey, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
-    RegionOf h' (ρ x) st cells := by
+theorem regionOf_path_supported {x : Nat} {p : List String} {ρ : Env} {h h' : Heap} {u : Val}
+    {st : Option Nat} {cells : List (Option Nat)}
+    (hw : readPath h (ρ x) p = some u)
+    (hs : Supported [(.path x p arraySpineKey, .keep)] ρ h h') (hr : RegionOf h u st cells) :
+    RegionOf h' u st cells := by
   rcases hr with hr | ⟨l, rfl, hst, hl⟩
   · exact .inl hr
-  · have hm : (Region.field x arraySpineKey).mem ρ h l = true := by
-      simpa [Region.mem] using spineOf_lookup hst
+  · have hm : (Region.path x p arraySpineKey).mem ρ h l = true := by
+      simp only [Region.mem, hw]
+      simpa using spineOf_lookup hst
     obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l _ hm hl
     simp only [Change.Holds] at hk
     exact .inr ⟨l, rfl, hst, by rw [hv', hk]⟩
 
+/-- The support of an affine index shift: each of its terms at `keep`. -/
+def _root_.Verification.HeapKnowledge.IndexShift.support (c : ReadContext) (sh : IndexShift) : Footprint :=
+  sh.terms.flatMap fun p => p.1.support c .keep
+
+theorem IndexShift.support_sound {c : ReadContext} {sh : IndexShift} {ρ : Env} {h h' : Heap} {i j : Nat}
+    (hc : c.Holds ρ h h') (hs : Supported (sh.support c) ρ h h') (he : sh.eval ε ρ h i = some j) :
+    sh.eval ε ρ h' i = some j := by
+  refine IndexShift.eval_frame (fun p hp z hz => ?_) he
+  have hsub : Supported (p.1.support c .keep) ρ h h' := supported_sub hs fun e he' =>
+    List.mem_flatMap.mpr ⟨p, hp, he'⟩
+  obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
+  rw [h3 rfl] at h1; exact h1
+
 /-- Whether an element guard target is supported by a finite footprint:
 testing the element itself (`[]`) of the quantified array or of a parallel array. -/
 def ElemTarget.supported : ElemTarget → Bool
-  | .self [] | .parallel _ _ [] => true
+  | .self [] | .parallel _ _ _ [] => true
   | _ => false
 
 /-- Whether a quantified body variable is supported by a finite footprint:
 the index, scalar element, offset element, free term, or direct projection
 (path `[]`) of the element or a parallel array's element. -/
 def Bound.supported : Bound → Bool
-  | .project _ [] | .parallel _ _ _ [] => true
-  | .project _ (_ :: _) | .parallel _ _ _ (_ :: _) => false
+  | .project _ [] | .parallel _ _ _ _ [] => true
+  | .project _ (_ :: _) | .parallel _ _ _ _ (_ :: _) => false
   | _ => true
 
 /-- Whether an indexed-element body's variable is supported by `atIndexSupport`:
@@ -444,7 +460,7 @@ index, scalar element, direct element array/view/string length, or a free term. 
 def Bound.atIndexSupported : Bound → Bool
   | .index | .elem | .free _ => true
   | .project .length [] | .project .view [] | .project .strLength [] | .project (.bitMask _) [] => true
-  | .offset _ | .project _ _ | .parallel _ _ _ _ => false
+  | .offset _ | .project _ _ | .parallel _ _ _ _ _ => false
 
 /-- Whether an indexed-element body reads the element's array spine length. -/
 def bodyUsesElemLength (body : LinearClause Bound) : Bool :=
@@ -467,22 +483,24 @@ projection), requiring its element cells at `keep` rather than `init`. -/
 def BodyClause.needsKeep (B : BodyClause) : Bool :=
   !B.targets.isEmpty || B.vars.any fun | .project _ _ => true | _ => false
 
-/-- The support of a parallel-array access `(s', p')`: its path, spine (as an
-array spine when `c.arrayPath s' p'` holds) and element cells at `keep`. -/
+/-- The support of a parallel-array access `(s', p')`: its path, spine (at
+`extend` for an ordinary array spine, `keep` otherwise) and element cells at `keep`. -/
 def parallelCells (c : ReadContext) (s' : Nat) (p' : List String) : Footprint :=
   pathReads c s' .grow [] p' ++
-    [(if c.arrayPath s' p' then .path s' p' arraySpineKey else .spine s' p', .keep),
+    [(if c.arrayPath s' p' then .path s' p' arraySpineKey else .spine s' p',
+      if c.arrayPath s' p' then .extend else .keep),
      (.pathCells s' p', .keep)]
 
 /-- The support of a quantified body clause's guard targets and variables. -/
 def bodyClauseSupport (c : ReadContext) (s : Nat) (p : List String) (B : BodyClause) : Footprint :=
   B.targets.flatMap (fun
-    | .parallel s' p' [] => parallelCells c s' p'
+    | .parallel s' p' sh [] => parallelCells c s' p' ++ sh.support c
     | _ => []) ++
   B.vars.flatMap fun
     | .free t => t.support c .keep
     | .project .length [] => [(.elemSpines s p, .keep)]
-    | .parallel s' p' k [] => parallelCells c s' p' ++ if k == .length then [(.elemSpines s' p', .keep)] else []
+    | .parallel s' p' sh k [] => parallelCells c s' p' ++ sh.support c ++
+        if k == .length then [(.elemSpines s' p', .keep)] else []
     | _ => []
 
 /-- The supports of a quantified body's clauses. -/
@@ -511,29 +529,30 @@ theorem _root_.Verification.HeapKnowledge.IndexBound.support_sound {c : ReadCont
       exact ⟨v, hv', rfl⟩
 
 /-- The locations a quantified fact over the array the path `p` reads from
-slot `s` reads besides its path: its array spine (and view spine unless known
-to be an array spine), and its element cells (`Region.pathCells`) at `keep`
-when guards or projections read them, else at `init`. -/
+slot `s` reads besides its path: its array spine at `extend` (and view spine at
+`keep` unless known to be an array spine), and its element cells (`Region.pathCells`)
+at `keep` when guards or projections read them, else at `init`. -/
 def everyCells (c : ReadContext) (s : Nat) (p : List String) (stop : IndexBound) (keepCells : Bool) : Footprint :=
   (if c.arrayPath s p || stop.base == some (Term.now .length s p) then
-    [(.path s p arraySpineKey, .keep)]
+    [(.path s p arraySpineKey, .extend)]
   else
-    [(.path s p arraySpineKey, .keep), (.spine s p, .keep)]) ++
+    [(.path s p arraySpineKey, .extend), (.spine s p, .keep)]) ++
   [(.pathCells s p, if keepCells then .keep else .init)]
 
-/-- The support of a region fact `apart(a, b)`: its two spine locations at
-`keep`. -/
-def apartSupport (a b : Nat) : Footprint :=
-  [(.field a arraySpineKey, .keep), (.field b arraySpineKey, .keep)]
+/-- The support of a region fact `apart(a.p, b.q)`: both paths and their spine
+locations at `keep`. -/
+def apartSupport (c : ReadContext) (a : Nat) (p : List String) (b : Nat) (q : List String) : Footprint :=
+  pathReads c a .keep [] p ++ pathReads c b .keep [] q ++
+    [(.path a p arraySpineKey, .keep), (.path b q arraySpineKey, .keep)]
 
 /-- The support of an element fact $`z[t] \doteq v`$ over the array a slot
 holds (the note, §5, Definition "Supports of the atoms", the row of
 $`z[t] \doteq v`$: $`\mathrm{reads}_{\mathsf{grow}}(z) \cup \{z[\ast]{:}\,\mathsf{keep}\} \cup
 \mathrm{supp}(t)`$): its spine location, an array's or a typed array's view
-spine, at `keep`, and the element cells it lists at `keep`; the slot's path
-is empty and its index a slot's value, which read no location. -/
-def elementSupport (x : Nat) : Footprint :=
-  [(.spine x [], .keep), (.cells x, .keep)]
+spine, at `keep`, the element cells it lists at `keep`, and its index shift's
+support. -/
+def elementSupport (c : ReadContext) (x : Nat) (idx : IndexShift) : Footprint :=
+  [(.spine x [], .keep), (.cells x, .keep)] ++ idx.support c
 
 /-- The support of a quantified fact whose body clauses are supported:
 its array's path, spine and element cells (`everyCells`), its bounds' and
@@ -548,11 +567,16 @@ def everySupport (c : ReadContext) (s : Nat) (p : List String) (start stop : Ind
 element cells at `init` (when unguarded; `keep` when guarded, since a guard may
 read `null` or `undefined`), the index term and body free terms at `keep`, and
 the elements' spines at `keep` when the body reads the element's array length. -/
-def atIndexSupport (c : ReadContext) (s : Nat) (p : List String) (idx : Term) (guard : Option GuardTag)
+def atIndexSupport (c : ReadContext) (s : Nat) (p : List String) (idx : IndexShift) (guard : Option GuardTag)
     (body : LinearClause Bound) : Footprint :=
   pathReads c s .grow [] p ++ [(.spine s p, .keep), (.pathCells s p, if guard.isNone then .init else .keep)] ++
-    idx.support c .keep ++ atIndexBodySupport c body ++
+    idx.support c ++ atIndexBodySupport c body ++
     (if bodyUsesElemLength body then [(.elemSpines s p, .keep)] else [])
+
+/-- The support of an element-spine separation `elemSpineApart a p b q`: the
+two path reads, the second array's spine, and its element cells. -/
+def elemSpineApartSupport (c : ReadContext) (a : Nat) (p : List String) (b : Nat) (q : List String) : Footprint :=
+  pathReads c a .keep [] p ++ pathReads c b .keep [] q ++ [(.spine b q, .keep), (.pathCells b q, .keep)]
 
 /-- **Finite evidence of an index fact's support**: the form of the fact
 the support is computed for, and, for a disjunction and a guarded fact, the
@@ -567,6 +591,7 @@ inductive FactSupport where
   | guarded (body : Footprint) (b : FactSupport)
   | spineApart
   | apart
+  | elemSpineApart
   | element
   | fieldRead
   | every
@@ -584,8 +609,9 @@ def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSuppor
   | .either A B, S, .either SA a SB b => S == SA ++ SB && check c A SA a && check c B SB b
   | .guarded s p _ B, S, .guarded SB b => S == pathReads c s .keep [] p ++ SB && check c B SB b
   | .spineApart a p b q, S, .spineApart => S == pathReads c a .keep [] p ++ pathReads c b .keep [] q
-  | .apart a b, S, .apart => S == apartSupport a b
-  | .element _ x _, S, .element => S == elementSupport x
+  | .apart a p b q, S, .apart => S == apartSupport c a p b q
+  | .elemSpineApart a p b q, S, .elemSpineApart => S == elemSpineApartSupport c a p b q
+  | .element _ x idx, S, .element => S == elementSupport c x idx
   | .fieldRead _ o fld, S, .fieldRead => S == pathReads c o .keep [] [fld]
   | .every s p start stop body, S, .every =>
     body.all BodyClause.supported && S == everySupport c s p start stop body
@@ -637,29 +663,40 @@ private theorem elemKindValue_kept {x : Nat} {q : List String} {k : Term.Kind} {
     subst hk
     exact lengthOf_of_spine hsv hv' hmax
 
-/-- A parallel array's path and spine are kept where `parallelCells` is supported. -/
+/-- An `.extend` change on an array spine preserves every existing entry as a prefix. -/
+private theorem extend_arr {b : Nat} {ls : List (Option Nat)} {v' : Val}
+    (hk : Change.Holds .extend b (.arr ls) v') :
+    ∃ ls', v' = .arr ls' ∧ ls <+: ls' := by
+  rcases hk with rfl | hs | ⟨ls0, more, h0, rfl, -⟩
+  · exact ⟨ls, rfl, List.prefix_refl ls⟩
+  · exact absurd hs.2.1 (by simp [isArr])
+  · cases h0; exact ⟨ls ++ more, rfl, List.prefix_append ls more⟩
+
+/-- A parallel array's path is kept and its spine is kept or extended where
+`parallelCells` is supported. -/
 private theorem parallelCells_kept {c : ReadContext} {s' : Nat} {p' : List String} {ρ : Env} {h h' : Heap}
     (hc : c.Holds ρ h h') (hs : Supported (parallelCells c s' p') ρ h h')
     {a : Val} {st : Nat} {ls' : List (Option Nat)}
     (ha : readPath h (ρ s') p' = some a) (he : elementsOf a = some st) (hls' : h[st]?.bind spineEntries = some ls') :
-    readPath h' (ρ s') p' = some a ∧ h'[st]?.bind spineEntries = some ls' := by
+    readPath h' (ρ s') p' = some a ∧ ∃ ls'', h'[st]?.bind spineEntries = some ls'' ∧ ls' <+: ls'' := by
   have hobj : isObj a = true := by cases a <;> simp_all [elementsOf, isObj]
   have ha' : readPath h' (ρ s') p' = some a :=
     pathReads_sound hc p' [] (supported_left hs) (keeps_obj (by decide) hobj) rfl rfl ha
-  obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls'
   cases hca : c.arrayPath s' p' with
   | true =>
-    have hsp := hc.2 s' p' a st hca ha he
+    obtain ⟨hsp, harr⟩ := hc.2 s' p' a st hca ha he
+    have hu := harr ls' hls'
     have hm : (Region.path s' p' arraySpineKey).mem ρ h st = true := by
       simp [Region.mem, ha, spineOf] at hsp ⊢; exact hsp
-    obtain ⟨v', hv', hk⟩ := supported_right hs (.path s' p' arraySpineKey, .keep) (by simp [hca]) st u hm hu
-    simp only [Change.Holds] at hk
-    exact ⟨ha', by rw [hv', hk]; exact hue⟩
+    obtain ⟨v', hv', hk⟩ := supported_right hs (.path s' p' arraySpineKey, .extend) (by simp [hca]) st _ hm hu
+    obtain ⟨ls'', rfl, hpre⟩ := extend_arr hk
+    exact ⟨ha', ls'', by simp [hv', spineEntries], hpre⟩
   | false =>
+    obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls'
     have hm : (Region.spine s' p').mem ρ h st = true := by simp [Region.mem, ha, he]
     obtain ⟨v', hv', hk⟩ := supported_right hs (.spine s' p', .keep) (by simp [hca]) st u hm hu
     simp only [Change.Holds] at hk
-    exact ⟨ha', by rw [hv', hk]; exact hue⟩
+    exact ⟨ha', ls', by rw [hv', hk]; exact hue, List.prefix_refl ls'⟩
 
 /-- **A checked support supports its fact** in its context. -/
 theorem FactSupport.check_sound (c : ReadContext) :
@@ -715,26 +752,55 @@ theorem FactSupport.check_sound (c : ReadContext) :
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) (keeps_keep u) rfl rfl hu,
       pathReads_sound hc q [] (supported_right hs) (keeps_keep w) rfl rfl hw, hne⟩
-  | element v x k =>
+  | elemSpineApart a p b q =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
     subst hS
-    refine Supports.intro fun ρ h h' _ hF hs => ?_
-    obtain ⟨s, ls, b, i, hx, hls, hb, hi, hlt, hcell, hnone⟩ := hF
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
+    obtain ⟨u, w, hu, hw, hall⟩ := hF
+    have h12 := supported_left hs
+    have hspCells := supported_right hs
+    have hu' := pathReads_sound hc p [] (supported_left h12) (keeps_keep u) rfl rfl hu
+    have hw' := pathReads_sound hc q [] (supported_right h12) (keeps_keep w) rfl rfl hw
+    refine ⟨u, w, hu', hw', fun st hst => ?_⟩
+    obtain ⟨ls, hls, hel⟩ := hall st hst
+    have hls' : h'[st]?.bind spineEntries = some ls := by
+      obtain ⟨v0, hv0, hve⟩ := Option.bind_eq_some_iff.mp hls
+      have hm : (Region.spine b q).mem ρ h st = true := by simp [Region.mem, hw, hst]
+      obtain ⟨v', hv', hk⟩ := hspCells (.spine b q, .keep) (by simp) st v0 hm hv0
+      simp only [Change.Holds] at hk
+      rw [hv', hk]; exact hve
+    refine ⟨ls, hls', fun l hl => ?_⟩
+    obtain ⟨e, he, hne⟩ := hel l hl
+    have hm : (Region.pathCells b q).mem ρ h l = true := by
+      have ho : some l ∈ entriesAt h (some st) := by simp [entriesAt, hls, hl]
+      simpa [Region.mem, hw, List.contains_iff_mem] using elementsOf_entries_sub hst ho
+    obtain ⟨e', he', hk⟩ := hspCells (.pathCells b q, .keep) (by simp) l e hm he
+    simp only [Change.Holds] at hk
+    rw [hk] at he'
+    exact ⟨e, he', hne⟩
+  | element v x idx =>
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
+    obtain ⟨s, ls, i, hx, hls, hi, hlt, hcell, hnone⟩ := hF
+    have hbase := supported_left hs
+    have hidx := supported_right hs
     obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
     have hm : (Region.spine x []).mem ρ h s = true := by
       simp [Region.mem, readPath, hx]
-    obtain ⟨u', hu', hk⟩ := hs (.spine x [], .keep) (by simp [elementSupport]) s _ hm hu
+    obtain ⟨u', hu', hk⟩ := hbase (.spine x [], .keep) (by simp) s _ hm hu
     simp only [Change.Holds] at hk
     subst hk
-    refine ⟨s, ls, b, i, hx, by rw [hu']; exact hue, hb, hi, hlt, fun l hl => ?_, hnone⟩
+    refine ⟨s, ls, i, hx, by rw [hu']; exact hue, IndexShift.support_sound hc hidx hi, hlt, fun l hl => ?_, hnone⟩
     have hv := hcell l hl
     have hmem : (Region.cells x).mem ρ h l = true := by
       have ho : some l ∈ entriesAt h (some s) := by
         simp only [entriesAt, hls, Option.getD_some]
         exact List.mem_of_getElem? hl
       simpa [Region.mem, List.contains_iff_mem] using elementsOf_entries_sub hx ho
-    obtain ⟨v', hv', hk'⟩ := hs (.cells x, .keep) (by simp [elementSupport]) l _ hmem hv
+    obtain ⟨v', hv', hk'⟩ := hbase (.cells x, .keep) (by simp) l _ hmem hv
     simp only [Change.Holds] at hk'
     rw [hv', hk']
   | fieldRead v o fld =>
@@ -743,14 +809,20 @@ theorem FactSupport.check_sound (c : ReadContext) :
     subst hS
     refine Supports.intro fun ρ h h' hc hF hs =>
       pathReads_sound hc [fld] [] hs (keeps_keep (ρ v)) rfl rfl hF
-  | apart a b =>
+  | apart a p b q =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
     subst hS
-    refine Supports.intro fun ρ h h' _ hF hs => ?_
-    obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hF
-    exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp [apartSupport])) hx,
-      regionOf_supported (supported_sub hs (by simp [apartSupport])) hy, hab⟩
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
+    obtain ⟨u, w, hu, hw, sa, xs, sb, ys, hx, hy, hab⟩ := hF
+    have hpa := supported_left (supported_left hs)
+    have hpb := supported_right (supported_left hs)
+    have hsp := supported_right hs
+    exact ⟨u, w, pathReads_sound hc p [] hpa (keeps_keep u) rfl rfl hu,
+      pathReads_sound hc q [] hpb (keeps_keep w) rfl rfl hw,
+      sa, xs, sb, ys,
+      regionOf_path_supported hu (supported_sub hsp (by simp)) hx,
+      regionOf_path_supported hw (supported_sub hsp (by simp)) hy, hab⟩
   | every s p start stop body =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
@@ -768,17 +840,17 @@ theorem FactSupport.check_sound (c : ReadContext) :
     refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_)
       (fun m hm => IndexBound.support_sound hc hstart hm)
       (fun z hz => IndexBound.support_sound hc hstop hz)
-      (fun w st ls hw he hls F hFm i t htm v hv => ?_) (fun w st ls hw he hls F hFm i b hbm z hz => ?_)
+      (fun w st ls ls' hw he hls hpre F hFm i t htm v hv => ?_) (fun w st ls ls' hw he hls hpre F hFm i b hbm z hz => ?_)
     · obtain ⟨w0, st0, -, -, -, hw0, he0, -⟩ := hF
       have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
       subst hww
       have ho := hw_obj _ st0 hw0 he0
       exact pathReads_sound hc p [] hpath (keeps_obj (by decide) ho) rfl rfl hw0
-    · obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
-      by_cases harr : (c.arrayPath s p || stop.base == some (Term.now .length s p)) = true
-      · have hsp : spineOf w = some st := by
+    · by_cases harr : (c.arrayPath s p || stop.base == some (Term.now .length s p)) = true
+      · have ⟨hsp, harr_ls⟩ : spineOf w = some st ∧ h[st]? = some (.arr ls) := by
           rcases Bool.or_eq_true_iff.mp harr with hca | hst
-          · exact hc.2 s p w st hca hw he
+          · obtain ⟨hsp, harr'⟩ := hc.2 s p w st hca hw he
+            exact ⟨hsp, harr' ls hls⟩
           · simp only [beq_iff_eq] at hst
             obtain ⟨w0, st0, -, m0, n0, hw0, he0, -, -, hn0, -⟩ := hF
             simp only [IndexBound.eval, hst, Option.map_eq_some_iff] at hn0
@@ -786,16 +858,21 @@ theorem FactSupport.check_sound (c : ReadContext) :
             simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at hv0
             obtain ⟨w1, hw1, hl1⟩ := hv0
             rw [hw] at hw0 hw1; cases hw0; cases hw1
-            obtain ⟨st1, -, hsp1, -, -, -⟩ := lengthOf_spine hl1
+            obtain ⟨st1, ls1, hsp1, hls1, -, -⟩ := lengthOf_spine hl1
             rw [elementsOf_spine hsp1] at he; cases he
-            exact hsp1
+            rw [hls1] at hls
+            simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls
+            subst hls
+            exact ⟨hsp1, hls1⟩
         have hm : (Region.path s p arraySpineKey).mem ρ h st = true := by
           simp [Region.mem, hw, spineOf] at hsp ⊢; exact hsp
-        obtain ⟨v', hv', hk⟩ := hcells (.path s p arraySpineKey, .keep) (by simp [everyCells, harr]) st _ hm hu
-        simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
-      · have hm : (Region.spine s p).mem ρ h st = true := by simp [Region.mem, hw, he]
+        obtain ⟨v', hv', hk⟩ := hcells (.path s p arraySpineKey, .extend) (by simp [everyCells, harr]) st _ hm harr_ls
+        obtain ⟨ls', rfl, hpre⟩ := extend_arr hk
+        exact ⟨ls', by simp [hv', spineEntries], hpre⟩
+      · obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
+        have hm : (Region.spine s p).mem ρ h st = true := by simp [Region.mem, hw, he]
         obtain ⟨v', hv', hk⟩ := hcells (.spine s p, .keep) (by simp [everyCells, harr]) st _ hm hu
-        simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
+        simp only [Change.Holds] at hk; exact ⟨ls, by rw [hv', hk]; exact hue, List.prefix_refl ls⟩
     · have hFsup := Bool.and_eq_true_iff.mp (List.all_eq_true.mp hsc F hFm)
       have htsup := List.all_eq_true.mp hFsup.1 t htm
       cases t with
@@ -811,47 +888,59 @@ theorem FactSupport.check_sound (c : ReadContext) :
           simp only [ElemTarget.read] at hv ⊢
           split at hv
           · rename_i l hl
+            obtain ⟨tail, rfl⟩ := hpre
+            rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
             obtain ⟨u, hu, hrg⟩ := Option.bind_eq_some_iff.mp hv
             simp only [readGuard, Option.some.injEq] at hrg; subst hrg
             exact Option.bind_eq_some_iff.mpr ⟨u, pathCells_elem_kept hpc (keeps_keep u) hw he hls hl hu, rfl⟩
           · cases hv
-      | parallel s' p' ep =>
+      | parallel s' p' sh ep =>
         cases ep with
         | cons _ _ => simp [ElemTarget.supported] at htsup
         | nil =>
-          have hps : Supported (parallelCells c s' p') ρ h h' := supported_sub hbody fun e he' => by
+          have hpsAll : Supported (parallelCells c s' p' ++ sh.support c) ρ h h' := supported_sub hbody fun e he' => by
             simp only [bodySupport, List.mem_flatMap, bodyClauseSupport, List.mem_append]
-            exact ⟨F, hFm, .inl ⟨.parallel s' p' [], htm, he'⟩⟩
+            exact ⟨F, hFm, .inl ⟨.parallel s' p' sh [], htm, he'⟩⟩
+          have hps := supported_left hpsAll
+          have hsh := supported_right hpsAll
           simp only [ElemTarget.read] at hv ⊢
-          cases ha : readPath h (ρ s') p' with
-          | none => simp [ha] at hv
-          | some a =>
-            simp only [ha] at hv
-            cases hea : elementsOf a with
-            | none => simp [hea] at hv
-            | some st' =>
-              simp only [hea] at hv
-              cases hls' : h[st']?.bind spineEntries with
-              | none => simp [hls'] at hv
-              | some ls' =>
-                simp only [hls'] at hv
-                obtain ⟨ha', hls''⟩ := parallelCells_kept hc hps ha hea hls'
-                simp only [ha', hea, hls'']
-                split at hv
-                · rename_i l hl
-                  obtain ⟨u, hu, hrg⟩ := Option.bind_eq_some_iff.mp hv
-                  simp only [readGuard, Option.some.injEq] at hrg; subst hrg
-                  have hpc' : Supported [(.pathCells s' p', .keep)] ρ h h' :=
-                    supported_sub (supported_right hps) (by simp)
-                  exact Option.bind_eq_some_iff.mpr ⟨u, pathCells_elem_kept hpc' (keeps_keep u) ha hea hls' hl hu, rfl⟩
-                · cases hv
+          cases hshe : sh.eval ε ρ h i with
+          | none => simp [hshe] at hv
+          | some j =>
+            simp only [hshe, IndexShift.support_sound hc hsh hshe] at hv ⊢
+            cases ha : readPath h (ρ s') p' with
+            | none => simp [ha] at hv
+            | some a =>
+              simp only [ha] at hv
+              cases hea : elementsOf a with
+              | none => simp [hea] at hv
+              | some st' =>
+                simp only [hea] at hv
+                cases hls' : h[st']?.bind spineEntries with
+                | none => simp [hls'] at hv
+                | some ls2 =>
+                  simp only [hls'] at hv
+                  obtain ⟨ha', ls2', hls2', hpre2⟩ := parallelCells_kept hc hps ha hea hls'
+                  simp only [ha', hea, hls2']
+                  split at hv
+                  · rename_i l hl
+                    obtain ⟨tail2, rfl⟩ := hpre2
+                    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
+                    obtain ⟨u, hu, hrg⟩ := Option.bind_eq_some_iff.mp hv
+                    simp only [readGuard, Option.some.injEq] at hrg; subst hrg
+                    have hpc' : Supported [(.pathCells s' p', .keep)] ρ h h' :=
+                      supported_sub (supported_right hps) (by simp)
+                    exact Option.bind_eq_some_iff.mpr ⟨u, pathCells_elem_kept hpc' (keeps_keep u) ha hea hls' hl hu, rfl⟩
+                  · cases hv
     · have hFsup := Bool.and_eq_true_iff.mp (List.all_eq_true.mp hsc F hFm)
       have hbsup := List.all_eq_true.mp hFsup.2 b hbm
-      have hcell : ∀ j z, elementInt h ls j = some z → elementInt h' ls j = some z := by
+      have hcell : ∀ j z, elementInt h ls j = some z → elementInt h' ls' j = some z := by
         intro j z hj
         simp only [elementInt] at hj ⊢
         split at hj
         · rename_i l hl
+          obtain ⟨tail, rfl⟩ := hpre
+          rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
           simp only [Option.bind_eq_some_iff] at hj ⊢
           obtain ⟨v, hv, hz'⟩ := hj
           obtain ⟨bv, rfl, -⟩ := intValue_safe hz'
@@ -875,6 +964,8 @@ theorem FactSupport.check_sound (c : ReadContext) :
           simp only [boundValue] at hz ⊢
           split at hz
           · rename_i l hl
+            obtain ⟨tail, rfl⟩ := hpre
+            rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
             obtain ⟨v, hv, htv⟩ := Option.bind_eq_some_iff.mp hz
             have hv' := pathCells_elem_kept hpc (keeps_keep v) hw he hls hl hv
             have hsp : k = .length → Supported [(.elemSpines s p, .keep)] ρ h h' := fun hk => by
@@ -884,40 +975,47 @@ theorem FactSupport.check_sound (c : ReadContext) :
                 exact ⟨F, hFm, .inr ⟨.project .length [], hbm, he'⟩⟩
             exact Option.bind_eq_some_iff.mpr ⟨v, hv', elemKindValue_kept hsp hw he hls hl hv htv⟩
           · cases hz
-      | parallel s' p' k ep =>
+      | parallel s' p' sh k ep =>
         cases ep with
         | cons _ _ => simp [Bound.supported] at hbsup
         | nil =>
-          have hpsAll : Supported (parallelCells c s' p' ++ if k == .length then [(.elemSpines s' p', .keep)] else []) ρ h h' :=
+          have hpsAll : Supported (parallelCells c s' p' ++ sh.support c ++ if k == .length then [(.elemSpines s' p', .keep)] else []) ρ h h' :=
             supported_sub hbody fun e he' => by
               simp only [bodySupport, List.mem_flatMap, bodyClauseSupport, List.mem_append]
-              exact ⟨F, hFm, .inr ⟨.parallel s' p' k [], hbm, he'⟩⟩
-          have hps := supported_left hpsAll
+              exact ⟨F, hFm, .inr ⟨.parallel s' p' sh k [], hbm, he'⟩⟩
+          have hps := supported_left (supported_left hpsAll)
+          have hsh := supported_right (supported_left hpsAll)
           simp only [boundValue] at hz ⊢
-          cases ha : readPath h (ρ s') p' with
-          | none => simp [ha] at hz
-          | some a =>
-            simp only [ha] at hz
-            cases hea : elementsOf a with
-            | none => simp [hea] at hz
-            | some st' =>
-              simp only [hea] at hz
-              cases hls' : h[st']?.bind spineEntries with
-              | none => simp [hls'] at hz
-              | some ls' =>
-                simp only [hls'] at hz
-                obtain ⟨ha', hls''⟩ := parallelCells_kept hc hps ha hea hls'
-                simp only [ha', hea, hls'']
-                split at hz
-                · rename_i l hl
-                  obtain ⟨v, hv, htv⟩ := Option.bind_eq_some_iff.mp hz
-                  have hpc' : Supported [(.pathCells s' p', .keep)] ρ h h' :=
-                    supported_sub (supported_right hps) (by simp)
-                  have hv' := pathCells_elem_kept hpc' (keeps_keep v) ha hea hls' hl hv
-                  have hsp : k = .length → Supported [(.elemSpines s' p', .keep)] ρ h h' := fun hk => by
-                    subst hk; simpa using supported_right hpsAll
-                  exact Option.bind_eq_some_iff.mpr ⟨v, hv', elemKindValue_kept hsp ha hea hls' hl hv htv⟩
-                · cases hz
+          cases hshe : sh.eval ε ρ h i with
+          | none => simp [hshe] at hz
+          | some j =>
+            simp only [hshe, IndexShift.support_sound hc hsh hshe] at hz ⊢
+            cases ha : readPath h (ρ s') p' with
+            | none => simp [ha] at hz
+            | some a =>
+              simp only [ha] at hz
+              cases hea : elementsOf a with
+              | none => simp [hea] at hz
+              | some st' =>
+                simp only [hea] at hz
+                cases hls' : h[st']?.bind spineEntries with
+                | none => simp [hls'] at hz
+                | some ls2 =>
+                  simp only [hls'] at hz
+                  obtain ⟨ha', ls2', hls2', hpre2⟩ := parallelCells_kept hc hps ha hea hls'
+                  simp only [ha', hea, hls2']
+                  split at hz
+                  · rename_i l hl
+                    obtain ⟨tail2, rfl⟩ := hpre2
+                    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
+                    obtain ⟨v, hv, htv⟩ := Option.bind_eq_some_iff.mp hz
+                    have hpc' : Supported [(.pathCells s' p', .keep)] ρ h h' :=
+                      supported_sub (supported_right hps) (by simp)
+                    have hv' := pathCells_elem_kept hpc' (keeps_keep v) ha hea hls' hl hv
+                    have hsp : k = .length → Supported [(.elemSpines s' p', .keep)] ρ h h' := fun hk => by
+                      subst hk; simpa using supported_right hpsAll
+                    exact Option.bind_eq_some_iff.mpr ⟨v, hv', elemKindValue_kept hsp ha hea hls' hl hv htv⟩
+                  · cases hz
       | free t =>
         have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he' => by
           simp only [bodySupport, List.mem_flatMap, bodyClauseSupport, List.mem_append]
@@ -967,8 +1065,7 @@ theorem FactSupport.check_sound (c : ReadContext) :
       have hm : (Region.spine s p).mem ρ h st = true := by simp [Region.mem, hw, he]
       obtain ⟨v', hv', hk⟩ := hspcells (.spine s p, .keep) (by simp) st _ hm hu
       simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
-    · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hidx hz
-      rw [h3 rfl] at h1; exact h1
+    · exact IndexShift.support_sound hc hidx hz
     · have hbs := List.all_eq_true.mp hsup b hb
       cases b with
       | index => exact hz
@@ -1023,7 +1120,7 @@ theorem FactSupport.check_sound (c : ReadContext) :
               simp only [Change.Holds] at hk
               exact lengthOf_of_spine hs1 (by rw [hu', hk]) hmax
             · cases hz
-      | parallel _ _ _ _ => simp [Bound.atIndexSupported] at hbs
+      | parallel _ _ _ _ _ => simp [Bound.atIndexSupported] at hbs
       | free t =>
         have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he' => by
           simp only [atIndexBodySupport, List.mem_flatMap]
@@ -1047,12 +1144,13 @@ def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext)
     let (SB, b) ← B.produceSupport c
     pure (pathReads c s .keep [] p ++ SB, .guarded SB b)
   | .spineApart a p b q => some (pathReads c a .keep [] p ++ pathReads c b .keep [] q, .spineApart)
-  | .apart a b => some (apartSupport a b, .apart)
+  | .apart a p b q => some (apartSupport c a p b q, .apart)
+  | .elemSpineApart a p b q => some (elemSpineApartSupport c a p b q, .elemSpineApart)
   | .every s p start stop body =>
     if body.all BodyClause.supported then some (everySupport c s p start stop body, .every) else none
   | .atIndex s p idx guard body =>
     if body.vars.all Bound.atIndexSupported then some (atIndexSupport c s p idx guard body, .atIndex) else none
-  | .element _ x _ => some (elementSupport x, .element)
+  | .element _ x idx => some (elementSupport c x idx, .element)
   | .fieldRead _ o fld => some (pathReads c o .keep [] [fld], .fieldRead)
 
 /-- **The support of an index fact**, where one is produced: the footprint

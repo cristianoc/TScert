@@ -93,6 +93,7 @@ def OperationPostF.map {S S' : Type} (f : S → S') : OperationPostF S → Opera
   | .elementsWhen x v y R => .elementsWhen x v y R
   | .spineExtends x => .spineExtends x
   | .viewWrite x i v g => .viewWrite x i v g
+  | .shallowCopy x x' => .shallowCopy x x'
 
 /-- A formula with its appends' arguments and its transports mapped. -/
 def FormulaF.map {S S' T T' : Type} (f : S → S') (g : T → T') : FormulaF S T → FormulaF S' T'

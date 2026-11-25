@@ -351,23 +351,29 @@ type StepVar = { before: { t: LinearTerm } } | { after: { t: LinearTerm } };
 type LinearFact<V> = { le: { form: [V, Integer][]; bound: Integer } }
   | { ne: { form: [V, Integer][]; bound: Integer } };
 type Clause<V> = LinearFact<V> | { either: { left: Clause<V>; right: Clause<V> } };
+type IndexShift = { terms: [LinearTerm, Integer][]; offset: Integer };
+type ElemTarget = { self: { path: string[] } }
+  | { parallel: { slot: Nat; path: string[]; shift: IndexShift; elemPath: string[] } };
 type BodyVariable = "index" | "elem" | { offset: { delta: Nat } }
   | { project: { kind: LinearTermKind; path: string[] } }
-  | { parallel: { slot: Nat; path: string[]; kind: LinearTermKind; elemPath: string[] } }
+  | { parallel: { slot: Nat; path: string[]; shift: IndexShift; kind: LinearTermKind; elemPath: string[] } }
   | { free: { t: LinearTerm } };
 type IndexBound = { base: LinearTerm | null; offset: Integer };
-type ElemTarget = { self: { path: string[] } } | { parallel: { slot: Nat; path: string[]; elemPath: string[] } };
 type BodyClause = Clause<BodyVariable>
-  | { guarded: { target: ElemTarget; tag: "null" | "undefined" | "true" | "false"; body: BodyClause } }
+  | { guarded: { target: ElemTarget; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: BodyClause } }
   | { bodyEither: { left: BodyClause; right: BodyClause } };
 type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe: { slot: Nat } }
   | { length: { array: Nat; length: Nat } } | { bound: { array: Nat; index: Nat; strict: boolean } }
   | { linear: { fact: LinearFact<LinearTerm> } } | { either: { left: IndexFact; right: IndexFact } }
-  | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } }
-  | { element: { value: Nat; array: Nat; index: Nat } }
+  | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } }
+  | { element: { value: Nat; array: Nat; index: IndexShift } }
+  | { fieldRead: { value: Nat; object: Nat; field: string } }
   | { every: { slot: Nat; path: string[]; start: IndexBound; stop: IndexBound; body: BodyClause[] } }
-  | { apart: { slot: Nat; other: Nat } }
-  | { spineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
+  | { atIndex: { slot: Nat; path: string[]; index: IndexShift; guard: "null" | "undefined" | "true" | "false" | null; body: Clause<BodyVariable> } }
+  | { apart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } }
+  | { spineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } }
+  | { elemSpineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } }
+  | { same: { slot: Nat; other: Nat } };
 type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];
 type OperationPost =
   | { arith: { op: Arith; left: Witness; right: Witness; result: Path } }
@@ -377,6 +383,7 @@ type OperationPost =
   | { push: { x: Nat; exit: Nat; args: WitnessSeq } }
   | { fact: { phase: "before" | "after"; lift: Nat; fact: IndexFact } }
   | { freshSpine: { x: Nat } } | { freshObject: { x: Nat } } | { freshRegion: { x: Nat } }
+  | { shallowCopy: { src: Nat; dst: Nat } }
   | { elementsWhen: { x: Nat; value: Literal; y: Nat; predicate: ElementKinds } }
   | { spineExtends: { x: Nat } }
   | { viewWrite: { x: Nat; i: Nat; v: Nat; format: "uint8" | "uint16" | "int32" | "float64" | null } };

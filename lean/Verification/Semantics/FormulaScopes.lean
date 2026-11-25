@@ -167,6 +167,9 @@ theorem OperationPostF.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s
   | viewWrite x i v f =>
     simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, hb x hq.1.1, hb i hq.1.2, hb v hq.2]
+  | shallowCopy x x' =>
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, hb x hq.1, ha x' hq.2]
 
 /-! ## Formulas -/
 

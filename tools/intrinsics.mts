@@ -807,7 +807,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       const bounded = (view: TypeTerm, stored: IndexFact[]): TypeTerm => ({ ...fn([view, atom("number")], atom("number")),
         effect: footprintEffect(emptyFootprint, { pre: [{ int: { slot: 2 } }, le([[value(2), -1]], 0),
           le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1)],
-        ensures: [...stored, { element: { value: 0, array: 2, index: 3 } }] }) });
+        ensures: [...stored, { element: { value: 0, array: 2, index: { terms: [[value(3), 1]], offset: 0 } } }] }) });
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn([views, atom("number")], either(atom("number"), atom("undefined"))), effect: emptyEffect },
         ...viewKinds.flatMap(({ type, range }): TypeTerm[] => range === null ? [] :
@@ -942,7 +942,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         type: { k: "intersection", span, parts: [
           { ...fn(params, either(binder, atom("undefined"))), effect: emptyEffect },
           { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { array: 1, index: 2, strict: true } }],
-            ensures: [{ element: { value: 0, array: 2, index: 3 } }] }) },
+            ensures: [{ element: { value: 0, array: 2, index: { terms: [[{ kind: "value", slot: 3, path: [] }, 1]], offset: 0 } } }] }) },
         ] } };
     },
   };

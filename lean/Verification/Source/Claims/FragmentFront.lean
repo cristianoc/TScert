@@ -281,13 +281,30 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
           | _ => false
         | .error _ => false
       | none => false
+  let freshCallee := fun (sp : Span) => match exprMap.get? sp with
+    | some (.ok A) => match PositiveRules.expand (SourceTypes.graph T) A with
+      | [.arrs L _] | [.callable _ _ L _ _] => !L.isEmpty && L.all (·.effect.schema.normal.freshResult)
+      | _ => false
+    | _ => false
+  let ensuresAt := fun (sp : Span) (arity : Nat) => match exprMap.get? sp with
+    | some (.ok A) => match PositiveRules.expand (SourceTypes.graph T) A with
+      | [.arrs L _] | [.callable _ _ L _ _] =>
+        let matched := L.filter fun a => a.effect.promise.isNone && a.arguments.length == arity
+        match matched with
+        | [] => []
+        | first :: rest => first.effect.schema.normal.facts.filter fun F =>
+            rest.all fun a => a.effect.schema.normal.facts.contains F
+      | _ => []
+    | _ => []
   let heads : Std.HashMap Nat (List HeadInference.Fact) :=
     (HeadInference.proposals
       { headRules force with
           kind := HeadInference.kindsOf f lengthKind
           arrays := HeadInference.arraysOf f lengthKind
           ensuresOf := ensuresOf
-          freshOf := freshOf } f.body
+          ensuresAt := ensuresAt
+          freshOf := freshOf
+          freshCallee := freshCallee } f.body
       (if (headRules force).carried then HeadInference.entryOf f else [])).foldl (fun m (pos, fs) => m.insert pos fs) {}
   let early := (earlyNames f.body).eraseDups
   let headClaims (g : SourceFlow.Graph) (node : SourceFlow.Node) : List (Nat × List HeadInference.Fact) :=

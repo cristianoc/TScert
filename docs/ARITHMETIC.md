@@ -1629,19 +1629,21 @@ substitution preserves the body's meaning.
 under leading [guards](#guarded-clauses), such as
 `extras === null || forall i in fits: …`. Within a body, each body clause
 may carry leading element guards `P[i] === null || …`,
-`P[i] === undefined || …`, `Q[i] === null || …` or
-`Q[i] === undefined || …` (on the quantified element or a parallel array's
-element at the same index, and their data paths), and linear body terms may
-project a parallel array's element at the same index (`Q[i].length`,
-`Q[i].f.length`, or a safe-integer value). For example:
+`P[i] === undefined || …`, `Q[i + s] === null || …` or
+`Q[i + s] === undefined || …` (on the quantified element or a parallel array's
+element at an affine shift $`i + s`$ with unit binder coefficient and linear
+shift $`s = \sum c\cdot t + d`$, `IndexShift`), and linear body terms may
+project a parallel array's element at an affine shift (`Q[i + s].length`,
+`Q[i + s].f.length`, or a safe-integer value). For example:
 
 ```ts
 /** @invariant forall i in this.advances: this.advances[i] === null || 1 <= this.advances[i].length
- *  @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length <= this.extras[i].length */
+ *  @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length <= this.extras[i].length
+ *  @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length <= subExtras[k].length */
 ```
 
 A guarded body clause $`T = g \lor \varphi`$ at an index $`i`$, with
-$`T`$ the element read `P[i]` or `Q[i]` and its data path, holds as
+$`T`$ the element read `P[i]` or `Q[i + s]` and its data path, holds as
 JavaScript evaluates the expression: the read yields a value with tag
 $`g`$, or the read evaluates and $`\varphi`$ holds, the reads of
 $`\varphi`$ being part of its meaning
@@ -1655,15 +1657,16 @@ The quantified array's own element `P[i]` evaluates at every index, since
 JavaScript reads any index of an array, a hole or an index past the end as
 `undefined` (`ElemTarget.ownElement`). Any other read evaluates where it
 yields a value: a data path `P[i].f` throws on a nullish element and a
-parallel read `Q[i]` throws on a nullish `Q`. At a hole the model's read
+parallel read `Q[i + s]` throws on a nullish `Q` or requires $`i + s \ge 0`$. At a hole the model's read
 of `P[i]` yields no value, so the clause holds there through
 $`\varphi`$ alone, which JavaScript's `undefined` also satisfies unless
 $`g`$ is `undefined`.
 
-At an element read $`\mathrm{element}(r,a,k)`$, `every-read` instantiates
+At an element read $`\mathrm{element}(r,a,k)`$ (whose index $`k`$ is an
+`IndexShift`), `every-read` instantiates
 each guarded body clause with $`r`$ for $`P[i]`$ and any read
-$`\mathrm{element}(r',b,k')`$ of the parallel array $`b`$ at an index
-entailed equal to $`k`$ for $`Q[i]`$, turning each element guard into a
+$`\mathrm{element}(r',b,k')`$ of the parallel array $`b`$ whose index $`k'`$
+is entailed equal to $`k + s`$ for $`Q[i + s]`$, turning each element guard into a
 guarded fact on $`r`$ or $`r'`$ (`HeapKnowledge.instantiateEvery`, proved by
 `instantiateEvery_holds`). Subsequent narrowing (`r !== null`) releases the
 guarded body facts (`HeapKnowledge.unguardedInstances`, proved by
@@ -1679,6 +1682,38 @@ put that index at least zero and below the prefix bound.
 Across calls and heap transitions, a body
 projecting an element's length depends on the array's element spines region
 (`Footprints.Region.elemSpines`, proved by `Survival.every_supported`).
+Fresh-spine allocations (`[]`, `slice()`, `%ArrayFilled%`, and calls with
+`freshResult`) record `IndexFact.elemSpineApart` (`PathElemSpinesApart`)
+against existing array paths whose path, spine, and element cells survive the
+step, separating the new array's spine from `Region.elemSpines` of those paths
+in `Footprints.knowledgeQuery` at every world budget and path depth.
+Similarly, `IndexFact.apart` (`PathRegionsApart`) generalizes region
+separation to field-rooted array paths, established by array literals and
+`freshRegion` calls (`%ArrayFilled%`, `slice()`).
+
+**Shallow copy, push witnesses, and copy-transfer overwrite.**
+A 0-argument `Array.prototype.slice()` (`OperationPostF.shallowCopy`) copies
+each element at the same index into a fresh array with its own spine and
+element cells (`fresh`, `freshRegion`), keeping holes and length, so every
+quantified fact over the receiver on an interval $`[\mathit{start}, \mathit{stop})`$
+transfers onto the fresh copy on the same interval, and on
+$`[\mathit{start}, |r|)`$ when $`\mathit{stop}`$ is the receiver's length
+(`PromiseCalls.shallowCopyKept`, proved by `shallowCopyKept_holds`).
+A `push` call records an element witness `IndexFact.element` for each pushed
+argument at `old(len) + offset` (`PromiseCalls.pushElemAtoms`, proved by
+`pushElemAtoms_holds`); when a temporary pushed slot is dropped on an edge,
+`HeapKnowledge.restateAtIndex` lifts its linear facts into an
+`IndexFact.atIndex` witness (generalized to `IndexShift`) so a subsequent
+parallel `push` can discharge shifted parallel body clauses at the appended
+index (`PromiseCalls.appendParallelAtIndex` and `appendedBody`, proved by
+`every_appended`).
+An in-bounds overwrite `a[i] = src[q] ?? null` (or `a[i] = src[q]`) where
+`src` satisfies a quantified clause on $`[\mathit{start}, \mathit{stop})`$ with
+$`\mathit{start} \le q < \mathit{stop}`$ entailed, and whose body matches the
+target clause at index `q`, establishes the target clause at `i` by
+copy-transfer, so the target interval is kept whole
+(`IndexWrites.copyTransferBody` in `everyOverwrittenList`, proved by
+`copyTransferBody_holds`).
 
 **Bitmask terms and disjunctive body clauses.** A linear term kind
 $`\mathrm{bitMask}(m)`$ ($`0 \le m < 2^{31}`$) denotes the signed 32-bit
@@ -1979,13 +2014,13 @@ array's write: its premises are that no spine changes (`writeChanges`) and
 that the write lands below the view's fixed length (`ExactWrite`), while an
 append changes a spine's length and allocates a cell. `every-push`
 (`PromiseCalls.every_appended`) reads the same heap change as an append (an
-append's heap meets `ReceiverGrows` and `ReceiverAppends`), but extends only
-a fact over the receiver's own array, and its check at the new index
-(`appendedBody`) admits no parallel read. The lockstep case extends a fact
+append's heap meets `ReceiverGrows` and `ReceiverAppends`), and extends
+a fact over the receiver's own array, discharging parallel reads at the
+appended index from `element` or `atIndex` witnesses (`appendedBody`,
+`appendParallelAtIndex`). The lockstep dense-append rule extends a fact
 over another array whose body reads the written one in parallel, with the
 bound moving to the written array's length, which `every-push` does not
-state. The append rule's extension of a fact over the written array itself,
-where the body reads no parallel array, is the case `every-push` states.
+state.
 
 **Extending a prefix.** An exact element write at index $`k`$ establishes a
 prefix with bound $`m`$ where the old prefix has bound $`n`$,

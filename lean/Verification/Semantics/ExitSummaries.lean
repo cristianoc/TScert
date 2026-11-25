@@ -218,6 +218,10 @@ the result's spine and every present element cell were allocated during the
 call (`freshRegion 0`). -/
 def ExitSchema.freshRegionResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshRegion 0) ∈ q.ensures)
 
+/-- **Whether an exit states a shallow copy of its receiver**: its
+postcondition `shallowCopy 0 0`. -/
+def ExitSchema.shallowCopyResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.shallowCopy 0 0) ∈ q.ensures)
+
 /-- The element predicate of a postcondition `elementsWhen 0 true 1 R`. -/
 def elementsWhenTrueOf : FormulaSchema → Option ElemPred
   | .operation (.elementsWhen 0 .tru 1 R) => some R

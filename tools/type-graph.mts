@@ -87,6 +87,7 @@ export type EffectOptions = {
   readonly receiverSpine?: boolean;
   readonly receiverFields?: boolean;
   readonly receiverGrows?: boolean;
+  readonly shallowCopy?: boolean;
   readonly requires?: ElementKinds | null;
   readonly elements?: ElementKinds | null;
   readonly pre?: readonly IndexFact[];
@@ -200,6 +201,7 @@ export const frameEffect = (stated: Frame, options?: EffectOptions): Modifies<{}
     ...(options?.ensures ?? []).map(f => factPost("after", 0, f)),
     ...(options?.receiverGrows ? [{ transition: { effect: [receiverSpineEntry] } }, operation({ spineExtends: { x: 0 } }),
       pushPost(0, 1, { restFrom: { first: 1 } })] : []),
+    ...(options?.shallowCopy ? [operation({ shallowCopy: { x: 0, exit: 0 } })] : []),
     ...(elementWrite === null ? [] : writePosts(elementWrite))];
   return effect({ normal: exitSchema(frame, ensures), exceptional: options?.onThrow ? exitSchema(frame) : exitSchema(topFrame) },
     { promise: options?.promise ?? null, requires: options?.requires ?? null, pre });
@@ -302,12 +304,13 @@ const grammar: { readonly [name: string]: Shape } = {
   transport: { record: { shift: "nat", overrides: { list: { pair: ["nat", { ref: "witness" }] } }, boxed: "bool",
     stable: { list: "nat" } } },
   stepVar: { union: { before: { record: { t: termShape } }, after: { record: { t: termShape } } } },
+  indexShift: { record: { terms: { list: { pair: [termShape, "int"] } }, offset: "int" } },
   bodyVariable: { union: { offset: { record: { delta: "nat" } },
     project: { record: { kind: kindShape, path: strings } },
-    parallel: { record: { slot: "nat", path: strings, kind: kindShape, elemPath: strings } },
+    parallel: { record: { slot: "nat", path: strings, shift: { ref: "indexShift" }, kind: kindShape, elemPath: strings } },
     free: { record: { t: termShape } } }, names: ["index", "elem"] },
   elemTarget: { union: { self: { record: { path: strings } },
-    parallel: { record: { slot: "nat", path: strings, elemPath: strings } } } },
+    parallel: { record: { slot: "nat", path: strings, shift: { ref: "indexShift" }, elemPath: strings } } } },
   clause: { union: { guarded: { record: { target: { ref: "elemTarget" }, tag: { names: ["null", "undefined", "true", "false"] }, body: { ref: "clause" } } },
     bodyEither: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
     either: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
@@ -320,14 +323,15 @@ const grammar: { readonly [name: string]: Shape } = {
     pastSafe: { record: { slot: "nat" } }, linear: { record: { fact: linear(termShape) } },
     either: { record: { left: { ref: "fact" }, right: { ref: "fact" } } },
     guarded: { record: { slot: "nat", path: strings, tag: { names: ["null", "undefined", "true", "false", "notNull", "notUndefined", "notTrue", "notFalse"] }, body: { ref: "fact" } } },
-    element: { record: { value: "nat", array: "nat", index: "nat" } },
+    element: { record: { value: "nat", array: "nat", index: { ref: "indexShift" } } },
     fieldRead: { record: { value: "nat", object: "nat", field: "string" } },
     every: { record: { slot: "nat", path: strings, start: { ref: "indexBound" }, stop: { ref: "indexBound" }, body: { list: { ref: "clause" } } } },
-    atIndex: { record: { slot: "nat", path: strings, index: termShape,
+    atIndex: { record: { slot: "nat", path: strings, index: { ref: "indexShift" },
       guard: { nullable: { names: ["null", "undefined", "true", "false"] } }, body: { ref: "clause" } } },
-    apart: { record: { slot: "nat", other: "nat" } },
+    apart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } },
     same: { record: { slot: "nat", other: "nat" } },
-    spineApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
+    spineApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } },
+    elemSpineApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
   kinds: { list: { names: elementKindOrder } },
   post: { union: {
     arith: { record: { op: { names: ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
@@ -340,6 +344,7 @@ const grammar: { readonly [name: string]: Shape } = {
     freshSpine: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } }, freshRegion: { record: { x: "nat" } },
     elementsWhen: { record: { x: "nat", value: { ref: "literal" }, y: "nat", predicate: { ref: "kinds" } } },
     spineExtends: { record: { x: "nat" } },
+    shallowCopy: { record: { x: "nat", exit: "nat" } },
     viewWrite: { record: { x: "nat", i: "nat", v: "nat", format: { nullable: { names: ["uint8", "uint16", "int32", "float64"] } } } } } },
   formula: { union: {
     transition: { record: { effect: { ref: "frame" } } }, operation: { record: { post: { ref: "post" } } },

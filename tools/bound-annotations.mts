@@ -60,7 +60,7 @@
 // conjunct of the precondition, or at the result's position `0`, a fact of
 // its result (`typeInvariants`, fragment-statements.mts).
 import * as ts from "typescript/unstable/ast";
-import type { BodyFact, BodyVariable, ElemTarget, GuardTag, IndexBound, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
+import type { BodyFact, BodyVariable, ElemTarget, GuardTag, IndexBound, IndexFact, IndexShift, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its spine's length;
  * a typed array, whose `length` is its typed-array length (`view`); a string,
@@ -257,7 +257,8 @@ type Clause = { guards: Guard[]; atoms: Atom[] };
 class Parser {
   private at = 0;
   private readonly ts: Token[];
-  constructor(ts: Token[]) { this.ts = ts; }
+  private readonly indexExprs: Map<string, Linear>;
+  constructor(ts: Token[], indexExprs: Map<string, Linear> = new Map()) { this.ts = ts; this.indexExprs = indexExprs; }
   private peek(): Token | undefined { return this.ts[this.at]; }
   private take(): Token | undefined { return this.ts[this.at++]; }
   private isOp(v: string): boolean { const t = this.peek(); return t !== undefined && t.k === "op" && t.v === v; }
@@ -497,22 +498,32 @@ class Parser {
     }
     return this.variable();
   }
-  /** A path, or the element `p[i]` a path's array holds at an index path or a `forall`'s index. */
+  /** A path, or the element `p[expr]` a path's array holds at an index path or an affine `forall` index. */
   private element(path: string): string {
     if (!this.isOp("[")) return path;
     this.at++;
-    const idx = this.variable();
-    let delta = 0;
-    if (this.isOp("+")) {
-      if (idx.includes(".")) throw new ClauseError("an element offset applies only to a `forall` index");
-      this.at++;
-      const d = this.take();
-      if (!d || d.k !== "num" || !Number.isSafeInteger(d.v) || d.v < 0)
-        throw new ClauseError("an element offset is a nonnegative integer");
-      delta = d.v;
-    }
+    const idx = this.sum();
     this.expect("]");
-    let out = `${path}[${idx}${delta === 0 ? "" : `+${delta}`}]`;
+    for (const k of idx.terms.keys()) {
+      if (k.includes("[")) throw new ClauseError("an array index expression cannot contain another index");
+    }
+    const entries = [...idx.terms].filter(([, c]) => c !== 0);
+    const only = entries.length === 1 ? entries[0] : undefined;
+    let inside: string;
+    if (only !== undefined && only[1] === 1 && idx.constant === 0) {
+      inside = only[0];
+    } else if (only !== undefined && only[1] === 1 && idx.constant > 0 && !only[0].includes(".")) {
+      inside = `${only[0]}+${idx.constant}`;
+    } else {
+      const parts: string[] = [];
+      for (const [k, c] of entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+        parts.push(c === 1 ? k : c === -1 ? `-${k}` : `${c}*${k}`);
+      }
+      if (idx.constant !== 0 || parts.length === 0) parts.push(String(idx.constant));
+      inside = parts.join("+");
+    }
+    this.indexExprs.set(inside, idx);
+    let out = `${path}[${inside}]`;
     while (this.isOp(".")) {
       this.at++;
       const f = this.take();
@@ -585,13 +596,13 @@ function computed(e: Linear): Linear {
 function bodyPositions(f: BodyFact): number[] {
   if ("guarded" in f) {
     const t = f.guarded.target;
-    return [...("parallel" in t ? [t.parallel.slot] : []), ...bodyPositions(f.guarded.body)];
+    return [...("parallel" in t ? [t.parallel.slot, ...t.parallel.shift.terms.map(([x]) => x.slot)] : []), ...bodyPositions(f.guarded.body)];
   }
   if ("bodyEither" in f) return [...bodyPositions(f.bodyEither.left), ...bodyPositions(f.bodyEither.right)];
   if ("either" in f) return [...bodyPositions(f.either.left), ...bodyPositions(f.either.right)];
   return ("le" in f ? f.le.form : f.ne.form).flatMap(([x]) =>
     typeof x === "string" || "project" in x || "offset" in x ? []
-      : "parallel" in x ? [x.parallel.slot] : [x.free.t.slot]);
+      : "parallel" in x ? [x.parallel.slot, ...x.parallel.shift.terms.map(([t]) => t.slot)] : [x.free.t.slot]);
 }
 
 function isBodyClauseOnly(f: BodyFact): boolean {
@@ -616,14 +627,15 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("pastSafe" in f) return [f.pastSafe.slot];
   if ("length" in f) return [f.length.array, f.length.length];
   if ("bound" in f) return [f.bound.array, f.bound.index];
-  if ("element" in f) return [f.element.value, f.element.array, f.element.index];
+  if ("element" in f) return [f.element.value, f.element.array, ...f.element.index.terms.map(([t]) => t.slot)];
   if ("fieldRead" in f) return [f.fieldRead.value, f.fieldRead.object];
   if ("every" in f) return [f.every.slot,
     ...(f.every.start.base === null ? [] : [f.every.start.base.slot]),
     ...(f.every.stop.base === null ? [] : [f.every.stop.base.slot]),
     ...f.every.body.flatMap(bodyPositions)];
-  if ("atIndex" in f) return [f.atIndex.slot, f.atIndex.index.slot, ...bodyPositions(f.atIndex.body)];
+  if ("atIndex" in f) return [f.atIndex.slot, ...f.atIndex.index.terms.map(([t]) => t.slot), ...bodyPositions(f.atIndex.body)];
   if ("spineApart" in f) return [f.spineApart.slot, f.spineApart.other];
+  if ("elemSpineApart" in f) return [f.elemSpineApart.slot, f.elemSpineApart.other];
   if ("apart" in f) return [f.apart.slot, f.apart.other];
   if ("same" in f) return [f.same.slot, f.same.other];
   const F = f.linear.fact;
@@ -746,10 +758,11 @@ export function loopBindings(loop: ts.Node, names: readonly string[]): Map<strin
 export function elaborateRequires(clauses: readonly string[], params: readonly ClauseParameter[], assumptions: readonly string[] = []):
     { facts: IndexFact[] } | { refused: string } {
   try {
+    const indexExprs = new Map<string, Linear>();
     const parsed = clauses.map(text => {
       const ts = tokens(text);
       if (typeof ts === "string") throw new ClauseError(ts);
-      return new Parser(ts).clause();
+      return new Parser(ts, indexExprs).clause();
     });
     if (parsed.flat().some(c => c.guards.some(g => g.tag === "undefined" || g.tag === "notUndefined")) && params.some(q => q.name === "undefined"))
       throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
@@ -765,7 +778,15 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       if (close < 0) throw new ClauseError(`invalid indexed element ${key}`);
       const array = key.slice(0, open);
       const index = key.slice(open + 1, close);
-      if (index.includes("+")) throw new ClauseError(`element offset ${key} is only permitted inside \`forall\``);
+      const idxLin = indexExprs.get(index);
+      if (idxLin !== undefined) {
+        const entries = [...idxLin.terms].filter(([, c]) => c !== 0);
+        const only = entries.length === 1 ? entries[0] : undefined;
+        if (only === undefined || only[1] !== 1 || idxLin.constant !== 0)
+          throw new ClauseError(`element offset ${key} is only permitted inside \`forall\``);
+      } else if (index.includes("+") || index.includes("-") || index.includes("*")) {
+        throw new ClauseError(`element offset ${key} is only permitted inside \`forall\``);
+      }
       const rest = key.slice(close + 1);
       if (rest !== "" && !rest.startsWith(".")) throw new ClauseError(`invalid indexed element path ${key}`);
       const tail = rest === "" ? [] : rest.slice(1).split(".");
@@ -932,7 +953,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           const spec = resolveElem(targetElem);
           const v = elemVar(spec, a.of);
           if (v === "elem" || (typeof v !== "string" && "project" in v)) usedNegElems.add(targetElem);
-          intFacts.push({ atIndex: { slot: spec.slot, path: spec.path, index: spec.index, guard: spec.guard,
+          intFacts.push({ atIndex: { slot: spec.slot, path: spec.path, index: { terms: [[spec.index, 1]], offset: 0 }, guard: spec.guard,
             body: { le: { form: [[v, 1]], bound: MAX_SAFE } } } });
           continue;
         }
@@ -956,7 +977,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           const spec = resolveElem(targetElem);
           const form: [BodyVariable, number][] = nonzero.map(([x, c]): [BodyVariable, number] => [elemVar(spec, x), c]);
           if (form.some(([v]) => v === "elem" || (typeof v !== "string" && "project" in v))) usedNegElems.add(targetElem);
-          compared.push({ atIndex: { slot: spec.slot, path: spec.path, index: spec.index, guard: spec.guard,
+          compared.push({ atIndex: { slot: spec.slot, path: spec.path, index: { terms: [[spec.index, 1]], offset: 0 }, guard: spec.guard,
             body: ne ? { ne: { form, bound } } : { le: { form, bound } } } });
           return;
         }
@@ -1007,39 +1028,54 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         if (a.elemGuards.some(g => g.tag === "undefined") && params.some(q => q.name === "undefined"))
           throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
         const elem = `${a.array}[${a.binder}]`;
-        const splitIndexed = (key: string): { arr: string; elemPath: string[] } | null => {
-          const marker = `[${a.binder}]`;
-          const idx = key.indexOf(marker);
-          if (idx < 0) return null;
-          const arr = key.slice(0, idx);
-          const rest = key.slice(idx + marker.length);
+        const splitIndexed = (key: string): { arr: string; elemKey: string; elemPath: string[]; shift: IndexShift; isZero: boolean; constOffset: number | null } | null => {
+          const open = key.indexOf("[");
+          if (open < 0) return null;
+          const close = key.indexOf("]", open + 1);
+          if (close < 0) return null;
+          const arr = key.slice(0, open);
+          const inside = key.slice(open + 1, close);
+          const rest = key.slice(close + 1);
           if (rest !== "" && !rest.startsWith(".")) return null;
-          return { arr, elemPath: rest === "" ? [] : rest.slice(1).split(".") };
+          const lin = indexExprs.get(inside);
+          if (lin === undefined) return null;
+          if ((lin.terms.get(a.binder) ?? 0) !== 1) return null;
+          if (!Number.isSafeInteger(lin.constant))
+            throw new ClauseError("the index shift's constant lies outside the safe integers");
+          const shiftTerms: [LinearTerm, number][] = [...lin.terms]
+            .filter(([k, c]) => k !== a.binder && c !== 0)
+            .map(([k, c]): [LinearTerm, number] => [term(k), c])
+            .sort((x, y) => order(x[0], y[0]));
+          const shift: IndexShift = { terms: shiftTerms, offset: lin.constant };
+          const isZero = shiftTerms.length === 0 && lin.constant === 0;
+          const constOffset = shiftTerms.length === 0 && lin.constant > 0 ? lin.constant : null;
+          return { arr, elemKey: key.slice(0, close + 1), elemPath: rest === "" ? [] : rest.slice(1).split("."),
+            shift, isZero, constOffset };
         };
-        const resolvedElemGuards: { target: ElemTarget; arr: string; arrFields: string[]; elemPath: string[]; tag: GuardTag }[] = [];
-        const elemExcludedBy = (limit: number, arrKey: string, arrRoot: string, arrFields: string[], elemPath: string[]): Excluded => (depth) =>
+        const resolvedElemGuards: { target: ElemTarget; elemKey: string; arrFields: string[]; elemPath: string[]; tag: GuardTag }[] = [];
+        const elemExcludedBy = (limit: number, elemKey: string, arrRoot: string, arrFields: string[], elemPath: string[]): Excluded => (depth) =>
           depth <= arrFields.length
             ? excludedBy(guards, guards.length, arrRoot)(depth)
             : resolvedElemGuards.slice(0, limit).flatMap(g =>
-                g.arr === arrKey && g.arrFields.length + 1 + g.elemPath.length === depth &&
+                g.elemKey === elemKey && g.arrFields.length + 1 + g.elemPath.length === depth &&
                 g.elemPath.every((field, i) => elemPath[i] === field) ? [g.tag] : []);
         for (const g of a.elemGuards) {
           const parsedElem = splitIndexed(g.path);
           if (parsedElem === null)
-            throw new ClauseError(`the element guard ${g.path} must index an array at ${a.binder}`);
-          const { arr, elemPath } = parsedElem;
+            throw new ClauseError(`the element guard ${g.path} must index an array at ${a.binder} (with unit coefficient)`);
+          const { arr, elemKey, elemPath, shift, isZero } = parsedElem;
           const arrRoot = arr.split(".")[0] ?? "";
           const { p: ap, path: arrFields } = path(arr);
           const arrKind = ap.at(arrFields, excludedBy(guards, guards.length, arrRoot));
           if (arrKind !== "array" && arrKind !== "view")
             throw new ClauseError(`the element guard ${g.path} indexes ${arr}, which is not an array or a typed array`);
-          if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, elemPath),
+          if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, elemKey, arrRoot, arrFields, elemPath),
               g.tag === "undefined") === null)
             throw new ClauseError(`the element path ${g.path} has no field contract`);
-          const target: ElemTarget = arr === a.array
+          const target: ElemTarget = arr === a.array && isZero
             ? { self: { path: elemPath } }
-            : { parallel: { slot: ap.position, path: arrFields, elemPath } };
-          resolvedElemGuards.push({ target, arr, arrFields, elemPath, tag: g.tag });
+            : { parallel: { slot: ap.position, path: arrFields, shift, elemPath } };
+          resolvedElemGuards.push({ target, elemKey, arrFields, elemPath, tag: g.tag });
         }
         const wrapElem = (f: BodyFact): BodyFact =>
           resolvedElemGuards.reduceRight<BodyFact>((b, g) => ({ guarded: { target: g.target, tag: g.tag, body: b } }), f);
@@ -1052,15 +1088,15 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             if (mask !== null) throw new ClauseError("`&` does not apply to a `forall` index");
             return "index";
           }
-          if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
-            if (mask !== null) throw new ClauseError("`&` does not apply to an offset element");
-            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...fields, "[]"], excludedBy(guards, guards.length, root)) !== "int")
-              throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
-            return { offset: { delta: Number(key.slice(`${a.array}[${a.binder}+`.length, -1)) } };
-          }
           const parsedElem = splitIndexed(key);
           if (parsedElem !== null) {
-            const { arr, elemPath: fullPath } = parsedElem;
+            const { arr, elemKey, elemPath: fullPath, shift, isZero, constOffset } = parsedElem;
+            if (arr === a.array && constOffset !== null && fullPath.length === 0) {
+              if (mask !== null) throw new ClauseError("`&` does not apply to an offset element");
+              if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...fields, "[]"], excludedBy(guards, guards.length, root)) !== "int")
+                throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
+              return { offset: { delta: constOffset } };
+            }
             const arrRoot = arr.split(".")[0] ?? "";
             const { p: ap, path: arrFields } = path(arr);
             const arrKind = ap.at(arrFields, excludedBy(guards, guards.length, arrRoot));
@@ -1069,13 +1105,13 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             const length = fullPath.at(-1) === "length";
             if (mask !== null && length) throw new ClauseError("`&` applies to a numeric value term");
             const ep = length ? fullPath.slice(0, -1) : fullPath;
-            const kind = ap.at([...arrFields, "[]", ...ep], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, ep));
+            const kind = ap.at([...arrFields, "[]", ...ep], elemExcludedBy(resolvedElemGuards.length, elemKey, arrRoot, arrFields, ep));
             if (length) {
               if (kind !== "array" && kind !== "view" && kind !== "string")
                 throw new ClauseError(`the element path ${key} has no length contract`);
               const k = kind === "array" ? "length" : kind === "view" ? "view" : "strLength";
-              return arr === a.array ? { project: { kind: k, path: ep } }
-                : { parallel: { slot: ap.position, path: arrFields, kind: k, elemPath: ep } };
+              return arr === a.array && isZero ? { project: { kind: k, path: ep } }
+                : { parallel: { slot: ap.position, path: arrFields, shift, kind: k, elemPath: ep } };
             }
             if (mask !== null) {
               if (!(arrKind === "view" && ep.length === 0) &&
@@ -1083,16 +1119,16 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
                 throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
               if (ep.length > 0 && kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
               const bm = { bitMask: { mask } } as const;
-              return arr === a.array ? { project: { kind: bm, path: ep } }
-                : { parallel: { slot: ap.position, path: arrFields, kind: bm, elemPath: ep } };
+              return arr === a.array && isZero ? { project: { kind: bm, path: ep } }
+                : { parallel: { slot: ap.position, path: arrFields, shift, kind: bm, elemPath: ep } };
             }
             if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && kind !== "int")
               throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
             if (ep.length > 0 && kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
-            if (arr === a.array) return ep.length === 0 ? "elem" : { project: { kind: "value", path: ep } };
-            return { parallel: { slot: ap.position, path: arrFields, kind: "value", elemPath: ep } };
+            if (arr === a.array && isZero) return ep.length === 0 ? "elem" : { project: { kind: "value", path: ep } };
+            return { parallel: { slot: ap.position, path: arrFields, shift, kind: "value", elemPath: ep } };
           }
-          if (key.includes("[")) throw new ClauseError(`${key} is no element of the array ${a.array} at the index ${a.binder}`);
+          if (key.includes("[")) throw new ClauseError(`${key} is no element of an array at the index ${a.binder} (or a shifted index with unit coefficient)`);
           return { free: { t: term(rawKey) } };
         };
         for (const b of atoms) {
@@ -1103,23 +1139,23 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             const parsedElem = splitIndexed(b.elem);
             if (parsedElem === null)
               throw new ClauseError(`the element tag ${b.elem} must index an array at ${a.binder}`);
-            const { arr, elemPath } = parsedElem;
+            const { arr, elemKey, elemPath, shift, isZero } = parsedElem;
             const arrRoot = arr.split(".")[0] ?? "";
             const { p: ap, path: arrFields } = path(arr);
             const arrKind = ap.at(arrFields, excludedBy(guards, guards.length, arrRoot));
             if (arrKind !== "array" && arrKind !== "view")
               throw new ClauseError(`the element tag ${b.elem} indexes ${arr}, which is not an array or a typed array`);
-            if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, elemPath),
+            if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, elemKey, arrRoot, arrFields, elemPath),
                 b.tag === "undefined") === null)
               throw new ClauseError(`the element path ${b.elem} has no field contract`);
-            const target: ElemTarget = arr === a.array
+            const target: ElemTarget = arr === a.array && isZero
               ? { self: { path: elemPath } }
-              : { parallel: { slot: ap.position, path: arrFields, elemPath } };
+              : { parallel: { slot: ap.position, path: arrFields, shift, elemPath } };
             body.push({ guarded: { target, tag: b.tag, body: { le: { form: [], bound: -1 } } } });
             continue;
           }
           if (b.k !== "safeInteger") continue;
-          if (splitIndexed(b.of) === null && !b.of.startsWith(`${a.array}[${a.binder}+`))
+          if (splitIndexed(b.of) === null)
             throw new ClauseError(`a quantified safe integer must name ${elem} or an element at ${a.binder}`);
           body.push({ le: { form: [[variable(b.of), 1]], bound: MAX_SAFE } });
         }

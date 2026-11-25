@@ -85,6 +85,7 @@ export type OperationPost =
   | { readonly elementsWhen: { readonly x: number; readonly value: Literal; readonly y: number;
       readonly predicate: ElementKinds } }
   | { readonly spineExtends: { readonly x: number } }
+  | { readonly shallowCopy: { readonly x: number; readonly exit: number } }
   | { readonly viewWrite: { readonly x: number; readonly i: number; readonly v: number; readonly format: ViewFormat | null } };
 /** A two-state postcondition of a specification
  * (`FormulaF WitnessSeq TransportSchema`, no assertion-arena node). */
@@ -149,34 +150,43 @@ export type IndexFact =
   | { readonly either: { readonly left: IndexFact; readonly right: IndexFact } }
   | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;
       readonly body: IndexFact } }
-  | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
+  | { readonly element: { readonly value: number; readonly array: number; readonly index: IndexShift } }
   | { readonly fieldRead: { readonly value: number; readonly object: number; readonly field: string } }
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly start: IndexBound;
       readonly stop: IndexBound; readonly body: readonly BodyFact[] } }
-  | { readonly atIndex: { readonly slot: number; readonly path: readonly string[]; readonly index: LinearTerm;
+  | { readonly atIndex: { readonly slot: number; readonly path: readonly string[]; readonly index: IndexShift;
       readonly guard: GuardTag | null; readonly body: BodyFact } }
-  | { readonly apart: { readonly slot: number; readonly other: number } }
+  | { readonly apart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
+      readonly otherPath: readonly string[] } }
   | { readonly same: { readonly slot: number; readonly other: number } }
   | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
+      readonly otherPath: readonly string[] } }
+  | { readonly elemSpineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
 /** An affine bound `base + offset` (or constant `offset` when `base` is null)
  * of a quantified index interval (`HeapKnowledge.IndexBound`). */
 export type IndexBound = { readonly base: LinearTerm | null; readonly offset: number };
+/** An affine index shift (`HeapKnowledge.IndexShift`): `Σ c·t + offset`,
+ * added to the bound index (or 0 for a standalone element index). */
+export type IndexShift = {
+  readonly terms: readonly (readonly [LinearTerm, Integer])[];
+  readonly offset: Integer;
+};
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
  * index, the element at it, a projection of the element, a parallel array's
- * element at the same index, or a linear term. */
+ * element at the same or shifted index, or a linear term. */
 export type BodyVariable =
   | "index"
   | "elem"
   | { offset: { delta: number } }
   | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } }
-  | { readonly parallel: { readonly slot: number; readonly path: readonly string[];
+  | { readonly parallel: { readonly slot: number; readonly path: readonly string[]; readonly shift: IndexShift;
       readonly kind: LinearTerm["kind"]; readonly elemPath: readonly string[] } }
   | { readonly free: { readonly t: LinearTerm } };
 /** The target of an element guard in a quantified fact's body (`HeapKnowledge.ElemTarget`). */
 export type ElemTarget =
   | { readonly self: { readonly path: readonly string[] } }
-  | { readonly parallel: { readonly slot: number; readonly path: readonly string[]; readonly elemPath: readonly string[] } };
+  | { readonly parallel: { readonly slot: number; readonly path: readonly string[]; readonly shift: IndexShift; readonly elemPath: readonly string[] } };
 /** A clause of a quantified fact's body, optionally under element guards. */
 export type BodyFact =
   | { readonly guarded: { readonly target: ElemTarget; readonly tag: GuardTag; readonly body: BodyFact } }

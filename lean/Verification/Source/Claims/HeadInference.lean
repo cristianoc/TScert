@@ -36,18 +36,18 @@ structure Lin where
 /-- The target of an element guard in a quantified fact's body. -/
 inductive ElemTargetKey where
   | self (elemPath : List String)
-  | parallel (name : String) (path : List String) (elemPath : List String)
+  | parallel (name : String) (path : List String) (shift : SourceClaims.ShiftRef) (elemPath : List String)
   deriving BEq, Inhabited
 
 /-- A variable of a quantified fact's body (`SourceClaims.BodyRef`): the
 index, the element at it, a projection of the element, a parallel array's
-element at the same index, or a term over source names. -/
+element at the same or shifted index, or a term over source names. -/
 inductive BodyKey where
   | index
   | elem
   | offset (delta : Nat)
   | project (kind : HeapKnowledge.Term.Kind) (path : List String)
-  | parallel (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind) (elemPath : List String)
+  | parallel (name : String) (path : List String) (shift : SourceClaims.ShiftRef) (kind : HeapKnowledge.Term.Kind) (elemPath : List String)
   | term (k : Key)
   deriving BEq, Inhabited
 
@@ -61,13 +61,13 @@ inductive BodyFact where
   deriving BEq, Inhabited
 
 def BodyFact.names : BodyFact → List String
-  | .lin ts _ | .ne ts _ => ts.filterMap fun
-      | (.term k, _) => some k.1
-      | (.parallel n .., _) => some n
-      | _ => none
+  | .lin ts _ | .ne ts _ => ts.flatMap fun
+      | (.term k, _) => [k.1]
+      | (.parallel n _ sh _ _, _) => n :: sh.terms.map (·.1.1)
+      | _ => []
   | .either a b => a.names ++ b.names
   | .guarded (.self _) _ b => b.names
-  | .guarded (.parallel n ..) _ b => n :: b.names
+  | .guarded (.parallel n _ sh _) _ b => n :: sh.terms.map (·.1.1) ++ b.names
 
 /-- A proposed fact: a linear fact, or a binding's value a safe integer. -/
 inductive Fact where
@@ -118,14 +118,14 @@ def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
       | .elem => .elem
       | .offset d => .offset d
       | .project k p => .project k p
-      | .parallel n p k ep => .parallel n p k ep
+      | .parallel n p sh k ep => .parallel n p sh k ep
       | .term (n, p, k) => .term n p k
     let rec toClaim : BodyFact → SourceClaims.BodyClaim
       | .lin ts d => .linear (ts.map fun (v, c) => (ref v, c)) d
       | .ne ts d => .ne (ts.map fun (v, c) => (ref v, c)) d
       | .either a b => .either (toClaim a) (toClaim b)
       | .guarded (.self ep) g b => .guarded (.self ep) g (toClaim b)
-      | .guarded (.parallel n p ep) g b => .guarded (.parallel n p ep) g (toClaim b)
+      | .guarded (.parallel n p sh ep) g b => .guarded (.parallel n p sh ep) g (toClaim b)
     some (gs, (a, pa), start, stop, body.map toClaim)
   | _ => none
 
@@ -210,12 +210,18 @@ partial def Fact.text : Fact → String
         let base := String.intercalate "." (n :: p) ++ match k with | .value => "" | _ => ".length"
         if d == 0 then base else if d > 0 then s!"{base} + {d}" else s!"{base} - {-d}"
     let arr := String.intercalate "." (a :: pa)
+    let shiftIdx := fun (sh : SourceClaims.ShiftRef) =>
+      let ts := sh.terms.map fun ((n, p, k), c) =>
+        let base := String.intercalate "." (n :: p) ++ match k with | .value => "" | _ => ".length"
+        if c == 1 then base else s!"{c} * {base}"
+      let parts := "i" :: ts ++ (if sh.offset == 0 then [] else [toString sh.offset])
+      " + ".intercalate parts
     let v := fun (b : BodyKey) => match b with
       | .index => "i" | .elem => s!"{arr}[i]" | .offset d => s!"{arr}[i + {d}]"
       | .project (.bitMask m) p => s!"({String.intercalate "." (s!"{arr}[i]" :: p)} & {m})"
       | .project _ p => String.intercalate "." (s!"{arr}[i]" :: p)
-      | .parallel n p (.bitMask m) ep => s!"({String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)} & {m})"
-      | .parallel n p _ ep => String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)
+      | .parallel n p sh (.bitMask m) ep => s!"({String.intercalate "." (s!"{String.intercalate "." (n :: p)}[{shiftIdx sh}]" :: ep)} & {m})"
+      | .parallel n p sh _ ep => String.intercalate "." (s!"{String.intercalate "." (n :: p)}[{shiftIdx sh}]" :: ep)
       | .term (n, p, .bitMask m) => s!"({String.intercalate "." (n :: p)} & {m})"
       | .term (n, p, _) => String.intercalate "." (n :: p)
     let rec clause : BodyFact → String
@@ -226,8 +232,8 @@ partial def Fact.text : Fact → String
       | .either a b => s!"({clause a} || {clause b})"
       | .guarded (.self ep) g b =>
         guardCond (String.intercalate "." (s!"{arr}[i]" :: ep)) g ++ clause b
-      | .guarded (.parallel n p ep) g b =>
-        guardCond (String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)) g ++ clause b
+      | .guarded (.parallel n p sh ep) g b =>
+        guardCond (String.intercalate "." (s!"{String.intercalate "." (n :: p)}[{shiftIdx sh}]" :: ep)) g ++ clause b
     let range := if start == (none, 0) then s!"i < {renderBound stop}" else s!"{renderBound start} <= i < {renderBound stop}"
     String.join (gs.map fun (g, p, t) => guardCond (String.intercalate "." (g :: p)) t) ++
       s!"forall {range} of {arr}: " ++ " && ".intercalate (body.map clause)
@@ -261,6 +267,7 @@ partial def linOf (K : String → HeapKnowledge.Term.Kind) : Expr → Option (Li
   | .read _ (.str "length") e => do
     let (r, p) ← pathOf e; pure ([((r, p, if p.isEmpty then K r else .length), 1)], 0)
   | .call _ (.var _ "%ByteLength%") [e] _ _ => do let (r, p) ← pathOf e; pure ([((r, p, .view), 1)], 0)
+  | .call _ (.var _ "%ArrayLength%") [e] _ _ => linOf K e
   | .cast _ _ e => linOf K e
   | .arith _ .add a b => do
     let (ta, ka) ← linOf K a; let (tb, kb) ← linOf K b; pure (addTerms ta tb, ka + kb)
@@ -560,9 +567,15 @@ structure Rules where
   /-- Each function's postcondition (`@ensures`) by its name: a call's
   facts of the binding it sets (`callEnsures`). -/
   ensuresOf : String → List HeapKnowledge.IndexFact := fun _ => []
+  /-- A callee expression's postcondition by its span and argument count,
+  read from its instantiated type (`exprMap`): generic intrinsics and methods. -/
+  ensuresAt : Span → Nat → List HeapKnowledge.IndexFact := fun _ _ => []
   /-- Whether a function's signatures all declare a fresh result (`Fresh<...>`):
   a call's spine separation from existing array bindings and field paths. -/
   freshOf : String → Bool := fun _ => false
+  /-- Whether a callee expression's instantiated signatures at its span all
+  declare a fresh result (methods such as `slice()` as well as functions). -/
+  freshCallee : Span → Bool := fun _ => false
   /-- Forced (`--force-proposals head-ensures`): each term of the binding a
   call's postcondition names also stated at most `-1` (`callEnsures`), the
   adversarial fact a loop head it reaches proposes and the pass's edge check
@@ -666,11 +679,11 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
       let rec bodyKept : BodyFact → Bool
         | .lin ts _ | .ne ts _ => ts.all fun
             | (.term k, _) => kept k
-            | (.parallel n p _ _, _) => !p.isEmpty || !t.contains n
+            | (.parallel n p sh _ _, _) => (!p.isEmpty || !t.contains n) && sh.terms.all (fun p => kept p.1)
             | _ => true
         | .either a b => bodyKept a && bodyKept b
         | .guarded (.self _) _ b => bodyKept b
-        | .guarded (.parallel n p _) _ b => (!p.isEmpty || !t.contains n) && bodyKept b
+        | .guarded (.parallel n p sh _) _ b => (!p.isEmpty || !t.contains n) && sh.terms.all (fun p => kept p.1) && bodyKept b
       (!pa.isEmpty || !t.contains a) && start.1.all kept && stop.1.all kept && body.all bodyKept)
 
 /-- The guards a test's answer `pos` fails (`x.f !== null` holding: `x.f`
@@ -809,12 +822,16 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
     let ofBound : HeapKnowledge.IndexBound → Option (Option Key × Int) := fun b => do
       let bs ← b.base.mapM fun t => do pure (← termName t, t.path, t.kind)
       pure (bs, b.offset)
+    let ofShift (sh : HeapKnowledge.IndexShift) : Option SourceClaims.ShiftRef := do
+      let ts ← sh.terms.mapM fun (t, c) => do pure (((← termName t), t.path, t.kind), c)
+      pure ⟨ts, sh.offset⟩
     let var : HeapKnowledge.Bound → Option BodyKey := fun
       | .index => some .index
       | .elem => some .elem
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
-      | .parallel s' p' k ep => (nameAt s').map fun n => .parallel n p' k ep
+      | .parallel s' p' sh k ep => do
+          pure (.parallel (← nameAt s') p' (← ofShift sh) k ep)
       | .free t => (termName t).map fun n => .term (n, t.path, t.kind)
     let rec ofBody : HeapKnowledge.BodyClause → Option BodyFact
       | .clause (.atom (.le form d)) => do pure (.lin (← form.mapM fun (b, c) => do pure (← var b, c)) d)
@@ -822,8 +839,8 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
       | .clause (.either a b) => do pure (.either (← ofBody (.clause a)) (← ofBody (.clause b)))
       | .either a b => do pure (.either (← ofBody a) (← ofBody b))
       | .guarded (.self ep) g b => (ofBody b).map (.guarded (.self ep) g)
-      | .guarded (.parallel s' p' ep) g b => do
-          pure (.guarded (.parallel (← nameAt s') p' ep) g (← ofBody b))
+      | .guarded (.parallel s' p' sh ep) g b => do
+          pure (.guarded (.parallel (← nameAt s') p' (← ofShift sh) ep) g (← ofBody b))
     let body ← body.mapM ofBody
     pure (.every [] a path (← ofBound start) (← ofBound stop) body)
   | .fieldRead v o f => do pure (.fieldRead [] (← nameAt v) (← nameAt o) f)
@@ -872,16 +889,20 @@ every array binding of `arrays`; a fresh array literal or fresh-returning call
 apart from every array binding of `arrays` and every field-rooted array length
 path in `ctx`; a copy (`const x = o`) each of `o`'s separations at `x`; a
 choice of `o` and `null` (`c ? o : null`) each guarded by `x === null`. -/
-def separations (arrays : List String) (freshOf : String → Bool) (ctx : Ctx) (x : String) : Expr → List Fact
+def separations (arrays : List String) (freshOf : String → Bool) (ctx : Ctx) (x : String)
+    (e : Expr) (freshCallee : Span → Bool := fun _ => false) : List Fact :=
+  match e with
   | .alloc _ names es =>
     (names.zip es).flatMap fun (k, e) => match k, e with
       | .str f, .arrayLit _ [] _ => (arrays.filter (· != x)).map fun a => Fact.apart [] x [f] a []
       | _, _ => []
   | .arrayLit _ _ _ => freshAparts
-  | .call _ (.var _ f) _ _ _ => if freshOf f then freshAparts else []
+  | .call _ callee _ _ _ | .invoke _ callee _ _ _ =>
+    let named := match callee with | .var _ f => freshOf f | _ => false
+    if named || freshCallee callee.span then freshAparts else []
   | .var _ o => copies o []
   | .ifBody _ _ (.var _ o) (.lit _ .vnull) | .ifBody _ _ (.lit _ .vnull) (.var _ o) => copies o [(x, [], .null)]
-  | .cast _ _ e => separations arrays freshOf ctx x e
+  | .cast _ _ e => separations arrays freshOf ctx x e freshCallee
   | _ => []
 where
   freshAparts : List Fact :=
@@ -923,20 +944,22 @@ def Fact.restate (n root : String) (path : List String) : Fact → Option Fact
       | some (n', p') => (n', p', t)
       | none => (g, p, t)
     let (a', pa') := (through a pa).getD (a, pa)
+    let moveShift := fun (sh : SourceClaims.ShiftRef) =>
+      ({ terms := sh.terms.map fun (k, c) => (move k, c), offset := sh.offset } : SourceClaims.ShiftRef)
     let rec moveBody : BodyFact → BodyFact
       | .lin ts d => .lin (ts.map fun
           | (.term k, c) => (.term (move k), c)
-          | (.parallel m p k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' k ep, c)
+          | (.parallel m p sh k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' (moveShift sh) k ep, c)
           | v => v) d
       | .ne ts d => .ne (ts.map fun
           | (.term k, c) => (.term (move k), c)
-          | (.parallel m p k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' k ep, c)
+          | (.parallel m p sh k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' (moveShift sh) k ep, c)
           | v => v) d
       | .either a b => .either (moveBody a) (moveBody b)
       | .guarded (.self ep) g b => .guarded (.self ep) g (moveBody b)
-      | .guarded (.parallel m p ep) g b =>
+      | .guarded (.parallel m p sh ep) g b =>
           let (m', p') := (through m p).getD (m, p)
-          .guarded (.parallel m' p' ep) g (moveBody b)
+          .guarded (.parallel m' p' (moveShift sh) ep) g (moveBody b)
     let f' := Fact.every gs' a' pa' (moveBound start) (moveBound stop) (body.map moveBody)
     if f' == f then none else some f'
   | f@(.lin l) =>
@@ -1095,22 +1118,63 @@ def Ctx.join (a b : Ctx) : Ctx :=
     | f => if y.contains f then some f else none
   Ctx.add (kept a b) (kept b a)
 
-/-- The facts a call of a function stating a postcondition gives the
+/-- Substitute a call's receiver path and linear/path actuals into a linear
+postcondition (`result` at slot `0`, receiver at slot `1`, `p`-th actual at
+slot `p + 2`). -/
+private def substCallLinear (K : String → HeapKnowledge.Term.Kind) (x : String)
+    (recvPath : Option (String × List String)) (args : List Expr)
+    (ts : List (HeapKnowledge.Term × Int)) (bound : Int) : Option Fact := Id.run do
+  let mut outTerms : List (Key × Int) := []
+  let mut outBound : Int := bound
+  for (t, c) in ts do
+    if t.atEntry then return none
+    if t.slot == 0 then
+      outTerms := addTerms outTerms [((x, t.path, t.kind), c)]
+    else if t.slot == 1 then
+      let some (r, rp) := recvPath | return none
+      if r == x then return none
+      outTerms := addTerms outTerms [((r, rp ++ t.path, t.kind), c)]
+    else
+      let some arg := args[t.slot - 2]? | return none
+      if t.path.isEmpty && t.kind == .value then
+        let some (ats, ak) := linOf K arg | return none
+        if ats.any (·.1.1 == x) then return none
+        outTerms := addTerms outTerms (scale c ats)
+        outBound := outBound - c * ak
+      else
+        let some (r, rp) := pathOf arg | return none
+        if r == x then return none
+        outTerms := addTerms outTerms [((r, rp ++ t.path, t.kind), c)]
+  if outTerms.isEmpty then return none
+  return some (.lin ⟨outTerms, outBound⟩)
+
+/-- The facts a call of a function or method stating a postcondition gives the
 binding `x` it sets: each of its `@ensures` facts (position `0` its result,
-`p + 2` its `p`-th parameter), its result `x` and each parameter the actual
-where that is a binding (`linear_facts.ml:call_expression_facts`). -/
-def callEnsures («ensures» : String → List HeapKnowledge.IndexFact) (x : String) (forced : Bool := false) :
-    Expr → List Fact
-  | .call _ (.var _ f) args [] _ =>
+`1` its receiver, `p + 2` its `p`-th parameter), its result `x` and each
+parameter the actual where that is a binding or linear expression
+(`linear_facts.ml:call_expression_facts`). -/
+def callEnsures (K : String → HeapKnowledge.Term.Kind) («ensures» : String → List HeapKnowledge.IndexFact)
+    (x : String) (forced : Bool := false)
+    (e : Expr) (ensuresAt : Span → Nat → List HeapKnowledge.IndexFact := fun _ _ => []) : List Fact :=
+  match e with
+  | .call _ callee args [] _ | .invoke _ callee args [] _ =>
+    let byName := match callee with | .var _ f => ensures f | _ => []
+    let raw := if byName.isEmpty then ensuresAt callee.span args.length else byName
+    let recvPath := match e, callee with
+      | .invoke .., .read _ _ recv => pathOf recv
+      | _, _ => none
     let nameAt := fun (p : Nat) => if p == 0 then some x else if p < 2 then none else match args[p - 2]? with
       | some (.var _ a) => if a == x then none else some a
       | _ => none
-    let fs := (ensures f).filterMap (ofIndexFact nameAt)
+    let fs := raw.filterMap fun F =>
+      (ofIndexFact nameAt F).orElse fun _ => match F with
+        | .linear (.le ts b) => substCallLinear K x recvPath args ts b
+        | _ => none
     -- (forced: each term of `x` a fact names at most `-1`)
     let falses : List Fact := if !forced then [] else
       ((fs.flatMap fun | .lin l => l.terms.map (·.1) | _ => []).filter (·.1 == x)).eraseDups.map fun t => .lin ⟨[(t, 1)], -1⟩
     fs ++ falses
-  | .cast _ _ e => callEnsures ensures x forced e
+  | .cast _ _ e => callEnsures K ensures x forced e ensuresAt
   | _ => []
 
 /-- The facts a choice `c ? a : b` gives the binding `x` it sets: on each
@@ -1118,23 +1182,26 @@ arm, under what its answer of `c` states, `x` equal to a linear arm or a
 call's postcondition (`callEnsures`), the two joined
 (`linear_facts.ml:declaration`'s conditional, arm by arm). -/
 def valueArms (K : String → HeapKnowledge.Term.Kind) («ensures» : String → List HeapKnowledge.IndexFact)
-    (ctx : Ctx) (x : String) (forced : Bool := false) : Expr → List Fact
+    (ctx : Ctx) (x : String) (forced : Bool := false)
+    (e : Expr) (ensuresAt : Span → Nat → List HeapKnowledge.IndexFact := fun _ _ => []) : List Fact :=
+  match e with
   | .ifBody _ c a b =>
     let arm := fun (answer : Bool) (e : Expr) =>
       let ctx' := ctx.add (ctx.tested (atomsOf K c answer))
       match linOf K e with
       | some v => equalTo ctx' x v
-      | none => callEnsures ensures x forced e
+      | none => callEnsures K ensures x forced e ensuresAt
     let l := arm true a
     let r := arm false b
     if l.isEmpty || r.isEmpty then [] else (Ctx.join (ctx.add l) (ctx.add r)).filter fun f => f.names.contains x
-  | .cast _ _ e => valueArms K ensures ctx x forced e
+  | .cast _ _ e => valueArms K ensures ctx x forced e ensuresAt
   | _ => []
 
 /-- The facts after an expression statement: an assignment of a linear
 value states its equality, a step restates, any other write forgets. -/
 def Ctx.effectOne (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (e : Expr)
-    («ensures» : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false) : Ctx :=
+    («ensures» : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false)
+    (ensuresAt : Span → Nat → List HeapKnowledge.IndexFact := fun _ _ => []) : Ctx :=
   let pushed := ctx.pushed K e
   let ctx := (ctx.across (allExprs e)).add pushed
   match e with
@@ -1144,8 +1211,8 @@ def Ctx.effectOne (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (e : Expr
       let ctx := ctx.kill [x]
       match linOf K rhs with
       | some v => ctx.add (equalTo ctx x v)
-      | none => ctx.add (choiceBounds K x rhs ++ callEnsures ensures x falseEnsures rhs ++
-          valueArms K ensures ctx x falseEnsures rhs)
+      | none => ctx.add (choiceBounds K x rhs ++ callEnsures K ensures x falseEnsures rhs ensuresAt ++
+          valueArms K ensures ctx x falseEnsures rhs ensuresAt)
   | .update _ _ (.var _ x) _ _ => match stepOf x e with
     | some (some c) => ctx.step x c
     | _ => ctx.kill [x]
@@ -1454,10 +1521,10 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
   | some v => ctx := ctx.add (equalTo ctx x v)
   | none => ctx := ctx.add (choiceBounds rules.kind x init ++ constructedLength rules.kind x init ++
       allocFields rules.kind ctx x init ++
-      callEnsures rules.ensuresOf x rules.falseEnsures init ++
-      valueArms rules.kind rules.ensuresOf ctx x rules.falseEnsures init ++
+      callEnsures rules.kind rules.ensuresOf x rules.falseEnsures init rules.ensuresAt ++
+      valueArms rules.kind rules.ensuresOf ctx x rules.falseEnsures init rules.ensuresAt ++
       ctx.elemFacts rules.kind x init rules.falseElements)
-  if rules.separations then ctx := ctx.add (separations rules.arrays rules.freshOf ctx x init)
+  if rules.separations then ctx := ctx.add (separations rules.arrays rules.freshOf ctx x init rules.freshCallee)
   -- (an element read `x = arr[idx]`: element fact where a quantified fact mentions `arr`,
   -- and any guarded/parallel quantified body facts instantiated at `x` for loop heads)
   let hasEveryOn := fun (arr : String) => ctx.any fun
@@ -1483,8 +1550,9 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
   let rec instBody (selfName : String) (parName : String → List String → Option String) (idx : String)
       (gs : List (String × List String × HeapKnowledge.GuardTag)) : BodyFact → List Fact
     | .guarded (.self ep) g b => instBody selfName parName idx (gs ++ [(selfName, ep, g)]) b
-    | .guarded (.parallel a pa ep) g b =>
-        match parName a pa with
+    | .guarded (.parallel a pa sh ep) g b =>
+        if sh != .zero then []
+        else match parName a pa with
         | some p => instBody selfName parName idx (gs ++ [(p, ep, g)]) b
         | none => []
     | .lin ts d =>
@@ -1492,7 +1560,7 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
           | .index => some ((idx, [], .value), c)
           | .elem => some ((selfName, [], .value), c)
           | .project k ep => some ((selfName, ep, k), c)
-          | .parallel a pa k ep => (parName a pa).map fun p => ((p, ep, k), c)
+          | .parallel a pa sh k ep => if sh != .zero then none else (parName a pa).map fun p => ((p, ep, k), c)
           | .term k => some (k, c)
           | .offset _ => none
         match conv with

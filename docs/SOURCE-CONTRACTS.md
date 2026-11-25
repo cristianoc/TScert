@@ -3194,7 +3194,12 @@ result. Of `ArrayProto`, `slice`, `flat`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at`, `[Symbol.iterator]`, `values`, `keys` and
 `entries` state it: they read the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
-only their result. `find`, `findIndex`, `filter`, `some`, `every`,
+only their result. The zero-argument overload of `slice()` additionally
+states `fresh`, `freshRegion`, `shallowCopy`, and `result.length === this.length`
+(audited against ECMA-262 `Array.prototype.slice`: on an ordinary extensible
+array with standard prototype, `ArraySpeciesCreate` allocates a fresh ordinary
+array whose spine and present element cells are freshly allocated, copying each
+present index verbatim and preserving holes and length). `find`, `findIndex`, `filter`, `some`, `every`,
 `forEach`, `flatMap`, and `reduce` and `reduceRight` with an initial value,
 call a callback; each reads the length once and the
 receiver's own numeric keys, data properties (`numericOwn`), and allocates

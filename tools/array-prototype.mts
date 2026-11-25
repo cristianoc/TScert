@@ -346,7 +346,7 @@ export const overlay: readonly OverlayEntry[] = [
     effect: footprintEffect(emptyFootprint, { fresh: true }),
     stated: [
       ...presences.map((presence): StatedSignature => ({ receiver: arrayOf(element, true, presence), params: [],
-        result: arrayOf(element, false, presence), effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
+        result: arrayOf(element, false, presence), effect: footprintEffect(emptyFootprint, { fresh: true, freshRegion: true, shallowCopy: true, ensures: [
           { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
             [{ kind: "length", slot: 1, path: [] }, -1]], bound: 0 } } } },
           { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, -1],

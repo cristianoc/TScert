@@ -29,9 +29,11 @@ function at(xs: number[], i: number): number {
 ```
 
 A quantified atom states its body of every element, optionally under
-leading guards and with element guards, parallel-array element projections, or
-bitmask comparisons `(flags[i] & mask) !== tag` over a parallel typed array in
-its body ([quantified clauses](ARITHMETIC.md#quantified-clauses)):
+leading guards and with element guards, parallel-array element projections
+at the same or an affine shifted index (unit binder coefficient, such as
+`advances[base + k]` or `advances[base + k - from]`), or bitmask comparisons
+`(flags[i] & mask) !== tag` over a parallel typed array in its body
+([quantified clauses](ARITHMETIC.md#quantified-clauses)):
 
 ```ts
 /** @requires safeInteger(k) && 0 <= k && k < ends.length
@@ -47,6 +49,9 @@ function fitWithExtra(fits: (number[] | null)[], extras: (number[] | null)[] | n
 
 /** @invariant forall i in this.extras: (this.flags[i] & 0x7) !== 2 || this.extras[i] === null */
 type TaggedChunks = { flags: Uint8Array; advances: (number[] | null)[]; extras: (number[] | null)[] };
+
+/** @requires forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length <= subExtras[k].length */
+function readShifted(advances: (number[] | null)[], subExtras: (number[] | null)[], base: number, s: number): number { … }
 ```
 
 `p !== q` of two arrays states that their spines differ, so the body keeps

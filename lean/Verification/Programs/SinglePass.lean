@@ -523,7 +523,7 @@ def Atom.through (chain : Bool) (a : Atom) : List Nat := match a with
 fact. Observations select these witnesses together to instantiate the
 body after a guard is discharged. -/
 def elementDependencies : HeapKnowledge.IndexFact → List Nat
-  | .element _ a i => [a, i]
+  | .element _ a idx => a :: idx.slots
   | .every a _ _ _ _ => [a]
   | .guarded _ _ _ body => elementDependencies body
   | _ => []
@@ -1703,8 +1703,8 @@ def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.Index
   | .guarded 0 _ _ B => (startIdentities B).map fun (c, _) => (c, false)
   | .guarded (s + 1) p tag B =>
     (startIdentities B).map fun (c, r) => (c ++ (c.getLast?.map (.guarded s p tag ·)).toList, r)
-  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .fieldRead _ _ _ | .apart _ _
-  | .spineApart _ _ _ _ | .same _ _ => []
+  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .fieldRead _ _ _ | .apart _ _ _ _
+  | .spineApart _ _ _ _ | .elemSpineApart _ _ _ _ | .same _ _ => []
 
 /-- The start's identity facts (`startIdentities`) for the postcondition
 `ens`: of each statement list, the first the entry facts entail

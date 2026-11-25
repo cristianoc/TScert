@@ -113,7 +113,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
         obtain ⟨rfl, rfl⟩ := hc
         exact ⟨w, by rw [← guardReads_read hl hm q]; exact hw, hB'⟩
       · exact ⟨w, hw, hB'⟩
-  | index | length | bound | int | pastSafe | either | element | fieldRead | every | atIndex | apart | spineApart | same =>
+  | index | length | bound | int | pastSafe | either | element | fieldRead | every | atIndex | apart | spineApart | elemSpineApart | same =>
     intro hB; exact hB
 
 /-- **The lowered guards hold** where the atoms and the links do. -/

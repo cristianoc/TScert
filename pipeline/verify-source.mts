@@ -1134,7 +1134,8 @@ class TypeTexts {
     const normal = e.exits.normal;
     const fresh = normal.ensures.some((f) => typeof f === "object" && "operation" in f &&
       (("freshSpine" in f.operation.post && f.operation.post.freshSpine.x === 0) ||
-       ("freshObject" in f.operation.post && f.operation.post.freshObject.x === 0)));
+       ("freshObject" in f.operation.post && f.operation.post.freshObject.x === 0) ||
+       ("freshRegion" in f.operation.post && f.operation.post.freshRegion.x === 0)));
     const shown = fresh ? `Fresh<${result}>` : result;
     const changes = normal.frame.filter((c) => c.change !== "keep").map((c) => `${JSON.stringify(regionText(c.region))}: "${c.change}"`);
     const frame = changes.length === 0 ? "{}" : `{ ${changes.join("; ")} }`;
@@ -1156,19 +1157,22 @@ class TypeTexts {
 function factOf(f: StatedFact): IndexFact {
   const term = (t: LinearTerm): FactTerm => ({ ...t, path: [...t.path] });
   const form = <V, W>(xs: readonly (readonly [V, Integer])[], to: (v: V) => W): [W, Integer][] => xs.map(([v, c]) => [to(v), c]);
+  const shiftOf = (sh: { readonly terms: readonly (readonly [LinearTerm, Integer])[]; readonly offset: Integer }):
+      { terms: [FactTerm, Integer][]; offset: Integer } => ({ terms: form(sh.terms, term), offset: sh.offset });
   const variable = (v: BodyVariable): FactVariable => {
     if (v === "index" || v === "elem") return v;
     if ("offset" in v) return { offset: { delta: v.offset.delta } };
     if ("project" in v) return { project: { kind: v.project.kind, slot: 0, path: [...v.project.path] } };
     if ("parallel" in v)
-      return { parallel: { slot: v.parallel.slot, path: [...v.parallel.path], kind: v.parallel.kind, elemPath: [...v.parallel.elemPath] } };
+      return { parallel: { slot: v.parallel.slot, path: [...v.parallel.path], shift: shiftOf(v.parallel.shift),
+        kind: v.parallel.kind, elemPath: [...v.parallel.elemPath] } };
     return term(v.free.t);
   };
   const body = (b: BodyFact): BodyFormula => {
     if ("guarded" in b) {
       const t = b.guarded.target;
       const target = "self" in t ? { self: { path: [...t.self.path] } }
-        : { parallel: { slot: t.parallel.slot, path: [...t.parallel.path], elemPath: [...t.parallel.elemPath] } };
+        : { parallel: { slot: t.parallel.slot, path: [...t.parallel.path], shift: shiftOf(t.parallel.shift), elemPath: [...t.parallel.elemPath] } };
       return { guarded: { target, tag: b.guarded.tag, body: body(b.guarded.body) } };
     }
     if ("bodyEither" in b) return { either: { left: body(b.bodyEither.left), right: body(b.bodyEither.right) } };
@@ -1182,6 +1186,7 @@ function factOf(f: StatedFact): IndexFact {
   }
   if ("either" in f) return { either: { left: factOf(f.either.left), right: factOf(f.either.right) } };
   if ("guarded" in f) return { guarded: { ...f.guarded, path: [...f.guarded.path], body: factOf(f.guarded.body) } };
+  if ("element" in f) return { element: { value: f.element.value, array: f.element.array, index: shiftOf(f.element.index) } };
   if ("every" in f) {
     const e = f.every;
     const bound = (b: { readonly base: LinearTerm | null; readonly offset: number }) =>
@@ -1190,9 +1195,11 @@ function factOf(f: StatedFact): IndexFact {
   }
   if ("atIndex" in f) {
     const e = f.atIndex;
-    return { atIndex: { slot: e.slot, path: [...e.path], index: term(e.index), guard: e.guard, body: body(e.body) } };
+    return { atIndex: { slot: e.slot, path: [...e.path], index: shiftOf(e.index), guard: e.guard, body: body(e.body) } };
   }
+  if ("apart" in f) return { apart: { ...f.apart, path: [...f.apart.path], otherPath: [...f.apart.otherPath] } };
   if ("spineApart" in f) return { spineApart: { ...f.spineApart, path: [...f.spineApart.path], otherPath: [...f.spineApart.otherPath] } };
+  if ("elemSpineApart" in f) return { elemSpineApart: { ...f.elemSpineApart, path: [...f.elemSpineApart.path], otherPath: [...f.elemSpineApart.otherPath] } };
   // (the others hold positions and flags alone)
   return f;
 }

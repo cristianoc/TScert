@@ -20,15 +20,17 @@ open HeapKnowledge
 /-- The sites a separation fact names, when it names two. -/
 def SepFact.sites : SepFact → Option ((Nat × List String) × (Nat × List String))
   | .spines a b | .arrays a b => some (a, b)
-  | .locs .. => none
+  | .elemSpines .. | .locs .. => none
 
 /-- The separations an unconditional fact states: a spine separation
-($`\pi \mathrel{\#} \pi'`$), a region fact ($`\mathrm{apart}(x, y)`$), and
+($`\pi \mathrel{\#} \pi'`$), a region fact ($`\mathrm{apart}(x, y)`$),
+an element-spine separation (`elemSpineApart`), and
 either guarded by a slot's value being a guard's tag where one of its paths
 starts at that slot: there it reads no object, so it selects no location. -/
 def factSeps (ls : HeapLinks.Links) : IndexFact → List SepFact
   | .spineApart a p b q => [.spines (a, p) (b, q)]
-  | .apart a b => [.arrays (a, []) (b, [])]
+  | .apart a p b q => [.arrays (a, p) (b, q)]
+  | .elemSpineApart a p b q => [.elemSpines (a, p) (b, q)]
   | .guarded g [] t B => if t.isPositive then (factSeps ls B).filter fun e => match e.sites with
     | some (a, b) => (HeapLinks.aliases ls g).contains a.1 || (HeapLinks.aliases ls g).contains b.1
     | none => false
@@ -65,14 +67,29 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
     rw [hu] at hu'; cases hu'
     rw [hw] at hw'; cases hw'
     exact hne l l hsu hsw rfl
-  | apart a b =>
+  | apart a p b q =>
     intro hF e he
     simp only [factSeps, List.mem_singleton] at he
     subst he
+    obtain ⟨u0, w0, hu0, hw0, hreg⟩ := hF
     intro u w l hu hw hpu hpw hul hwl
-    simp only [readPath, Option.some.injEq] at hu hw
-    subst hu; subst hw
-    exact regionsApart_arrays hF hpu hpw hul hwl
+    rw [hu0] at hu; cases hu
+    rw [hw0] at hw; cases hw
+    exact regionsApart_arrays hreg hpu hpw hul hwl
+  | elemSpineApart a p b q =>
+    intro hF e he
+    simp only [factSeps, List.mem_singleton] at he
+    subst he
+    obtain ⟨u0, w0, hu0, hw0, hall⟩ := hF
+    intro u w l hu hw hpw hul c hc el hel hse
+    rw [hu0] at hu; cases hu
+    rw [hw0] at hw; cases hw
+    obtain ⟨st, ls, hst, hls, hcm⟩ := spineCells_of_plain hpw hc
+    obtain ⟨ls', hls', hcel⟩ := hall st hst
+    rw [hls] at hls'; cases hls'
+    obtain ⟨e', he', hne⟩ := hcel c hcm
+    rw [hel] at he'; cases he'
+    exact hne l l hul hse rfl
   | guarded g p tag B ih =>
     intro hF e he
     cases p with
@@ -103,6 +120,7 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
             rcases hroot with hr | hr
             · rw [tagAt hr hu] at hul; exact tag_array hpos htag hul
             · rw [tagAt hr hw] at hwl; exact tag_array hpos htag hwl
+          | elemSpines _ _ => simp [SepFact.sites] at hroot
           | locs => simp [SepFact.sites] at hroot
         · exact ih hB e he
       · cases he
@@ -172,17 +190,19 @@ theorem knowledgeQuery_spines (k : Knowledge) {e : SepFact} (he : e ∈ knowledg
   | arrays a b =>
     simpa [SepEvidence.byFact, arraySite_of_spineSite hx, arraySite_of_spineSite hy, knowledgeEvidence,
       SepFact.sites] using hm
-  | locs => simp [SepFact.sites] at hm
+  | elemSpines _ _ => simp [SepFact.sites] at hm
+  | locs _ _ _ _ => simp [SepFact.sites] at hm
 
 /-! ## Guarded separation queries and survival -/
 
 /-- The separations an unconditional fact states under slot guards `gs`
 assumed not to hold (`∀ (g, t) ∈ gs, ¬t.holds (ρ g)`): a spine separation,
-a region fact, a positively guarded separation on a path root, or any
+a region fact, an element-spine separation, a positively guarded separation on a path root, or any
 separation guarded by a slot guard in `gs`. -/
 def factSepsUnder (ls : HeapLinks.Links) (gs : List (Nat × GuardTag)) : IndexFact → List SepFact
   | .spineApart a p b q => [.spines (a, p) (b, q)]
-  | .apart a b => [.arrays (a, []) (b, [])]
+  | .apart a p b q => [.arrays (a, p) (b, q)]
+  | .elemSpineApart a p b q => [.elemSpines (a, p) (b, q)]
   | .guarded g [] t B =>
     if gs.contains (g, t) then factSepsUnder ls gs B
     else if t.isPositive then (factSepsUnder ls gs B).filter fun e => match e.sites with
@@ -205,14 +225,29 @@ theorem factSepsUnder_holds {ls : HeapLinks.Links} {gs : List (Nat × GuardTag)}
     rw [hu] at hu'; cases hu'
     rw [hw] at hw'; cases hw'
     exact hne l l hsu hsw rfl
-  | apart a b =>
+  | apart a p b q =>
     intro hF e he
     simp only [factSepsUnder, List.mem_singleton] at he
     subst he
+    obtain ⟨u0, w0, hu0, hw0, hreg⟩ := hF
     intro u w l hu hw hpu hpw hul hwl
-    simp only [readPath, Option.some.injEq] at hu hw
-    subst hu; subst hw
-    exact regionsApart_arrays hF hpu hpw hul hwl
+    rw [hu0] at hu; cases hu
+    rw [hw0] at hw; cases hw
+    exact regionsApart_arrays hreg hpu hpw hul hwl
+  | elemSpineApart a p b q =>
+    intro hF e he
+    simp only [factSepsUnder, List.mem_singleton] at he
+    subst he
+    obtain ⟨u0, w0, hu0, hw0, hall⟩ := hF
+    intro u w l hu hw hpw hul c hc el hel hse
+    rw [hu0] at hu; cases hu
+    rw [hw0] at hw; cases hw
+    obtain ⟨st, ls, hst, hls, hcm⟩ := spineCells_of_plain hpw hc
+    obtain ⟨ls', hls', hcel⟩ := hall st hst
+    rw [hls] at hls'; cases hls'
+    obtain ⟨e', he', hne⟩ := hcel c hcm
+    rw [hel] at he'; cases he'
+    exact hne l l hul hse rfl
   | guarded g p tag B ih =>
     intro hF e he
     cases p with
@@ -247,6 +282,7 @@ theorem factSepsUnder_holds {ls : HeapLinks.Links} {gs : List (Nat × GuardTag)}
               rcases hroot with hr | hr
               · rw [tagAt hr hu] at hul; exact tag_array hpos htag hul
               · rw [tagAt hr hw] at hwl; exact tag_array hpos htag hwl
+            | elemSpines _ _ => simp [SepFact.sites] at hroot
             | locs => simp [SepFact.sites] at hroot
           · exact ih hB e he
         · cases he

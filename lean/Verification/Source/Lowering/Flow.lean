@@ -36,15 +36,19 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
     let rec rerootBody : HeapKnowledge.BodyClause → Option HeapKnowledge.BodyClause
       | .clause f => (f.mapVars fun
           | .free t => (t.reroot now entry).map HeapKnowledge.Bound.free
-          | .parallel s' p' k ep => (now s').map fun (sl, pr) => .parallel sl (pr ++ p') k ep
+          | .parallel s' p' sh k ep => do
+              let (sl, pr) ← now s'
+              let sh' ← sh.reroot now entry
+              pure (.parallel sl (pr ++ p') sh' k ep)
           | .index => some .index
           | .elem => some .elem
           | .offset d => some (.offset d)
           | .project k p => some (.project k p)).map .clause
       | .guarded (.self ep) g b => (rerootBody b).map (.guarded (.self ep) g)
-      | .guarded (.parallel s' p' ep) g b => do
+      | .guarded (.parallel s' p' sh ep) g b => do
           let (sl, pr) ← now s'
-          pure (.guarded (.parallel sl (pr ++ p') ep) g (← rerootBody b))
+          let sh' ← sh.reroot now entry
+          pure (.guarded (.parallel sl (pr ++ p') sh' ep) g (← rerootBody b))
       | .either a b => do pure (.either (← rerootBody a) (← rerootBody b))
     let body ← body.mapM rerootBody
     pure (.every slot (pre ++ path) start stop body)
@@ -57,9 +61,10 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
       | .elem => some .elem
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
-      | .parallel s' p' k ep => do
+      | .parallel s' p' sh k ep => do
           let (sl, pr) ← now s'
-          pure (.parallel sl (pr ++ p') k ep)
+          let sh' ← sh.reroot now entry
+          pure (.parallel sl (pr ++ p') sh' k ep)
     pure (.atIndex slot (pre ++ path) idx guard body)
   | f => f.mapM fun p => do
     let (slot, path) ← now p
@@ -403,6 +408,11 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | none => throw (locatedRefusal (← table) node.source .entryClaim
         s!"a quantified fact names '{name}', which is no value binding or cell")
   let tbl ← table
+  let lowerShift (sh : SourceClaims.ShiftRef) : Compiler HeapKnowledge.IndexShift := do
+    let terms ← sh.terms.mapM fun ((n, path, kind), c) => do
+      let (z, r) ← root n path
+      pure (HeapKnowledge.Term.now kind z r, c)
+    pure ⟨terms, sh.offset⟩
   let rec linearBody : SourceClaims.BodyClaim → Compiler (HeapKnowledge.LinearClause HeapKnowledge.Bound)
     | .linear terms bound => do
       let form ← terms.mapM fun (v, c) => do
@@ -411,7 +421,9 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .elem => pure .elem
           | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
-          | .parallel n path kind ep => do let (z, r) ← root n path; pure (.parallel z r kind ep)
+          | .parallel n path sh kind ep => do
+              let (z, r) ← root n path
+              pure (.parallel z r (← lowerShift sh) kind ep)
           | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
         pure (b, c)
       pure (.atom (.le form bound))
@@ -422,7 +434,9 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .elem => pure .elem
           | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
-          | .parallel n path kind ep => do let (z, r) ← root n path; pure (.parallel z r kind ep)
+          | .parallel n path sh kind ep => do
+              let (z, r) ← root n path
+              pure (.parallel z r (← lowerShift sh) kind ep)
           | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
         pure (b, c)
       pure (.atom (.ne form bound))
@@ -431,9 +445,9 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         "an element guard may not appear inside a disjunction")
   let rec bodyClause : SourceClaims.BodyClaim → Compiler HeapKnowledge.BodyClause
     | .guarded (.self ep) g b => do pure (.guarded (.self ep) g (← bodyClause b))
-    | .guarded (.parallel n path ep) g b => do
+    | .guarded (.parallel n path sh ep) g b => do
       let (z, r) ← root n path
-      pure (.guarded (.parallel z r ep) g (← bodyClause b))
+      pure (.guarded (.parallel z r (← lowerShift sh) ep) g (← bodyClause b))
     | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
     | c => .clause <$> linearBody c
   let lowerBound : SourceClaims.BoundClaim → Compiler HeapKnowledge.IndexBound := fun (bs, off) => do
@@ -455,7 +469,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- refused rather than dropped.
   let apart ← ((fc.entryApart.lookup node.source.1).getD []).mapM fun (name, other) =>
     match valueSlot scope name, valueSlot scope other with
-    | some x, some y => pure ({ fact := .apart x y } : HeapKnowledge.IndexAtom)
+    | some x, some y => pure ({ fact := .apart x [] y [] } : HeapKnowledge.IndexAtom)
     | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
@@ -516,7 +530,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | none => do throw (locatedRefusal (← table) node.source .entryClaim
             s!"an element-read guard names '{g}', which is no value binding")
       let fact := gs.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
-        (HeapKnowledge.IndexFact.element v a i)
+        (HeapKnowledge.IndexFact.element v a (.ofSlot i))
       pure ({ fact } : HeapKnowledge.IndexAtom)
     | none, _, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"an element read names '{value}' as its value, which is no value binding")

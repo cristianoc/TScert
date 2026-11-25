@@ -312,7 +312,7 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat Ã
       | .index a => match a.fact with
         | .linear (.le [(_, 1)] (-1)) => true
         | .spineApart a p b q => a == b && p == q
-        | .apart a b => a == b
+        | .apart a p b q => a == b && p == q
         | .every _ _ _ _ [.clause (.atom (.le [(.elem, 1)] (-1)))] => true
         | _ => false
       | .link g => !g.alias && g.cell == g.value

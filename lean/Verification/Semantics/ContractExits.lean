@@ -249,6 +249,13 @@ theorem Effect.callPost_freshRegion (hf : e.schema.normal.freshRegionResult = tr
   obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
   exact hH (.operation (.freshRegion 0)) (by simpa [ExitSchema.freshRegionResult] using hf)
 
+/-- **A shallow copy of the receiver**, where the normal exit states one
+(`ExitSchema.shallowCopyResult`). -/
+theorem Effect.callPost_shallowCopy (hs : e.schema.normal.shallowCopyResult = true)
+    (hp : e.callPost r args before after v) : ShallowCopy r v before after := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  exact hH (.operation (.shallowCopy 0 0)) (by simpa [ExitSchema.shallowCopyResult] using hs)
+
 /-- **The receiver's elements** where the result is `true`, for each
 element predicate the normal exit states (`ExitSchema.elementsWhenTrue`). -/
 theorem Effect.callPost_elements {R : ElemPred} (hR : R ∈ e.schema.normal.elementsWhenTrue) (hv : v = .tru)

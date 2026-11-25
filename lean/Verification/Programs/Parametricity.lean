@@ -473,7 +473,7 @@ theorem releaseTypedGuarded_reassign (Γ : List (Ty ι)) :
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩
   | ⟨.either _ _, _, _⟩ | ⟨.element _ _ _, _, _⟩ | ⟨.fieldRead _ _ _, _, _⟩
-  | ⟨.every _ _ _ _ _, _, _⟩ | ⟨.atIndex _ _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ | ⟨.same _ _, _, _⟩ => by
+  | ⟨.every _ _ _ _ _, _, _⟩ | ⟨.atIndex _ _ _ _ _, _, _⟩ | ⟨.apart _ _ _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ | ⟨.elemSpineApart _ _ _ _, _, _⟩ | ⟨.same _ _, _, _⟩ => by
     simp [HeapKnowledge.releaseTypedGuarded]
 
 omit [DecidableEq ι] in
@@ -623,14 +623,23 @@ theorem typesPathSpinesApart_reassign (Γ : List (List ι)) (x : Nat) (p : List 
   rw [pathTys_reassign, pathTys_reassign]
   cases HeapExpressionRules.pathTys G Γ x p <;> cases HeapExpressionRules.pathTys G Γ y q <;> rfl
 
+theorem typesElemSpinesApart_reassign (Γ : List (List ι)) (x y : Nat) (q : List String) :
+    HeapExpressionRules.typesElemSpinesApart (reassign G η) Γ x y q =
+      HeapExpressionRules.typesElemSpinesApart G Γ x y q := by
+  unfold HeapExpressionRules.typesElemSpinesApart
+  rw [pathTys_reassign]
+  cases Γ[x]? <;> cases HeapExpressionRules.pathTys G Γ y q <;> rfl
+
 theorem typeSpineQuery_reassign (Γ : List (List ι)) :
     HeapExpressionRules.typeSpineQuery (reassign G η) Γ = HeapExpressionRules.typeSpineQuery G Γ := by
   unfold HeapExpressionRules.typeSpineQuery
   congr 1; funext r s
   cases Footprints.spineSite r <;> cases Footprints.spineSite s <;>
-    try (cases Footprints.selectedSpineSite s <;> simp [typesPathSpinesApart_reassign]) <;>
-    try (cases Footprints.selectedSpineSite r <;> simp [typesPathSpinesApart_reassign]) <;>
-    simp [typesPathSpinesApart_reassign]
+    try (cases Footprints.selectedSpineSite s <;> (try cases s) <;>
+      simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]) <;>
+    try (cases Footprints.selectedSpineSite r <;> (try cases r) <;>
+      simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]) <;>
+    simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]
 
 theorem callQuery_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) :
     PromiseCalls.callQuery (reassign G η) Γ k = PromiseCalls.callQuery G Γ k := by
@@ -642,11 +651,56 @@ theorem growSpineKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledg
   unfold PromiseCalls.growSpineKept
   cases PromiseCalls.receiverSlot t <;> simp [callQuery_reassign]
 
+theorem growElemSpinesKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (p : List String) :
+    PromiseCalls.growElemSpinesKept (reassign G η) Γ k t s p = PromiseCalls.growElemSpinesKept G Γ k t s p := by
+  unfold PromiseCalls.growElemSpinesKept
+  cases PromiseCalls.receiverSlot t <;> simp [callQuery_reassign]
+
+theorem growBoundKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat)
+    (p : List String) (first : Nat → String → Bool) (pushed : Option Nat) (b : HeapKnowledge.Bound) :
+    PromiseCalls.growBoundKept (reassign G η) Γ k t s p first pushed b =
+      PromiseCalls.growBoundKept G Γ k t s p first pushed b := by
+  cases b with
+  | project kd ep =>
+    unfold PromiseCalls.growBoundKept
+    rw [growElemSpinesKept_reassign]
+    cases pushed <;> simp [growSpineKept_reassign]
+  | parallel s' p' sh kd ep =>
+    simp only [PromiseCalls.growBoundKept, growElemSpinesKept_reassign]
+  | _ => rfl
+
+theorem growBodyKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat)
+    (p : List String) (first : Nat → String → Bool) (pushed : Option Nat) (B : HeapKnowledge.BodyClause) :
+    PromiseCalls.growBodyKept (reassign G η) Γ k t s p first pushed B =
+      PromiseCalls.growBodyKept G Γ k t s p first pushed B := by
+  induction B with
+  | clause C =>
+    unfold PromiseCalls.growBodyKept
+    rw [show PromiseCalls.growBoundKept (reassign G η) Γ k t s p first pushed =
+      PromiseCalls.growBoundKept G Γ k t s p first pushed from
+      funext (growBoundKept_reassign G η Γ k t s p first pushed)]
+  | guarded tgt g b ih =>
+    unfold PromiseCalls.growBodyKept
+    rw [ih]
+  | either A B ihA ihB =>
+    unfold PromiseCalls.growBodyKept
+    rw [ihA, ihB]
+
 theorem effectKept_reassign (stable : Nat → String → Bool) (arrayPath : Nat → List String → Bool)
     (Γ : List (List ι)) (eff : CallEffects.Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     PromiseCalls.effectKept (reassign G η) Γ stable arrayPath eff t k =
       PromiseCalls.effectKept G Γ stable arrayPath eff t k := by
   simp only [PromiseCalls.effectKept, PromiseCalls.frameKeeps, callQuery_reassign]
+
+omit [DecidableEq ι] in
+theorem valuesAt_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i : Nat) :
+    HeapExpressionRules.valuesAt (reassign G η) Γ k i = HeapExpressionRules.valuesAt G Γ k i := rfl
+
+omit [DecidableEq ι] in
+theorem appendParallelSlot_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i s' : Nat)
+    (p' : List String) (sh : HeapKnowledge.IndexShift) :
+    PromiseCalls.appendParallelSlot (reassign G η) Γ k i s' p' sh =
+      PromiseCalls.appendParallelSlot G Γ k i s' p' sh := rfl
 
 omit [DecidableEq ι] in
 theorem appendedBody_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i a : Nat)
@@ -656,25 +710,28 @@ theorem appendedBody_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge
   | guarded t g b ih =>
     cases t with
     | self ep =>
-      unfold PromiseCalls.appendedBody
-      rw [ih]
-      rfl
-    | parallel _ _ _ => simp [PromiseCalls.appendedBody]
+      simp only [PromiseCalls.appendedBody, valuesAt_reassign, ih]
+    | parallel s' p' sh ep =>
+      simp only [PromiseCalls.appendedBody, appendParallelSlot_reassign, valuesAt_reassign, ih]
   | either A B ihA ihB =>
-    unfold PromiseCalls.appendedBody
-    rw [ihA, ihB]
+    simp only [PromiseCalls.appendedBody, ihA, ihB]
   | clause C =>
     induction C with
-    | atom F => simp [PromiseCalls.appendedBody]
+    | atom F =>
+      have ht : PromiseCalls.appendTerm (reassign G η) Γ k i a = PromiseCalls.appendTerm G Γ k i a := by
+        funext b; cases b <;> simp [PromiseCalls.appendTerm, appendParallelSlot_reassign]
+      have htk : PromiseCalls.appendTermOrKeep (reassign G η) Γ k i a = PromiseCalls.appendTermOrKeep G Γ k i a := by
+        funext b; cases b <;> simp [PromiseCalls.appendTermOrKeep, appendParallelSlot_reassign]
+      simp only [PromiseCalls.appendedBody, PromiseCalls.appendedLinearViaAtIndex, ht, htk]
     | either A B ihA ihB =>
       unfold PromiseCalls.appendedBody
       rw [ihA, ihB]
 
-theorem growBoundKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (b : HeapKnowledge.IndexBound) :
-    PromiseCalls.growBoundKept (reassign G η) Γ k t b = PromiseCalls.growBoundKept G Γ k t b := by
+theorem growIndexBoundKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (b : HeapKnowledge.IndexBound) :
+    PromiseCalls.growIndexBoundKept (reassign G η) Γ k t b = PromiseCalls.growIndexBoundKept G Γ k t b := by
   cases b with
   | mk bs _ =>
-    cases bs <;> simp only [PromiseCalls.growBoundKept, growSpineKept_reassign]
+    cases bs <;> simp only [PromiseCalls.growIndexBoundKept, growSpineKept_reassign]
 
 theorem spineDisjointFromA_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a s : Nat)
     (p : List String) :
@@ -713,7 +770,7 @@ theorem factKeptByDenseAppend_reassign (Γ : List (List ι)) (k : HeapKnowledge.
     cases p <;> simp only [IndexWrites.factKeptByDenseAppend, spineDisjointFromA_reassign,
       termKeptByDenseAppend_reassign, bodyClauseKeptByDenseAppend_reassign]
   | linear _ => simp only [IndexWrites.factKeptByDenseAppend, termKeptByDenseAppend_reassign]
-  | element _ _ _ => simp only [IndexWrites.factKeptByDenseAppend, spineDisjointFromA_reassign]
+  | element _ _ _ => simp only [IndexWrites.factKeptByDenseAppend, spineDisjointFromA_reassign, termKeptByDenseAppend_reassign]
   | _ => rfl
 
 theorem resolveParallelAppend_reassign (K : Linear.Known HeapKnowledge.Term) (Γ : List (List ι))
@@ -758,7 +815,7 @@ theorem bodyClauseAsAtIndex_reassign (Γ : List (List ι)) (k : HeapKnowledge.Kn
   | guarded tgt tag b ih =>
     cases tgt with
     | self _ => simp only [IndexWrites.bodyClauseAsAtIndex, ih]
-    | parallel s' p' ep =>
+    | parallel s' p' sh ep =>
       cases p' with
       | cons _ _ => rfl
       | nil =>
@@ -790,8 +847,12 @@ theorem everyGrown_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) 
   funext a
   unfold PromiseCalls.everyGrown
   split
-  · simp only [growBoundKept_reassign]
-    congr 1; congr 1
+  · rename_i s p st0 st1 body _
+    rw [show PromiseCalls.growBodyKept (reassign G η) Γ k t s p (PromiseCalls.growFirst k t) none =
+      PromiseCalls.growBodyKept G Γ k t s p (PromiseCalls.growFirst k t) none from
+      funext (growBodyKept_reassign G η Γ k t s p (PromiseCalls.growFirst k t) none)]
+    simp only [growIndexBoundKept_reassign]
+    congr 2
     cases t <;> try rfl
     rename_i f r args
     cases r <;> try rfl
@@ -799,6 +860,9 @@ theorem everyGrown_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) 
     rename_i x rest
     cases x <;> cases rest <;> try rfl
     dsimp only
+    rw [show PromiseCalls.growBodyKept (reassign G η) Γ k (.invoke f (.var _) [.var _]) s p (PromiseCalls.growFirst k (.invoke f (.var _) [.var _])) (some _) =
+      PromiseCalls.growBodyKept G Γ k (.invoke f (.var _) [.var _]) s p (PromiseCalls.growFirst k (.invoke f (.var _) [.var _])) (some _) from
+      funext (growBodyKept_reassign G η Γ k _ s p _ (some _))]
     rw [show PromiseCalls.appendedBody (reassign G η) Γ k _ _ = PromiseCalls.appendedBody G Γ k _ _ from
       funext (appendedBody_reassign G η Γ k _ _)]
   · rfl
@@ -841,6 +905,15 @@ omit [DecidableEq ι] in
 theorem linearAppendKept_reassign (Γ : List (List ι)) (eff : CallEffects.Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     PromiseCalls.linearAppendKept (reassign G η) Γ eff t k = PromiseCalls.linearAppendKept G Γ eff t k := rfl
 
+omit [DecidableEq ι] in
+theorem pushElemAtoms_reassign (Γ : List (List ι)) (eff : CallEffects.Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
+    PromiseCalls.pushElemAtoms (reassign G η) Γ eff t k = PromiseCalls.pushElemAtoms G Γ eff t k := rfl
+
+theorem shallowCopyKept_reassign (Γ : List (List ι)) (eff : CallEffects.Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
+    PromiseCalls.shallowCopyKept (reassign G η) Γ eff t k = PromiseCalls.shallowCopyKept G Γ eff t k := by
+  unfold PromiseCalls.shallowCopyKept
+  simp only [arrayPathOf_reassign]
+
 theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     PromiseCalls.ensuresCall (reassign G η) (images.reassign η) j k e codes sums =
@@ -849,7 +922,7 @@ theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
   split
   · rename_i p
     simp only [checkTree_reassign, requiresTree_reassign, stableFirst_reassign, arrayPathOf_reassign,
-      effectKept_reassign, appendKept_reassign, writeKept_reassign, linearAppendKept_reassign]
+      effectKept_reassign, appendKept_reassign, writeKept_reassign, linearAppendKept_reassign, pushElemAtoms_reassign]
   · rfl
 
 theorem withEnsures_reassign (stable : Nat → String → Bool) (Γ : List (List ι)) (eff : CallEffects.Effect)
@@ -857,7 +930,8 @@ theorem withEnsures_reassign (stable : Nat → String → Bool) (Γ : List (List
     PromiseCalls.withEnsures stable (reassign G η) Γ eff t k0 k =
       PromiseCalls.withEnsures stable G Γ eff t k0 k := by
   unfold PromiseCalls.withEnsures
-  rw [arrayPathOf_reassign, effectKept_reassign, appendKept_reassign, writeKept_reassign, linearAppendKept_reassign]
+  rw [arrayPathOf_reassign, effectKept_reassign, appendKept_reassign, writeKept_reassign, linearAppendKept_reassign,
+    pushElemAtoms_reassign, shallowCopyKept_reassign]
   rfl
 
 omit [DecidableEq ι] in
@@ -923,10 +997,6 @@ theorem denseAppendAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowl
     IndexWrites.denseAppendAtoms (reassign G η) Γ k a i v = IndexWrites.denseAppendAtoms G Γ k a i v := by
   simp only [IndexWrites.denseAppendAtoms, denseAppendAtomsCore_reassign]
   rfl
-
-omit [DecidableEq ι] in
-theorem valuesAt_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i : Nat) :
-    HeapExpressionRules.valuesAt (reassign G η) Γ k i = HeapExpressionRules.valuesAt G Γ k i := rfl
 
 theorem overwriteAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a i v : Nat) :
     IndexWrites.overwriteAtoms (reassign G η) Γ k a i v =

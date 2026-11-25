@@ -565,7 +565,7 @@ def readsAbsent : IndexFact → Bool
   | .index k | .int k | .pastSafe k => P.absentSlot k
   | .length x n => P.absentSlot x || P.absentSlot n
   | .bound x k _ => P.absentSlot x || P.absentSlot k
-  | .element _ x k => P.absentSlot x || P.absentSlot k
+  | .element _ x k => P.absentSlot x || k.terms.any fun p => P.absent p.1
   | _ => false
 
 /-- A linear post fact naming an entry term composed with the relation
@@ -614,7 +614,12 @@ def absentBound (b : IndexBound) : Bool :=
 /-- A body variable as a variable of the step. -/
 def bodyVar : Bound → Option BodyVar
   | .free t => (P.var t).map .step
-  | .parallel s p k ep => (P.slot s).map fun s' => .bound (.parallel s' p k ep)
+  | .parallel s p sh k ep =>
+    if sh.entrySlots.isEmpty then do
+      let s' ← P.slot s
+      let sh' ← sh.mapM P.slot
+      pure (.bound (.parallel s' p sh' k ep))
+    else none
   | b => some (.bound b)
 
 /-- A step's body variable read back after the step: a bound variable of
@@ -654,9 +659,12 @@ def clause : LinearClause Bound → List (LinearClause Bound)
 /-- A guarded body clause composed. -/
 def bodyClause : BodyClause → List BodyClause
   | .clause c => (P.clause c).map .clause
-  | .guarded t g b => match t.mapM P.slot with
-    | some t' => (bodyClause b).map (.guarded t' g)
-    | none => []
+  | .guarded t g b =>
+    if t.entrySlots.isEmpty then
+      match t.mapM P.slot with
+      | some t' => (bodyClause b).map (.guarded t' g)
+      | none => []
+    else []
   | .either a b => (bodyClause a).flatMap fun a' => (bodyClause b).map (.either a' ·)
 
 /-- The disjunction of two facts neither of which is `isFalsum`: two bounds
@@ -698,11 +706,14 @@ def fact : IndexFact → List IndexFact
       (P.startBounds start).flatMap fun lo => (P.stopBounds stop).map fun hi => .every s' p lo hi body'
     | none => []
   | .atIndex s p idx guard body =>
-    if P.absentSlot s || P.absent idx then [falsum] else
-    if idx.atEntry || body.vars.any (fun | .free t => t.atEntry | _ => false) then []
+    if P.absentSlot s || idx.terms.any (fun p => P.absent p.1) then [falsum] else
+    if !idx.entrySlots.isEmpty || body.vars.any (fun b => !b.entrySlots.isEmpty) then []
     else ((IndexFact.atIndex s p idx guard body).mapM P.slot).toList
+  | F@(.element _ _ k) =>
+    if P.readsAbsent F then [falsum]
+    else if k.entrySlots.isEmpty then (F.mapM P.slot).toList else []
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
-  | F@(.element _ _ _) | F@(.fieldRead _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) | F@(.same _ _) =>
+  | F@(.fieldRead _ _ _) | F@(.apart _ _ _ _) | F@(.spineApart _ _ _ _) | F@(.elemSpineApart _ _ _ _) | F@(.same _ _) =>
     if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
 
 end Composer
@@ -943,11 +954,11 @@ theorem Composer.stopBounds_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {b : In
       exact ⟨v' + offset, by simp [IndexBound.eval, hv'], by omega⟩
 
 theorem boundValue_local {ε ε' : EntryState} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
-    {b : Bound} (hb : ∀ t, b ≠ .free t) (hp : ∀ s p k ep, b ≠ .parallel s p k ep) :
+    {b : Bound} (hb : ∀ t, b ≠ .free t) (hp : ∀ s p sh k ep, b ≠ .parallel s p sh k ep) :
     boundValue ε ρ h ls i b = boundValue ε' ρ' h ls i b := by
   cases b with
   | free t => exact absurd rfl (hb t)
-  | parallel s p k ep => exact absurd rfl (hp s p k ep)
+  | parallel s p sh k ep => exact absurd rfl (hp s p sh k ep)
   | project k p =>
     simp only [boundValue, termValue, termAt, Bool.false_eq_true, ite_false]
   | _ => rfl
@@ -984,10 +995,17 @@ theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (O
         obtain ⟨z, hz, rfl⟩ := hy
         obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 _ hx)
         exact (P.var_val hs hz hn).trans hn.symm
-      | parallel s p k ep =>
-        simp only [Composer.bodyVar, Option.map_eq_some_iff] at hy
-        obtain ⟨s', hs', rfl⟩ := hy
-        simp only [bv, BodyVar.val, boundValue, hs.slot s s' hs', termValue, termAt, Bool.false_eq_true, ite_false]
+      | parallel s p sh k ep =>
+        simp only [Composer.bodyVar] at hy
+        split at hy
+        · rename_i hne
+          simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hy
+          obtain ⟨s', hs', sh', hsh', rfl⟩ := hy
+          have hsh : sh'.eval ε ρ' h' i = sh.eval ε₀ τ h' i := by
+            rw [IndexShift.eval_mapM hsh' (fun z _ t ht => hs.slot z t ht),
+              IndexShift.eval_entry (ε' := ε₀) (by simpa using hne)]
+          simp only [bv, BodyVar.val, boundValue, hs.slot s s' hs', hsh, termValue, termAt, Bool.false_eq_true, ite_false]
+        · cases hy
       | project k p =>
         simp only [Composer.bodyVar, Option.some.injEq] at hy
         subst hy
@@ -1140,10 +1158,12 @@ theorem readsAbsent_not (hs : P.Sound ε ε₀ ρ h ρ' τ h') {F : IndexFact} (
     · rw [hst x ha] at hx; cases hx
     · rw [hs.absentSlot k ha] at hk; cases hk
   | element v x k =>
-    obtain ⟨s, ls, b, i, hx, -, hk, -⟩ := hF
+    obtain ⟨s, ls, i, hx, -, hk, -⟩ := hF
     rcases Bool.or_eq_true_iff.mp ha with ha | ha
     · rw [hel x ha] at hx; cases hx
-    · rw [hs.absentSlot k ha] at hk; cases hk
+    · obtain ⟨p, hp, habs⟩ := List.any_eq_true.mp ha
+      have hdef := IndexShift.eval_defines hk p hp
+      rw [hs.absent p.1 habs] at hdef; cases hdef
   | _ => simp [Composer.readsAbsent] at ha
 
 theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (Option Nat)} {i : Nat} :
@@ -1154,21 +1174,28 @@ theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : L
     exact P.clause_holds hs hC d hd
   | .guarded t g b, hB, D, hD => by
     simp only [Composer.bodyClause] at hD
-    cases hm : t.mapM P.slot with
-    | none => simp [hm] at hD
-    | some t' =>
-      simp only [hm] at hD
-      obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hD
-      have htr : t'.read ρ' h' ls i = t.read τ h' ls i := by
-        cases t with
-        | self ep => cases hm; rfl
-        | parallel s p ep =>
-          obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hm
-          simp only [ElemTarget.read, hs.slot s s' hs']
-      have hep : t'.ownElement = t.ownElement := ElemTarget.mapM_ownElement hm
-      rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
-      · exact .inl ⟨w, htr ▸ hw, hg⟩
-      · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, htr ▸ hw⟩, bodyClause_holds hs hb d hd⟩
+    split at hD
+    · rename_i hne
+      cases hm : t.mapM P.slot with
+      | none => simp [hm] at hD
+      | some t' =>
+        simp only [hm] at hD
+        obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hD
+        have htr : t'.read ε ρ' h' ls i = t.read ε₀ τ h' ls i := by
+          cases t with
+          | self ep => cases hm; rfl
+          | parallel s p sh ep =>
+            simp only [ElemTarget.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+            obtain ⟨s', hs', sh', hsh', rfl⟩ := hm
+            have hsh : sh'.eval ε ρ' h' i = sh.eval ε₀ τ h' i := by
+              rw [IndexShift.eval_mapM hsh' (fun z _ t ht => hs.slot z t ht),
+                IndexShift.eval_entry (ε' := ε₀) (by simpa [ElemTarget.entrySlots] using hne)]
+            simp only [ElemTarget.read, hs.slot s s' hs', hsh]
+        have hep : t'.ownElement = t.ownElement := ElemTarget.mapM_ownElement hm
+        rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
+        · exact .inl ⟨w, htr ▸ hw, hg⟩
+        · exact .inr ⟨fun hne' => let ⟨w, hw⟩ := hp (hep ▸ hne'); ⟨w, htr ▸ hw⟩, bodyClause_holds hs hb d hd⟩
+    · cases hD
   | .either a b, hB, D, hD => by
     simp only [Composer.bodyClause, List.mem_flatMap, List.mem_map] at hD
     obtain ⟨a', ha', b', hb', rfl⟩ := hD
@@ -1287,20 +1314,33 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
           subst hw
           simp [elementsOf] at hsto
         | cons f q => simp [readPath] at hw
-      · rw [hs.absent idx ha] at hi; cases hi
+      · obtain ⟨q, hq, hab⟩ := List.any_eq_true.mp ha
+        simp only [IndexShift.eval] at hi
+        split at hi
+        · rename_i hall
+          have hqdef := List.all_eq_true.mp hall q hq
+          rw [hs.absent q.1 hab] at hqdef; cases hqdef
+        · cases hi
     split at hD
     · cases hD
     · rename_i hne
-      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, List.any_eq_true, not_exists, not_and] at hne
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Bool.not_eq_false', List.isEmpty_iff,
+        List.any_eq_true, not_exists, not_and] at hne
       have hentry : (IndexFact.atIndex s p idx guard body).entrySlots = [] := by
         simp only [IndexFact.entrySlots, List.append_eq_nil_iff, List.flatMap_eq_nil_iff]
-        refine ⟨by simp [Term.entrySlots, hne.1], fun b hb => ?_⟩
-        cases b with
-        | free t =>
-          have ht : t.atEntry = false := hne.2 (.free t) hb
-          simp [Term.entrySlots, ht]
-        | _ => rfl
+        refine ⟨hne.1, fun b hb => ?_⟩
+        have := hne.2 b hb
+        simpa using this
       exact hmapped hentry ⟨w, sto, ls, i, hw, hsto, hls, hi, hlt, hrest⟩ hD
+  | element v x k =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    split at hD
+    · rename_i ha; exact absurd hF (readsAbsent_not hs ha)
+    · split at hD
+      · rename_i hne
+        exact hmapped (by simpa [IndexFact.entrySlots] using hne) hF hD
+      · cases hD
   | _ =>
     intro hF D hD
     simp only [Composer.fact] at hD

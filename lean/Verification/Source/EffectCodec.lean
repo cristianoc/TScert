@@ -818,12 +818,26 @@ def stepVarOf (j : Json) : Except String StepVar := do
 @[simp] theorem stepVarOf_stepVarJ (x : StepVar) : stepVarOf (stepVarJ x) = .ok x := by
   cases x <;> simp [stepVarJ, stepVarOf, fields_obj] <;> try rfl
 
+def indexShiftJ (sh : IndexShift) : Json :=
+  obj ["terms", "offset"] [listJ (pairJ termJ intJ) sh.terms, intJ sh.offset]
+
+def indexShiftOf (j : Json) : Except String IndexShift := do
+  let [ts, off] ← fields j ["terms", "offset"] | throw "index shift"
+  pure ⟨← under "terms" (listOf (pairOf termOf intOf) ts), ← under "offset" (intOf off)⟩
+
+@[simp] theorem indexShiftOf_indexShiftJ (sh : IndexShift) : indexShiftOf (indexShiftJ sh) = .ok sh := by
+  cases sh with
+  | mk ts off =>
+    simp [indexShiftJ, indexShiftOf, fields_obj, listOf_listJ (pairOf termOf intOf) (pairJ termJ intJ) ts
+      (fun p _ => pairOf_pairJ termOf intOf termJ intJ p (termOf_termJ p.1) (intOf_intJ p.2))] <;> rfl
+
 def boundJ : Bound → Json
   | .index => "index"
   | .elem => "elem"
   | .offset d => tagged "offset" (obj ["delta"] [natJ d])
   | .project k p => tagged "project" (obj ["kind", "path"] [kindJ k, strsJ p])
-  | .parallel s p k ep => tagged "parallel" (obj ["slot", "path", "kind", "elemPath"] [natJ s, strsJ p, kindJ k, strsJ ep])
+  | .parallel s p sh k ep => tagged "parallel"
+      (obj ["slot", "path", "shift", "kind", "elemPath"] [natJ s, strsJ p, indexShiftJ sh, kindJ k, strsJ ep])
   | .free t => tagged "free" (obj ["t"] [termJ t])
 
 def boundOf (j : Json) : Except String Bound := do
@@ -838,8 +852,9 @@ def boundOf (j : Json) : Except String Bound := do
     let [kd, p] ← fields v ["kind", "path"] | throw "project"
     pure (.project (← under "kind" (kindOf kd)) (← under "path" (listOf strOf p)))
   | "parallel" => do
-    let [s, p, kd, ep] ← fields v ["slot", "path", "kind", "elemPath"] | throw "parallel"
+    let [s, p, sh, kd, ep] ← fields v ["slot", "path", "shift", "kind", "elemPath"] | throw "parallel"
     pure (.parallel (← under "slot" (natOf s)) (← under "path" (listOf strOf p))
+      (← under "shift" (indexShiftOf sh))
       (← under "kind" (kindOf kd)) (← under "elemPath" (listOf strOf ep)))
   | "free" => do
     let [t] ← fields v ["t"] | throw "free"
@@ -851,7 +866,8 @@ def boundOf (j : Json) : Except String Bound := do
 
 def elemTargetJ : ElemTarget → Json
   | .self p => tagged "self" (obj ["path"] [strsJ p])
-  | .parallel s p ep => tagged "parallel" (obj ["slot", "path", "elemPath"] [natJ s, strsJ p, strsJ ep])
+  | .parallel s p sh ep => tagged "parallel"
+      (obj ["slot", "path", "shift", "elemPath"] [natJ s, strsJ p, indexShiftJ sh, strsJ ep])
 
 def elemTargetOf (j : Json) : Except String ElemTarget := do
   let (k, v) ← tagOf j
@@ -860,9 +876,9 @@ def elemTargetOf (j : Json) : Except String ElemTarget := do
     let [p] ← fields v ["path"] | throw "self"
     pure (.self (← under "path" (listOf strOf p)))
   | "parallel" => do
-    let [s, p, ep] ← fields v ["slot", "path", "elemPath"] | throw "parallel"
+    let [s, p, sh, ep] ← fields v ["slot", "path", "shift", "elemPath"] | throw "parallel"
     pure (.parallel (← under "slot" (natOf s)) (← under "path" (listOf strOf p))
-      (← under "elemPath" (listOf strOf ep)))
+      (← under "shift" (indexShiftOf sh)) (← under "elemPath" (listOf strOf ep)))
   | _ => throw "an element target"
 
 @[simp] theorem elemTargetOf_elemTargetJ (t : ElemTarget) : elemTargetOf (elemTargetJ t) = .ok t := by
@@ -1001,14 +1017,17 @@ def factJ : IndexFact → Json
   | .linear F => tagged "linear" (obj ["fact"] [linearJ termJ F])
   | .either a b => tagged "either" (obj ["left", "right"] [factJ a, factJ b])
   | .guarded k p g b => tagged "guarded" (obj ["slot", "path", "tag", "body"] [natJ k, strsJ p, guardJ g, factJ b])
-  | .element v x k => tagged "element" (obj ["value", "array", "index"] [natJ v, natJ x, natJ k])
+  | .element v x k => tagged "element" (obj ["value", "array", "index"] [natJ v, natJ x, indexShiftJ k])
   | .fieldRead v o f => tagged "fieldRead" (obj ["value", "object", "field"] [natJ v, natJ o, Json.str f])
   | .every k p start stop body => tagged "every"
       (obj ["slot", "path", "start", "stop", "body"] [natJ k, strsJ p, indexBoundJ start, indexBoundJ stop, listJ bodyClauseJ body])
   | .atIndex k p idx g body => tagged "atIndex"
-      (obj ["slot", "path", "index", "guard", "body"] [natJ k, strsJ p, termJ idx, optJ guardJ g, clauseJ boundJ body])
-  | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
+      (obj ["slot", "path", "index", "guard", "body"] [natJ k, strsJ p, indexShiftJ idx, optJ guardJ g, clauseJ boundJ body])
+  | .apart a p b q => tagged "apart"
+      (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
   | .spineApart a p b q => tagged "spineApart"
+      (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
+  | .elemSpineApart a p b q => tagged "elemSpineApart"
       (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
   | .same a b => tagged "same" (obj ["slot", "other"] [natJ a, natJ b])
 
@@ -1044,7 +1063,7 @@ def factOf : Nat → Json → Except String IndexFact
         (← under "body" (factOf n b)))
     | "element" => do
       let [a, x, i] ← fields v ["value", "array", "index"] | throw "element"
-      pure (.element (← under "value" (natOf a)) (← under "array" (natOf x)) (← under "index" (natOf i)))
+      pure (.element (← under "value" (natOf a)) (← under "array" (natOf x)) (← under "index" (indexShiftOf i)))
     | "fieldRead" => do
       let [a, o, f] ← fields v ["value", "object", "field"] | throw "fieldRead"
       pure (.fieldRead (← under "value" (natOf a)) (← under "object" (natOf o)) (← under "field" (strOf f)))
@@ -1055,14 +1074,19 @@ def factOf : Nat → Json → Except String IndexFact
         (← under "body" (listOf (bodyClauseOf n) b)))
     | "atIndex" => do
       let [s, p, idx, g, b] ← fields v ["slot", "path", "index", "guard", "body"] | throw "atIndex"
-      pure (.atIndex (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "index" (termOf idx))
+      pure (.atIndex (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "index" (indexShiftOf idx))
         (← under "guard" (optOf guardOf g)) (← under "body" (clauseOf boundOf n b)))
     | "apart" => do
-      let [a, b] ← fields v ["slot", "other"] | throw "apart"
-      pure (.apart (← under "slot" (natOf a)) (← under "other" (natOf b)))
+      let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "apart"
+      pure (.apart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
+        (← under "otherPath" (listOf strOf q)))
     | "spineApart" => do
       let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "spineApart"
       pure (.spineApart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
+        (← under "otherPath" (listOf strOf q)))
+    | "elemSpineApart" => do
+      let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "elemSpineApart"
+      pure (.elemSpineApart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
         (← under "otherPath" (listOf strOf q)))
     | "same" => do
       let [a, b] ← fields v ["slot", "other"] | throw "same"
@@ -1134,6 +1158,7 @@ def postJ : OperationPostF WitnessSeq → Json
   | .elementsWhen x v y R => tagged "elementsWhen"
       (obj ["x", "value", "y", "predicate"] [natJ x, litJ v, natJ y, predJ R])
   | .spineExtends x => tagged "spineExtends" (obj ["x"] [natJ x])
+  | .shallowCopy x x' => tagged "shallowCopy" (obj ["x", "exit"] [natJ x, natJ x'])
   | .viewWrite x i v g => tagged "viewWrite" (obj ["x", "i", "v", "format"] [natJ x, natJ i, natJ v, optJ formatJ g])
 
 def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := do
@@ -1177,6 +1202,9 @@ def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := d
   | "spineExtends" => do
     let [x] ← fields v ["x"] | throw "spineExtends"
     pure (.spineExtends (← under "x" (natOf x)))
+  | "shallowCopy" => do
+    let [x, x'] ← fields v ["x", "exit"] | throw "shallowCopy"
+    pure (.shallowCopy (← under "x" (natOf x)) (← under "exit" (natOf x')))
   | "viewWrite" => do
     let [x, i, a, g] ← fields v ["x", "i", "v", "format"] | throw "viewWrite"
     pure (.viewWrite (← under "x" (natOf x)) (← under "i" (natOf i)) (← under "v" (natOf a))
@@ -1541,10 +1569,10 @@ private def sample : Effect :=
       .operation (.freshSpine 0)]⟩⟩,
     some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
     [.every 1 ["x"] .zero (.ofTerm (.now .length 1 ["x"])) [.clause (.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))),
-      .guarded (.self []) .null (.guarded (.parallel 2 ["y"] []) .null
-        (.clause (.atom (.le [(.project .length [], 1), (.parallel 2 ["y"] .length [], -1)] 0))))],
+      .guarded (.self []) .null (.guarded (.parallel 2 ["y"] ⟨[(.value 3, 1)], -1⟩ []) .null
+        (.clause (.atom (.le [(.project .length [], 1), (.parallel 2 ["y"] ⟨[(.value 3, 1)], -1⟩ .length [], -1)] 0))))],
      .fieldRead 1 2 "f",
-      .apart 1 2, .same 0 2]⟩
+      .apart 1 [] 2 [], .same 0 2]⟩
 
 -- An assertion-arena reference does not serialize, at any depth.
 #guard !serializable { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }

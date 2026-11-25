@@ -69,6 +69,19 @@ def ReceiverAppends (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
     ∃ ls', after[s]? = some (.arr ls') ∧ ls'.length = ls.length + args.length ∧
       ∀ j a, args[j]? = some a → ∃ l, ls'[ls.length + j]? = some (some l) ∧ after[l]? = some a ∧ before.length ≤ l
 
+/-- A shallow copy of the array at `src` in `before` into the array at `dst` in
+`after`: the result has the same spine length, each hole stays a hole, and each
+present element cell holds the same value (`Array.prototype.slice()`,
+SOURCE-CONTRACTS.md). -/
+def ShallowCopy (src dst : Tm) (before after : Heap) : Prop :=
+  ∀ s₁ ls₁, Footprints.spineOf src = some s₁ → before[s₁]? = some (.arr ls₁) →
+    ∃ s₂ ls₂, Footprints.spineOf dst = some s₂ ∧ after[s₂]? = some (.arr ls₂) ∧
+      ls₂.length = ls₁.length ∧
+      ∀ i < ls₁.length,
+        (ls₁[i]? = some none ∧ ls₂[i]? = some none) ∨
+        (∃ l₁ l₂ v, ls₁[i]? = some (some l₁) ∧ ls₂[i]? = some (some l₂) ∧
+          before[l₁]? = some v ∧ after[l₂]? = some v)
+
 end Verification.CallEffects
 
 namespace Verification.TolerantFrames
@@ -452,6 +465,9 @@ inductive OperationPostF (Seq : Type) where
   slot `x` (`CallEffects.WriteAt`), at the format `f`, or at the typed
   array's own format where `f` is none. -/
   | viewWrite (x i v : Nat) (format : Option ViewFormat)
+  /-- A shallow copy of the array at entry slot `x` into exit slot `x'`
+  (`CallEffects.ShallowCopy`). -/
+  | shallowCopy (x x' : Nat)
   deriving DecidableEq, Repr
 
 /-- The operational posts of the interpreted formulas: an append's arguments a
@@ -489,6 +505,7 @@ def OperationPostF.Holds (s : TwoState) : OperationPost → Prop
         ls'.length ≤ maxArrayLength
   | .viewWrite x i v f => ∀ g, writeFormats (s.beforeEnv x) f g →
       CallEffects.WriteAt g [s.beforeEnv x, s.beforeEnv i, s.beforeEnv v] s.before.h s.after.h
+  | .shallowCopy x x' => CallEffects.ShallowCopy (s.beforeEnv x) (s.afterEnv x') s.before.h s.after.h
 
 /-- **Two-state formulas** (I4, `Formula`): an assertion at one phase, the
 action of an effect from the entry to the exit (the note's `tr_Φ`, §6,
