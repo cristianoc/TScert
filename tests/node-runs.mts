@@ -3488,9 +3488,16 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-quantified-object-literal-every"),
     "typeof wrapOther([[1]], [[]]).chunks[0][0]"),
     "undefined", "the unrelated array has an empty row and breaks the promised invariant");
-  assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
-    "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
-    '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");
+  assert.equal(runExample(ofKind("quantified-inbounds-overwrite", ["positive"]),
+    "JSON.stringify([replaceChunk({ chunks: [[1], null] }, 1), clearChunk({ chunks: [[1], [2]] }, 0), replaceChunkNullable({ chunks: [[1], null] }, 0, null), replaceChunkNullable({ chunks: [[1], null] }, 1, [9])])"),
+    '[{"chunks":[[1],[42]]},{"chunks":[null,[2]]},{"chunks":[null,null]},{"chunks":[[1],[9]]}]',
+    "quantified-inbounds-overwrite (#392): safe in-bounds overwrites");
+  assert.equal(runExample(negative("invalid-quantified-inbounds-overwrite"),
+    "(() => { const r = replaceEmpty({ chunks: [[1]] }, 0); return typeof r.chunks[0][0]; })()"),
+    "undefined", "invalid-quantified-inbounds-overwrite (#392): overwriting with [] breaks 1 <= chunks[i].length");
+  assert.equal(runExample(negative("invalid-quantified-inbounds-overwrite-alias"),
+    "(() => { const c = [[1]]; const r = overwriteAliased({ chunks: c }, c, 0); return typeof r.chunks[0][0]; })()"),
+    "undefined", "invalid-quantified-inbounds-overwrite-alias (#392): overwriting through aliased array breaks 1 <= chunks[i].length");
   assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
     "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
     "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");

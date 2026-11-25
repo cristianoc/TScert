@@ -1773,6 +1773,16 @@ fact over a view does not transfer to a `subarray` of it either
 most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
 `Int32Array`: the clause states the bound (`v <= 2147483647`).
 
+**Overwriting an ordinary array element.** Distinct indices of a typed
+array that have cells address distinct locations (`listT_distinct`). Two
+cells can hold the same value. On a bounded overwrite, the checker keeps a
+quantified body at each other index where its reads survive the write.
+At the written index it checks the body with the replacement as the
+element. A parallel read needs its own evidence of survival or a checked
+read of the replacement at the same index
+(`IndexWrites.boundedOverwrite_sound`). Writing `[42]` satisfies
+`1 <= chunks[i].length` at the written index. Writing `[]` violates it.
+
 **Extending a prefix.** An exact element write at index $`k`$ establishes a
 prefix with bound $`m`$ where the old prefix has bound $`n`$,
 $`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact

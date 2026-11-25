@@ -134,7 +134,7 @@ theorem listT_spreads {T : TupleF} {E : Fam}
     (hpos : ∀ i A, positionFam T i = some A → FamLe A E)
     (hhole : T.presence = .sparse → ∀ j (U : WorldT j), E j U .undef) :
     Spreads (listT T) E := by
-  rintro n W h v hh ⟨ls, rfl, hd, hlen, -, hbound, hreq, hopt, hrest⟩
+  rintro n W h v hh ⟨ls, rfl, hd, hlen, -, hbound, hreq, hopt, hrest, -⟩
   have hsome : ∀ l, some l ∈ ls → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → E j U u := by
     intro l hm

@@ -851,7 +851,7 @@ theorem spineData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h :
   unfold spineData at hv
   simp only [hl] at hv
   rw [hu] at hv
-  obtain ⟨ls, rfl, -, -, -, -, -, -, hrest⟩ := hs
+  obtain ⟨ls, rfl, -, -, -, -, -, -, hrest, -⟩ := hs
   simp only at hv
   obtain ⟨q, hq, hqe⟩ := List.mem_filterMap.mp (mem_of_lookup hv)
   obtain ⟨m, hm, he⟩ := Option.map_eq_some_iff.mp hqe

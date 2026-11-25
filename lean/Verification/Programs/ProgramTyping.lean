@@ -582,7 +582,7 @@ theorem setElem_spine_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     (href : RefsOk X (.setElem (.arr ls) (.num b) vv)) :
     Safe Ξ (meaning G L) p X heap'' (.setElem (.arr ls) (.num b) vv) := by
   have hlist := ((represents_raw hr p X (.arr ls)) hav').1
-  obtain ⟨ls', hls, -, -, -, -, hreq, hopt, hrest⟩ := hlist
+  obtain ⟨ls', hls, -, -, -, -, hreq, hopt, hrest, -⟩ := hlist
   cases hls
   simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest
   have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
@@ -640,6 +640,11 @@ theorem setElem_spine_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
     · exact hkls
     · exact indexOfBits_lt hk
+    · intro hm
+      obtain ⟨c, hc⟩ := listT_lookup ((represents_raw hr p X (.arr ls)) hav').1 heap''.length hm
+      have hlt : heap''.length < (toList X).length := (List.getElem?_eq_some_iff.mp hc).1
+      have hlen : heap''.length = (toList X).length := hok''.1.1
+      omega
     · exact hm'
 
 /-- A record's storage positions, read as keys, roles and contracts side by
@@ -1812,7 +1817,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro m hm V hy hv heap' iv hok' hival hi' hvr2
     have hfin := hC2.ok (t := iv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, -, hopt, hrest⟩ := ((represents_raw hr m V av) ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, hopt, hrest, -⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hopt hrest
     have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
@@ -1864,7 +1869,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro m hm V hy hv heap' iv hok' hival hi' hvr2
     have hfin := hC2.ok (t := iv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, -, -, hrest⟩ := ((represents_raw hr m V av) ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, -, hrest, -⟩ := ((represents_raw hr m V av) ha'').1
     have hnum := answers_sound hq hi'
     obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
       cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
