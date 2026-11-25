@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-390"><code>1e5527447555ea08bc14dfb9b7aa47c0eaca14b6..pr-390</code></a><ul><li>3 commits</li><li>changes: 3 Definition, 3 Rule, 1 Lowering, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></li><li>wire: added BodyClause.guarded, ElemTarget (self/parallel), Bound.parallel, and Region.elemSpines across TS and Lean codecs</li><li>wire: none</li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-390"><code>1e5527447555ea08bc14dfb9b7aa47c0eaca14b6..pr-390</code></a><ul><li>4 commits</li><li>changes: 3 Definition, 3 Rule, 1 Lowering, 1 Wire, 1 Docs, 1 Check, 1 Tooling</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></li><li>wire: added BodyClause.guarded, ElemTarget (self/parallel), Bound.parallel, and Region.elemSpines across TS and Lean codecs</li><li>wire: none</li></ul></li></ul></section>
 <h2 id="g-pr-390"><code>1e5527447555ea08bc14dfb9b7aa47c0eaca14b6..pr-390</code></h2><article class="card" id="c-9b06eedd7"><header><div><div class="sha">9b06eedd7 · Cristiano Calcagno · Nov 25, 06:16</div><h3>Prove guarded element-length and parallel-array invariants in SinglePass</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Quantified clauses over arrays of nullable nested arrays (such as <code>forall i in a: a[i] === null || 1 &lt;= a[i].length</code> and <code>b === null || forall i in a: a[i] === null || b[i] === null || a[i].length &lt;= b[i].length</code>) could not be stated or discharged in the proved SinglePass verifier because: - quantified clauses (<code>Fact.every</code>) supported only bare linear/disjunctive bodies over a single array, not element nullability guards or parallel reads of a second array at the same index; - optional-property links were lowered as non-optional at loop heads, dropping guarded invariants on optional object properties across loop back-edges; - bare-slot guarded facts stayed locked when branch narrowing refined the slot's type in Γ (e.g. <code>extras === null ? ... : extras[g]!</code>) without recording a ValueSet fact; - <code>nearStep</code> collected guarded and disjunctive facts into <code>linearNear</code>'s 40-fact budget before reaching linear bounds at large loop merges; - guarded field reads (<code>x === null || ...</code>) and element spines needed footprint survival and merge-point tracking across nullable guards and effect-bounded callbacks.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Definition <span class="target">semantics: quantified body clauses, parallel targets, element-spine region</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">BodyClause covered only linear inequalities, disequalities, and binary</span></span></div><div class="row"><span><span class="m-text">disjunctions over a single array's element; Bound carried no parallel</span></span></div><div class="row"><span><span class="m-text">array target; Footprints</span>.<span class="m-text">Region had no element-spine region; IndexFact</span></span></div><div class="row"><span><span class="m-text">had no guarded-surviving fieldRead link</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Adds BodyClause</span>.<span class="m-text">guarded (guarding a body clause by an element's or</span></span></div><div class="row"><span><span class="m-text">parallel element's nullability tag) with ElemTarget</span> (.<span class="m-text">self</span> / .<span class="m-text">parallel</span>),</span></div><div class="row"><span><span class="m-con">Bound</span>.<span class="m-text">parallel (reading a second array's element or element length at the</span></span></div><div class="row"><span><span class="m-text">same quantified index), Footprints</span>.<span class="m-con">Region</span>.<span class="m-text">elemSpines (all element spines</span></span></div><div class="row"><span><span class="m-text">of an array path, kept by spine-preserving effects), and</span></span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-text">fieldRead (recording</span> <var>v</var> <span class="m-rel">=</span> <var>c</var>.<var>f</var> <span class="m-text">so guarded field reads survive</span></span></div><div class="row"><span><span class="m-text">control-flow merges and reach traversal</span>).</span></div></div></div></figure></div>
@@ -414,5 +414,70 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  pipeline/examples/every-view-write-keeps.ts        |  22 +
  pipeline/examples/invalid-view-write-every-view.ts |  11 +
  tests/node-runs.mts                                |  15 +</pre></details>
+</article>
+<article class="card" id="c-6b7b2d878"><header><div><div class="sha">6b7b2d878 · Cristiano Calcagno · Nov 25, 06:50</div><h3>Match quantified guards to their field paths and record the closed write gap</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>For a row with nullable left and right fields, testing left against null let elaboration resolve right.length. With left equal to [] and right equal to null, reading the length throws under Node. The Pretext tier also recorded a confined field-write pattern as a gap although both functions in the case verify.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">front end: field paths in quantified element clauses</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a field prefix in a quantified element</span><span class="tgt"><span class="m-text">an earlier guard on the same array at the same depth could exclude its</span> <span class="m-text">tag</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a field prefix in a quantified element</span><span class="tgt"><span class="m-text">an earlier guard excludes its tag when it names the same array and that exact field prefix</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">Pretext tier: confined field-write expectation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">The quantified bound across a confined field write was expected to be</span><span class="ln">refused.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Both the inferred and written loop invariants verify across the write.</span></pre></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-quantified-sibling-element-guard</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the right field has no length contract under the guard on the left</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Row</span> = { left: number[] | <span class="tk-k">null</span>; right: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; rows.length
+ *  @requires forall j in rows: rows[j].left === null || 1 &lt;= rows[j].right.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> rightLength(rows: <span class="tk-t">Row</span>[], i: number): number {
+  <span class="tk-k">const</span> row = rows[i]!;
+  <span class="tk-k">return</span> row.left === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : row.right!.length;
+}</pre></details></li><li><details><summary><code>quantified-sibling-element-guard</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a matching guard protects direct and nested length reads</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Row</span> = { left: number[] | <span class="tk-k">null</span>; right: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires forall i in rows: rows[i].right === null || 1 &lt;= rows[i].right.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> countRows(rows: <span class="tk-t">Row</span>[]): number {
+  <span class="tk-k">return</span> rows.length;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">NestedRow</span> = { right: { items: number[] } | <span class="tk-k">null</span> };
+
+<span class="tk-c">/** @requires forall i in rows: rows[i].right === null || 1 &lt;= rows[i].right.items.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> countNestedRows(rows: <span class="tk-t">NestedRow</span>[]): number {
+  <span class="tk-k">return</span> rows.length;
+}</pre></details></li><li><details><summary><code>bounds-pattern-confined-field-write</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a fresh object's field write preserves the quantified bound</span></summary><pre class="code"><span class="tk-c">// Bounds pattern P3: a quantified fact across a write outside its array.</span>
+<span class="tk-c">// Fact: forall i in items: 0 &lt;= items[i] &lt; widths.length, kept across</span>
+<span class="tk-c">// `fragment.width = s`, a write of a field of a fresh object, whose location</span>
+<span class="tk-c">// is no element of `items` and no spine of `widths`.</span>
+<span class="tk-c">// Pretext: rich-inline.ts createLine (12 sites), setEmptyObjectFacts (7).</span>
+<span class="tk-k">type</span> <span class="tk-t">Fragment</span> = { item: number; width: number };
+
+<span class="tk-c">/** @requires forall i in items: safeInteger(items[i]) &amp;&amp; 0 &lt;= items[i] &amp;&amp; items[i] &lt; widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> acrossWrite(items: <span class="tk-t">Int32Array</span>, widths: number[]): number {
+  <span class="tk-k">const</span> fragment: <span class="tk-t">Fragment</span> = { item: <span class="tk-n">0</span>, width: <span class="tk-n">0</span> };
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; items.length; i++) {
+    fragment.width = s;
+    s += widths[items[i]!]!;
+  }
+  <span class="tk-k">return</span> s + fragment.width;
+}
+
+<span class="tk-c">/** @requires forall i in items: safeInteger(items[i]) &amp;&amp; 0 &lt;= items[i] &amp;&amp; items[i] &lt; widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> acrossWriteInvariant(items: <span class="tk-t">Int32Array</span>, widths: number[]): number {
+  <span class="tk-k">const</span> fragment: <span class="tk-t">Fragment</span> = { item: <span class="tk-n">0</span>, width: <span class="tk-n">0</span> };
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(i) &amp;&amp; 0 &lt;= i
+   * @invariant forall k in items: safeInteger(items[k]) &amp;&amp; 0 &lt;= items[k] &amp;&amp; items[k] &lt; widths.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; items.length; i++) {
+    fragment.width = i;
+    s += widths[items[i]!]!;
+  }
+  <span class="tk-k">return</span> s + fragment.width;
+}</pre></details></li></ul>
+<h4 class="change">Validation</h4><div class="prose"><p>Six targeted pipeline cases match their expectations. The sibling-field counterexample throws TypeError under Node. The documentation check reports zero problems.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-quantified-sibling-element-guard</span> <span class="test pos">quantified-sibling-element-guard</span> <span class="test pos">bounds-pattern-confined-field-write</span></dd></dl>
+<details><summary>9 files changed, 35 insertions(+), 16 deletions(-)</summary><pre class="code"> docs/drafts/parity-rule-table.md                            |  2 +-
+ docs/drafts/rules-at-acceptance.md                          |  5 -----
+ pipeline/cases.mts                                          |  6 ++++--
+ ...te-refused.ts =&gt; bounds-pattern-confined-field-write.ts} |  3 ---
+ pipeline/examples/bounds-pattern-fresh-field-write.ts       |  2 +-
+ .../examples/invalid-quantified-sibling-element-guard.ts    |  8 ++++++++
+ pipeline/examples/quantified-sibling-element-guard.ts       | 13 +++++++++++++
+ tests/node-runs.mts                                         |  3 +++
+ tools/bound-annotations.mts                                 |  9 +++++----</pre></details>
 </article>
 </main></body></html>
