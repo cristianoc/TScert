@@ -1788,6 +1788,19 @@ fact over a view does not transfer to a `subarray` of it either
 most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
 `Int32Array`: the clause states the bound (`v <= 2147483647`).
 
+**Appending by an indexed ordinary array write.** An index equal to the
+old length adds a fresh cell and keeps the old positions and their
+contents. The checked write records which value is stored at the index.
+It can extend a quantified body after checking the new position. Two
+writes to parallel arrays advance the paired fact after both entries
+are present. The first write keeps the old paired prefix and records
+its element. The second uses that record to check the pair at the
+new index. For example, an advance of length one and an extra of
+length zero fail the check even when the two arrays grow in lockstep.
+Where another read needs type-directed spine separation, the append rule
+uses the same element-contract witness as the push rule
+(`IndexWrites.denseAppendAtoms_sound`).
+
 **Extending a prefix.** An exact element write at index $`k`$ establishes a
 prefix with bound $`m`$ where the old prefix has bound $`n`$,
 $`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact

@@ -114,7 +114,9 @@ theorem boundedWritesSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     (Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.select j k e codes sums =
       (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.select j k e codes sums := by
-  simp only [Checker.boundedWrites, indexingSelect_reassign, Parametricity.boundedWriteCheck_reassign, Parametricity.keepsLengths_reassign, Parametricity.writeAtoms_reassign, Parametricity.growOutput_reassign, Parametricity.stableFirst_reassign, Parametricity.atLengthAtoms_reassign]
+  simp only [Checker.boundedWrites, indexingSelect_reassign, Parametricity.boundedWriteCheck_reassign,
+    Parametricity.keepsLengths_reassign, Parametricity.writeAtoms_reassign, Parametricity.growOutput_reassign,
+    Parametricity.stableFirst_reassign, Parametricity.atLengthAtoms_reassign, Parametricity.denseAppendAtoms_reassign]
   all_goals rfl
 
 /-- **The ordinary checker's `select` at a reassigned graph** is its

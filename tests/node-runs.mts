@@ -3511,9 +3511,12 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-quantified-guarded-push-inner-alias"),
     "(() => { const row = [7]; return growRow({ chunks: [null, row] }, row).chunks[1].length; })()"),
     2, "growing an aliased row violates the upper bound of one");
-  assert.equal(runExample(ofKind("quantified-dense-append-write-gap", ["gap"]),
+  assert.equal(runExample(ofKind("quantified-dense-append-write", ["positive"]),
     "String(copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]))"),
-    "14", "quantified-dense-append-write-gap (#395): safe lockstep dense-append write");
+    "14", "quantified-dense-append-write (#395): safe lockstep dense-append write");
+  assert.deepEqual(runPlain(negative("invalid-quantified-dense-append-short-extra"),
+    "(() => { const extras = []; const advances = appendRows(extras); return [advances[0].length, extras[0].length]; })()"),
+    [1, 0], "an appended extra that is too short violates the paired length bound");
   assert.equal(runExample(ofKind("quantified-suffix-null-gap", ["gap"]),
     "JSON.stringify(buildLazyExtras([[1], [2, 3], [4]], [null, [10, 20], null]))"),
     '{"advances":[[1],[2,3],[4]],"extras":[null,[10,20],null]}', "quantified-suffix-null-gap (#396): safe lazy parallel allocation");
