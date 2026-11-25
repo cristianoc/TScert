@@ -6075,20 +6075,29 @@ def instantiateAtIndex (K : Thunk (Linear.Known Term)) (k : Knowledge) (cls kCls
     | none => []
   | _ => []
 
-/-- The facts each element read the atoms state instantiates
-(`instantiateEvery`, `instantiateAtIndex`). -/
+/-- The facts each element read (bare or guarded by a slot tag) the atoms state
+instantiates (`instantiateEvery`, `instantiateAtIndex`). -/
 def elementFacts (k : Knowledge) : List IndexAtom :=
   let everys := k.indices.filter fun a => a.cond.isNone && match a.fact with | .every .. => true | _ => false
   let atIdxs := k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex
   if everys.isEmpty && atIdxs.isEmpty then [] else
   let elems := k.indices.filterMap fun a => match a with | ⟨.element r x i, none, _⟩ => some (r, x, i) | _ => none
-  if elems.isEmpty then [] else
+  let guardedElems := k.indices.filterMap fun a => match a with
+    | ⟨.guarded g [] tag (.element r x i), none, _⟩ => some (g, tag, r, x, i)
+    | _ => none
+  if elems.isEmpty && guardedElems.isEmpty then [] else
   let K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) []
-  elems.flatMap fun (r, x, i) =>
+  elems.flatMap (fun (r, x, i) =>
     let cls := HeapLinks.aliases k.links x
     let kCls := if atIdxs.isEmpty then [] else HeapLinks.aliases k.links i
     everys.flatMap (instantiateEvery K k.links k.indices cls r x i) ++
-    atIdxs.flatMap (instantiateAtIndex K k cls kCls r i)
+    atIdxs.flatMap (instantiateAtIndex K k cls kCls r i)) ++
+  guardedElems.flatMap fun (g, tag, r, x, i) =>
+    let cls := HeapLinks.aliases k.links x
+    (everys.flatMap (instantiateEvery K k.links k.indices cls r x i)).map fun a =>
+      { fact := match a.fact with
+        | .guarded g' [] tag' _ => if g' == g && tag' == tag then a.fact else .guarded g [] tag a.fact
+        | _ => .guarded g [] tag a.fact }
 
 /-- Knowledge with its element reads' instances added. -/
 def elementInstances (k : Knowledge) : Knowledge :=
@@ -6387,34 +6396,89 @@ theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds
       · cases ha'
       · split at ha'
         · cases ha'
-        · obtain ⟨⟨r, x, i⟩, he, hm⟩ := List.mem_flatMap.mp ha'
-          obtain ⟨e, hem, hme⟩ := List.mem_filterMap.mp he
-          match e, hem, hme with
-          | ⟨.element r' x' i', none, _⟩, hem, hme =>
-            simp only [Option.some.injEq, Prod.mk.injEq] at hme
-            obtain ⟨rfl, rfl, rfl⟩ := hme
-            have hel := hk.2.2.2.2.2 _ hem (fun b hb => by cases hb)
-            rcases List.mem_append.mp hm with hm | hm
-            · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
-              exact instantiateEvery_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
-                (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
-                (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
-            · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
-              have hne : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty = false := by
-                cases hne' : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty
-                · rfl
-                · rw [List.isEmpty_iff.mp hne'] at hcm; cases hcm
-              simp only [hne, Bool.false_eq_true, ite_false] at hm
-              exact instantiateAtIndex_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
-                (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk
-                (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy)
-                (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
-          | ⟨.element _ _ _, some _, _⟩, _, hme => cases hme
-          | ⟨.index _, _, _⟩, _, hme | ⟨.length _ _, _, _⟩, _, hme | ⟨.bound _ _ _, _, _⟩, _, hme
-          | ⟨.int _, _, _⟩, _, hme | ⟨.pastSafe _, _, _⟩, _, hme | ⟨.linear _, _, _⟩, _, hme
-          | ⟨.guarded _ _ _ _, _, _⟩, _, hme | ⟨.either _ _, _, _⟩, _, hme | ⟨.fieldRead _ _ _, _, _⟩, _, hme
-          | ⟨.apart _ _, _, _⟩, _, hme | ⟨.spineApart _ _ _ _, _, _⟩, _, hme | ⟨.every _ _ _ _, _, _⟩, _, hme
-          | ⟨.atIndex _ _ _ _ _, _, _⟩, _, hme | ⟨.same _ _, _, _⟩, _, hme => cases hme
+        · rcases List.mem_append.mp ha' with ha' | ha'
+          · obtain ⟨⟨r, x, i⟩, he, hm⟩ := List.mem_flatMap.mp ha'
+            obtain ⟨e, hem, hme⟩ := List.mem_filterMap.mp he
+            match e, hem, hme with
+            | ⟨.element r' x' i', none, _⟩, hem, hme =>
+              simp only [Option.some.injEq, Prod.mk.injEq] at hme
+              obtain ⟨rfl, rfl, rfl⟩ := hme
+              have hel := hk.2.2.2.2.2 _ hem (fun b hb => by cases hb)
+              rcases List.mem_append.mp hm with hm | hm
+              · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
+                exact instantiateEvery_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
+                  (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
+                  (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
+              · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
+                have hne : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty = false := by
+                  cases hne' : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty
+                  · rfl
+                  · rw [List.isEmpty_iff.mp hne'] at hcm; cases hcm
+                simp only [hne, Bool.false_eq_true, ite_false] at hm
+                exact instantiateAtIndex_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
+                  (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk
+                  (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy)
+                  (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
+            | ⟨.element _ _ _, some _, _⟩, _, hme => cases hme
+            | ⟨.index _, _, _⟩, _, hme | ⟨.length _ _, _, _⟩, _, hme | ⟨.bound _ _ _, _, _⟩, _, hme
+            | ⟨.int _, _, _⟩, _, hme | ⟨.pastSafe _, _, _⟩, _, hme | ⟨.linear _, _, _⟩, _, hme
+            | ⟨.guarded _ _ _ _, _, _⟩, _, hme | ⟨.either _ _, _, _⟩, _, hme | ⟨.fieldRead _ _ _, _, _⟩, _, hme
+            | ⟨.apart _ _, _, _⟩, _, hme | ⟨.spineApart _ _ _ _, _, _⟩, _, hme | ⟨.every _ _ _ _, _, _⟩, _, hme
+            | ⟨.atIndex _ _ _ _ _, _, _⟩, _, hme | ⟨.same _ _, _, _⟩, _, hme => cases hme
+          · obtain ⟨⟨g, tag, r, x, i⟩, hge, hm⟩ := List.mem_flatMap.mp ha'
+            obtain ⟨⟨ef, ec, en⟩, hem, hme⟩ := List.mem_filterMap.mp hge
+            cases ec with
+            | some _ => simp only at hme; cases hme
+            | none =>
+              cases ef with
+              | guarded g0 p0 tag0 bf =>
+                cases p0 with
+                | cons _ _ => simp only at hme; cases hme
+                | nil =>
+                  cases bf with
+                  | element r0 x0 i0 =>
+                    simp only [Option.some.injEq, Prod.mk.injEq] at hme
+                    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hme
+                    have hgu := hk.2.2.2.2.2 _ hem (fun b hb => by cases hb)
+                    obtain ⟨v, hv, hor⟩ := hgu
+                    simp only [readGuard, Option.some.injEq] at hv; subst hv
+                    obtain ⟨a0, ha0, rfl⟩ := List.mem_map.mp hm
+                    obtain ⟨⟨cf, cc, cn⟩, hcm, ha0m⟩ := List.mem_flatMap.mp ha0
+                    have ha0_cond : a0.cond = none := by
+                      cases cc with
+                      | some _ => simp [instantiateEvery] at ha0m
+                      | none =>
+                        cases cf <;> simp only [instantiateEvery] at ha0m
+                        all_goals try cases ha0m
+                        split at ha0m
+                        · split at ha0m
+                          · obtain ⟨_, _, hmap⟩ := List.mem_filterMap.mp ha0m
+                            obtain ⟨_, _, hEq⟩ := Option.map_eq_some_iff.mp hmap
+                            cases hEq; rfl
+                          · cases ha0m
+                        · cases ha0m
+                    have hinst : (IndexFact.element r0 x0 i0).HoldsAt ε ρ h → a0.fact.HoldsAt ε ρ h := fun hel =>
+                      instantiateEvery_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
+                        (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
+                        (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a0 ha0m
+                        (fun b hb => by rw [ha0_cond] at hb; cases hb)
+                    cases hfa0 : a0.fact with
+                    | guarded g' p' tag' B =>
+                      cases p' with
+                      | nil =>
+                        simp only
+                        split
+                        · rename_i heq
+                          simp only [Bool.and_eq_true, beq_iff_eq] at heq
+                          obtain ⟨rfl, rfl⟩ := heq
+                          rcases hor with htg | hel
+                          · exact ⟨ρ g', rfl, .inl htg⟩
+                          · exact hfa0 ▸ hinst hel
+                        · exact ⟨ρ g0, rfl, hor.imp id fun hel => hfa0 ▸ hinst hel⟩
+                      | cons _ _ => exact ⟨ρ g0, rfl, hor.imp id fun hel => hfa0 ▸ hinst hel⟩
+                    | _ => exact ⟨ρ g0, rfl, hor.imp id fun hel => hfa0 ▸ hinst hel⟩
+                  | _ => simp only at hme; cases hme
+              | _ => simp only at hme; cases hme
 
 
 /-- Whether a linear fact contradicts a prepared linear context `K`, checked

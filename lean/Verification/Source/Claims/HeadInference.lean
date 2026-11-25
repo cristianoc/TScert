@@ -565,6 +565,28 @@ abbrev Ctx := List Fact
 
 def Ctx.kill (ctx : Ctx) (ns : List String) : Ctx := ctx.filter fun f => !f.names.any ns.contains
 
+/-- Forget `ns` after eliminating their linear terms (`Linear.eliminateAll`),
+so linear relations between surviving bindings (`a.length === i`, `b.length === i`
+→ `a.length === b.length`) survive a block's exit. -/
+def Ctx.eliminateKill (ctx : Ctx) (ns : List String) : Ctx :=
+  if ns.isEmpty then ctx else
+  let raw : List Lin := ctx.filterMap fun | .lin l => some l | _ => none
+  let keys : List Key := (raw.flatMap fun l => l.terms.map (·.1)).eraseDups
+  let used := (List.range keys.length).filter fun idx => match keys[idx]? with
+    | some (n, _, _) => ns.contains n
+    | none => false
+  let derived : List Fact := if used.isEmpty then [] else
+    let encoded : List (Linear.Fact Nat) := raw.filterMap fun l =>
+      (l.terms.mapM fun ((k, c) : Key × Int) => (keys.idxOf? k).map fun idx => (idx, c)).map fun ts => Linear.Fact.le ts l.bound
+    (Linear.eliminateAll encoded used).filterMap fun
+      | .le ts b =>
+        if ts.isEmpty then none else
+        (ts.mapM fun ((idx, c) : Nat × Int) => (keys[idx]?).bind fun (k : Key) =>
+          if ns.contains k.1 then none else some (k, c)).map fun ts' => Fact.lin ⟨ts', b⟩
+      | .ne .. => none
+  let kept := ctx.kill ns
+  kept ++ derived.eraseDups.filter (!kept.contains ·)
+
 /-- The bindings whose arrays expressions resize by name: each root of a
 resizing method's receiver (`push`, `pop`, `shift`, `unshift`, `splice`), of a
 written element's or field's receiver. A callee that resizes an array it is
@@ -1532,8 +1554,8 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
     | .ite _ c t e => do
       let tOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c true) ++ ctx.unguarded c true rules.falseGuards)) t
       let eOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c false) ++ ctx.unguarded c false rules.falseGuards)) (e.getD [])
-      let tOut := tOut.kill (declaredIn t)
-      let eOut := eOut.kill (declaredIn (e.getD []))
+      let tOut := tOut.eliminateKill (declaredIn t)
+      let eOut := eOut.eliminateKill (declaredIn (e.getD []))
       if exits t && !exits (e.getD []) then return eOut
       if exits (e.getD []) && !exits t then return tOut
       -- (the facts both arms establish after them, `Ctx.join`)
@@ -1557,9 +1579,9 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
       -- (at the exit, the written invariant too: it holds at the head)
       return if breaks body then base else base.add (written ++ head ++ Ctx.tested (head ++ written) (atomsOf rules.kind c false))
     | .block _ _ body => do
-      -- (the facts after its statements, its own bindings forgotten)
+      -- (the facts after its statements, its own bindings eliminated then forgotten)
       let out ← walk rules ctx body
-      return out.kill (declaredIn body)
+      return out.eliminateKill (declaredIn body)
     | .forOf pos _ _ _ i body => do
       -- A `for...of` head: its iterable once, then the facts of a loop
       -- whose test is its iterator's step.

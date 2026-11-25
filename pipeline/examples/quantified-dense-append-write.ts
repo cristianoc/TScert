@@ -35,3 +35,24 @@ export function copyLockstep(
   }
   return sum;
 }
+
+/**
+ * @requires forall i in src: 1 <= src[i].length
+ */
+export function copyNonEmpty(src: number[][]): number {
+  const dst: number[][] = [];
+  /**
+   * @invariant safeInteger(i) && 0 <= i && dst.length === i
+   * @invariant forall j in dst: 1 <= dst[j].length
+   */
+  for (let i = 0; i < src.length; i++) {
+    const row = src[i]!;
+    if ((i & 0x7fffffff) !== i || i > dst.length) throw new RangeError("index");
+    dst[i] = row;
+  }
+  let sum = 0;
+  for (let i = 0; i < dst.length; i++) {
+    sum += dst[i]![0]!;
+  }
+  return sum;
+}

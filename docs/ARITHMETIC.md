@@ -1870,6 +1870,37 @@ limits in [FOOTPRINTS.md](FOOTPRINTS.md#element-regions);
 `IndexWrites.boundedOverwrite_sound`). Writing `[42]` satisfies
 `1 <= chunks[i].length` at the written index. Writing `[]` violates it.
 
+**Appending by an indexed ordinary array write.** An index equal to the
+old length adds a fresh cell and keeps the old positions and their
+contents. The checked write records which value is stored at the index.
+It can extend a quantified body after checking the new position. Two
+writes to parallel arrays advance the paired fact after both entries
+are present. The first write keeps the old paired prefix and records
+its element. The second uses that record to check the pair at the
+new index. For example, an advance of length one and an extra of
+length zero fail the check even when the two arrays grow in lockstep.
+Where another read needs type-directed spine separation, the append rule
+uses the push rule's (`typesSpineApart`, `typesPathSpinesApart`)
+(`IndexWrites.denseAppendAtoms_sound`). The rule extends an unconditional
+quantified fact over a slot (an empty field path), whose parallel arrays
+are slots; a body with an offset read (`x[i + d]`) has no instance at the
+appended index and is not extended, a stated limit.
+
+The append rule is not stated as an instance of the rules extending a
+prefix at a new last index, `every-push` and the exact element write below.
+The exact element write (`PromiseCalls.every_written_prefix`) reads a typed
+array's write: its premises are that no spine changes (`writeChanges`) and
+that the write lands below the view's fixed length (`ExactWrite`), while an
+append changes a spine's length and allocates a cell. `every-push`
+(`PromiseCalls.every_appended`) reads the same heap change as an append (an
+append's heap meets `ReceiverGrows` and `ReceiverAppends`), but extends only
+a fact over the receiver's own array, and its check at the new index
+(`appendedBody`) admits no parallel read. The lockstep case extends a fact
+over another array whose body reads the written one in parallel, with the
+bound moving to the written array's length, which `every-push` does not
+state. The append rule's extension of a fact over the written array itself,
+where the body reads no parallel array, is the case `every-push` states.
+
 **Extending a prefix.** An exact element write at index $`k`$ establishes a
 prefix with bound $`m`$ where the old prefix has bound $`n`$,
 $`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact
@@ -2001,6 +2032,12 @@ type TypeScript gives its declaration, so a binding declared `SafeInt` is
 compared with no `safeInteger(...)` (`safe-int-loop-invariant`). The invariant states
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.
+
+On leaving a block, head inference eliminates the departing bindings
+from linear facts before forgetting them. For example, when both output
+arrays have length `i`, it proposes that their lengths agree after the
+loop-local `i` goes out of scope. Each proposed relation is checked
+before it is used at a following loop head.
 
 **Implementation.** The front end reads the tag before the loop
 (`loopInvariantTags`, `clauseRoots`, `loopBindings` in

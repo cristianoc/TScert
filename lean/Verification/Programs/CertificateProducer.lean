@@ -2080,6 +2080,11 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
             projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
               ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
       guardsOf x (fun z => .spineApart z q y r) ++ guardsOf y (fun z => .spineApart x q z r)
+    | .element v x idx =>
+      (HeapLinks.aliases p.links v).flatMap fun z =>
+        ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
+          projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
+            ({ fact := .guarded z [] g (.element z x idx) } : HeapKnowledge.IndexAtom)
     | _ => []
   let candidates := ((projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
     restated.eraseDups).filter fun a => !k.indices.contains a
