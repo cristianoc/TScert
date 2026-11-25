@@ -3479,9 +3479,16 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-view-write-every-view"),
     "(() => { const v = new Uint8Array([0]); return typeof writeViewAliased(v, v, [10]); })()"),
     "undefined", "invalid-view-write-every-view: aliased Uint8Array write corrupts index bound and reads undefined");
-  assert.equal(runExample(ofKind("quantified-object-literal-every-gap", ["gap"]),
-    "JSON.stringify(wrapChunks([[1, 2], null]))"),
-    '{"chunks":[[1,2],null]}', "quantified-object-literal-every-gap (#391): safe object-literal wrap");
+  assert.equal(runExample(ofKind("quantified-object-literal-every", ["positive"]),
+    "JSON.stringify([wrapChunks([[1, 2], null]), wrapPaired([[1]], [[2]]), wrapOptionalPaired([[1]], null), wrapOptionalPaired([[1]], [[2]]), wrapParallelBox([[1, 2], null], [[3, 4], null]), wrapNested([[1, 2], null]), lastOfChunks([[1, 2], null], 0)])"),
+    '[{"chunks":[[1,2],null]},{"chunks":[[1]],"extras":[[2]]},{"chunks":[[1]],"extras":null},{"chunks":[[1]],"extras":[[2]]},{"chunks":[[1,2],null],"extras":[[3,4],null]},{"inner":{"chunks":[[1,2],null]}},2]',
+    "quantified-object-literal-every (#391): each literal holds its input arrays, and the call reads the last element");
+  assert.equal(runExample(negative("invalid-quantified-object-literal-every"),
+    "typeof lastInChunk(wrapOther([[1]], [[]]), 0)"),
+    "undefined", "invalid-quantified-object-literal-every (#391): the returned field's empty row is read at index -1");
+  assert.equal(runExample(negative("invalid-quantified-object-literal-every-call"),
+    "typeof lastOfOther([[1]], [[]], 0)"),
+    "undefined", "invalid-quantified-object-literal-every-call (#391): the argument's empty row is read at index -1");
   assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
     "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
     '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");

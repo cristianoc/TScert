@@ -1644,6 +1644,24 @@ $`c`$ into slot $`v`$ restates of $`v`$ a quantified fact whose root, bound
 or body terms read through $`c.f`$ (proved), so `const { widths } = data`
 retains the fact of $`|\mathit{widths}|`$.
 
+**Goals through required reads.** Every entailment of index facts (an
+edge, a loop head, a return, a call's precondition) derives a goal from its
+restatement through the required field reads the knowledge links: where
+field $`f`$ of slot $`c`$ is present and was read into slot $`v`$, a path
+$`c.f.p`$ reads what $`v.p`$ reads, so the goal's array roots, bound and body
+terms rooted at $`c.f`$ are restated at $`v`$, along chains of such reads
+and below guards and disjunctions (`HeapKnowledge.requiredGoals`, proved
+`requiredGoals_holds` from `lowerRequired_iff`). An optional field's read
+gives no location and restates nothing. Returning `{ chunks }`, or passing
+it where a type's quantified invariant is required, establishes
+$`\forall i<|r.\mathit{chunks}|.\ \Phi`$ from the fact about
+$`\mathit{chunks}`$.
+
+```math
+\frac{K\vdash c.f\ \text{present, read into}\ v\qquad K\vdash \Phi[v/c.f]}
+     {K\vdash \Phi}\ \textsf{goal-read}
+```
+
 **Prefix weakening.** Every entailment of index facts (an edge, a loop
 head, a return, a call's precondition) derives a quantified fact over a
 shorter prefix of the same array: from a source quantified fact whose body
