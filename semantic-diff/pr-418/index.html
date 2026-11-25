@@ -1,0 +1,445 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-418"><code>65ea348388ef64489cdac9e048137b496bf9286c..pr-418</code></a><ul><li>4 commits</li><li>changes: 2 Definition, 1 Rule, 2 Check, 2 Proposal, 2 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">The contract of an ordinary array input states that its spine lists each element cell at one index; JavaScript arrays meet it, since an array's elements are distinct storage slots.</span></li></ul></li></ul></section>
+<h2 id="g-pr-418"><code>65ea348388ef64489cdac9e048137b496bf9286c..pr-418</code></h2><article class="card" id="c-b0a266349"><header><div><div class="sha">b0a266349 · Cristiano Calcagno · Nov 25, 11:53</div><h3>Keep quantified facts across element writes with distinct array cells (#392)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Overwriting an in-bounds element of an ordinary array (<code>chunks[k] = next</code>, <code>chunks[k] = null</code>, or a guarded nullable array) dropped every quantified fact over <code>chunks</code>, and <code>replaceChunk</code> failed with <code>source ensures refusal at [777,781): a return of 'replaceChunk' does not establish the postcondition</code>. The array spine contract did not say that distinct indices list distinct element cells, so a write at <code>k</code> could not be shown to leave <code>chunks[i]</code>, <code>i ≠ k</code>, untouched. A second rule, older and narrower, kept a quantified fact across any checked write only when the fact's array was apart from the written one and its body read no guard, element projection or parallel array.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">semantics: array spine contract</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A spine meets a tuple contract when its length, presence and</span></span></div><div class="row"><span><span class="m-text">position-wise element cell contracts hold</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">It meets it when those hold and two distinct indices list distinct</span></span></div><div class="row"><span><span class="m-text">cells</span><span class="m-rel">:</span></span></div><div class="row cont"><span><span class="m-bind">∀</span> <var>i</var> <var>j</var> <var>l</var>. <var>i</var> <span class="m-rel">≠</span> <var>j</var> ∧ <span class="m-op">ls</span>[<var>i</var>] <span class="m-rel">=</span> <var>l</var> ⟹ <span class="m-op">ls</span>[<var>j</var>] <span class="m-rel">≠</span> <var>l</var></span></div><div class="row"><span><span class="m-text">An allocated literal meets it by distinct allocation indices; a growth</span></span></div><div class="row"><span><span class="m-text">at a hole or at the end places a fresh cell no index lists</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">single pass: quantified fact across an element write</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">apart</span><sub><var>Σ</var></sub>(<var>a</var>,<var>z</var>)</span><span><span class="m-op">array</span>(<var>z</var>)</span><span><span class="m-op">apart</span><sub><var>a</var></sub>(<var>t</var>)</span><span><span class="m-bind">∀</span><var>F</var><span class="m-rel">∈</span><var>Φ</var>. <span class="m-op">apart</span><sub><var>a</var></sub>(<var>F</var>), <var>F</var> <span class="m-text">unguarded, no projection or parallel read</span></span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>a</var>[<var>k</var>] <span class="m-rel">:</span><span class="m-rel">=</span> <var>v</var> ⊣ <var>Σ'</var>, <span class="m-bind">∀</span><var>i</var>&lt;<var>t</var>. <var>Φ</var></div></div></div><span class="rule-name">(every-apart-write)</span></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">framed</span><sub><var>a</var></sub>(<var>z</var>,<var>Φ</var>)</span><span>(<var>K</var> <span class="m-rel">⊢</span> <var>k</var> &lt; |<var>a</var>|  ∧  <span class="m-op">at</span><sub><var>k</var></sub>)  ∨  <span class="m-op">apart</span><sub><var>a</var></sub>(<var>z</var>,<var>t</var>,<var>Φ</var>)</span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>a</var>[<var>k</var>] <span class="m-rel">:</span><span class="m-rel">=</span> <var>v</var> ⊣ <var>Σ'</var>, <var>a</var>[<var>k</var>] <span class="m-rel">=</span> <var>v</var>,  <span class="m-bind">∀</span><var>i</var>&lt;<var>t</var>. <var>Φ</var></div></div></div><span class="rule-name">(every-write)</span></div><div class="formulas"><div class="row"><span><span class="m-op">framed</span><sub><var>a</var></sub>(<var>z</var>,<var>Φ</var>)<span class="m-rel">:</span> <var>z</var> <span class="m-text">and every array</span> <var>Φ</var> <span class="m-text">reads in parallel alias a or are</span></span></div><div class="row"><span><span class="m-text">apart from a (spine and cells); an offset read has its root apart from</span></span></div><div class="row"><span><var>a</var>. <span class="m-op">at</span><sub><var>k</var></sub><span class="m-rel">:</span> <var>K</var> <span class="m-rel">⊢</span> <var>t</var> <span class="m-rel">≤</span> <var>k</var>, <span class="m-text">or every clause of</span> <var>Φ</var> <span class="m-text">holds at</span> <var>k</var> <span class="m-text">with</span> <var>v</var> <span class="m-text">as the</span></span></div><div class="row"><span><span class="m-text">element of each array aliasing a</span>. <span class="m-op">apart</span><sub><var>a</var></sub>(<var>z</var>,<var>t</var>,<var>Φ</var>)<span class="m-rel">:</span> <var>z</var> <span class="m-text">and every parallel</span></span></div><div class="row"><span><span class="m-text">array are apart from a, the bound and free terms read no length of a</span></span></div><div class="row"><span><span class="m-text">slot not apart from a, and no read through an element is a length</span>. <span class="m-con">One</span></span></div><div class="row"><span><span class="m-text">rule now decides every quantified fact across a checked write; the</span></span></div><div class="row"><span><span class="m-text">older rule's every-branch is removed</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-inbounds-overwrite</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">in-bounds overwrites with a non-null row, null, and a guarded nullable value keep the row-length fact</span></summary><pre class="code"><span class="tk-c">// Overwriting an in-bounds element of an ordinary array (`chunks[k] = next`,</span>
+<span class="tk-c">// `chunks[k] = null`, or a guarded nullable array) keeps the quantified</span>
+<span class="tk-c">// invariant on all other indices (`i !== k`), because an ordinary JS array's</span>
+<span class="tk-c">// element cells are distinct (`listT`), and checks the body clause at `k`.</span>
+<span class="tk-c">// Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkList</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/** @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; list.chunks.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> replaceChunk(list: <span class="tk-t">ChunkList</span>, k: number): <span class="tk-t">ChunkList</span> {
+  <span class="tk-k">const</span> next: number[] = [<span class="tk-n">42</span>];
+  <span class="tk-k">const</span> chunks = list.chunks;
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt;= chunks.length)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  chunks[k] = next;
+  <span class="tk-k">return</span> list;
+}
+
+<span class="tk-c">/** @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; list.chunks.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> clearChunk(list: <span class="tk-t">ChunkList</span>, k: number): <span class="tk-t">ChunkList</span> {
+  <span class="tk-k">const</span> chunks = list.chunks;
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt;= chunks.length)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  chunks[k] = <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> list;
+}
+
+<span class="tk-c">/**
+ * @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; list.chunks.length
+ * @requires next === null || 1 &lt;= next.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> replaceChunkNullable(
+  list: <span class="tk-t">ChunkList</span>,
+  k: number,
+  next: number[] | <span class="tk-k">null</span>,
+): <span class="tk-t">ChunkList</span> {
+  <span class="tk-k">const</span> chunks = list.chunks;
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt;= chunks.length)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  chunks[k] = next;
+  <span class="tk-k">return</span> list;
+}</pre></details></li><li><details><summary><code>invalid-quantified-inbounds-overwrite</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">overwriting with <code>[]</code> violates <code>1 &lt;= chunks[i].length</code> at <code>k</code></span></summary><pre class="code"><span class="tk-c">// Overwriting an in-bounds element with an empty array `[]` violates the</span>
+<span class="tk-c">// quantified element-length invariant `1 &lt;= this.chunks[i].length` at `k`.</span>
+<span class="tk-c">// Unsafe (run under Node: `replaceEmpty({ chunks: [[1]] }, 0).chunks[0][0]` is `undefined`).</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkList</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/** @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; list.chunks.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> replaceEmpty(list: <span class="tk-t">ChunkList</span>, k: number): <span class="tk-t">ChunkList</span> {
+  <span class="tk-k">const</span> empty: number[] = [];
+  <span class="tk-k">const</span> chunks = list.chunks;
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt;= chunks.length)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  chunks[k] = empty;
+  <span class="tk-k">return</span> <mark>list</mark>;
+}</pre></details></li><li><details><summary><code>invalid-quantified-inbounds-overwrite-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a parameter array that may alias <code>list.chunks</code> is not apart from it</span></summary><pre class="code"><span class="tk-c">// Overwriting an in-bounds element through an unseparated parameter array that</span>
+<span class="tk-c">// may alias `list.chunks` invalidates `list`'s quantified element-length invariant.</span>
+<span class="tk-c">// Unsafe (run under Node: `const c = [[1]]; overwriteAliased({ chunks: c }, c, 0).chunks[0][0]` is `undefined`).</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkList</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/** @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; alias.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> overwriteAliased(
+  list: <span class="tk-t">ChunkList</span>,
+  alias: (number[] | <span class="tk-k">null</span>)[],
+  k: number,
+): <span class="tk-t">ChunkList</span> {
+  <span class="tk-k">const</span> empty: number[] = [];
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt;= alias.length)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  alias[k] = empty;
+  <span class="tk-k">return</span> <mark>list</mark>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Distinctness is proved inside the array spine contract and kept by allocation, growth, admissibility and subtyping. The rule is proved against the step semantics of a checked element write over one heap relation (ElementWriteHeap) holding for a present cell, a hole and an append; where the write is known in bounds the relation also keeps the spine's length. A guarded clause holds where its read gives a value with the tag, or where the read evaluates and its continuation holds; the array's own element evaluates at a hole, as undefined. Where the clause's array is apart from the written one, its continuation at the written index is checked assuming the guard false of that element only for a tag undefined does not meet. The CLI soundness theorem is unchanged.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>Lean builds with the axiom checks; docs check; the cases of the patterns quantified, array, index, push and fresh; the three Node runs.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.listT · Verification.listT_distinct · Verification.elemSlots_distinct · Verification.placeAt_distinct · Verification.listT_alloc · Verification.listT_grow · Verification.IndexWrites.ElementWriteHeap · Verification.IndexWrites.InBoundsWriteHeap · Verification.IndexWrites.bodyClauseOtherOk · Verification.IndexWrites.everyOverwritten · Verification.IndexWrites.overwriteAtoms · Verification.IndexWrites.boundedOverwrite_sound · Verification.IndexWrites.writeAtoms</dd><dt>Trust</dt><dd><span class="trust">The contract of an ordinary array input states that its spine lists each element cell at one index; JavaScript arrays meet it, since an array's elements are distinct storage slots.</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-inbounds-overwrite</span> <span class="test neg">invalid-quantified-inbounds-overwrite</span> <span class="test neg">invalid-quantified-inbounds-overwrite-alias</span></dd></dl>
+<details><summary>23 files changed, 1789 insertions(+), 189 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                                 |   13 +-
+ docs/FOOTPRINTS.md                                 |   42 +-
+ docs/SINGLE-PASS.md                                |    2 +-
+ .../Paper/TolerantFrames/ModelLoop.lean            |   15 +-
+ lean/Verification/Programs/BranchRefinement.lean   |    4 +-
+ lean/Verification/Programs/ExpressionEffects.lean  |    2 +-
+ lean/Verification/Programs/IndexWrites.lean        | 1650 ++++++++++++++++++--
+ lean/Verification/Programs/ObjectMerge.lean        |    2 +-
+ lean/Verification/Programs/Parametricity.lean      |    7 +-
+ lean/Verification/Programs/ProgramTyping.lean      |   11 +-
+ lean/Verification/Programs/RestCalls.lean          |    2 +-
+ .../Programs/TolerantFramesWalkReassignSelect.lean |    2 +-
+ .../Source/Claims/RegionInference.lean             |    2 +-
+ lean/Verification/Types/PositiveGraphs.lean        |   10 +-
+ lean/Verification/Types/PositiveNormalization.lean |    4 +-
+ lean/Verification/Types/PositiveRules.lean         |    8 +-
+ lean/Verification/Types/Types.lean                 |   79 +-
+ pipeline/cases.mts                                 |    4 +-
+ .../invalid-quantified-inbounds-overwrite-alias.ts |   22 +
+ .../invalid-quantified-inbounds-overwrite.ts       |   19 +
+ .../examples/quantified-inbounds-overwrite-gap.ts  |   19 -
+ pipeline/examples/quantified-inbounds-overwrite.ts |   46 +
+ tests/node-runs.mts                                |   13 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-4bec402af"><header><div><div class="sha">4bec402af · Cristiano Calcagno · Nov 25, 11:57</div><h3>Check guarded array bodies across push</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>buildChunks appends null or a nonempty row. Its loop needs the quantified row-length fact at the new index. An inner push in appendNonEmpty can grow a row also stored in the outer array. Neon's implementation (#413), with Codex's docs, extra negative and Node runs (#409).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">quantified growth and append</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a push</span><span class="tgt"><span class="m-text">check the appended element as an integer and preserve scalar body terms where the growth keeps or increases them</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a push</span><span class="tgt"><span class="m-text">establish a guard on the appended value or establish its continuation, and carry body terms whose meaning the growth preserves</span>. <span class="m-text">A lower bound on a row length can survive when its row is the receiver</span>. <span class="m-text">The check uses type-directed spine separation where the writable contracts admit different stored shapes</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">single pass: a path whose elements are an array's</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">arrayPath</span>(<var>x</var>, <var>p</var>) ⟺ |<var>p</var>| <span class="m-rel">≤</span> 1 <span class="m-text">and the type of</span> <var>x</var>, <span class="m-text">or of each type of</span></span></div><div class="row"><span><span class="m-text">field</span> <var>p</var> <span class="m-op">of</span> <var>x</var>, <span class="m-text">is an array or no object (read from x's type directly)</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">arrayPath</span>(<var>x</var>, <var>p</var>) ⟺ |<var>p</var>| <span class="m-rel">≤</span> 1 <span class="m-text">and every type</span> <span class="m-text">in</span> <span class="m-op">pathTys</span>(<var>x</var>, <var>p</var>) <span class="m-text">is an</span></span></div><div class="row"><span><span class="m-text">array or no object</span>, <span class="m-op">pathTys</span>(<var>x</var>, <var>p</var>) <span class="m-text">the types of reading</span> <var>p</var> <span class="m-text">from</span> <var>x</var> <span class="m-text">that</span></span></div><div class="row"><span><span class="m-text">the type-directed separation reads</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-guarded-push</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">guarded pushes and aliased inner rows preserve the lower bound</span></summary><pre class="code"><span class="tk-c">// Pushing `null` or a non-empty `number[]` onto `(number[] | null)[]`</span>
+<span class="tk-c">// preserves `forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length`;</span>
+<span class="tk-c">// The inner `number[]` and outer `(number[] | null)[]` have incompatible</span>
+<span class="tk-c">// writable spine contracts even when empty. A push on a row already in the</span>
+<span class="tk-c">// outer array preserves its lower length bound at every occurrence.</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkBag</span> = {
+  chunks: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/** @ensures forall i in result: result[i] === null || 1 &lt;= result[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildChunks(widths: number[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">const</span> chunks: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/** @invariant forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) {
+    <span class="tk-k">const</span> w = widths[i]!;
+    <span class="tk-k">if</span> (w &lt;= <span class="tk-n">0</span>) {
+      chunks.push(<span class="tk-k">null</span>);
+    } <span class="tk-k">else</span> {
+      <span class="tk-k">const</span> row: number[] = [];
+      row.push(w);
+      chunks.push(row);
+    }
+  }
+  <span class="tk-k">return</span> chunks;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendNonEmpty(bag: <span class="tk-t">ChunkBag</span>, row: number[], w: number): <span class="tk-t">ChunkBag</span> {
+  row.push(w);
+  bag.chunks.push(row);
+  <span class="tk-k">return</span> bag;
+}</pre></details></li><li><details><summary><code>invalid-quantified-guarded-push</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the empty replacement violates the lower bound at the new index</span></summary><pre class="code"><span class="tk-c">// Pushing an empty `number[]` onto `(number[] | null)[]` violates</span>
+<span class="tk-c">// `forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length`, so the</span>
+<span class="tk-c">// loop head refuses the back-edge. Unsafe (run under Node: `buildEmpty([1])[0][0]`</span>
+<span class="tk-c">// is `undefined` at `number`).</span>
+
+<span class="tk-c">/** @ensures forall i in result: result[i] === null || 1 &lt;= result[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildEmpty(widths: number[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">const</span> chunks: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/** @invariant forall i in chunks: chunks[i] === null || 1 &lt;= chunks[i].length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) {
+    <span class="tk-k">const</span> w = widths[i]!;
+    <span class="tk-k">if</span> (w &lt;= <span class="tk-n">0</span>) {
+      chunks.push(<span class="tk-k">null</span>);
+    } <span class="tk-k">else</span> {
+      <span class="tk-k">const</span> row: number[] = [];
+      chunks.push(row);
+    }
+  }
+  <span class="tk-k">return</span> chunks;
+}</pre></details></li><li><details><summary><code>invalid-quantified-push-outer-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the same writable spine can grow without its widths</span></summary><pre class="code"><span class="tk-c">// `rows` may hold `bag.chunks` itself. Appending a null row can grow the</span>
+<span class="tk-c">// spine matched to `widths` without adding a width. Under Node the last</span>
+<span class="tk-c">// width read is undefined when `rows` and `bag.chunks` share a spine.</span>
+<span class="tk-c">/** @invariant forall i in this.chunks: this.chunks[i] === null || 1 &lt;= this.chunks[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkBag</span> = { chunks: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-c">/** @requires bag.chunks.length === widths.length &amp;&amp; 1 &lt;= widths.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readLastWidth(bag: <span class="tk-t">ChunkBag</span>, rows: (number[] | <span class="tk-k">null</span>)[], widths: number[]): number {
+  rows.push(<span class="tk-k">null</span>);
+  <span class="tk-k">return</span> widths[bag.chunks.length - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>invalid-quantified-guarded-push-inner-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">inner growth invalidates an upper length bound</span></summary><pre class="code"><span class="tk-c">// Node witness: With row = [7], growRow({ chunks: [null, row] }, row) grows the stored row to length 2.</span>
+<span class="tk-c">/**
+ * @invariant forall i in this.chunks: this.chunks[i] === null || this.chunks[i].length &lt;= 1
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ChunkBag</span> = { chunks: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> growRow(bag: <span class="tk-t">ChunkBag</span>, row: number[]): <span class="tk-t">ChunkBag</span> {
+  row.push(<span class="tk-n">42</span>);
+  <span class="tk-k">return</span> bag;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The push relation allocates a new element cell and keeps old ones. A witnessed difference in writable spine contracts separates those spines even when no element is present; the caller's obligation that each input meets its declared type, writable arrays invariant, is the one it relies on (a <code>never[]</code> passed as both arrays breaks it). A call observed at normal return supplies the steps needed for the type proof.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>The original program, empty arrays, and repeated inner aliases pass under Node. The negative examples exhibit the false bounds under Node. Lean builds with the axiom checks; docs check; tsc; the cases of the patterns quantified, push, array, index, fresh, every and write.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.PromiseCalls.appendKept_holds · Verification.HeapExpressionRules.typesSpineApart_sound · Verification.HeapExpressionRules.arrayPathOf · Verification.HeapExpressionRules.arrayPathOf_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-guarded-push</span> <span class="test neg">invalid-quantified-guarded-push</span> <span class="test neg">invalid-quantified-push-outer-alias</span> <span class="test neg">invalid-quantified-guarded-push-inner-alias</span></dd></dl>
+<details><summary>11 files changed, 1464 insertions(+), 232 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                                 |  25 +-
+ .../Verification/Programs/HeapExpressionRules.lean | 676 +++++++++++++++++-
+ lean/Verification/Programs/Parametricity.lean      | 104 ++-
+ lean/Verification/Programs/PromiseCalls.lean       | 781 ++++++++++++++++-----
+ lean/Verification/Semantics/IndexFacts.lean        |  38 +-
+ pipeline/cases.mts                                 |   8 +-
+ .../invalid-quantified-guarded-push-inner-alias.ts |  10 +
+ .../examples/invalid-quantified-guarded-push.ts    |  20 +
+ .../invalid-quantified-push-outer-alias.ts         |  11 +
+ ...rded-push-gap.ts =&gt; quantified-guarded-push.ts} |   5 +-
+ tests/node-runs.mts                                |  18 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-55fe60da8"><header><div><div class="sha">55fe60da8 · Cristiano Calcagno · Nov 25, 11:41</div><h3>Extend quantified array prefixes across exact indexed appends (#395)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>copyLockstep writes a row and its optional extra at the two arrays' old lengths, and copyNonEmpty writes a row at its array's old length. Each loop failed with <code>source incoming edge obligation at [1081,1407): evidence search failed</code>: the checker kept bounds across the writes but did not extend the quantified body to the new position, and at the reader loop the equality of the two lengths was lost with the first loop's counter. Neon's implementation (#414), with Codex's composition, docs and negative (#410).</p><p>The append rule is not stated as an instance of the rules that extend a prefix at a new last index. The exact element write (every_written_prefix) is a typed array's: its premises are that no spine changes and that the index is below the view's fixed length, and an append changes a spine's length and allocates a cell. The push rule (every_appended) reads the same heap change as an append, but extends only a fact over the receiver's array and checks no parallel read at the new index; the lockstep extension is of a fact over another array that reads the written one in parallel, with its bound moving to the written array's length.</p></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">exact indexed append of ordinary arrays</span></h4><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a bounded write <code>a[i] = v</code> with |a| ≤ i known</span><span class="tgt"><span class="m-text">record a</span>[<var>i</var>] <span class="m-rel">=</span> <var>v</var>, <span class="m-text">keep every fact whose reads the append leaves unchanged (spines apart by separation evidence or by the push rule's type-directed separation, typesPathSpinesApart), restate a quantified fact over a at the bound</span> <var>i</var>, <span class="m-text">and extend it to</span> |<var>a</var>| <span class="m-text">where its body holds of</span> <var>v</var> <span class="m-op">at</span> <var>i</var>; <span class="m-text">extend a fact over an array</span> <var>s</var> <span class="m-text">apart from a whose body reads a in parallel to</span> |<var>a</var>| <span class="m-text">where it holds of</span> (<var>s</var>[<var>i</var>], <var>v</var>) <span class="m-op">at</span> <var>i</var>.</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">linear relations at scope exits</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">leaving a scope</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">discard facts mentioning a departing binding</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">leaving a scope</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">combine linear facts to eliminate departing</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">bindings, and propose the resulting relations over surviving</span></span></div><div class="cond"><span class="tgt"><span class="m-text">bindings before discarding the originals</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">quantified element reads after a nullable join</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">read <span class="tk-k">of</span> an element</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">unconditional element fact where all paths give it</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">read <span class="tk-k">of</span> an element</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">candidate guarded by the joined slot's tag when an incoming path proves the element read</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">The checker establishes the guard or verifies the element read</span></span></div><div class="cond"><span class="tgt"><span class="m-text">on each incoming edge</span>.</span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-dense-append-write</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the second write completes the pair and extends both loop invariants; one write extends the row-length fact</span></summary><pre class="code"><span class="tk-c">// Building two parallel arrays in lockstep via dense-append element writes</span>
+<span class="tk-c">// (`if (i &gt; a.length) throw; a[i] = v`) extends both the single-array</span>
+<span class="tk-c">// guarded length invariant and the parallel-array length invariant.</span>
+<span class="tk-c">// Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @requires srcAdvances.length === srcExtras.length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 &lt;= srcAdvances[i].length
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || srcExtras[i] === null || srcAdvances[i].length &lt;= srcExtras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copyLockstep(
+  srcAdvances: (number[] | <span class="tk-k">null</span>)[],
+  srcExtras: (number[] | <span class="tk-k">null</span>)[],
+): number {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= srcAdvances.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; srcAdvances.length; i++) {
+    <span class="tk-k">const</span> adv = srcAdvances[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> ex = srcExtras[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    advances[i] = adv;
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; extras.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = ex;
+  }
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; advances.length; i++) {
+    <span class="tk-k">const</span> row = advances[i];
+    <span class="tk-k">if</span> (row === <span class="tk-k">undefined</span> || row === <span class="tk-k">null</span>) <span class="tk-k">continue</span>;
+    <span class="tk-k">const</span> ex = extras[i] ?? <span class="tk-k">null</span>;
+    sum += row[<span class="tk-n">0</span>]! + (ex === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : ex[<span class="tk-n">0</span>]!);
+  }
+  <span class="tk-k">return</span> sum;
+}
+
+<span class="tk-c">/**
+ * @requires forall i in src: 1 &lt;= src[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copyNonEmpty(src: number[][]): number {
+  <span class="tk-k">const</span> dst: number[][] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; dst.length === i
+   * @invariant forall j in dst: 1 &lt;= dst[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; src.length; i++) {
+    <span class="tk-k">const</span> row = src[i]!;
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; dst.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    dst[i] = row;
+  }
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; dst.length; i++) {
+    sum += dst[i]![<span class="tk-n">0</span>]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-quantified-dense-append-short-extra</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the new extra has length zero and its advance has length one</span></summary><pre class="code"><span class="tk-c">// Node witness: With extras = [], appendRows(extras) returns [[42]] and leaves extras equal to [[]].</span>
+<span class="tk-c">/**
+ * @ensures forall i in result: result[i] === null || extras[i] === null || result[i].length &lt;= extras[i].length
+ * @requires extras.length === 0
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendRows(extras: (number[] | <span class="tk-k">null</span>)[]): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> adv = [<span class="tk-n">42</span>];
+  <span class="tk-k">const</span> ex: number[] = [];
+  <span class="tk-k">const</span> i = advances.length;
+  <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  advances[i] = adv;
+  <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; extras.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  extras[i] = ex;
+  <span class="tk-k">return</span> advances;
+}</pre></details></li><li><details><summary><code>invalid-quantified-dense-append-write</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a loop appending an empty extra breaks the paired invariant at its head</span></summary><pre class="code"><span class="tk-c">// Dense-append element write placing an empty array into `extras` violates the</span>
+<span class="tk-c">// parallel length invariant `advances[j].length &lt;= extras[j].length`.</span>
+<span class="tk-c">// Unsafe (run under Node: `copyLockstepShorterExtra([[5, 6]])` returns `NaN`).</span>
+<span class="tk-c">/**
+ * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 &lt;= srcAdvances[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copyLockstepShorterExtra(
+  srcAdvances: (number[] | <span class="tk-k">null</span>)[],
+): number {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= srcAdvances.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; srcAdvances.length; i++) {
+    <span class="tk-k">const</span> adv = srcAdvances[i] ?? <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> ex: number[] = [];
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; advances.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    advances[i] = adv;
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt; extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = ex;
+  }
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; advances.length; i++) {
+    <span class="tk-k">const</span> row = advances[i];
+    <span class="tk-k">if</span> (row === <span class="tk-k">undefined</span> || row === <span class="tk-k">null</span>) <span class="tk-k">continue</span>;
+    <span class="tk-k">const</span> ex = extras[i] ?? <span class="tk-k">null</span>;
+    sum += row[<span class="tk-n">0</span>]! + (ex === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : ex[<span class="tk-n">0</span>]!);
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>The rule extends unconditional facts over a slot (an empty field path) whose parallel arrays are slots; a body with an offset read has no instance at the appended index.</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>The exact array write keeps the old cells and places one fresh cell holding the value. The proof checks other reads for separation, instantiates the body at the written index, and keeps facts over the completed prefix. The type-directed separation is typesSpineApart_sound's. Each linear relation proposed at a scope exit is checked on every incoming edge before it is used.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>Lean builds with the axiom checks; docs check; tsc; the cases of the patterns quantified, dense, push, array, index, fresh, every and write; node-runs.mts (14 and 4 for the positives, NaN and [1, 0] for the negatives).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.IndexWrites.denseAppendAtoms · Verification.IndexWrites.denseAppendAtoms_sound · Verification.IndexWrites.spineDisjointFromA · Verification.IndexWrites.elemSpinesDisjointFromA · Verification.HeapKnowledge.elementInstances_holds · Verification.SourceElaboration.HeadInference.Ctx.eliminateKill</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-dense-append-write</span> <span class="test neg">invalid-quantified-dense-append-short-extra</span> <span class="test neg">invalid-quantified-dense-append-write</span></dd></dl>
+<details><summary>12 files changed, 1656 insertions(+), 50 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                                 |   37 +
+ .../Verification/Programs/CertificateProducer.lean |    5 +
+ lean/Verification/Programs/IndexWrites.lean        | 1335 +++++++++++++++++++-
+ lean/Verification/Programs/Parametricity.lean      |   74 +-
+ .../Programs/TolerantFramesWalkReassignSelect.lean |    5 +-
+ lean/Verification/Semantics/HeapKnowledge.lean     |  130 +-
+ lean/Verification/Source/Claims/HeadInference.lean |   30 +-
+ pipeline/cases.mts                                 |    6 +-
+ .../invalid-quantified-dense-append-short-extra.ts |   16 +
+ .../invalid-quantified-dense-append-write.ts       |   35 +
+ ...ite-gap.ts =&gt; quantified-dense-append-write.ts} |   21 +
+ tests/node-runs.mts                                |   12 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-b8eee8014"><header><div><div class="sha">b8eee8014 · Cristiano Calcagno · Nov 25, 11:41</div><h3>State distinct array cells and the overwrite rule in the Tolerant frames note</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The Lean array contract states that a spine lists each element cell at one index (#392), and the single pass keeps a quantified array invariant across an in-bounds overwrite by it. The note's spine model and its value-dependent write rules state neither, so the note and the Lean define the array spine differently.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">Tolerant frames note: the spine model</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>A spine is the sequence of element cells and holes in index order, with its length and its listed cells.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>The same, and an array's spine lists each cell once: c_i = c_j ≠ ∘ implies i = j, so a write to the cell at one index leaves every other index's element unchanged (Lean: listT_distinct).</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">Tolerant frames note: writes that keep or extend a fact</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Three value-dependent rules: Write-Kept, Push-Every, View-Every.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Four, with Write-Every: {(∀i&lt;n. φ(i,x[i])) ∧ 0 ≤ k &lt; |x| ∧ (n ≤ k ∨ φ(k,v))} x[k] = v {∀i&lt;n. φ(i,x[i])} and its status (Lean: boundedOverwrite_sound).</p></div></figure></div>
+<h4 class="change">Validation</h4><div class="prose"><p>latexmk builds the PDF with no undefined reference; build.py builds the HTML with the same 15 unmatched tags as before the change.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 14 insertions(+), 6 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/note.tex | 20 ++++++++++++++------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
