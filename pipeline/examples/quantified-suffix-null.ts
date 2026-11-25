@@ -37,10 +37,8 @@ export function buildLazyExtras(
     if (adv !== null && ex !== null) {
       extras ??= new Array<number[] | null>(n).fill(null);
       const store = extras;
-      if ((i & 0x7fffffff) !== i || i >= store.length) throw new RangeError("index");
       store[i] = ex;
     }
-    if ((i & 0x7fffffff) !== i || i > advances.length) throw new RangeError("index");
     advances[i] = adv;
   }
   return { advances, extras };
