@@ -1668,6 +1668,9 @@ such contradictions (`HeapKnowledge.everyEntailed_sound`). For example,
 when `chunks.length <= extras.length` and every element of `extras` is
 null, a clause over `chunks` guarded first by `extras[i] === null` holds
 because the comparison on the two elements is skipped at each index.
+A quantified guard also witnesses its read throughout its prefix. If the
+target tests `chunks[i]` first, a covered guard over that same read supplies
+the witness. The known tag of `extras[i]` proves the continuation.
 
 **Empty arrays.** A quantified fact over an array of length zero holds for
 any body (proved). Its body terms need no interpretation, since no index
