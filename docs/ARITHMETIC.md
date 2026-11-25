@@ -1564,7 +1564,11 @@ integer constant. The fact holds only where each bound denotes an integer;
 the clause states no other fact of a bound. A body atom `P[i] === t` or
 `P[i].p === t`, with $`t`$ one of `null`, `undefined`, `true`, `false`,
 states the guarded clause $`P[i]=t\lor\bot`$: at each index of the interval
-the read evaluates and gives $`t`$.
+the read evaluates and gives $`t`$. Where the clause is read, a body atom
+`P[i] !== t` is refused (`quantified-negated-tag-refused`), as is a tag atom
+in a disjunction of the body other than its leading guards
+(`quantified-tag-disjunction-refused`) and a bound of any other form
+(`quantified-malformed-bound-refused`).
 
 **Subintervals.** Every entailment of index facts (an edge, a loop head, a
 return, a call's precondition) derives a quantified fact over a subinterval
