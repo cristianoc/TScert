@@ -1733,7 +1733,7 @@ apart. Two rules follow (proved):
 \frac{(\forall i<t.\ \Phi)\in\Sigma\quad \mathrm{kept}_\chi(t)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)}
      {\Sigma\vdash r\leftarrow y.\mathtt{push}(\vec a)\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-grow}
 \qquad
-\frac{(\forall i<|x|.\ \Phi)\in\Sigma\quad \mathrm{int}(a)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)\land K\vdash F[|x|/i,\ a/x[i]]}
+\frac{(\forall i<|x|.\ \Phi)\in\Sigma\quad \mathrm{value}(a)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)\land K\vdash F[|x|/i,\ a/x[i]]}
      {\Sigma\vdash r\leftarrow x.\mathtt{push}(a)\dashv\Sigma',\ \forall i<|x|.\ \Phi}\ \textsf{every-push}
 ```
 
@@ -1742,8 +1742,23 @@ $`\mathrm{first}(z,[\,])`$, a separation fact keeping $`z`$'s spine apart
 from the receiver's. So `itemSegments.push(widths.length)` extends
 `forall i in itemSegments: … itemSegments[i] <= widths.length`, and a push of
 a value the body excludes, or into an array no separation keeps apart from
-the quantified one, keeps no fact over the whole quantified array. A push of
-several actuals extends none (`every-push` reads one).
+the quantified one, keeps no fact over the whole quantified array. A guard
+on the appended element is established by the tag of the value being
+appended, or by checking its continuation. For `chunks.push(null)` the
+null test discharges the body. For a row, the checker can establish the
+required lower bound on its length before the push. The checked append
+body uses reads of the receiving array and established free terms. A push of several
+actuals extends none (`every-push` reads one).
+
+Type-directed separation also keeps a spine when the two spine contracts
+cannot describe the same writable storage (`typesSpineApart_sound`).
+A mutable `number[]` can store a number where a mutable
+`(number[] | null)[]` requires a nullable row. The contracts therefore
+separate their spines even when both arrays are empty. The type query at
+a call checks paths of at most two fields with a proof budget of four.
+Pushing onto a row that appears in several outer elements preserves a
+lower bound on its length at each occurrence. Upper bounds, equalities,
+and disequalities require the relevant length to be preserved.
 
 **Across a typed array's element write.** `b[k] = v` of a view at a safe
 integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ within the

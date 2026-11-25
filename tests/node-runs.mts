@@ -3494,9 +3494,23 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
     "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
     "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");
-  assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
+  assert.equal(runExample(ofKind("quantified-guarded-push", ["positive"]),
     "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
-    '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");
+    '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push (#394): safe guarded push and disjoint inner push");
+  assert.equal(runExample(ofKind("quantified-guarded-push", ["positive"]),
+    "JSON.stringify(appendNonEmpty({ chunks: [] }, [], 4))"),
+    '{"chunks":[[4]]}', "quantified guarded push (#394): empty outer array and empty row");
+  assert.equal(runExample(ofKind("quantified-guarded-push", ["positive"]),
+    "(() => { const row = [1]; const result = appendNonEmpty({ chunks: [row, row] }, row, 4); return result.chunks.length === 3 && result.chunks.every(chunk => chunk === row) && JSON.stringify(row) === '[1,4]'; })()"),
+    true, "quantified guarded push (#394): all three occurrences still refer to the same grown row");
+  assert.equal(runExample(negative("invalid-quantified-guarded-push"), "typeof buildEmpty([1])[0][0]"),
+    "undefined", "an appended empty row violates the lower bound at its new index");
+  assert.equal(runExample(negative("invalid-quantified-push-outer-alias"),
+    "(() => { const chunks = [[1]]; return typeof readLastWidth({ chunks }, chunks, [5]); })()"),
+    "undefined", "invalid quantified push outer alias (#394): the grow call adds a row without adding a width");
+  assert.equal(runExample(negative("invalid-quantified-guarded-push-inner-alias"),
+    "(() => { const row = [7]; return growRow({ chunks: [null, row] }, row).chunks[1].length; })()"),
+    2, "growing an aliased row violates the upper bound of one");
   assert.equal(runExample(ofKind("quantified-dense-append-write-gap", ["gap"]),
     "String(copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]))"),
     "14", "quantified-dense-append-write-gap (#395): safe lockstep dense-append write");
