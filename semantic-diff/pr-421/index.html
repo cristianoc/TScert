@@ -92,16 +92,17 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-421"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-421</code></a><ul><li>1 commit</li><li>changes: 1 Definition, 3 Rule, 1 Proposal, 1 Trust, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion; %ArrayFilled% adds freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></li><li>wire: Bound.parallel and ElemTarget.parallel add shift; IndexFact adds elemSpineApart and IndexShift on element/atIndex; OperationPost adds freshRegion and shallowCopy</li></ul></li></ul></section>
-<h2 id="g-pr-421"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-421</code></h2><article class="card" id="c-9e6fa5b71"><header><div><div class="sha">9e6fa5b71 · Cristiano Calcagno · Nov 25, 17:40</div><h3>Support shifted parallel quantified clauses, shallow-copy slice, and copy-transfer overwrites (#397)</h3></div><span class="pill ok">verified</span></header>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-421"><code>aa8bbf9e27f735862995e8fd86651286aca63a84..pr-421</code></a><ul><li>5 commits</li><li>changes: 1 Definition, 4 Rule, 2 Proposal, 1 Trust, 1 Wire, 2 Docs, 3 Control</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></li><li>new trust: <span class="trust">Array.prototype.slice() with no argument states shallowCopy and freshRegion (review obligation; tested by these controls)</span></li><li>wire: Bound.parallel and ElemTarget.parallel add shift; IndexFact adds elemSpineApart and IndexShift on element/atIndex; OperationPost adds freshRegion and shallowCopy</li></ul></li></ul></section>
+<h2 id="g-pr-421"><code>aa8bbf9e27f735862995e8fd86651286aca63a84..pr-421</code></h2><article class="card" id="c-d7c0c0d68"><header><div><div class="sha">d7c0c0d68 · Cristiano Calcagno · Nov 25, 19:33</div><h3>Support shifted parallel quantified clauses, shallow-copy slice and copy transfer (#397, PR #421)</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>appendSubRange shallow-copies prefix.advances via slice(), appends subWidths.length entries starting at base while building 0-indexed subExtras whose entry subExtras[s] pairs with advances[base + s], and then copies prefix.extras[i] into extras[i] and subExtras[s] into extras[base + s]. This failed with <code>source ensures refusal: a return of 'appendSubRange' does not establish the postcondition</code> because parallel quantified bounds could only index at i (not i + shift), 0-arg slice() did not state shallow-copy element preservation or a fresh region, element-spine separation was not tracked across array growth, in-bounds overwrites did not transfer a copied source element's quantified body into the written parallel array, and dropping a temporary field-read slot did not restate quantified facts onto the surviving object path.</p></div>
 <h4 class="change"><span class="act added">added</span>Definition <span class="target">affine index shift and element-spine separation</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">IndexShift</span> <span class="m-rel">=</span> { <span class="m-text">terms</span> <span class="m-rel">:</span> <span class="m-con">Linear</span>.<span class="m-text">Form Term, offset</span> <span class="m-rel">:</span> <span class="m-con">Int</span> }</span></div><div class="row"><span><span class="m-op">eval</span>(<var>i</var>, <span class="m-op">sh</span>) <span class="m-rel">=</span> <var>i</var> + <span class="m-op">sum</span><sub><var>j</var></sub> (<var>c</var><sub><var>j</var></sub> * <span class="m-op">val</span>(<var>t</var><sub><var>j</var></sub>)) + <span class="m-text">offset (defined when non-negative)</span></span></div><div class="row"><span><span class="m-text">Attached to Bound</span>.<span class="m-text">parallel, ElemTarget</span>.<span class="m-text">parallel, and IndexFact</span>.<span class="m-op">atIndex</span>,</span></div><div class="row"><span><span class="m-text">and generalizing IndexFact</span>.<span class="m-text">element's index from a bare slot to an</span></span></div><div class="row"><span><span class="m-con">IndexShift</span>.</span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-op">elemSpineApart</span>(<var>a</var>, <var>p</var>, <var>b</var>, <var>q</var>) (<span class="m-con">SepFact</span>.<span class="m-op">elemSpines</span>)<span class="m-rel">:</span> <span class="m-text">the spine of</span></span></div><div class="row"><span><var>a</var>.<var>p</var> <span class="m-text">differs from the spine of every present element of</span> <var>b</var>.<var>q</var>.</span></div></div></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">shallow-copy slice and fresh-region postconditions</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>r</var> <span class="m-rel">=</span> <span class="m-con">recv</span>.<span class="m-op">slice</span>()</span><span>(0-<span class="m-text">arg, shallowCopyResult</span> &amp; <span class="m-op">freshRegionResult</span>)</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span><var>k</var> &lt; <span class="m-text">recv</span>.<span class="m-text">length</span>. <var>φ</var>(<var>k</var>, <span class="m-text">recv</span>[<var>k</var>])  ⇒  <span class="m-bind">∀</span><var>k</var> &lt; <var>r</var>.<span class="m-text">length</span>. <var>φ</var>(<var>k</var>, <var>r</var>[<var>k</var>])</div><div><span class="m-text">and r's spine and element cells are apart from every pre-call array</span></div><div><span class="m-text">region, with r's spine apart from every pre-call element spine</span>.</div></div></div><span class="rule-name">(shallow-copy-every)</span></div></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">shifted parallel push and copy-transfer element write</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">advances</span>.<span class="m-op">push</span>(<var>x</var>) <span class="m-text">establishes</span> <span class="m-op">element</span>(<var>x</var>, <span class="m-text">advances</span>, <span class="m-op">old</span><sub><span class="m-text">len</span></sub>) (<code class="m-code">pushElemAtoms</code>)</span></div><div class="row"><span><span class="m-text">and preserves quantified facts over other arrays via</span> <code class="m-code">elemSpineApart</code>.</span></div><div class="row"><span><span class="m-text">When subExtras</span>.<span class="m-op">push</span>(<var>y</var>) <span class="m-text">extends a shifted parallel quantifier</span></span></div><div class="row"><span><code class="m-code">forall k <span class="tk-k">in</span> subExtras: advances[base + k] ... subExtras[k]</code>,</span></div><div class="row"><span><code class="m-code">appendParallelAtIndex</code> <span class="m-text">resolves advances</span>[<span class="m-text">base</span> + <span class="m-op">old</span><sub><span class="m-text">len</span></sub>] <span class="m-text">from the</span></span></div><div class="row"><span><span class="m-text">recorded</span> <code class="m-code">element</code> / <code class="m-code">atIndex</code> <span class="m-text">facts</span>.</span></div><div class="row"><span><span class="m-text">At an in-bounds overwrite</span> <code class="m-code">extras[at] = src[idx] ?? <span class="tk-k">null</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">IndexWrites</span>.copyTransferBody</code> <span class="m-text">instantiates an existing quantified fact</span></span></div><div class="row"><span><span class="m-text">over <code class="m-code">src</code> at <code class="m-code">idx</code> (or <code class="m-code">at</code>) and transfers its body clause into the</span></span></div><div class="row"><span><span class="m-text">target quantified fact over <code class="m-code">extras</code> at</span> <code class="m-code">at</code>.</span></div></div></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">quantified fact restatement across dropped temporary slots</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">HeapKnowledge</span>.<span class="m-text">restateEvery (called in restateSpines) lifts unconditional</span></span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-text">every atoms naming a dropped temporary slot through plain and</span></span></div><div class="row"><span><span class="m-text">bridge read links (liftPath</span> / <span class="m-op">liftDropped</span> / <span class="m-text">liftDroppedShift), preserving</span></span></div><div class="row"><span><span class="m-text">quantified invariants across object literals such as</span></span></div><div class="row"><span><code class="m-code"><span class="tk-k">return</span> { advances, extras: prefix.extras }</code>.</span></div></div></div>
 <h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">region inference: arity- and variadic-aware fresh/grown calls</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>freshRegionCall, freshSpineCall, and spineGrown checked only fixed arrows across all overloads and ignored variadic signatures, missing 0-arg slice() and variadic push(...items).</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>matchingCallEffects filters fixed arrows by argument count and includes variadic signatures with params.length &lt;= arity; freshApartAt proposes elemSpineApart for grown fresh-spine slots at loop heads. All proposals remain untrusted and are checked by the proved pass on every edge.</p></div></figure></div>
-<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">Array.prototype.slice 0-arg, %ArrayFilled%</span></h4><div class="prose"><p>0-arg Array.prototype.slice() adds OperationPostF.shallowCopy and OperationPostF.freshRegion (ECMA-262 Array.prototype.slice creates a fresh array spine and fresh element cells holding the receiver's own values without mutating the receiver). %ArrayFilled% adds OperationPostF.freshRegion (fresh array spine and freshly allocated element cells). Both are documented in docs/SOURCE-CONTRACTS.md and checked by tests/builtin-trust.mts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">Array.prototype.slice 0-arg</span></h4><div class="prose"><p>0-arg Array.prototype.slice() adds OperationPostF.shallowCopy and OperationPostF.freshRegion (ECMA-262 Array.prototype.slice creates a fresh array spine and fresh element cells holding the receiver's own values, holes and length, without mutating the receiver), audited in docs/SOURCE-CONTRACTS.md. %ArrayFilled%'s freshRegion is the line's (interval quantified clauses, #419).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">rebased onto interval quantified clauses and bitmask terms</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Every rule above over <code class="m-code"><span class="tk-t">IndexFact</span>.every</code> reads an interval</span> [<span class="m-text">start, stop</span>)</span></div><div class="row"><span>(<code class="m-code"><span class="tk-t">IndexBound</span></code> <span class="m-text">bounds</span>)<span class="m-rel">:</span> <span class="m-text">growth and append keep or extend</span> [<span class="m-text">start, stop</span>),</span></div><div class="row"><span><span class="m-text">copy-transfer and shallow copy check start</span> &lt;<span class="m-rel">=</span> <var>q</var> &lt; <span class="m-text">stop, restatement lifts</span></span></div><div class="row"><span><span class="m-text">both bounds</span>. <span class="m-text">Shifted reads meet the bitmask guards</span><span class="m-rel">:</span> <span class="m-text">a parallel read at a</span></span></div><div class="row"><span><span class="m-text">nonzero shift of the view written by <code class="m-code">b[i] = x</code> keeps no fact, and the</span></span></div><div class="row"><span><code class="m-code">atIndex</code>-<span class="m-kw">tag</span>, <span class="m-text">dense-append and <code class="m-code">bodyClauseAsAtIndex</code> paths read a</span></span></div><div class="row"><span><span class="m-text">parallel array at shift zero only</span>. <code class="m-code">either</code> <span class="m-text">body clauses pass through</span></span></div><div class="row"><span><span class="m-text">growth, append, copy-transfer matching and restatement</span>. <span class="m-con">Region</span></span></div><div class="row"><span><span class="m-text">separation at fresh-region calls is one proposal and one rule</span></span></div><div class="row"><span>(<code class="m-code">freshCallApart</code> <span class="m-text">over field paths and bare array slots); the element</span></span></div><div class="row"><span><span class="m-text">type of an array slot (<code class="m-code">arrayElemType</code>, including <code class="m-code"><span class="tk-t">T</span>[] | <span class="tk-k">null</span></code>) lives</span> <span class="m-text">in</span></span></div><div class="row"><span><span class="m-con">HeapExpressionRules</span>.</span></div></div></div>
 <h4 class="change"><span class="act modified">modified</span>Wire <span class="target">Bound, ElemTarget, IndexFact, OperationPost</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Bound.parallel and ElemTarget.parallel had no shift; IndexFact.element and IndexFact.atIndex carried a bare slot / term; OperationPost lacked freshRegion and shallowCopy; IndexFact lacked elemSpineApart.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Bound.parallel and ElemTarget.parallel carry shift (IndexShift); IndexFact.element and IndexFact.atIndex carry IndexShift; IndexFact adds elemSpineApart; OperationPost adds freshRegion and shallowCopy. Parser annotations accept affine shifted parallel indices (<code>a[base + k]</code>, <code>a[base + k - from]</code>).</p></div></figure></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md, REQUEST-PROTOCOL.md, SOURCE-CONTRACTS.md</span></h4><div class="prose"><p>Document affine shifted parallel indices, shallow-copy slice and %ArrayFilled% freshRegion contracts, elemSpineApart, copy-transfer overwrites, and updated wire types.</p></div>
 <h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-offset-parallel-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by verified positive case</span></summary><pre class="code"><span class="tk-c">// Shifted parallel indexing (`rich-inline.ts:496-578`): a sub-range builder</span>
@@ -278,42 +279,41 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   }
   <span class="tk-k">return</span> { advances, extras };
 }</pre></details></li><li><code>invalid-quantified-offset-parallel-shift  negative</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">off-by-one shift base + s - 1 refused at return (reads undefined under Node)</span></li></ul>
-<h4 class="change">Soundness</h4><div class="prose"><p>Every new rule and restatement is proved in Lean with zero sorry and zero project axioms (Verification.Tests.AxiomCheck and Verification.Paper.TolerantFrames.Tests.AxiomCheck pass; mode8Accepted_sound is unchanged). The two native contract additions (0-arg slice() shallowCopy + freshRegion and %ArrayFilled% freshRegion) are audited against ECMA-262 in docs/SOURCE-CONTRACTS.md and pass tests/builtin-trust.mts.</p></div>
-<h4 class="change">Validation</h4><div class="prose"><p>lake build Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck verifier (1031 jobs, 0 warnings); tsc, tools/unchecked.mts, tests/json-field-names.mts (17/17), tests/builtin-trust.mts, tests/docs.mts (0 problems), tests/axiom-check-imports.mts, tests/rule-inventory.mts, dev/generated-sections.mts --check, tests/node-runs.mts; run-cases.mts quantified (48/48), slice (13/13).</p></div>
-<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.IndexShift · Verification.HeapKnowledge.restateEvery_holds · Verification.PromiseCalls.shallowCopyKept_holds · Verification.PromiseCalls.pushElemAtoms_holds · Verification.PromiseCalls.freshCallRegionApart_holds · Verification.PromiseCalls.growElemSpinesKept_sound · Verification.IndexWrites.everyOverwritten_holds · Verification.TolerantFrames.restateEvery_named</dd><dt>Wire</dt><dd>Bound.parallel and ElemTarget.parallel add shift · IndexFact adds elemSpineApart and IndexShift on element/atIndex · OperationPost adds freshRegion and shallowCopy</dd><dt>Trust</dt><dd><span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion; %ArrayFilled% adds freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel-shift</span></dd></dl>
-<details><summary>48 files changed, 6335 insertions(+), 1624 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    7 +-
- docs/ARITHMETIC.md                                 |   63 +-
- docs/REQUEST-PROTOCOL.md                           |   26 +-
- docs/SOURCE-CONTRACTS.md                           |   16 +-
+<h4 class="change">Soundness</h4><div class="prose"><p>Every new rule and restatement is proved in Lean with zero sorry and zero project axioms (Verification.Tests.AxiomCheck and Verification.Paper.TolerantFrames.Tests.AxiomCheck pass; mode8Accepted_sound is unchanged). The native contract addition (0-arg slice() shallowCopy + freshRegion) is a review obligation, audited against ECMA-262 in docs/SOURCE-CONTRACTS.md.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build (1032 jobs, 0 warnings), lake build verifier, Verification.Tests.AxiomCheck and Verification.Paper.TolerantFrames.Tests.AxiomCheck, tests/axiom-check-imports.mts; tsc over tools, tools/unchecked.mts, tests/json-field-names.mts (17), tests/builtin-trust.mts, tests/docs.mts (0 problems), tests/node-runs.mts; run-cases.mts quantified (57/57), slice (13/13), bit (6/6).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.IndexShift · Verification.HeapKnowledge.restateEvery_holds · Verification.HeapKnowledge.shiftIsSlot_sound · Verification.PromiseCalls.shallowCopyKept_holds · Verification.PromiseCalls.pushElemAtoms_holds · Verification.PromiseCalls.freshCallApart_holds · Verification.PromiseCalls.growElemSpinesKept_sound · Verification.IndexWrites.copyTransferBody_holds · Verification.IndexWrites.everyOverwrittenList_holds · Verification.TolerantFrames.restateEvery_named</dd><dt>Wire</dt><dd>Bound.parallel and ElemTarget.parallel add shift · IndexFact adds elemSpineApart and IndexShift on element/atIndex · OperationPost adds freshRegion and shallowCopy</dd><dt>Trust</dt><dd><span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel-shift</span></dd></dl>
+<details><summary>47 files changed, 6663 insertions(+), 1891 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   11 +-
+ docs/ARITHMETIC.md                                 |   67 +-
+ docs/REQUEST-PROTOCOL.md                           |   21 +-
+ docs/SOURCE-CONTRACTS.md                           |    7 +-
  .../Paper/TolerantFrames/ModelRules.lean           |    4 +-
- .../Paper/TolerantFrames/ParityDerivations.lean    |    6 +-
- .../Verification/Programs/HeapExpressionRules.lean |  390 +++-
- lean/Verification/Programs/IndexWrites.lean        | 2033 ++++++++++++++++----
- lean/Verification/Programs/Parametricity.lean      |  104 +-
- lean/Verification/Programs/PromiseCalls.lean       | 1613 ++++++++++++++--
+ .../Paper/TolerantFrames/ParityDerivations.lean    |    4 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  417 +++-
+ lean/Verification/Programs/IndexWrites.lean        | 2191 +++++++++++++++-----
+ lean/Verification/Programs/Parametricity.lean      |  118 +-
+ lean/Verification/Programs/PromiseCalls.lean       | 1762 +++++++++++++---
  lean/Verification/Programs/SinglePass.lean         |    6 +-
  .../Programs/TolerantFramesMergeGuarded.lean       |    2 +-
- .../Programs/TolerantFramesStoreOpsNames.lean      |  254 ++-
- lean/Verification/Semantics/AssertionScopes.lean   |    3 +-
- lean/Verification/Semantics/ClosedFootprints.lean  |    5 +
- lean/Verification/Semantics/ContractExits.lean     |   14 +
- lean/Verification/Semantics/ExitRenaming.lean      |   10 +
- lean/Verification/Semantics/ExitSchemas.lean       |    2 +
- lean/Verification/Semantics/ExitSummaries.lean     |    9 +
- lean/Verification/Semantics/FormulaScopes.lean     |    6 +
- lean/Verification/Semantics/HeapKnowledge.lean     |  917 ++++++---
- lean/Verification/Semantics/IndexFacts.lean        |  905 ++++++---
+ .../Programs/TolerantFramesStoreOpsNames.lean      |  287 ++-
+ lean/Verification/Semantics/AssertionScopes.lean   |    1 +
+ lean/Verification/Semantics/ContractExits.lean     |    7 +
+ lean/Verification/Semantics/ExitRenaming.lean      |    5 +
+ lean/Verification/Semantics/ExitSchemas.lean       |    1 +
+ lean/Verification/Semantics/ExitSummaries.lean     |    4 +
+ lean/Verification/Semantics/FormulaScopes.lean     |    3 +
+ lean/Verification/Semantics/HeapKnowledge.lean     | 1155 ++++++++---
+ lean/Verification/Semantics/IndexFacts.lean        |  931 +++++++--
  .../Verification/Semantics/SeparationEvidence.lean |   73 +
  lean/Verification/Semantics/StepRelations.lean     |  118 +-
- lean/Verification/Semantics/Survival.lean          |  340 ++--
+ lean/Verification/Semantics/Survival.lean          |  340 +--
  .../Verification/Semantics/SurvivalSeparation.lean |   64 +-
- lean/Verification/Semantics/TwoStateFormulas.lean  |   21 +
+ lean/Verification/Semantics/TwoStateFormulas.lean  |   17 +
  lean/Verification/Source/Claims/FragmentFront.lean |   19 +-
- lean/Verification/Source/Claims/HeadInference.lean |  156 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  160 +-
  lean/Verification/Source/Claims/MemberSettle.lean  |    2 +-
- .../Source/Claims/RegionInference.lean             |  138 +-
- lean/Verification/Source/EffectCodec.lean          |   62 +-
- lean/Verification/Source/Lowering/Flow.lean        |   32 +-
+ .../Source/Claims/RegionInference.lean             |  117 +-
+ lean/Verification/Source/EffectCodec.lean          |   58 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   36 +-
  lean/Verification/Source/SourceClaims.lean         |   12 +-
  pipeline/cases.mts                                 |    6 +-
  .../invalid-quantified-offset-parallel-shift.ts    |   41 +
@@ -323,12 +323,129 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  pipeline/verify-source.mts                         |   15 +-
  tests/node-runs.mts                                |   12 +-
  tools/array-prototype.mts                          |    2 +-
- tools/bound-annotations.mts                        |  138 +-
- tools/declaration-types.mts                        |   23 +-
+ tools/bound-annotations.mts                        |  152 +-
+ tools/declaration-types.mts                        |   22 +-
  tools/diagnostic.mts                               |   52 +-
  tools/fact-text.mts                                |   35 +-
- tools/intrinsics.mts                               |    6 +-
- tools/type-graph.mts                               |   21 +-</pre></details>
-<div class="sha">with Antigravity</div>
+ tools/intrinsics.mts                               |    4 +-
+ tools/type-graph.mts                               |   17 +-</pre></details>
+<div class="sha">with Antigravity · with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-5beb17f90"><header><div><div class="sha">5beb17f90 · Cristiano Calcagno · Nov 25, 19:35</div><h3>Refuse the shifted-parallel negative controls at the obligations they target</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>invalid-quantified-offset-parallel and its -shift sibling carried none of the positive's loop invariants, so each was refused at the first loop head for want of an invariant, whatever the shift and copy-transfer rules decide. Their expectation named only the return, which any such refusal reaches.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Control <span class="target">invalid-quantified-offset-parallel</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-offset-parallel</code></div><p>an unannotated appendSubRange with longer advances rows; expectation: the return of appendSubRangeOffByOne.</p></div></figure><figure><figcaption>After</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-offset-parallel</code></div><p>the positive's appendSubRange with every loop invariant, changed only to push a subExtras row shorter than its advances row; expectation: the first loop's back edge does not keep advances[base + k].length &lt;= subExtras[k].length.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Control <span class="target">invalid-quantified-offset-parallel-shift</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-offset-parallel-shift</code></div><p>an unannotated appendSubRange writing extras[base + s - 1]; expectation: the return of appendSubRangeWrongShift.</p></div></figure><figure><figcaption>After</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-offset-parallel-shift</code></div><p>the positive's appendSubRange with every loop invariant, changed only to write subExtras[s] into extras[base + s - 1]; expectation: the last loop's back edge does not keep advances[j].length &lt;= extras[j].length, since copy transfer pairs subExtras[s] with advances[base + s] only.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-quantified-offset-parallel</code> <span class="kind negative">negative</span> <span class="was">negative  refused</span> <span class="arrow">→</span> <span class="now">refused  at the shifted invariant; fails under Node</span></summary><pre class="code"><span class="tk-c">// Negative control for shifted parallel indexing (#397): `appendSubRange` of</span>
+<span class="tk-c">// quantified-offset-parallel.ts with every loop invariant kept and one change:</span>
+<span class="tk-c">// each appended `subExtras` row is shorter than the `advances` row appended</span>
+<span class="tk-c">// with it. The first loop's shifted invariant</span>
+<span class="tk-c">// `advances[base + k].length &lt;= subExtras[k].length` does not survive the two</span>
+<span class="tk-c">// pushes, and under Node the result breaks `ConcatParallel`'s invariant</span>
+<span class="tk-c">// (`extras[1][1]` is `undefined` where `advances[1][1]` is `0`).</span>
+<span class="tk-c">/**
+ * @invariant this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ConcatParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendSubRangeShortRow(
+  prefix: <span class="tk-t">ConcatParallel</span>,
+  subWidths: number[],
+): <span class="tk-t">ConcatParallel</span> {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = prefix.advances.slice();
+  <span class="tk-k">const</span> base = advances.length;
+  <span class="tk-k">const</span> subExtras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(s) &amp;&amp; 0 &lt;= base &amp;&amp; base &lt;= prefix.extras.length &amp;&amp; 0 &lt;= s
+   * @invariant subExtras.length === s
+   * @invariant advances.length === base + s
+   * @invariant forall i &lt; base of advances: advances[i] === null || prefix.extras[i] === null || advances[i].length &lt;= prefix.extras[i].length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subWidths.length; s++) {
+    <span class="tk-k">const</span> w = subWidths[s]!;
+    advances.push([w, <span class="tk-n">0</span>]);
+    subExtras.push([w]);
+  }
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(
+    advances.length,
+  ).fill(<span class="tk-k">null</span>);
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= base &amp;&amp; base &lt;= prefix.extras.length
+   * @invariant forall j &lt; base of advances: advances[j] === null || prefix.extras[j] === null || advances[j].length &lt;= prefix.extras[j].length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; base; i++) {
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = prefix.extras[i] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(s) &amp;&amp; 0 &lt;= base &amp;&amp; 0 &lt;= s &amp;&amp; s &lt;= subExtras.length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subExtras.length; s++) {
+    <span class="tk-k">const</span> at = base + s;
+    <span class="tk-k">if</span> ((at &amp; 0x7fffffff) !== at || at &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[at] = subExtras[s] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}</pre></details></li><li><code>invalid-quantified-offset-parallel-shift  negative  refused → refused  at the copied overwrite; fails under Node</code></li></ul>
+<h4 class="change">Validation</h4><div class="prose"><p>run-cases.mts offset-parallel (3/3); tests/node-runs.mts.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel-shift</span></dd></dl>
+<details><summary>4 files changed, 60 insertions(+), 19 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                 |  8 +++---
+ .../invalid-quantified-offset-parallel-shift.ts    | 31 +++++++++++++++++----
+ .../examples/invalid-quantified-offset-parallel.ts | 32 ++++++++++++++++++----
+ tests/node-runs.mts                                |  8 +++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8340f58e4"><header><div><div class="sha">8340f58e4 · Cristiano Calcagno · Nov 25, 19:37</div><h3>Test the zero-argument slice() contract under Node and in both directions</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The zero-argument slice() states shallowCopy and freshRegion, a review obligation no proof discharges, and the record of the change adding them named tests/builtin-trust.mts as its check; that suite tests the built-ins' trust fields (outside code) and does not read effect postconditions. No case or Node run showed the stated behaviour, nor that the contract stops short of a deep copy.</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">native-slice-fresh, invalid-native-slice-shallow</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="control"><p>native-slice-fresh: headAt writes <code>copy[k] = []</code> into <code>xs.slice()</code> and reads <code>xs[k][0]</code> under <code>forall i in xs: xs[i] === null || 1 &lt;= xs[i].length</code>; verified because the copy's cells are fresh, &quot;1&quot; under Node. invalid-native-slice-shallow: headAfterRowPop pops the copy's row and reads <code>xs[k][0]</code>; refused at that read, a TypeError under Node, since the copy's elements are the receiver's. tests/node-runs.mts checks slice()'s four stated postconditions directly: a distinct array, the receiver's length, the same element and the same hole at each index, and a write to the copy leaving the receiver.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>native-slice-fresh</code> <span class="kind positive">positive</span> <span class="was">positive  new</span> <span class="arrow">→</span> <span class="now">verified  freshRegion of slice()</span></summary><pre class="code"><span class="tk-c">// The zero-argument `slice()` (SOURCE-CONTRACTS.md, `ArrayProto`) returns a</span>
+<span class="tk-c">// fresh array: its spine and element cells are new, and it holds the</span>
+<span class="tk-c">// receiver's own values at the same indices, its holes and its length. A</span>
+<span class="tk-c">// write to the copy's cell leaves the receiver's element, so the receiver's</span>
+<span class="tk-c">// quantified bound still gives `row[0]` (`headAt([[1]], 0)` is &quot;1&quot; under</span>
+<span class="tk-c">// Node; were the copy the receiver, `row` would be `[]` and `row[0]` absent).</span>
+<span class="tk-c">/** @requires safeInteger(k) &amp;&amp; 0 &lt;= k &amp;&amp; k &lt; xs.length
+ *  @requires forall i in xs: xs[i] === null || 1 &lt;= xs[i].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> headAt(xs: (number[] | <span class="tk-k">null</span>)[], k: number): string {
+  <span class="tk-k">const</span> copy = xs.slice();
+  copy[k] = [];
+  <span class="tk-k">const</span> row = xs[k] ?? <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (row === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">return</span> row[<span class="tk-n">0</span>]!.toFixed(<span class="tk-n">0</span>);
+}</pre></details></li><li><code>invalid-native-slice-shallow  negative  new → refused</code> <span class="why">shallowCopy is not deep; fails under Node</span></li></ul>
+<h4 class="change">Validation</h4><div class="prose"><p>run-cases.mts native-slice (2/2); tests/node-runs.mts; tests/docs.mts; tsc over tools.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="trust">Array.prototype.slice() with no argument states shallowCopy and freshRegion (review obligation; tested by these controls)</span></dd><dt>Tests</dt><dd><span class="test pos">native-slice-fresh</span> <span class="test neg">invalid-native-slice-shallow</span></dd></dl>
+<details><summary>5 files changed, 53 insertions(+), 1 deletion(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md                          |  6 +++++-
+ pipeline/cases.mts                                |  3 +++
+ pipeline/examples/invalid-native-slice-shallow.ts | 14 ++++++++++++++
+ pipeline/examples/native-slice-fresh.ts           | 15 +++++++++++++++
+ tests/node-runs.mts                               | 16 ++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-1dca79eef"><header><div><div class="sha">1dca79eef · Cristiano Calcagno · Nov 25, 19:38</div><h3>State the quantified clauses' index forms and the reach of shifted reads</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A shifted read (<code>IndexShift</code>) exists for parallel arrays only, beside a constant offset for the quantified array's own element (<code>Bound.offset</code>) and a one-term interval bound (<code>IndexBound</code>): three forms for one notion. Making the shift the one index form of element reads replaces the own-element reads <code>elem</code>, the projections and <code>offset</code> by one form carrying a shift, and their uses in the rules and proofs: about 80 <code>Bound.offset</code> sites and about 390 own-element and projection sites in 13 Lean modules (measured by grep), past a moderate change. ARITHMETIC.md described the shift without these limits.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">the index forms of element reads in quantified clauses</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="prose"><p>ARITHMETIC.md states: the own element is read at the bound index or a constant natural offset, a parallel element at an affine shift; <code>P[i + n]</code> with terms is not expressible; <code>IndexBound</code> is a special case of the shift's form; the atIndex-tag, dense-append and view-write rules read a parallel array at shift zero only, so a fact with another shift is kept but not extended there.</p></div></figure></div>
+<h4 class="change">Validation</h4><div class="prose"><p>tests/docs.mts (0 problems).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 14 insertions(+), 1 deletion(-)</summary><pre class="code"> docs/ARITHMETIC.md | 15 ++++++++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-598523d30"><header><div><div class="sha">598523d30 · Cristiano Calcagno · Nov 25, 19:38</div><h3>State what the fresh-region proposals' signature matching stands for</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>matchingCallEffects picks a callee's signatures by argument count, which reads like a second overload selection beside elaboration's. No shared selection exists to reuse: proposals are computed before the pass, from the callee's type alone, and elaboration selects a signature inline per call form, recorded in the call's evidence (<code>selectedEffect</code>), which the pass reads.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">matchingCallEffects</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="prose"><p>its documentation states it approximates overload selection for proposals only, names the selection the pass reads, and that a proposal from a signature the call does not select is a candidate no edge establishes, so it changes no verdict.</p></div></figure></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build Verification.Source.Claims.RegionInference.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 9 insertions(+), 1 deletion(-)</summary><pre class="code"> lean/Verification/Source/Claims/RegionInference.lean | 10 +++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
