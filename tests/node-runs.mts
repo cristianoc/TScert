@@ -3479,4 +3479,28 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-view-write-every-view"),
     "(() => { const v = new Uint8Array([0]); return typeof writeViewAliased(v, v, [10]); })()"),
     "undefined", "invalid-view-write-every-view: aliased Uint8Array write corrupts index bound and reads undefined");
+  assert.equal(runExample(ofKind("quantified-object-literal-every-gap", ["gap"]),
+    "JSON.stringify(wrapChunks([[1, 2], null]))"),
+    '{"chunks":[[1,2],null]}', "quantified-object-literal-every-gap (#391): safe object-literal wrap");
+  assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
+    "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
+    '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");
+  assert.equal(runExample(ofKind("quantified-array-fill-null-gap", ["gap"]),
+    "JSON.stringify(attachEmptyExtras([[1, 2], null]))"),
+    "[null,null]", "quantified-array-fill-null-gap (#393): safe new Array(n).fill(null)");
+  assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
+    "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
+    '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");
+  assert.equal(runExample(ofKind("quantified-dense-append-write-gap", ["gap"]),
+    "String(copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]))"),
+    "14", "quantified-dense-append-write-gap (#395): safe lockstep dense-append write");
+  assert.equal(runExample(ofKind("quantified-suffix-null-gap", ["gap"]),
+    "JSON.stringify(buildLazyExtras([[1], [2, 3], [4]], [null, [10, 20], null]))"),
+    '{"advances":[[1],[2,3],[4]],"extras":[null,[10,20],null]}', "quantified-suffix-null-gap (#396): safe lazy parallel allocation");
+  assert.equal(runExample(ofKind("quantified-offset-parallel-gap", ["gap"]),
+    "JSON.stringify(appendSubRange({ advances: [[1]], extras: [[2]] }, [3, 4]))"),
+    '{"advances":[[1],[3],[4]],"extras":[[2],[3,0],[4,0]]}', "quantified-offset-parallel-gap (#397): safe sub-range offset copy");
+  assert.equal(runExample(ofKind("quantified-bitmask-guard-gap", ["gap"]),
+    "JSON.stringify(buildAndPatchPreservedSpace(new Uint8Array([1, 2]), 1).advances)"),
+    "[[10,20],[5,5,5]]", "quantified-bitmask-guard-gap (#398): safe bitmask-guarded overwrite");
 }
