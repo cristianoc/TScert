@@ -28,7 +28,9 @@ function at(xs: number[], i: number): number {
 }
 ```
 
-A quantified atom states its body of every element:
+A quantified atom states its body of every element, optionally under
+leading guards and with element guards or parallel-array element projections
+in its body ([quantified clauses](ARITHMETIC.md#quantified-clauses)):
 
 ```ts
 /** @requires safeInteger(k) && 0 <= k && k < ends.length
@@ -36,6 +38,10 @@ A quantified atom states its body of every element:
 function widthAt(widths: number[], ends: number[], k: number): number {
   return widths[ends[k]!]!;
 }
+
+/** @requires extras === null || fits.length <= extras.length
+ *  @requires extras === null || forall i in fits: fits[i] === null || extras[i] === null || fits[i].length <= extras[i].length */
+function fitWithExtra(fits: (number[] | null)[], extras: (number[] | null)[] | null, i: number): number { … }
 ```
 
 `p !== q` of two arrays states that their spines differ, so the body keeps

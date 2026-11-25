@@ -294,7 +294,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | fieldRead _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose spine's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -327,7 +327,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
-    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hm; cases hm
+    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | fieldRead _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their spine: read links
@@ -1792,7 +1792,7 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | fieldRead _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ | spineApart _ _ _ _ | same _ _ => rw [hfact] at hf; cases hf
 
 /-- Whether the linear facts bound a slot `i` by the length of the spine of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/
@@ -2602,9 +2602,9 @@ def writeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (a : Nat
       ((HeapLinks.aliases k.links a).contains y && apartFrom k a x && arraySlot G Γ x) ||
       (apartFrom k a x && apartFrom k a y && arraySlot G Γ x && arraySlot G Γ y)
     | .every s [] stop body => apartFrom k a s && arraySlot G Γ s && termApart k a stop &&
-        body.all fun F => F.vars.all fun b => match b with
+        body.all fun B => B.targets.isEmpty && B.vars.all fun b => match b with
           | .free t => termApart k a t
-          | .project _ _ => false
+          | .project _ _ | .parallel _ _ _ _ => false
           | _ => true
     | _ => false
 
@@ -2750,17 +2750,23 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       obtain ⟨u, hu', hue⟩ := Option.bind_eq_some_iff.mp hls'
       rw [hkeep st (.inl rfl) _ hu']; exact hue
     · intro z' hz'; exact termApart_kept hw hk hh hρ hu hstop hz'
+    · intro w st' ls' hw' hst' hls' F hF i t ht v hv
+      have hnt := (hbody F hF).1
+      simp only [List.isEmpty_iff] at hnt
+      rw [hnt] at ht; cases ht
     · intro w st' ls' hw' hst' hls' F hF i b hb z' hz'
       simp only [readPath, Option.some.injEq] at hw'
       subst hw'
       rw [hst] at hst'; cases hst'
       rw [hls] at hls'; cases hls'
+      have hbv := (hbody F hF).2 b hb
       cases b with
       | index => exact hz'
-      | free t => exact termApart_kept hw hk hh hρ hu (hbody F hF _ hb) hz'
+      | free t => exact termApart_kept hw hk hh hρ hu hbv hz'
       | elem => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
       | offset d => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
-      | project k p => have := hbody F hF (.project k p) hb; contradiction
+      | project k p => simp at hbv
+      | parallel s p k ep => simp at hbv
   all_goals (rw [hfact] at hsel; cases hsel)
 
 /-- A write at the spine of `a`'s array keeps `writeAtoms` (`region-write`,

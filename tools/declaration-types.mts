@@ -149,6 +149,7 @@ export type IndexFact =
   | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;
       readonly body: IndexFact } }
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
+  | { readonly fieldRead: { readonly value: number; readonly object: number; readonly field: string } }
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
       readonly body: readonly BodyFact[] } }
   | { readonly atIndex: { readonly slot: number; readonly path: readonly string[]; readonly index: LinearTerm;
@@ -158,10 +159,23 @@ export type IndexFact =
   | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
- * index, the element at it, or a linear term. */
-export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } } | { readonly free: { readonly t: LinearTerm } };
-/** A linear fact of a quantified fact's body, over its variables. */
+ * index, the element at it, a projection of the element, a parallel array's
+ * element at the same index, or a linear term. */
+export type BodyVariable =
+  | "index"
+  | "elem"
+  | { offset: { delta: number } }
+  | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } }
+  | { readonly parallel: { readonly slot: number; readonly path: readonly string[];
+      readonly kind: LinearTerm["kind"]; readonly elemPath: readonly string[] } }
+  | { readonly free: { readonly t: LinearTerm } };
+/** The target of an element guard in a quantified fact's body (`HeapKnowledge.ElemTarget`). */
+export type ElemTarget =
+  | { readonly self: { readonly path: readonly string[] } }
+  | { readonly parallel: { readonly slot: number; readonly path: readonly string[]; readonly elemPath: readonly string[] } };
+/** A clause of a quantified fact's body, optionally under element guards. */
 export type BodyFact =
+  | { readonly guarded: { readonly target: ElemTarget; readonly tag: GuardTag; readonly body: BodyFact } }
   | { readonly either: { readonly left: BodyFact; readonly right: BodyFact } }
   | { readonly le: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } }
   | { readonly ne: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } };

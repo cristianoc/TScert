@@ -1443,7 +1443,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   -- gives). The pool is consulted only where those leave a choice open. A
   -- construct signature stating a precondition is admitted where the step's
   -- knowledge establishes it.
-  let admits := admits?.getD fun (eff : CallEffects.Effect) (t : Tm) => PromiseCalls.preconditionHolds k eff t
+  let admits := admits?.getD fun (eff : CallEffects.Effect) (t : Tm) =>
+    PromiseCalls.preconditionHolds (HeapKnowledge.unguardedByTypes G j.context k) eff t
   let own := own?.getD (j.type :: j.context).eraseDups
   let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? j))) fun _ =>
     (expressionWithUsing G images own suggestions aliases admits fuel j.context j.term j.type).orElse fun _ =>
@@ -2080,11 +2081,9 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
               ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
       guardsOf x (fun z => .spineApart z q y r) ++ guardsOf y (fun z => .spineApart x q z r)
     | _ => []
-  let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
-    restated.eraseDups
-  candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
-    HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-      p.indices [a] none
+  let candidates := ((projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
+    restated.eraseDups).filter fun a => !k.indices.contains a
+  projections.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
 
 /-- Propagate established postconditions along single-predecessor paths. The
 entry starts at its requirement; a statement entry (a cut) at its requirement

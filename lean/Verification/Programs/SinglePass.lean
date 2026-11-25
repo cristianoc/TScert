@@ -530,13 +530,23 @@ def selectRound (s : Store) (chain : Bool) (frontier : List Nat) (seen : Std.Has
       if seen.contains y then (next, seen, kept, out) else (y :: next, seen.insert y, kept, out))
       (next, seen, kept.insert a, out.push a)) acc) ([], seen, kept, out)
 
+/-- The value facts of names mentioned by collected facts that were not on the
+frontier: leaf facts only, with no further chaining. -/
+def selectValues (s : Store) (seen : Std.HashSet Nat) (kept : Std.HashSet Atom) (out : Array Atom) : Array Atom :=
+  (out.toList.foldl (fun acc a =>
+    a.names.foldl (fun (sn, kp, o) n =>
+      if sn.contains n then (sn, kp, o) else
+      (s.about n).foldl (fun (sn, kp, o) b => match b with
+        | .value _ => if kp.contains b then (sn, kp, o) else (sn, kp.insert b, o.push b)
+        | _ => (sn, kp, o)) (sn.insert n, kp, o)) acc) (seen, kept, out)).2.2
+
 /-- The selective worklist (`selectRound`) from `frontier` until a round
 finds no new name: each round with a next frontier keeps a new fact, so a
 fuel of the store's size and two never runs out. -/
 def selectFrom (s : Store) (chain : Bool) : Nat → List Nat → Std.HashSet Nat → Std.HashSet Atom → Array Atom → Array Atom
-  | 0, _, _, _, out => out
+  | 0, _, seen, kept, out => selectValues s seen kept out
   | fuel + 1, frontier, seen, kept, out =>
-    if frontier.isEmpty then out else
+    if frontier.isEmpty then selectValues s seen kept out else
     let (next, seen, kept, out) := selectRound s chain frontier seen kept out
     selectFrom s chain fuel next seen kept out
 
@@ -1614,7 +1624,7 @@ def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.Index
   | .guarded 0 _ _ B => (startIdentities B).map fun (c, _) => (c, false)
   | .guarded (s + 1) p tag B =>
     (startIdentities B).map fun (c, r) => (c ++ (c.getLast?.map (.guarded s p tag ·)).toList, r)
-  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .apart _ _
+  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .fieldRead _ _ _ | .apart _ _
   | .spineApart _ _ _ _ | .same _ _ => []
 
 /-- The start's identity facts (`startIdentities`) for the postcondition
@@ -2243,7 +2253,7 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   -- spine separation; each kept where every predecessor's facts entail it.
   let tags : List HeapKnowledge.GuardTag := [.null, .undef, .tru, .fls]
   let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
-    | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
+    | .value f => if f.contents != {} && tags.any (fun g => HeapKnowledge.onlyTag f.contents g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
     | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩ | .link _ => a.names
@@ -2270,14 +2280,33 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
           some (z, g.complement)
         else none).eraseDups
       if nullish.isEmpty then [] else
-      let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
+      let indexCands := projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
-        | .guarded .. | .either .. => []
-        | F => nullish.map fun (z, g) =>
-            ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
-      candidates.filter fun a => flat.all fun (p : Knowledge) =>
-        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-          p.indices [a] none
+        | .either .. => []
+        | .guarded s [] t B =>
+            let cls := HeapLinks.aliases p.links s
+            nullish.filterMap fun (z, g) =>
+              if !cls.contains z then none
+              else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
+              else match B with
+                | .guarded s' [] t' _ =>
+                  if (HeapLinks.aliases p.links s').contains z && t' == g then some a else none
+                | .guarded .. => none
+                | _ => some ({ fact := .guarded z [] g (.guarded s [] t B) } : HeapKnowledge.IndexAtom)
+        | .guarded .. => []
+        | F => nullish.filterMap fun (z, g) =>
+            if HeapKnowledge.guardTags p z [] g then none
+            else some ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)
+      let linkCands := projections.flatMap fun (p : Knowledge) => p.links.flatMap fun l =>
+        if l.alias || l.optional then [] else match l.field with
+        | .str f =>
+          let cls := HeapLinks.aliases p.links l.value
+          nullish.filterMap fun (z, g) =>
+            if cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
+            else none
+        | .sym _ => []
+      let candidates := (indexCands ++ linkCands).eraseDups
+      flat.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
     return joined ++ tagged
   let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
     m.fold (fun acc _ φs => φs.foldl (·.insert ·) acc) acc) {}
@@ -2460,19 +2489,20 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     let kindKey := SinglePassStats.termKind node.expression
     -- Each precondition the call's signatures state, decided once, where the
     -- search first asks it (`admitsNear`).
+    let kPre := HeapKnowledge.unguardedByTypes G Γr kE
     let stated : List ((Option CallEffects.ElemPred × List HeapKnowledge.IndexFact) × Thunk Bool) :=
       own.foldl (fun acc F => match PositiveRules.expand G F with
         | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => L.foldl (fun acc p =>
             let key := (p.effect.requires, p.effect.pre)
             if acc.any (·.1 == key) then acc
-            else acc ++ [(key, Thunk.mk fun _ => admitsNear kE p.effect node.expression)]) acc
+            else acc ++ [(key, Thunk.mk fun _ => admitsNear kPre p.effect node.expression)]) acc
         | _ => acc) []
     let admits := fun (eff : CallEffects.Effect) (t : Tm) =>
       if t == node.expression then
         match stated.find? (·.1 == (eff.requires, eff.pre)) with
         | some (_, v) => v.get
-        | none => admitsNear kE eff t
-      else admitsNear kE eff t
+        | none => admitsNear kPre eff t
+      else admitsNear kPre eff t
     -- A call of a slot: its derivation read off the callee's signatures
     -- (`directCall`), its step `ordinary`; otherwise the search.
     let (direct, a0) := match node.expression with

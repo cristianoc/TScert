@@ -3447,4 +3447,16 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-set-add-invalidates-size"),
     "typeof readAfterSetAdd(new Set(), [42])"),
     "undefined", "invalid-set-add-invalidates-size: s.add increases s.size past xs.length");
+  assert.equal(runExample(ofKind("quantified-guarded-element-length", ["positive"]),
+    "JSON.stringify([lastAdvance({ advances: [[3, 7], null], extras: null }, 0), lastAdvance({ advances: [[3, 7], null], extras: null }, 1), sumWithExtras({ advances: [[3, 7]], extras: [[1, 2]] }, 0), sumWithExtras({ advances: [[3, 7]], extras: null }, 0)])"),
+    "[7,0,13,10]", "quantified-guarded-element-length: guarded element length and parallel-array extras");
+  assert.equal(runExample(negative("invalid-quantified-guarded-element-length"),
+    "String(lastOrZero([[]], 0))"),
+    "NaN", "invalid-quantified-guarded-element-length: empty inner array reads index -1 (undefined + 1 = NaN)");
+  assert.equal(runExample(negative("invalid-quantified-parallel-length"),
+    "String(sumShortExtras([[1, 2]], [[10]], 0))"),
+    "NaN", "invalid-quantified-parallel-length: shorter parallel inner array reads undefined at g = 1 (NaN)");
+  assert.equal(runExample(ofKind("guarded-field-read-merge", ["positive"]),
+    "JSON.stringify([totalWithOptionalExtras({ widths: [1, 2] }), totalWithOptionalExtras({ widths: [1, 2], opt: { extras: null } }), totalWithOptionalExtras({ widths: [1, 2], opt: { extras: [10, 20] } })])"),
+    "[3,3,33]", "guarded-field-read-merge: optional nested parallel array extracted via ternary");
 }

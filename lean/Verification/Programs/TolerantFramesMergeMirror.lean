@@ -141,7 +141,7 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
     (views : List State) : List HeapKnowledge.IndexAtom :=
   let tags : List HeapKnowledge.GuardTag := [.null, .undef, .tru, .fls]
   let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
-    | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
+    | .value f => if f.contents != {} && tags.any (fun g => HeapKnowledge.onlyTag f.contents g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
     | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩ | .link _ => a.names
@@ -168,14 +168,33 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
           some (z, g.complement)
         else none).eraseDups
       if nullish.isEmpty then [] else
-      let candidates := (projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
+      let indexCands := projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
-        | .guarded .. | .either .. => []
-        | F => nullish.map fun (z, g) =>
-            ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
-      candidates.filter fun a => flat.all fun (p : HeapKnowledge.Knowledge) =>
-        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-          p.indices [a] none
+        | .either .. => []
+        | .guarded s [] t B =>
+            let cls := HeapLinks.aliases p.links s
+            nullish.filterMap fun (z, g) =>
+              if !cls.contains z then none
+              else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
+              else match B with
+                | .guarded s' [] t' _ =>
+                  if (HeapLinks.aliases p.links s').contains z && t' == g then some a else none
+                | .guarded .. => none
+                | _ => some ({ fact := .guarded z [] g (.guarded s [] t B) } : HeapKnowledge.IndexAtom)
+        | .guarded .. => []
+        | F => nullish.filterMap fun (z, g) =>
+            if HeapKnowledge.guardTags p z [] g then none
+            else some ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)
+      let linkCands := projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.links.flatMap fun l =>
+        if l.alias || l.optional then [] else match l.field with
+        | .str f =>
+          let cls := HeapLinks.aliases p.links l.value
+          nullish.filterMap fun (z, g) =>
+            if cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
+            else none
+        | .sym _ => []
+      let candidates := (indexCands ++ linkCands).eraseDups
+      flat.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
     return joined ++ tagged
   let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
     m.fold (fun acc _ φs => φs.foldl (·.insert ·) acc) acc) {}

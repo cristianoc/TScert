@@ -346,16 +346,43 @@ theorem selectRound_about (s : Store) (chain : Bool) (frontier : List Nat) (seen
       · exact hc
       · exact hc
 
+/-- **The leaf value-fact pass keeps only facts the index lists.** -/
+theorem selectValues_about (s : Store) (seen : Std.HashSet Nat) (kept : Std.HashSet Atom) (out : Array Atom)
+    (h : ∀ a ∈ out.toList, ∃ n, a ∈ s.about n) :
+    ∀ a ∈ (SinglePass.selectValues s seen kept out).toList, ∃ n, a ∈ s.about n := by
+  let P : Std.HashSet Nat × Std.HashSet Atom × Array Atom → Prop :=
+    fun b => ∀ a ∈ b.2.2.toList, ∃ n, a ∈ s.about n
+  refine foldl_inv P _ out.toList (seen, kept, out) h fun _ _ acc hacc =>
+    foldl_inv P _ _ acc hacc fun n _ b hb => ?_
+  obtain ⟨sn, kp, o⟩ := b
+  dsimp only
+  split
+  · exact hb
+  · refine foldl_inv P _ (s.about n) (sn.insert n, kp, o) hb fun a' ha' c hc => ?_
+    obtain ⟨sn', kp', o'⟩ := c
+    dsimp only
+    cases a' with
+    | value _ =>
+      dsimp only
+      split
+      · exact hc
+      · intro x hx
+        simp only [Array.toList_push, List.mem_append, List.mem_singleton] at hx
+        rcases hx with hx | rfl
+        · exact hc x hx
+        · exact ⟨n, ha'⟩
+    | _ => exact hc
+
 /-- **The selective worklist keeps only facts the index lists.** -/
 theorem selectFrom_about (s : Store) (chain : Bool) :
     ∀ (fuel : Nat) (frontier : List Nat) (seen : Std.HashSet Nat) (kept : Std.HashSet Atom) (out : Array Atom),
       (∀ a ∈ out.toList, ∃ n, a ∈ s.about n) →
       ∀ a ∈ (SinglePass.selectFrom s chain fuel frontier seen kept out).toList, ∃ n, a ∈ s.about n
-  | 0, _, _, _, _, h => h
+  | 0, _, seen, kept, out, h => selectValues_about s seen kept out h
   | fuel + 1, frontier, seen, kept, out, h => by
     unfold SinglePass.selectFrom
     split
-    · exact h
+    · exact selectValues_about s seen kept out h
     · exact selectFrom_about s chain fuel _ _ _ _ (selectRound_about s chain frontier seen kept out h)
 
 /-- **Every fact the selective worklist returns is listed by the index**

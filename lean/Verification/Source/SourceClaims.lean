@@ -17,16 +17,24 @@ inductive BodyRef where
   | elem
   | offset (delta : Nat)
   | project (kind : HeapKnowledge.Term.Kind) (path : List String)
+  | parallel (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind) (elemPath : List String)
   | term (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind)
+  deriving Repr, Inhabited
+
+inductive ElemTargetRef where
+  | self (elemPath : List String)
+  | parallel (name : String) (path : List String) (elemPath : List String)
   deriving Repr, Inhabited
 
 inductive BodyClaim where
   | linear (terms : List (BodyRef × Int)) (bound : Int)
   | either (left right : BodyClaim)
+  | guarded (target : ElemTargetRef) (tag : HeapKnowledge.GuardTag) (body : BodyClaim)
 
-/-- A proposed quantified fact: an array a value binding's name and path
+/-- A proposed quantified fact: its leading guards, an array a value binding's name and path
 read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
-abbrev EveryClaim := (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
+abbrev EveryClaim := List (String × List String × HeapKnowledge.GuardTag) ×
+  (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
   List BodyClaim
 
 /-- A proposed spine separation: its guards, each a value binding's name, a
@@ -67,6 +75,11 @@ structure PointData (ι : Type) where
   /-- At a statement entry, the read links proposed: `(cell, value, field)`,
   stating that `value` holds the value read from `cell.field`. -/
   entryLinks : List (Nat × List (String × String × String)) := []
+  /-- At a statement entry, the element reads proposed: `(value, array, index)`. -/
+  entryElements : List (Nat × List (String × String × String)) := []
+  /-- At a statement entry, the guarded field-read facts proposed:
+  `(guards, value, object, field)`. -/
+  entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -88,6 +101,10 @@ def PointData.overlay (base row : PointData ι) : PointData ι :=
     entrySpinesApart := row.entrySpinesApart ++ base.entrySpinesApart.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1)
     entryLinks := row.entryLinks ++ base.entryLinks.filter (fun p =>
+      !(row.envs.map Prod.fst).contains p.1)
+    entryElements := row.entryElements ++ base.entryElements.filter (fun p =>
+      !(row.envs.map Prod.fst).contains p.1)
+    entryFieldReads := row.entryFieldReads ++ base.entryFieldReads.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1) }
 
 /-- A lifetime storage contract is keyed by its initializer and binding name.
@@ -114,6 +131,8 @@ structure Function (ι : Type) where
   entryApart : List (Nat × List (String × String)) := []
   entrySpinesApart : List (Nat × List SpinesApartClaim) := []
   entryLinks : List (Nat × List (String × String × String)) := []
+  entryElements : List (Nat × List (String × String × String)) := []
+  entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The declaring unit's parameter rows for each internal constructor scheme. -/
@@ -152,14 +171,16 @@ def Function.atPoint (f : Function ι) (point : String) : Function ι :=
     entryEvery := row.entryEvery
     entryApart := row.entryApart
     entrySpinesApart := row.entrySpinesApart
-    entryLinks := row.entryLinks }
+    entryLinks := row.entryLinks
+    entryElements := row.entryElements
+    entryFieldReads := row.entryFieldReads }
 
 /-- A signature overlay retains other bodies' claims, while replacing its own
 sites in every execution point. -/
 def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
   let points := (f.points.map Prod.fst ++ row.points.map Prod.fst).eraseDups.map fun id =>
     (id, ((f.points.lookup id).getD {}).overlay ((row.points.lookup id).getD {}))
-  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts f.entryEvery f.entryApart f.entrySpinesApart f.entryLinks).overlay
+  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts f.entryEvery f.entryApart f.entrySpinesApart f.entryLinks f.entryElements f.entryFieldReads).overlay
     row.toPointData
   { f with
     exprs := active.exprs
@@ -172,6 +193,8 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
     entryApart := active.entryApart
     entrySpinesApart := active.entrySpinesApart
     entryLinks := active.entryLinks
+    entryElements := active.entryElements
+    entryFieldReads := active.entryFieldReads
     points := points
     contracts := row.contracts ++ f.contracts.filter (fun p => !(row.contracts.map Prod.fst).contains p.1) }
 

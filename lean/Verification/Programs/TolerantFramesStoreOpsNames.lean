@@ -23,6 +23,13 @@ theorem bound_mapM_slots {f : Nat → Option Nat} {b b' : Bound} (h : b.mapM f =
     simp only [Bound.mapM, Option.map_eq_some_iff] at h
     obtain ⟨t', ht, rfl⟩ := h
     exact Term.mapM_slots ht
+  | parallel s p k ep =>
+    simp only [Bound.mapM, Option.map_eq_some_iff] at h
+    obtain ⟨s', hs, rfl⟩ := h
+    intro y hy
+    simp only [Bound.slots, List.mem_singleton] at hy ⊢
+    subst hy
+    exact ⟨s, rfl, hs⟩
   | _ =>
     simp only [Bound.mapM, Option.some.injEq] at h
     subst h
@@ -44,6 +51,33 @@ theorem clause_mapVars_vars {V W : Type} {g : V → Option W} :
     rcases hy with hy | hy
     · obtain ⟨x, hx, e⟩ := clause_mapVars_vars hA y hy; exact ⟨x, .inl hx, e⟩
     · obtain ⟨x, hx, e⟩ := clause_mapVars_vars hB y hy; exact ⟨x, .inr hx, e⟩
+
+theorem bodyClause_mapM_slots {f : Nat → Option Nat} :
+    ∀ {B B' : BodyClause}, B.mapM f = some B' → ∀ y ∈ B'.slots, ∃ x ∈ B.slots, f x = some y
+  | .clause F, B', h => by
+    simp only [BodyClause.mapM, Option.map_eq_some_iff] at h
+    obtain ⟨F', hF, rfl⟩ := h
+    intro y hy
+    obtain ⟨b', hb', hy⟩ := List.mem_flatMap.mp hy
+    obtain ⟨b, hb, hbm⟩ := clause_mapVars_vars hF b' hb'
+    obtain ⟨x, hx, e⟩ := bound_mapM_slots hbm y hy
+    exact ⟨x, List.mem_flatMap.mpr ⟨b, hb, hx⟩, e⟩
+  | .guarded (.self ep) g b, B', h => by
+    simp only [BodyClause.mapM, ElemTarget.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨_, rfl, b', hb, rfl⟩ := h
+    intro y hy
+    simp only [BodyClause.slots, ElemTarget.slots, List.nil_append] at hy ⊢
+    exact bodyClause_mapM_slots hb y hy
+  | .guarded (.parallel s p ep) g b, B', h => by
+    simp only [BodyClause.mapM, ElemTarget.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.map_eq_some_iff, Option.pure_def, Option.some.injEq] at h
+    obtain ⟨_, ⟨s', hs, rfl⟩, b', hb, rfl⟩ := h
+    intro y hy
+    simp only [BodyClause.slots, ElemTarget.slots, List.cons_append, List.nil_append, List.mem_cons] at hy ⊢
+    rcases hy with rfl | hy
+    · exact ⟨s, .inl rfl, hs⟩
+    · obtain ⟨x, hx, e⟩ := bodyClause_mapM_slots hb y hy; exact ⟨x, .inr hx, e⟩
 
 theorem indexFact_mapM_slots {f : Nat → Option Nat} :
     ∀ {F F' : IndexFact}, F.mapM f = some F' → ∀ y ∈ F'.slots, ∃ x ∈ F.slots, f x = some y := by
@@ -88,12 +122,10 @@ theorem indexFact_mapM_slots {f : Nat → Option Nat} :
     · obtain ⟨x, hx, e⟩ := Term.mapM_slots hst y hy
       exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_left _ hx), e⟩
     · obtain ⟨C', hC', hy⟩ := List.mem_flatMap.mp hy
-      obtain ⟨b', hb', hy⟩ := List.mem_flatMap.mp hy
       obtain ⟨C, hC, hCm⟩ := (IndexFact.mapBody_pairs hb).1 C' hC'
-      obtain ⟨b, hb0, hbm⟩ := clause_mapVars_vars hCm b' hb'
-      obtain ⟨x, hx, e⟩ := bound_mapM_slots hbm y hy
+      obtain ⟨x, hx, e⟩ := bodyClause_mapM_slots hCm y hy
       exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_right _
-        (List.mem_flatMap.mpr ⟨C, hC, List.mem_flatMap.mpr ⟨b, hb0, hx⟩⟩)), e⟩
+        (List.mem_flatMap.mpr ⟨C, hC, hx⟩)), e⟩
   | atIndex s p idx g body =>
     intro F' h y hy
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,

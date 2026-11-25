@@ -70,9 +70,22 @@ function bodyVariable(v: BodyVariable, array: string, name: Namer): string {
     const at = ["e", ...v.project.path].join(".");
     return v.project.kind === "value" ? at : v.project.kind === "length" ? `${at}.length` : `${v.project.kind}(${at})`;
   }
+  if ("parallel" in v) {
+    const arr = pathText(v.parallel.slot, v.parallel.path, name);
+    const at = [`${arr}[k]`, ...v.parallel.elemPath].join(".");
+    return v.parallel.kind === "value" ? at : v.parallel.kind === "length" ? `${at}.length` : `${v.parallel.kind}(${at})`;
+  }
   return term(v, name);
 }
 function body(f: BodyFormula, array: string, name: Namer): string {
+  if ("guarded" in f) {
+    const g = f.guarded;
+    const tgt = "self" in g.target ? ["e", ...g.target.self.path].join(".")
+      : [`${pathText(g.target.parallel.slot, g.target.parallel.path, name)}[k]`, ...g.target.parallel.elemPath].join(".");
+    const cond = g.tag === "notNull" ? "=== null" : g.tag === "notUndefined" ? "=== undefined"
+      : g.tag === "notTrue" ? "=== true" : g.tag === "notFalse" ? "=== false" : `!== ${g.tag}`;
+    return `${tgt} ${cond} → ${body(g.body, array, name)}`;
+  }
   if ("either" in f) return `(${body(f.either.left, array, name)}) || (${body(f.either.right, array, name)})`;
   return linear(f.form, f.bound, f.ne, (v) => bodyVariable(v, array, name)) ?? "true";
 }
@@ -100,6 +113,8 @@ export function indexFact(f: IndexFact, name: Namer): string | null {
   }
   if ("element" in f)
     return `${name(f.element.value)} === ${asOperand(name(f.element.array))}[${name(f.element.index)}]`;
+  if ("fieldRead" in f)
+    return `${name(f.fieldRead.value)} === ${asOperand(name(f.fieldRead.object))}.${f.fieldRead.field}`;
   if ("apart" in f) return `apart(${name(f.apart.slot)}, ${name(f.apart.other)})`;
   if ("same" in f) return `${name(f.same.slot)} === ${name(f.same.other)}`;
   if ("spineApart" in f) {

@@ -1587,7 +1587,33 @@ linear entailment establishes that its index equals the first index plus
 that offset. `offsetSlot_value` and `instantiateEvery_holds` prove that
 substitution preserves the body's meaning.
 
-**Frame conditions.** A body containing an element projection or offset is preserved
+**Element guards and parallel arrays.** A quantified atom may itself sit
+under leading [guards](#guarded-clauses), such as
+`extras === null || forall i in fits: …`. Within a body, each body clause
+may carry leading element guards `P[i] === null || …`,
+`P[i] === undefined || …`, `Q[i] === null || …` or
+`Q[i] === undefined || …` (on the quantified element or a parallel array's
+element at the same index, and their data paths), and linear body terms may
+project a parallel array's element at the same index (`Q[i].length`,
+`Q[i].f.length`, or a safe-integer value). For example:
+
+```ts
+/** @invariant forall i in this.advances: this.advances[i] === null || 1 <= this.advances[i].length
+ *  @invariant this.extras === null || forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length <= this.extras[i].length */
+```
+
+At an element read $`\mathrm{element}(r,a,k)`$, `every-read` instantiates
+each guarded body clause with $`r`$ for $`P[i]`$ and any read
+$`\mathrm{element}(r',b,k')`$ of the parallel array $`b`$ at an index
+entailed equal to $`k`$ for $`Q[i]`$, turning each element guard into a
+guarded fact on $`r`$ or $`r'`$ (`HeapKnowledge.instantiateEvery`, proved by
+`instantiateEvery_holds`). Subsequent narrowing (`r !== null`) releases the
+guarded body facts (`HeapKnowledge.unguardedInstances`, proved by
+`unguardedInstances_holds`). Across calls and heap transitions, a body
+projecting an element's length depends on the array's element spines region
+(`Footprints.Region.elemSpines`, proved by `Survival.every_supported`).
+
+**Frame conditions.** A body containing an element projection, element guard, parallel array or offset is preserved
 across heap extension and unchanged heaps. The growth and element-write
 checks require its projected terms to be re-established; their generic
 preservation checks refuse them. Disjunctive bodies also require explicit
@@ -1797,11 +1823,18 @@ empty literal's length (proved: `emptyArrayAtoms_holds`, by its finite
 execution); `Checker.emptyArrays` adds those facts and fresh locations.
 
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
-to an element, pretext's `narrowsLine` through a destructured path). Negative,
-each run under Node: `invalid-quantified-element-read-inclusive` (an element
-at most the length), `invalid-quantified-element-read-alias-write` (a write
-through an alias of the quantified array) and
-`invalid-quantified-element-read-shrunk` (a `pop` of the bounding array).
+to an element, pretext's `narrowsLine` through a destructured path),
+`quantified-guarded-element-length` (guarded element lengths and parallel-array
+element lengths over optional-chained entries), and `guarded-field-read-merge`
+(a nullable parallel-array length bound through an optional nested field across
+a ternary merge). Negative, each run under Node:
+`invalid-quantified-element-read-inclusive` (an element at most the length),
+`invalid-quantified-element-read-alias-write` (a write through an alias of the
+quantified array), `invalid-quantified-element-read-shrunk` (a `pop` of the
+bounding array), `invalid-quantified-guarded-element-length` (an empty inner
+array admitted by `0 <= xs[j].length`), and
+`invalid-quantified-parallel-length` (a shorter parallel inner array admitted
+by `xs[j].length <= ys[j].length + 1`).
 Empty entry: positive `quantified-empty-builder` (an empty literal, push
 under a written invariant, and a bounded consumer); negative
 `invalid-quantified-empty` (`[7]` claimed bounded by a one-element array,
