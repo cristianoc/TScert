@@ -352,12 +352,13 @@ type LinearFact<V> = { le: { form: [V, Integer][]; bound: Integer } }
 type Clause<V> = LinearFact<V> | { either: { left: Clause<V>; right: Clause<V> } };
 type BodyVariable = "index" | "elem" | { offset: { delta: Nat } }
   | { project: { kind: LinearTerm["kind"]; path: string[] } } | { free: { t: LinearTerm } };
+type IndexBound = { base: LinearTerm | null; offset: Integer };
 type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe: { slot: Nat } }
   | { length: { array: Nat; length: Nat } } | { bound: { array: Nat; index: Nat; strict: boolean } }
   | { linear: { fact: LinearFact<LinearTerm> } } | { either: { left: IndexFact; right: IndexFact } }
   | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } }
   | { element: { value: Nat; array: Nat; index: Nat } }
-  | { every: { slot: Nat; path: string[]; stop: LinearTerm; body: Clause<BodyVariable>[] } }
+  | { every: { slot: Nat; path: string[]; start: IndexBound; stop: IndexBound; body: Clause<BodyVariable>[] } }
   | { apart: { slot: Nat; other: Nat } }
   | { spineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
 type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];
@@ -368,7 +369,7 @@ type OperationPost =
   | { lengthsKept: { x: Nat; exit: Nat } } | { boundedWrite: { x: Nat; i: Nat; exit: Nat } }
   | { push: { x: Nat; exit: Nat; args: WitnessSeq } }
   | { fact: { phase: "before" | "after"; lift: Nat; fact: IndexFact } }
-  | { freshSpine: { x: Nat } } | { freshObject: { x: Nat } }
+  | { freshSpine: { x: Nat } } | { freshObject: { x: Nat } } | { freshRegion: { x: Nat } }
   | { elementsWhen: { x: Nat; value: Literal; y: Nat; predicate: ElementKinds } }
   | { spineExtends: { x: Nat } }
   | { viewWrite: { x: Nat; i: Nat; v: Nat; format: "uint8" | "uint16" | "int32" | "float64" | null } };

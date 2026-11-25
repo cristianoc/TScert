@@ -690,7 +690,7 @@ def OperationPostF.scoped (sc : Scope) : OperationPost → Bool
   | .boundedWrite x i x' => decide (x < sc.before) && decide (i < sc.before) && decide (x' < sc.after)
   | .push x x' args => decide (x < sc.before) && decide (x' < sc.after) && args.all (Witness.scoped sc.before)
   | .fact p l F => F.slots.all (fun i => decide (i + l < sc.count p)) && F.entrySlots.all (fun i => decide (i < sc.before))
-  | .freshSpine x | .freshObject x => decide (x < sc.after)
+  | .freshSpine x | .freshObject x | .freshRegion x => decide (x < sc.after)
   | .elementsWhen x _ y _ => decide (x < sc.after) && decide (y < sc.after)
   | .spineExtends x => decide (x < sc.before)
   | .viewWrite x i v _ => decide (x < sc.before) && decide (i < sc.before) && decide (v < sc.before)

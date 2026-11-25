@@ -4485,9 +4485,10 @@ wrapped and the unwritten form one meaning (the entry's `filled`,
 
 `%ArrayLength%` is ArrayCreate's check: a RangeError where
 $`\mathrm{ToUint32}(n)\ne n`$, otherwise $`n`$. `%ArrayFilled%` makes an
-array of that length whose every index holds the value, a fresh spine (the
-effect's `fresh`); each element is the value itself, so an object value is
-one object all indices share, at its own contract. Neither states its
+array of that length whose every index holds the value, with a fresh spine and
+fresh element cells (the effect's `fresh` and `freshRegion`, so its region is
+apart from every pre-existing array); each element is the value itself, so an
+object value is one object all indices share, at its own contract. Neither states its
 footprint on a throw: building the RangeError is the engine's.
 
 The host's steps (ECMA-262, ArrayCreate and `Array.prototype.fill`): $`e_1`$,

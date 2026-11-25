@@ -110,22 +110,35 @@ theorem indexFact_mapM_slots {f : Nat → Option Nat} :
     rcases hy with rfl | hy
     · exact ⟨s, .inl rfl, hs⟩
     · obtain ⟨x, hx, e⟩ := ih hB y hy; exact ⟨x, .inr hx, e⟩
-  | every s p stop body =>
+  | every s p start stop body =>
     intro F' h y hy
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at h
-    obtain ⟨s', hs, stop', hst, body', hb, rfl⟩ := h
-    simp only [IndexFact.slots] at hy ⊢
-    rcases List.mem_cons.mp hy with h1 | hy
-    · subst h1; exact ⟨s, List.mem_cons_self .., hs⟩
-    rcases List.mem_append.mp hy with hy | hy
-    · obtain ⟨x, hx, e⟩ := Term.mapM_slots hst y hy
-      exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_left _ hx), e⟩
-    · obtain ⟨C', hC', hy⟩ := List.mem_flatMap.mp hy
-      obtain ⟨C, hC, hCm⟩ := (IndexFact.mapBody_pairs hb).1 C' hC'
+    obtain ⟨s', hs, start', hstart, stop', hstop, body', hb, rfl⟩ := h
+    simp only [IndexFact.slots, List.mem_cons, List.mem_append, List.mem_flatMap] at hy ⊢
+    rcases hy with ((rfl | hy) | hy) | ⟨C', hC', hy⟩
+    · exact ⟨s, .inl (.inl (.inl rfl)), hs⟩
+    · cases hsb : start.base with
+      | none =>
+        simp only [IndexBound.mapM, hsb, Option.some.injEq] at hstart
+        subst hstart; simp [IndexBound.slots, hsb] at hy
+      | some t =>
+        simp only [IndexBound.mapM, hsb, Option.map_eq_some_iff] at hstart
+        obtain ⟨t', ht', rfl⟩ := hstart
+        obtain ⟨x, hx, e⟩ := Term.mapM_slots ht' y hy
+        exact ⟨x, .inl (.inl (.inr (by simp [IndexBound.slots, hsb, hx]))), e⟩
+    · cases hsb : stop.base with
+      | none =>
+        simp only [IndexBound.mapM, hsb, Option.some.injEq] at hstop
+        subst hstop; simp [IndexBound.slots, hsb] at hy
+      | some t =>
+        simp only [IndexBound.mapM, hsb, Option.map_eq_some_iff] at hstop
+        obtain ⟨t', ht', rfl⟩ := hstop
+        obtain ⟨x, hx, e⟩ := Term.mapM_slots ht' y hy
+        exact ⟨x, .inl (.inr (by simp [IndexBound.slots, hsb, hx])), e⟩
+    · obtain ⟨C, hC, hCm⟩ := (IndexFact.mapBody_pairs hb).1 C' hC'
       obtain ⟨x, hx, e⟩ := bodyClause_mapM_slots hCm y hy
-      exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_right _
-        (List.mem_flatMap.mpr ⟨C, hC, hx⟩)), e⟩
+      exact ⟨x, .inr ⟨C, hC, hx⟩, e⟩
   | atIndex s p idx g body =>
     intro F' h y hy
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,

@@ -943,10 +943,24 @@ theorem bodyClauseOf_bodyClauseJ (B : BodyClause) : ∀ n, bodyClauseDepth B ≤
 
 /-! ## Index facts -/
 
+def indexBoundJ (b : IndexBound) : Json :=
+  obj ["base", "offset"] [optJ termJ b.base, intJ b.offset]
+
+def indexBoundOf (j : Json) : Except String IndexBound := do
+  let [bs, off] ← fields j ["base", "offset"] | throw "indexBound"
+  pure { base := ← under "base" (optOf termOf bs), offset := ← under "offset" (intOf off) }
+
+theorem termJ_ne_null (t : HeapKnowledge.Term) : termJ t ≠ .null := by
+  unfold termJ; split <;> simp [obj, Json.mkObj]
+
+@[simp] theorem indexBoundOf_indexBoundJ (b : IndexBound) : indexBoundOf (indexBoundJ b) = .ok b := by
+  have hb := optOf_optJ termOf termJ (o := b.base) termJ_ne_null (fun t _ => termOf_termJ t)
+  simp [indexBoundJ, indexBoundOf, fields_obj, hb]
+
 def factDepth : IndexFact → Nat
   | .either a b => max (factDepth a) (factDepth b) + 1
   | .guarded _ _ _ b => factDepth b + 1
-  | .every _ _ _ body => maxOf bodyClauseDepth body + 1
+  | .every _ _ _ _ body => maxOf bodyClauseDepth body + 1
   | .atIndex _ _ _ _ body => clauseDepth (V := Bound) body + 1
   | _ => 1
 
@@ -961,8 +975,8 @@ def factJ : IndexFact → Json
   | .guarded k p g b => tagged "guarded" (obj ["slot", "path", "tag", "body"] [natJ k, strsJ p, guardJ g, factJ b])
   | .element v x k => tagged "element" (obj ["value", "array", "index"] [natJ v, natJ x, natJ k])
   | .fieldRead v o f => tagged "fieldRead" (obj ["value", "object", "field"] [natJ v, natJ o, Json.str f])
-  | .every k p stop body => tagged "every"
-      (obj ["slot", "path", "stop", "body"] [natJ k, strsJ p, termJ stop, listJ bodyClauseJ body])
+  | .every k p start stop body => tagged "every"
+      (obj ["slot", "path", "start", "stop", "body"] [natJ k, strsJ p, indexBoundJ start, indexBoundJ stop, listJ bodyClauseJ body])
   | .atIndex k p idx g body => tagged "atIndex"
       (obj ["slot", "path", "index", "guard", "body"] [natJ k, strsJ p, termJ idx, optJ guardJ g, clauseJ boundJ body])
   | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
@@ -1007,8 +1021,9 @@ def factOf : Nat → Json → Except String IndexFact
       let [a, o, f] ← fields v ["value", "object", "field"] | throw "fieldRead"
       pure (.fieldRead (← under "value" (natOf a)) (← under "object" (natOf o)) (← under "field" (strOf f)))
     | "every" => do
-      let [s, p, st, b] ← fields v ["slot", "path", "stop", "body"] | throw "every"
-      pure (.every (← under "slot" (natOf s)) (← under "path" (listOf strOf p)) (← under "stop" (termOf st))
+      let [s, p, st0, st1, b] ← fields v ["slot", "path", "start", "stop", "body"] | throw "every"
+      pure (.every (← under "slot" (natOf s)) (← under "path" (listOf strOf p))
+        (← under "start" (indexBoundOf st0)) (← under "stop" (indexBoundOf st1))
         (← under "body" (listOf (bodyClauseOf n) b)))
     | "atIndex" => do
       let [s, p, idx, g, b] ← fields v ["slot", "path", "index", "guard", "body"] | throw "atIndex"
@@ -1039,7 +1054,7 @@ theorem factOf_factJ (F : IndexFact) : ∀ n, factDepth F ≤ n → factOf n (fa
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [factDepth] at hn; omega⟩
     have hb := ih m (by simp [factDepth] at hn; omega)
     simp [factJ, factOf, fields_obj, hb] <;> try rfl
-  | every k p stop body =>
+  | every k p start stop body =>
     intro n hn
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [factDepth] at hn; omega⟩
     have hb := listOf_listJ (bodyClauseOf m) bodyClauseJ body fun c hc =>
@@ -1087,6 +1102,7 @@ def postJ : OperationPostF WitnessSeq → Json
   | .fact ph l F => tagged "fact" (obj ["phase", "lift", "fact"] [phaseJ ph, natJ l, factJ F])
   | .freshSpine x => tagged "freshSpine" (obj ["x"] [natJ x])
   | .freshObject x => tagged "freshObject" (obj ["x"] [natJ x])
+  | .freshRegion x => tagged "freshRegion" (obj ["x"] [natJ x])
   | .elementsWhen x v y R => tagged "elementsWhen"
       (obj ["x", "value", "y", "predicate"] [natJ x, litJ v, natJ y, predJ R])
   | .spineExtends x => tagged "spineExtends" (obj ["x"] [natJ x])
@@ -1123,6 +1139,9 @@ def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := d
   | "freshObject" => do
     let [x] ← fields v ["x"] | throw "freshObject"
     pure (.freshObject (← under "x" (natOf x)))
+  | "freshRegion" => do
+    let [x] ← fields v ["x"] | throw "freshRegion"
+    pure (.freshRegion (← under "x" (natOf x)))
   | "elementsWhen" => do
     let [x, a, y, R] ← fields v ["x", "value", "y", "predicate"] | throw "elementsWhen"
     pure (.elementsWhen (← under "x" (natOf x)) (← under "value" (litOf a)) (← under "y" (natOf y))
@@ -1493,7 +1512,7 @@ private def sample : Effect :=
     ⟨topFrame, [.transport ⟨1, [(3, .path ⟨0, []⟩), (3, .literal .undef)], true, [2, 2]⟩,
       .operation (.freshSpine 0)]⟩⟩,
     some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
-    [.every 1 ["x"] (.now .length 1 ["x"]) [.clause (.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))),
+    [.every 1 ["x"] .zero (.ofTerm (.now .length 1 ["x"])) [.clause (.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))),
       .guarded (.self []) .null (.guarded (.parallel 2 ["y"] []) .null
         (.clause (.atom (.le [(.project .length [], 1), (.parallel 2 ["y"] .length [], -1)] 0))))],
      .fieldRead 1 2 "f",

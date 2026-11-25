@@ -280,19 +280,46 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   let writtenAt := fun (h : Nat) => ((writes.find? (·.1 == h)).map (·.2)).getD [] |>.flatMap fun (l, w) =>
     ((held.getD l none).getD []).filterMap fun (a, _, o) => if a == w then some o else none
   let written := (writes.map (·.1)).flatMap writtenAt
-  if written.isEmpty then return []
-  let table := carryForward P r.start width (fun l => if written.contains l then allocates l else []) false
+  let table : Array (Option (List (Nat × Nat × Nat))) :=
+    if written.isEmpty then Array.replicate P.length none
+    else carryForward P r.start width (fun l => if written.contains l then allocates l else []) false
+  -- Also detect loops that allocate a fresh-region array (`freshRegionResult`, e.g. `new Array(n).fill(v)`)
+  -- into a nullable array slot `x`: propose `x === null || apart(a, x)` for each array slot `a` at the head.
+  let hasFreshRegionCall (l : Nat) : Bool := match A[l]? with
+    | some node => match node.expression with
+      | .invoke (.var f) _ _ => match (ctxOf l)[f]? with
+        | some F => match PositiveRules.expand G F with
+          | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
+              L.any fun p => p.effect.schema.normal.freshRegionResult
+          | _ => false
+        | none => false
+      | _ => false
+    | none => false
+  let nullableArraySlot (Γ : List (Ty ι)) (s : Nat) : Bool := match Γ[s]? with
+    | some R =>
+      let cs := PositiveRules.expand G R
+      cs.any (· == .nul) && cs.any (fun | .refs fs [] vs .. => (Stored.views fs).any (·.1 == arraySpineKey) || vs.any (·.1 == arraySpineKey) | _ => false)
+    | none => false
   return r.cuts.filterMap fun h => do
     guard (heads.getD h false)
-    let ps ← table.getD h none
-    let written := writtenAt h
     let Γ := ctxOf h
-    let ps := (ps.filter fun (a, b, o) => written.contains o && IndexWrites.arraySlot G Γ a && IndexWrites.arraySlot G Γ b).map
-      fun (a, b, _) => (a, b)
+    let written := writtenAt h
+    let ps : List (Nat × Nat) := match table.getD h none with
+      | some ps => (ps.filter fun (a, b, o) => written.contains o && IndexWrites.arraySlot G Γ a && IndexWrites.arraySlot G Γ b).map
+          fun (a, b, _) => (a, b)
+      | none => []
     let ps := ps.eraseDups
     let ps := ps ++ (if force then (ps.map (·.1)).eraseDups.map fun a => (a, a) else [])
-    if ps.isEmpty then none else
-    some (h, ps.map fun (a, b) => HeapKnowledge.Candidate.index { fact := .apart a b })
+    let bodyHasFresh := match bodies.find? (·.1 == h) with
+      | some (_, body) => (List.range A.size).any fun l => body.getD l false && hasFreshRegionCall l
+      | none => false
+    let guardedApart : List HeapKnowledge.Candidate := if !bodyHasFresh then [] else
+      let arrs := (List.range Γ.length).filter (IndexWrites.arraySlot G Γ)
+      let nulls := (List.range Γ.length).filter (nullableArraySlot Γ)
+      nulls.flatMap fun x => arrs.filterMap fun a =>
+        if a == x then none else some (HeapKnowledge.Candidate.index { fact := .guarded x [] .null (.apart a x) })
+    let cands := ps.map (fun (a, b) => HeapKnowledge.Candidate.index { fact := .apart a b }) ++ guardedApart
+    if cands.isEmpty then none else some (h, cands)
 
 end
 

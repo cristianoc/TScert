@@ -2071,6 +2071,10 @@ each kept where every edge's knowledge entails it. Search only: each edge is
 checked again. -/
 def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.Knowledge) :
     List HeapKnowledge.IndexAtom :=
+  let existingGuards : List (Nat × HeapKnowledge.GuardTag) := (projections.flatMap fun p => p.indices.filterMap fun a =>
+    if a.cond.isSome then none else match a.fact with
+    | .guarded g [] t _ => some (g, t)
+    | _ => none).eraseDups
   let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
     if a.cond.isSome then [] else match a.fact with
     | .spineApart x q y r =>
@@ -2085,6 +2089,9 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
         ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
           projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
             ({ fact := .guarded z [] g (.element z x idx) } : HeapKnowledge.IndexAtom)
+    | .every .. | .apart .. =>
+      a :: existingGuards.map fun (g, t) => ({ fact := .guarded g [] t a.fact } : HeapKnowledge.IndexAtom)
+    | .guarded _ [] _ (.every ..) | .guarded _ [] _ (.apart ..) => [a]
     | _ => []
   let candidates := ((projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
     restated.eraseDups).filter fun a => !k.indices.contains a

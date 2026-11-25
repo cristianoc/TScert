@@ -34,11 +34,13 @@ inductive BodyClaim where
 /-- An element read proposed at a statement entry, with its guards. -/
 abbrev ElementClaim := List (String × List String × HeapKnowledge.GuardTag) × String × String × String
 
+/-- An affine index bound `base + offset` (or constant `offset` when `base = none`). -/
+abbrev BoundClaim := Option (String × List String × HeapKnowledge.Term.Kind) × Int
+
 /-- A proposed quantified fact: its leading guards, an array a value binding's name and path
-read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
+read, the start and stop bounds of its index interval, and its body's facts `Σ c·x ≤ d`. -/
 abbrev EveryClaim := List (String × List String × HeapKnowledge.GuardTag) ×
-  (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
-  List BodyClaim
+  (String × List String) × BoundClaim × BoundClaim × List BodyClaim
 
 /-- A proposed spine separation: its guards, each a value binding's name, a
 path and a tag (ARITHMETIC.md, "Guarded clauses"), then two pairs of a value

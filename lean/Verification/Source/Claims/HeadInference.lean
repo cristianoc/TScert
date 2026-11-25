@@ -74,10 +74,10 @@ inductive Fact where
   paths read are different spines (`IndexFact.spineApart`, guarded). -/
   | apart (guards : List (String × List String × HeapKnowledge.GuardTag)) (a : String) (pa : List String)
       (b : String) (pb : List String)
-  /-- Of each index below `stop` of the array the path from `a` reads, the
+  /-- Of each index in `[start, stop)` of the array the path from `a` reads, the
   body's facts (`IndexFact.every`, optionally guarded). -/
   | every (guards : List (String × List String × HeapKnowledge.GuardTag))
-      (a : String) (pa : List String) (stop : Key) (body : List BodyFact)
+      (a : String) (pa : List String) (start stop : Option Key × Int) (body : List BodyFact)
   /-- Unless a guard's path of its binding holds its tag, the linear fact
   (`IndexFact.guarded`, a type invariant's `x.f === null || …`). -/
   | guarded (guards : List (String × List String × HeapKnowledge.GuardTag)) (l : Lin)
@@ -94,7 +94,8 @@ def Fact.names : Fact → List String
   | .int n => [n]
   | .apart gs a _ b _ => gs.map (·.1) ++ [a, b]
   | .guarded gs l => gs.map (·.1) ++ l.terms.map (·.1.1)
-  | .every gs a _ stop body => gs.map (·.1) ++ a :: stop.1 :: body.flatMap BodyFact.names
+  | .every gs a _ start stop body =>
+    gs.map (·.1) ++ [a] ++ (start.1.map (·.1)).toList ++ (stop.1.map (·.1)).toList ++ body.flatMap BodyFact.names
   | .readLink c v _ => [c, v]
   | .element gs v a i => gs.map (·.1) ++ [v, a, i]
   | .fieldRead gs v o _ => gs.map (·.1) ++ [v, o]
@@ -108,7 +109,7 @@ def Fact.claim : Fact → Option SourceClaims.ClauseClaim
 
 /-- The quantified fact the producer would write for the fact. -/
 def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
-  | .every gs a pa stop body =>
+  | .every gs a pa start stop body =>
     let ref : BodyKey → SourceClaims.BodyRef := fun
       | .index => .index
       | .elem => .elem
@@ -120,7 +121,7 @@ def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
       | .lin ts d => .linear (ts.map fun (v, c) => (ref v, c)) d
       | .guarded (.self ep) g b => .guarded (.self ep) g (toClaim b)
       | .guarded (.parallel n p ep) g b => .guarded (.parallel n p ep) g (toClaim b)
-    some (gs, (a, pa), stop, body.map toClaim)
+    some (gs, (a, pa), start, stop, body.map toClaim)
   | _ => none
 
 /-- The spine separation the producer would write for the fact. -/
@@ -191,12 +192,17 @@ partial def Fact.text : Fact → String
       " + ".intercalate parts
     -- `Σpos - Σneg ≤ d` as `Σpos ≤ Σneg + d`, constants on the right.
     s!"{side pos 0} <= {side neg l.bound}"
-  | .every gs a pa (sn, sp, _) body =>
+  | .every gs a pa start stop body =>
     let guardCond := fun (path : String) (t : HeapKnowledge.GuardTag) => match t with
       | .null => s!"{path} === null || " | .undef => s!"{path} === undefined || "
       | .tru => s!"{path} === true || " | .fls => s!"{path} === false || "
       | .notNull => s!"{path} !== null || " | .notUndef => s!"{path} !== undefined || "
       | .notTru => s!"{path} !== true || " | .notFls => s!"{path} !== false || "
+    let renderBound := fun (b : Option Key × Int) => match b with
+      | (none, d) => toString d
+      | (some (n, p, k), d) =>
+        let base := String.intercalate "." (n :: p) ++ match k with | .value => "" | _ => ".length"
+        if d == 0 then base else if d > 0 then s!"{base} + {d}" else s!"{base} - {-d}"
     let arr := String.intercalate "." (a :: pa)
     let v := fun (b : BodyKey) => match b with
       | .index => "i" | .elem => s!"{arr}[i]" | .offset d => s!"{arr}[i + {d}]"
@@ -210,8 +216,9 @@ partial def Fact.text : Fact → String
         guardCond (String.intercalate "." (s!"{arr}[i]" :: ep)) g ++ clause b
       | .guarded (.parallel n p ep) g b =>
         guardCond (String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)) g ++ clause b
+    let range := if start == (none, 0) then s!"i < {renderBound stop}" else s!"{renderBound start} <= i < {renderBound stop}"
     String.join (gs.map fun (g, p, t) => guardCond (String.intercalate "." (g :: p)) t) ++
-      s!"forall i < {String.intercalate "." (sn :: sp)}.length of {arr}: " ++ " && ".intercalate (body.map clause)
+      s!"forall {range} of {arr}: " ++ " && ".intercalate (body.map clause)
 
 /-- Terms added, coefficients merged, zeros dropped. -/
 def addTerms (a b : List (Key × Int)) : List (Key × Int) :=
@@ -640,7 +647,7 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
   -- A quantified fact: across expressions writing no element and resizing
   -- none of its arrays by name (a write through an alias or a callback is
   -- the pass's to check or refuse).
-  | .every _ a pa stop body =>
+  | .every _ a pa start stop body =>
     es.all quiet || (!es.any (fun | .objectAssign .. => true | _ => false) &&
       let t := touched es inBounds
       let kept := fun ((n, p, k) : Key) => !p.isEmpty || k == .value || k == .strLength || !t.contains n
@@ -651,7 +658,7 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
             | _ => true
         | .guarded (.self _) _ b => bodyKept b
         | .guarded (.parallel n p _) _ b => (!p.isEmpty || !t.contains n) && bodyKept b
-      (!pa.isEmpty || !t.contains a) && kept stop && body.all bodyKept)
+      (!pa.isEmpty || !t.contains a) && start.1.all kept && stop.1.all kept && body.all bodyKept)
 
 /-- The guards a test's answer `pos` fails (`x.f !== null` holding: `x.f`
 not `null`), through `!` and the conjuncts of a conjunction holding (of a
@@ -686,10 +693,10 @@ def Ctx.unguarded (ctx : Ctx) (c : Expr) (pos : Bool) (forced : Bool := false) :
         | (t, _) :: _ => if forced && rest.isEmpty then [Fact.lin ⟨[(t, 1)], -1⟩] else []
         | [] => []
       (if rest.isEmpty then .lin l else .guarded rest l) :: false_
-    | .every gs a pa stop body =>
+    | .every gs a pa start stop body =>
       if gs.isEmpty then [] else
       let rest := gs.filter (!failed.contains ·)
-      if rest.length == gs.length then [] else [.every rest a pa stop body]
+      if rest.length == gs.length then [] else [.every rest a pa start stop body]
     | .element gs v a i =>
       let rest := gs.filter (!failed.contains ·)
       if rest.length == gs.length then [] else [.element rest v a i]
@@ -777,15 +784,18 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
     | .apart gs a pa b pb => pure (.apart ((← nameAt g, p, t) :: gs) a pa b pb)
     | .lin l => pure (.guarded [(← nameAt g, p, t)] l)
     | .guarded gs l => pure (.guarded ((← nameAt g, p, t) :: gs) l)
-    | .every gs a pa stop b => pure (.every ((← nameAt g, p, t) :: gs) a pa stop b)
+    | .every gs a pa start stop b => pure (.every ((← nameAt g, p, t) :: gs) a pa start stop b)
     | .fieldRead gs v o f => pure (.fieldRead ((← nameAt g, p, t) :: gs) v o f)
     | _ => none
   | .linear (.le form d) => do
     let ts ← form.mapM fun (t, c) => do pure (((← termName t), t.path, t.kind), c)
     let ts := addTerms [] ts
     if ts.isEmpty then none else pure (.lin ⟨ts, d⟩)
-  | .every s path stop body => do
+  | .every s path start stop body => do
     let a ← nameAt s
+    let ofBound : HeapKnowledge.IndexBound → Option (Option Key × Int) := fun b => do
+      let bs ← b.base.mapM fun t => do pure (← termName t, t.path, t.kind)
+      pure (bs, b.offset)
     let var : HeapKnowledge.Bound → Option BodyKey := fun
       | .index => some .index
       | .elem => some .elem
@@ -800,7 +810,7 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
       | .guarded (.parallel s' p' ep) g b => do
           pure (.guarded (.parallel (← nameAt s') p' ep) g (← ofBody b))
     let body ← body.mapM ofBody
-    pure (.every [] a path (← termName stop, stop.path, stop.kind) body)
+    pure (.every [] a path (← ofBound start) (← ofBound stop) body)
   | .fieldRead v o f => do pure (.fieldRead [] (← nameAt v) (← nameAt o) f)
   | _ => none
 where
@@ -887,12 +897,13 @@ def Ctx.step (ctx : Ctx) (x : String) (c : Int) : Ctx :=
 at the read of the path `path` from `root` (`linear_facts.ml:erestate_read`):
 its array, its bound and its terms through the path, of `n`. -/
 def Fact.restate (n root : String) (path : List String) : Fact → Option Fact
-  | f@(.every gs a pa stop body) =>
+  | f@(.every gs a pa start stop body) =>
     let through := fun (m : String) (p : List String) =>
       if m == root && path.isPrefixOf p then some (n, p.drop path.length) else none
     let move := fun ((m, p, k) : Key) => match through m p with
       | some (n', p') => (n', p', k)
       | none => (m, p, k)
+    let moveBound := fun ((bs, off) : Option Key × Int) => (bs.map move, off)
     let gs' := gs.map fun (g, p, t) => match through g p with
       | some (n', p') => (n', p', t)
       | none => (g, p, t)
@@ -906,7 +917,7 @@ def Fact.restate (n root : String) (path : List String) : Fact → Option Fact
       | .guarded (.parallel m p ep) g b =>
           let (m', p') := (through m p).getD (m, p)
           .guarded (.parallel m' p' ep) g (moveBody b)
-    let f' := Fact.every gs' a' pa' (move stop) (body.map moveBody)
+    let f' := Fact.every gs' a' pa' (moveBound start) (moveBound stop) (body.map moveBody)
     if f' == f then none else some f'
   | f@(.lin l) =>
     let move := fun ((m, p, k) : Key) =>
@@ -974,8 +985,10 @@ partial def Ctx.elemBound (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (
       -- (an index below the fact's stop: its array's length, or a prefix's
       -- bound, `forall i < n of xs`)
       ctx.flatMap fun (f : Fact) => match f with
-        | .every [] b [] stop body =>
-          if b != xs || !ctx.entails ⟨addTerms kt [(stop, -1)], -1 - kc⟩ then [] else
+        | .every [] b [] start stop body =>
+          let loOk := ctx.entails ⟨addTerms (scale (-1) kt) ((start.1.map (·, 1)).toList), kc - start.2⟩
+          let hiOk := ctx.entails ⟨addTerms kt ((stop.1.map (·, -1)).toList), stop.2 - 1 - kc⟩
+          if b != xs || !loOk || !hiOk then [] else
           body.filterMap fun
             | .lin ts d => bodyBound upper kt kc ts d
             | .guarded .. => none
@@ -1004,7 +1017,7 @@ def Ctx.pushed (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) : Expr → L
     match linOf K a with
     | none => []
     | some (at_, ac) => ctx.filter fun
-      | .every [] b [] stop body => b == xs && stop == (xs, [], K xs) && body.all fun
+      | .every [] b [] _ stop body => b == xs && stop == (some (xs, [], K xs), 0) && body.all fun
         | .guarded .. => false
         | .lin ts d =>
         let k := ((ts.find? (·.1 == .elem)).map (·.2)).getD 0
@@ -1378,7 +1391,7 @@ def headFacts (rules : Rules) (ctx : Ctx) (cond : Expr) (loop : List Stmt) (upda
     | .lin l => l.terms.map fun (t, _) => Fact.lin ⟨[(t, 1)], -1⟩
     | _ => []
   let falseEvery := if !rules.falseEvery then [] else carried.filterMap fun
-    | .every [] a pa stop _ => some (Fact.every [] a pa stop [.lin [(.elem, 1)] (-1)])
+    | .every [] a pa start stop _ => some (Fact.every [] a pa start stop [.lin [(.elem, 1)] (-1)])
     | _ => none
   let falseSeparations := if !rules.falseSeparations then [] else carried.filterMap fun
     | .apart _ a pa _ _ => some (Fact.apart [] a pa a pa)
@@ -1427,7 +1440,7 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
   -- (an element read `x = arr[idx]`: element fact where a quantified fact mentions `arr`,
   -- and any guarded/parallel quantified body facts instantiated at `x` for loop heads)
   let hasEveryOn := fun (arr : String) => ctx.any fun
-    | .every _ a _ _ body => a == arr || body.any fun b => b.names.contains arr
+    | .every _ a _ _ _ body => a == arr || body.any fun b => b.names.contains arr
     | _ => false
   let rec elemPathOf : Expr → Option (String × List String × String × Bool)
     | .cast _ _ e => elemPathOf e
@@ -1476,10 +1489,12 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
           | _ => none
         else none
       let inst := ctx.flatMap fun
-        | .every gs a pa stop body =>
-          let full := stop == (a, pa, .length) || stop == (a, pa, .view)
+        | .every gs a pa start stop body =>
+          let full := start == (none, 0) && (stop == (some (a, pa, .length), 0) || stop == (some (a, pa, .view), 0))
           let i : Key := (idx, [], .value)
-          if !full && !(ctx.entails ⟨[(i, -1)], 0⟩ && ctx.entails ⟨[(i, 1), (stop, -1)], -1⟩) then []
+          let loOk := ctx.entails ⟨addTerms [(i, -1)] ((start.1.map (·, 1)).toList), -start.2⟩
+          let hiOk := ctx.entails ⟨addTerms [(i, 1)] ((stop.1.map (·, -1)).toList), stop.2 - 1⟩
+          if !full && !(loOk && hiOk) then []
           else
             -- A non-null result of the nullable read entails a non-nullish receiver.
             let gs := if nullable then gs.filter fun (g, p, t) =>

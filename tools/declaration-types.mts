@@ -81,6 +81,7 @@ export type OperationPost =
   | { readonly fact: { readonly phase: "before" | "after"; readonly lift: number; readonly fact: IndexFact } }
   | { readonly freshSpine: { readonly x: number } }
   | { readonly freshObject: { readonly x: number } }
+  | { readonly freshRegion: { readonly x: number } }
   | { readonly elementsWhen: { readonly x: number; readonly value: Literal; readonly y: number;
       readonly predicate: ElementKinds } }
   | { readonly spineExtends: { readonly x: number } }
@@ -150,14 +151,17 @@ export type IndexFact =
       readonly body: IndexFact } }
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
   | { readonly fieldRead: { readonly value: number; readonly object: number; readonly field: string } }
-  | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
-      readonly body: readonly BodyFact[] } }
+  | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly start: IndexBound;
+      readonly stop: IndexBound; readonly body: readonly BodyFact[] } }
   | { readonly atIndex: { readonly slot: number; readonly path: readonly string[]; readonly index: LinearTerm;
       readonly guard: GuardTag | null; readonly body: BodyFact } }
   | { readonly apart: { readonly slot: number; readonly other: number } }
   | { readonly same: { readonly slot: number; readonly other: number } }
   | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
+/** An affine bound `base + offset` (or constant `offset` when `base` is null)
+ * of a quantified index interval (`HeapKnowledge.IndexBound`). */
+export type IndexBound = { readonly base: LinearTerm | null; readonly offset: number };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
  * index, the element at it, a projection of the element, a parallel array's
  * element at the same index, or a linear term. */

@@ -112,6 +112,7 @@ export interface HeapKnowledge {
    * truthy value, or a falsy one where `negated`. */
   indices: {fact: IndexFact; cond?: number; negated: boolean}[];
 }
+export type IndexBound = { base: LinearTerm | null; offset: Integer };
 export type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { pastSafe: { slot: number } } |
@@ -120,7 +121,7 @@ export type IndexFact = { index: { slot: number } } | { length: { array: number;
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { fieldRead: { value: number; object: number; field: string } } |
-  { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
+  { every: { slot: number; path: string[]; start: IndexBound; stop: IndexBound; body: BodyFormula[] } } |
   { atIndex: { slot: number; path: string[]; index: LinearTerm; guard: "null" | "undefined" | "true" | "false" | "notNull" | "notUndefined" | "notTrue" | "notFalse" | null; body: BodyFormula } } |
   { apart: { slot: number; other: number } } |
   { same: { slot: number; other: number } } |
@@ -664,13 +665,17 @@ function indexFact(f: Json | undefined): IndexFact {
       return { form, bound, ne };
     };
     if ("every" in f) {
-      const e = record(record(f,["every"]).every,["slot","path","stop","body"]);
+      const e = record(record(f,["every"]).every,["slot","path","start","stop","body"]);
       const path = e.path;
       if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
       if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
+      const indexBound = (v: Json | undefined): IndexBound => {
+        const b = record(v, ["base", "offset"]);
+        return { base: b.base === null ? null : linearTerm(b.base), offset: integer(b.offset) };
+      };
       const body = e.body.map(bodyFormula);
       return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
-        stop: linearTerm(e.stop), body } };
+        start: indexBound(e.start), stop: indexBound(e.stop), body } };
     }
     const e = record(record(f,["atIndex"]).atIndex,["slot","path","index","guard","body"]);
     const path = e.path;

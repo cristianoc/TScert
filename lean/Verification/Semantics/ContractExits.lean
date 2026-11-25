@@ -242,6 +242,13 @@ theorem Effect.callPost_freshObject (hf : e.schema.normal.freshObjectResult = tr
   obtain ⟨pad, -, -, s, s', rfl, -, -, hH⟩ := Effect.callPost_holds hp
   exact hH (.operation (.freshObject 0)) (by simpa [ExitSchema.freshObjectResult] using hf)
 
+/-- **A fresh result array region** (spine and element cells), where the normal
+exit states one (`ExitSchema.freshRegionResult`). -/
+theorem Effect.callPost_freshRegion (hf : e.schema.normal.freshRegionResult = true)
+    (hp : e.callPost r args before after v) : Footprints.FreshRegionAt before.length after v := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  exact hH (.operation (.freshRegion 0)) (by simpa [ExitSchema.freshRegionResult] using hf)
+
 /-- **The receiver's elements** where the result is `true`, for each
 element predicate the normal exit states (`ExitSchema.elementsWhenTrue`). -/
 theorem Effect.callPost_elements {R : ElemPred} (hR : R ∈ e.schema.normal.elementsWhenTrue) (hv : v = .tru)

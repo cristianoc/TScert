@@ -155,6 +155,9 @@ theorem OperationPostF.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s
   | freshObject x =>
     simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, ha x hq]
+  | freshRegion x =>
+    simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, ha x hq]
   | elementsWhen x v y R =>
     simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, ha x hq.1, ha y hq.2]

@@ -416,7 +416,7 @@ const viewOfLength: CallEffect = footprintEffect(emptyFootprint, {
       right: { pastSafe: { slot: 1 } } } }],
   // At a return's positions: 0 the view, 2 the length, `view(0) = 2`.
   ensures: [
-    { every: { slot: 0, path: [], stop: lengthTerm("view", 0), body: [] } },
+    { every: { slot: 0, path: [], start: { base: null, offset: 0 }, stop: { base: lengthTerm("view", 0), offset: 0 }, body: [] } },
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), 1], [lengthTerm("value", 2), -1]], bound: 0 } } } },
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] });
 const typedArrayEntries: GlobalEntry[] = viewKinds.map(({ name, type }): GlobalEntry => (

@@ -3542,9 +3542,21 @@ for (const [file, call] of [
   assert.deepEqual(runPlain(negative("invalid-quantified-dense-append-short-extra"),
     "(() => { const extras = []; const advances = appendRows(extras); return [advances[0].length, extras[0].length]; })()"),
     [1, 0], "an appended extra that is too short violates the paired length bound");
-  assert.equal(runExample(ofKind("quantified-suffix-null-gap", ["gap"]),
+  assert.equal(runExample(ofKind("quantified-suffix-null", ["positive"]),
     "JSON.stringify(buildLazyExtras([[1], [2, 3], [4]], [null, [10, 20], null]))"),
-    '{"advances":[[1],[2,3],[4]],"extras":[null,[10,20],null]}', "quantified-suffix-null-gap (#396): safe lazy parallel allocation");
+    '{"advances":[[1],[2,3],[4]],"extras":[null,[10,20],null]}', "quantified-suffix-null (#396): safe lazy parallel allocation");
+  assert.deepEqual(runPlain(ofKind("quantified-suffix-null", ["positive"]),
+    "(() => { const xs = [null, null, null]; overwriteSplitsNulls(xs, 1, [7]); return [readInInterval([99, 0, 1], [10, 20], 1, 3, 2), shrinkInterval([99, 0, 1, 99], [10, 20], 0, 4), readLowerBounded([99, 1], [10, 20], 1, 1), xs[0], xs[2]]; })()"),
+    [20, 10, 20, null, null], "quantified-suffix-null (#396): interval reads, subinterval weakening, lower-bounded read, and overwrite split");
+  assert.deepEqual(runPlain(negative("invalid-quantified-suffix-null"),
+    "(() => { const r = buildLazyExtrasWrongFill([[1, 2], [3, 4]], [[10, 20], null]); return [r.advances[1].length, r.extras[1].length]; })()"),
+    [2, 0], "invalid-quantified-suffix-null (#396): wrong fill breaks paired length bound");
+  assert.deepEqual(runPlain(negative("invalid-quantified-suffix-overwrite-past"),
+    "(() => { const r = buildLazyExtrasWritePast([[1, 2], [3, 4]], [[10, 20], null]); return [r.advances[1].length, r.extras[1].length]; })()"),
+    [2, 0], "invalid-quantified-suffix-overwrite-past (#396): writing past suffix breaks paired length bound");
+  assert.equal(runExample(negative("invalid-quantified-interval-outside"),
+    "String(Number.isNaN(readBeforeLowerBound([99, 0], [42], 1, 2)))"),
+    "true", "invalid-quantified-interval-outside (#396): reading below lower bound returns NaN");
   assert.equal(runExample(ofKind("quantified-offset-parallel-gap", ["gap"]),
     "JSON.stringify(appendSubRange({ advances: [[1]], extras: [[2]] }, [3, 4]))"),
     '{"advances":[[1],[3],[4]],"extras":[[2],[3,0],[4,0]]}', "quantified-offset-parallel-gap (#397): safe sub-range offset copy");

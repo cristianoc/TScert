@@ -1013,6 +1013,14 @@ def mergeGuardPath (asA asB : List Nat) (okA okBGuard : String → Bool) (s : Na
     if (asB.contains s && okBGuard f) || (asA.contains s && okA f) then (true, 0) else (false, s + 1)
   | [] => (false, s + 1)
 
+def mergeIndexBound (asA asB : List Nat) (okA okB : String → Bool) (b : HeapKnowledge.IndexBound) :
+    Bool × HeapKnowledge.IndexBound :=
+  match b.base with
+  | none => (false, b)
+  | some t =>
+    let (m, t') := mergeTerm asA asB okA okB t
+    (m, { b with base := some t' })
+
 /-- Rewrites an unconditional index fact across a merge, returning `(moved, F')`
 where `moved` records whether at least one path moved onto slot `0`. -/
 def mergeFact (asA asB : List Nat) (okA okB okBGuard : String → Bool) : IndexFact → Option (Bool × IndexFact)
@@ -1023,11 +1031,12 @@ def mergeFact (asA asB : List Nat) (okA okB okBGuard : String → Bool) : IndexF
     let (m1, s') := mergePath asA asB okA okB s p
     let (m2, o') := mergePath asA asB okA okB o q
     some (m1 || m2, .spineApart s' p o' q)
-  | .every s p stop body =>
+  | .every s p start stop body =>
     let (ms, s') := mergePath asA asB okA okB s p
-    let (mst, stop') := mergeTerm asA asB okA okB stop
+    let (msta, start') := mergeIndexBound asA asB okA okB start
+    let (mst, stop') := mergeIndexBound asA asB okA okB stop
     match body.mapM (mergeBodyClause asA asB okA okB) with
-    | some pairs => some (ms || mst || pairs.any (·.1), .every s' p stop' (pairs.map (·.2)))
+    | some pairs => some (ms || msta || mst || pairs.any (·.1), .every s' p start' stop' (pairs.map (·.2)))
     | none => none
   | .guarded s p tag inner =>
     let (mg, s') := mergeGuardPath asA asB okA okBGuard s p
@@ -1460,22 +1469,36 @@ private theorem mergeFact_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
     obtain ⟨-, rfl⟩ := hmf
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, merge_readPath_eq hb he hk hh hparts hu, merge_readPath_eq hb he hk hh hparts hw, hne⟩
-  | every s1 p1 stop body =>
+  | every s1 p1 start stop body =>
     intro F' m hmf hF
     simp only [mergeFact] at hmf
     split at hmf
     · rename_i pairs hpairs
       simp only [Option.some.injEq, Prod.mk.injEq] at hmf
       obtain ⟨-, rfl⟩ := hmf
-      obtain ⟨w, sto, ls, m', hw, hsto, hls, hm', hall⟩ := hF
+      obtain ⟨w, sto, ls, m0, m', hw, hsto, hls, hm0, hm', hall⟩ := hF
       have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
         simp [List.append_assoc]
-      refine ⟨w, sto, ls, m', merge_readPath_eq hb he hk hh hparts hw, hsto, ?_,
-        merge_termValue_eq hb he hk hh hparts hm', fun i hi C' hC' => ?_⟩
+      have hmb : ∀ (bd : HeapKnowledge.IndexBound) (z : Int), bd.eval ε ρ h = some z →
+          (mergeIndexBound (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+            (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+            (fun f => copiedKey (.str f) && !d.contains (.str f)) bd).2.eval ε
+              (push r ρ) h' = some z := by
+        intro bd z hbd
+        cases bd with
+        | mk bs off =>
+          cases bs with
+          | none => exact hbd
+          | some t =>
+            simp only [mergeIndexBound, HeapKnowledge.IndexBound.eval, Option.map_eq_some_iff] at hbd ⊢
+            obtain ⟨v, hv, rfl⟩ := hbd
+            exact ⟨v, merge_termValue_eq hb he hk hh hparts hv, rfl⟩
+      refine ⟨w, sto, ls, m0, m', merge_readPath_eq hb he hk hh hparts hw, hsto, ?_,
+        hmb start m0 hm0, hmb stop m' hm', fun i hlo hi C' hC' => ?_⟩
       · rw [hext_eq]; exact HeapKnowledge.spineEntries_extend _ hls
       · obtain ⟨⟨mb, C''⟩, hp, rfl⟩ := List.mem_map.mp hC'
         obtain ⟨C, hC, hCC'⟩ := mapM_mem_rev hpairs (mb, C'') hp
-        exact mergeBodyClause_holds hb he hk hh hparts hCC' (hall i hi C hC)
+        exact mergeBodyClause_holds hb he hk hh hparts hCC' (hall i hlo hi C hC)
     · cases hmf
   | guarded s1 p1 tag inner ih =>
     intro F' m hmf hF
@@ -2566,7 +2589,8 @@ def fieldEveryBody (as : List IndexAtom) (chg : Changes) (first : Nat → String
 def fieldEvery (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
     (v : Nat) (a : IndexAtom) : Bool :=
   match a.fact with
-  | .every _ [] stop body => chg.spine == .keep && stop.keptBy chg first && body.all (fieldEveryBody as chg first v)
+  | .every _ [] start stop body =>
+    chg.spine == .keep && start.keptBy chg first && stop.keptBy chg first && body.all (fieldEveryBody as chg first v)
   | _ => false
 
 theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → String → Bool}
@@ -2577,15 +2601,16 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
     a.fact.HoldsAt ε ρ (h.set l (ρ v)) := by
   unfold fieldEvery at hk
   split at hk
-  · rename_i s st body hfact
+  · rename_i s st0 st1 body hfact
     rw [hfact] at ha ⊢
     simp only [Bool.and_eq_true, beq_iff_eq] at hk
-    obtain ⟨⟨hspine, hst⟩, hb⟩ := hk
-    obtain ⟨w, sto, ls, n, hw, hs, hl, hn, hall⟩ := ha
+    obtain ⟨⟨⟨hspine, hst0⟩, hst1⟩, hb⟩ := hk
+    obtain ⟨w, sto, ls, m0, n, hw, hs, hl, hm0, hn, hall⟩ := ha
     have hl' : (h.set l (ρ v))[sto]?.bind spineEntries = some ls := by
       obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hl
       rw [hc.1 sto u hu (by cases u <;> simp_all [spineEntries, Changes.alters])]; exact hue
-    refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj B hF => ?_⟩
+    refine ⟨w, sto, ls, m0, n, hw, hs, hl', IndexBound.eval_kept hc hf hst0 hm0, IndexBound.eval_kept hc hf hst1 hn,
+      fun j hlo hj B hF => ?_⟩
     have hB := List.all_eq_true.mp hb B hF
     cases B with
     | guarded _ _ _ => cases hB
@@ -2614,7 +2639,7 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
           | elem => simp [Bound.inst, termValue_value, boundValue, elementInt, hloc, hlt]
           | free t => rfl
         · cases hnew
-      · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj (.clause (.atom F)) hF)
+      · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hlo hj (.clause (.atom F)) hF)
         · cases y with
           | index => exact hy
           | elem =>

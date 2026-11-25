@@ -165,6 +165,7 @@ def renameOperation {S S' : Type} (R : Renaming) (seq : S → Option S') :
   | .fact p l F => do pure (.fact p 0 (← F.reframe (fun i => R.at p (i + l)) R.before))
   | .freshSpine x => (R.after x).map .freshSpine
   | .freshObject x => (R.after x).map .freshObject
+  | .freshRegion x => (R.after x).map .freshRegion
   | .elementsWhen x v y P => do pure (.elementsWhen (← R.after x) v (← R.after y) P)
   | .spineExtends x => (R.before x).map .spineExtends
   | .viewWrite x i v g => do pure (.viewWrite (← R.before x) (← R.before i) (← R.before v) g)
@@ -226,6 +227,10 @@ theorem holds_renameOperation {R : Renaming} {s s' : TwoState} (hs : R.Agrees s 
     simp only [renameOperation, Option.map_eq_some_iff] at hq
     obtain ⟨a, hx, rfl⟩ := hq
     simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, ha _ _ hx]
+  | freshRegion x =>
+    simp only [renameOperation, Option.map_eq_some_iff] at hq
+    obtain ⟨a, hx, rfl⟩ := hq
+    simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, hs.post, ha _ _ hx]
   | elementsWhen x v y P =>
     simp only [renameOperation, Option.bind_eq_bind, Option.pure_def] at hq
     obtain ⟨a, hx, hq⟩ := bind_some hq; obtain ⟨b, hy, hq⟩ := bind_some hq; cases hq

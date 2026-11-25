@@ -60,7 +60,7 @@
 // conjunct of the precondition, or at the result's position `0`, a fact of
 // its result (`typeInvariants`, fragment-statements.mts).
 import * as ts from "typescript/unstable/ast";
-import type { BodyFact, BodyVariable, ElemTarget, GuardTag, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
+import type { BodyFact, BodyVariable, ElemTarget, GuardTag, IndexBound, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its spine's length;
  * a typed array, whose `length` is its typed-array length (`view`); a string,
@@ -238,8 +238,9 @@ function tokens(text: string): Token[] | string {
  * parameter's name or `xs.length`, and the subexpressions JavaScript computes
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
+type BoundExpr = { base: string | null; offset: number };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
-  { k: "forall"; binder: string; array: string; stop: string | null; elemGuards: Guard[]; body: Atom[][] } |
+  { k: "forall"; binder: string; array: string; start: BoundExpr | null; stop: BoundExpr | null; elemGuards: Guard[]; body: Atom[][] } |
   { k: "distinct"; left: string; right: string } |
   { k: "elemTag"; elem: string; tag: GuardTag; negated: boolean };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
@@ -352,14 +353,27 @@ class Parser {
   }
   private atom(): Atom {
     const t = this.peek();
-    // `forall i in p: C`: the rest of the clause is its body.
+    // `forall [lo <=] i [< hi of | in] p: C`: the rest of the clause is its body.
     if (t && t.k === "name" && t.v === "forall") {
       this.at++;
-      const binder = this.take();
-      if (!binder || binder.k !== "name") throw new ClauseError("`forall` names its index");
-      const stop = this.isOp("<") ? (this.at++, this.stop()) : null;
+      let start: BoundExpr | null = null;
+      let binder: string;
+      const first = this.peek();
+      const next = this.ts[this.at + 1];
+      if (first && first.k === "name" && ((next?.k === "name" && next.v === "in") || (next?.k === "op" && next.v === "<"))) {
+        this.at++;
+        binder = first.v;
+      } else {
+        start = this.boundExpr();
+        this.expect("<=");
+        const b = this.take();
+        if (!b || b.k !== "name") throw new ClauseError("`forall` names its index after `<=`");
+        binder = b.v;
+      }
+      const stop = this.isOp("<") ? (this.at++, this.boundExpr()) : null;
       const word = this.take();
-      if (!word || word.k !== "name" || word.v !== (stop === null ? "in" : "of")) throw new ClauseError("`forall i` is followed by `in P` or `< n of P`");
+      if (!word || word.k !== "name" || word.v !== (stop === null ? "in" : "of"))
+        throw new ClauseError("`forall` expects `in P` or `< bound of P`");
       const array = this.variable();
       this.expect(":");
       const elemGuards: Guard[] = [];
@@ -371,7 +385,7 @@ class Parser {
       }
       const body = this.disjunction();
       if (body.some(bs => bs.some(a => a.k === "forall"))) throw new ClauseError("a `forall` body states no `forall`");
-      return { k: "forall", binder: binder.v, array, stop, elemGuards, body };
+      return { k: "forall", binder, array, start, stop, elemGuards, body };
     }
     if (t && t.k === "name" && t.v === "safeInteger") {
       this.at++;
@@ -391,8 +405,6 @@ class Parser {
         this.at++;
         const r = this.peek();
         if (left.includes("[")) {
-          if (!left.endsWith("]"))
-            throw new ClauseError("an element guard tests the indexed element itself (`p[q] !== tag`)");
           if (!r || r.k !== "name" || (r.v !== "null" && r.v !== "undefined" && r.v !== "true" && r.v !== "false"))
             throw new ClauseError("`!==` on an indexed element compares against null, undefined, true or false");
           this.at++;
@@ -405,8 +417,6 @@ class Parser {
         this.at++;
         const r = this.peek();
         if (r && r.k === "name" && (r.v === "null" || r.v === "undefined" || r.v === "true" || r.v === "false")) {
-          if (!left.endsWith("]"))
-            throw new ClauseError("an element guard tests the indexed element itself (`p[q] === tag`)");
           this.at++;
           return { k: "elemTag", elem: left, tag: r.v, negated: false };
         }
@@ -442,7 +452,33 @@ class Parser {
     }
     return names.join(".");
   }
-  /** A prefix clause's bound: a path, or `old(p)`, the path read in the
+  /** An affine interval bound: an integer literal `c` or `-c`, or a path /
+   * `old(p)` optionally shifted by `+ c` or `- c`. */
+  private boundExpr(): BoundExpr {
+    const t = this.peek();
+    if (!t) throw new ClauseError("the clause ends inside a `forall` bound");
+    if (this.isOp("-")) {
+      this.at++;
+      const n = this.take();
+      if (!n || n.k !== "num") throw new ClauseError("a `forall` bound after `-` expects an integer literal");
+      return { base: null, offset: -n.v };
+    }
+    if (t.k === "num") {
+      this.at++;
+      return { base: null, offset: t.v };
+    }
+    const base = this.stop();
+    let offset = 0;
+    if (this.isOp("+") || this.isOp("-")) {
+      const sign = this.isOp("+") ? 1 : -1;
+      this.at++;
+      const n = this.take();
+      if (!n || n.k !== "num") throw new ClauseError("a `forall` bound offset expects an integer literal");
+      offset = sign * n.v;
+    }
+    return { base, offset };
+  }
+  /** A prefix clause's base term: a path, or `old(p)`, the path read in the
    * entry state. */
   private stop(): string {
     const t = this.peek();
@@ -543,7 +579,10 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("fieldRead" in f) return [f.fieldRead.value, f.fieldRead.object];
-  if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
+  if ("every" in f) return [f.every.slot,
+    ...(f.every.start.base === null ? [] : [f.every.start.base.slot]),
+    ...(f.every.stop.base === null ? [] : [f.every.stop.base.slot]),
+    ...f.every.body.flatMap(bodyPositions)];
   if ("atIndex" in f) return [f.atIndex.slot, f.atIndex.index.slot, ...bodyPositions(f.atIndex.body)];
   if ("spineApart" in f) return [f.spineApart.slot, f.spineApart.other];
   if ("apart" in f) return [f.apart.slot, f.apart.other];
@@ -570,6 +609,29 @@ function rootsOf(text: string, current: boolean): string[] {
   if (typeof ts === "string") return [];
   const words = new Set(["forall", "in", "safeInteger", "null", "undefined", "true", "false"]);
   const binders = new Set<string>();
+  const ofPositions = new Set<number>();
+  for (let i = 0; i < ts.length; i++) {
+    const t = ts[i];
+    if (!t || t.k !== "name" || t.v !== "forall") continue;
+    const colon = ts.findIndex((tok, j) => j > i && tok.k === "op" && tok.v === ":");
+    const end = colon < 0 ? ts.length : colon;
+    const first = ts[i + 1];
+    const second = ts[i + 2];
+    if (first?.k === "name" && ((second?.k === "name" && second.v === "in") || (second?.k === "op" && second.v === "<"))) {
+      binders.add(first.v);
+    } else {
+      for (let j = i + 1; j + 1 < end; j++) {
+        if (ts[j]?.k === "op" && ts[j]?.v === "<=") {
+          const b = ts[j + 1];
+          if (b?.k === "name") binders.add(b.v);
+          break;
+        }
+      }
+    }
+    for (let j = i + 1; j + 1 < end; j++) {
+      if (ts[j]?.k === "name" && ts[j]?.v === "of" && ts[j + 1]?.k === "name") ofPositions.add(j);
+    }
+  }
   const roots: string[] = [];
   /** The tokens inside `old(…)`, which read the entry state. */
   const inOld = new Set<number>();
@@ -584,9 +646,8 @@ function rootsOf(text: string, current: boolean): string[] {
     if (t.k !== "name") return;
     if (t.v === "old" && inOld.has(i) && !inOld.has(i - 1)) return;
     if (current && inOld.has(i)) return;
-    if (before?.k === "name" && before.v === "forall") { binders.add(t.v); return; }
+    if (ofPositions.has(i)) return;
     if (before?.k === "op" && before.v === ".") return;
-    if (t.v === "of" && before?.k === "name" && ts[i + 1]?.k === "name") return;
     if (words.has(t.v) || binders.has(t.v) || roots.includes(t.v)) return;
     roots.push(t.v);
   });
@@ -752,6 +813,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       const negElemTags = new Map<string, GuardTag[]>();
       for (const a of atoms) {
         if (a.k !== "elemTag") continue;
+        if (!a.elem.endsWith("]"))
+          throw new ClauseError("an element guard tests the indexed element itself (`p[q] !== tag`)");
         if (!a.negated)
           throw new ClauseError(`\`${a.elem} === ${a.tag}\` may only appear as a guard disjunction \`${a.elem} === ${a.tag} || ...\``);
         const list = negElemTags.get(a.elem) ?? [];
@@ -931,8 +994,30 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           resolvedElemGuards.reduceRight<BodyFact>((b, g) => ({ guarded: { target: g.target, tag: g.tag, body: b } }), f);
         const branchBody = (atoms: Atom[]): BodyFact[] => {
         if (atoms.some(b => b.k === "distinct")) throw new ClauseError("a `forall` body states no `!==`");
-        if (atoms.some(b => b.k === "elemTag")) throw new ClauseError("a `forall` body states no element tag guard");
         const body: BodyFact[] = [];
+        for (const b of atoms) {
+          if (b.k !== "elemTag") continue;
+          if (b.negated) throw new ClauseError("a `forall` body states no negated element tag (`!==`)");
+          if (a.body.length > 1) throw new ClauseError("an element tag assertion may not appear inside a `forall` disjunction");
+          if (b.tag === "undefined" && params.some(q => q.name === "undefined"))
+            throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
+          const parsedElem = splitIndexed(b.elem);
+          if (parsedElem === null)
+            throw new ClauseError(`the element tag ${b.elem} must index an array at ${a.binder}`);
+          const { arr, elemPath } = parsedElem;
+          const arrRoot = arr.split(".")[0] ?? "";
+          const { p: ap, path: arrFields } = path(arr);
+          const arrKind = ap.at(arrFields, excludedBy(guards, guards.length, arrRoot));
+          if (arrKind !== "array" && arrKind !== "view")
+            throw new ClauseError(`the element tag ${b.elem} indexes ${arr}, which is not an array or a typed array`);
+          if (ap.at([...arrFields, "[]", ...elemPath], elemExcludedBy(resolvedElemGuards.length, arr, arrRoot, arrFields, elemPath),
+              b.tag === "undefined") === null)
+            throw new ClauseError(`the element path ${b.elem} has no field contract`);
+          const target: ElemTarget = arr === a.array
+            ? { self: { path: elemPath } }
+            : { parallel: { slot: ap.position, path: arrFields, elemPath } };
+          body.push({ guarded: { target, tag: b.tag, body: { le: { form: [], bound: -1 } } } });
+        }
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
           if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
@@ -990,8 +1075,12 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           }
         }
         body = (body ?? []).map(wrapElem);
-        compared.push({ every: { slot: p.position, path: fields,
-          stop: a.stop === null ? { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields } : term(a.stop), body } });
+        const resolveBound = (b: BoundExpr): IndexBound => ({ base: b.base === null ? null : term(b.base), offset: b.offset });
+        const startBound: IndexBound = a.start === null ? { base: null, offset: 0 } : resolveBound(a.start);
+        const stopBound: IndexBound = a.stop === null
+          ? { base: { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields }, offset: 0 }
+          : resolveBound(a.stop);
+        compared.push({ every: { slot: p.position, path: fields, start: startBound, stop: stopBound, body } });
       }
       return [...intFacts, ...compared];
     };
@@ -1013,6 +1102,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       for (const c of alternatives) {
         const only = c.atoms.length === 1 ? c.atoms[0] : undefined;
         if (only !== undefined && only.k === "elemTag" && !only.negated) {
+          if (!only.elem.endsWith("]"))
+            throw new ClauseError("an element guard tests the indexed element itself (`p[q] === tag`)");
           if (elemGuards.has(only.elem))
             throw new ClauseError(`indexed element \`${only.elem}\` may have at most one guard tag`);
           elemGuards.set(only.elem, only.tag);

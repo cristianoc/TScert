@@ -1183,7 +1183,9 @@ function factOf(f: StatedFact): IndexFact {
   if ("guarded" in f) return { guarded: { ...f.guarded, path: [...f.guarded.path], body: factOf(f.guarded.body) } };
   if ("every" in f) {
     const e = f.every;
-    return { every: { slot: e.slot, path: [...e.path], stop: term(e.stop), body: e.body.map(body) } };
+    const bound = (b: { readonly base: LinearTerm | null; readonly offset: number }) =>
+      ({ base: b.base === null ? null : term(b.base), offset: b.offset });
+    return { every: { slot: e.slot, path: [...e.path], start: bound(e.start), stop: bound(e.stop), body: e.body.map(body) } };
   }
   if ("atIndex" in f) {
     const e = f.atIndex;

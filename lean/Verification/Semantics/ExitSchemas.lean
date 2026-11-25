@@ -89,6 +89,7 @@ def OperationPostF.map {S S' : Type} (f : S → S') : OperationPostF S → Opera
   | .fact p l F => .fact p l F
   | .freshSpine x => .freshSpine x
   | .freshObject x => .freshObject x
+  | .freshRegion x => .freshRegion x
   | .elementsWhen x v y R => .elementsWhen x v y R
   | .spineExtends x => .spineExtends x
   | .viewWrite x i v g => .viewWrite x i v g

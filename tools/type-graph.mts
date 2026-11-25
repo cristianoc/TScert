@@ -83,6 +83,7 @@ export type EffectOptions = {
   readonly onThrow?: boolean;
   readonly fresh?: boolean;
   readonly freshObject?: boolean;
+  readonly freshRegion?: boolean;
   readonly receiverSpine?: boolean;
   readonly receiverFields?: boolean;
   readonly receiverGrows?: boolean;
@@ -194,6 +195,7 @@ export const frameEffect = (stated: Frame, options?: EffectOptions): Modifies<{}
   const ensures: Formula[] = [
     ...(options?.fresh ? [operation({ freshSpine: { x: 0 } })] : []),
     ...(options?.freshObject ? [operation({ freshObject: { x: 0 } })] : []),
+    ...(options?.freshRegion ? [operation({ freshRegion: { x: 0 } })] : []),
     ...(elements === null ? [] : [operation({ elementsWhen: { x: 0, value: "true", y: 1, predicate: elements } })]),
     ...(options?.ensures ?? []).map(f => factPost("after", 0, f)),
     ...(options?.receiverGrows ? [{ transition: { effect: [receiverSpineEntry] } }, operation({ spineExtends: { x: 0 } }),
@@ -309,6 +311,7 @@ const grammar: { readonly [name: string]: Shape } = {
     either: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
     le: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } },
     ne: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } } } },
+  indexBound: { record: { base: { nullable: termShape }, offset: "int" } },
   fact: { union: {
     index: { record: { slot: "nat" } }, length: { record: { array: "nat", length: "nat" } },
     bound: { record: { array: "nat", index: "nat", strict: "bool" } }, int: { record: { slot: "nat" } },
@@ -317,7 +320,7 @@ const grammar: { readonly [name: string]: Shape } = {
     guarded: { record: { slot: "nat", path: strings, tag: { names: ["null", "undefined", "true", "false", "notNull", "notUndefined", "notTrue", "notFalse"] }, body: { ref: "fact" } } },
     element: { record: { value: "nat", array: "nat", index: "nat" } },
     fieldRead: { record: { value: "nat", object: "nat", field: "string" } },
-    every: { record: { slot: "nat", path: strings, stop: termShape, body: { list: { ref: "clause" } } } },
+    every: { record: { slot: "nat", path: strings, start: { ref: "indexBound" }, stop: { ref: "indexBound" }, body: { list: { ref: "clause" } } } },
     atIndex: { record: { slot: "nat", path: strings, index: termShape,
       guard: { nullable: { names: ["null", "undefined", "true", "false"] } }, body: { ref: "clause" } } },
     apart: { record: { slot: "nat", other: "nat" } },
@@ -332,7 +335,7 @@ const grammar: { readonly [name: string]: Shape } = {
     lengthsKept: { record: { x: "nat", exit: "nat" } }, boundedWrite: { record: { x: "nat", i: "nat", exit: "nat" } },
     push: { record: { x: "nat", exit: "nat", args: { ref: "seq" } } },
     fact: { record: { phase: { names: ["before", "after"] }, lift: "nat", fact: { ref: "fact" } } },
-    freshSpine: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } },
+    freshSpine: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } }, freshRegion: { record: { x: "nat" } },
     elementsWhen: { record: { x: "nat", value: { ref: "literal" }, y: "nat", predicate: { ref: "kinds" } } },
     spineExtends: { record: { x: "nat" } },
     viewWrite: { record: { x: "nat", i: "nat", v: "nat", format: { nullable: { names: ["uint8", "uint16", "int32", "float64"] } } } } } },

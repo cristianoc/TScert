@@ -524,7 +524,7 @@ fact. Observations select these witnesses together to instantiate the
 body after a guard is discharged. -/
 def elementDependencies : HeapKnowledge.IndexFact → List Nat
   | .element _ a i => [a, i]
-  | .every a _ _ _ => [a]
+  | .every a _ _ _ _ => [a]
   | .guarded _ _ _ body => elementDependencies body
   | _ => []
 
@@ -1636,7 +1636,7 @@ disjunction's arm is read where that arm holds, and one beneath a guard on
 the result where the result fails it, neither a condition of the start's
 state. -/
 def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.IndexFact × Bool)
-  | F@(.linear _) | F@(.every _ _ _ _) | F@(.atIndex _ _ _ _ _) =>
+  | F@(.linear _) | F@(.every _ _ _ _ _) | F@(.atIndex _ _ _ _ _) =>
     F.entryTerms.flatMap fun t => (HeapKnowledge.IndexFact.identity t).map fun I => ([I], true)
   | .either A B => (startIdentities A ++ startIdentities B).map fun (c, _) => (c, false)
   | .guarded 0 _ _ B => (startIdentities B).map fun (c, _) => (c, false)
@@ -2280,7 +2280,8 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
     | .value f => if f.contents != {} && tags.any (fun g => HeapKnowledge.onlyTag f.contents g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩ | .link _ => a.names
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .index ⟨.atIndex .., _, _⟩
+    | .index ⟨.every .., _, _⟩ | .index ⟨.apart .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
     (diffs.flatMap fun d => d.flatMap fun a => match a with
@@ -2316,17 +2317,34 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
         | .guarded s [] t B =>
             let cls := HeapLinks.aliases p.links s
             nullish.filterMap fun (z, g) =>
-              if !g.isPositive || !cls.contains z || g == t.complement then none
-              else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
+              if cls.contains z then
+                if !g.isPositive || g == t.complement then none
+                else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
+                else match B with
+                  | .guarded s' [] t' _ =>
+                    if (HeapLinks.aliases p.links s').contains z && t' == g then some a else none
+                  | .guarded .. => none
+                  | _ => some ({ fact := .guarded z [] g (.guarded s [] t B) } : HeapKnowledge.IndexAtom)
               else match B with
-                | .guarded s' [] t' _ =>
-                  if (HeapLinks.aliases p.links s').contains z && t' == g then some a else none
                 | .guarded .. => none
-                | _ => some ({ fact := .guarded z [] g (.guarded s [] t B) } : HeapKnowledge.IndexAtom)
+                | _ =>
+                  if HeapKnowledge.guardTags p z [] g then none
+                  else some ({ fact := .guarded z [] g (.guarded s [] t B) } : HeapKnowledge.IndexAtom)
         | .guarded .. => []
-        | F => nullish.filterMap fun (z, g) =>
-            if HeapKnowledge.guardTags p z [] g then none
-            else some ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)
+        | F =>
+            let single := nullish.filterMap fun (z, g) =>
+              if HeapKnowledge.guardTags p z [] g then none
+              else some ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)
+            let pair := match F with
+              | .element .. | .linear .. =>
+                nullishPos.flatMap fun (z1, g1) =>
+                  if HeapKnowledge.guardTags p z1 [] g1 then []
+                  else nullishPos.filterMap fun (z2, g2) =>
+                    if z1 < z2 && !HeapKnowledge.guardTags p z2 [] g2 then
+                      some ({ fact := .guarded z1 [] g1 (.guarded z2 [] g2 F) } : HeapKnowledge.IndexAtom)
+                    else none
+              | _ => []
+            single ++ pair
       let linkCands := projections.flatMap fun (p : Knowledge) => p.links.flatMap fun l =>
         if l.alias || l.optional then [] else match l.field with
         | .str f =>

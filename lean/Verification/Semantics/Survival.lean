@@ -485,12 +485,33 @@ def bodyClauseSupport (c : ReadContext) (s : Nat) (p : List String) (B : BodyCla
 def bodySupport (c : ReadContext) (s : Nat) (p : List String) (body : List BodyClause) : Footprint :=
   body.flatMap (bodyClauseSupport c s p)
 
+/-- The support of an affine index bound: empty when constant, else its base term's support. -/
+def _root_.Verification.HeapKnowledge.IndexBound.support (c : ReadContext) (δ : Change) (b : IndexBound) : Footprint :=
+  match b.base with
+  | none => []
+  | some t => t.support c δ
+
+theorem _root_.Verification.HeapKnowledge.IndexBound.support_sound {c : ReadContext} {b : IndexBound}
+    {ρ : Env} {h h' : Heap} {n : Int}
+    (hc : c.Holds ρ h h') (hs : Supported (b.support c .keep) ρ h h')
+    (he : b.eval ε ρ h = some n) : b.eval ε ρ h' = some n := by
+  cases b with
+  | mk base offset =>
+    cases base with
+    | none => exact he
+    | some t =>
+      simp only [IndexBound.eval, Option.map_eq_some_iff] at he ⊢
+      obtain ⟨v, hv, rfl⟩ := he
+      obtain ⟨v', hv', -, heq⟩ := Term.support_sound hc (.inl rfl) hs hv
+      rw [heq rfl] at hv'
+      exact ⟨v, hv', rfl⟩
+
 /-- The locations a quantified fact over the array the path `p` reads from
 slot `s` reads besides its path: its array spine (and view spine unless known
 to be an array spine), and its element cells (`Region.pathCells`) at `keep`
 when guards or projections read them, else at `init`. -/
-def everyCells (c : ReadContext) (s : Nat) (p : List String) (stop : Term) (keepCells : Bool) : Footprint :=
-  (if c.arrayPath s p || stop == Term.now .length s p then
+def everyCells (c : ReadContext) (s : Nat) (p : List String) (stop : IndexBound) (keepCells : Bool) : Footprint :=
+  (if c.arrayPath s p || stop.base == some (Term.now .length s p) then
     [(.path s p arraySpineKey, .keep)]
   else
     [(.path s p arraySpineKey, .keep), (.spine s p, .keep)]) ++
@@ -511,12 +532,12 @@ def elementSupport (x : Nat) : Footprint :=
   [(.spine x [], .keep), (.cells x, .keep)]
 
 /-- The support of a quantified fact whose body clauses are supported:
-its array's path, spine and element cells (`everyCells`), its bound's and
+its array's path, spine and element cells (`everyCells`), its bounds' and
 its body's supports. -/
-def everySupport (c : ReadContext) (s : Nat) (p : List String) (stop : Term) (body : List BodyClause) :
+def everySupport (c : ReadContext) (s : Nat) (p : List String) (start stop : IndexBound) (body : List BodyClause) :
     Footprint :=
   pathReads c s .grow [] p ++ everyCells c s p stop (body.any BodyClause.needsKeep) ++
-    stop.support c .keep ++ bodySupport c s p body
+    start.support c .keep ++ stop.support c .keep ++ bodySupport c s p body
 
 /-- The support of an indexed-element fact whose body variables meet
 `Bound.atIndexSupported`: the array's path at `grow`, its spine at `keep`, its
@@ -562,8 +583,8 @@ def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSuppor
   | .apart a b, S, .apart => S == apartSupport a b
   | .element _ x _, S, .element => S == elementSupport x
   | .fieldRead _ o fld, S, .fieldRead => S == pathReads c o .keep [] [fld]
-  | .every s p stop body, S, .every =>
-    body.all BodyClause.supported && S == everySupport c s p stop body
+  | .every s p start stop body, S, .every =>
+    body.all BodyClause.supported && S == everySupport c s p start stop body
   | .atIndex s p idx guard body, S, .atIndex =>
     body.vars.all Bound.atIndexSupported && S == atIndexSupport c s p idx guard body
   | _, _, _ => false
@@ -726,36 +747,40 @@ theorem FactSupport.check_sound (c : ReadContext) :
     obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hF
     exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp [apartSupport])) hx,
       regionOf_supported (supported_sub hs (by simp [apartSupport])) hy, hab⟩
-  | every s p stop body =>
+  | every s p start stop body =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
     obtain ⟨hsc, rfl⟩ := hS
     refine Supports.intro fun ρ h h' hc hF hs => ?_
-    have hpath := supported_left (supported_left (supported_left hs))
-    have hcells := supported_right (supported_left (supported_left hs))
+    have hpath := supported_left (supported_left (supported_left (supported_left hs)))
+    have hcells := supported_right (supported_left (supported_left (supported_left hs)))
+    have hstart := supported_right (supported_left (supported_left hs))
     have hstop := supported_right (supported_left hs)
     have hbody := supported_right hs
     have hw_obj : ∀ w st, readPath h (ρ s) p = some w → elementsOf w = some st → isObj w = true := by
       intro w st _ he; cases w <;> simp_all [elementsOf, isObj]
     have hpc : Supported [(.pathCells s p, if body.any BodyClause.needsKeep then .keep else .init)] ρ h h' :=
       supported_sub hcells (by simp [everyCells])
-    refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_) (fun z hz => ?_)
+    refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_)
+      (fun m hm => IndexBound.support_sound hc hstart hm)
+      (fun z hz => IndexBound.support_sound hc hstop hz)
       (fun w st ls hw he hls F hFm i t htm v hv => ?_) (fun w st ls hw he hls F hFm i b hbm z hz => ?_)
-    · obtain ⟨w0, st0, -, -, hw0, he0, -⟩ := hF
+    · obtain ⟨w0, st0, -, -, -, hw0, he0, -⟩ := hF
       have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
       subst hww
       have ho := hw_obj _ st0 hw0 he0
       exact pathReads_sound hc p [] hpath (keeps_obj (by decide) ho) rfl rfl hw0
     · obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
-      by_cases harr : (c.arrayPath s p || stop == Term.now .length s p) = true
+      by_cases harr : (c.arrayPath s p || stop.base == some (Term.now .length s p)) = true
       · have hsp : spineOf w = some st := by
           rcases Bool.or_eq_true_iff.mp harr with hca | hst
           · exact hc.2 s p w st hca hw he
           · simp only [beq_iff_eq] at hst
-            subst hst
-            obtain ⟨w0, st0, -, n0, hw0, he0, -, hn0, -⟩ := hF
-            simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at hn0
-            obtain ⟨w1, hw1, hl1⟩ := hn0
+            obtain ⟨w0, st0, -, m0, n0, hw0, he0, -, -, hn0, -⟩ := hF
+            simp only [IndexBound.eval, hst, Option.map_eq_some_iff] at hn0
+            obtain ⟨v0, hv0, -⟩ := hn0
+            simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at hv0
+            obtain ⟨w1, hw1, hl1⟩ := hv0
             rw [hw] at hw0 hw1; cases hw0; cases hw1
             obtain ⟨st1, -, hsp1, -, -, -⟩ := lengthOf_spine hl1
             rw [elementsOf_spine hsp1] at he; cases he
@@ -767,8 +792,6 @@ theorem FactSupport.check_sound (c : ReadContext) :
       · have hm : (Region.spine s p).mem ρ h st = true := by simp [Region.mem, hw, he]
         obtain ⟨v', hv', hk⟩ := hcells (.spine s p, .keep) (by simp [everyCells, harr]) st _ hm hu
         simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
-    · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz
-      rw [h3 rfl] at h1; exact h1
     · have hFsup := Bool.and_eq_true_iff.mp (List.all_eq_true.mp hsc F hFm)
       have htsup := List.all_eq_true.mp hFsup.1 t htm
       cases t with
@@ -1022,8 +1045,8 @@ def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext)
     pure (pathReads c s .keep [] p ++ SB, .guarded SB b)
   | .spineApart a p b q => some (pathReads c a .keep [] p ++ pathReads c b .keep [] q, .spineApart)
   | .apart a b => some (apartSupport a b, .apart)
-  | .every s p stop body =>
-    if body.all BodyClause.supported then some (everySupport c s p stop body, .every) else none
+  | .every s p start stop body =>
+    if body.all BodyClause.supported then some (everySupport c s p start stop body, .every) else none
   | .atIndex s p idx guard body =>
     if body.vars.all Bound.atIndexSupported then some (atIndexSupport c s p idx guard body, .atIndex) else none
   | .element _ x _ => some (elementSupport x, .element)
@@ -1054,7 +1077,7 @@ theorem IndexFact.produceSupport_check (c : ReadContext) :
     obtain ⟨⟨SB, b⟩, hB, h⟩ := h
     cases h
     simp [FactSupport.check, ih hB]
-  | every s p stop body =>
+  | every s p start stop body =>
     intro S ev h
     simp only [IndexFact.produceSupport] at h
     split at h

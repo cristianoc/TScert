@@ -630,12 +630,13 @@ Several tags of one kind state their conjunction.
 \begin{aligned}
 K &::= G\ \texttt{||}\ K \mid C\\
 G &::= P\ \texttt{===}\ \mathtt{null} \mid P\ \texttt{===}\ \mathtt{undefined} \mid P\ \texttt{===}\ \mathtt{true} \mid P\ \texttt{===}\ \mathtt{false}\\
-C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ P\ \mathtt{of}\ P\texttt{:}\ B\\
+C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ D\ \mathtt{of}\ P\texttt{:}\ B \mid \mathtt{forall}\ D\ \texttt{<=}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ D\ \texttt{<=}\ x\ \texttt{<}\ D\ \mathtt{of}\ P\texttt{:}\ B\\
+D &::= n \mid -n \mid P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid D + n \mid D - n\\
 A &::= \mathtt{safeInteger}(P) \mid \mathtt{safeInteger}(I) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P \mid P[Q]\ \texttt{===}\ t \mid P[Q]\ \texttt{!==}\ t\\
 I &::= P[Q] \mid P[Q].p\\
 E &::= n \mid P \mid P.\mathtt{length} \mid I \mid I.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid n\cdot I \mid n\cdot I.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
 P,Q &::= x \mid P.f\\
-B &::= A' \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
+B &::= A' \mid P[x]\ \texttt{===}\ t \mid P[x].p\ \texttt{===}\ t \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
 E' &::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid P[x].p.\mathtt{length} \mid n\cdot E'
 \end{aligned}
 ```
@@ -1516,15 +1517,17 @@ paths, the index `x`, the element `P[x]`, its data paths and their array,
 typed-array or string lengths. An element is named in a comparison only
 where the body states it a safe integer, as a path is. Its meaning is one
 index fact: the path reads a value whose spine of elements holds locations
-$`\ell`$, the bound term denotes $`n`$, and for every index below it each
+$`\ell`$, the affine lower and upper bounds (`IndexBound`, an optional term plus
+an integer offset) denote integers $`a`$ and $`b`$, and for every index
+$`i\in\mathbb{N}`$ with $`a\le i < b`$ each
 body fact holds, its variables denoting, the element only where it is
-present and a safe integer. The fact is written $`\forall i<t.\ \Phi`$, for a set
+present and a safe integer. The fact is written $`\forall a\le i<b.\ \Phi`$, for a set
 $`\Phi`$ of body facts whose element terms read the path $`x.p`$ at the
 index $`i`$:
 
 ```math
-(\forall i<t.\ \Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land \mathrm{entries}(h(s))=\ell\land⟦t⟧_{\rho,h}=n\land
-\forall i<n.\ \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
+(\forall a\le i<b.\ \Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land \mathrm{entries}(h(s))=\ell\land⟦a⟧_{\rho,h}=m\land⟦b⟧_{\rho,h}=n\land
+\forall i\in\mathbb{N}.\ m\le i < n \Rightarrow \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
 ```
 
 with $`\mathrm{elems}(v)`$ an array's spine, or, of a typed array, the view
@@ -1533,8 +1536,8 @@ and $`\mathrm{entries}`$ the cells a spine lists, an array's
 $`\mathsf{arr}\,\ell`$ as $`\ell`$ and a view spine's
 $`\mathsf{viewSpine}\,t\,\langle c_0,\ldots\rangle`$ with every index present
 (`spineEntries`). A
-clause `forall x in P: B` elaborates to it with $`t=|P|`$ of an array,
-$`t=\mathrm{view}(P)`$ of a typed array, each comparison
+clause `forall x in P: B` elaborates to it with $`a=0`$ and $`b=|P|`$ of an array,
+$`b=\mathrm{view}(P)`$ of a typed array, each comparison
 of the body to a linear fact over the index, the element and terms, its
 computed sums ranged as a clause's are. A hole denotes no element, so a body
 naming the element holds of no index holding a hole. A projected term reads
@@ -1545,11 +1548,24 @@ numeric data path requires its own `safeInteger(xs[i].offset)` atom.
 Projected terms are instantiated by `every-read` with the read value as
 their root; mapping and heap extension preserve their meaning (proved).
 
-A prefix clause `forall i < n of P: B` uses the same quantified fact with
-its bound the term `n`. The clause states `safeInteger(n)` when `n` names a
-value. Length paths are terms too, and in a postcondition `old(P)` or
-`old(P.length)`. A bound is one term; a named successor
-`const next = n + 1` supplies the bound for an extended prefix.
+An interval clause `forall lo <= i < hi of P: B` (and the shorthands
+`forall i < hi of P: B` with $`a=0`$ and `forall lo <= i in P: B` with
+$`b=|P|`$ or $`\mathrm{view}(P)`$) uses the same quantified fact with affine
+bounds `IndexBound` (a constant, a term, or a term plus or minus a constant).
+Each bound term states `safeInteger` when it names a value; length paths and
+in a postcondition `old(P)` or `old(P.length)` are terms too. A standalone
+element-tag body `P[i] === t` or `P[i].p === t` (for `t` one of `null`,
+`undefined`, `true`, `false`) elaborates to a guarded falsum
+(`BodyClause.guarded target t (0 <= -1)`), so the clause holds at index $`i`$
+when the element (or its path) has tag $`t`$. Entailment weakens an interval
+to any subinterval ($`a\le a'`$ and $`b'\le b`$, `everySubinterval`), derives
+any empty interval ($`b\le a`$ or $`b\le 0`$, `everyEmpty`) over a defined
+spine, and discharges a guarded body clause from a covering element-tag
+quantifier (`everyGuards`). Overwriting an in-bounds element at index $`i`$
+preserves an interval quantifier over $`[a, b)`$ by splitting it into the
+prefix $`[a, i)`$ and suffix $`[i+1, b)`$ (`everyOverwrittenList`), and a
+dense append at index $`i`$ extends a slot-guarded quantified invariant whose
+parallel body clause follows via `atIndex` (`bodyClauseAsAtIndex`).
 
 **Reading an element.** The bounded signature of
 $`\%\mathsf{ElementAt}\%`$ ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length))
@@ -1565,8 +1581,8 @@ quantified fact over an array of $`a`$'s alias class, each body fact holds of
 $`k`$ and $`r`$ (proved):
 
 ```math
-\frac{\mathrm{element}(r,a,k)\in\Sigma\quad (\forall i<t.\ \Phi)\in\Sigma\quad x\in[a]\quad
-      \mathrm{int}(k)\quad K\vdash 0\le k\quad K\vdash k\le t-1}
+\frac{\mathrm{element}(r,a,k)\in\Sigma\quad (\forall a'\le i<b.\ \Phi)\in\Sigma\quad x\in[a]\quad
+      \mathrm{int}(k)\quad K\vdash 0\le k\quad K\vdash a'\le k\quad K\vdash k\le b-1}
      {\Sigma,\ F[k/i,\ r/x[i]]\ \ (F\in\Phi)}\ \textsf{every-read}
 ```
 

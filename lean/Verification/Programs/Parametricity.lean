@@ -473,7 +473,7 @@ theorem releaseTypedGuarded_reassign (Γ : List (Ty ι)) :
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩
   | ⟨.either _ _, _, _⟩ | ⟨.element _ _ _, _, _⟩ | ⟨.fieldRead _ _ _, _, _⟩
-  | ⟨.every _ _ _ _, _, _⟩ | ⟨.atIndex _ _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ | ⟨.same _ _, _, _⟩ => by
+  | ⟨.every _ _ _ _ _, _, _⟩ | ⟨.atIndex _ _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ | ⟨.spineApart _ _ _ _, _, _⟩ | ⟨.same _ _, _, _⟩ => by
     simp [HeapKnowledge.releaseTypedGuarded]
 
 omit [DecidableEq ι] in
@@ -656,12 +656,18 @@ theorem appendedBody_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge
       unfold PromiseCalls.appendedBody
       rw [ihA, ihB]
 
+theorem growBoundKept_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) (b : HeapKnowledge.IndexBound) :
+    PromiseCalls.growBoundKept (reassign G η) Γ k t b = PromiseCalls.growBoundKept G Γ k t b := by
+  cases b with
+  | mk bs _ =>
+    cases bs <;> simp only [PromiseCalls.growBoundKept, growSpineKept_reassign]
+
 theorem everyGrown_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :
     PromiseCalls.everyGrown (reassign G η) Γ k t = PromiseCalls.everyGrown G Γ k t := by
   funext a
   unfold PromiseCalls.everyGrown
   split
-  · simp only [growSpineKept_reassign]
+  · simp only [growBoundKept_reassign]
     congr 1; congr 1
     cases t <;> try rfl
     rename_i f r args
@@ -786,10 +792,14 @@ theorem factKeptByDenseAppend_reassign (Γ : List (List ι)) (k : HeapKnowledge.
     IndexWrites.factKeptByDenseAppend (reassign G η) Γ k a =
       IndexWrites.factKeptByDenseAppend G Γ k a := by
   funext F
-  induction F with
-  | guarded _ _ _ B ih => simp only [IndexWrites.factKeptByDenseAppend, ih]
+  induction F generalizing k with
+  | guarded _ p _ B ih =>
+    cases p <;> simp only [IndexWrites.factKeptByDenseAppend, ih]
   | either A B ihA ihB => simp only [IndexWrites.factKeptByDenseAppend, ihA, ihB]
-  | every _ p _ _ =>
+  | every _ p _ _ _ =>
+    cases p <;> simp only [IndexWrites.factKeptByDenseAppend, spineDisjointFromA_reassign,
+      termKeptByDenseAppend_reassign, bodyClauseKeptByDenseAppend_reassign]
+  | atIndex _ p _ _ _ =>
     cases p <;> simp only [IndexWrites.factKeptByDenseAppend, spineDisjointFromA_reassign,
       termKeptByDenseAppend_reassign, bodyClauseKeptByDenseAppend_reassign]
   | linear _ => simp only [IndexWrites.factKeptByDenseAppend, termKeptByDenseAppend_reassign]
@@ -818,18 +828,39 @@ theorem bodyClauseForAppend_reassign (K : Linear.Known HeapKnowledge.Term) (Γ :
   | guarded tgt tag b ih =>
     cases tgt <;> simp only [IndexWrites.bodyClauseForAppend, ih, resolveParallelAppend_reassign]
 
+theorem bodyClauseAsAtIndex_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a i selfSlot : Nat)
+    (B : HeapKnowledge.BodyClause) :
+    IndexWrites.bodyClauseAsAtIndex (reassign G η) Γ k a i selfSlot B =
+      IndexWrites.bodyClauseAsAtIndex G Γ k a i selfSlot B := by
+  induction B with
+  | clause _ => rfl
+  | guarded tgt tag b ih =>
+    cases tgt with
+    | self _ => simp only [IndexWrites.bodyClauseAsAtIndex, ih]
+    | parallel s' p' ep =>
+      cases p' with
+      | cons _ _ => rfl
+      | nil =>
+        cases ep with
+        | cons _ _ => rfl
+        | nil =>
+          cases b with
+          | guarded _ _ _ => rfl
+          | clause _ => simp only [IndexWrites.bodyClauseAsAtIndex, spineDisjointFromA_reassign]
+
 theorem bodyHoldsAtAppend_reassign (K : Linear.Known HeapKnowledge.Term) (Γ : List (List ι))
-    (k : HeapKnowledge.Knowledge) (a : Nat) (aCls : List Nat) (i selfSlot : Nat)
+    (k : HeapKnowledge.Knowledge) (gs : List (Nat × HeapKnowledge.GuardTag)) (a : Nat) (aCls : List Nat) (i selfSlot : Nat)
     (parWritten : Option Nat) (body : List HeapKnowledge.BodyClause) :
-    IndexWrites.bodyHoldsAtAppend K (reassign G η) Γ k a aCls i selfSlot parWritten body =
-      IndexWrites.bodyHoldsAtAppend K G Γ k a aCls i selfSlot parWritten body := by
-  simp only [IndexWrites.bodyHoldsAtAppend, bodyClauseForAppend_reassign, factKeptByDenseAppend_reassign]
+    IndexWrites.bodyHoldsAtAppend K (reassign G η) Γ k gs a aCls i selfSlot parWritten body =
+      IndexWrites.bodyHoldsAtAppend K G Γ k gs a aCls i selfSlot parWritten body := by
+  simp only [IndexWrites.bodyHoldsAtAppend, bodyClauseForAppend_reassign, bodyClauseAsAtIndex_reassign,
+    factKeptByDenseAppend_reassign]
   rfl
 
 theorem denseAppendAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a i v : Nat) :
     IndexWrites.denseAppendAtoms (reassign G η) Γ k a i v = IndexWrites.denseAppendAtoms G Γ k a i v := by
   simp only [IndexWrites.denseAppendAtoms, factKeptByDenseAppend_reassign, bodyHoldsAtAppend_reassign,
-    bodyClauseKeptByDenseAppend_reassign, spineDisjointFromA_reassign]
+    bodyClauseKeptByDenseAppend_reassign, termKeptByDenseAppend_reassign, spineDisjointFromA_reassign]
   rfl
 
 omit [DecidableEq ι] in

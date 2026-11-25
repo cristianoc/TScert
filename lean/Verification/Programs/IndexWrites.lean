@@ -2136,7 +2136,7 @@ theorem guardedSpineSlots_empty {limit : Nat} :
   | .guarded _ _ _ B, _, _, hm => guardedSpineSlots_empty (F := B) hm
   | .index _, _, _, hm | .length _ _, _, _, hm | .bound _ _ _, _, _, hm
   | .int _, _, _, hm | .pastSafe _, _, _, hm | .linear _, _, _, hm
-  | .either _ _, _, _, hm | .element _ _ _, _, _, hm | .every _ _ _ _, _, _, hm
+  | .either _ _, _, _, hm | .element _ _ _, _, _, hm | .every _ _ _ _ _, _, _, hm
   | .atIndex _ _ _ _ _, _, _, hm | .apart _ _, _, _, hm | .same _ _, _, _, hm => by
     simp [guardedSpineSlots] at hm
 
@@ -2151,7 +2151,7 @@ def indexPaths (limit : Nat) (k : Knowledge) : List (Nat × List String) :=
       | .spineApart s p o q =>
           (if !p.isEmpty && s < limit then [(s, p)] else []) ++
           (if !q.isEmpty && o < limit then [(o, q)] else [])
-      | .every s p _ _ => if !p.isEmpty && s < limit then [(s, p)] else []
+      | .every s p _ _ _ => if !p.isEmpty && s < limit then [(s, p)] else []
       | .guarded _ _ _ B => guardedSpineSlots limit B
       | _ => []).eraseDups
 
@@ -2292,10 +2292,10 @@ theorem indexPaths_defined {limit : Nat} {k : Knowledge} {ρ h s p}
         · simp only [List.mem_singleton, Prod.mk.injEq] at h2
           obtain ⟨rfl, rfl⟩ := h2; exact ⟨w, hw⟩
         · cases h2
-    | every s1 p1 _ _ =>
+    | every s1 p1 _ _ _ =>
       simp only [hof] at hfa
       rw [hof] at hF
-      obtain ⟨w, -, -, -, hw, -⟩ := hF
+      obtain ⟨w, -, -, -, -, hw, -⟩ := hF
       split at hfa
       · simp only [List.mem_singleton, Prod.mk.injEq] at hfa
         obtain ⟨rfl, rfl⟩ := hfa; exact ⟨w, hw⟩
@@ -2582,11 +2582,14 @@ apart from it. Each separation is the one disjointness check's (`apartFrom`);
 that a side is an array is its slot's type (`arraySlot`). The quantified facts
 the write keeps are `overwriteAtoms`'s (`every-write`). -/
 def writeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (a : Nat) : List IndexAtom :=
+  let apartOk := fun (x y : Nat) =>
+    (HeapLinks.aliases k.links a).contains x ||
+    (HeapLinks.aliases k.links a).contains y ||
+    (apartFrom k a x && apartFrom k a y && arraySlot G Γ x && arraySlot G Γ y)
   k.indices.filter fun atom => atom.cond.isNone && match atom.fact with
-    | .apart x y =>
-      ((HeapLinks.aliases k.links a).contains x && apartFrom k a y && arraySlot G Γ y) ||
-      ((HeapLinks.aliases k.links a).contains y && apartFrom k a x && arraySlot G Γ x) ||
-      (apartFrom k a x && apartFrom k a y && arraySlot G Γ x && arraySlot G Γ y)
+    | .apart x y => apartOk x y
+    | .guarded _ [] _ (.apart x y) =>
+      (HeapLinks.aliases k.links a).contains x || (HeapLinks.aliases k.links a).contains y
     | _ => false
 
 /-- What an element write at the spine cell `target`, which held `xs`,
@@ -2631,31 +2634,37 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     rcases hu with ⟨he, -⟩ | ⟨st, he, hst, -⟩
     · cases he
     · cases he; exact .inr ⟨target, rfl, hst, hxs'⟩
-  -- The written array beside an array slot apart from it.
-  have side : ∀ x y, x ∈ HeapLinks.aliases k.links a → apartFrom k a y = true → arraySlot G Γ y = true →
+  -- The written array beside any value whose region is apart from it in `h`.
+  have side : ∀ x y, x ∈ HeapLinks.aliases k.links a → RegionsApart h (ρ x) (ρ y) →
       RegionsApart h' (ρ x) (ρ y) := by
-    intro x y hx hy hs
-    rw [HeapLinks.aliases_eq hk.2.2.1 hx]
-    obtain ⟨st, ls, hst, hls, hlt, hbelow⟩ := arraySlot_region hs he hh
-    obtain ⟨se, ys, hre, hre', hsep⟩ := untouched hw hu (apartFrom_sound hy hk hh hρ hu hst hls)
-    obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst, hls⟩)
-    rw [e1, e2] at hre' hsep
-    refine ⟨some target, xs', some st, ls, hwritten, hre', fun l hl m hm => ?_⟩
+    intro x y hx hap
+    rw [HeapLinks.aliases_eq hk.2.2.1 hx] at hap ⊢
+    obtain ⟨se, ys, hre, hre', hsep⟩ := untouched hw hu hap
+    have hbelow : ∀ m, InRegion se ys m → m < h.length := by
+      intro m hm
+      rcases hre with ⟨rfl, hyarr⟩ | ⟨st, rfl, -, hys⟩
+      · rcases hm with hm | hm
+        · cases hm
+        · have href : RefOk W (.elem m) := (hρ y) (.elem m) (by rw [hyarr]; simp only [refs, spineRefs, List.mem_filterMap]; exact ⟨some m, hm, rfl⟩)
+          obtain ⟨u, hu, -⟩ := hh.2 m .elem href
+          exact (List.getElem?_eq_some_iff.mp hu).1
+      · rcases hm with hm | hm
+        · cases hm; exact (List.getElem?_eq_some_iff.mp hys).1
+        · exact (hh.spine_cells hys hm).2
+    refine ⟨some target, xs', se, ys, hwritten, hre', fun l hl m hm => ?_⟩
     rcases hl with hl | hl
     · exact hsep l (.inl hl) m hm
     · rcases hcells l hl with hl | rfl
       · exact hsep l (.inr hl) m hm
-      · rcases hm with hm | hm
-        · cases hm; omega
-        · have := hbelow m hm; omega
+      · have := hbelow m hm; omega
   cases hfact : atom.fact
   case apart x y =>
     rw [hfact] at hsel hat
     show RegionsApart h' (ρ x) (ρ y)
     simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem] at hsel
-    rcases hsel with (⟨⟨hx, hy⟩, hs⟩ | ⟨⟨hy, hx⟩, hs⟩) | ⟨⟨⟨hx, hy⟩, hsx⟩, hsy⟩
-    · exact side x y hx hy hs
-    · exact regionsApart_symm (side y x hy hx hs)
+    rcases hsel with (hx | hy) | ⟨⟨⟨hx, hy⟩, hsx⟩, hsy⟩
+    · exact side x y hx hat
+    · exact regionsApart_symm (side y x hy (regionsApart_symm hat))
     · obtain ⟨stx, lsx, hstx, hlsx, -, -⟩ := arraySlot_region hsx he hh
       obtain ⟨sty, lsy, hsty, hlsy, -, -⟩ := arraySlot_region hsy he hh
       obtain ⟨sx, xs1, hrx, hrx', -⟩ := untouched hw hu (apartFrom_sound hx hk hh hρ hu hstx hlsx)
@@ -2665,6 +2674,20 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       obtain ⟨e3, e4⟩ := regionOf_unique hrb hry
       rw [e1, e2, e3, e4] at hsep
       exact ⟨sx, xs1, sy, ys1, hrx', hry', hsep⟩
+  case guarded g p tag B =>
+    rw [hfact] at hsel hat
+    cases p with
+    | cons _ _ => simp at hsel
+    | nil =>
+      cases B with
+      | apart x y =>
+        simp only [Bool.or_eq_true, List.contains_iff_mem] at hsel
+        obtain ⟨v, hv, hor⟩ := hat
+        refine ⟨v, hv, hor.imp id fun hap => ?_⟩
+        rcases hsel with hx | hy
+        · exact side x y hx hap
+        · exact regionsApart_symm (side y x hy (regionsApart_symm hap))
+      | _ => simp at hsel
   all_goals (rw [hfact] at hsel; cases hsel)
 
 /-- A write at the spine of `a`'s array keeps `writeAtoms` (`region-write`)
@@ -4074,7 +4097,7 @@ private theorem unwrapGuarded_holds {links : HeapLinks.Links} {gs : List (Nat ×
   | .guarded _ (_ :: _) _ _, _, hu, _ | .index _, _, hu, _ | .length _ _, _, hu, _
   | .bound _ _ _, _, hu, _ | .int _, _, hu, _ | .pastSafe _, _, hu, _ | .linear _, _, hu, _
   | .either _ _, _, hu, _ | .element _ _ _, _, hu, _ | .fieldRead _ _ _, _, hu, _
-  | .every _ _ _ _, _, hu, _ | .atIndex _ _ _ _ _, _, hu, _ | .apart _ _, _, hu, _
+  | .every _ _ _ _ _, _, hu, _ | .atIndex _ _ _ _ _, _, hu, _ | .apart _ _, _, hu, _
   | .spineApart _ _ _ _, _, hu, _ | .same _ _, _, hu, _ => by simp [unwrapGuarded] at hu
 
 private theorem atomsUnderGuards_holds {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
@@ -4230,38 +4253,48 @@ def writtenBodyClause (vals : Nat → Option ValueSets.ValueSet) (K : Linear.Kno
           | none => false
       | none => false
 
-/-- Whether an element write `a[i] = v` at a checked index keeps the
-quantified fact `every s p stop body` (`every-write`). Every index other than
-`i` is framed (`bodyClauseOtherOk`). Where the write is known in bounds
-(`inBounds`, `i < a.length`), the fact holds at `i` because its bound is at
-most `i` or its body holds of `v` there (`writtenBodyClause`); otherwise the
-fact reads nothing of `a`'s region: its root and every parallel array are
-apart from `a` and its bound reads no length of `a`'s region. -/
-def everyOverwritten (vals : Nat → Option ValueSets.ValueSet) (K : Linear.Known Term)
-    (k : Knowledge) (a i v s : Nat) (p : List String) (stop : Term) (body : List BodyClause)
-    (inBounds : Bool) : Bool :=
-  match classifyArrayPath k a s p with
-  | none => false
-  | some rootRole =>
-    body.all (bodyClauseOtherOk k a rootRole inBounds) &&
-      if inBounds then
-        K.entails (.le [(stop, 1), (.value i, -1)] 0) ||
-          body.all (writtenBodyClause vals K k a i v s p rootRole true [])
+/-- Quantified facts derived from `every s p start stop body` across a bounded write
+`a[i] = v`:
+- when `inBounds = true` and `body` is framed at other indices:
+  - keeps `[start, stop)` unchanged if `stop ≤ i`, `i < start`, or `v` satisfies `body` at `i`;
+  - otherwise emits surviving disjoint sub-intervals `[start, i)` (when `i ≤ stop` and `start ≠ i`)
+    and `[i + 1, stop)` (when `start ≤ i + 1`).
+- when `inBounds = false`: keeps `[start, stop)` only when the array, bounds, and body are apart from `a`. -/
+def everyOverwrittenList (vals : Nat → Option ValueSets.ValueSet) (K : Linear.Known Term)
+    (k : Knowledge) (a i v : Nat) (atom : IndexAtom) (inBounds : Bool) : List IndexAtom :=
+  match atom.fact with
+  | .every s p start stop body =>
+    match classifyArrayPath k a s p with
+    | none => []
+    | some rootRole =>
+      if !body.all (bodyClauseOtherOk k a rootRole inBounds) then []
+      else if inBounds then
+        let iB := IndexBound.ofTerm (.value i)
+        if K.entails (stop.leFact iB) || K.entails (iB.leFact start 1) ||
+            body.all (writtenBodyClause vals K k a i v s p rootRole true []) then
+          [atom]
+        else
+          (if start != iB && K.entails (iB.leFact stop) then
+            [{ atom with fact := .every s p start iB body }] else []) ++
+          (if K.entails (start.leFact iB (-1)) then
+            [{ atom with fact := .every s p ⟨some (.value i), 1⟩ stop body }] else [])
       else
-        rootRole == .apart && termApart k a stop && !body.any (bodyClauseReadsWritten k a .apart)
+        if rootRole == .apart && start.base.all (termApart k a) && stop.base.all (termApart k a) &&
+            !body.any (bodyClauseReadsWritten k a .apart) then
+          [atom]
+        else []
+  | _ => []
 
 /-- Index facts established or preserved by a checked `boundedWrite a i v`:
 the written element identity `a[i] === v` (`IndexFact.element v a i`), and
-every quantified fact `everyOverwritten` keeps, with `i < a.length` known
+every quantified fact `everyOverwrittenList` keeps or splits, with `i < a.length` known
 where `bounded k a i true`. -/
 def overwriteAtoms (vals : Nat → Option ValueSets.ValueSet) (k : Knowledge) (a i v : Nat) :
     List IndexAtom :=
   { fact := .element v a i } ::
     let K := knownOf k.indices
     let inBounds := bounded k a i true
-    k.indices.filter fun atom => match atom.fact with
-      | .every s p stop body => everyOverwritten vals K k a i v s p stop body inBounds
-      | _ => false
+    k.indices.flatMap fun atom => everyOverwrittenList vals K k a i v atom inBounds
 
 /-- A term or a read through an element value that `bodyClauseOtherOk` admits
 is kept by the write. -/
@@ -4838,11 +4871,37 @@ private theorem writtenBodyClause_holds {n : Nat} {W : WorldT n}
                             · exact htg
                             · exact hgs g hg) hrec⟩
 
-private theorem everyOverwritten_holds {n : Nat} {W : WorldT n}
+private theorem everyOverwrittenList_cond {vals : Nat → Option ValueSets.ValueSet} {K : Linear.Known Term}
+    {k : Knowledge} {a i v : Nat} {atom out : IndexAtom} {inBounds : Bool}
+    (hmem : out ∈ everyOverwrittenList vals K k a i v atom inBounds) :
+    out.cond = atom.cond ∧ out.negated = atom.negated := by
+  unfold everyOverwrittenList at hmem
+  cases hfa : atom.fact <;> simp only [hfa] at hmem <;> try cases hmem
+  rename_i s p start stop body
+  cases hcls : classifyArrayPath k a s p with
+  | none => simp [hcls] at hmem
+  | some rootRole =>
+    simp only [hcls] at hmem
+    split at hmem
+    · cases hmem
+    split at hmem
+    · split at hmem
+      · simp only [List.mem_singleton] at hmem; subst hmem; exact ⟨rfl, rfl⟩
+      · rcases List.mem_append.mp hmem with hl | hr
+        · split at hl
+          · simp only [List.mem_singleton] at hl; subst hl; exact ⟨rfl, rfl⟩
+          · cases hl
+        · split at hr
+          · simp only [List.mem_singleton] at hr; subst hr; exact ⟨rfl, rfl⟩
+          · cases hr
+    · split at hmem
+      · simp only [List.mem_singleton] at hmem; subst hmem; exact ⟨rfl, rfl⟩
+      · cases hmem
+
+private theorem everyOverwrittenList_holds {n : Nat} {W : WorldT n}
     {vals : Nat → Option ValueSets.ValueSet} {K : Linear.Known Term}
     {k : Knowledge} {ρ : Env} {h h' : Heap}
-    {a i v s target idx : Nat} {p : List String} {stop : Term} {body : List BodyClause}
-    {ls ls' : List (Option Nat)} {inBounds : Bool}
+    {a i v target idx : Nat} {ls ls' : List (Option Nat)} {inBounds : Bool} {atom out : IndexAtom}
     (hw : ElementWriteHeap W h h' target ls ls' idx (ρ v))
     (hib : inBounds = true → InBoundsWriteHeap W h h' target ls ls' idx (ρ v))
     (hvals : ∀ x R, vals x = some R → R.mem (ρ x) = true)
@@ -4850,25 +4909,46 @@ private theorem everyOverwritten_holds {n : Nat} {W : WorldT n}
     (hh : HeapOk n W h) (hρ : RootsOk W ρ)
     (hsa : Footprints.spineOf (ρ a) = some target)
     (hki : intValue (ρ i) = some (idx : Int))
-    (hev : everyOverwritten vals K k a i v s p stop body inBounds = true)
-    (hF : (IndexFact.every s p stop body).HoldsAt ε ρ h) :
-    (IndexFact.every s p stop body).HoldsAt ε ρ h' := by
-  unfold everyOverwritten at hev
+    (hmem : out ∈ everyOverwrittenList vals K k a i v atom inBounds)
+    (hF : atom.fact.HoldsAt ε ρ h) :
+    out.fact.HoldsAt ε ρ h' ∧ out.cond = atom.cond ∧ out.negated = atom.negated := by
+  unfold everyOverwrittenList at hmem
+  cases hfa : atom.fact <;> simp only [hfa] at hmem <;> try cases hmem
+  rw [hfa] at hF
+  rename_i s p start stop body
   cases hcls : classifyArrayPath k a s p with
-  | none => simp [hcls] at hev
+  | none => simp [hcls] at hmem
   | some rootRole =>
-    rw [hcls] at hev
-    simp only [Bool.and_eq_true, List.all_eq_true] at hev
-    obtain ⟨hother, hnew⟩ := hev
+    simp only [hcls] at hmem
+    split at hmem
+    · cases hmem
+    rename_i hotherN
+    have hother : ∀ B ∈ body, bodyClauseOtherOk k a rootRole inBounds B = true :=
+      List.all_eq_true.mp (by simpa using hotherN)
     have hin : inBounds = true → ls'.length = ls.length := fun hb => (hib hb).lenEq
-    obtain ⟨w, st, ls_root, n0, hrp, he, hls_root, hstop, hall⟩ := hF
+    obtain ⟨w, st, ls_root, m0, n0, hrp, he, hls_root, hstart, hstop, hall⟩ := hF
     have hnaW : ∀ xs, w ≠ .arr xs := fun xs heq => by subst heq; simp [elementsOf] at he
     obtain ⟨hrp', hwRef⟩ := hw.readPath_kept hh (hρ s) hrp hnaW
-    have hstop' : termValue ε ρ h' stop = some n0 := by
-      cases hb : inBounds
-      · simp only [hb, Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true'] at hnew
-        exact hw.termApart_kept hk hh hρ hsa hnew.1.2 hstop
-      · exact (hib hb).termValue_kept hh hρ hstop
+    have hboundKept : ∀ (bd : IndexBound) (z : Int), (inBounds = true ∨ bd.base.all (termApart k a) = true) →
+        bd.eval ε ρ h = some z → bd.eval ε ρ h' = some z := by
+      intro bd z hok hbd
+      cases bd with
+      | mk bs off =>
+        cases bs with
+        | none => exact hbd
+        | some t =>
+          simp only [IndexBound.eval, Option.map_eq_some_iff] at hbd ⊢
+          obtain ⟨u, hu, rfl⟩ := hbd
+          rcases hok with hb | hap
+          · exact ⟨u, (hib hb).termValue_kept hh hρ hu, rfl⟩
+          · simp only [Option.all_some] at hap
+            exact ⟨u, hw.termApart_kept hk hh hρ hsa hap hu, rfl⟩
+    have hiEval : (IndexBound.ofTerm (.value i)).eval ε ρ h = some (idx : Int) := by
+      simp [IndexBound.ofTerm, IndexBound.eval, termValue_value, hki]
+    have hiEval' : (IndexBound.ofTerm (.value i)).eval ε ρ h' = some (idx : Int) := by
+      simp [IndexBound.ofTerm, IndexBound.eval, termValue_value, hki]
+    have hiPlusEval' : ({ base := some (.value i), offset := 1 } : IndexBound).eval ε ρ h' = some ((idx : Int) + 1) := by
+      simp [IndexBound.eval, termValue_value, hki]
     -- Helper: any classified parallel array path `(s', p')` frames cleanly.
     have hparAll : ∀ (j : Nat) (s' : Nat) (p' : List String) (r' : WriteRole),
         classifyArrayPath k a s' p' = some r' → j ≠ idx ∨ r' = .apart →
@@ -4897,62 +4977,106 @@ private theorem everyOverwritten_holds {n : Nat} {W : WorldT n}
         obtain ⟨hls2', hcells2, hrefs2⟩ := hw.apart_spine_kept hk hh hρ hsa hdisj hrp2 he2 hls2
         exact ⟨ls2, hrp2', hls2', rfl, fun l hl => hcells2 l (List.mem_of_getElem? hl),
           fun l u2 hl hu2 => hrefs2 l u2 (List.mem_of_getElem? hl) hu2⟩
-    -- Specialize to rootRole.
-    cases rootRole with
-    | written =>
-      cases hb : inBounds
-      · simp [hb] at hnew
-      simp only [hb, ite_true, Bool.or_eq_true, List.all_eq_true] at hnew
-      have hwa : w = ρ a := readsPath_eq hk.2.2.1 (classifyArrayPath_written hcls) hrp
-      subst hwa
-      rw [elementsOf_spine hsa] at he; cases he
-      rw [hw.oldSpine] at hls_root
-      simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls_root; subst hls_root
-      refine ⟨ρ a, target, ls', n0, hrp', elementsOf_spine hsa, by simp [hw.newSpine, spineEntries], hstop',
-        fun j hj B hB => ?_⟩
-      by_cases hji : j = idx
-      · subst j
-        rcases hnew with hent | hbody
-        · have hf := Linear.Known.entails_sound hK hent
-          simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hstop, termValue_value, hki,
-            Option.getD_some] at hf
-          omega
-        · refine writtenBodyClause_holds (hib hb) hvals hK hk hh hρ hsa hki (fun _ => rfl) (fun h => by cases h)
+    -- Obtain the post-write root spine and per-index framing for `j ≠ idx` (and `j = idx` when apart/unchanged).
+    have hrootPost : ∃ ls_root', h'[st]?.bind spineEntries = some ls_root' ∧
+        (∀ (j : Nat), m0 ≤ (j : Int) → (j : Int) < n0 → j ≠ idx → ∀ B ∈ body, B.HoldsAt ε ρ h' ls_root' j) ∧
+        (inBounds = true → m0 ≤ (idx : Int) → (idx : Int) < n0 →
+          body.all (writtenBodyClause vals K k a i v s p rootRole true []) = true →
+          ∀ B ∈ body, B.HoldsAt ε ρ h' ls_root' idx) ∧
+        (rootRole = .apart → !body.any (bodyClauseReadsWritten k a .apart) = true →
+          ∀ (j : Nat), m0 ≤ (j : Int) → (j : Int) < n0 → ∀ B ∈ body, B.HoldsAt ε ρ h' ls_root' j) := by
+      cases rootRole with
+      | written =>
+        have hwa : w = ρ a := readsPath_eq hk.2.2.1 (classifyArrayPath_written hcls) hrp
+        subst hwa
+        rw [elementsOf_spine hsa] at he; cases he
+        rw [hw.oldSpine] at hls_root
+        simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls_root; subst hls_root
+        refine ⟨ls', by simp [hw.newSpine, spineEntries], ?_, ?_, fun h _ => by cases h⟩
+        · intro j hlo hj hne B hB
+          exact bodyClause_frame_idx (rootRole := .written) hw hk hh hρ hsa hin (fun h => by cases h)
+            (fun _ => hw.otherSlot j hne) (fun _ l hl => hw.otherCell j l hne hl)
+            (fun l u hl hu => refsOk_of_heap hh (hh.spine_cells hw.oldSpine (List.mem_of_getElem? hl)).1 hu)
+            (hparAll j) (hother B hB) (.inl hne) (hall j hlo hj B hB)
+        · intro hb hlo hi hbody B hB
+          exact writtenBodyClause_holds (hib hb) hvals hK hk hh hρ hsa hki (fun _ => rfl) (fun h => by cases h)
             (fun l u hl hu => refsOk_of_heap hh (hh.spine_cells hw.oldSpine (List.mem_of_getElem? hl)).1 hu)
             (fun s' p' r' hr' ha => hparAll idx s' p' r' hr' (.inr ha))
-            (hb ▸ hother B hB) (fun _ => hall idx hj B hB) (fun _ hm => by simp at hm) (hbody B hB)
-      · exact bodyClause_frame_idx (rootRole := .written) hw hk hh hρ hsa hin (fun h => by cases h)
-          (fun _ => hw.otherSlot j hji) (fun _ l hl => hw.otherCell j l hji hl)
-          (fun l u hl hu => refsOk_of_heap hh (hh.spine_cells hw.oldSpine (List.mem_of_getElem? hl)).1 hu)
-          (hparAll j) (hother B hB) (.inl hji) (hall j hj B hB)
-    | apart =>
-      have hdisj := classifyArrayPath_apart hcls
-      obtain ⟨hls_root', hcells_root, hrefs_root⟩ := hw.apart_spine_kept hk hh hρ hsa hdisj hrp he hls_root
-      refine ⟨w, st, ls_root, n0, hrp', he, hls_root', hstop', fun j hj B hB => ?_⟩
-      have hframe : (j ≠ idx ∨ bodyClauseReadsWritten k a .apart B = false) →
-          B.HoldsAt ε ρ h' ls_root j := fun hnr =>
-        bodyClause_frame_idx (rootRole := .apart) hw hk hh hρ hsa hin (fun _ => ⟨rfl, hcells_root⟩)
-          (fun _ => rfl) (fun _ l hl => hcells_root l (List.mem_of_getElem? hl))
-          (fun l u hl hu => hrefs_root l u (List.mem_of_getElem? hl) hu)
-          (hparAll j) (hother B hB) hnr (hall j hj B hB)
-      by_cases hji : j = idx
-      · subst j
-        cases hb : inBounds
-        · simp only [hb, Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true',
-            List.any_eq_false] at hnew
-          exact hframe (.inr (Bool.eq_false_iff.mpr (hnew.2 B hB)))
-        simp only [hb, ite_true, Bool.or_eq_true, List.all_eq_true] at hnew
-        rcases hnew with hent | hbody
-        · have hf := Linear.Known.entails_sound hK hent
-          simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hstop, termValue_value, hki,
-            Option.getD_some] at hf
-          omega
-        · refine writtenBodyClause_holds (hib hb) hvals hK hk hh hρ hsa hki (fun h => by cases h)
+            (hb ▸ hother B hB) (fun _ => hall idx hlo hi B hB) (fun _ hm => by simp at hm)
+            (List.all_eq_true.mp hbody B hB)
+      | apart =>
+        have hdisj := classifyArrayPath_apart hcls
+        obtain ⟨hls_root', hcells_root, hrefs_root⟩ := hw.apart_spine_kept hk hh hρ hsa hdisj hrp he hls_root
+        have hframe : ∀ (j : Nat), m0 ≤ (j : Int) → (j : Int) < n0 → ∀ B ∈ body,
+            (j ≠ idx ∨ bodyClauseReadsWritten k a .apart B = false) → B.HoldsAt ε ρ h' ls_root j :=
+          fun j hlo hj B hB hnr =>
+            bodyClause_frame_idx (rootRole := .apart) hw hk hh hρ hsa hin (fun _ => ⟨rfl, hcells_root⟩)
+              (fun _ => rfl) (fun _ l hl => hcells_root l (List.mem_of_getElem? hl))
+              (fun l u hl hu => hrefs_root l u (List.mem_of_getElem? hl) hu)
+              (hparAll j) (hother B hB) hnr (hall j hlo hj B hB)
+        refine ⟨ls_root, hls_root', fun j hlo hj hne B hB => hframe j hlo hj B hB (.inl hne), ?_, ?_⟩
+        · intro hb hlo hi hbody B hB
+          exact writtenBodyClause_holds (hib hb) hvals hK hk hh hρ hsa hki (fun h => by cases h)
             (fun _ => ⟨w, st, hrp, he, hls_root, rfl, hcells_root, hrefs_root⟩)
             (fun l u hl hu => hrefs_root l u (List.mem_of_getElem? hl) hu)
             (fun s' p' r' hr' ha => hparAll idx s' p' r' hr' (.inr ha))
-            (hb ▸ hother B hB) (fun _ => hall idx hj B hB) (fun _ hm => by simp at hm) (hbody B hB)
-      · exact hframe (.inl hji)
+            (hb ▸ hother B hB) (fun _ => hall idx hlo hi B hB) (fun _ hm => by simp at hm)
+            (List.all_eq_true.mp hbody B hB)
+        · intro _ hnr j hlo hj B hB
+          have hbf : bodyClauseReadsWritten k a .apart B = false := by
+            cases hbr : bodyClauseReadsWritten k a .apart B with
+            | false => rfl
+            | true =>
+              have : body.any (bodyClauseReadsWritten k a .apart) = true := List.any_eq_true.mpr ⟨B, hB, hbr⟩
+              simp [this] at hnr
+          exact hframe j hlo hj B hB (.inr hbf)
+    obtain ⟨ls_root', hls_root', hotherIdx, hwrittenIdx, hapartAll⟩ := hrootPost
+    cases hb : inBounds with
+    | false =>
+      simp only [hb, Bool.false_eq_true, ite_false] at hmem
+      split at hmem
+      · rename_i hap
+        simp only [List.mem_singleton] at hmem; subst hmem
+        simp only [Bool.and_eq_true, beq_iff_eq] at hap
+        obtain ⟨⟨⟨hrap, hstAp⟩, hspAp⟩, hnr⟩ := hap
+        rw [hfa]
+        exact ⟨⟨w, st, ls_root', m0, n0, hrp', he, hls_root',
+          hboundKept start m0 (.inr hstAp) hstart, hboundKept stop n0 (.inr hspAp) hstop,
+          hapartAll hrap hnr⟩, rfl, rfl⟩
+      · cases hmem
+    | true =>
+      simp only [hb, ite_true] at hmem
+      have hstart' := hboundKept start m0 (.inl hb) hstart
+      have hstop' := hboundKept stop n0 (.inl hb) hstop
+      split at hmem
+      · rename_i hkeep
+        simp only [List.mem_singleton] at hmem; subst hmem
+        rw [hfa]
+        refine ⟨⟨w, st, ls_root', m0, n0, hrp', he, hls_root', hstart', hstop', fun j hlo hj B hB => ?_⟩, rfl, rfl⟩
+        by_cases hji : j = idx
+        · subst j
+          simp only [Bool.or_eq_true] at hkeep
+          rcases hkeep with (h1 | h2) | hbody
+          · have := IndexBound.leFact_sound hstop hiEval (Linear.Known.entails_sound hK h1); omega
+          · have := IndexBound.leFact_sound hiEval hstart (Linear.Known.entails_sound hK h2); omega
+          · exact hwrittenIdx hb hlo hj hbody B hB
+        · exact hotherIdx j hlo hj hji B hB
+      · rcases List.mem_append.mp hmem with hleft | hright
+        · split at hleft
+          · rename_i hlc
+            simp only [List.mem_singleton] at hleft; subst hleft
+            obtain ⟨-, hent⟩ := Bool.and_eq_true_iff.mp hlc
+            have hle := IndexBound.leFact_sound hiEval hstop (Linear.Known.entails_sound hK hent)
+            exact ⟨⟨w, st, ls_root', m0, idx, hrp', he, hls_root', hstart', hiEval',
+              fun j hlo hj B hB => hotherIdx j hlo (by omega) (by omega) B hB⟩, rfl, rfl⟩
+          · cases hleft
+        · split at hright
+          · rename_i hrc
+            simp only [List.mem_singleton] at hright; subst hright
+            have hle := IndexBound.leFact_sound hstart hiEval (Linear.Known.entails_sound hK hrc)
+            exact ⟨⟨w, st, ls_root', (idx : Int) + 1, n0, hrp', he, hls_root', hiPlusEval', hstop',
+              fun j hlo hj B hB => hotherIdx j (by omega) hj (by omega) B hB⟩, rfl, rfl⟩
+          · cases hright
 
 /-- A checked `boundedWrite a i v` establishes `IndexFact.element v a i` and,
 when `i < a.length`, preserves every quantified fact accepted by `everyOverwritten`. -/
@@ -5059,11 +5183,15 @@ theorem boundedOverwrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
           · refine ⟨s, ls, b, idx, elementsOf_spine hs, by simp [hsp', spineEntries], hb, hsafeInt, hidxLt, ?_, ?_⟩
             · intro l' hl'; rw [hlsIdx] at hl'; cases hl'; exact hcell'
             · intro hno; rw [hlsIdx] at hno; cases hno
-          · obtain ⟨hmem, hsel⟩ := List.mem_filter.mp hatom
-            have hF := hk.2.2.2.2.2 atom hmem hcond
-            cases hfa : atom.fact <;> simp only [hfa] at hsel hF ⊢ <;> try { cases hsel }
-            exact everyOverwritten_holds hib.toElementWriteHeap (fun _ => hib) hvals
-              (knownOf_holds hk.2.2.2.2.2) hk hh hρ hs hki hsel hF
+          · obtain ⟨src, hmem, hsel⟩ := List.mem_flatMap.mp hatom
+            have hcond' : ∀ c, src.cond = some c → tagHolds .truthy (ρ c) = !src.negated := by
+              intro c hc
+              have hceq := everyOverwrittenList_cond hsel
+              rw [← hceq.1] at hc
+              rw [← hceq.2]
+              exact hcond c hc
+            exact (everyOverwrittenList_holds hib.toElementWriteHeap (fun _ => hib) hvals
+              (knownOf_holds hk.2.2.2.2.2) hk hh hρ hs hki hsel (hk.2.2.2.2.2 src hmem hcond')).1
         · -- Case 2: hole or append (`elemLoc ls b = none`)
           rw [hidx] at hi'; cases hi'
           have hsp' : ((h ++ [ρ v]).set s (.arr (placeAt ls idx h.length)))[s]? = some (.arr (placeAt ls idx h.length)) :=
@@ -5109,10 +5237,15 @@ theorem boundedOverwrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
               rw [hidx] at hidx0; cases hidx0
               have hidxLt : idx < ls.length := by simp at hlt0; omega
               exact { hew with idxLt := hidxLt, lenEq := by rw [placeAt_length]; omega }
-            obtain ⟨hmem, hsel⟩ := List.mem_filter.mp hatom
-            have hF := hk.2.2.2.2.2 atom hmem hcond
-            cases hfa : atom.fact <;> simp only [hfa] at hsel hF ⊢ <;> try { cases hsel }
-            exact everyOverwritten_holds hew hib hvals (knownOf_holds hk.2.2.2.2.2) hk hh hρ hs hki hsel hF
+            obtain ⟨src, hmem, hsel⟩ := List.mem_flatMap.mp hatom
+            have hcond' : ∀ c, src.cond = some c → tagHolds .truthy (ρ c) = !src.negated := by
+              intro c hc
+              have hceq := everyOverwrittenList_cond hsel
+              rw [← hceq.1] at hc
+              rw [← hceq.2]
+              exact hcond c hc
+            exact (everyOverwrittenList_holds hew hib hvals (knownOf_holds hk.2.2.2.2.2) hk hh hρ hs hki hsel
+              (hk.2.2.2.2.2 src hmem hcond')).1
     · cases htypes
   · cases htypes
 
@@ -5217,9 +5350,31 @@ theorem elementWrite_post4 {Ξ T : Fam} {P : Heap → Prop}
             · exact absurd hr (val_not_thrown rfl)
             · exact False.elim (value_no_step rfl st')
 
-/-- The homogeneous element type of a writable or readonly array type. -/
+/-- Whether a clause can be inhabited by an object value (not a primitive). -/
+private def nonPrimitiveClause : PositiveNormalization.Clause (Ty ι) → Bool
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .symbol => false
+  | _ => true
+
+private theorem clauseSem_nonPrimitive_of_obj {G : NormalGraph ι} {c : PositiveNormalization.Clause (Ty ι)}
+    {m : Nat} {W : WorldT m} {fs : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (h : clauseSem G c m W (.objAt fs cd oid)) : nonPrimitiveClause c = true := by
+  cases c with
+  | nul => exact absurd h.1 (by simp [semWithArgs, nulT])
+  | undef => exact absurd h.1 (by simp [semWithArgs, undefT])
+  | bool => exact absurd h.1 (by simp [semWithArgs, boolT])
+  | boolLit b => cases b <;> exact absurd h.1 (by simp [semWithArgs])
+  | num => exact absurd h.1 (by simp [semWithArgs, numT])
+  | numLit _ => exact absurd h.1 (by simp [semWithArgs])
+  | str => exact absurd h.1 (by simp [semWithArgs, strT])
+  | strLit _ => exact absurd h.1 (by simp [semWithArgs])
+  | bigint => exact absurd h.1 (by simp [semWithArgs, bigintT])
+  | symbol => exact absurd h.1 (by simp [semWithArgs, symbolT])
+  | _ => rfl
+
+/-- The homogeneous element type of a writable or readonly array type (including
+unions with primitive types such as `T[] | null`). -/
 @[nospecialize] def arrayElemType (G : NormalGraph ι) (R : Ty ι) : Option (Ty ι) :=
-  match expand G R with
+  match (expand G R).filter nonPrimitiveClause with
   | [.refs fs [] vs _ _ _ _] =>
     match ((Stored.views fs).lookup arraySpineKey).orElse fun _ => vs.lookup arraySpineKey with
     | some S => match expand G S with
@@ -5228,14 +5383,14 @@ theorem elementWrite_post4 {Ξ T : Fam} {P : Heap → Prop}
     | none => none
   | _ => none
 
-/-- An element stored in a homogeneous array of element type `E` satisfies
-`meaning G E` two levels below the array's budget. -/
-theorem arrayElemType_sound {G : NormalGraph ι} {R E : Ty ι} {m : Nat} {W : WorldT (m + 4)} {h : Heap}
-    {u w : Val} {st j l : Nat} {ls : List (Option Nat)}
-    (hc : arrayElemType G R = some E) (hu : meaning G R (m + 4) W u) (hh : HeapOk (m + 4) W h)
-    (hst : Footprints.spineOf u = some st) (hls : h[st]? = some (.arr ls))
-    (hl : ls[j]? = some (some l)) (hw : h[l]? = some w) :
-    meaning G E (m + 2) (trunc (m + 2) (by omega) W) w := by
+private theorem arrayElemType_obj {G : NormalGraph ι} {R E : Ty ι} {m : Nat} {W : WorldT (m + 4)}
+    {fs0 : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (hc : arrayElemType G R = some E) (hu : meaning G R (m + 4) W (.objAt fs0 cd oid)) :
+    ∃ (flds : List (PropKey × Nat)) (l0 : Nat) (c : Ctr (m + 4)) (oid' : Nat) (S : Ty ι) (ro : Bool) (pr : ArrayPresence),
+      Tm.objAt fs0 cd oid = .objAt flds .absent oid' ∧ flds.lookup arraySpineKey = some l0 ∧
+      lookup W l0 = some c ∧
+      (∀ (i : Nat) (hi : i < m + 4) (W' : WorldT i) (v : Val), c i hi W' v → meaning G S i W' v) ∧
+      expand G S = [.list ⟨[], [], some E, ro, pr⟩ []] := by
   unfold arrayElemType at hc
   split at hc
   case h_2 => cases hc
@@ -5247,39 +5402,58 @@ theorem arrayElemType_sound {G : NormalGraph ι} {R E : Ty ι} {m : Nat} {W : Wo
   case h_2 => cases hc
   rename_i ro pr hT
   cases hc
-  have hr : Represents G R (.refs fs [] vs os ms ks st_keys) := hexp
-  have hsem := (represents_raw hr _ W _) hu
-  obtain ⟨flds, l0, c, oid, hobj, hf, hlc, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l0 : Nat) (c : Ctr (m + 4)) (oid : Nat),
-      u = .objAt flds .absent oid ∧ flds.lookup arraySpineKey = some l0 ∧ lookup W l0 = some c ∧
-      ∀ (i : Nat) (hi : i < m + 4) (W' : WorldT i) (v : Val), c i hi W' v → meaning G S i W' v := by
-    cases hfs : (Stored.views fs).lookup arraySpineKey with
-    | some S' =>
-      rw [hfs] at hS; simp only [Option.orElse_some, Option.some.injEq] at hS; subst hS
-      obtain ⟨_, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hfs)
-      obtain ⟨flds, l0, c, oid, hobj, hf, hlc, hag⟩ :=
-        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S', hm, rfl⟩) hsem.1.1
-      exact ⟨flds, l0, c, oid, hobj, hf, hlc, fun i hi W' v hv => (hag i hi W' v).mp hv⟩
-    | none =>
-      rw [hfs] at hS; simp only [Option.orElse_none] at hS
-      exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
+  have hmem_filt : PositiveNormalization.Clause.refs fs [] vs os ms ks st_keys ∈
+      (expand G R).filter nonPrimitiveClause := by rw [hexp]; simp
+  have hplain := plain_of_mem_expand (List.mem_filter.mp hmem_filt).1
+  obtain ⟨c0, hc0_mem, hc0_sem⟩ := (expand_sem G R hplain (m + 4) W _).mp hu
+  have hc0_filt : c0 ∈ (expand G R).filter nonPrimitiveClause :=
+    List.mem_filter.mpr ⟨hc0_mem, clauseSem_nonPrimitive_of_obj hc0_sem⟩
+  rw [hexp, List.mem_singleton] at hc0_filt
+  subst hc0_filt
+  have hsem := hc0_sem.1
+  cases hfs : (Stored.views fs).lookup arraySpineKey with
+  | some S' =>
+    rw [hfs] at hS; simp only [Option.orElse_some, Option.some.injEq] at hS; subst hS
+    obtain ⟨_, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hfs)
+    obtain ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S', hm, rfl⟩) hsem.1.1
+    exact ⟨flds, l0, c, oid', S', ro, pr, hobj, hf, hlc, fun i hi W' v hv => (hag i hi W' v).mp hv, hT⟩
+  | none =>
+    rw [hfs] at hS; simp only [Option.orElse_none] at hS
+    obtain ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩ :=
+      viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
         (by simp [arraySpineKey, lengthKey]) hsem.2.1
-  have hst0 : l0 = st := by
-    rw [hobj] at hst; simp only [Footprints.spineOf, Footprints.fieldsOf] at hst
-    rw [hf] at hst; cases hst; rfl
-  subst hst0
-  obtain ⟨v0, hv0, hvc⟩ := hh.1.2 l0 c hlc
-  rw [hls] at hv0; cases hv0
-  have hsp : meaning G S (m + 3) (trunc (m + 3) (by omega) W) (.arr ls) :=
-    hag (m + 3) (by omega) _ _ (hvc (m + 3) (by omega))
-  have hlist := ((represents_raw (show Represents G S (.list ⟨[], [], some E, ro, pr⟩ []) from hT) _ _ _) hsp).1
-  obtain ⟨ls', heq, -, -, -, -, -, -, hrest, -⟩ := hlist
-  cases heq
-  obtain ⟨E', c', hE', hlk', hag'⟩ := hrest j l (by simp [tupleFams]) hl
-  simp only [tupleFams, Option.map_some, Option.some.injEq] at hE'; subst hE'
-  obtain ⟨c0, hc0, rfl⟩ := lookup_trunc_inv (by omega) W l c' hlk'
-  obtain ⟨w', hw', hwc⟩ := hh.1.2 l c0 hc0
-  rw [hw] at hw'; cases hw'
-  exact (hag' (m + 2) (by omega) (trunc (m + 2) (by omega) W) w).1 (hwc (m + 2) (by omega))
+    exact ⟨flds, l0, c, oid', S, ro, pr, hobj, hf, hlc, hag, hT⟩
+
+/-- An element stored in a homogeneous array of element type `E` satisfies
+`meaning G E` two levels below the array's budget. -/
+theorem arrayElemType_sound {G : NormalGraph ι} {R E : Ty ι} {m : Nat} {W : WorldT (m + 4)} {h : Heap}
+    {u w : Val} {st j l : Nat} {ls : List (Option Nat)}
+    (hc : arrayElemType G R = some E) (hu : meaning G R (m + 4) W u) (hh : HeapOk (m + 4) W h)
+    (hst : Footprints.spineOf u = some st) (hls : h[st]? = some (.arr ls))
+    (hl : ls[j]? = some (some l)) (hw : h[l]? = some w) :
+    meaning G E (m + 2) (trunc (m + 2) (by omega) W) w := by
+  cases u with
+  | objAt fs0 cd oid =>
+    obtain ⟨flds, l0, c, oid', S, ro, pr, hobj, hf, hlc, hag, hT⟩ := arrayElemType_obj hc hu
+    have hst0 : l0 = st := by
+      rw [hobj] at hst; simp only [Footprints.spineOf, Footprints.fieldsOf] at hst
+      rw [hf] at hst; cases hst; rfl
+    subst hst0
+    obtain ⟨v0, hv0, hvc⟩ := hh.1.2 l0 c hlc
+    rw [hls] at hv0; cases hv0
+    have hsp : meaning G S (m + 3) (trunc (m + 3) (by omega) W) (.arr ls) :=
+      hag (m + 3) (by omega) _ _ (hvc (m + 3) (by omega))
+    have hlist := ((represents_raw (show Represents G S (.list ⟨[], [], some E, ro, pr⟩ []) from hT) _ _ _) hsp).1
+    obtain ⟨ls', heq, -, -, -, -, -, -, hrest, -⟩ := hlist
+    cases heq
+    obtain ⟨E', c', hE', hlk', hag'⟩ := hrest j l (by simp [tupleFams]) hl
+    simp only [tupleFams, Option.map_some, Option.some.injEq] at hE'; subst hE'
+    obtain ⟨c0, hc0, rfl⟩ := lookup_trunc_inv (by omega) W l c' hlk'
+    obtain ⟨w', hw', hwc⟩ := hh.1.2 l c0 hc0
+    rw [hw] at hw'; cases hw'
+    exact (hag' (m + 2) (by omega) (trunc (m + 2) (by omega) W) w).1 (hwc (m + 2) (by omega))
+  | _ => simp [Footprints.spineOf, Footprints.fieldsOf] at hst
 
 /-! ### Dense-append heap transition -/
 
@@ -5444,25 +5618,152 @@ indices (`j < xs.length` when `allowParallelA` holds) across a dense append on
         ((allowParallelA && p'.isEmpty && aCls.contains s') || spineDisjointFromA G Γ k a s' p') &&
         (k' != .length || (p'.isEmpty && ep.isEmpty && elemSpinesDisjointFromA G Γ a s')))
 
+/-- Release unconditional guarded facts of `k` whose guard `(s, [], tag)` (at the
+outermost level or immediately under one slot guard) fails when `¬ tag.holds (ρ g)`. -/
+def assumeGuardFalse (k : Knowledge) (g : Nat) (tag : GuardTag) : Knowledge :=
+  let r := HeapLinks.rep (HeapLinks.classes k.links)
+  let rg := r g
+  let extra := k.indices.filterMap fun a => match a.cond, a.fact with
+    | none, .guarded s [] t B =>
+      if t == tag && r s == rg then some { fact := B }
+      else match B with
+        | .guarded s2 [] t2 B2 =>
+          if t2 == tag && r s2 == rg then some { fact := .guarded s [] t B2 } else none
+        | _ => none
+    | _, _ => none
+  if extra.isEmpty then k else { k with indices := k.indices ++ extra.filter (!k.indices.contains ·) }
+
+private theorem assumeGuardFalse_holds {k : Knowledge} {g : Nat} {tag : GuardTag} {ρ : Env} {h : Heap}
+    (hk : Holds k ε ρ h) (hng : ¬ tag.holds (ρ g)) : Holds (assumeGuardFalse k g tag) ε ρ h := by
+  unfold assumeGuardFalse
+  dsimp only
+  split
+  · exact hk
+  · refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+    rcases List.mem_append.mp ha with ha | ha
+    · exact hk.2.2.2.2.2 a ha hc
+    · have ha' := (List.mem_filter.mp ha).1
+      obtain ⟨b, hb, hbm⟩ := List.mem_filterMap.mp ha'
+      have hrep := HeapLinks.rep_eq (HeapLinks.classes_one hk.2.2.1)
+      cases hbc : b.cond with
+      | some _ => simp [hbc] at hbm
+      | none =>
+        have hbf := hk.2.2.2.2.2 b hb (fun _ hc' => by rw [hbc] at hc'; cases hc')
+        cases hfact : b.fact with
+        | guarded s p t B =>
+          cases p with
+          | cons _ _ => simp [hbc, hfact] at hbm
+          | nil =>
+            simp only [hbc, hfact] at hbm
+            split at hbm
+            · rename_i hcond
+              simp only [Option.some.injEq] at hbm; subst hbm
+              simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+              obtain ⟨rfl, hreq⟩ := hcond
+              rw [hfact] at hbf
+              obtain ⟨v, hv, hor⟩ := hbf
+              simp only [readGuard, Option.some.injEq] at hv; subst hv
+              have hsg : ρ s = ρ g := by rw [← hrep s, hreq, hrep g]
+              exact hor.resolve_left (hsg ▸ hng)
+            · cases hB : B with
+              | guarded s2 p2 t2 B2 =>
+                cases p2 with
+                | cons _ _ => simp [hB] at hbm
+                | nil =>
+                  simp only [hB] at hbm
+                  split at hbm
+                  · rename_i hcond2
+                    simp only [Option.some.injEq] at hbm; subst hbm
+                    simp only [Bool.and_eq_true, beq_iff_eq] at hcond2
+                    obtain ⟨rfl, hreq⟩ := hcond2
+                    rw [hfact, hB] at hbf
+                    obtain ⟨v1, hv1, hor1⟩ := hbf
+                    refine ⟨v1, hv1, hor1.imp id fun h2 => ?_⟩
+                    obtain ⟨v2, hv2, hor2⟩ := h2
+                    simp only [readGuard, Option.some.injEq] at hv2; subst hv2
+                    have hsg : ρ s2 = ρ g := by rw [← hrep s2, hreq, hrep g]
+                    exact hor2.resolve_left (hsg ▸ hng)
+                  · cases hbm
+              | _ => simp [hB] at hbm
+        | _ => simp [hbc, hfact] at hbm
+
+/-- Peel leading empty-path slot guards from a fact. -/
+def peelSlotGuards : IndexFact → List (Nat × GuardTag) × IndexFact
+  | .guarded g [] tag B =>
+    let (gs, core) := peelSlotGuards B
+    ((g, tag) :: gs, core)
+  | F => ([], F)
+
+/-- Re-wrap a fact with leading empty-path slot guards. -/
+def wrapSlotGuards (gs : List (Nat × GuardTag)) (F : IndexFact) : IndexFact :=
+  gs.foldr (fun (g, tag) acc => .guarded g [] tag acc) F
+
+private theorem peelSlotGuards_wrap :
+    ∀ {F core : IndexFact} {gs : List (Nat × GuardTag)},
+      peelSlotGuards F = (gs, core) → wrapSlotGuards gs core = F
+  | .guarded g [] tag B, core, gs, h => by
+    simp only [peelSlotGuards] at h
+    cases hp : peelSlotGuards B with
+    | mk gs' core' =>
+      rw [hp] at h; cases h
+      show IndexFact.guarded g [] tag (wrapSlotGuards gs' core') = .guarded g [] tag B
+      rw [peelSlotGuards_wrap hp]
+  | .guarded _ (_ :: _) _ _, _, _, h => by simp [peelSlotGuards] at h; obtain ⟨rfl, rfl⟩ := h; rfl
+  | .index _, _, _, h | .length _ _, _, _, h | .bound _ _ _, _, _, h | .int _, _, _, h
+  | .pastSafe _, _, _, h | .linear _, _, _, h | .either _ _, _, _, h | .element _ _ _, _, _, h
+  | .fieldRead _ _ _, _, _, h | .every _ _ _ _ _, _, _, h | .atIndex _ _ _ _ _, _, _, h
+  | .apart _ _, _, _, h | .spineApart _ _ _ _, _, _, h | .same _ _, _, _, h => by
+    simp [peelSlotGuards] at h; obtain ⟨rfl, rfl⟩ := h; rfl
+
+private theorem wrapSlotGuards_elim {gs : List (Nat × GuardTag)} {F G : IndexFact}
+    {k : Knowledge} {ρ : Env} {h h' : Heap}
+    (hk : Holds k ε ρ h) (hF : (wrapSlotGuards gs F).HoldsAt ε ρ h)
+    (hstep : Holds (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k) ε ρ h →
+      (∀ p ∈ gs, ¬ p.2.holds (ρ p.1)) →
+      F.HoldsAt ε ρ h → G.HoldsAt ε ρ h') :
+    (wrapSlotGuards gs G).HoldsAt ε ρ h' := by
+  induction gs generalizing k with
+  | nil => exact hstep hk (fun _ h => by cases h) hF
+  | cons p rest ih =>
+    obtain ⟨g, tag⟩ := p
+    obtain ⟨v, hv, hor⟩ := hF
+    simp only [readGuard, Option.some.injEq] at hv; subst hv
+    by_cases htg : tag.holds (ρ g)
+    · exact ⟨ρ g, rfl, .inl htg⟩
+    · refine ⟨ρ g, rfl, .inr ?_⟩
+      exact ih (assumeGuardFalse_holds hk htg) (hor.resolve_left htg) fun hk' hrest hF' =>
+        hstep hk' (fun q hq => by
+          rcases List.mem_cons.mp hq with rfl | hq'
+          · exact htg
+          · exact hrest q hq') hF'
+
 /-- Whether an index fact is preserved across a dense append on `a`. -/
 @[nospecialize] def factKeptByDenseAppend [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
     (k : Knowledge) (a : Nat) : IndexFact → Bool
   | .linear F => F.vars.all (termKeptByDenseAppend G Γ k a)
+  | .guarded g [] tag B => factKeptByDenseAppend G Γ (assumeGuardFalse k g tag) a B
   | .guarded _ p _ B => p.all (· != "[]") && factKeptByDenseAppend G Γ k a B
   | .either A B => factKeptByDenseAppend G Γ k a A && factKeptByDenseAppend G Γ k a B
   | .element _ x _ => (HeapLinks.aliases k.links a).contains x || spineDisjointFromA G Γ k a x []
-  | .every s [] stop body =>
-    spineDisjointFromA G Γ k a s [] && termKeptByDenseAppend G Γ k a stop &&
+  | .every s [] start stop body =>
+    spineDisjointFromA G Γ k a s [] &&
+      start.base.all (termKeptByDenseAppend G Γ k a) &&
+      stop.base.all (termKeptByDenseAppend G Γ k a) &&
       body.all (bodyClauseKeptByDenseAppend G Γ k a s false)
+  | .atIndex s [] idx _ body =>
+    spineDisjointFromA G Γ k a s [] && termKeptByDenseAppend G Γ k a idx &&
+      bodyClauseKeptByDenseAppend G Γ k a s false (.clause body)
   | _ => false
 
-/-- Guard tags from both `guardTags k` and `valuesAt G Γ k` on bare slots. -/
-@[nospecialize] def denseTags [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) :
-    Nat → List String → GuardTag → Bool :=
+/-- Guard tags from `guardTags k`, `valuesAt G Γ k`, and any assumed-false leading guards `gs`. -/
+@[nospecialize] def denseTags [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge)
+    (gs : List (Nat × GuardTag) := []) : Nat → List String → GuardTag → Bool :=
+  let r := HeapLinks.rep (HeapLinks.classes k.links)
   fun s p t => guardTags k s p t ||
-    (p.isEmpty && match HeapExpressionRules.valuesAt G Γ k s with
+    (p.isEmpty && (gs.any (fun (g, tg) => tg.complement == t && r s == r g) ||
+      match HeapExpressionRules.valuesAt G Γ k s with
       | some V => onlyTag V t
-      | none => false)
+      | none => false))
 
 /-- Whether slot `r` is known not to hold `undefined` (by `valuesAt`). -/
 @[nospecialize] def slotNotUndef [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (r : Nat) : Bool :=
@@ -5515,20 +5816,59 @@ the quantified array's element and `resolveParallelAppend` for parallel arrays. 
     let b' ← bodyClauseForAppend K G Γ k a aCls i selfSlot parWritten b
     pure (.guarded r' ep tag b')
 
+/-- Translate a `Bound` variable from a clause over `a` (with `selfSlot` at `i`) into a `Bound`
+variable over a single parallel array in class `s'Cls` at index `i`. -/
+private def boundForAtIndex (s'Cls : List Nat) (i selfSlot : Nat) : Bound → Option Bound
+  | .index => some (.free (.value i))
+  | .elem => some (.free (.value selfSlot))
+  | .offset _ => none
+  | .project kd ep => some (.free (.now kd selfSlot ep))
+  | .parallel s'' [] kd ep =>
+    if s'Cls.contains s'' then some (if ep.isEmpty && kd == .value then .elem else .project kd ep)
+    else none
+  | .parallel _ (_ :: _) _ _ => none
+  | .free t => some (.free t)
+
+/-- Whether every arm of a linear body clause reads the array element (forcing a present cell). -/
+private def clauseReadsElem : LinearClause Bound → Bool
+  | .atom F => F.vars.any fun | .elem | .project _ _ => true | _ => false
+  | .either A B => clauseReadsElem A && clauseReadsElem B
+
+/-- Express a body clause over `a` referencing a single parallel array `s'` apart from `a`
+at index `i` as a guarded `atIndex` fact on `s'`, so both `element` witnesses and covering
+interval `every` facts on `s'` can discharge it without an unconditional `element` read. -/
+@[nospecialize] def bodyClauseAsAtIndex [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (k : Knowledge) (a i selfSlot : Nat) : BodyClause → Option IndexFact
+  | .guarded (.self ep) tag b =>
+    (bodyClauseAsAtIndex G Γ k a i selfSlot b).map (.guarded selfSlot ep tag)
+  | .guarded (.parallel s' [] []) tag (.clause c) =>
+    if (tag == .null || tag == .tru || tag == .fls) && spineDisjointFromA G Γ k a s' [] then
+      let s'Cls := HeapLinks.aliases k.links s'
+      match c.mapVars (boundForAtIndex s'Cls i selfSlot) with
+      | some c' => if clauseReadsElem c' then some (.atIndex s' [] (.value i) (some tag) c') else none
+      | none => none
+    else none
+  | _ => none
+
 /-- Whether every clause in `body` instantiates at the appended index `i`, is
 entailed by `k` (via `indicesCheckWith`), and survives the dense append on `a`
 (`factKeptByDenseAppend`). -/
 @[nospecialize] def bodyHoldsAtAppend [DecidableEq ι] (K : Linear.Known Term) (G : NormalGraph ι)
-    (Γ : List (Ty ι)) (k : Knowledge) (a : Nat) (aCls : List Nat) (i selfSlot : Nat)
-    (parWritten : Option Nat) (body : List BodyClause) : Bool :=
-  let tags := denseTags G Γ k
+    (Γ : List (Ty ι)) (k : Knowledge) (gs : List (Nat × GuardTag)) (a : Nat) (aCls : List Nat)
+    (i selfSlot : Nat) (parWritten : Option Nat) (body : List BodyClause) : Bool :=
+  let tags := denseTags G Γ k gs
   let M := HeapLinks.aliases k.links
   body.all fun B =>
-    match bodyClauseForAppend K G Γ k a aCls i selfSlot parWritten B with
-    | some F =>
-      indicesCheckWith tags M k.links k.indices [{ fact := F }] none &&
-        factKeptByDenseAppend G Γ k a F
-    | none => false
+    let direct := match bodyClauseForAppend K G Γ k a aCls i selfSlot parWritten B with
+      | some F =>
+        indicesCheckWith tags M k.links k.indices [{ fact := F }] none &&
+          factKeptByDenseAppend G Γ k a F
+      | none => false
+    direct || (parWritten.isNone && match bodyClauseAsAtIndex G Γ k a i selfSlot B with
+      | some F =>
+        indicesCheckWith tags M k.links k.indices [{ fact := F }] none &&
+          factKeptByDenseAppend G Γ k a F
+      | none => false)
 
 /-- Whether a quantified body references any array of `aCls` in parallel. -/
 def bodyMentionsParallel (aCls : List Nat) (body : List BodyClause) : Bool :=
@@ -5536,16 +5876,20 @@ def bodyMentionsParallel (aCls : List Nat) (body : List BodyClause) : Bool :=
     B.targets.any (fun | .parallel s' [] _ => aCls.contains s' | _ => false) ||
     B.vars.any (fun | .parallel s' [] _ _ => aCls.contains s' | _ => false)
 
+private def knownAfterGuards (K : Linear.Known Term) (gs : List (Nat × GuardTag)) (k' : Knowledge) : Linear.Known Term :=
+  if gs.isEmpty then K else knownOf k'.indices
+
 /-- The index atoms a dense-append bounded write `a[i] = v` (with `a.length ≤ i`
 entailed by `k`) produces and preserves:
 1. `element v a i`;
 2. facts of `k` untouched by `a`'s spine (`factKeptByDenseAppend`);
-3. for each unconditional `every s [] stop body` with `i ≤ stop`:
-   - when `s` aliases `a`, preserves the prefix at `.value i` and extends to
-     `.length s` when `v` satisfies `body` at `i`;
+3. for each unconditional (optionally slot-guarded) `every s [] start stop body`
+   with `start` kept and `i ≤ stop`:
+   - when `s` aliases `a`, preserves the interval `[start, i)` and extends to
+     `[start, s.length)` when `v` satisfies `body` at `i`;
    - when `s` is apart from `a` and `body` references `a` in parallel, extends
-     to `.length a` (and `.length s` when `s.length ≤ i + 1`) using `element r s i`
-     when `(r, v)` satisfies `body` at `i`. -/
+     to `[start, a.length)` (and `[start, s.length)` when `s.length ≤ i + 1`)
+     using `element r s i` when `(r, v)` satisfies `body` at `i`. -/
 @[nospecialize] def denseAppendAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
     (k : Knowledge) (a i v : Nat) : List IndexAtom :=
   match Γ[a]? with
@@ -5562,26 +5906,33 @@ entailed by `k`) produces and preserves:
       else
         let elemAtom : IndexAtom := { fact := .element v a i }
         let keptAtoms := k.indices.filter fun atom => factKeptByDenseAppend G Γ k a atom.fact
+        let iB := IndexBound.ofTerm (.value i)
         let everyAtoms := k.indices.flatMap fun atom =>
           if atom.cond.isSome then []
-          else match atom.fact with
-            | .every s [] stop body =>
-              if !(termDefined k.indices stop && K.entails (.le [(.value i, 1), (stop, -1)] 0)) then []
+          else
+            let (gs, core) := peelSlotGuards atom.fact
+            match core with
+            | .every s [] start stop body =>
+              let k' := gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k
+              let K' := knownAfterGuards K gs k'
+              if !(start.defined k'.indices && stop.defined k'.indices &&
+                  start.base.all (termKeptByDenseAppend G Γ k' a) &&
+                  K'.entails (iB.leFact stop)) then []
               else if aCls.contains s then
-                if body.all (bodyClauseKeptByDenseAppend G Γ k a s true) then
-                  { fact := .every s [] (.value i) body } ::
-                    (if bodyHoldsAtAppend K G Γ k a aCls i v none body then
-                      [{ fact := .every s [] (.length s) body }] else [])
+                if body.all (bodyClauseKeptByDenseAppend G Γ k' a s true) then
+                  { fact := wrapSlotGuards gs (.every s [] start iB body) } ::
+                    (if bodyHoldsAtAppend K' G Γ k' gs a aCls i v none body then
+                      [{ fact := wrapSlotGuards gs (.every s [] start (.ofTerm (.length s)) body) }] else [])
                 else []
-              else if spineDisjointFromA G Γ k a s [] && bodyMentionsParallel aCls body &&
-                  body.all (bodyClauseKeptByDenseAppend G Γ k a s true) then
-                match parallelSlot K k.links k.indices s [] i with
+              else if spineDisjointFromA G Γ k' a s [] && bodyMentionsParallel aCls body &&
+                  body.all (bodyClauseKeptByDenseAppend G Γ k' a s true) then
+                match parallelSlot K' k'.links k'.indices s [] i with
                 | some r =>
-                  if slotNotUndef G Γ k r && bodyHoldsAtAppend K G Γ k a aCls i r (some v) body then
-                    { fact := .every s [] (.length a) body } ::
-                      (if termDefined k.indices (.length s) &&
-                          K.entails (.le [(.length s, 1), (.value i, -1)] 1) then
-                        [{ fact := .every s [] (.length s) body }] else [])
+                  if slotNotUndef G Γ k' r && bodyHoldsAtAppend K' G Γ k' gs a aCls i r (some v) body then
+                    { fact := wrapSlotGuards gs (.every s [] start (.ofTerm (.length a)) body) } ::
+                      (if termDefined k'.indices (.length s) &&
+                          K'.entails (.le [(.length s, 1), (.value i, -1)] 1) then
+                        [{ fact := wrapSlotGuards gs (.every s [] start (.ofTerm (.length s)) body) }] else [])
                   else []
                 | none => []
               else []
@@ -5649,42 +6000,22 @@ private theorem elemSpinesDisjointFromA_ne [DecidableEq ι] {G : NormalGraph ι}
       simp only [hEs] at hdisj
       -- Extract `Footprints.spineOf (ρ s) = some st` and `h[st]? = some (.arr ls)` from `arrayElemType`.
       have hsp_arr : Footprints.spineOf (ρ s) = some st ∧ h[st]? = some (.arr ls) := by
-        have hEs0 := hEs
-        unfold arrayElemType at hEs0
-        split at hEs0
-        case h_2 => cases hEs0
-        rename_i fs vs os ms ks st_keys hexp
-        split at hEs0
-        case h_2 => cases hEs0
-        rename_i S hS
-        split at hEs0
-        case h_2 => cases hEs0
-        rename_i ro pr hT
-        cases hEs0
-        have hr : Represents G R (.refs fs [] vs os ms ks st_keys) := hexp
-        have hsem := (represents_raw hr _ W _) (he.2 s R hRs)
-        obtain ⟨flds, l0, c, oid, hobj, hf, hlc, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l0 : Nat) (c : Ctr (m + 4)) (oid : Nat),
-            ρ s = .objAt flds .absent oid ∧ flds.lookup arraySpineKey = some l0 ∧ lookup W l0 = some c ∧
-            ∀ (i : Nat) (hi : i < m + 4) (W' : WorldT i) (v : Val), c i hi W' v → meaning G S i W' v := by
-          cases hfs : (Stored.views fs).lookup arraySpineKey with
-          | some S' =>
-            rw [hfs] at hS; simp only [Option.orElse_some, Option.some.injEq] at hS; subst hS
-            obtain ⟨_, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hfs)
-            obtain ⟨flds, l0, c, oid, hobj, hf, hlc, hag⟩ :=
-              recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S', hm, rfl⟩) hsem.1.1
-            exact ⟨flds, l0, c, oid, hobj, hf, hlc, fun i hi W' v hv => (hag i hi W' v).mp hv⟩
-          | none =>
-            rw [hfs] at hS; simp only [Option.orElse_none] at hS
-            exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
-              (by simp [arraySpineKey, lengthKey]) hsem.2.1
-        have hsp0 : Footprints.spineOf (ρ s) = some l0 := by simp [hobj, Footprints.spineOf, Footprints.fieldsOf, hf]
-        have heq : l0 = st := by rw [elementsOf_spine hsp0] at hel; cases hel; rfl
-        subst heq
-        obtain ⟨u, hu, huc⟩ := hh.1.2 l0 c hlc
-        have hSsem := hag (m + 3) (by omega) _ _ (huc (m + 3) (by omega))
-        obtain ⟨ls0, rfl, -⟩ := ((represents_raw (show Represents G S (.list ⟨[], [], some E_s, ro, pr⟩ []) from hT) _ _ _) hSsem).1
-        rw [hu] at hls; simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls; subst hls
-        exact ⟨hsp0, hu⟩
+        cases hρs : ρ s with
+        | objAt fs0 cd oid =>
+          have hmem := he.2 s R hRs
+          rw [hρs] at hmem hel
+          obtain ⟨flds, l0, c, oid', S, ro, pr, hobj, hf, hlc, hag, hT⟩ := arrayElemType_obj hEs hmem
+          cases hobj
+          have hsp0 : Footprints.spineOf (.objAt fs0 .absent oid) = some l0 := by
+            simp [Footprints.spineOf, Footprints.fieldsOf, hf]
+          have heq : l0 = st := by rw [elementsOf_spine hsp0] at hel; cases hel; rfl
+          subst heq
+          obtain ⟨u, hu, huc⟩ := hh.1.2 l0 c hlc
+          have hSsem := hag (m + 3) (by omega) _ _ (huc (m + 3) (by omega))
+          obtain ⟨ls0, rfl, -⟩ := ((represents_raw (show Represents G S (.list ⟨[], [], some E_s, ro, pr⟩ []) from hT) _ _ _) hSsem).1
+          rw [hu] at hls; simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls; subst hls
+          exact ⟨hsp0, hu⟩
+        | _ => rw [hρs] at hel; simp [elementsOf] at hel
       have hwm := arrayElemType_sound hEs (he.2 s R hRs) hh hsp_arr.1 hsp_arr.2 hl hw
       have hav : meaning G R_a (m + 4) (trunc (m + 4) (Nat.le_refl _) W) (ρ a) :=
         (meaning_adm G R_a).down_le (m + 4) (m + 4) (Nat.le_refl _) W _ (he.2 a R_a hRa)
@@ -5950,28 +6281,56 @@ private theorem bodyClauseKeptByDenseAppend_holds [DecidableEq ι] {G : NormalGr
                       have hne := elemSpinesDisjointFromA_ne he hh hsa hed hel' hls2 hl hv hsw
                       exact lengthOf_of_spine hsw (by rw [hda.kept st_w (List.getElem?_eq_some_iff.mp hlsw).1 hne]; exact hlsw) hmax
 
-private theorem factKeptByDenseAppend_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+private theorem boundKeptByDenseAppend_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {k : Knowledge} {a target m : Nat}
+    {W : WorldT (m + 4)} {ρ : Env} {h h' : Heap} {xs : List (Option Nat)}
+    {value : Val} {bd : IndexBound} {z : Int}
+    (hda : DenseAppendHeap h h' target xs value)
+    (htarg : roleAt W target = some (.spine .array))
+    (he : EnvOk G Γ ρ (m + 4) W) (hk : Holds k ε ρ h) (hh : HeapOk (m + 4) W h) (hρ : RootsOk W ρ)
+    (hsa : Footprints.spineOf (ρ a) = some target)
+    (hkept : bd.base.all (termKeptByDenseAppend G Γ k a) = true)
+    (hbd : bd.eval ε ρ h = some z) : bd.eval ε ρ h' = some z := by
+  cases bd with
+  | mk bs off =>
+    cases bs with
+    | none => exact hbd
+    | some t =>
+      simp only [Option.all_some] at hkept
+      simp only [IndexBound.eval, Option.map_eq_some_iff] at hbd ⊢
+      obtain ⟨v, hv, rfl⟩ := hbd
+      exact ⟨v, termKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hkept hv, rfl⟩
+
+private theorem factKeptByDenseAppend_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {a target m : Nat}
     {W : WorldT (m + 4)} {ρ : Env} {h h' : Heap} {xs : List (Option Nat)}
     {value : Val}
     (hda : DenseAppendHeap h h' target xs value)
     (htarg : roleAt W target = some (.spine .array))
-    (he : EnvOk G Γ ρ (m + 4) W) (hk : Holds k ε ρ h) (hh : HeapOk (m + 4) W h) (hρ : RootsOk W ρ)
+    (he : EnvOk G Γ ρ (m + 4) W) (hh : HeapOk (m + 4) W h) (hρ : RootsOk W ρ)
     (hsa : Footprints.spineOf (ρ a) = some target) :
-    ∀ {F : IndexFact}, factKeptByDenseAppend G Γ k a F = true → F.HoldsAt ε ρ h → F.HoldsAt ε ρ h'
-  | .linear L, hkept, hF => by
+    ∀ {F : IndexFact} {k : Knowledge}, Holds k ε ρ h → factKeptByDenseAppend G Γ k a F = true →
+      F.HoldsAt ε ρ h → F.HoldsAt ε ρ h'
+  | .linear L, k, hk, hkept, hF => by
     simp only [factKeptByDenseAppend, List.all_eq_true] at hkept
     refine LinearClause.holdsAt_extend (F := .atom L) (fun t ht z hz =>
       termKeptByDenseAppend_holds hda htarg he hk hh hρ hsa (hkept t ht) hz) hF
-  | .guarded s p tag B, hkept, ⟨w, hw, hor⟩ => by
+  | .guarded g [] tag B, k, hk, hkept, ⟨w, hw, hor⟩ => by
+    simp only [factKeptByDenseAppend] at hkept
+    simp only [readGuard, Option.some.injEq] at hw; subst hw
+    by_cases htg : tag.holds (ρ g)
+    · exact ⟨ρ g, rfl, .inl htg⟩
+    · exact ⟨ρ g, rfl, .inr (factKeptByDenseAppend_holds hda htarg he hh hρ hsa
+        (assumeGuardFalse_holds hk htg) hkept (hor.resolve_left htg))⟩
+  | .guarded s (f :: p) tag B, k, hk, hkept, ⟨w, hw, hor⟩ => by
     simp only [factKeptByDenseAppend, Bool.and_eq_true] at hkept
     exact ⟨w, readGuard_denseAppend hda hh htarg hkept.1 (hρ s) hw,
-      hor.imp id (factKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hkept.2)⟩
-  | .either A B, hkept, hor => by
+      hor.imp id (factKeptByDenseAppend_holds hda htarg he hh hρ hsa hk hkept.2)⟩
+  | .either A B, k, hk, hkept, hor => by
     simp only [factKeptByDenseAppend, Bool.and_eq_true] at hkept
-    exact hor.imp (factKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hkept.1)
-      (factKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hkept.2)
-  | .element r x idxSlot, hkept, ⟨st, ls, b, idx, hel, hls, hbi, hsi, hlt, hpres, hhole⟩ => by
+    exact hor.imp (factKeptByDenseAppend_holds hda htarg he hh hρ hsa hk hkept.1)
+      (factKeptByDenseAppend_holds hda htarg he hh hρ hsa hk hkept.2)
+  | .element r x idxSlot, k, hk, hkept, ⟨st, ls, b, idx, hel, hls, hbi, hsi, hlt, hpres, hhole⟩ => by
     simp only [factKeptByDenseAppend, Bool.or_eq_true, List.contains_iff_mem] at hkept
     rcases hkept with hal | hdisj
     · have hxeq : ρ x = ρ a := HeapLinks.aliases_eq hk.2.2.1 hal
@@ -5988,34 +6347,185 @@ private theorem factKeptByDenseAppend_holds [DecidableEq ι] {G : NormalGraph ι
       refine ⟨st, ls, b, idx, hel, by rw [hst_eq]; exact hls, hbi, hsi, hlt, fun l hl => ?_, hhole⟩
       rw [elemCell_denseAppend hda hh htarg hls (List.mem_of_getElem? hl)]
       exact hpres l hl
-  | .every s [] stop body, hkept, ⟨w, st, ls, n0, hw, hel, hls, hstop, hall⟩ => by
+  | .every s [] start stop body, k, hk, hkept, ⟨w, st, ls, m0, n0, hw, hel, hls, hstart, hstop, hall⟩ => by
     simp only [factKeptByDenseAppend, Bool.and_eq_true, List.all_eq_true] at hkept
-    obtain ⟨⟨hdisj, hstK⟩, hbodyK⟩ := hkept
+    obtain ⟨⟨⟨hdisj, hst0K⟩, hst1K⟩, hbodyK⟩ := hkept
     simp only [readPath, Option.some.injEq] at hw; subst hw
     have hst_eq := elementsOf_denseAppend_eq hda htarg he hk hh hρ hsa rfl hel hdisj
-    refine ⟨ρ s, st, ls, n0, rfl, hel, by rw [hst_eq]; exact hls,
-      termKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hstK hstop, fun j hj B hB => ?_⟩
+    refine ⟨ρ s, st, ls, m0, n0, rfl, hel, by rw [hst_eq]; exact hls,
+      boundKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hst0K hstart,
+      boundKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hst1K hstop,
+      fun j hlo hj B hB => ?_⟩
     exact bodyClauseKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hel hls
-      (fun _ _ h => h) (fun h => by cases h) (hbodyK B hB) (hall j hj B hB)
-  | .every _ (_ :: _) _ _, hkept, _ => by simp [factKeptByDenseAppend] at hkept
-  | .index _, hkept, _ | .length _ _, hkept, _ | .bound _ _ _, hkept, _ | .int _, hkept, _
-  | .pastSafe _, hkept, _ | .fieldRead _ _ _, hkept, _ | .atIndex _ _ _ _ _, hkept, _
-  | .apart _ _, hkept, _ | .spineApart _ _ _ _, hkept, _ | .same _ _, hkept, _ => by
+      (fun _ _ h => h) (fun h => by cases h) (hbodyK B hB) (hall j hlo hj B hB)
+  | .atIndex s [] idx guard body, k, hk, hkept, ⟨w, st, ls, i0, hw, hel, hls, hidx, hlt, hrest⟩ => by
+    simp only [factKeptByDenseAppend, Bool.and_eq_true] at hkept
+    obtain ⟨⟨hdisj, hidxK⟩, hbodyK⟩ := hkept
+    simp only [readPath, Option.some.injEq] at hw; subst hw
+    have hst_eq := elementsOf_denseAppend_eq hda htarg he hk hh hρ hsa rfl hel hdisj
+    refine ⟨ρ s, st, ls, i0, rfl, hel, by rw [hst_eq]; exact hls,
+      termKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hidxK hidx, hlt, ?_⟩
+    have hbodyH : body.HoldsAt (boundValue ε ρ h ls i0) → body.HoldsAt (boundValue ε ρ h' ls i0) :=
+      bodyClauseKeptByDenseAppend_holds hda htarg he hk hh hρ hsa hel hls (fun _ _ h => h) (fun h => by cases h) hbodyK
+    cases guard with
+    | none => exact hbodyH hrest
+    | some g =>
+      rcases hrest with ⟨l, v, hl, hv, hgv⟩ | ⟨hl, hgu⟩ | hB
+      · exact .inl ⟨l, v, hl, by rw [elemCell_denseAppend hda hh htarg hls (List.mem_of_getElem? hl)]; exact hv, hgv⟩
+      · exact .inr (.inl ⟨hl, hgu⟩)
+      · exact .inr (.inr (hbodyH hB))
+  | .every _ (_ :: _) _ _ _, _, _, hkept, _ => by simp [factKeptByDenseAppend] at hkept
+  | .atIndex _ (_ :: _) _ _ _, _, _, hkept, _ => by simp [factKeptByDenseAppend] at hkept
+  | .index _, _, _, hkept, _ | .length _ _, _, _, hkept, _ | .bound _ _ _, _, _, hkept, _ | .int _, _, _, hkept, _
+  | .pastSafe _, _, _, hkept, _ | .fieldRead _ _ _, _, _, hkept, _
+  | .apart _ _, _, _, hkept, _ | .spineApart _ _ _ _, _, _, hkept, _ | .same _ _, _, _, hkept, _ => by
     simp [factKeptByDenseAppend] at hkept
 
 private theorem denseTags_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) :
-    ∀ s p t, denseTags G Γ k s p t = true → ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v := by
+    {gs : List (Nat × GuardTag)} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h)
+    (hgs : ∀ p ∈ gs, ¬ p.2.holds (ρ p.1)) :
+    ∀ s p t, denseTags G Γ k gs s p t = true → ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v := by
   intro s p t ht
   simp only [denseTags, Bool.or_eq_true, Bool.and_eq_true, List.isEmpty_iff] at ht
-  rcases ht with hgt | ⟨rfl, hval⟩
+  rcases ht with hgt | ⟨rfl, hgm | hval⟩
   · exact guardTags_sound hk s p t hgt
+  · obtain ⟨⟨g, tg⟩, hmem, hm⟩ := List.any_eq_true.mp hgm
+    simp only [Bool.and_eq_true, beq_iff_eq] at hm
+    obtain ⟨rfl, hreq⟩ := hm
+    have hrep := HeapLinks.rep_eq (HeapLinks.classes_one hk.2.2.1)
+    have hsg : ρ s = ρ g := by rw [← hrep s, hreq, hrep g]
+    have hnot := hgs (g, tg) hmem
+    refine ⟨ρ s, rfl, ?_⟩
+    rw [hsg]
+    revert hnot
+    cases tg <;> cases ρ g <;> simp [GuardTag.complement, GuardTag.holds]
   · cases hV : HeapExpressionRules.valuesAt G Γ k s with
     | none => simp [hV] at hval
     | some V =>
       rw [hV] at hval
       exact ⟨ρ s, rfl, onlyTag_mem hval (HeapExpressionRules.valuesAt_sound hV he hk)⟩
+
+private theorem clauseReadsElem_present {ε : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
+    ∀ {c : LinearClause Bound}, clauseReadsElem c = true → c.HoldsAt (boundValue ε ρ h ls i) →
+      ∃ l v, ls[i]? = some (some l) ∧ h[l]? = some v
+  | .atom F, hre, hF => by
+    simp only [clauseReadsElem, List.any_eq_true] at hre
+    obtain ⟨b, hb, hbm⟩ := hre
+    have hdef := hF.1 b hb
+    cases b with
+    | elem =>
+      simp only [boundValue, elementInt] at hdef
+      cases hli : ls[i]? with
+      | none => simp [hli] at hdef
+      | some o =>
+        cases o with
+        | none => simp [hli] at hdef
+        | some l =>
+          simp only [hli] at hdef
+          obtain ⟨val, hval⟩ := Option.isSome_iff_exists.mp hdef
+          obtain ⟨v, hv, -⟩ := Option.bind_eq_some_iff.mp hval
+          exact ⟨l, v, rfl, hv⟩
+    | project kd ep =>
+      simp only [boundValue] at hdef
+      cases hli : ls[i]? with
+      | none => simp [hli] at hdef
+      | some o =>
+        cases o with
+        | none => simp [hli] at hdef
+        | some l =>
+          simp only [hli] at hdef
+          obtain ⟨val, hval⟩ := Option.isSome_iff_exists.mp hdef
+          obtain ⟨v, hv, -⟩ := Option.bind_eq_some_iff.mp hval
+          exact ⟨l, v, rfl, hv⟩
+    | _ => simp at hbm
+  | .either A B, hre, hF => by
+    simp only [clauseReadsElem, Bool.and_eq_true] at hre
+    exact hF.elim (clauseReadsElem_present hre.1) (clauseReadsElem_present hre.2)
+
+private theorem bodyClauseAsAtIndex_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {k : Knowledge} {a i selfSlot idx : Nat}
+    {ρ : Env} {h h' : Heap} {ls_s : List (Option Nat)} {l_self : Nat}
+    (hk : Holds k ε ρ h)
+    (hidx : intValue (ρ i) = some (idx : Int))
+    (hself_l : ls_s[idx]? = some (some l_self)) (hself_v : h'[l_self]? = some (ρ selfSlot)) :
+    ∀ {B : BodyClause} {F : IndexFact},
+      bodyClauseAsAtIndex G Γ k a i selfSlot B = some F →
+      F.HoldsAt ε ρ h' → B.HoldsAt ε ρ h' ls_s idx
+  | .guarded (.self ep) tag b, F, hinst, hF => by
+    simp only [bodyClauseAsAtIndex, Option.map_eq_some_iff] at hinst
+    obtain ⟨Fb, hFb, rfl⟩ := hinst
+    obtain ⟨w, hrg, hor⟩ := hF
+    exact hor.elim
+      (fun htg => .inl ⟨w, by simp only [ElemTarget.read, hself_l, hself_v, Option.bind_some]; exact hrg, htg⟩)
+      (fun hr => .inr ⟨fun _ => ⟨w, by simp only [ElemTarget.read, hself_l, hself_v, Option.bind_some]; exact hrg⟩,
+        bodyClauseAsAtIndex_sound hk hidx hself_l hself_v hFb hr⟩)
+  | .guarded (.parallel s' [] []) tag (.clause c), F, hinst, hF => by
+    simp only [bodyClauseAsAtIndex] at hinst
+    split at hinst
+    case isFalse => cases hinst
+    rename_i hcond
+    obtain ⟨htagPos, -⟩ := Bool.and_eq_true_iff.mp hcond
+    cases hmap : c.mapVars (boundForAtIndex (HeapLinks.aliases k.links s') i selfSlot) with
+    | none => simp [hmap] at hinst
+    | some c' =>
+      simp only [hmap] at hinst
+      split at hinst
+      case isFalse => cases hinst
+      rename_i hre
+      simp only [Option.some.injEq] at hinst; subst hinst
+      obtain ⟨w, st', ls', i0, hrp, hel', hls', hi0, hlt, hrest⟩ := hF
+      simp only [readPath, Option.some.injEq] at hrp; subst hrp
+      simp only [termValue_value, hidx, Option.some.injEq] at hi0
+      have hieq : i0 = idx := by omega
+      subst hieq
+      rcases hrest with ⟨l, u, hl, hu, htg⟩ | ⟨_, hgu⟩ | hc'
+      · exact .inl ⟨u, by simp [ElemTarget.read, readPath, hel', hls', hl, hu, readGuard], htg⟩
+      · exfalso
+        cases tag <;> simp [GuardTag.holds] at htagPos hgu
+      · obtain ⟨l, u, hl, hu⟩ := clauseReadsElem_present hre hc'
+        refine .inr ⟨fun _ => ⟨u, by simp [ElemTarget.read, readPath, hel', hls', hl, hu, readGuard]⟩, ?_⟩
+        refine (LinearClause.holdsAt_mapVars hmap fun x _ y hy => ?_).mp hc'
+        cases x with
+        | index =>
+          simp only [boundForAtIndex, Option.some.injEq] at hy; subst hy
+          simp only [boundValue, termValue_value, hidx]
+        | elem =>
+          simp only [boundForAtIndex, Option.some.injEq] at hy; subst hy
+          simp only [boundValue, termValue_value, elementInt, hself_l, hself_v, Option.bind_some]
+        | offset _ => simp [boundForAtIndex] at hy
+        | project kd ep =>
+          simp only [boundForAtIndex, Option.some.injEq] at hy; subst hy
+          simp only [boundValue, hself_l, hself_v, Option.bind_some]
+          rw [termValue_now rfl, termValue_now rfl]; rfl
+        | parallel s'' p'' kd ep =>
+          cases p'' with
+          | cons _ _ => simp [boundForAtIndex] at hy
+          | nil =>
+            simp only [boundForAtIndex] at hy
+            split at hy
+            case isFalse => cases hy
+            rename_i hmem
+            have hseq : ρ s'' = ρ s' := HeapLinks.aliases_eq hk.2.2.1 (List.contains_iff_mem.mp hmem)
+            split at hy
+            · rename_i hek
+              simp only [Option.some.injEq] at hy; subst hy
+              simp only [Bool.and_eq_true, List.isEmpty_iff, beq_iff_eq] at hek
+              obtain ⟨rfl, rfl⟩ := hek
+              simp only [boundValue, readPath, hseq, hel', hls', elementInt]
+              cases ls'[i0]? with
+              | none => rfl
+              | some o => cases o with
+                | none => rfl
+                | some l' => cases hv' : h'[l']? with | none => simp [hv'] | some v' => simp only [hv', Option.bind_some]; exact (termValue_value (s := 0) (ρ := fun _ => v')).symm
+            · simp only [Option.some.injEq] at hy; subst hy
+              simp only [boundValue, readPath, hseq, hel', hls']
+        | free t =>
+          simp only [boundForAtIndex, Option.some.injEq] at hy; subst hy; rfl
+  | .clause _, _, hinst, _ => by simp [bodyClauseAsAtIndex] at hinst
+  | .guarded (.parallel _ (_ :: _) _) _ _, _, hinst, _ => by simp [bodyClauseAsAtIndex] at hinst
+  | .guarded (.parallel _ [] (_ :: _)) _ _, _, hinst, _ => by simp [bodyClauseAsAtIndex] at hinst
+  | .guarded (.parallel _ [] []) _ (.guarded ..), _, hinst, _ => by simp [bodyClauseAsAtIndex] at hinst
 
 private theorem slotNotUndef_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
     {r : Nat} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
@@ -6283,55 +6793,91 @@ theorem denseAppendAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
         · rcases List.mem_append.mp hm' with hm_kept | hm_ev
           · -- 2. `factKeptByDenseAppend`
             obtain ⟨ha_mem, hfk⟩ := List.mem_filter.mp hm_kept
-            exact factKeptByDenseAppend_holds hda htarg he hk hh hρ hs0 hfk
+            exact factKeptByDenseAppend_holds hda htarg he hh hρ hs0 hk hfk
               (hk.2.2.2.2.2 atom ha_mem hcond)
           · -- 3. `every` preservation and extension
             obtain ⟨src, hsrc_mem, hflat⟩ := List.mem_flatMap.mp hm_ev
             split at hflat
             · cases hflat
             rename_i hnone
-            have hnone' : src.cond = none := by cases hsc : src.cond <;> simp_all
+            have hnone' : src.cond = none := by
+              cases hsc : src.cond with
+              | none => rfl
+              | some _ => exact absurd (by simp [hsc]) hnone
             have hsrc_H := hk.2.2.2.2.2 src hsrc_mem (fun b hb => by rw [hnone'] at hb; cases hb)
-            cases hsf : src.fact <;> simp only [hsf] at hflat <;> try cases hflat
-            rename_i s_ev p_ev stop body
-            cases p_ev with
-            | cons _ _ => simp at hflat
-            | nil =>
-              rw [hsf] at hsrc_H
-              obtain ⟨w0, st0, ls0, n0, hw0, hel0, hls0, hstop0, hall0⟩ := hsrc_H
-              simp only [readPath, Option.some.injEq] at hw0; subst hw0
-              cases hstop_ok : (termDefined k.indices stop && (knownOf k.indices).entails (.le [(.value i, 1), (stop, -1)] 0)) with
-              | false => simp [hstop_ok] at hflat
-              | true =>
-                simp only [hstop_ok, Bool.not_true, Bool.false_eq_true, ite_false] at hflat
-                obtain ⟨-, hent_stop⟩ := Bool.and_eq_true_iff.mp hstop_ok
-                have hi_le_n0 : (ls.length : Int) ≤ n0 := by
-                  have hent := Linear.Known.entails_sound hK hent_stop
-                  simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, termValue_value, hidx_int,
-                    hidx_eq, hstop0, Option.getD_some] at hent
-                  omega
-                have hbody_at : ∀ selfSlot parWritten,
+            cases hpeel : peelSlotGuards src.fact with
+            | mk gs core =>
+              rw [hpeel] at hflat
+              have hwrap : wrapSlotGuards gs core = src.fact := peelSlotGuards_wrap hpeel
+              cases hsf : core <;> simp only [hsf] at hflat <;> try cases hflat
+              rename_i s_ev p_ev start stop body
+              cases p_ev with
+              | cons _ _ => simp at hflat
+              | nil =>
+                subst hsf
+                rw [← hwrap] at hsrc_H
+                dsimp only at hflat
+                let k' := gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k
+                let K' := knownAfterGuards K gs k'
+                split at hflat
+                · cases hflat
+                rename_i hcond_not
+                have hcond_ok : (start.defined k'.indices && stop.defined k'.indices &&
+                    start.base.all (termKeptByDenseAppend G j.context k' a) &&
+                    K'.entails ((IndexBound.ofTerm (.value i)).leFact stop)) = true := by
+                  simpa only [k', K', K, Bool.not_eq_true', Bool.not_eq_false] using hcond_not
+                obtain ⟨⟨⟨-, -⟩, hstart_kept⟩, hent_stop⟩ := by
+                  simpa only [Bool.and_eq_true] using hcond_ok
+                have hbody_at : ∀ (hk' : Holds k' ε ρ h) (hgs : ∀ p ∈ gs, ¬ p.2.holds (ρ p.1))
+                    (hK' : K'.Holds (termValuation ε ρ h)) selfSlot parWritten,
                     (∀ v0, parWritten = some v0 → ρ v0 = ρ v) →
                     ∀ ls_t l_self,
                     ls_t[ls.length]? = some (some l_self) → h'[l_self]? = some (ρ selfSlot) →
-                    bodyHoldsAtAppend K G j.context k a aCls i selfSlot parWritten body = true →
+                    bodyHoldsAtAppend K' G j.context k' gs a aCls i selfSlot parWritten body = true →
                     ∀ B ∈ body, B.HoldsAt ε ρ h' ls_t ls.length := by
-                  intro selfSlot parWritten hpw ls_t l_self hsl hsv hba B hB
+                  intro hk' hgs hK' selfSlot parWritten hpw ls_t l_self hsl hsv hba B hB
                   have hBc := List.all_eq_true.mp hba B hB
-                  cases hinst : bodyClauseForAppend K G j.context k a aCls i selfSlot parWritten B with
-                  | none => simp [hinst] at hBc
-                  | some F =>
-                    simp only [hinst] at hBc
-                    obtain ⟨hchk, hfk⟩ := Bool.and_eq_true_iff.mp hBc
-                    have hF_h : F.HoldsAt ε ρ h := by
-                      have hres := indicesCheckWith_sound (denseTags_sound he hk)
-                        (fun _ _ hm => HeapLinks.aliases_eq hk.2.2.1 hm) hk.2.2.1 hchk hk.2.2.2.2.2
-                        { fact := F } (List.mem_singleton_self _) (fun _ hc' => by cases hc')
-                      rwa [show PointClaims.mapEnv none ρ = ρ from by funext x; rfl] at hres
-                    have hF_h' := factKeptByDenseAppend_holds hda htarg he hk hh hρ hs0 hfk hF_h
-                    exact hidx_eq ▸ bodyClauseForAppend_sound hda htarg he hk hh hρ hK hs0
-                      (fun x hx => HeapLinks.aliases_eq hk.2.2.1 hx) hpw hidx_int hidx_eq
-                      (hidx_eq ▸ hsl) hsv hinst hF_h'
+                  simp only [Bool.or_eq_true] at hBc
+                  rcases hBc with hdir | hpar_ai
+                  · cases hinst : bodyClauseForAppend K' G j.context k' a aCls i selfSlot parWritten B with
+                    | none => simp [hinst] at hdir
+                    | some F =>
+                      simp only [hinst] at hdir
+                      obtain ⟨hchk, hfk⟩ := Bool.and_eq_true_iff.mp hdir
+                      have hF_h : F.HoldsAt ε ρ h := by
+                        have hres := indicesCheckWith_sound (denseTags_sound he hk' hgs)
+                          (fun _ _ hm => HeapLinks.aliases_eq hk'.2.2.1 hm) hk'.2.2.1 hchk hk'.2.2.2.2.2
+                          { fact := F } (List.mem_singleton_self _) (fun _ hc' => by cases hc')
+                        rwa [show PointClaims.mapEnv none ρ = ρ from by funext x; rfl] at hres
+                      have hF_h' := factKeptByDenseAppend_holds hda htarg he hh hρ hs0 hk' hfk hF_h
+                      exact hidx_eq ▸ bodyClauseForAppend_sound hda htarg he hk' hh hρ hK' hs0
+                        (fun x hx => HeapLinks.aliases_eq hk.2.2.1 hx) hpw hidx_int hidx_eq
+                        (hidx_eq ▸ hsl) hsv hinst hF_h'
+                  · obtain ⟨-, hai⟩ := Bool.and_eq_true_iff.mp hpar_ai
+                    cases hinst : bodyClauseAsAtIndex G j.context k' a i selfSlot B with
+                    | none => simp [hinst] at hai
+                    | some F =>
+                      simp only [hinst] at hai
+                      obtain ⟨hchk, hfk⟩ := Bool.and_eq_true_iff.mp hai
+                      have hF_h : F.HoldsAt ε ρ h := by
+                        have hres := indicesCheckWith_sound (denseTags_sound he hk' hgs)
+                          (fun _ _ hm => HeapLinks.aliases_eq hk'.2.2.1 hm) hk'.2.2.1 hchk hk'.2.2.2.2.2
+                          { fact := F } (List.mem_singleton_self _) (fun _ hc' => by cases hc')
+                        rwa [show PointClaims.mapEnv none ρ = ρ from by funext x; rfl] at hres
+                      have hF_h' := factKeptByDenseAppend_holds hda htarg he hh hρ hs0 hk' hfk hF_h
+                      exact hidx_eq ▸ bodyClauseAsAtIndex_sound hk' hidx_int (hidx_eq ▸ hsl) hsv hinst hF_h'
+                have hK'_of : ∀ (hk' : Holds k' ε ρ h), K'.Holds (termValuation ε ρ h) := fun hk' => by
+                  dsimp only [K', knownAfterGuards]; split
+                  · exact hK
+                  · exact knownOf_holds hk'.2.2.2.2.2
+                have hi_le_stop : ∀ (hk' : Holds k' ε ρ h) {n0 : Int},
+                    stop.eval ε ρ h = some n0 → (ls.length : Int) ≤ n0 := by
+                  intro hk' n0 hstop0
+                  have hent := Linear.Known.entails_sound (hK'_of hk') hent_stop
+                  have hiEval : (IndexBound.ofTerm (.value i)).eval ε ρ h = some (ls.length : Int) := by
+                    simp [IndexBound.ofTerm, IndexBound.eval, termValue_value, hidx_int, hidx_eq]
+                  have hle_ev := IndexBound.leFact_sound hiEval hstop0 hent
+                  omega
                 split at hflat
                 · -- Case 1: `s_ev ∈ aCls` (single-array `every` on `a`)
                   rename_i hsa_ev
@@ -6340,38 +6886,56 @@ theorem denseAppendAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
                   rename_i hbk
                   simp only [List.all_eq_true] at hbk
                   have hs_eq : ρ s_ev = ρ a := HeapLinks.aliases_eq hk.2.2.1 (List.contains_iff_mem.mp hsa_ev)
-                  rw [hs_eq, elementsOf_spine hs0] at hel0; cases hel0
-                  rw [hda.old_spine] at hls0
-                  simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls0; subst hls0
-                  have hprefix : ∀ j0 : Nat, j0 < ls.length → ∀ B ∈ body,
-                      B.HoldsAt ε ρ h' (placeAt ls ls.length h.length) j0 := by
-                    intro j0 hj0 B hB
-                    refine bodyClauseKeptByDenseAppend_holds hda htarg he hk hh hρ hs0
+                  rcases List.mem_cons.mp hflat with rfl | hflat
+                  · -- Interval `[start, i)`
+                    refine wrapSlotGuards_elim hk hsrc_H fun hk' _ hcore_H => ?_
+                    obtain ⟨w0, st0, ls0, m0, n0, hw0, hel0, hls0, hstart0, hstop0, hall0⟩ := hcore_H
+                    simp only [readPath, Option.some.injEq] at hw0; subst hw0
+                    rw [hs_eq, elementsOf_spine hs0] at hel0; cases hel0
+                    rw [hda.old_spine] at hls0
+                    simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls0; subst hls0
+                    have hi_le_n0 := hi_le_stop hk' hstop0
+                    have hstart' := boundKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0 hstart_kept hstart0
+                    refine ⟨ρ s_ev, s, placeAt ls ls.length h.length, m0, ls.length, rfl,
+                      by rw [hs_eq]; exact elementsOf_spine hs0, by rw [hda.new_spine]; rfl,
+                      hstart', by simp [IndexBound.ofTerm, IndexBound.eval, termValue_value, hidx_int, hidx_eq],
+                      fun j0 hlo hj0 B hB => ?_⟩
+                    exact bodyClauseKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0
                       (by rw [hs_eq]; exact elementsOf_spine hs0) (by rw [hda.old_spine]; rfl)
                       (fun d l hl0 => by
                         have hlt0 : j0 + d < ls.length := (List.getElem?_eq_some_iff.mp hl0).1
                         rw [placeAt_getElem?]; simp only [Nat.ne_of_lt hlt0, hlt0, ite_false, ite_true, hl0])
-                      (fun _ => hj0) (hbk B hB) (hall0 j0 (by omega) B hB)
-                  rcases List.mem_cons.mp hflat with rfl | hflat
-                  · -- Prefix at `.value i`
-                    refine ⟨ρ s_ev, s, placeAt ls ls.length h.length, ls.length, rfl,
-                      by rw [hs_eq]; exact elementsOf_spine hs0, by rw [hda.new_spine]; rfl,
-                      by simp [termValue_value, hidx_int, hidx_eq], fun j0 hj0 B hB => hprefix j0 (by omega) B hB⟩
-                  · -- Full extension to `.length s_ev`
+                      (fun _ => by omega) (hbk B hB) (hall0 j0 hlo (by omega) B hB)
+                  · -- Full extension to `[start, s_ev.length)`
                     split at hflat
                     case isFalse => cases hflat
                     rename_i hba
                     simp only [List.mem_singleton] at hflat; subst hflat
-                    refine ⟨ρ s_ev, s, placeAt ls ls.length h.length, (placeAt ls ls.length h.length).length, rfl,
+                    refine wrapSlotGuards_elim hk hsrc_H fun hk' hgs hcore_H => ?_
+                    obtain ⟨w0, st0, ls0, m0, n0, hw0, hel0, hls0, hstart0, hstop0, hall0⟩ := hcore_H
+                    simp only [readPath, Option.some.injEq] at hw0; subst hw0
+                    rw [hs_eq, elementsOf_spine hs0] at hel0; cases hel0
+                    rw [hda.old_spine] at hls0
+                    simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls0; subst hls0
+                    have hi_le_n0 := hi_le_stop hk' hstop0
+                    have hstart' := boundKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0 hstart_kept hstart0
+                    refine ⟨ρ s_ev, s, placeAt ls ls.length h.length, m0, (placeAt ls ls.length h.length).length, rfl,
                       by rw [hs_eq]; exact elementsOf_spine hs0, by rw [hda.new_spine]; rfl,
-                      by simp only [termValue_length, hs_eq]; exact lengthOf_of_spine hs0 hda.new_spine hmax',
-                      fun j0 hj0 B hB => ?_⟩
+                      hstart',
+                      by simp only [IndexBound.ofTerm, IndexBound.eval, termValue_length, hs_eq, Option.map_eq_some_iff]
+                         exact ⟨_, lengthOf_of_spine hs0 hda.new_spine hmax', by omega⟩,
+                      fun j0 hlo hj0 B hB => ?_⟩
                     rw [placeAt_length] at hj0
                     by_cases hjlt : j0 < ls.length
-                    · exact hprefix j0 hjlt B hB
+                    · exact bodyClauseKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0
+                        (by rw [hs_eq]; exact elementsOf_spine hs0) (by rw [hda.old_spine]; rfl)
+                        (fun d l hl0 => by
+                          have hlt0 : j0 + d < ls.length := (List.getElem?_eq_some_iff.mp hl0).1
+                          rw [placeAt_getElem?]; simp only [Nat.ne_of_lt hlt0, hlt0, ite_false, ite_true, hl0])
+                        (fun _ => hjlt) (hbk B hB) (hall0 j0 hlo (by omega) B hB)
                     · have hjeq : j0 = ls.length := by omega
                       subst hjeq
-                      exact hbody_at v none (fun _ h => by cases h) (placeAt ls ls.length h.length) h.length
+                      exact hbody_at hk' hgs (hK'_of hk') v none (fun _ h => by cases h) (placeAt ls ls.length h.length) h.length
                         (by rw [placeAt_getElem?]; simp) hda.fresh_val hba B hB
                 · -- Case 2: `s_ev` apart from `a`, referencing `a` in parallel
                   split at hflat
@@ -6379,58 +6943,80 @@ theorem denseAppendAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
                   rename_i hpar_cond
                   simp only [Bool.and_eq_true, List.all_eq_true] at hpar_cond
                   obtain ⟨⟨hdisj_s, -⟩, hbk⟩ := hpar_cond
-                  cases hps : parallelSlot (knownOf k.indices) k.links k.indices s_ev [] i with
-                  | none => simp [hps] at hflat
+                  cases hps : parallelSlot K' k'.links k'.indices s_ev [] i with
+                  | none =>
+                    have hps' : parallelSlot (knownAfterGuards (knownOf k.indices) gs (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k))
+                        (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k).links
+                        (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k).indices s_ev [] i = none := hps
+                    simp [hps'] at hflat
                   | some r =>
-                    simp only [hps] at hflat
+                    have hps' : parallelSlot (knownAfterGuards (knownOf k.indices) gs (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k))
+                        (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k).links
+                        (gs.foldl (fun acc p => assumeGuardFalse acc p.1 p.2) k).indices s_ev [] i = some r := hps
+                    simp only [hps'] at hflat
                     split at hflat
                     case isFalse => cases hflat
                     rename_i hr_cond
                     obtain ⟨hnu, hba⟩ := Bool.and_eq_true_iff.mp hr_cond
-                    have hst_eq := elementsOf_denseAppend_eq hda htarg he hk hh hρ hs0 rfl hel0 hdisj_s
-                    have hpr := parallelSlot_read hK hk.2.2.1 hk.2.2.2.2.2 (hidx_eq ▸ hidx_int) hps rfl hel0 hls0
-                    obtain ⟨hlt_s, hpres_s, hhole_s⟩ := hpr
-                    obtain ⟨l_r, hl_r, hv_r⟩ : ∃ l_r, ls0[ls.length]? = some (some l_r) ∧ h'[l_r]? = some (ρ r) := by
-                      cases hl0 : ls0[ls.length]? with
-                      | none => exact absurd (List.getElem?_eq_none_iff.mp hl0) (by omega)
-                      | some o =>
-                        cases o with
-                        | none => exact absurd (hhole_s hl0) (slotNotUndef_sound he hk hnu)
-                        | some l_r =>
-                          exact ⟨l_r, rfl, by
-                            rw [elemCell_denseAppend hda hh htarg hls0 (List.mem_of_getElem? hl0)]
-                            exact hpres_s l_r hl0⟩
-                    have hstep_all : ∀ j0 : Nat, j0 < ls.length + 1 → ∀ B ∈ body, B.HoldsAt ε ρ h' ls0 j0 := by
-                      intro j0 hj0 B hB
+                    have hcase2 : ∀ (hk' : Holds k' ε ρ h) (hgs : ∀ p ∈ gs, ¬ p.2.holds (ρ p.1))
+                        (hcore_H : (IndexFact.every s_ev [] start stop body).HoldsAt ε ρ h),
+                        ∃ st0 ls0 m0, elementsOf (ρ s_ev) = some st0 ∧
+                          h'[st0]?.bind spineEntries = some ls0 ∧
+                          start.eval ε ρ h' = some m0 ∧
+                          ∀ j0 : Nat, m0 ≤ (j0 : Int) → j0 < ls.length + 1 → ∀ B ∈ body, B.HoldsAt ε ρ h' ls0 j0 := by
+                      intro hk' hgs hcore_H
+                      obtain ⟨w0, st0, ls0, m0, n0, hw0, hel0, hls0, hstart0, hstop0, hall0⟩ := hcore_H
+                      simp only [readPath, Option.some.injEq] at hw0; subst hw0
+                      have hi_le_n0 := hi_le_stop hk' hstop0
+                      have hstart' := boundKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0 hstart_kept hstart0
+                      have hst_eq := elementsOf_denseAppend_eq hda htarg he hk' hh hρ hs0 rfl hel0 hdisj_s
+                      have hpr := parallelSlot_read (hK'_of hk') hk'.2.2.1 hk'.2.2.2.2.2 (hidx_eq ▸ hidx_int) hps rfl hel0 hls0
+                      obtain ⟨hlt_s, hpres_s, hhole_s⟩ := hpr
+                      obtain ⟨l_r, hl_r, hv_r⟩ : ∃ l_r, ls0[ls.length]? = some (some l_r) ∧ h'[l_r]? = some (ρ r) := by
+                        cases hl0 : ls0[ls.length]? with
+                        | none => exact absurd (List.getElem?_eq_none_iff.mp hl0) (by omega)
+                        | some o =>
+                          cases o with
+                          | none => exact absurd (hhole_s hl0) (slotNotUndef_sound he hk' hnu)
+                          | some l_r =>
+                            exact ⟨l_r, rfl, by
+                              rw [elemCell_denseAppend hda hh htarg hls0 (List.mem_of_getElem? hl0)]
+                              exact hpres_s l_r hl0⟩
+                      refine ⟨st0, ls0, m0, hel0, by rw [hst_eq]; exact hls0, hstart', fun j0 hlo hj0 B hB => ?_⟩
                       by_cases hjlt : j0 < ls.length
-                      · exact bodyClauseKeptByDenseAppend_holds hda htarg he hk hh hρ hs0 hel0 hls0
-                          (fun _ _ h => h) (fun _ => hjlt) (hbk B hB) (hall0 j0 (by omega) B hB)
+                      · exact bodyClauseKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0 hel0 hls0
+                          (fun _ _ h => h) (fun _ => hjlt) (hbk B hB) (hall0 j0 hlo (by omega) B hB)
                       · have hjeq : j0 = ls.length := by omega
                         subst hjeq
-                        exact hbody_at r (some v) (fun v0 hv0 => by cases hv0; rfl) ls0 l_r hl_r hv_r hba B hB
+                        exact hbody_at hk' hgs (hK'_of hk') r (some v) (fun v0 hv0 => by cases hv0; rfl) ls0 l_r hl_r hv_r hba B hB
                     rcases List.mem_cons.mp hflat with rfl | hflat
-                    · -- Extension to `.length a`
-                      refine ⟨ρ s_ev, st0, ls0, (placeAt ls ls.length h.length).length, rfl, hel0,
-                        by rw [hst_eq]; exact hls0,
-                        by simp only [termValue_length]; exact lengthOf_of_spine hs0 hda.new_spine hmax',
-                        fun j0 hj0 B hB => hstep_all j0 (by rw [placeAt_length] at hj0; omega) B hB⟩
-                    · -- Extension to `.length s_ev` when `s_ev.length ≤ i + 1`
+                    · -- Extension to `[start, a.length)`
+                      refine wrapSlotGuards_elim hk hsrc_H fun hk' hgs hcore_H => ?_
+                      obtain ⟨st0, ls0, m0, hel0, hls0', hstart', hstep_all⟩ := hcase2 hk' hgs hcore_H
+                      refine ⟨ρ s_ev, st0, ls0, m0, (placeAt ls ls.length h.length).length, rfl, hel0, hls0', hstart',
+                        by simp only [IndexBound.ofTerm, IndexBound.eval, termValue_length, Option.map_eq_some_iff]
+                           exact ⟨_, lengthOf_of_spine hs0 hda.new_spine hmax', by omega⟩,
+                        fun j0 hlo hj0 B hB => hstep_all j0 hlo (by rw [placeAt_length] at hj0; omega) B hB⟩
+                    · -- Extension to `[start, s_ev.length)` when `s_ev.length ≤ i + 1`
                       split at hflat
                       case isFalse => cases hflat
                       rename_i hs_len_cond
                       simp only [List.mem_singleton] at hflat; subst hflat
+                      refine wrapSlotGuards_elim hk hsrc_H fun hk' hgs hcore_H => ?_
+                      obtain ⟨st0, ls0, m0, hel0, hls0', hstart', hstep_all⟩ := hcase2 hk' hgs hcore_H
                       obtain ⟨hdef_s, hent_s⟩ := Bool.and_eq_true_iff.mp hs_len_cond
-                      obtain ⟨ns, hns⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk.2.2.2.2.2 hdef_s)
+                      obtain ⟨ns, hns⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk'.2.2.2.2.2 hdef_s)
                       have hns' : termValue ε ρ h' (.length s_ev) = some ns :=
-                        termKeptByDenseAppend_holds hda htarg he hk hh hρ hs0
+                        termKeptByDenseAppend_holds hda htarg he hk' hh hρ hs0
                           (by simp [termKeptByDenseAppend, Term.length, hdisj_s]) hns
                       have hns_le : ns ≤ (ls.length : Int) + 1 := by
-                        have hl_s := Linear.Known.entails_sound hK hent_s
+                        have hl_s := Linear.Known.entails_sound (hK'_of hk') hent_s
                         simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hns, termValue_value,
                           hidx_int, hidx_eq, Option.getD_some] at hl_s
                         omega
-                      refine ⟨ρ s_ev, st0, ls0, ns, rfl, hel0, by rw [hst_eq]; exact hls0, hns',
-                        fun j0 hj0 B hB => hstep_all j0 (by omega) B hB⟩
+                      refine ⟨ρ s_ev, st0, ls0, m0, ns, rfl, hel0, hls0', hstart',
+                        by simp only [IndexBound.ofTerm, IndexBound.eval, hns', Option.map_some, Int.add_zero],
+                        fun j0 hlo hj0 B hB => hstep_all j0 hlo (by omega) B hB⟩
 
 end Verification.IndexWrites
 

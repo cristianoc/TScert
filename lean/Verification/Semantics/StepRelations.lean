@@ -576,6 +576,21 @@ def linear (G : Linear.Fact Term) : List IndexFact :=
   | some G' => (compose P.kept P.before (P.rel.with G')).map .linear
   | none => []
 
+/-- The terms after the step a quantified fact's lower bound `start` may be read
+as: itself after the step where the step keeps it, and otherwise each term
+after it the linear facts both states meet bound it above by (`u ≤ t'`). -/
+def starts (start : Term) : List Term :=
+  match P.var start with
+  | some (.after u) => [u]
+  | some (.before u) => (definedOf P.kept P.before P.rel).eraseDups.filter fun t' =>
+      Linear.entails P.context (.le [(.before u, 1), (.after t', -1)] 0)
+  | none => []
+
+def startBounds (b : IndexBound) : List IndexBound :=
+  match b.base with
+  | none => [b]
+  | some t => (P.starts t).map fun t' => { b with base := some t' }
+
 /-- The terms after the step a quantified fact's bound `stop` may be read
 as: itself after the step where the step keeps it, and otherwise each term
 after it the linear facts both states meet bound it below by. -/
@@ -585,6 +600,16 @@ def stops (stop : Term) : List Term :=
   | some (.before u) => (definedOf P.kept P.before P.rel).eraseDups.filter fun t' =>
       Linear.entails P.context (.le [(.after t', 1), (.before u, -1)] 0)
   | none => []
+
+def stopBounds (b : IndexBound) : List IndexBound :=
+  match b.base with
+  | none => [b]
+  | some t => (P.stops t).map fun t' => { b with base := some t' }
+
+def absentBound (b : IndexBound) : Bool :=
+  match b.base with
+  | none => false
+  | some t => P.absent t
 
 /-- A body variable as a variable of the step. -/
 def bodyVar : Bound → Option BodyVar
@@ -665,9 +690,11 @@ def fact : IndexFact → List IndexFact
     else match P.slot s with
     | some s' => (fact B).map (.guarded s' p tag)
     | none => []
-  | .every s p stop body => if P.absentSlot s || P.absent stop then [falsum] else
+  | .every s p start stop body => if P.absentSlot s || P.absentBound start || P.absentBound stop then [falsum] else
     match P.slot s with
-    | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.bodyClause)
+    | some s' =>
+      let body' := body.flatMap P.bodyClause
+      (P.startBounds start).flatMap fun lo => (P.stopBounds stop).map fun hi => .every s' p lo hi body'
     | none => []
   | .atIndex s p idx guard body =>
     if P.absentSlot s || P.absent idx then [falsum] else
@@ -840,6 +867,43 @@ theorem Composer.linear_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {G : Linear
     exact compose_holds hs.before hs.kept (StepRelation.with_holds hs.rel hd hG') F0 hF0
   · cases hF
 
+theorem Composer.starts_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {start : Term} {m : Int}
+    (hm : termValue ε₀ τ h' start = some m) :
+    ∀ lo ∈ P.starts start, ∃ m', termValue ε ρ' h' lo = some m' ∧ m ≤ m' := by
+  intro lo hlo
+  unfold Composer.starts at hlo
+  split at hlo
+  · rename_i u hu
+    simp only [List.mem_singleton] at hlo; subst hlo
+    exact ⟨m, P.var_val hs hu hm, Int.le_refl _⟩
+  · rename_i u hu
+    obtain ⟨hmem, hent⟩ := List.mem_filter.mp hlo
+    obtain ⟨m', hm'⟩ := Option.isSome_iff_exists.mp
+      (definedOf_defined hs.before hs.kept hs.rel lo (List.mem_eraseDups.mp hmem))
+    have hle := Linear.entails_sound hent (context_holds (term := P.term) (slot := P.slot) (absent := P.absent) (absentSlot := P.absentSlot) hs.before hs.kept hs.rel)
+    have hb : termValue ε ρ h u = some m := P.var_val hs hu hm
+    simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hm', hb] at hle
+    exact ⟨m', hm', by simp at hle; omega⟩
+  · cases hlo
+
+theorem Composer.startBounds_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {b : IndexBound} {m : Int}
+    (hm : b.eval ε₀ τ h' = some m) :
+    ∀ lo ∈ P.startBounds b, ∃ m', lo.eval ε ρ' h' = some m' ∧ m ≤ m' := by
+  intro lo hlo
+  cases b with
+  | mk base offset =>
+    cases base with
+    | none =>
+      simp only [startBounds, List.mem_singleton] at hlo; subst hlo
+      exact ⟨m, hm, Int.le_refl _⟩
+    | some t =>
+      simp only [startBounds, List.mem_map] at hlo
+      obtain ⟨t', ht', rfl⟩ := hlo
+      simp only [IndexBound.eval, Option.map_eq_some_iff] at hm
+      obtain ⟨v, hv, rfl⟩ := hm
+      obtain ⟨v', hv', hle⟩ := P.starts_bound hs hv t' ht'
+      exact ⟨v' + offset, by simp [IndexBound.eval, hv'], by omega⟩
+
 theorem Composer.stops_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {stop : Term} {n : Int}
     (hn : termValue ε₀ τ h' stop = some n) :
     ∀ st ∈ P.stops stop, ∃ n', termValue ε ρ' h' st = some n' ∧ n' ≤ n := by
@@ -858,6 +922,24 @@ theorem Composer.stops_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {stop : Term
     simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hn', hb] at hle
     exact ⟨n', hn', by simp at hle; omega⟩
   · cases hst
+
+theorem Composer.stopBounds_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {b : IndexBound} {n : Int}
+    (hn : b.eval ε₀ τ h' = some n) :
+    ∀ hi ∈ P.stopBounds b, ∃ n', hi.eval ε ρ' h' = some n' ∧ n' ≤ n := by
+  intro hi hhi
+  cases b with
+  | mk base offset =>
+    cases base with
+    | none =>
+      simp only [stopBounds, List.mem_singleton] at hhi; subst hhi
+      exact ⟨n, hn, Int.le_refl _⟩
+    | some t =>
+      simp only [stopBounds, List.mem_map] at hhi
+      obtain ⟨t', ht', rfl⟩ := hhi
+      simp only [IndexBound.eval, Option.map_eq_some_iff] at hn
+      obtain ⟨v, hv, rfl⟩ := hn
+      obtain ⟨v', hv', hle⟩ := P.stops_bound hs hv t' ht'
+      exact ⟨v' + offset, by simp [IndexBound.eval, hv'], by omega⟩
 
 theorem boundValue_local {ε ε' : EntryState} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
     {b : Bound} (hb : ∀ t, b ≠ .free t) (hp : ∀ s p k ep, b ≠ .parallel s p k ep) :
@@ -1149,28 +1231,42 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hD
       refine ⟨v, by rw [hs.slot s s' hs']; exact hv, hor.imp id fun hB => ih hB b hb⟩
     · cases hD
-  | every s p stop body =>
+  | every s p start stop body =>
     intro hF D hD
     simp only [Composer.fact] at hD
-    obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+    obtain ⟨w, sto, ls, m, n, hw, hsto, hls, hm, hn, hall⟩ := hF
     split at hD
     · rename_i habs
-      rcases Bool.or_eq_true_iff.mp habs with ha | ha
-      · rw [hs.absentSlot s ha] at hw
-        cases p with
-        | nil =>
-          simp only [readPath, Option.some.injEq] at hw
-          subst hw
-          simp [elementsOf] at hsto
-        | cons f q => simp [readPath] at hw
-      · rw [hs.absent stop ha] at hn; cases hn
+      rcases Bool.or_eq_true_iff.mp habs with h1 | ha
+      · rcases Bool.or_eq_true_iff.mp h1 with ha | ha
+        · rw [hs.absentSlot s ha] at hw
+          cases p with
+          | nil =>
+            simp only [readPath, Option.some.injEq] at hw
+            subst hw
+            simp [elementsOf] at hsto
+          | cons f q => simp [readPath] at hw
+        · cases hsb : start.base with
+          | none => simp [Composer.absentBound, hsb] at ha
+          | some t =>
+            simp only [Composer.absentBound, hsb] at ha
+            simp only [IndexBound.eval, hsb, hs.absent t ha, Option.map_none] at hm
+            cases hm
+      · cases hsb : stop.base with
+        | none => simp [Composer.absentBound, hsb] at ha
+        | some t =>
+          simp only [Composer.absentBound, hsb] at ha
+          simp only [IndexBound.eval, hsb, hs.absent t ha, Option.map_none] at hn
+          cases hn
     split at hD
     · rename_i s' hs'
-      obtain ⟨st, hst, rfl⟩ := List.mem_map.mp hD
-      obtain ⟨n', hn', hle⟩ := P.stops_bound hs hn st hst
-      refine ⟨w, sto, ls, n', by rw [hs.slot s s' hs']; exact hw, hsto, hls, hn', fun i hi C hC => ?_⟩
+      simp only [List.mem_flatMap, List.mem_map] at hD
+      obtain ⟨lo, hlo, hi, hhi, rfl⟩ := hD
+      obtain ⟨m', hm', hlem⟩ := P.startBounds_bound hs hm lo hlo
+      obtain ⟨n', hn', hlen⟩ := P.stopBounds_bound hs hn hi hhi
+      refine ⟨w, sto, ls, m', n', by rw [hs.slot s s' hs']; exact hw, hsto, hls, hm', hn', fun i hlo' hi' C hC => ?_⟩
       obtain ⟨C0, hC0, hC⟩ := List.mem_flatMap.mp hC
-      exact P.bodyClause_holds hs (hall i (by omega) C0 hC0) C hC
+      exact P.bodyClause_holds hs (hall i (by omega) (by omega) C0 hC0) C hC
     · cases hD
   | atIndex s p idx guard body =>
     intro hF D hD

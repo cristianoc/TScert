@@ -29,8 +29,9 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
   | .guarded p path tag body => do
     let (slot, pre) ← now p
     pure (.guarded slot (pre ++ path) tag (← invariantFact now entry body))
-  | .every p path stop body => do
+  | .every p path start stop body => do
     let (slot, pre) ← now p
+    let start ← start.reroot now entry
     let stop ← stop.reroot now entry
     let rec rerootBody : HeapKnowledge.BodyClause → Option HeapKnowledge.BodyClause
       | .clause f => (f.mapVars fun
@@ -45,7 +46,7 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
           let (sl, pr) ← now s'
           pure (.guarded (.parallel sl (pr ++ p') ep) g (← rerootBody b))
     let body ← body.mapM rerootBody
-    pure (.every slot (pre ++ path) stop body)
+    pure (.every slot (pre ++ path) start stop body)
   | .atIndex p path idx guard body => do
     let (slot, pre) ← now p
     let idx ← idx.reroot now entry
@@ -422,13 +423,19 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       let (z, r) ← root n path
       pure (.guarded (.parallel z r ep) g (← bodyClause b))
     | c => .clause <$> linearBody c
-  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun (guards, (name, path), (sn, sp, sk), body) => do
+  let lowerBound : SourceClaims.BoundClaim → Compiler HeapKnowledge.IndexBound := fun (bs, off) => do
+    let base ← bs.mapM fun (sn, sp, sk) => do
+      let (y, q) ← root sn sp
+      pure (HeapKnowledge.Term.now sk y q)
+    pure { base, offset := off }
+  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun (guards, (name, path), start, stop, body) => do
     let gs ← guards.mapM fun (g, gp, tag) => do let (z, r) ← root g gp; pure (z, r, tag)
     let (x, p) ← root name path
-    let (y, q) ← root sn sp
+    let start ← lowerBound start
+    let stop ← lowerBound stop
     let body ← body.mapM bodyClause
     let fact := gs.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
-      (HeapKnowledge.IndexFact.every x p (HeapKnowledge.Term.now sk y q) body)
+      (HeapKnowledge.IndexFact.every x p start stop body)
     pure ({ fact } : HeapKnowledge.IndexAtom)
   -- The region facts the producer proposes (FOOTPRINTS.md, "Element
   -- regions"): both sides value bindings; a claim naming any other is

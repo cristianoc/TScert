@@ -738,7 +738,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       const size: LinearTerm = { kind: "value", slot: 2, path: [] };
       const elements: IndexFact[] = guards.map(([tag, complement]) => ({
         guarded: { slot: 3, path: [], tag: complement, body: {
-          every: { slot: 0, path: [], stop: length, body: [
+          every: { slot: 0, path: [], start: { base: null, offset: 0 }, stop: { base: length, offset: 0 }, body: [
             { guarded: { target: { self: { path: [] } }, tag, body: { le: { form: [], bound: -1 } } } },
           ] },
         } },
@@ -746,7 +746,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       return {
         typeParams: [{ name: "T", bound: null, resolution: null }],
         type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
-          effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
+          effect: footprintEffect(emptyFootprint, { fresh: true, freshRegion: true, ensures: [
             { linear: { fact: { le: { form: [[length, 1], [size, -1]], bound: 0 } } } },
             { linear: { fact: { le: { form: [[length, -1], [size, 1]], bound: 0 } } } },
             ...elements,

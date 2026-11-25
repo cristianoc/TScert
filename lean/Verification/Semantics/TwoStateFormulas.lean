@@ -438,6 +438,9 @@ inductive OperationPostF (Seq : Type) where
   /-- The value at exit slot `x` is an object every own location of which
   was allocated after the entry (`Footprints.FreshObjectAt`). -/
   | freshObject (x : Nat)
+  /-- The value at exit slot `x` is an array whose spine and every present
+  element cell were allocated after the entry (`Footprints.FreshRegionAt`). -/
+  | freshRegion (x : Nat)
   /-- Where exit slot `x` holds `v`, every present element of the array at
   exit slot `y` meets `R` (`CallEffects.ElemsAt`). -/
   | elementsWhen (x : Nat) (v : Val) (y : Nat) (R : CallEffects.ElemPred)
@@ -479,6 +482,7 @@ def OperationPostF.Holds (s : TwoState) : OperationPost → Prop
   | .fact p l F => F.HoldsAt ⟨s.beforeEnv, s.before.h⟩ (fun i => s.env p (i + l)) (s.state p).h
   | .freshSpine x => FreshAt s.before.h.length (s.afterEnv x)
   | .freshObject x => FreshObjectAt s.before.h.length (s.afterEnv x)
+  | .freshRegion x => FreshRegionAt s.before.h.length s.after.h (s.afterEnv x)
   | .elementsWhen x v y R => s.afterEnv x = v → CallEffects.ElemsAt R (s.afterEnv y) s.after.h
   | .spineExtends x => ∀ st v, spineOf (s.beforeEnv x) = some st → s.before.h[st]? = some v →
       s.after.h[st]? = some v ∨ ∃ ls ls', v = .arr ls ∧ s.after.h[st]? = some (.arr ls') ∧ ls <+: ls' ∧

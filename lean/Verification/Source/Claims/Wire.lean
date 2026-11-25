@@ -409,7 +409,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
     entryFacts := entries.map (fun e => (e.start,e.facts.map Fact.claim))
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
-      ([], (q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map BodyFact.claim)))
+      ([], (q.name, q.path), (none, 0), (some (q.stop.name, q.stop.path, q.stop.term), 0), q.body.map BodyFact.claim)))
     entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
     entrySpinesApart := entries.map (fun e => (e.start, e.spinesApart.map fun r =>
       (r.guards.map fun g => (g.name, g.path, g.tag), (r.name, r.path), (r.other, r.otherPath))))

@@ -82,6 +82,12 @@ function body(f: BodyFormula, array: string, name: Namer): string {
     const g = f.guarded;
     const tgt = "self" in g.target ? ["e", ...g.target.self.path].join(".")
       : [`${pathText(g.target.parallel.slot, g.target.parallel.path, name)}[k]`, ...g.target.parallel.elemPath].join(".");
+    if (!("guarded" in g.body) && !("either" in g.body) && g.body.form.length === 0 && !g.body.ne &&
+        (typeof g.body.bound === "number" ? g.body.bound < 0 : BigInt(g.body.bound) < 0n)) {
+      const holds = g.tag === "notNull" ? "!== null" : g.tag === "notUndefined" ? "!== undefined"
+        : g.tag === "notTrue" ? "!== true" : g.tag === "notFalse" ? "!== false" : `=== ${g.tag}`;
+      return `${tgt} ${holds}`;
+    }
     const cond = g.tag === "notNull" ? "=== null" : g.tag === "notUndefined" ? "=== undefined"
       : g.tag === "notTrue" ? "=== true" : g.tag === "notFalse" ? "=== false" : `!== ${g.tag}`;
     return `${tgt} ${cond} → ${body(g.body, array, name)}`;
@@ -133,7 +139,17 @@ export function indexFact(f: IndexFact, name: Namer): string | null {
   }
   const e = f.every;
   const array = pathText(e.slot, e.path, name);
-  return `every element e at k < ${term(e.stop, name)} of ${array}: ${e.body.map((b) => body(b, array, name)).join(" && ")}`;
+  const boundText = (b: { base: LinearTerm | null; offset: Integer }): string => {
+    const off = typeof b.offset === "number" ? b.offset : BigInt(b.offset);
+    if (b.base === null) return String(b.offset);
+    const base = term(b.base, name);
+    if (off === 0 || off === 0n) return base;
+    return off > 0 ? `${base} + ${off}` : `${base} - ${typeof off === "bigint" ? -off : -off}`;
+  };
+  const range = e.start.base === null && (e.start.offset === 0 || e.start.offset === "0")
+    ? `k < ${boundText(e.stop)}`
+    : `${boundText(e.start)} <= k < ${boundText(e.stop)}`;
+  return `every element e at ${range} of ${array}: ${e.body.map((b) => body(b, array, name)).join(" && ")}`;
 }
 
 /** A property key: a string, or a well-known symbol by its number. */

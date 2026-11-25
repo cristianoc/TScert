@@ -863,6 +863,11 @@ length `b`. It reads no heap. -/
 def FreshObjectAt (b : Nat) (v : Tm) : Prop :=
   (∃ fs c oid, v = .objAt fs c oid) ∧ ∀ l ∈ ownOf v, b ≤ l
 
+/-- An array whose spine and every present element cell were allocated at or
+after a heap of length `b`. -/
+def FreshRegionAt (b : Nat) (h : Heap) (v : Tm) : Prop :=
+  ∃ s ls, spineOf v = some s ∧ b ≤ s ∧ h[s]? = some (.arr ls) ∧ ∀ l, some l ∈ ls → b ≤ l
+
 theorem FreshObjectAt.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshObjectAt b' v) :
     FreshObjectAt b v :=
   ⟨h.1, fun l hl => Nat.le_trans hb (h.2 l hl)⟩

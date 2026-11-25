@@ -12,7 +12,7 @@ linear comparisons over integers, paths `x.f`, lengths `p.length`, indexed
 elements `p[q]` and their lengths `p[q].length`, `&&`,
 `||` and `!`, guards such as `p === null || …`, `p !== null || …`, and
 `p[q] === null || …` (testing `null`, `undefined`, `true`, or `false`), a closing quantified atom
-`forall i in xs: …`, and `p !== q` of two arrays, whose spines differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
+`forall i in xs: …` (or with bounds `forall i < hi of xs: …`, `forall lo <= i in xs: …`, `forall lo <= i < hi of xs: …`, and standalone element-tag bodies `xs[i] === null`), and `p !== q` of two arrays, whose spines differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
 lists what each tag may name.
 
 ### `@requires C`
@@ -40,8 +40,9 @@ function widthAt(widths: number[], ends: number[], k: number): number {
 }
 
 /** @requires extras === null || fits.length <= extras.length
- *  @requires extras === null || forall i in fits: fits[i] === null || extras[i] === null || fits[i].length <= extras[i].length */
-function fitWithExtra(fits: (number[] | null)[], extras: (number[] | null)[] | null, i: number): number { … }
+ *  @requires extras === null || forall i in fits: fits[i] === null || extras[i] === null || fits[i].length <= extras[i].length
+ *  @requires extras === null || forall k <= j < n of extras: extras[j] === null */
+function fitWithExtra(fits: (number[] | null)[], extras: (number[] | null)[] | null, k: number, n: number): number { … }
 ```
 
 `p !== q` of two arrays states that their spines differ, so the body keeps

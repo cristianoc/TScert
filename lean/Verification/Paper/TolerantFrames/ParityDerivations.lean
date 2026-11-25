@@ -305,6 +305,7 @@ def OperationPostF.shift : OperationPost → OperationPost
   | .fact p l F => .fact p (if p = .after then l + 1 else l) F
   | .freshSpine x => .freshSpine (x + 1)
   | .freshObject x => .freshObject (x + 1)
+  | .freshRegion x => .freshRegion (x + 1)
   | .elementsWhen x v y R => .elementsWhen (x + 1) v (y + 1) R
   | .spineExtends x => .spineExtends x
   | .viewWrite x i v f => .viewWrite x i v f
@@ -1469,6 +1470,7 @@ theorem OperationPostF.holds_shift (s : TwoState) (x : Val) (q : OperationPost) 
         simp only [Verification.push]; rfl))
   | freshSpine _ => rfl
   | freshObject _ => rfl
+  | freshRegion _ => rfl
   | elementsWhen _ _ _ _ => rfl
   | spineExtends _ => rfl
   | viewWrite _ _ _ _ => rfl

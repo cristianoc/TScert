@@ -213,6 +213,11 @@ every own location of the result was allocated during the call
 (`freshObject 0`). -/
 def ExitSchema.freshObjectResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshObject 0) ∈ q.ensures)
 
+/-- **Whether an exit states a fresh array region**: its postcondition that
+the result's spine and every present element cell were allocated during the
+call (`freshRegion 0`). -/
+def ExitSchema.freshRegionResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshRegion 0) ∈ q.ensures)
+
 /-- The element predicate of a postcondition `elementsWhen 0 true 1 R`. -/
 def elementsWhenTrueOf : FormulaSchema → Option ElemPred
   | .operation (.elementsWhen 0 .tru 1 R) => some R
