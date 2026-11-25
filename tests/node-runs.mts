@@ -3561,11 +3561,11 @@ for (const [file, call] of [
     "JSON.stringify([appendSubRange({ advances: [[1]], extras: [[2]] }, [3, 4]), cloneAdvances({ advances: [[1]], extras: [[2, 3]] }), sumShiftedPair([null, [1, 2], [3]], [[10, 20], [30, 40]], 2, 1, 0)])"),
     '[{"advances":[[1],[3],[4]],"extras":[[2],[3,0],[4,0]]},{"advances":[[1]],"extras":[[2,3]]},33]', "quantified-offset-parallel (#397): safe sub-range offset copy, slice clone, and shifted pair sum");
   assert.deepEqual(runPlain(negative("invalid-quantified-offset-parallel"),
-    "(() => { const r = appendSubRangeOffByOne({ advances: [[1]], extras: [[2]] }, [3]); return [r.advances[1].length, r.extras[1].length, r.extras[1][1] === undefined]; })()"),
-    [2, 1, true], "invalid-quantified-offset-parallel (#397): shorter subExtras row violates ConcatParallel invariant and reads undefined");
+    "(() => { const r = appendSubRangeShortRow({ advances: [[1]], extras: [[2]] }, [3]); return [r.advances[1].length, r.extras[1].length, r.extras[1][1] === undefined]; })()"),
+    [2, 1, true], "invalid-quantified-offset-parallel (#397): a shorter appended subExtras row breaks ConcatParallel's invariant and reads undefined");
   assert.deepEqual(runPlain(negative("invalid-quantified-offset-parallel-shift"),
-    "(() => { const r = appendSubRangeWrongShift({ advances: [[1, 2]], extras: [[3, 4]] }, [5]); return [r.advances[0].length, r.extras[0].length, r.extras[0][1] === undefined]; })()"),
-    [2, 1, true], "invalid-quantified-offset-parallel-shift (#397): off-by-one shift overwrites extras[0] with shorter row and reads undefined");
+    "(() => { const r = appendSubRangeWrongShift({ advances: [[1, 2, 3]], extras: [[4, 5, 6]] }, [7]); return [r.advances[0].length, r.extras[0].length, r.extras[0][2] === undefined]; })()"),
+    [3, 2, true], "invalid-quantified-offset-parallel-shift (#397): the shift base + s - 1 overwrites extras[0] with a shorter row and reads undefined");
   assert.equal(runExample(ofKind("quantified-bitmask-guard", ["positive"]),
     "JSON.stringify(buildAndPatchPreservedSpace(new Uint8Array([1, 2]), 1).advances)"),
     "[[10,20],[5,5,5]]", "quantified-bitmask-guard (#398): safe bitmask-guarded overwrite");
