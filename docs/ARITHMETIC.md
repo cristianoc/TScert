@@ -1634,7 +1634,20 @@ may carry leading element guards `P[i] === null || …`,
 element at an affine shift $`i + s`$ with unit binder coefficient and linear
 shift $`s = \sum c\cdot t + d`$, `IndexShift`), and linear body terms may
 project a parallel array's element at an affine shift (`Q[i + s].length`,
-`Q[i + s].f.length`, or a safe-integer value). For example:
+`Q[i + s].f.length`, or a safe-integer value).
+
+The index forms are not uniform. The quantified array's own element is read
+at the bound index (`Bound.elem`, `Bound.project`, `ElemTarget.self`) or at a
+constant natural offset (`Bound.offset`, `P[i + d]`), and a parallel array's
+element at an affine shift (`IndexShift`). An own-array read at a shift with
+terms, `P[i + n]`, is not expressible: it would take one own-element form
+carrying an `IndexShift` in place of `elem`, the projections and `offset`.
+An interval bound (`IndexBound`, one term plus a constant) is likewise a
+special case of the shift's linear form, kept as its own type. Where a fact
+reads a parallel array at a shift other than zero, the rules that instantiate
+or discharge it at the written or appended index read that array at shift
+zero only (the `atIndex`-tag, dense-append and typed-array view-write rules),
+so such a fact is kept but not extended there. For example:
 
 ```ts
 /** @invariant forall i in this.advances: this.advances[i] === null || 1 <= this.advances[i].length
