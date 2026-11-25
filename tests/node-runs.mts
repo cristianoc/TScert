@@ -3479,9 +3479,12 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-view-write-every-view"),
     "(() => { const v = new Uint8Array([0]); return typeof writeViewAliased(v, v, [10]); })()"),
     "undefined", "invalid-view-write-every-view: aliased Uint8Array write corrupts index bound and reads undefined");
-  assert.equal(runExample(ofKind("quantified-object-literal-every-gap", ["gap"]),
+  assert.equal(runExample(ofKind("quantified-object-literal-every", ["positive"]),
     "JSON.stringify(wrapChunks([[1, 2], null]))"),
-    '{"chunks":[[1,2],null]}', "quantified-object-literal-every-gap (#391): safe object-literal wrap");
+    '{"chunks":[[1,2],null]}', "the literal's chunks field keeps the input's contents");
+  assert.equal(runExample(negative("invalid-quantified-object-literal-every"),
+    "typeof wrapOther([[1]], [[]]).chunks[0][0]"),
+    "undefined", "the unrelated array has an empty row and breaks the promised invariant");
   assert.equal(runExample(ofKind("quantified-inbounds-overwrite-gap", ["gap"]),
     "JSON.stringify(replaceChunk({ chunks: [[1], null] }, 1))"),
     '{"chunks":[[1],[42]]}', "quantified-inbounds-overwrite-gap (#392): safe in-bounds overwrite");

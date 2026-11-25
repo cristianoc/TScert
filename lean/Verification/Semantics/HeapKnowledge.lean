@@ -1329,6 +1329,111 @@ theorem lowerBodyClause_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl :
         simp only [hp] at hw
         rw [lowerRoot_path hl hr hp]; exact hw
 
+/-- The plain read links: a slot's value read as field `f` of slot `c`. -/
+def plainReads (ls : HeapLinks.Links) : List (Nat × String × Nat) :=
+  ls.filterMap fun g => if g.alias || g.optional then none else match g.field with
+    | .str f => some (g.cell, f, g.value)
+    | .sym _ => none
+
+theorem plainReads_bridge {ls : HeapLinks.Links} {g : Nat × String × Nat}
+    (hg : g ∈ plainReads ls) : g ∈ bridgeReads ls := by
+  obtain ⟨r, hr, he⟩ := List.mem_filterMap.mp hg
+  refine List.mem_filterMap.mpr ⟨r, hr, ?_⟩
+  split at he
+  · cases he
+  · rename_i h
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at h
+    simpa only [h.1, Bool.false_eq_true, ite_false] using he
+
+/-- A plain link witnesses a field location in both directions. -/
+theorem plainReads_path {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) {c v : Nat} {f : String}
+    (hm : (c, f, v) ∈ plainReads ls) (p : List String) :
+    readPath h (ρ c) (f :: p) = readPath h (ρ v) p := by
+  obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hm
+  split at hgm
+  · cases hgm
+  · rename_i hao
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hao
+    split at hgm
+    · rename_i f' hf'
+      simp only [Option.some.injEq, Prod.mk.injEq] at hgm
+      obtain ⟨rfl, rfl, rfl⟩ := hgm
+      have hlink := hl g hg
+      simp only [hao.1, hao.2, Bool.false_eq_true, ite_false] at hlink
+      obtain ⟨flds, cd, oid, l, he, hloc, hv⟩ := hlink
+      rw [hf'] at hloc
+      rw [he, readPath_cons hloc hv]
+    · cases hgm
+
+theorem lowerRequiredRoot_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) (s : Nat) (p : List String) :
+    readPath h (ρ (lowerRoot (plainReads ls) s p).1) (lowerRoot (plainReads ls) s p).2 =
+      readPath h (ρ s) p := by
+  cases p with
+  | nil => rfl
+  | cons f p =>
+    simp only [lowerRoot]
+    split
+    · rename_i g hg
+      have hmem := List.mem_of_find?_eq_some hg
+      have hmatch := List.find?_some hg
+      obtain ⟨c, f', v⟩ := g
+      simp only [Bool.and_eq_true, beq_iff_eq] at hmatch
+      obtain ⟨rfl, rfl⟩ := hmatch
+      exact (plainReads_path hl hmem p).symm
+    · rfl
+
+theorem lowerRequiredBody_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) {entries : List (Option Nat)} {i : Nat} :
+    ∀ B : BodyClause, (lowerBodyClause (plainReads ls) B).HoldsAt ε ρ h entries i ↔
+      B.HoldsAt ε ρ h entries i
+  | .clause F => by
+    refine LinearClause.holdsAt_mapVars (renameClause_mapVars (lowerBound (plainReads ls)) F)
+      (fun x _ y hy => ?_)
+    simp only [Function.comp_apply, Option.some.injEq] at hy
+    subst y
+    cases x with
+    | free t => exact lowerTerm_eq hl (fun _ hg => plainReads_bridge hg) t
+    | parallel s p k ep =>
+      simp only [lowerBound, boundValue, lowerRequiredRoot_eq hl]
+    | _ => rfl
+  | .guarded t g b => by
+    have heq : (lowerTarget (plainReads ls) t).read ρ h entries i = t.read ρ h entries i := by
+      cases t with
+      | self _ => rfl
+      | parallel s p ep => simp only [lowerTarget, ElemTarget.read, lowerRequiredRoot_eq hl]
+    simp only [lowerBodyClause, BodyClause.HoldsAt, heq, lowerRequiredBody_iff hl b]
+
+/-- Lower the array, bound, and body of a quantified fact through the same read links. -/
+def lowerEveryAt (reads : List (Nat × String × Nat)) (s : Nat) (p : List String)
+    (stop : Term) (body : List BodyClause) : IndexFact :=
+  let root := lowerRoot reads s p
+  .every root.1 root.2 (lowerTerm reads stop) (body.map (lowerBodyClause reads))
+
+/-- Restate a quantified fact through required field reads. All accesses in the
+body use the same read links as the array and bound. -/
+def lowerRequiredEvery (ls : HeapLinks.Links) : IndexFact → IndexFact
+  | .every s p st body => lowerEveryAt (plainReads ls) s p st body
+  | F => F
+
+theorem lowerRequiredEvery_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) (F : IndexFact) :
+    (lowerRequiredEvery ls F).HoldsAt ε ρ h ↔ F.HoldsAt ε ρ h := by
+  cases F with
+  | every s p st body =>
+    simp only [lowerRequiredEvery, lowerEveryAt, IndexFact.HoldsAt, lowerRequiredRoot_eq hl,
+      lowerTerm_eq hl (fun _ hg => plainReads_bridge hg)]
+    constructor
+    · rintro ⟨w, sp, entries, n, hw, hs, he, hn, hb⟩
+      exact ⟨w, sp, entries, n, hw, hs, he, hn, fun i hi B hB =>
+        (lowerRequiredBody_iff hl B).mp (hb i hi _ (List.mem_map_of_mem hB))⟩
+    · rintro ⟨w, sp, entries, n, hw, hs, he, hn, hb⟩
+      refine ⟨w, sp, entries, n, hw, hs, he, hn, fun i hi B hB => ?_⟩
+      obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hB
+      exact (lowerRequiredBody_iff hl A).mpr (hb i hi A hA)
+  | _ => rfl
+
 /-- A quantified fact restated through a read of slot `0`, where the read
 restates its array, its bound or a body term. -/
 def readEvery (reads : List (Nat × String × Nat)) (a : IndexAtom) : Option IndexAtom :=
@@ -1336,8 +1441,7 @@ def readEvery (reads : List (Nat × String × Nat)) (a : IndexAtom) : Option Ind
   | .every s p st body =>
     if lowerRoot reads s p != (s, p) || lowerTerm reads st != st ||
         body.map (lowerBodyClause reads) != body then
-      some { a with fact := (.every (lowerRoot reads s p).1 (lowerRoot reads s p).2 (lowerTerm reads st)
-        (body.map (lowerBodyClause reads)) : IndexFact) }
+      some { a with fact := lowerEveryAt reads s p st body }
     else none
   | _ => none
 
@@ -4135,12 +4239,6 @@ theorem restateReads_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as :
         liftDropped_eq hl (fun g hg => (List.mem_filter.mp hg).1) _ x y hy).mpr hbF
     · cases hab
 
-/-- The plain read links: a slot's value read as field `f` of slot `c`. -/
-def plainReads (ls : HeapLinks.Links) : List (Nat × String × Nat) :=
-  ls.filterMap fun g => if g.alias || g.optional then none else match g.field with
-    | .str f => some (g.cell, f, g.value)
-    | .sym _ => none
-
 /-- A path rooted at a dropped slot restated by plain reads toward a kept
 root: while its root is dropped, where a read gives the root's value as
 field `f` of slot `c`, the path rooted at `c` with `f` before it. -/
@@ -4168,21 +4266,7 @@ theorem liftPath_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env} {
         have hv : v = s := by simpa using List.find?_some hfind
         subst hv
         rw [ih _ _ _ _ ht]
-        obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hm
-        split at hgm
-        · cases hgm
-        · rename_i hao
-          simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hao
-          split at hgm
-          · rename_i f' hf'
-            simp only [Option.some.injEq, Prod.mk.injEq] at hgm
-            obtain ⟨rfl, rfl, rfl⟩ := hgm
-            have := hl g hg
-            simp only [hao.1, hao.2, Bool.false_eq_true, ite_false] at this
-            obtain ⟨flds, cd, oid, l, he, hlk, hval⟩ := this
-            rw [hf'] at hlk
-            rw [he, readPath_cons hlk hval]
-          · cases hgm
+        exact plainReads_path hl hm p
       · cases ht
     · cases ht; rfl
 
