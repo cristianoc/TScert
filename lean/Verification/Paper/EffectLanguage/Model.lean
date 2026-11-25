@@ -280,7 +280,7 @@ theorem closedOut_region_disjoint {h : Heap} {priv : Nat → Prop} {ρ : Env} {x
         | some u =>
           rw [hcu] at hm; simp only [beq_iff_eq] at hm
           have hcn := closedOut_spineCells_not_priv hc (closedOut_readPath_noPriv hc hnp hrp) ho
-          exact closedOut_elementsOf_not_priv (hc c (List.getElem?_eq_some_iff.mp hcu).1 hcn u hcu) hm
+          exact closedOut_elementsOf_not_priv (hc c (List.getElem?_eq_some_iff.mp hcu).1 hcn u hcu) (elementsOf_of_lookup_spine hm)
 
 /-- **Module disjointness for declared reach (`x.**_T`)**: any location
 reachable along arbitrary public field, spine, and element paths from an

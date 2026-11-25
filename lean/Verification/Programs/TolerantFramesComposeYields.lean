@@ -107,7 +107,7 @@ theorem framedKept_holds {Ss : List Confinement.FrameSpec} {k : HeapKnowledge.Kn
       split at hin
       · rename_i T hT
         exact Footprints.Supports.apply (Footprints.IndexFact.support?_supports {} a₀.fact hT)
-          (fun _ _ _ _ _ _ _ hs => by cases hs) hF (hcov hin)
+          ⟨(fun _ _ _ _ _ _ _ hs => nomatch hs), (fun _ _ _ _ ha => nomatch ha)⟩ hF (hcov hin)
       · cases hin
     intro x hx
     rw [List.mem_singleton.mp hx]

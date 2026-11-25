@@ -509,7 +509,7 @@ theorem IndexFact.support?_envOnly (c : ReadContext) {F : IndexFact} (hF : F.env
 
 /-- The empty context holds of every transition. -/
 theorem ReadContext.empty_holds (ρ : Env) (h h' : Heap) : ({} : ReadContext).Holds ρ h h' :=
-  fun _ _ _ _ _ _ _ hs => by cases hs
+  And.intro (fun _ _ _ _ _ _ _ hs => nomatch hs) (fun _ _ _ _ ha => nomatch ha)
 
 /-- **An index fact reading the environment alone holds in every heap**: the
 tolerant frame at its empty support (`support?_envOnly`, `frame_nil`). -/

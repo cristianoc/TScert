@@ -585,6 +585,9 @@ omit [DecidableEq ι] in
 theorem stableFirst_reassign :
     HeapExpressionRules.stableFirst (reassign G η) = HeapExpressionRules.stableFirst G := rfl
 
+theorem arrayPathOf_reassign :
+    HeapExpressionRules.arrayPathOf (reassign G η) = HeapExpressionRules.arrayPathOf G := rfl
+
 theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     PromiseCalls.ensuresCall (reassign G η) (images.reassign η) j k e codes sums =
@@ -592,10 +595,9 @@ theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
   unfold PromiseCalls.ensuresCall
   split
   · rename_i p
-    rw [checkTree_reassign G η images p codes sums, requiresTree_reassign, stableFirst_reassign]
+    rw [checkTree_reassign G η images p codes sums, requiresTree_reassign, stableFirst_reassign, arrayPathOf_reassign]
   · rfl
 
-omit [DecidableEq ι] in
 theorem withEnsures_reassign (stable : Nat → String → Bool) (Γ : List (List ι)) (eff : CallEffects.Effect)
     (t : Tm) (k0 k : HeapKnowledge.Knowledge) :
     PromiseCalls.withEnsures stable (reassign G η) Γ eff t k0 k =

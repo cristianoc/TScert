@@ -1784,7 +1784,7 @@ states. -/
 theorem stableContext_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env}
     {s s' : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) (ha : TolerantFrames.Admissible s s') :
     (stableContext G Γ).Holds ρ s.h s'.h := by
-  intro x k fs cd o l v hst hx hl hv
+  refine ⟨fun x k fs cd o l v hst hx hl hv => ?_, fun _ _ _ _ h => by cases h⟩
   simp only [stableContext] at hst
   split at hst
   · rename_i A hA
@@ -1798,6 +1798,101 @@ theorem stableContext_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env}
     rw [← Option.some.inj hv]
     exact ha.stable_value hw hc
   · cases hst
+
+/-- Whether a clause admits no typed-array view without an array spine: every
+member `w` with `elementsOf w = some st` holds `spineOf w = some st`. -/
+def clauseArrayOrNonObj {α : Type} : PositiveNormalization.Clause α → Bool
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
+  | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .numIn _ | .strIn _ | .int
+  | .list _ _ | .pack _ _ => true
+  | c => clauseField c arraySpineKey
+
+theorem clauseArrayOrNonObj_sound [DecidableEq ι] {G : NormalGraph ι} {c : PositiveNormalization.Clause (Ty ι)}
+    {n W w st} (hc : clauseArrayOrNonObj c = true)
+    (hsem : PositiveNormalization.semWithArgs (builtinExc G (builtinValues G)) (meaning G) (argMeaning G) c n W w)
+    (he : HeapKnowledge.elementsOf w = some st) : Footprints.spineOf w = some st := by
+  cases c with
+  | nul => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | undef => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | bool => rcases hsem with rfl | rfl <;> simp [HeapKnowledge.elementsOf] at he
+  | boolLit b => rw [hsem] at he; cases b <;> simp [HeapKnowledge.elementsOf] at he
+  | num => obtain ⟨_, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | numLit _ => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | str => obtain ⟨_, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | strLit _ => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | bigint => obtain ⟨_, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | bigintLit _ => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | symbol => obtain ⟨_, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | symbolLit _ => rw [hsem] at he; simp [HeapKnowledge.elementsOf] at he
+  | numIn _ => obtain ⟨_, _, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | strIn _ => obtain ⟨_, _, rfl⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | int => obtain ⟨_, rfl, -⟩ := hsem; simp [HeapKnowledge.elementsOf] at he
+  | list _ _ =>
+    obtain ⟨⟨_, rfl, -⟩, -⟩ := hsem
+    simp [HeapKnowledge.elementsOf] at he
+  | pack _ _ => exact hsem.elim
+  | _ =>
+    simp only [clauseArrayOrNonObj] at hc
+    obtain ⟨_, flds, code, oid, l, _, hw, hfd, -⟩ :=
+      clauseField_typed (cs := [_]) (List.mem_singleton_self _) hc hsem
+    subst hw
+    simp only [HeapKnowledge.elementsOf] at he
+    rw [hfd] at he
+    cases he
+    simp [Footprints.spineOf, Footprints.fieldsOf, hfd]
+
+/-- Whether a type's every member with `elementsOf w = some st` holds an array
+spine (`spineOf w = some st`). -/
+@[nospecialize] def tyArrayOrNonObj [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all clauseArrayOrNonObj
+
+theorem tyArrayOrNonObj_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {n W w st}
+    (ht : tyArrayOrNonObj G A = true) (hm : meaning G A n W w)
+    (he : HeapKnowledge.elementsOf w = some st) : Footprints.spineOf w = some st := by
+  simp only [tyArrayOrNonObj, Bool.and_eq_true, List.all_eq_true] at ht
+  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A ht.1 n W w).mp hm
+  exact clauseArrayOrNonObj_sound (ht.2 c hc) hsem he
+
+/-- Whether reading path `p` (depth ≤ 1) from slot `x` in `Γ` always yields an
+array spine (never a view spine) whenever `elementsOf` succeeds. -/
+@[nospecialize] def arrayPathOf [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (x : Nat) (p : List String) : Bool :=
+  match Γ[x]?, p with
+  | some A, [] => tyArrayOrNonObj G A
+  | some A, [f] => fieldOperand (expand G A) (.str f) && (fieldTys (expand G A) (.str f)).all (tyArrayOrNonObj G)
+  | _, _ => false
+
+theorem arrayPathOf_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
+    (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) :
+    ∀ x p w st, arrayPathOf G Γ x p = true → HeapKnowledge.readPath h (ρ x) p = some w →
+      HeapKnowledge.elementsOf w = some st → Footprints.spineOf w = some st := by
+  intro x p w st ha hr hel
+  unfold arrayPathOf at ha
+  cases hΓ : Γ[x]? with
+  | none => rw [hΓ] at ha; cases ha
+  | some A =>
+    rw [hΓ] at ha
+    cases p with
+    | nil =>
+      simp only [HeapKnowledge.readPath, Option.some.injEq] at hr; subst hr
+      exact tyArrayOrNonObj_sound ha (he.2 x A hΓ) hel
+    | cons f q =>
+      cases q with
+      | nil =>
+        simp only [Bool.and_eq_true, List.all_eq_true] at ha
+        obtain ⟨El, flds, code, oid, l, c, hv, hfd, hW, himp, hEl⟩ :=
+          fieldOperand_typed ha.1 (he.2 x A hΓ)
+        rw [hv] at hr
+        simp only [HeapKnowledge.readPath, hfd] at hr
+        cases hlu : h[l]? with
+        | none => rw [hlu] at hr; cases hr
+        | some u =>
+          rw [hlu] at hr; cases hr
+          obtain ⟨u', hu', hm⟩ := hh.1.2 l c hW
+          rw [hlu] at hu'; cases hu'
+          exact tyArrayOrNonObj_sound (ha.2 El hEl) (himp 0 (Nat.zero_lt_succ n) _ w (hm 0 (Nat.zero_lt_succ n))) hel
+      | cons _ _ => cases ha
 
 /-- **A stable field's location holds its value at every exit of a run**
 (`stable-first`), normal or thrown: the assertion that each first field
@@ -1818,7 +1913,7 @@ theorem stableFirst_frame_exc {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h
     (P := fun _ ρ h' => HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h')
     (C := fun _ ρ _ s s' => (stableContext G Γ).Holds ρ s.h s'.h) (S := fun _ => [])
     (fun _ _ => Footprints.SupportDomain.Supports.of_invariant fun _ _ _ _ _ hc hA =>
-      fun x g fs cd o l v hf hx hl hv => hc x (.str g) fs cd o l v hf hx hl (hA x g fs cd o l v hf hx hl hv))
+      fun x g fs cd o l v hf hx hl hv => hc.1 x (.str g) fs cd o l v hf hx hl (hA x g fs cd o l v hf hx hl hv))
     (fun _ _ => rfl) (Footprints.SepQuery.empty_sound _ _)
     (fun _ _ s' ha => stableContext_holds (s := s) he ha)
     (fun _ _ _ _ _ _ _ _ _ _ _ _ hv => hv) (TolerantFrames.WorldReach.refl W) hw hh hs

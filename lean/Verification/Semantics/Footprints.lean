@@ -746,7 +746,7 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .elemSpines x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (spineCells h v).any fun o => match o with
       | some c => match h[c]? with
-        | some u => HeapKnowledge.elementsOf u == some l
+        | some u => (fieldsOf u).lookup arraySpineKey == some l
         | none => false
       | none => false
     | none => false
@@ -832,7 +832,8 @@ class region its selector, and `all` every category. -/
 def Region.cats : Region → Selector
   | .field _ k | .path _ _ k => keyClass k
   | .fields _ | .pathFields _ _ | .cells _ | .pathCells _ _ => .values
-  | .spine _ _ | .elemSpines _ _ => .spines
+  | .spine _ _ => .spines
+  | .elemSpines _ _ => .arrays
   | .cls S => S
   | .all => .all
 

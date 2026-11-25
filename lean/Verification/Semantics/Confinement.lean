@@ -666,7 +666,7 @@ theorem outsideRegion_not_priv {h : Heap} {ρ : Env} {width : Nat} {holders : Li
           rw [he] at hce
           simp only [beq_iff_eq] at hce
           have hlt : cl < h.length := (List.getElem?_eq_some_iff.mp he).1
-          exact noPriv_elementsOf (hcl cl hlt hnpc e he) hce
+          exact noPriv_lookup (hcl cl hlt hnpc e he) hce
   | fields _ | pathFields _ _ | cls _ | all => simp [outsideRegion] at hout
 
 /-- When every allocated location outside `Priv` keeps its contents from `h` to `h'`,

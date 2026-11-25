@@ -3459,4 +3459,19 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("guarded-field-read-merge", ["positive"]),
     "JSON.stringify([totalWithOptionalExtras({ widths: [1, 2] }), totalWithOptionalExtras({ widths: [1, 2], opt: { extras: null } }), totalWithOptionalExtras({ widths: [1, 2], opt: { extras: [10, 20] } })])"),
     "[3,3,33]", "guarded-field-read-merge: optional nested parallel array extracted via ternary");
+  assert.equal(runExample(ofKind("every-view-write-keeps", ["positive"]),
+    "JSON.stringify([Array.from(markNonNull({ flags: new Uint8Array(2), chunks: [[5, 6], null], extras: [[2, 3], null] }).flags), Array.from(markNonNull({ flags: new Uint8Array(1), chunks: [[4]], extras: null }).flags)])"),
+    "[[1,0],[1]]", "every-view-write-keeps: typed-array writes preserve quantified ordinary-array invariants");
+  assert.equal(runExample(ofKind("confined-multi-arr-outside-every", ["positive"]),
+    "JSON.stringify(buildSummaries({ data: { chunks: [[1, 2], null], extras: [[3, 4], null] }, starts: null, ends: null, marks: null }))"),
+    '{"starts":[2,0],"ends":[0,1],"marks":[1,0]}', "confined-multi-arr-outside-every: multi-array confined pushes and writes preserve outside quantified invariants");
+  assert.equal(runExample(negative("invalid-object-spread-guarded-every"),
+    "(() => { const r = extendBroken({ chunks: [[1, 2]], chunkExtras: [[3, 4]] }, 0); return typeof r.chunkExtras[0][0]; })()"),
+    "undefined", "invalid-object-spread-guarded-every: overriding chunkExtras with [[]] breaks parallel length invariant");
+  assert.equal(runExample(negative("invalid-confined-outside-push-every"),
+    "(() => { const c = [[1]]; const b = pushAliased({ chunks: c }, c); return typeof b.chunks[1][0]; })()"),
+    "undefined", "invalid-confined-outside-push-every: pushing [] onto aliased target breaks quantified element length");
+  assert.equal(runExample(negative("invalid-view-write-every-view"),
+    "(() => { const v = new Uint8Array([0]); return typeof writeViewAliased(v, v, [10]); })()"),
+    "undefined", "invalid-view-write-every-view: aliased Uint8Array write corrupts index bound and reads undefined");
 }

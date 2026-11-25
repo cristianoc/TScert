@@ -862,6 +862,255 @@ private theorem ownedArrays_of_same {n : Nat} {W : WorldT n} {h h' : Heap} {ρ :
         simp [entriesAt, hsame sp hsp]
   exact (hoa y hy).2 loc (by rw [← hsc_eq]; exact hl)
 
+omit [DecidableEq ι] in
+private theorem elemWriteKeep_sound {G : NormalGraph ι} {ctx : List (Ty ι)}
+    {pre : NodeConf} {expr : Tm} {ρ : Env} {s s' : TolerantFrames.IndexedHeap}
+    {k : Nat} {v : Val} {Priv : Nat → Prop}
+    (hcw : isConfArrElemWrite ctx.length pre expr = true)
+    (he : EnvOk G ctx ρ s.n s.W)
+    (hρ_ok : ∀ i, RefsOk s.W (ρ i))
+    (hlt : ∀ loc, Priv loc → loc < s.h.length)
+    (hoa : OwnedArrays s.h ρ pre.ownedArr Priv)
+    (hval : isVal v = true)
+    (hsteps : Steps k s.h (instantiate 0 ρ expr) s'.h v) :
+    (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
+    OwnedArrays s'.h ρ pre.ownedArr (fun loc => Priv loc ∨ (s.h.length ≤ loc ∧ loc < s'.h.length)) ∧
+    v = .nul := by
+  let PrivExt : Nat → Prop := fun loc => Priv loc ∨ (s.h.length ≤ loc ∧ loc < s'.h.length)
+  have hval_lt : ∀ i, i < ctx.length → isVal (ρ i) = true := fun i hi =>
+    (meaning_value (he.2 i (ctx[i]'hi) (List.getElem?_eq_getElem hi))).1
+  obtain ⟨x, iv, y, hex, hxlt, hylt, hxmem, hivc⟩ :
+      ∃ x iv y, expr = .writeAt arraySpineKey (.var x) (.setElem (.readAt arraySpineKey (.var x)) iv (.var y)) ∧
+        x < ctx.length ∧ y < ctx.length ∧ x ∈ pre.ownedArr ∧
+        (match iv with | .var i => decide (i < ctx.length) | .num _ => true | _ => false) = true := by
+    generalize heq : expr = e at hcw
+    unfold isConfArrElemWrite at hcw
+    split at hcw
+    · simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.contains_iff_mem] at hcw
+      obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, hxlt⟩, hylt⟩, hxmem⟩, hivc⟩ := hcw
+      exact ⟨_, _, _, rfl, hxlt, hylt, hxmem, hivc⟩
+    · cases hcw
+  rw [hex] at hsteps
+  have hvx : isVal (ρ x) = true := hval_lt x hxlt
+  have hvy : isVal (ρ y) = true := hval_lt y hylt
+  have hviv : isVal (instantiate 0 ρ iv) = true := by
+    cases iv with
+    | var i =>
+      simp only [decide_eq_true_eq] at hivc
+      simpa [instantiate] using hval_lt i hivc
+    | num _ => rfl
+    | _ => simp at hivc
+  simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hsteps
+  have hrun : ∀ {k' h1 h2}, Steps k' h1 (.writeAt arraySpineKey (ρ x)
+      (.setElem (.readAt arraySpineKey (ρ x)) (instantiate 0 ρ iv) (ρ y))) h2 v →
+      h1 = s.h → h2 = s'.h →
+      (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
+      OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := by
+    intro k' h1 h2 hst hh1 hh2
+    subst hh1
+    have hnoWrite : ∀ (m : Nat) {hm t0 rx}, isVal rx = true →
+        (match rx with | .objAt fs _ _ => fs.lookup arraySpineKey = none | _ => True) →
+        Steps m hm (.writeAt arraySpineKey rx t0) h2 v → False := by
+      intro m
+      induction m with
+      | zero => intro hm t0 rx _ _ hst'; cases hst'; simp [isVal] at hval
+      | succ m ih =>
+        intro hm t0 rx hvrx hnone hst'
+        cases hst' with
+        | next st hrest =>
+          cases rx with
+          | objAt fs c oid =>
+            cases st with
+            | writeC1 s1 => exact value_no_step hvrx s1
+            | writeC2 _ _ => exact ih hvrx hnone hrest
+            | writeField _ hfd _ => simp [hfd] at hnone
+          | _ =>
+            cases st with
+            | writeC1 s1 => exact value_no_step hvrx s1
+            | writeC2 _ _ => exact ih hvrx trivial hrest
+    obtain ⟨flds, cd, oid, hrx⟩ : ∃ flds cd oid, ρ x = .objAt flds cd oid := by
+      have key : ∀ {r : Tm}, (∀ f c o, r ≠ .objAt f c o) →
+          (match r with | .objAt fs _ _ => fs.lookup arraySpineKey = none | _ => True) := by
+        intro r hne; cases r with | objAt f c o => exact (hne f c o rfl).elim | _ => trivial
+      exact Classical.byContradiction fun h =>
+        hnoWrite _ hvx (key fun f c o heq => h ⟨f, c, o, heq⟩) hst
+    rw [hrx] at hst
+    cases hst with
+    | refl => simp [isVal] at hval
+    | next st1 hst1 =>
+      cases st1 with
+      | writeC1 s1 => exact absurd s1 (value_no_step rfl)
+      | writeC2 _ s1 =>
+        cases s1 with
+        | setC1 s2 =>
+          cases s2 with
+          | readC s3 => exact absurd s3 (value_no_step rfl)
+          | readProto hnone _ _ => exact False.elim (hnoWrite _ rfl (by simp [hnone]) hst1)
+          | readMissing hnone _ => exact False.elim (hnoWrite _ rfl (by simp [hnone]) hst1)
+          | readField hfd hlu =>
+            rename_i u target
+            have htargetP : Priv target := (hoa x hxmem).1 target (by
+              simp [hrx, HeapKnowledge.elementsOf, hfd])
+            cases hst1 with
+            | refl => simp [isVal] at hval
+            | next st2 hst2 =>
+              have huval : isVal u = true := heapVals_of_indexed s target u hlu
+              obtain ⟨b', xs, _, rfl, hcase⟩ :=
+                ExpressionEffects.elem_set_inv rfl huval hviv hvy st2
+              have hlenW : (entries s.W).length = s.h.length := by
+                have := s.ok.1.1; simp only [toList, List.length_map] at this; exact this.symm
+              rcases hcase with ⟨cell, hcell, rfl, rfl⟩ | ⟨idx, _, _, rfl, rfl⟩
+              · have hcm : some cell ∈ xs := by
+                  unfold elemLoc at hcell
+                  cases hi' : indexOfBits b' with
+                  | none => simp [hi'] at hcell
+                  | some ix =>
+                    simp only [hi', Option.bind_some] at hcell
+                    cases hq : xs[ix]? with
+                    | none => simp [hq] at hcell
+                    | some o =>
+                      simp only [hq, Option.bind_some] at hcell
+                      cases hcell
+                      exact List.mem_of_getElem? hq
+                have hcell_in_spine : some cell ∈ spineCells s.h (ρ x) := by
+                  simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
+                    Option.bind_some, spineEntries, List.mem_append]
+                  exact .inl hcm
+                have hcellP : Priv cell := (hoa x hxmem).2 cell hcell_in_spine
+                cases hst2 with
+                | refl => simp [isVal] at hval
+                | next st3 hst3 =>
+                  cases st3 with
+                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
+                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr xs) = true))
+                  | writeField _ hfd' _ =>
+                    rename_i target'
+                    rw [hfd] at hfd'; cases hfd'
+                    have hv_eq : s'.h = (s.h.set cell (ρ y)).set target (.arr xs) ∧ v = .nul := by
+                      cases hst3 with
+                      | refl => exact ⟨hh2.symm, rfl⟩
+                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
+                    obtain ⟨hh', rfl⟩ := hv_eq
+                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
+                      intro loc _ hnp
+                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
+                      have hnc : cell ≠ loc := fun e => hnp (e ▸ hcellP)
+                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_set_ne hnc]
+                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
+                      fun loc hl => ?_⟩, rfl⟩
+                    have hrole_cell : roleAt s.W cell = some .elem :=
+                      spineCells_role_elem s.ok (hρ_ok x) hcell_in_spine
+                    have hcellIn : ∀ {sp : Option Nat},
+                        (∀ m, sp = some m → roleAt s.W m ≠ some .elem) →
+                        some loc ∈ entriesAt s'.h sp → some loc ∈ entriesAt s.h sp := by
+                      intro sp hne hme
+                      cases sp with
+                      | none => simp [entriesAt] at hme
+                      | some m =>
+                        by_cases hteq : target = m
+                        · subst hteq
+                          have hlt0 : target < (s.h.set cell (ρ y)).length := by
+                            simpa using (List.getElem?_eq_some_iff.mp hlu).1
+                          simpa [entriesAt, hh', List.getElem?_set_self hlt0, hlu] using hme
+                        · have hnc : cell ≠ m := fun e => hne m rfl (e ▸ hrole_cell)
+                          simpa [entriesAt, hh', List.getElem?_set_ne hteq, List.getElem?_set_ne hnc] using hme
+                    simp only [spineCells, List.mem_append] at hl
+                    rcases hl with hl | hl
+                    · exact .inl ((hoa z hz).2 loc (by
+                        simp only [spineCells, List.mem_append]
+                        exact .inl (hcellIn (fun m hm hce => by
+                          cases hrz : ρ z with
+                          | objAt fs cc oid =>
+                            rw [hrz] at hm; simp only [Footprints.fieldsOf] at hm
+                            have hsr : SlotRole arraySpineKey (roleAt s.W m) :=
+                              (hρ_ok z) (.slot arraySpineKey m) (by
+                                rw [hrz]; exact TolerantFrames.Reach.slot_mem_refs (c := cc) (i := oid) (lookup_mem_pair hm))
+                            rw [hce] at hsr; exact hsr
+                          | _ => rw [hrz] at hm; simp [Footprints.fieldsOf] at hm) hl)))
+                    · exact .inl ((hoa z hz).2 loc (by
+                        simp only [spineCells, List.mem_append]
+                        exact .inr (hcellIn (fun m hm hce => by
+                          cases hrz : ρ z with
+                          | objAt fs cc oid =>
+                            cases cc with
+                            | view s' fmt len =>
+                              simp only [hrz, HeapKnowledge.descriptorSpine, Option.some.injEq] at hm
+                              have hsr := (hρ_ok z) _ (by rw [hrz]; simp [refs] :
+                                Ref.view s' fmt len (fs.lookup arraySpineKey).isNone ∈ refs (ρ z))
+                              rw [← hm, hsr.2] at hce; cases hce
+                            | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm
+                          | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm) hl)))
+              · cases hst2 with
+                | refl => simp [isVal] at hval
+                | next st3 hst3 =>
+                  cases st3 with
+                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
+                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr _) = true))
+                  | writeField _ hfd' _ =>
+                    rename_i target'
+                    rw [hfd] at hfd'; cases hfd'
+                    have hv_eq : s'.h = (s.h ++ [ρ y]).set target (.arr (placeAt xs idx s.h.length)) ∧ v = .nul := by
+                      cases hst3 with
+                      | refl => exact ⟨hh2.symm, rfl⟩
+                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
+                    obtain ⟨hh', rfl⟩ := hv_eq
+                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
+                      intro loc hlt0 hnp
+                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
+                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_append_left hlt0]
+                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
+                      fun loc hl => ?_⟩, rfl⟩
+                    have hcellIn : ∀ {sp : Option Nat},
+                        (∀ m, sp = some m → m < s.h.length) →
+                        (∀ c, some c ∈ entriesAt s.h sp → Priv c) →
+                        some loc ∈ entriesAt s'.h sp → PrivExt loc := by
+                      intro sp hspLt hspOld hme
+                      cases sp with
+                      | none => simp [entriesAt] at hme
+                      | some m =>
+                        by_cases hteq : target = m
+                        · subst hteq
+                          have hlt0 : target < s.h.length := (List.getElem?_eq_some_iff.mp hlu).1
+                          have hlt_app : target < (s.h ++ [ρ y]).length := by rw [List.length_append]; omega
+                          simp only [entriesAt, hh', List.getElem?_set_self hlt_app,
+                            Option.bind_some, spineEntries, Option.getD_some] at hme
+                          rcases ExpressionEffects.placeAt_mem hme with hme | rfl
+                          · exact .inl ((hoa x hxmem).2 loc (by
+                              simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
+                                Option.bind_some, spineEntries, List.mem_append]
+                              exact .inl hme))
+                          · exact .inr ⟨Nat.le_refl _, by rw [hh']; simp⟩
+                        · have hlt0 : m < s.h.length := hspLt m rfl
+                          simp only [entriesAt, hh', List.getElem?_set_ne hteq,
+                            List.getElem?_append_left hlt0] at hme
+                          exact .inl (hspOld loc hme)
+                    simp only [spineCells, List.mem_append] at hl
+                    rcases hl with hl | hl
+                    · exact hcellIn
+                        (fun m hm => hlt m ((hoa z hz).1 m (by
+                          cases hrz : ρ z <;> simp_all [HeapKnowledge.elementsOf, Footprints.fieldsOf])))
+                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inl hc))
+                        hl
+                    · exact hcellIn
+                        (fun m hm => by
+                          cases hrz : ρ z with
+                          | objAt fs cc oid =>
+                            cases cc with
+                            | view s' fmt len =>
+                              simp only [hrz, HeapKnowledge.descriptorSpine, Option.some.injEq] at hm
+                              have hsr := (hρ_ok z) _ (by rw [hrz]; simp [refs] :
+                                Ref.view s' fmt len (fs.lookup arraySpineKey).isNone ∈ refs (ρ z))
+                              have hltW := roleAt_lt hsr.2
+                              omega
+                            | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm
+                          | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm)
+                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inr hc))
+                        hl
+        | setC2 _ s2 => exact absurd s2 (value_no_step hviv)
+        | setC3 _ _ s2 => exact absurd s2 (value_no_step hvy)
+      | writeField hv_bad _ _ => simp [isVal] at hv_bad
+  exact hrun hsteps rfl rfl
+
 /-- **Single-node soundness of `checkNode`** (normal exits and framed return):
 given `ConfinedAt` on entry of node `l`, `checkNode = true`, `TmRefsBelow m₀ node.expression`,
 and a normal run `Steps k s.h (instantiate 0 ρ node.expression) s'.h v`:
@@ -912,241 +1161,8 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
   let PrivExt : Nat → Prop := fun loc => Priv loc ∨ (s.h.length ≤ loc ∧ loc < s'.h.length)
   have hElemWriteKeep : isConfArrElemWrite c.context.length pre node.expression = true →
       (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
-      OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := by
-    intro hcw
-    cases hex : node.expression with
-    | writeAt f a b =>
-      cases a with
-      | var x =>
-        cases b with
-        | setElem rd iv rhs =>
-          cases rd with
-          | readAt f' a' =>
-            cases a' with
-            | var x' =>
-              cases rhs with
-              | var y =>
-                rw [hex] at hcw hsteps
-                simp only [isConfArrElemWrite, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
-                  List.contains_iff_mem] at hcw
-                obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, hxlt⟩, hylt⟩, hxmem⟩, hivc⟩ := hcw
-                have hvx : isVal (ρ x) = true := hval_lt x hxlt
-                have hvy : isVal (ρ y) = true := hval_lt y hylt
-                have hviv : isVal (instantiate 0 ρ iv) = true := by
-                  cases iv with
-                  | var i =>
-                    simp only [decide_eq_true_eq] at hivc
-                    simpa [instantiate] using hval_lt i hivc
-                  | num _ => rfl
-                  | _ => cases hivc
-                simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hsteps
-                have hrun : ∀ {k' h1 h2}, Steps k' h1 (.writeAt arraySpineKey (ρ x)
-                    (.setElem (.readAt arraySpineKey (ρ x)) (instantiate 0 ρ iv) (ρ y))) h2 v →
-                    h1 = s.h → h2 = s'.h →
-                    (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
-                    OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := by
-                  intro k' h1 h2 hst hh1 hh2
-                  subst hh1
-                  have hnoWrite : ∀ (m : Nat) {hm t0},
-                      (match ρ x with | .objAt fs _ _ => fs.lookup arraySpineKey = none | _ => True) →
-                      Steps m hm (.writeAt arraySpineKey (ρ x) t0) h2 v → False := by
-                    intro m
-                    induction m with
-                    | zero => intro hm t0 _ hst'; cases hst'; simp [isVal] at hval
-                    | succ m ih =>
-                      intro hm t0 hnone hst'
-                      cases hst' with
-                      | next st hrest =>
-                        cases hrx : ρ x with
-                        | objAt fs c oid =>
-                          rw [hrx] at st hrest hnone
-                          cases st with
-                          | writeC1 s1 => exact value_no_step (by rw [← hrx]; exact hvx) s1
-                          | writeC2 _ _ => exact ih (by rw [hrx]; exact hnone) (by rw [hrx]; exact hrest)
-                          | writeField hfd _ => simp [hfd] at hnone
-                        | _ =>
-                          rw [hrx] at st hrest
-                          cases st with
-                          | writeC1 s1 => exact value_no_step (by rw [← hrx]; exact hvx) s1
-                          | writeC2 _ _ => exact ih (by simp [hrx]) (by rw [hrx]; exact hrest)
-                  cases hrx : ρ x with
-                  | objAt flds cd oid =>
-                    rw [hrx] at hst
-                    cases hst with
-                    | refl => simp [isVal] at hval
-                    | next st1 hst1 =>
-                      cases st1 with
-                      | writeC1 s1 => exact absurd s1 (value_no_step rfl)
-                      | writeC2 _ s1 =>
-                        cases s1 with
-                        | setC1 s2 =>
-                          cases s2 with
-                          | readC s3 => exact absurd s3 (value_no_step rfl)
-                          | readProto hnone _ => exact False.elim (hnoWrite _ (by simp [hrx, hnone]) (by rw [hrx]; exact hst1))
-                          | readMissing hnone _ => exact False.elim (hnoWrite _ (by simp [hrx, hnone]) (by rw [hrx]; exact hst1))
-                          | readField hfd hlu =>
-                            rename_i target u
-                            have htargetP : Priv target := (hoa x hxmem).1 target (by
-                              simp [hrx, Footprints.spineOf, Footprints.fieldsOf, hfd])
-                            cases hst1 with
-                            | refl => simp [isVal] at hval
-                            | next st2 hst2 =>
-                              have huval : isVal u = true := HeapExpressionRules.heap_values s.adm s.ok target u hlu
-                              obtain ⟨b', xs, _, rfl, hcase⟩ :=
-                                ExpressionEffects.elem_set_inv rfl huval hviv hvy st2
-                              rcases hcase with ⟨cell, hcell, rfl, rfl⟩ | ⟨idx, _, _, rfl, rfl⟩
-                              · have hcm : some cell ∈ xs := by
-                                  unfold elemLoc at hcell
-                                  cases hi' : indexOfBits b' with
-                                  | none => simp [hi'] at hcell
-                                  | some ix =>
-                                    simp only [hi', Option.bind_some] at hcell
-                                    cases hq : xs[ix]? with
-                                    | none => simp [hq] at hcell
-                                    | some o =>
-                                      simp only [hq, Option.bind_some] at hcell
-                                      cases hcell
-                                      exact List.mem_of_getElem? hq
-                                have hcellP : Priv cell := (hoa x hxmem).2 cell (by
-                                  simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
-                                    Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some,
-                                    List.mem_append]
-                                  exact .inl hcm)
-                                cases hst2 with
-                                | refl => simp [isVal] at hval
-                                | next st3 hst3 =>
-                                  cases st3 with
-                                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
-                                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr xs) = true))
-                                  | writeField hfd' _ =>
-                                    rename_i target'
-                                    rw [hfd] at hfd'; cases hfd'
-                                    have hv_eq : s'.h = (s.h.set cell (ρ y)).set target (.arr xs) ∧ v = .nul := by
-                                      cases hst3 with
-                                      | refl => exact ⟨hh2.symm, rfl⟩
-                                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
-                                    obtain ⟨hh', rfl⟩ := hv_eq
-                                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
-                                      intro loc _ hnp
-                                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
-                                      have hnc : cell ≠ loc := fun e => hnp (e ▸ hcellP)
-                                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_set_ne hnc]
-                                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
-                                      fun loc hl => ?_⟩, rfl⟩
-                                    have hsp : spineCells s'.h (ρ z) = spineCells s.h (ρ z) := by
-                                      have hloc : ∀ l, s'.h[l]?.bind HeapKnowledge.spineEntries =
-                                          s.h[l]?.bind HeapKnowledge.spineEntries := by
-                                        intro l
-                                        rw [hh']
-                                        by_cases hlt' : target = l
-                                        · subst hlt'
-                                          have hlt0 : target < s.h.length := (List.getElem?_eq_some_iff.mp hlu).1
-                                          rw [List.getElem?_set_self (by simpa using hlt0), hlu]
-                                        · rw [List.getElem?_set_ne hlt']
-                                          by_cases hlc' : cell = l
-                                          · subst hlc'
-                                            have href := HeapExpressionRules.heap_refs s.adm s.ok target (.arr xs) hlu
-                                            have hmem : Ref.cell cell ∈ refs (.arr xs) := by
-                                              simp [refs, hcm]
-                                            have ⟨hclt, hrole⟩ := href _ hmem
-                                            have hnotarr : ∀ w, s.h[cell]? = some w → HeapKnowledge.spineEntries w = none := by
-                                              intro w hw
-                                              cases w with
-                                              | arr _ =>
-                                                have hcs := s.ok.2.2 cell (.arr _) hw
-                                                rw [hrole] at hcs; exact hcs.elim
-                                              | _ => rfl
-                                            have hnotarrY : HeapKnowledge.spineEntries (ρ y) = none := by
-                                              cases hy' : ρ y with
-                                              | arr _ =>
-                                                have hvy' := he.2 y (c.context[y]'hylt) (List.getElem?_eq_getElem hylt)
-                                                rw [hy'] at hvy'
-                                                exact absurd (meaning_value hvy').2 (by simp [notArr])
-                                              | _ => rfl
-                                            rw [List.getElem?_set_self hclt]
-                                            cases hq : s.h[cell]? with
-                                            | none => simp [hnotarrY]
-                                            | some w => simp [hnotarrY, hnotarr w hq]
-                                          · rw [List.getElem?_set_ne hlc']
-                                      simp only [spineCells, entriesAt, hloc]
-                                    rw [hsp] at hl
-                                    exact .inl ((hoa z hz).2 loc hl)
-                              · cases hst2 with
-                                | refl => simp [isVal] at hval
-                                | next st3 hst3 =>
-                                  cases st3 with
-                                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
-                                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr _) = true))
-                                  | writeField hfd' _ =>
-                                    rename_i target'
-                                    rw [hfd] at hfd'; cases hfd'
-                                    have hv_eq : s'.h = (s.h ++ [ρ y]).set target (.arr (placeAt xs idx s.h.length)) ∧ v = .nul := by
-                                      cases hst3 with
-                                      | refl => exact ⟨hh2.symm, rfl⟩
-                                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
-                                    obtain ⟨hh', rfl⟩ := hv_eq
-                                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
-                                      intro loc hlt0 hnp
-                                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
-                                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_append_left hlt0]
-                                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
-                                      fun loc hl => ?_⟩, rfl⟩
-                                    have hcellIn : ∀ {sp : Option Nat},
-                                        (∀ m, sp = some m → m < s.h.length) →
-                                        (∀ c, some c ∈ entriesAt s.h sp → Priv c) →
-                                        some loc ∈ entriesAt s'.h sp → PrivExt loc := by
-                                      intro sp hspLt hspOld hme
-                                      cases sp with
-                                      | none => simp [entriesAt] at hme
-                                      | some m =>
-                                        by_cases hteq : target = m
-                                        · subst hteq
-                                          have hlt0 : target < s.h.length := (List.getElem?_eq_some_iff.mp hlu).1
-                                          simp only [entriesAt, hh', List.getElem?_set_self (by simp; omega),
-                                            Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some] at hme
-                                          rcases ExpressionEffects.placeAt_mem hme with hme | rfl
-                                          · exact .inl ((hoa x hxmem).2 loc (by
-                                              simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
-                                                Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some,
-                                                List.mem_append]
-                                              exact .inl hme))
-                                          · exact .inr ⟨Nat.le_refl _, by rw [hh']; simp⟩
-                                        · have hlt0 : m < s.h.length := hspLt m rfl
-                                          simp only [entriesAt, hh', List.getElem?_set_ne hteq,
-                                            List.getElem?_append_left hlt0] at hme
-                                          exact .inl (hspOld loc hme)
-                                    simp only [spineCells, List.mem_append] at hl
-                                    rcases hl with hl | hl
-                                    · exact hcellIn
-                                        (fun m hm => hlt m ((hoa z hz).1 m (by
-                                          cases hrz : ρ z <;> simp_all [Footprints.spineOf, Footprints.fieldsOf])))
-                                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inl hc))
-                                        hl
-                                    · exact hcellIn
-                                        (fun m hm => by
-                                          cases hrz : ρ z with
-                                          | objAt fs cc oid =>
-                                            cases cc with
-                                            | view s' fmt len =>
-                                              simp only [hrz, HeapKnowledge.descriptorSpine, Option.some.injEq] at hm
-                                              subst hm
-                                              exact ((hρ_ok z) _ (by rw [hrz]; simp [refs] :
-                                                Ref.view s' fmt len (fs.lookup arraySpineKey).isNone ∈ refs (ρ z))).1
-                                            | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm
-                                          | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm)
-                                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inr hc))
-                                        hl
-                        | setC2 _ s2 => exact absurd s2 (value_no_step hviv)
-                        | setC3 _ _ s2 => exact absurd s2 (value_no_step hvy)
-                      | writeField _ _ _ => simp [isVal] at hval
-                  | _ => exact False.elim (hnoWrite _ (by simp [hrx]) hst)
-                exact hrun hsteps rfl rfl
-              | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
-            | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
-          | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
-        | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
-      | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
-    | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+      OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := fun hcw =>
+    elemWriteKeep_sound hcw he hρ_ok hlt hoa hval hsteps
   have hCallKeep : confinedCallNormal G images codes sums c node stepK deriv pre = true →
       (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
       OwnedArrays s'.h ρ pre.ownedArr PrivExt := by
@@ -1803,18 +1819,19 @@ def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (
     else
       let (tBase, _) := runFixedPoint G P claims start chosen
       tbl := tBase
-      let (f0, o0) := collect tbl
-      let mut bestScore := f0.length + o0.length
+      let (baseF, baseO) := collect tbl
+      let mut bestO := baseO.length
+      let mut bestF := baseF.length
       for a in allocs do
         if !chosen.contains a then
           let tryList := chosen ++ [a]
           let (t', _) := runFixedPoint G P claims start tryList
           let (f', o') := collect t'
-          let sc := f'.length + o'.length
-          if sc > bestScore then
+          if o'.length > bestO || (o'.length == bestO && f'.length > bestF) then
             chosen := tryList
             tbl := t'
-            bestScore := sc
+            bestO := o'.length
+            bestF := f'.length
   let (framed, outside) := collect tbl
   if framed.isEmpty && outside.isEmpty then return ⟨#[], [], [], []⟩
   return ⟨tbl, framed, chosen, outside⟩

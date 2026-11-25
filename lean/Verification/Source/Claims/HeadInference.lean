@@ -618,7 +618,7 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
   -- none of its arrays by name (a write through an alias or a callback is
   -- the pass's to check or refuse).
   | .every _ a pa stop body =>
-    es.all quiet || (!es.any (fun | .elemWrite .. | .indexWrite .. | .objectAssign .. => true | _ => false) &&
+    es.all quiet || (!es.any (fun | .objectAssign .. => true | _ => false) &&
       let t := touched es inBounds
       let kept := fun ((n, p, k) : Key) => !p.isEmpty || k == .value || k == .strLength || !t.contains n
       let rec bodyKept : BodyFact → Bool
