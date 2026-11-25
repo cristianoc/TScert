@@ -1,0 +1,334 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-421"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-421</code></a><ul><li>1 commit</li><li>changes: 1 Definition, 3 Rule, 1 Proposal, 1 Trust, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion; %ArrayFilled% adds freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></li><li>wire: Bound.parallel and ElemTarget.parallel add shift; IndexFact adds elemSpineApart and IndexShift on element/atIndex; OperationPost adds freshRegion and shallowCopy</li></ul></li></ul></section>
+<h2 id="g-pr-421"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-421</code></h2><article class="card" id="c-9e6fa5b71"><header><div><div class="sha">9e6fa5b71 · Cristiano Calcagno · Nov 25, 17:40</div><h3>Support shifted parallel quantified clauses, shallow-copy slice, and copy-transfer overwrites (#397)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>appendSubRange shallow-copies prefix.advances via slice(), appends subWidths.length entries starting at base while building 0-indexed subExtras whose entry subExtras[s] pairs with advances[base + s], and then copies prefix.extras[i] into extras[i] and subExtras[s] into extras[base + s]. This failed with <code>source ensures refusal: a return of 'appendSubRange' does not establish the postcondition</code> because parallel quantified bounds could only index at i (not i + shift), 0-arg slice() did not state shallow-copy element preservation or a fresh region, element-spine separation was not tracked across array growth, in-bounds overwrites did not transfer a copied source element's quantified body into the written parallel array, and dropping a temporary field-read slot did not restate quantified facts onto the surviving object path.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">affine index shift and element-spine separation</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">IndexShift</span> <span class="m-rel">=</span> { <span class="m-text">terms</span> <span class="m-rel">:</span> <span class="m-con">Linear</span>.<span class="m-text">Form Term, offset</span> <span class="m-rel">:</span> <span class="m-con">Int</span> }</span></div><div class="row"><span><span class="m-op">eval</span>(<var>i</var>, <span class="m-op">sh</span>) <span class="m-rel">=</span> <var>i</var> + <span class="m-op">sum</span><sub><var>j</var></sub> (<var>c</var><sub><var>j</var></sub> * <span class="m-op">val</span>(<var>t</var><sub><var>j</var></sub>)) + <span class="m-text">offset (defined when non-negative)</span></span></div><div class="row"><span><span class="m-text">Attached to Bound</span>.<span class="m-text">parallel, ElemTarget</span>.<span class="m-text">parallel, and IndexFact</span>.<span class="m-op">atIndex</span>,</span></div><div class="row"><span><span class="m-text">and generalizing IndexFact</span>.<span class="m-text">element's index from a bare slot to an</span></span></div><div class="row"><span><span class="m-con">IndexShift</span>.</span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-op">elemSpineApart</span>(<var>a</var>, <var>p</var>, <var>b</var>, <var>q</var>) (<span class="m-con">SepFact</span>.<span class="m-op">elemSpines</span>)<span class="m-rel">:</span> <span class="m-text">the spine of</span></span></div><div class="row"><span><var>a</var>.<var>p</var> <span class="m-text">differs from the spine of every present element of</span> <var>b</var>.<var>q</var>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">shallow-copy slice and fresh-region postconditions</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>r</var> <span class="m-rel">=</span> <span class="m-con">recv</span>.<span class="m-op">slice</span>()</span><span>(0-<span class="m-text">arg, shallowCopyResult</span> &amp; <span class="m-op">freshRegionResult</span>)</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span><var>k</var> &lt; <span class="m-text">recv</span>.<span class="m-text">length</span>. <var>φ</var>(<var>k</var>, <span class="m-text">recv</span>[<var>k</var>])  ⇒  <span class="m-bind">∀</span><var>k</var> &lt; <var>r</var>.<span class="m-text">length</span>. <var>φ</var>(<var>k</var>, <var>r</var>[<var>k</var>])</div><div><span class="m-text">and r's spine and element cells are apart from every pre-call array</span></div><div><span class="m-text">region, with r's spine apart from every pre-call element spine</span>.</div></div></div><span class="rule-name">(shallow-copy-every)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">shifted parallel push and copy-transfer element write</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">advances</span>.<span class="m-op">push</span>(<var>x</var>) <span class="m-text">establishes</span> <span class="m-op">element</span>(<var>x</var>, <span class="m-text">advances</span>, <span class="m-op">old</span><sub><span class="m-text">len</span></sub>) (<code class="m-code">pushElemAtoms</code>)</span></div><div class="row"><span><span class="m-text">and preserves quantified facts over other arrays via</span> <code class="m-code">elemSpineApart</code>.</span></div><div class="row"><span><span class="m-text">When subExtras</span>.<span class="m-op">push</span>(<var>y</var>) <span class="m-text">extends a shifted parallel quantifier</span></span></div><div class="row"><span><code class="m-code">forall k <span class="tk-k">in</span> subExtras: advances[base + k] ... subExtras[k]</code>,</span></div><div class="row"><span><code class="m-code">appendParallelAtIndex</code> <span class="m-text">resolves advances</span>[<span class="m-text">base</span> + <span class="m-op">old</span><sub><span class="m-text">len</span></sub>] <span class="m-text">from the</span></span></div><div class="row"><span><span class="m-text">recorded</span> <code class="m-code">element</code> / <code class="m-code">atIndex</code> <span class="m-text">facts</span>.</span></div><div class="row"><span><span class="m-text">At an in-bounds overwrite</span> <code class="m-code">extras[at] = src[idx] ?? <span class="tk-k">null</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">IndexWrites</span>.copyTransferBody</code> <span class="m-text">instantiates an existing quantified fact</span></span></div><div class="row"><span><span class="m-text">over <code class="m-code">src</code> at <code class="m-code">idx</code> (or <code class="m-code">at</code>) and transfers its body clause into the</span></span></div><div class="row"><span><span class="m-text">target quantified fact over <code class="m-code">extras</code> at</span> <code class="m-code">at</code>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">quantified fact restatement across dropped temporary slots</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">HeapKnowledge</span>.<span class="m-text">restateEvery (called in restateSpines) lifts unconditional</span></span></div><div class="row"><span><span class="m-con">IndexFact</span>.<span class="m-text">every atoms naming a dropped temporary slot through plain and</span></span></div><div class="row"><span><span class="m-text">bridge read links (liftPath</span> / <span class="m-op">liftDropped</span> / <span class="m-text">liftDroppedShift), preserving</span></span></div><div class="row"><span><span class="m-text">quantified invariants across object literals such as</span></span></div><div class="row"><span><code class="m-code"><span class="tk-k">return</span> { advances, extras: prefix.extras }</code>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">region inference: arity- and variadic-aware fresh/grown calls</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>freshRegionCall, freshSpineCall, and spineGrown checked only fixed arrows across all overloads and ignored variadic signatures, missing 0-arg slice() and variadic push(...items).</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>matchingCallEffects filters fixed arrows by argument count and includes variadic signatures with params.length &lt;= arity; freshApartAt proposes elemSpineApart for grown fresh-spine slots at loop heads. All proposals remain untrusted and are checked by the proved pass on every edge.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">Array.prototype.slice 0-arg, %ArrayFilled%</span></h4><div class="prose"><p>0-arg Array.prototype.slice() adds OperationPostF.shallowCopy and OperationPostF.freshRegion (ECMA-262 Array.prototype.slice creates a fresh array spine and fresh element cells holding the receiver's own values without mutating the receiver). %ArrayFilled% adds OperationPostF.freshRegion (fresh array spine and freshly allocated element cells). Both are documented in docs/SOURCE-CONTRACTS.md and checked by tests/builtin-trust.mts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">Bound, ElemTarget, IndexFact, OperationPost</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Bound.parallel and ElemTarget.parallel had no shift; IndexFact.element and IndexFact.atIndex carried a bare slot / term; OperationPost lacked freshRegion and shallowCopy; IndexFact lacked elemSpineApart.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Bound.parallel and ElemTarget.parallel carry shift (IndexShift); IndexFact.element and IndexFact.atIndex carry IndexShift; IndexFact adds elemSpineApart; OperationPost adds freshRegion and shallowCopy. Parser annotations accept affine shifted parallel indices (<code>a[base + k]</code>, <code>a[base + k - from]</code>).</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md, REQUEST-PROTOCOL.md, SOURCE-CONTRACTS.md</span></h4><div class="prose"><p>Document affine shifted parallel indices, shallow-copy slice and %ArrayFilled% freshRegion contracts, elemSpineApart, copy-transfer overwrites, and updated wire types.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-offset-parallel-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by verified positive case</span></summary><pre class="code"><span class="tk-c">// Shifted parallel indexing (`rich-inline.ts:496-578`): a sub-range builder</span>
+<span class="tk-c">// appends `subWidths.length` entries onto `advances` starting at `base` while</span>
+<span class="tk-c">// building a 0-indexed `subExtras` whose element `subExtras[s]` matches</span>
+<span class="tk-c">// `advances[base + s]`. Copying `subExtras[s]` into `extras[base + s]` keeps</span>
+<span class="tk-c">// `advances[i].length &lt;= extras[i].length`, relying on a shifted parallel</span>
+<span class="tk-c">// invariant (`advances[base + s]` vs `subExtras[s]`) that `Bound.parallel`</span>
+<span class="tk-c">// cannot currently express. Safe (run under Node).</span>
+<span class="tk-c">/**
+ * @invariant this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ConcatParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendSubRange(prefix: <span class="tk-t">ConcatParallel</span>, subWidths: number[]): <span class="tk-t">ConcatParallel</span> {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = prefix.advances.slice();
+  <span class="tk-k">const</span> base = advances.length;
+  <span class="tk-k">const</span> subExtras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subWidths.length; s++) {
+    <span class="tk-k">const</span> w = subWidths[s]!;
+    advances.push([w]);
+    subExtras.push([w, <span class="tk-n">0</span>]);
+  }
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(advances.length).fill(<span class="tk-k">null</span>);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; base; i++) {
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= extras.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = prefix.extras[i] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subExtras.length; s++) {
+    <span class="tk-k">const</span> at = base + s;
+    <span class="tk-k">if</span> ((at &amp; 0x7fffffff) !== at || at &gt;= extras.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[at] = subExtras[s] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">return</span> <mark>{ advances, extras }</mark>;
+}</pre></details></li><li><details><summary><code>quantified-offset-parallel</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">appendSubRange, cloneAdvances, and sumShiftedPair verify cleanly</span></summary><pre class="code"><span class="tk-c">// Shifted parallel indexing (`rich-inline.ts:496-578`, issue #397): a sub-range</span>
+<span class="tk-c">// builder appends `subWidths.length` entries onto `advances` starting at `base`</span>
+<span class="tk-c">// while building a 0-indexed `subExtras` whose element `subExtras[s]` matches</span>
+<span class="tk-c">// `advances[base + s]`. Copying `prefix.extras[i]` into `extras[i]` and</span>
+<span class="tk-c">// `subExtras[s]` into `extras[base + s]` keeps `advances[j].length &lt;= extras[j].length`.</span>
+<span class="tk-c">/**
+ * @invariant this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ConcatParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendSubRange(
+  prefix: <span class="tk-t">ConcatParallel</span>,
+  subWidths: number[],
+): <span class="tk-t">ConcatParallel</span> {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = prefix.advances.slice();
+  <span class="tk-k">const</span> base = advances.length;
+  <span class="tk-k">const</span> subExtras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(s) &amp;&amp; 0 &lt;= base &amp;&amp; base &lt;= prefix.extras.length &amp;&amp; 0 &lt;= s
+   * @invariant subExtras.length === s
+   * @invariant advances.length === base + s
+   * @invariant forall i &lt; base of advances: advances[i] === null || prefix.extras[i] === null || advances[i].length &lt;= prefix.extras[i].length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subWidths.length; s++) {
+    <span class="tk-k">const</span> w = subWidths[s]!;
+    advances.push([w]);
+    subExtras.push([w, <span class="tk-n">0</span>]);
+  }
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(
+    advances.length,
+  ).fill(<span class="tk-k">null</span>);
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= base &amp;&amp; base &lt;= prefix.extras.length
+   * @invariant forall j &lt; base of advances: advances[j] === null || prefix.extras[j] === null || advances[j].length &lt;= prefix.extras[j].length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; base; i++) {
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = prefix.extras[i] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-c">/**
+   * @invariant safeInteger(base) &amp;&amp; safeInteger(s) &amp;&amp; 0 &lt;= base &amp;&amp; 0 &lt;= s &amp;&amp; s &lt;= subExtras.length
+   * @invariant forall k in subExtras: advances[base + k] === null || subExtras[k] === null || advances[base + k].length &lt;= subExtras[k].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subExtras.length; s++) {
+    <span class="tk-k">const</span> at = base + s;
+    <span class="tk-k">if</span> ((at &amp; 0x7fffffff) !== at || at &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[at] = subExtras[s] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}
+
+<span class="tk-c">/**
+ * Shallow-copying `prefix.advances` via 0-arg `slice()` preserves its
+ * quantified parallel-length invariant against `prefix.extras`.
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> cloneAdvances(prefix: <span class="tk-t">ConcatParallel</span>): <span class="tk-t">ConcatParallel</span> {
+  <span class="tk-k">const</span> advances = prefix.advances.slice();
+  <span class="tk-k">return</span> { advances, extras: prefix.extras };
+}
+
+<span class="tk-c">/**
+ * Reading a shifted parallel element at `base + s - from` establishes the
+ * paired inner-array length bound.
+ *
+ * @requires safeInteger(base) &amp;&amp; safeInteger(from) &amp;&amp; safeInteger(s)
+ * @requires 0 &lt;= s &amp;&amp; s &lt; subExtras.length
+ * @requires 0 &lt;= base + s - from &amp;&amp; base + s - from &lt; advances.length
+ * @requires forall k in subExtras: advances[base + k - from] === null || subExtras[k] === null || advances[base + k - from].length &lt;= subExtras[k].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumShiftedPair(
+  advances: (number[] | <span class="tk-k">null</span>)[],
+  subExtras: (number[] | <span class="tk-k">null</span>)[],
+  base: number,
+  <span class="tk-k">from</span>: number,
+  s: number,
+): number {
+  <span class="tk-k">const</span> at = base + s - <span class="tk-k">from</span>;
+  <span class="tk-k">const</span> adv = advances[at];
+  <span class="tk-k">const</span> ext = subExtras[s];
+  <span class="tk-k">if</span> (adv === <span class="tk-k">null</span> || adv === <span class="tk-k">undefined</span> || ext === <span class="tk-k">null</span> || ext === <span class="tk-k">undefined</span>)
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; adv.length; i++) {
+    total += adv[i]! + ext[i]!;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-quantified-offset-parallel</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">shorter subExtras row refused at return (reads undefined under Node)</span></summary><pre class="code"><span class="tk-c">// Negative control for shifted parallel indexing (#397): copying `subExtras[s]`</span>
+<span class="tk-c">// into `extras[base + s]` when `subExtras` holds shorter rows than `advances`</span>
+<span class="tk-c">// (or off-by-one shift `base + s + 1`) violates `ConcatParallel`'s invariant</span>
+<span class="tk-c">// (`advances[i].length &lt;= extras[i].length`), so indexing `extras[i][j]` reads</span>
+<span class="tk-c">// `undefined` / `NaN` at runtime (verified under Node).</span>
+<span class="tk-c">/**
+ * @invariant this.advances.length &lt;= this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">ConcatParallel</span> = {
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> appendSubRangeOffByOne(
+  prefix: <span class="tk-t">ConcatParallel</span>,
+  subWidths: number[],
+): <span class="tk-t">ConcatParallel</span> {
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = prefix.advances.slice();
+  <span class="tk-k">const</span> base = advances.length;
+  <span class="tk-k">const</span> subExtras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subWidths.length; s++) {
+    <span class="tk-k">const</span> w = subWidths[s]!;
+    advances.push([w, <span class="tk-n">0</span>]);
+    subExtras.push([w]);
+  }
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(
+    advances.length,
+  ).fill(<span class="tk-k">null</span>);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; base; i++) {
+    <span class="tk-k">if</span> ((i &amp; 0x7fffffff) !== i || i &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[i] = prefix.extras[i] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> s = <span class="tk-n">0</span>; s &lt; subExtras.length; s++) {
+    <span class="tk-k">const</span> at = base + s;
+    <span class="tk-k">if</span> ((at &amp; 0x7fffffff) !== at || at &gt;= extras.length)
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    extras[at] = subExtras[s] ?? <span class="tk-k">null</span>;
+  }
+  <span class="tk-k">return</span> { advances, extras };
+}</pre></details></li><li><code>invalid-quantified-offset-parallel-shift  negative</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">off-by-one shift base + s - 1 refused at return (reads undefined under Node)</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every new rule and restatement is proved in Lean with zero sorry and zero project axioms (Verification.Tests.AxiomCheck and Verification.Paper.TolerantFrames.Tests.AxiomCheck pass; mode8Accepted_sound is unchanged). The two native contract additions (0-arg slice() shallowCopy + freshRegion and %ArrayFilled% freshRegion) are audited against ECMA-262 in docs/SOURCE-CONTRACTS.md and pass tests/builtin-trust.mts.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck verifier (1031 jobs, 0 warnings); tsc, tools/unchecked.mts, tests/json-field-names.mts (17/17), tests/builtin-trust.mts, tests/docs.mts (0 problems), tests/axiom-check-imports.mts, tests/rule-inventory.mts, dev/generated-sections.mts --check, tests/node-runs.mts; run-cases.mts quantified (48/48), slice (13/13).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.HeapKnowledge.IndexShift · Verification.HeapKnowledge.restateEvery_holds · Verification.PromiseCalls.shallowCopyKept_holds · Verification.PromiseCalls.pushElemAtoms_holds · Verification.PromiseCalls.freshCallRegionApart_holds · Verification.PromiseCalls.growElemSpinesKept_sound · Verification.IndexWrites.everyOverwritten_holds · Verification.TolerantFrames.restateEvery_named</dd><dt>Wire</dt><dd>Bound.parallel and ElemTarget.parallel add shift · IndexFact adds elemSpineApart and IndexShift on element/atIndex · OperationPost adds freshRegion and shallowCopy</dd><dt>Trust</dt><dd><span class="trust">0-arg Array.prototype.slice() adds shallowCopy and freshRegion; %ArrayFilled% adds freshRegion (audited in docs/SOURCE-CONTRACTS.md)</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel</span> <span class="test neg">invalid-quantified-offset-parallel-shift</span></dd></dl>
+<details><summary>48 files changed, 6335 insertions(+), 1624 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    7 +-
+ docs/ARITHMETIC.md                                 |   63 +-
+ docs/REQUEST-PROTOCOL.md                           |   26 +-
+ docs/SOURCE-CONTRACTS.md                           |   16 +-
+ .../Paper/TolerantFrames/ModelRules.lean           |    4 +-
+ .../Paper/TolerantFrames/ParityDerivations.lean    |    6 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  390 +++-
+ lean/Verification/Programs/IndexWrites.lean        | 2033 ++++++++++++++++----
+ lean/Verification/Programs/Parametricity.lean      |  104 +-
+ lean/Verification/Programs/PromiseCalls.lean       | 1613 ++++++++++++++--
+ lean/Verification/Programs/SinglePass.lean         |    6 +-
+ .../Programs/TolerantFramesMergeGuarded.lean       |    2 +-
+ .../Programs/TolerantFramesStoreOpsNames.lean      |  254 ++-
+ lean/Verification/Semantics/AssertionScopes.lean   |    3 +-
+ lean/Verification/Semantics/ClosedFootprints.lean  |    5 +
+ lean/Verification/Semantics/ContractExits.lean     |   14 +
+ lean/Verification/Semantics/ExitRenaming.lean      |   10 +
+ lean/Verification/Semantics/ExitSchemas.lean       |    2 +
+ lean/Verification/Semantics/ExitSummaries.lean     |    9 +
+ lean/Verification/Semantics/FormulaScopes.lean     |    6 +
+ lean/Verification/Semantics/HeapKnowledge.lean     |  917 ++++++---
+ lean/Verification/Semantics/IndexFacts.lean        |  905 ++++++---
+ .../Verification/Semantics/SeparationEvidence.lean |   73 +
+ lean/Verification/Semantics/StepRelations.lean     |  118 +-
+ lean/Verification/Semantics/Survival.lean          |  340 ++--
+ .../Verification/Semantics/SurvivalSeparation.lean |   64 +-
+ lean/Verification/Semantics/TwoStateFormulas.lean  |   21 +
+ lean/Verification/Source/Claims/FragmentFront.lean |   19 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  156 +-
+ lean/Verification/Source/Claims/MemberSettle.lean  |    2 +-
+ .../Source/Claims/RegionInference.lean             |  138 +-
+ lean/Verification/Source/EffectCodec.lean          |   62 +-
+ lean/Verification/Source/Lowering/Flow.lean        |   32 +-
+ lean/Verification/Source/SourceClaims.lean         |   12 +-
+ pipeline/cases.mts                                 |    6 +-
+ .../invalid-quantified-offset-parallel-shift.ts    |   41 +
+ .../examples/invalid-quantified-offset-parallel.ts |   42 +
+ .../examples/quantified-offset-parallel-gap.ts     |   37 -
+ pipeline/examples/quantified-offset-parallel.ts    |   97 +
+ pipeline/verify-source.mts                         |   15 +-
+ tests/node-runs.mts                                |   12 +-
+ tools/array-prototype.mts                          |    2 +-
+ tools/bound-annotations.mts                        |  138 +-
+ tools/declaration-types.mts                        |   23 +-
+ tools/diagnostic.mts                               |   52 +-
+ tools/fact-text.mts                                |   35 +-
+ tools/intrinsics.mts                               |    6 +-
+ tools/type-graph.mts                               |   21 +-</pre></details>
+<div class="sha">with Antigravity</div>
+</article>
+</main></body></html>
