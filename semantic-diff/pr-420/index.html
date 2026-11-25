@@ -92,20 +92,21 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-420"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-420</code></a><ul><li>1 commit</li><li>changes: 2 Definition, 4 Rule, 1 Proposal, 1 Wire, 1 Docs</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: LinearTerm.kind adds { bitMask: { mask: Nat } }; BodyClause adds bodyEither</li></ul></li></ul></section>
-<h2 id="g-pr-420"><code>b8eee8014e15e48659e7a93333eb2b4498ed4489..pr-420</code></h2><article class="card" id="c-51610ccef"><header><div><div class="sha">51610ccef · Cristiano Calcagno · Nov 25, 17:13</div><h3>Support bitmask-guarded quantified clauses over parallel typed arrays (#398)</h3></div><span class="pill ok">verified</span></header>
-<h4 class="change">Why</h4><div class="prose"><p>buildAndPatchPreservedSpace maintains parallel arrays flags (Uint8Array), advances, and extras where PRESERVED_SPACE (tag 2 under mask 0x7) entries never carry extras: forall i in extras: (flags[i] &amp; 0x7) !== 2 || extras[i] === null After the loop, when (flags[patchAt]! &amp; KIND_BITS) === PRESERVED_SPACE, it overwrites advances[patchAt] = [5, 5, 5]. This failed with <code>source ensures refusal: a return of 'buildAndPatchPreservedSpace' does not establish the postcondition</code> because linear terms lacked a bitmask projection, quantified body clauses could not combine a linear comparison disjunctively with an element guard, bitwise AND/OR did not propagate active masks, singleton numeric constants and tag-test equalities did not feed linear facts into atIndex restatements, and non-number overwrites did not keep parallel view-backed quantified clauses.</p></div>
-<h4 class="change"><span class="act added">added</span>Definition <span class="target">bitmask linear term</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">bitMask</span>(<var>m</var>, <var>v</var>) <span class="m-rel">=</span> <span class="m-op">toInt32</span>(<var>v</var>) &amp; <var>m</var></span><span><span class="m-text">for</span> 0 <span class="m-rel">≤</span> <var>m</var> &lt; 2^31 <span class="m-text">and numeric</span> <var>v</var></span></div><div class="row"><span><span class="m-text">Added as a heap-free Term</span>.<span class="m-text">Kind alongside value, length, view, and</span></span></div><div class="row"><span><span class="m-op">strLength</span>.</span></div></div></div>
-<h4 class="change"><span class="act added">added</span>Definition <span class="target">disjunctive quantified body clause</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">BodyClause</span>.<span class="m-op">either</span>(<var>A</var>, <var>B</var>) <span class="m-text">holds at index</span> <var>i</var> <span class="m-text">iff A holds at</span> <var>i</var> <span class="m-text">or</span> <var>B</var> <span class="m-text">holds at</span> <var>i</var>.</span></div><div class="row"><span><span class="m-text">Standalone element tag atoms <code class="m-code"><span class="tk-t">P</span>[i] === <span class="tk-k">null</span></code> elaborate to the guarded</span></span></div><div class="row"><span><span class="m-text">contradiction</span> <code class="m-code"><span class="tk-t">P</span>[i] === <span class="tk-k">null</span> || (<span class="tk-n">1</span> ≤ <span class="tk-n">0</span>)</code>.</span></div></div></div>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-420"><code>a387533fb7d4bb8b55e4529ddab08fb919dcbee3..pr-420</code></a><ul><li>3 commits</li><li>changes: 2 Definition, 6 Rule, 1 Proposal, 1 Wire, 2 Docs, 1 Control, 1 Check</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: LinearTerm.kind adds { bitMask: { mask: Nat } }; BodyClause adds bodyEither</li></ul></li></ul></section>
+<h2 id="g-pr-420"><code>a387533fb7d4bb8b55e4529ddab08fb919dcbee3..pr-420</code></h2><article class="card" id="c-1b6a3344b"><header><div><div class="sha">1b6a3344b · Cristiano Calcagno · Nov 25, 18:49</div><h3>Support bitmask-guarded quantified clauses over parallel typed arrays (#398)</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>buildAndPatchPreservedSpace maintains parallel arrays flags (Uint8Array), advances, and extras where PRESERVED_SPACE (tag 2 under mask 0x7) entries never carry extras: forall i in extras: (flags[i] &amp; 0x7) !== 2 || extras[i] === null After the loop, when (flags[patchAt]! &amp; KIND_BITS) === PRESERVED_SPACE, it overwrites advances[patchAt] = [5, 5, 5]. This failed with <code>source ensures refusal: a return of 'buildAndPatchPreservedSpace' does not establish the postcondition</code> because linear terms lacked a bitmask projection, quantified body clauses could not combine a linear comparison disjunctively with an element guard, bitwise AND/OR did not propagate active masks, singleton numeric constants and tag-test equalities did not feed linear facts into atIndex restatements, and non-number overwrites did not keep parallel view-backed quantified clauses. The work is pull request #420, rebased onto the interval quantified clauses of #419: each rule below is stated over an interval [a, b).</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">bitmask linear term</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">bitMask</span>(<var>m</var>, <var>v</var>) <span class="m-rel">=</span> <span class="m-op">toInt32</span>(<var>v</var>) &amp; <var>m</var></span><span><span class="m-text">for</span> 0 <span class="m-rel">≤</span> <var>m</var> &lt; 2^31 <span class="m-text">and numeric</span> <var>v</var></span></div><div class="row"><span><span class="m-text">A heap-free Term</span>.<span class="m-text">Kind beside value, length, view and strLength</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">disjunctive quantified body clause</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">BodyClause</span>.<span class="m-op">either</span>(<var>A</var>, <var>B</var>) <span class="m-text">holds at index</span> <var>i</var> <span class="m-text">iff A holds at</span> <var>i</var> <span class="m-text">or</span> <var>B</var> <span class="m-text">holds at</span> <var>i</var>.</span></div><div class="row"><span><span class="m-text">An element tag atom <code class="m-code"><span class="tk-t">P</span>[i] === t</code> in a body disjunction is that</span></span></div><div class="row"><span><span class="m-text">disjunction's arm</span><span class="m-rel">:</span> <span class="m-text">the guarded contradiction</span> <code class="m-code"><span class="tk-t">P</span>[i] === t || (<span class="tk-n">1</span> ≤ <span class="tk-n">0</span>)</code>.</span></div></div></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">bitmask arithmetic and active-mask propagation</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>x</var> <span class="m-rel">:</span> <span class="m-con">number</span></span><span><var>c</var> <span class="m-text">constant</span> (0 <span class="m-rel">≤</span> <var>c</var> &lt; 2^31)</span></div><div class="bar"></div><div class="conclusion"><div><var>r</var> <span class="m-rel">=</span> <var>x</var> &amp; <var>c</var> ⟹ <var>r</var> <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>c</var>, <var>x</var>) ∧ <span class="m-op">bitMask</span>(<var>c</var>, <var>r</var>) <span class="m-rel">=</span> <var>r</var></div></div></div><span class="rule-name">(bitAnd-mask)</span></div><div class="infer"><div class="frac"><div class="premises"><span><var>x</var> <span class="m-rel">:</span> <span class="m-con">number</span></span><span><var>c</var> <span class="m-text">constant</span></span><span><var>M</var> <span class="m-text">active mask</span></span><span>(<var>c</var> &amp; <var>M</var>) <span class="m-rel">=</span> 0</span></div><div class="bar"></div><div class="conclusion"><div><var>r</var> <span class="m-rel">=</span> <var>x</var> | <var>c</var> ⟹ <span class="m-op">bitMask</span>(<var>M</var>, <var>r</var>) <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>M</var>, <var>x</var>)</div></div></div><span class="rule-name">(bitOr-preserve)</span></div><div class="formulas"><div class="row"><span><span class="m-con">Bitwise</span> <span class="m-con">AND</span> <span class="m-text">also preserves active masks</span> <var>M</var> <span class="m-text">with</span> (<var>c</var> &amp; <var>M</var>) <span class="m-rel">=</span> <var>M</var> <span class="m-text">and zeros</span></span></div><div class="row"><span><span class="m-text">active masks with</span> (<var>c</var> &amp; <var>M</var>) <span class="m-rel">=</span> 0; <span class="m-text">bitwise</span> <span class="m-con">OR</span> <span class="m-text">fixes</span> <span class="m-op">bitMask</span>(<var>M</var>, <var>r</var>) <span class="m-rel">=</span> <var>M</var> <span class="m-text">when</span></span></div><div class="row"><span>(<var>c</var> &amp; <var>M</var>) <span class="m-rel">=</span> <var>M</var>, <span class="m-text">and preserves</span> <var>M</var> <span class="m-text">when the other operand satisfies</span></span></div><div class="row"><span><span class="m-op">bitMask</span>(<var>M</var>, <var>y</var>) <span class="m-rel">=</span> 0.</span></div></div></div>
-<h4 class="change"><span class="act added">added</span>Rule <span class="target">parallel typed-array view write preservation</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span><var>i</var>&lt;<var>n</var>. <var>φ</var>(<var>i</var>, <var>s</var>[<var>i</var>], <span class="m-text">view</span>[<var>i</var>])</span><span><span class="m-text">view</span>[<var>k</var>] <span class="m-rel">=</span> <var>v</var></span><span><span class="m-bind">∀</span><var>M</var> <span class="m-rel">∈</span> <span class="m-con">masks</span>(<var>φ</var>). <span class="m-op">bitMask</span>(<var>M</var>, <var>v</var>) <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>M</var>, <span class="m-text">view</span>[<var>k</var>])</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span><var>i</var>&lt;<var>n</var>. <var>φ</var>(<var>i</var>, <var>s</var>[<var>i</var>], <span class="m-text">view</span>[<var>i</var>])</div></div></div><span class="rule-name">(every-parallel-view-write)</span></div><div class="formulas"><div class="row"><span><span class="m-text">When a typed-array write preserves every mask projected from that view</span></span></div><div class="row"><span><span class="m-kw">in</span> <span class="m-text">a quantified body (for example <code class="m-code">flags[patchAt] = cur | 0x8</code> under mask</span></span></div><div class="row"><span><code class="m-code">0x7</code>), <span class="m-text">the quantified fact over the parallel array <code class="m-code">extras</code> survives</span>.</span></div></div></div>
-<h4 class="change"><span class="act added">added</span>Rule <span class="target">bitmask-guided index instantiation and non-number view disjointness</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">atIndex</span><span class="m-text">(flags</span>, <var>k</var>, (<var>e</var> &amp; <var>m</var>) <span class="m-rel">=</span> <var>t</var>)</span><span><span class="m-bind">∀</span><var>i</var>&lt;<var>n</var>. (<span class="m-text">(flags</span>[<var>i</var>] &amp; <var>m</var>) <span class="m-rel">≠</span> <var>t</var> ∨ <span class="m-text">extras</span>[<var>i</var>] <span class="m-rel">=</span> <span class="m-lit">null</span>)</span><span>0 <span class="m-rel">≤</span> <var>k</var> &lt; <var>n</var></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-op">atIndex</span><span class="m-text">(extras</span>, <var>k</var>, <span class="m-text">extras</span>[<var>k</var>] <span class="m-rel">=</span> <span class="m-lit">null</span>)</div></div></div><span class="rule-name">(atIndex-refute)</span></div><div class="formulas"><div class="row"><span><span class="m-text">An in-bounds overwrite <code class="m-code">advances[k] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>]</code> instantiates disjunctive</span></span></div><div class="row"><span><span class="m-text">quantified clauses at <code class="m-code">k</code>, refutes <code class="m-code">(flags[k] &amp; <span class="tk-n">7</span>) ≠ <span class="tk-n">2</span></code> from the promoted</span></span></div><div class="row"><span><span class="m-text">atIndex equality, and discharges the <code class="m-code">extras[k] === <span class="tk-k">null</span></code> guard</span>. <span class="m-con">Because</span></span></div><div class="row"><span><span class="m-text">the written value cannot be a number, the array overwrite cannot alter</span></span></div><div class="row"><span><span class="m-text">any typed-array view spine or view cell, keeping parallel-view clauses</span>.</span></div></div></div>
-<h4 class="change"><span class="act added">added</span>Rule <span class="target">singleton numeric constants and tag-test equality linear atoms</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>a</var> <span class="m-rel">:</span> <span class="m-op">numLit</span>(<var>i</var>)</span><span>⇒</span><span><span class="m-op">int</span>(<var>a</var>) ∧ <var>a</var> <span class="m-rel">≤</span> <var>i</var> ∧ -<var>a</var> <span class="m-rel">≤</span> -<var>i</var></span></div><div class="row"><span><span class="m-op">ite</span>(<span class="m-op">test</span>(<span class="m-op">numEq</span>(<var>b</var>), <var>a</var>), <span class="m-lit">true</span>, <span class="m-lit">false</span>)</span><span><span class="m-op">int</span>(<var>a</var>)</span><span><span class="m-op">safeInt</span>(<var>b</var>) <span class="m-rel">=</span> <var>i</var></span></div><div class="row cont"><span>⇒</span><span>(<var>a</var> <span class="m-rel">=</span> <var>i</var>) <span class="m-op">on</span> <span class="m-lit">true</span>,  (<var>a</var> <span class="m-rel">≠</span> <var>i</var>) <span class="m-op">on</span> <span class="m-lit">false</span></span></div></div><div class="formulas"><div class="row"><span><span class="m-text">Enables module-level numeric constants</span> (<code class="m-code"><span class="tk-t">KIND_BITS</span></code>, <code class="m-code"><span class="tk-t">TEXT</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">PRESERVED_SPACE</span></code>, <code class="m-code"><span class="tk-t">EXTRA_FLAG</span></code>) <span class="m-text">and inline equality branches</span></span></div><div class="row"><span><code class="m-code">(flags[patchAt]! &amp; <span class="tk-t">KIND_BITS</span>) === <span class="tk-t">PRESERVED_SPACE</span></code> <span class="m-text">to feed linear facts</span></span></div><div class="row"><span><span class="m-text">into <code class="m-code">atIndex</code> restatement and branch promotion</span>.</span></div></div></div>
-<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">region inference: loop-head array apartness</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">freshApartAt</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">apart at loop heads for</span> .<span class="m-op">arrLit</span> / <span class="m-text">fused</span> .<span class="m-text">letE allocations written inside the loop</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">freshApartAt</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">apart at loop heads also for split</span> .<span class="m-text">makeAt array-wrapper allocations when either side is written anywhere in the function</span>.</span></div></div><div class="cond"><span class="tgt"><span class="m-text">Each proposed pair is checked on every incoming edge by the proved pass</span>.</span></div></div></figure></div>
-<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">LinearTerm, BodyClause</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>LinearTerm.kind was <code>&quot;value&quot; | &quot;length&quot; | &quot;view&quot; | &quot;strLength&quot;</code>; BodyClause had linear clauses and <code>guarded</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>LinearTerm.kind adds <code>{ bitMask: { mask: Nat } }</code>; BodyClause adds <code>bodyEither</code> for disjunctive body clauses. Parser annotations accept hex literals (<code>0x…</code>), numeric <code>!==</code>, <code>(E &amp; m)</code> bitmask terms, and standalone element tag atoms inside <code>forall</code>.</p></div></figure></div>
-<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md, REQUEST-PROTOCOL.md</span></h4><div class="prose"><p>Document bitmask terms <code>(E &amp; m)</code>, hex literals, numeric <code>!==</code>, disjunctive quantified body clauses, disjoint-bit OR preservation, atIndex refutation, and the updated wire types.</p></div>
-<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-bitmask-guard-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by verified positive case</span></summary><pre class="code"><span class="tk-c">// Bitmask-guarded parallel invariant (`rich-inline.ts:461-468`):</span>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">parallel typed-array view write preservation</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span><var>i</var><span class="m-rel">∈</span>[<var>a</var>,<var>b</var>). <var>φ</var>(<var>i</var>, <var>s</var>[<var>i</var>], <span class="m-text">view</span>[<var>i</var>])</span><span><span class="m-text">view</span>[<var>k</var>] <span class="m-rel">=</span> <var>v</var></span><span><var>k</var> <span class="m-rel">∉</span> [<var>a</var>,<var>b</var>)  <span class="m-text">or</span>  <span class="m-bind">∀</span><var>M</var> <span class="m-rel">∈</span> <span class="m-con">masks</span>(<var>φ</var>). <span class="m-op">bitMask</span>(<var>M</var>, <var>v</var>) <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>M</var>, <span class="m-text">view</span>[<var>k</var>])</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-bind">∀</span><var>i</var><span class="m-rel">∈</span>[<var>a</var>,<var>b</var>). <var>φ</var>(<var>i</var>, <var>s</var>[<var>i</var>], <span class="m-text">view</span>[<var>i</var>])</div></div></div><span class="rule-name">(every-parallel-view-write)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">index instantiation of a disjunctive quantified clause</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span><var>i</var><span class="m-rel">∈</span>[<var>a</var>,<var>b</var>). <var>φ</var>(<var>i</var>)</span><span>0 <span class="m-rel">≤</span> <var>k</var></span><span><var>a</var> <span class="m-rel">≤</span> <var>k</var> &lt; <var>b</var></span></div><div class="bar"></div><div class="conclusion"><div><var>φ</var>(<var>k</var>)</div><div><span class="m-text">with each element guard resolved by an atIndex fact or an element read</span></div><div><span class="m-op">at</span> <var>k</var>. <span class="m-con">With</span> <span class="m-op">atIndex</span><span class="m-text">(flags</span>, <var>k</var>, <span class="m-text">(flags</span>[<var>k</var>] &amp; <var>m</var>) <span class="m-rel">=</span> <var>t</var>) <span class="m-text">and</span></div><div><var>φ</var>(<var>i</var>) <span class="m-rel">=</span> <span class="m-text">(flags</span>[<var>i</var>] &amp; <var>m</var>) <span class="m-rel">≠</span> <var>t</var> ∨ <span class="m-text">extras</span>[<var>i</var>] <span class="m-rel">=</span> <span class="m-lit">null</span>, <span class="m-text">this derives</span></div><div><span class="m-op">atIndex</span><span class="m-text">(extras</span>, <var>k</var>, <span class="m-text">extras</span>[<var>k</var>] <span class="m-rel">=</span> <span class="m-lit">null</span>).</div></div></div><span class="rule-name">(every-at-index)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">singleton numeric constants and tag-test equality linear atoms</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>a</var> <span class="m-rel">:</span> <span class="m-op">numLit</span>(<var>i</var>)</span><span>⇒</span><span><span class="m-op">int</span>(<var>a</var>) ∧ <var>a</var> <span class="m-rel">≤</span> <var>i</var> ∧ -<var>a</var> <span class="m-rel">≤</span> -<var>i</var></span></div><div class="row"><span><span class="m-op">ite</span>(<span class="m-op">test</span>(<span class="m-op">numEq</span>(<var>b</var>), <var>a</var>), <span class="m-lit">true</span>, <span class="m-lit">false</span>)</span><span><span class="m-op">int</span>(<var>a</var>)</span><span><span class="m-op">safeInt</span>(<var>b</var>) <span class="m-rel">=</span> <var>i</var></span></div><div class="row cont"><span>⇒</span><span>(<var>a</var> <span class="m-rel">=</span> <var>i</var>) <span class="m-op">on</span> <span class="m-lit">true</span>,  (<var>a</var> <span class="m-rel">≠</span> <var>i</var>) <span class="m-op">on</span> <span class="m-lit">false</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">dense append, exact push</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">The dense-append atoms (<code class="m-code">denseAppendAtomsCore</code>), shared by</span> <code class="m-code">a[i] = v</code></span></div><div class="row"><span><span class="m-text">and a single-value <code class="m-code">a.push(v)</code>, add</span> <span class="m-op">atIndex</span>(<var>a</var>, <var>i</var>, <span class="m-kw">tag</span>) <span class="m-text">for each tag every</span></span></div><div class="row"><span><span class="m-text">value of</span> <var>v</var> <span class="m-text">meets, and extend</span> <span class="m-bind">∀</span><var>i</var><span class="m-rel">∈</span>[<var>a'</var>,<var>b'</var>). <var>φ</var> <span class="m-text">over an array apart from the</span></span></div><div class="row"><span><span class="m-text">appended one where</span> <var>φ</var> <span class="m-text">holds at</span> <var>i</var> <span class="m-text">through a parallel element read or a</span></span></div><div class="row"><span><span class="m-text">known atIndex fact</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">region inference: loop-head array apartness</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">freshApartAt</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">apart at loop heads for array literal allocations written inside the loop</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">freshApartAt</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-text">apart at loop heads also for split array-wrapper allocations when either side is written anywhere in the function</span>.</span></div></div><div class="cond"><span class="tgt"><span class="m-text">Each proposed pair is checked on every incoming edge by the proved pass</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">LinearTerm, BodyClause</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>LinearTerm.kind was <code>&quot;value&quot; | &quot;length&quot; | &quot;view&quot; | &quot;strLength&quot;</code>; BodyClause had linear clauses and <code>guarded</code>.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>LinearTerm.kind adds <code>{ bitMask: { mask: Nat } }</code>; BodyClause adds <code>bodyEither</code>. Annotations accept hex literals (<code>0x…</code>), numeric <code>!==</code>, <code>(E &amp; m)</code> bitmask terms, and element tag atoms in <code>forall</code> disjunctions.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, ARITHMETIC.md, REQUEST-PROTOCOL.md</span></h4><div class="prose"><p>Bitmask terms, hex literals, numeric <code>!==</code>, disjunctive quantified body clauses over intervals, tag atoms as disjunction arms, and the wire types.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>quantified-bitmask-guard-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by the verified positive case</span></summary><pre class="code"><span class="tk-c">// Bitmask-guarded parallel invariant (`rich-inline.ts:461-468`):</span>
 <span class="tk-c">// `PRESERVED_SPACE` segments never carry `extras` (`(flags[i] &amp; 0x7) === 2`</span>
 <span class="tk-c">// implies `extras[i] === null`), so overwriting `advances[patchAt]` with a</span>
 <span class="tk-c">// fresh non-empty array when `(flags[patchAt] &amp; 0x7) === 2` preserves</span>
@@ -152,7 +153,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
     advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
   }
   <span class="tk-k">return</span> <mark>{ flags, advances, extras }</mark>;
-}</pre></details></li><li><details><summary><code>quantified-bitmask-guard</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">buildAndPatchPreservedSpace, setExtraFlag (disjoint OR | 0x8), and buildSetExtraFlagAndPatch verify cleanly</span></summary><pre class="code"><span class="tk-c">// Bitmask-guarded parallel invariant (`rich-inline.ts:461-468`):</span>
+}</pre></details></li><li><details><summary><code>quantified-bitmask-guard</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">buildAndPatchPreservedSpace, setExtraFlag, buildSetExtraFlagAndPatch</span></summary><pre class="code"><span class="tk-c">// Bitmask-guarded parallel invariant (`rich-inline.ts:461-468`):</span>
 <span class="tk-c">// `PRESERVED_SPACE` segments never carry `extras` (`(flags[i] &amp; 0x7) === 2`</span>
 <span class="tk-c">// implies `extras[i] === null`), so overwriting `advances[patchAt]` with a</span>
 <span class="tk-c">// fresh non-empty array when `(flags[patchAt] &amp; 0x7) === 2` preserves</span>
@@ -264,7 +265,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
     advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
   }
   <span class="tk-k">return</span> { flags, advances, extras };
-}</pre></details></li><li><details><summary><code>invalid-quantified-bitmask-guard</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">patching on TEXT, narrower mask 0x3, and overlapping OR 0x2 are refused and fail under Node</span></summary><pre class="code"><span class="tk-c">// Negative controls for bitmask-guarded quantified clauses: each function</span>
+}</pre></details></li><li><details><summary><code>invalid-quantified-bitmask-guard</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">patching on TEXT, mask 0x3, overlapping OR 0x2; fail under Node</span></summary><pre class="code"><span class="tk-c">// Negative controls for bitmask-guarded quantified clauses: each function</span>
 <span class="tk-c">// breaks `TaggedChunks`'s invariant and produces `undefined`/`NaN` under Node.</span>
 <span class="tk-k">const</span> <span class="tk-t">KIND_BITS</span> = 0x7;
 <span class="tk-k">const</span> <span class="tk-t">TEXT</span> = <span class="tk-n">1</span>;
@@ -373,18 +374,21 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   <span class="tk-k">const</span> cur = chunks.flags[patchAt]!;
   chunks.flags[patchAt] = cur | 0x2;
   <span class="tk-k">return</span> chunks;
+}</pre></details></li><li><code>quantified-tag-disjunction-refused  gap</code> <span class="was">unsupported</span> <span class="arrow">→</span> <span class="now">removed</span></li><li><details><summary><code>quantified-tag-disjunction</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>forall i in xs: i &lt; 0 || xs[i] === null</code></span></summary><pre class="code"><span class="tk-c">/** @requires forall i in xs: i &lt; 0 || xs[i] === null */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> countEmpty(xs: (number[] | <span class="tk-k">null</span>)[]): number {
+  <span class="tk-k">return</span> xs.length;
 }</pre></details></li></ul>
-<h4 class="change">Soundness</h4><div class="prose"><p>Every new inference rule is proved in Lean with zero sorry and zero project axioms (AxiomCheck and TolerantFrames.Tests.AxiomCheck pass; mode8Accepted_sound is unchanged). Bitmask semantics matches ECMAScript ToInt32 bitwise AND/OR (<code>intAnd</code>/<code>intOr</code>). Non-number array overwrites preserve all view spines and view cells via <code>WorldAdm.view</code> and <code>ViewCell</code>. Loop-head <code>apart</code> proposals remain untrusted and are checked by the proved pass on every incoming edge.</p></div>
-<h4 class="change">Validation</h4><div class="prose"><p>lake build Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck verifier (1031 jobs, 0 warnings); tsc, tools/unchecked.mts, tests/json-field-names.mts (17/17), tests/docs.mts (0 problems), tests/axiom-check-imports.mts, tests/node-runs.mts; run-cases.mts quantified (47/47), bit (4/4), typed-array (35/35).</p></div>
-<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.IndexNumbers.intAnd · Verification.IndexNumbers.intOr · Verification.IndexWrites.bitMaskAtoms_holds · Verification.IndexWrites.everyParallelViewWritten_holds · Verification.IndexWrites.boundedOverwrite_sound · Verification.IndexWrites.linearAtoms_holds · Verification.HeapExpressionRules.viewPathOf_sound · Verification.HeapExpressionRules.nonNumberSlot_sound · Verification.HeapKnowledge.restateAtIndex_holds · Verification.HeapKnowledge.instantiateEveryAtK_holds · Verification.HeapKnowledge.atIndexTag_holds</dd><dt>Wire</dt><dd>LinearTerm.kind adds { bitMask: { mask: Nat } } · BodyClause adds bodyEither</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-bitmask-guard</span> <span class="test neg">invalid-quantified-bitmask-guard</span></dd></dl>
-<details><summary>38 files changed, 6116 insertions(+), 1289 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    8 +-
- docs/ARITHMETIC.md                                 |   42 +-
+<h4 class="change">Soundness</h4><div class="prose"><p>Every new rule is proved in Lean with no sorry and no project axioms; mode8Accepted_sound is unchanged. Bitmask semantics matches ECMAScript ToInt32 bitwise AND/OR (<code>intAnd</code>/<code>intOr</code>). Non-number array overwrites preserve every view spine and view cell. Loop-head apart proposals are checked by the proved pass on every incoming edge.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build (1032 jobs, 0 warnings); both axiom checks; lake build verifier; tsc, tools/unchecked.mts, tests/json-field-names.mts (17), tests/docs.mts (0 problems), tests/node-runs.mts; run-cases.mts quantified (53/53), bit (4/4), typed-array (35/35).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.IndexWrites.bitMaskAtoms_holds · Verification.IndexWrites.linearAtoms_holds · Verification.IndexWrites.boundedOverwrite_sound · Verification.IndexWrites.denseAppendAtomsCore_holds · Verification.PromiseCalls.every_parallel_view_written · Verification.PromiseCalls.writeAtIndexAtoms_holds · Verification.HeapExpressionRules.viewPathOf_sound · Verification.HeapExpressionRules.nonNumberSlot_sound · Verification.HeapKnowledge.restateAtIndex_holds · Verification.HeapKnowledge.instantiateEveryAtK_holds · Verification.HeapKnowledge.atIndexTag_read</dd><dt>Wire</dt><dd>LinearTerm.kind adds { bitMask: { mask: Nat } } · BodyClause adds bodyEither</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">quantified-bitmask-guard</span> <span class="test neg">invalid-quantified-bitmask-guard</span> <span class="test pos">quantified-tag-disjunction</span></dd></dl>
+<details><summary>39 files changed, 6247 insertions(+), 1431 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |    8 +-
+ docs/ARITHMETIC.md                                 |   54 +-
  docs/REQUEST-PROTOCOL.md                           |   13 +-
  .../Paper/TolerantFrames/ParityEvidence.lean       |    8 +-
  .../Verification/Programs/HeapExpressionRules.lean |  177 +-
- lean/Verification/Programs/IndexWrites.lean        | 2417 +++++++++++++++-----
- lean/Verification/Programs/Parametricity.lean      |  209 +-
- lean/Verification/Programs/PromiseCalls.lean       | 1085 +++++++--
+ lean/Verification/Programs/IndexWrites.lean        | 2582 +++++++++++++++-----
+ lean/Verification/Programs/Parametricity.lean      |  258 +-
+ lean/Verification/Programs/PromiseCalls.lean       | 1085 +++++++-
  lean/Verification/Programs/SinglePass.lean         |   75 +-
  .../Verification/Programs/TolerantFramesDelta.lean |  290 ++-
  .../Programs/TolerantFramesStoreOpsBelowNames.lean |  288 ++-
@@ -392,7 +396,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../Programs/TolerantFramesStoreOpsNames.lean      |  219 +-
  lean/Verification/Semantics/ContractExits.lean     |   31 +
  lean/Verification/Semantics/ElementWrites.lean     |   33 +-
- lean/Verification/Semantics/HeapKnowledge.lean     | 1273 ++++++++++-
+ lean/Verification/Semantics/HeapKnowledge.lean     | 1286 +++++++++-
  lean/Verification/Semantics/IndexFacts.lean        |  229 +-
  lean/Verification/Semantics/IndexNumbers.lean      |  163 ++
  lean/Verification/Semantics/Linear.lean            |  138 +-
@@ -400,21 +404,268 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  lean/Verification/Semantics/Survival.lean          |   23 +-
  .../Verification/Semantics/SurvivalSeparation.lean |    3 +-
  lean/Verification/Source/Claims/HeadInference.lean |   36 +-
- .../Source/Claims/RegionInference.lean             |   42 +-
+ .../Source/Claims/RegionInference.lean             |   53 +-
  lean/Verification/Source/EffectCodec.lean          |   40 +-
  lean/Verification/Source/Lowering/Flow.lean        |   13 +
  lean/Verification/Source/SourceClaims.lean         |    1 +
- pipeline/cases.mts                                 |    3 +-
+ pipeline/cases.mts                                 |    6 +-
  .../examples/invalid-quantified-bitmask-guard.ts   |  110 +
  pipeline/examples/quantified-bitmask-guard-gap.ts  |   48 -
  pipeline/examples/quantified-bitmask-guard.ts      |  113 +
+ ...on-refused.ts =&gt; quantified-tag-disjunction.ts} |    0
  pipeline/verify-source.mts                         |    1 +
  tests/node-runs.mts                                |   19 +-
- tools/bound-annotations.mts                        |  169 +-
+ tools/bound-annotations.mts                        |  189 +-
  tools/declaration-types.mts                        |   11 +-
  tools/diagnostic.mts                               |   16 +-
  tools/fact-text.mts                                |   17 +-
  tools/type-graph.mts                               |    8 +-</pre></details>
-<div class="sha">with Antigravity</div>
+<div class="sha">with Antigravity · with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-5966d2680"><header><div><div class="sha">5966d2680 · Cristiano Calcagno · Nov 25, 18:51</div><h3>Assert each refusal of the bitmask-guard negative control</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The control invalid-quantified-bitmask-guard held three functions (patchOnTextTag, patchWithWrongMask, setOverlappingBit), and its expectation matched the first unit's refusal only: a change accepting either of the other two would pass unnoticed. A case's diagnostic is matched against the run's first refusal, so each function is its own control.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Control <span class="target">invalid-quantified-bitmask-guard</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-bitmask-guard</code></div><p>one fixture, three functions, the expectation naming patchOnTextTag.</p></div></figure><figure><figcaption>After</figcaption><div class="control"><div class="control-head"><code>--force-proposals invalid-quantified-bitmask-guard</code></div><p>three fixtures, one function each, each expectation naming its function.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-quantified-bitmask-guard</code> <span class="kind negative">negative</span> <span class="was">negative  refused</span> <span class="arrow">→</span> <span class="now">removed  split below</span></summary><pre class="code"><span class="tk-c">// Negative controls for bitmask-guarded quantified clauses: each function</span>
+<span class="tk-c">// breaks `TaggedChunks`'s invariant and produces `undefined`/`NaN` under Node.</span>
+<span class="tk-k">const</span> <span class="tk-t">KIND_BITS</span> = 0x7;
+<span class="tk-k">const</span> <span class="tk-t">TEXT</span> = <span class="tk-n">1</span>;
+<span class="tk-k">const</span> <span class="tk-t">PRESERVED_SPACE</span> = <span class="tk-n">2</span>;
+
+<span class="tk-c">/**
+ * @invariant this.flags.length === this.advances.length
+ * @invariant this.advances.length === this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ * @invariant forall i in this.extras: (this.flags[i] &amp; 0x7) !== 2 || this.extras[i] === null
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">TaggedChunks</span> = {
+  flags: <span class="tk-t">Uint8Array</span>;
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/**
+ * Patching on `TEXT` (1) instead of `PRESERVED_SPACE` (2) overwrites
+ * `advances[patchAt]` with length 3 while `extras[patchAt]` has length 2.
+ * @requires safeInteger(patchAt) &amp;&amp; 0 &lt;= patchAt &amp;&amp; patchAt &lt; kinds.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> patchOnTextTag(
+  kinds: <span class="tk-t">Uint8Array</span>,
+  patchAt: number,
+): <span class="tk-t">TaggedChunks</span> {
+  <span class="tk-k">const</span> n = kinds.length;
+  <span class="tk-k">const</span> flags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= flags.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant forall j in extras: (flags[j] &amp; 7) !== 2 || extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> k = kinds[i]! &amp; <span class="tk-t">KIND_BITS</span>;
+    flags[i] = k;
+    <span class="tk-k">if</span> (k === <span class="tk-t">TEXT</span>) {
+      advances.push([<span class="tk-n">10</span>, <span class="tk-n">20</span>]);
+      extras.push([<span class="tk-n">1</span>, <span class="tk-n">2</span>]);
+    } <span class="tk-k">else</span> {
+      advances.push(<span class="tk-k">null</span>);
+      extras.push(<span class="tk-k">null</span>);
+    }
+  }
+  <span class="tk-k">if</span> ((flags[patchAt]! &amp; <span class="tk-t">KIND_BITS</span>) === <span class="tk-t">TEXT</span>) {
+    <span class="tk-k">if</span> ((patchAt &amp; 0x7fffffff) !== patchAt || patchAt &gt;= advances.length) {
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    }
+    advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
+  }
+  <span class="tk-k">return</span> { flags, advances, extras };
+}
+
+<span class="tk-c">/**
+ * Guarding with a narrower mask (`0x3` instead of `0x7`) matches tag `6`,
+ * which carries a 2-element `extras` entry, breaking `advances[i].length &lt;= extras[i].length`.
+ * @requires safeInteger(patchAt) &amp;&amp; 0 &lt;= patchAt &amp;&amp; patchAt &lt; kinds.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> patchWithWrongMask(
+  kinds: <span class="tk-t">Uint8Array</span>,
+  patchAt: number,
+): <span class="tk-t">TaggedChunks</span> {
+  <span class="tk-k">const</span> n = kinds.length;
+  <span class="tk-k">const</span> flags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= flags.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant forall j in extras: (flags[j] &amp; 7) !== 2 || extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> k = kinds[i]! &amp; <span class="tk-t">KIND_BITS</span>;
+    flags[i] = k;
+    <span class="tk-k">if</span> (k === <span class="tk-n">6</span>) {
+      advances.push([<span class="tk-n">10</span>, <span class="tk-n">20</span>]);
+      extras.push([<span class="tk-n">1</span>, <span class="tk-n">2</span>]);
+    } <span class="tk-k">else</span> {
+      advances.push(<span class="tk-k">null</span>);
+      extras.push(<span class="tk-k">null</span>);
+    }
+  }
+  <span class="tk-k">if</span> ((flags[patchAt]! &amp; 0x3) === <span class="tk-t">PRESERVED_SPACE</span>) {
+    <span class="tk-k">if</span> ((patchAt &amp; 0x7fffffff) !== patchAt || patchAt &gt;= advances.length) {
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    }
+    advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
+  }
+  <span class="tk-k">return</span> { flags, advances, extras };
+}
+
+<span class="tk-c">/**
+ * Setting a bit overlapping `KIND_BITS` (`0x2` overlaps `0x7`) flips a tag-0
+ * entry with non-null `extras` to `PRESERVED_SPACE` (2), breaking the invariant.
+ * @requires safeInteger(patchAt) &amp;&amp; 0 &lt;= patchAt &amp;&amp; patchAt &lt; chunks.flags.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> setOverlappingBit(
+  chunks: <span class="tk-t">TaggedChunks</span>,
+  patchAt: number,
+): <span class="tk-t">TaggedChunks</span> {
+  <span class="tk-k">const</span> cur = chunks.flags[patchAt]!;
+  chunks.flags[patchAt] = cur | 0x2;
+  <span class="tk-k">return</span> chunks;
+}</pre></details></li><li><details><summary><code>invalid-quantified-bitmask-guard-text-tag</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">patchOnTextTag; fails under Node</span></summary><pre class="code"><span class="tk-c">// A negative control for bitmask-guarded quantified clauses: the function</span>
+<span class="tk-c">// breaks `TaggedChunks`'s invariant, as a run under Node shows.</span>
+<span class="tk-k">const</span> <span class="tk-t">KIND_BITS</span> = 0x7;
+<span class="tk-k">const</span> <span class="tk-t">TEXT</span> = <span class="tk-n">1</span>;
+
+<span class="tk-c">/**
+ * @invariant this.flags.length === this.advances.length
+ * @invariant this.advances.length === this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ * @invariant forall i in this.extras: (this.flags[i] &amp; 0x7) !== 2 || this.extras[i] === null
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">TaggedChunks</span> = {
+  flags: <span class="tk-t">Uint8Array</span>;
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/**
+ * Patching on `TEXT` (1) instead of `PRESERVED_SPACE` (2) overwrites
+ * `advances[patchAt]` with length 3 while `extras[patchAt]` has length 2.
+ * @requires safeInteger(patchAt) &amp;&amp; 0 &lt;= patchAt &amp;&amp; patchAt &lt; kinds.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> patchOnTextTag(
+  kinds: <span class="tk-t">Uint8Array</span>,
+  patchAt: number,
+): <span class="tk-t">TaggedChunks</span> {
+  <span class="tk-k">const</span> n = kinds.length;
+  <span class="tk-k">const</span> flags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= flags.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant forall j in extras: (flags[j] &amp; 7) !== 2 || extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> k = kinds[i]! &amp; <span class="tk-t">KIND_BITS</span>;
+    flags[i] = k;
+    <span class="tk-k">if</span> (k === <span class="tk-t">TEXT</span>) {
+      advances.push([<span class="tk-n">10</span>, <span class="tk-n">20</span>]);
+      extras.push([<span class="tk-n">1</span>, <span class="tk-n">2</span>]);
+    } <span class="tk-k">else</span> {
+      advances.push(<span class="tk-k">null</span>);
+      extras.push(<span class="tk-k">null</span>);
+    }
+  }
+  <span class="tk-k">if</span> ((flags[patchAt]! &amp; <span class="tk-t">KIND_BITS</span>) === <span class="tk-t">TEXT</span>) {
+    <span class="tk-k">if</span> ((patchAt &amp; 0x7fffffff) !== patchAt || patchAt &gt;= advances.length) {
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    }
+    advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
+  }
+  <span class="tk-k">return</span> { flags, advances, extras };
+}</pre></details></li><li><details><summary><code>invalid-quantified-bitmask-guard-wrong-mask</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">patchWithWrongMask; fails under Node</span></summary><pre class="code"><span class="tk-c">// A negative control for bitmask-guarded quantified clauses: the function</span>
+<span class="tk-c">// breaks `TaggedChunks`'s invariant, as a run under Node shows.</span>
+<span class="tk-k">const</span> <span class="tk-t">KIND_BITS</span> = 0x7;
+<span class="tk-k">const</span> <span class="tk-t">PRESERVED_SPACE</span> = <span class="tk-n">2</span>;
+
+<span class="tk-c">/**
+ * @invariant this.flags.length === this.advances.length
+ * @invariant this.advances.length === this.extras.length
+ * @invariant forall i in this.advances: this.advances[i] === null || 1 &lt;= this.advances[i].length
+ * @invariant forall i in this.advances: this.advances[i] === null || this.extras[i] === null || this.advances[i].length &lt;= this.extras[i].length
+ * @invariant forall i in this.extras: (this.flags[i] &amp; 0x7) !== 2 || this.extras[i] === null
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">TaggedChunks</span> = {
+  flags: <span class="tk-t">Uint8Array</span>;
+  advances: (number[] | <span class="tk-k">null</span>)[];
+  extras: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/**
+ * Guarding with a narrower mask (`0x3` instead of `0x7`) matches tag `6`,
+ * which carries a 2-element `extras` entry, breaking `advances[i].length &lt;= extras[i].length`.
+ * @requires safeInteger(patchAt) &amp;&amp; 0 &lt;= patchAt &amp;&amp; patchAt &lt; kinds.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> patchWithWrongMask(
+  kinds: <span class="tk-t">Uint8Array</span>,
+  patchAt: number,
+): <span class="tk-t">TaggedChunks</span> {
+  <span class="tk-k">const</span> n = kinds.length;
+  <span class="tk-k">const</span> flags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">const</span> advances: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-k">const</span> extras: (number[] | <span class="tk-k">null</span>)[] = [];
+  <span class="tk-c">/**
+   * @invariant safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt;= flags.length &amp;&amp; advances.length === i &amp;&amp; extras.length === i
+   * @invariant forall j in advances: advances[j] === null || 1 &lt;= advances[j].length
+   * @invariant forall j in advances: advances[j] === null || extras[j] === null || advances[j].length &lt;= extras[j].length
+   * @invariant forall j in extras: (flags[j] &amp; 7) !== 2 || extras[j] === null
+   */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> k = kinds[i]! &amp; <span class="tk-t">KIND_BITS</span>;
+    flags[i] = k;
+    <span class="tk-k">if</span> (k === <span class="tk-n">6</span>) {
+      advances.push([<span class="tk-n">10</span>, <span class="tk-n">20</span>]);
+      extras.push([<span class="tk-n">1</span>, <span class="tk-n">2</span>]);
+    } <span class="tk-k">else</span> {
+      advances.push(<span class="tk-k">null</span>);
+      extras.push(<span class="tk-k">null</span>);
+    }
+  }
+  <span class="tk-k">if</span> ((flags[patchAt]! &amp; 0x3) === <span class="tk-t">PRESERVED_SPACE</span>) {
+    <span class="tk-k">if</span> ((patchAt &amp; 0x7fffffff) !== patchAt || patchAt &gt;= advances.length) {
+      <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+    }
+    advances[patchAt] = [<span class="tk-n">5</span>, <span class="tk-n">5</span>, <span class="tk-n">5</span>];
+  }
+  <span class="tk-k">return</span> { flags, advances, extras };
+}</pre></details></li><li><code>invalid-quantified-bitmask-guard-overlapping-bit  negative  new → refused</code> <span class="why">setOverlappingBit; fails under Node</span></li></ul>
+<h4 class="change">Validation</h4><div class="prose"><p>run-cases.mts invalid-quantified-bitmask (3/3); tests/node-runs.mts.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-quantified-bitmask-guard-text-tag</span> <span class="test neg">invalid-quantified-bitmask-guard-wrong-mask</span> <span class="test neg">invalid-quantified-bitmask-guard-overlapping-bit</span></dd></dl>
+<details><summary>5 files changed, 96 insertions(+), 63 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                 |  4 +-
+ ...lid-quantified-bitmask-guard-overlapping-bit.ts | 29 +++++++++++
+ .../invalid-quantified-bitmask-guard-text-tag.ts   | 56 +++++++++++++++++++++
+ ...invalid-quantified-bitmask-guard-wrong-mask.ts} | 58 +---------------------
+ tests/node-runs.mts                                | 12 ++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-aa8bbf9e2"><header><div><div class="sha">aa8bbf9e2 · Cristiano Calcagno · Nov 25, 18:55</div><h3>State the AND mask law and the shapes the bitmask triggers match</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A review of #420 found the mask rules for <code>x &amp; c</code> stated only where c &amp; M is 0 or M, although the law holds for every active mask M, and the pass's triggers for the bitmask rules shaped to its example: an index instantiation tried only for a body whose top clause is a disjunction, and syntactic matches of atIndex bounds and mask equalities with coefficient 1. The general statement replaces the special cases where its proof is direct; the remaining limits are stated.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">bitAnd-mask</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>r</var> <span class="m-rel">=</span> <var>x</var> &amp; <var>c</var> ⟹ <span class="m-op">bitMask</span>(<var>M</var>, <var>r</var>) <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>M</var>, <var>x</var>)</span><span><span class="m-text">where</span> <var>c</var> &amp; <var>M</var> <span class="m-rel">=</span> <var>M</var></span></div><div class="row"><span><var>r</var> <span class="m-rel">=</span> <var>x</var> &amp; <var>c</var> ⟹ <span class="m-op">bitMask</span>(<var>M</var>, <var>r</var>) <span class="m-rel">=</span> 0</span><span><span class="m-text">where</span> <var>c</var> &amp; <var>M</var> <span class="m-rel">=</span> 0</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>r</var> <span class="m-rel">=</span> <var>x</var> &amp; <var>c</var> ⟹ <span class="m-op">bitMask</span>(<var>M</var>, <var>r</var>) <span class="m-rel">=</span> <span class="m-op">bitMask</span>(<var>M</var> &amp; <var>c</var>, <var>x</var>)</span><span><span class="m-text">for every active mask</span> <var>M</var></span></div><div class="row"><span><span class="m-text">(the constant</span> 0 <span class="m-text">where</span> <var>M</var> &amp; <var>c</var> <span class="m-rel">=</span> 0)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">every-at-index trigger</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>instantiateEveryAtK tries a quantified clause whose body has a top-level BodyClause.either.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>it tries one whose body holds a BodyClause.either at its top or beneath its element guards (BodyClause.hasEither).</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, &quot;Bitmask terms and disjunctive body clauses&quot;</span></h4><div class="prose"><p>The AND law; the OR rules' limit (the law (r &amp; M) = (x &amp; (M &amp; ~c)) + (c &amp; M) is not stated, so an OR whose constant sets some but not all bits of M keeps no fact under M); the shapes instantiateEveryAtK, atIndexConst/atIndexTerm and SinglePass.maskSourceOf match.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>No case changes outcome.</code></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>bitAndSideAtoms_holds proves the law from intAnd_assoc_mask; the trigger change only gates which instances are proposed.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>lake build (1032 jobs, 0 warnings), lake build verifier; run-cases.mts quantified (55/55), bit (6/6), typed-array (35/35); tests/docs.mts.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>Verification.IndexWrites.bitMaskAtoms_holds · Verification.HeapKnowledge.instantiateEveryAtK_holds</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 52 insertions(+), 26 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                             | 33 +++++++++++++++++++-----
+ lean/Verification/Programs/IndexWrites.lean    | 35 +++++++++++++-------------
+ lean/Verification/Semantics/HeapKnowledge.lean | 10 ++++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
