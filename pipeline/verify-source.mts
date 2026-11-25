@@ -31,9 +31,8 @@ import { moduleEntries } from "../tools/library-modules.mts";
 import { libraryRegExpNames } from "../tools/regexp.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { verifyByUnits } from "./module-interfaces.mts";
-import type { CheckedUnits } from "./module-interfaces.mts";
 import { decodeContractRead, decodeVerdictLine, decodeWorkerPrepared, type ContractRead } from "./stage-execution.mts";
-import type { WorkerPart } from "./stages.mts";
+import type { WorkerPart, WorkerRun } from "./stages.mts";
 import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -355,7 +354,10 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
  * unit's verdict (the pass's front, which computes the types) is
  * `unsupported`, phase `proposal`, but a direct obligation the front finds
  * not established or exhausted, which is a refused unit's; a stage over its
- * limit is an error. */
+ * limit is an error. The file's check reads the module interfaces its
+ * selected units reach; where those were not established (an interface
+ * stage over its limit, refused or failed), no unit has a verdict and the
+ * file is an error whose detail is that failure. */
 function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, hasModules: boolean, subtypeRounds: number | undefined,
     functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string,
     units: UnitSelection): Outcome {
@@ -368,13 +370,14 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const select = units.select;
   const roots = select === null ? all : all.filter((n) => select.includes(n));
   const names = roots.length === all.length ? "" : roots.join(",");
-  let checked: CheckedUnits;
+  let checked: WorkerRun;
   try {
     checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
     }, hasModules);
   } catch (error) {
+    // The interface stages' failure, or the worker's.
     const message = messageOf(error);
     return { status: "error", artifacts, phase: "check", units: null,
       detail: /timed-out|timeout-replayed/.test(message)
@@ -387,7 +390,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     detail: `tool failure: verifier --file-worker ${what}: ${part.error?.message ?? (part.stderr.trim().split("\n")[0] || "no output")}` });
   // The preparation: over its limit, failed, refused (the pass's front),
   // or the units the selection checks.
-  const { preparation } = checked.run;
+  const { preparation } = checked;
   const preparationExecution = preparation.execution;
   if (preparationExecution === "timed-out" || preparationExecution === "timeout-replayed")
     return { status: "error", artifacts, phase: "check", units: null,
@@ -406,7 +409,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const lines: string[] = prepared.established.map((u) =>
     JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], elaboration: null, contracts: [] }));
   const log: string[] = [];
-  for (const part of checked.run.parts) {
+  for (const part of checked.parts) {
     const unit = prepared.selected.find((u) => u.unit === part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
     if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
@@ -436,13 +439,6 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const contractReads: UnitContracts[] = decoded.filter((l, i) => !l.unit.startsWith("module:") &&
     decoded.findIndex((m) => m.unit === l.unit) === i).map((l) => ({ unit: l.unit, reads: [...l.contracts] }));
   const refusal = elaboration === null ? null : `reject: ${elaboration}`;
-  // Where the module interfaces were not established, a unit refused at
-  // ordinary contracts is refused for that first.
-  const unestablished = checked.interfaceFailure === null ? null :
-    `the module interfaces its imports read were not established: ${
-      /timed-out|timeout-replayed/.test(checked.interfaceFailure)
-        ? `timeout: a module-interface stage did not finish within ${stepTimeoutMs / 1000} s: ` : ""}${
-      checked.interfaceFailure.split("\n")[0] ?? ""}`;
   const strings = (value: unknown): string[] => {
     if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
       throw Error("tool failure: the single pass printed a unit without its members or dependencies");
@@ -457,8 +453,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       throw Error("tool failure: the single pass printed a verdict without its refusal");
     return { unit, members: strings(field(value, "members")), accepted,
       depends: accepted ? strings(field(value, "depends")) : [],
-      refusal: typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
-        : "" };
+      refusal: typeof reason === "string" ? reason : "" };
   }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
   // A unit's dependencies are decided by what it reaches through them, so a
   // cycle of units is decided together: a unit refused of its own, or one

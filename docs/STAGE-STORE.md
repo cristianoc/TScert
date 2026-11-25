@@ -213,16 +213,15 @@ establishes an entry and how an importer binds one are
 A check (`pipeline/verify-source.mts`, the case runner and every caller
 through it) runs the parse stage, then the file's `pass` stage, a
 [worker stage](#worker-stages) (`--file-worker 8`), and the interface stages
-it needs (`verifyByUnits`): the file's stage runs at ordinary import
-contracts first; where every selected unit is accepted, no interface stage
-runs, and where some units are semantically refused, the interface stages
-run for the modules those refused units reach, followed by the file's stage
-at those interfaces. The worker
+it needs (`verifyByUnits`): the interface stages run for the modules the
+selected units reach, then the file's stage runs once at those interfaces
+(for a file with no modules, at an empty interfaces document). The worker
 prepares the file once and checks its selected units one after another;
 each unit's result is an entry of its own, and a unit over its limit is that
-unit's refusal, a timeout, and its dependents'. Where the interface stages
-fail (a timeout, a refusal), the file's stage runs at ordinary contracts,
-each refused unit's refusal naming that failure first. A unit counts as
+unit's refusal, a timeout, and its dependents'. Where an interface stage
+fails (a timeout, a refusal, an operational failure), the file's stage does
+not run: no unit has a verdict, and the file's outcome is an error naming
+that failure. A unit counts as
 verified only with every unit it depends on accepted; a unit the pass
 refuses is `unverified` (phase `search`), a refusal of the pass's front
 `unsupported` (phase `proposal`).

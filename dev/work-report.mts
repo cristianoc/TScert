@@ -48,7 +48,6 @@ const sites = {
   roles: "1 requested and imported roles",
   wholeTimeout: "2 whole-file timeout",
   unitFallback: "3 per-unit fallback preparation",
-  ordinary: "4 ordinary-contract attempt",
   omission: "5 census omission rounds",
   dependency: "6 census dependency rounds",
   walks: "7 declaration proposal and body elaboration",
@@ -182,7 +181,6 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
     if (first.fragment !== other.fragment) return sites.omission;
     if (first.names !== other.names) return first.names !== "" && other.names !== "" || attemptsTimedOut.has(other.fragment ?? "")
       ? sites.unitFallback : sites.dependency;
-    if (first.interfaces !== other.interfaces) return sites.ordinary;
     if (first.part === null && other.part === null) return sites.restart;
     return sites.sameKey;
   };

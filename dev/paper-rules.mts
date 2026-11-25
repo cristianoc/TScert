@@ -54,10 +54,8 @@ function run(file: string, project: string | undefined, quiet: boolean = false):
   const side = annotations(resolve(file));
   const sidePath = join(artifacts, "paper-side.json");
   writeFileSync(sidePath, JSON.stringify(side));
-  // The interfaces the ordinary check read: its imports' established module
-  // interfaces where it established them, ordinary contracts otherwise.
-  const established = join("interfaces", "interfaces.json");
-  const interfaces = existsSync(join(artifacts, established)) ? established : join("interfaces", "ordinary-interfaces.json");
+  // The module interfaces the ordinary check read (`verifyByUnits`).
+  const interfaces = join("interfaces", "interfaces.json");
   const out = execFileSync(prototype, [sidePath, "fragment.json", interfaces,
     sourceKey(artifacts), "12"], { cwd: artifacts, encoding: "utf8", stdio: ["ignore", "pipe", process.env.PAPER_TRACE ? "inherit" : "ignore"], timeout: 300_000 });
   const failed = new Map([
