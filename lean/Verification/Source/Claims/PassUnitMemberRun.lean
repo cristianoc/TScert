@@ -82,7 +82,7 @@ its walks framing the nodes `fr` and the footprint's fallback allowed where
 `GraphAccepted` states them. -/
 theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (given : Option (Std.HashMap String Json)) (observe : Option String) (counting : Bool) (j : Nat)
-    (fr : List (Nat × List Footprints.Footprint)) (fb : Bool) m
+    (fr : List (Nat × List Confinement.FrameSpec)) (fb : Bool) m
     (h : f.passMemberGraph fuel j compare debugNode repeats given observe counting (framed := fr) (fallback := fb) =
       .ok m) (hacc : m.accepted = true) :
     GraphAccepted f j fr fb := by
@@ -281,7 +281,7 @@ theorem passMemberGraph_accepted (f : FilePlans) (fuel : Nat) (compare : Bool) (
           MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary sumsAnswers ∧
           c.bound = bnd ∧ c.regional = rg ∧ (c.confinement.isSome ∨ c.framed = fr) ∧ c.result = walk k bnd rg := by
         intro k bnd rg
-        let mkCall : List (Nat × List Footprints.Footprint) → Option LocalConfinement.Table → RunCall G I :=
+        let mkCall : List (Nat × List Confinement.FrameSpec) → Option LocalConfinement.Table → RunCall G I :=
           fun fr' conf' =>
             { pool := pool, fuel := fuel, P := r.program, claims := r.claims, start := r.start, inputs := r.inputs,
               goal := r.goal, assertions := r.assertions, cuts := r.cuts, candidates := r.candidates,

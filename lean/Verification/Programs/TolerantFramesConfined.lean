@@ -39,11 +39,13 @@ private theorem mem_program_expr {E : List Tm} {K : List (Continuation × Option
   obtain ⟨⟨e, k, x⟩, hz, rfl⟩ := List.mem_map.mp h
   exact (List.of_mem_zip hz).1
 
-/-- If `SinglePass.framedAt conf.framed l = some Ss`, then `l ∈ conf.framedNodes`
-and `Ss` is the singleton `[confinedFootprint (conf.at l).owned (conf.at l).ownedArr]`. -/
-private theorem framedAt_confined {conf : LocalConfinement.Table} {l : Nat} {Ss : List Footprints.Footprint}
+/-- If `SinglePass.framedAt conf.framed l = some Ss`, then either `l ∈ conf.framedNodes`
+and `Ss = [.footprint (confinedFootprint (conf.at l).owned (conf.at l).ownedArr)]`,
+or `∃ w, (l, w) ∈ conf.outsideNodes ∧ Ss = [.outside w (conf.at l).holders]`. -/
+private theorem framedAt_confined {conf : LocalConfinement.Table} {l : Nat} {Ss : List Confinement.FrameSpec}
     (h : SinglePass.framedAt conf.framed l = some Ss) :
-    l ∈ conf.framedNodes ∧ Ss = [Confinement.confinedFootprint (conf.at l).owned (conf.at l).ownedArr] := by
+    (l ∈ conf.framedNodes ∧ Ss = [.footprint (Confinement.confinedFootprint (conf.at l).owned (conf.at l).ownedArr)]) ∨
+    (∃ w, (l, w) ∈ conf.outsideNodes ∧ Ss = [.outside w (conf.at l).holders]) := by
   simp only [SinglePass.framedAt, Option.map_eq_some_iff] at h
   obtain ⟨⟨l', Ss'⟩, hfind, hSs⟩ := h
   simp only at hSs
@@ -53,13 +55,18 @@ private theorem framedAt_confined {conf : LocalConfinement.Table} {l : Nat} {Ss 
     have := List.find?_some hfind
     simpa only [beq_iff_eq] using this
   subst heq
-  simp only [LocalConfinement.Table.framed, List.mem_filterMap] at hmem
-  obtain ⟨l₀, hl₀, hpair⟩ := hmem
-  split at hpair
-  · cases hpair
-  · simp only [Option.some.injEq, Prod.mk.injEq] at hpair
-    obtain ⟨rfl, rfl⟩ := hpair
-    exact ⟨hl₀, rfl⟩
+  simp only [LocalConfinement.Table.framed, List.mem_append, List.mem_filterMap] at hmem
+  rcases hmem with ⟨l₀, hl₀, hpair⟩ | ⟨⟨l₀, w⟩, hl₀, hpair⟩
+  · split at hpair
+    · cases hpair
+    · simp only [Option.some.injEq, Prod.mk.injEq] at hpair
+      obtain ⟨rfl, rfl⟩ := hpair
+      exact .inl ⟨hl₀, rfl⟩
+  · split at hpair
+    · cases hpair
+    · simp only [Option.some.injEq, Prod.mk.injEq] at hpair
+      obtain ⟨rfl, rfl⟩ := hpair
+      exact .inr ⟨w, hl₀, rfl⟩
 
 /-- `checkWalkConfinement` guarantees the start node's confinement entry is empty. -/
 private theorem start_empty_of_walkConfinement {G : NormalGraph ι} {I : InstanceImageCheck G}
@@ -177,7 +184,7 @@ theorem nodesChecked_confined {G : NormalGraph ι} {images : InstanceImageCheck 
       have hρ' : ∀ i, RefsOk s'.W (ρ i) := RootsOk.admissible hadm hρ
       have htb : Confinement.TmRefsBelow ε.heap.length na.node.expression :=
         htbP na.node (List.mem_of_getElem? na.hP)
-      obtain ⟨hfr, hexits_cf⟩ := LocalConfinement.checkNode_sound_normal hchk hcodes hsums hwl he he'
+      obtain ⟨hfr, hout_cf, hexits_cf⟩ := LocalConfinement.checkNode_sound_normal hchk hcodes hsums hwl he he'
         hρ hρ' hkS hm₀ htb hcf hv hr hsteps hkn
       have hK : framedK (ε := ε) (framedFOf conf.framed) (framedSOf conf.framed) l na.st.stepK (push v ρ) s'.h := by
         intro hFl
@@ -185,13 +192,19 @@ theorem nodesChecked_confined {G : NormalGraph ι} {images : InstanceImageCheck 
         cases hfa : SinglePass.framedAt conf.framed l with
         | none => rw [hfa] at hFl; cases hFl
         | some Ss =>
-          obtain ⟨hmem_fr, rfl⟩ := framedAt_confined hfa
-          have hsupp : ∀ T ∈ framedSOf conf.framed l, Footprints.Supported T ρ s.h s'.h := by
-            intro T hTmem
-            simp only [framedSOf, hfa, Option.getD_some, List.mem_singleton] at hTmem
-            subst hTmem
-            exact hfr hmem_fr
-          exact framedKept_holds hkS hsupp
+          rcases framedAt_confined hfa with ⟨hmem_fr, rfl⟩ | ⟨w, hmem_out, rfl⟩
+          · have hsupp : ∀ S ∈ framedSOf conf.framed l, S.Supported ρ s.h s'.h := by
+              intro S hSmem
+              simp only [framedSOf, hfa, Option.getD_some, List.mem_singleton] at hSmem
+              subst hSmem
+              exact hfr hmem_fr
+            exact framedKept_holds hkS hsupp
+          · have hsupp : ∀ S ∈ framedSOf conf.framed l, S.Supported ρ s.h s'.h := by
+              intro S hSmem
+              simp only [framedSOf, hfa, Option.getD_some, List.mem_singleton] at hSmem
+              subst hSmem
+              exact hout_cf w hmem_out
+            exact framedKept_holds hkS hsupp
       have hshape := nodeShape_of na.hshape (he'.2 0 _ rfl)
       have hm' : m ≤ s'.h.length := Nat.le_trans hm hadm.length_le
       have hm₀' : ε.heap.length ≤ s'.h.length := Nat.le_trans hm₀ hadm.length_le

@@ -984,31 +984,83 @@ def edgesOf (k : Continuation) (x : Option Target) : List (Target × Bool) :=
 /-- A node's pairs: none where the table reaches no run there. -/
 def trackedAt (T : List (Option Tracked)) (l : Nat) : Option Tracked := T[l]?.bind id
 
+/-- The pairs carried across an edge with mapping `m` and target width `w`:
+equivalent to iterating `i ∈ [0, w)` and matching `slot m i`, in `O(w · |sources|)`
+time without repeated linked-list indexing. -/
+def carryTracked (sources : Tracked) (m : Mapping) (w : Nat) : Tracked :=
+  if sources.isEmpty || w == 0 then [] else
+  match m with
+  | none =>
+    sources.filter fun p => p.1 < w
+  | some slots =>
+    let rec tail (j : Nat) (z : Tracked) (a : List (Nat × Nat)) : List (Nat × Nat) :=
+      if j < w then
+        tail (j + 1) z (z.foldl (fun a' p => (j, p.2) :: a') a)
+      else a.reverse
+    termination_by w - j
+    let rec go (i : Nat) (xs : List Nat) (acc : List (Nat × Nat)) : List (Nat × Nat) :=
+      if i < w then
+        match xs with
+        | s :: rest =>
+          let acc := sources.foldl (fun a p => if p.1 == s then (i, p.2) :: a else a) acc
+          go (i + 1) rest acc
+        | [] =>
+          let z := sources.filter fun p => p.1 == 0
+          if z.isEmpty then acc.reverse else tail i z acc
+      else acc.reverse
+    termination_by w - i
+    go 0 slots []
+
+/-- The pairs at each node: the seed at the entry, carried along every edge
+to each slot whose mapping reads a slot holding the input, those every
+predecessor carries, computed by worklist propagation. Untrusted: `edgesTrack`
+checks every edge. -/
+def trackTableWithWidths (P : Program) (widths : Array Nat) (start : Nat) (seed : Tracked) :
+    List (Option Tracked) := Id.run do
+  let nodes := P.toArray
+  let mut table : Array (Option Tracked) := Array.replicate nodes.size none
+  if start < nodes.size then
+    table := table.set! start (some seed)
+  let mut queued : Array Bool := Array.replicate nodes.size false
+  let mut work : List Nat := []
+  if start < nodes.size then
+    queued := queued.set! start true
+    work := [start]
+  let mut fuel := (2 * nodes.size + 2) * (nodes.size + 1)
+  while !work.isEmpty && fuel > 0 do
+    let l :: rest := work | break
+    work := rest
+    queued := queued.set! l false
+    fuel := fuel - 1
+    let some here := table.getD l none | continue
+    let some node := nodes[l]? | continue
+    let varResult : Tracked := match node.expression with
+      | .var s => here.filterMap fun p => if p.1 == s then some (0, p.2) else none
+      | _ => []
+    let normalEdges := (edgesOf node.continuation none).map (·, true)
+    let handlerEdges := node.handler.toList.map fun t => ((t, true), false)
+    for (e, isNormal) in normalEdges ++ handlerEdges do
+      let dst := e.1.label
+      if dst >= nodes.size then continue
+      let sources := if e.2 then (if isNormal then varResult else []) ++ shiftTracked here else here
+      let carried := carryTracked sources e.1.mapping (widths.getD dst 0)
+      let current := table.getD dst none
+      let merged := match current with
+        | none => some carried
+        | some old => some (old.filter carried.contains)
+      if merged != current then
+        table := table.set! dst merged
+        if !queued.getD dst true then
+          queued := queued.set! dst true
+          work := dst :: work
+  return table.toList
+
 /-- The pairs at each node: the seed at the entry, carried along every edge
 to each slot whose mapping reads a slot holding the input, those every
 predecessor carries. Untrusted: `edgesTrack` checks every edge. -/
 @[nospecialize] def trackTable (P : Program) (C : Certificate ι) (start : Nat) (seed : Tracked) :
-    List (Option Tracked) := Id.run do
-  let widths := (C.map fun c => (entry c).length).toArray
-  let mut table : Array (Option Tracked) := Array.replicate P.length none
-  table := table.set! start (some seed)
-  for _ in List.range (2 * P.length + 2) do
-    let mut changed := false
-    for (node, l) in P.zipIdx do
-      let some here := table.getD l none | continue
-      for e in edgesOf node.continuation node.handler do
-        let sources := if e.2 then shiftTracked here else here
-        let carried := (List.range (widths.getD e.1.label 0)).flatMap fun i =>
-          sources.filterMap fun p => if p.1 == slot e.1.mapping i then some (i, p.2) else none
-        let current := table.getD e.1.label none
-        let merged := match current with
-          | none => some carried
-          | some old => some (old.filter carried.contains)
-        if merged != current then
-          table := table.set! e.1.label merged
-          changed := true
-    if !changed then break
-  return table.toList
+    List (Option Tracked) :=
+  trackTableWithWidths P (C.map fun c => (entry c).length).toArray start seed
 
 /-- Every edge out of a node the table reaches carries its pairs: the table
 reaches the target, and the target's pairs follow. -/

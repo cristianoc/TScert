@@ -2085,10 +2085,13 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
             if a.names.any phiNames.contains then
               rawBodies := (a, F) :: rawBodies
   if (rawGuards.isEmpty && phiGuards.isEmpty) || rawBodies.isEmpty then return existing
+  let twoViews := views.length ≤ 2
   let linMask (a : Atom) (L : Linear.Fact HeapKnowledge.Term) : List Bool :=
     views.map fun (qs : State) =>
-      (qs.store.holds a || HeapKnowledge.entailsKnown (qs.store.linearNear a.names) L) &&
-        entailDefinedCheck qs a L
+      if qs.store.holds a then entailDefinedCheck qs a L
+      else if twoViews then false
+      else entailDefinedCheck qs a L &&
+        (Linear.Known.build (HeapKnowledge.linearRaw (qs.store.linearNear a.names)) []).entails L
   let guards := rawGuards.filterMap fun (a, L) =>
     let m := linMask a L
     if m.all id || m.all (!·) then none else some (a, L, m)
@@ -2115,8 +2118,9 @@ def mergeDisjCandidates (live phiNames : Std.HashSet Nat) (met : Store)
         let taut := match bF with
           | .linear bL =>
             let near := met.linearNear (ga.names ++ ba.names)
-            HeapKnowledge.entailsKnown (near ++ negLinear gL) bL ||
-            HeapKnowledge.entailsKnown (near ++ negLinear bL) gL
+            let nearK := Linear.Known.build (HeapKnowledge.linearRaw near) []
+            ((HeapKnowledge.linearRaw (negLinear gL)).foldl Linear.Known.add nearK).entails bL ||
+            ((HeapKnowledge.linearRaw (negLinear bL)).foldl Linear.Known.add nearK).entails gL
           | _ => false
         if !taut then
           out := { fact := .either (.linear gL) bF } :: out
@@ -2272,21 +2276,27 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
       { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
     let joined := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
     let tagged := timedKind "meet tagged" fun _ =>
+      let taggedSlots := tagged.filterMap mergedNames.idxOf?
       let nullishPos := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
-        (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
-          (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
+        if f.contents == {} then [] else
+        let cls := HeapLinks.aliases o.links f.slot
+        if !cls.any taggedSlots.contains then [] else
+        (tags.filter fun g => HeapKnowledge.onlyTag f.contents g).flatMap fun g =>
+          cls.map (·, g))).eraseDups.filter fun (z, g) =>
+            !projections.all (fun o => HeapKnowledge.guardTags o z [] g)
       let nullish := (nullishPos ++ nullishPos.filterMap fun (z, g) =>
         if (g == .null || g == .undef) && projections.any (fun o => HeapKnowledge.guardTags o z [] g.complement) then
           some (z, g.complement)
         else none).eraseDups
       if nullish.isEmpty then [] else
+      let commonSet : Std.HashSet HeapKnowledge.IndexAtom := common.indices.foldl (·.insert ·) {}
       let indexCands := projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
-        if a.cond.isSome || common.indices.contains a then [] else match a.fact with
+        if a.cond.isSome || commonSet.contains a then [] else match a.fact with
         | .either .. => []
         | .guarded s [] t B =>
             let cls := HeapLinks.aliases p.links s
             nullish.filterMap fun (z, g) =>
-              if !cls.contains z then none
+              if !g.isPositive || !cls.contains z || g == t.complement then none
               else if t == g then some ({ fact := .guarded z [] t B } : HeapKnowledge.IndexAtom)
               else match B with
                 | .guarded s' [] t' _ =>
@@ -2302,10 +2312,10 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
         | .str f =>
           let cls := HeapLinks.aliases p.links l.value
           nullish.filterMap fun (z, g) =>
-            if cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
+            if g.isPositive && cls.contains z && !HeapKnowledge.guardTags p z [] g then some ({ fact := .guarded z [] g (.fieldRead z l.cell f) } : HeapKnowledge.IndexAtom)
             else none
         | .sym _ => []
-      let candidates := (indexCands ++ linkCands).eraseDups
+      let candidates := (keepFirst {} (indexCands ++ linkCands)).2.toList
       flat.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
     return joined ++ tagged
   let phiNames : Std.HashSet Nat := renames.foldl (fun acc m =>
@@ -2313,17 +2323,25 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   let disjoined : List HeapKnowledge.IndexAtom := timedKind "meet disjoined" fun _ =>
     let disjNameCands := mergeDisjCandidates live phiNames met diffs views
     if disjNameCands.isEmpty then [] else
-    let candidates := (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
+    let candidates := (keepFirst {} (disjNameCands.filterMap fun a => match (Atom.index a).rename mergedNames.idxOf? with
       | some (.index x) => some x
-      | _ => none).eraseDups
-    candidates.filter fun a =>
-      let slots := a.fact.slots.eraseDups
-      views.all fun ps =>
-        let p0 := (materialize ps width slots false).1
-        let p := { p0 with indices := p0.indices.filter fun x =>
-          x == a || match x.fact with | .either _ _ => a.fact.hasAtIndex && x.fact.hasAtIndex | _ => true }
-        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-          p.indices [a] none
+      | _ => none)).2.toList
+    if candidates.isEmpty then [] else
+    let slots := (candidates.flatMap (·.fact.slots)).eraseDups
+    let (withAt, plain) := candidates.partition (·.fact.hasAtIndex)
+    let viewsK := views.map fun ps => (materialize ps width slots false).1
+    let keptPlain := if plain.isEmpty then [] else
+      let plainSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList plain
+      let plainViews := viewsK.map fun p =>
+        { p with indices := p.indices.filter fun x =>
+          plainSet.contains x || match x.fact with | .either _ _ => false | _ => true }
+      plainViews.foldl (fun cs p => HeapKnowledge.indicesFilter p cs false) plain
+    let keptAt := if withAt.isEmpty then [] else
+      let atViews := viewsK.map fun p =>
+        { p with indices := p.indices.filter fun x =>
+          withAt.contains x || match x.fact with | .either _ _ => x.fact.hasAtIndex | _ => true }
+      atViews.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) withAt
+    keptPlain ++ keptAt
   let guarded := guarded0 ++ disjoined
   met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
     | some a => acc.add a
@@ -2385,14 +2403,14 @@ structure Stepped (ι : Type) where
   stepDeriv : Option (ProgramCertificates.Evidence ι) := none
   stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
 
-/-- Whether every entry of `T` is covered by some support in `Ss`
-(`Confinement.entryCoveredBy`). -/
-def footprintSupportedIn (Ss : List Footprints.Footprint) (T : Footprints.Footprint) : Bool :=
-  Ss.any fun S => T.all (Confinement.entryCoveredBy S)
+/-- Whether every entry of `T` is covered by some support spec in `Ss`
+(`Confinement.FrameSpec.covers`). -/
+def footprintSupportedIn (Ss : List Confinement.FrameSpec) (T : Footprints.Footprint) : Bool :=
+  Ss.any fun S => S.covers T
 
 /-- A fact's produced support (`IndexFact.support?`, no stable key) is covered
-by one of the supports `Ss`. -/
-def supportedIn (Ss : List Footprints.Footprint) (F : HeapKnowledge.IndexFact) : Bool :=
+by one of the support specs `Ss`. -/
+def supportedIn (Ss : List Confinement.FrameSpec) (F : HeapKnowledge.IndexFact) : Bool :=
   match F.support? {} with
   | some T => footprintSupportedIn Ss T
   | none => false
@@ -2400,9 +2418,9 @@ def supportedIn (Ss : List Footprints.Footprint) (F : HeapKnowledge.IndexFact) :
 /-- **The facts a framed node's return keeps** (the draft "Framed
 acceptance", "The graph at framed returns"): the heap facts of its entry's
 knowledge (cells, links, elements, and index atoms) whose support is covered
-by a support it keeps (`footprintSupportedIn`, `supportedIn`), renamed past
+by a support spec it keeps (`footprintSupportedIn`, `supportedIn`), renamed past
 the node's result. -/
-def framedKept (Ss : List Footprints.Footprint) (k : Knowledge) : List Atom :=
+def framedKept (Ss : List Confinement.FrameSpec) (k : Knowledge) : List Atom :=
   (HeapFacts.shift (k.cells.filter fun f => footprintSupportedIn Ss (Footprints.FactKind.cell f).support)).map Atom.cell ++
   (HeapLinks.pull (k.links.filter fun g => footprintSupportedIn Ss (Footprints.FactKind.link g).support)
     (fun i => [i + 1])).map Atom.link ++
@@ -2410,9 +2428,9 @@ def framedKept (Ss : List Footprints.Footprint) (k : Knowledge) : List Atom :=
     footprintSupportedIn Ss (Footprints.FactKind.elems a.slot a.pred).support)).map Atom.elem ++
   (HeapKnowledge.shiftIndices (k.indices.filter fun a => supportedIn Ss a.fact)).map Atom.index
 
-/-- The supports a framed node keeps, among the framed nodes `framed`
-with their supports; none at a node no entry names. -/
-def framedAt (framed : List (Nat × List Footprints.Footprint)) (l : Nat) : Option (List Footprints.Footprint) :=
+/-- The support specs a framed node keeps, among the framed nodes `framed`
+with their support specs; none at a node no entry names. -/
+def framedAt (framed : List (Nat × List Confinement.FrameSpec)) (l : Nat) : Option (List Confinement.FrameSpec) :=
   (framed.find? (·.1 == l)).map (·.2)
 
 /-- The store `s` with the atoms `kept`, at slots, added over the
@@ -2423,10 +2441,10 @@ def keepStore (names : List Nat) (kept : List Atom) (s : Store) : Store :=
     | none => s) s
 
 /-- **The step a framed node's exits read**: the step `st` from the entry
-`entry`, its store holding, at a framed node keeping the supports `kept`,
-the facts of the step's input those supports keep (`framedKept`) over the
+`entry`, its store holding, at a framed node keeping the support specs `kept`,
+the facts of the step's input those support specs keep (`framedKept`) over the
 names after the step; the step itself at another node. -/
-def keptStep (kept : Option (List Footprints.Footprint)) (entry : State) (st : Stepped ι) : Stepped ι :=
+def keptStep (kept : Option (List Confinement.FrameSpec)) (entry : State) (st : Stepped ι) : Stepped ι :=
   let keep := (kept.map (fun Ss => framedKept Ss st.stepK)).getD []
   { st with store := keepStore (st.result :: entry.names) keep st.store }
 
@@ -2489,20 +2507,20 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     let kindKey := SinglePassStats.termKind node.expression
     -- Each precondition the call's signatures state, decided once, where the
     -- search first asks it (`admitsNear`).
-    let kPre := HeapKnowledge.unguardedByTypes G Γr kE
+    let kPre := Thunk.mk fun _ => HeapKnowledge.unguardedByTypes G Γr kE
     let stated : List ((Option CallEffects.ElemPred × List HeapKnowledge.IndexFact) × Thunk Bool) :=
       own.foldl (fun acc F => match PositiveRules.expand G F with
         | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => L.foldl (fun acc p =>
             let key := (p.effect.requires, p.effect.pre)
             if acc.any (·.1 == key) then acc
-            else acc ++ [(key, Thunk.mk fun _ => admitsNear kPre p.effect node.expression)]) acc
+            else acc ++ [(key, Thunk.mk fun _ => admitsNear kPre.get p.effect node.expression)]) acc
         | _ => acc) []
     let admits := fun (eff : CallEffects.Effect) (t : Tm) =>
       if t == node.expression then
         match stated.find? (·.1 == (eff.requires, eff.pre)) with
         | some (_, v) => v.get
-        | none => admitsNear kPre eff t
-      else admitsNear kPre eff t
+        | none => admitsNear kPre.get eff t
+      else admitsNear kPre.get eff t
     -- A call of a slot: its derivation read off the callee's signatures
     -- (`directCall`), its step `ordinary`; otherwise the search.
     let (direct, a0) := match node.expression with
@@ -2770,7 +2788,7 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   /-- Whether each visit records its step's local effect (`Walk.visits`). -/
   grading : Bool
   /-- The framed nodes with the supports their returns keep (`framedAt`). -/
-  framed : List (Nat × List Footprints.Footprint)
+  framed : List (Nat × List Confinement.FrameSpec)
   /-- The slots stated fresh at each loop head other than the start. -/
   givenFresh : Array (List Nat) := #[]
 
@@ -2848,7 +2866,7 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
     (stated «given» : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
-    (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Footprints.Footprint))
+    (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Confinement.FrameSpec))
     (givenFresh : Array (List Nat) := #[]) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
@@ -2873,7 +2891,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := [])
+    (framed : List (Nat × List Confinement.FrameSpec) := [])
     (givenFresh : Array (List Nat) := #[]) :
     Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) :=
   let nodes := P.toArray
@@ -4260,7 +4278,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := [])
+    (framed : List (Nat × List Confinement.FrameSpec) := [])
     (givenFresh : Array (List Nat) := #[]) :
     Except (WalkStop ι G) (WalkState ι G × Nat) := do
   let (env, σ0) ← setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
@@ -4308,7 +4326,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
-    (framed : List (Nat × List Footprints.Footprint) := [])
+    (framed : List (Nat × List Confinement.FrameSpec) := [])
     (confinement : Option LocalConfinement.Table := none)
     (givenFresh : Array (List Nat) := #[]) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known

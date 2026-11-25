@@ -62,7 +62,7 @@ def MainCall {G : NormalGraph ι} {I : InstanceImageCheck G} (r : SourceRequest 
 /-- **A run accepted at framed nodes `fr`**: its walk accepted, framing
 those nodes. -/
 def _root_.Verification.TolerantFrames.Target.RunCall.AcceptsAt {G : NormalGraph ι} {I : InstanceImageCheck G}
-    (c : RunCall G I) (after : Answered G) (fr : List (Nat × List Footprints.Footprint)) : Prop :=
+    (c : RunCall G I) (after : Answered G) (fr : List (Nat × List Confinement.FrameSpec)) : Prop :=
   c.AcceptsWalk after ∧ (c.confinement.isSome ∨ c.framed = fr)
 
 /-- **The main graph accepted** as `passGroup` accepts it, its walks framing
@@ -71,7 +71,7 @@ refused and the fallback allowed (`fb`), by the footprint's regional
 fallback (no regions), followed by the stated regions' run where it states
 any. Each accepted run's read summaries checked. -/
 inductive MainAcceptedAt (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
-    (codes : CodeEntry ι → Bool) (fr : List (Nat × List Footprints.Footprint)) (fb : Bool) (a : Answered G) : Prop where
+    (codes : CodeEntry ι → Bool) (fr : List (Nat × List Confinement.FrameSpec)) (fb : Bool) (a : Answered G) : Prop where
   | direct (c : RunCall G I) (after : Answered G) :
       MainCall r c codes .ordinary a → c.bound = mainBound r → regionOf c.regional = regionalSpec r →
       c.AcceptsAt after fr → summariesChecked r after.summaries.toList = true → MainAcceptedAt G I r codes fr fb a
@@ -98,7 +98,7 @@ the nodes `fr`, the footprint's fallback allowed where `fb`): unqualified,
 its code requests accepted in order and its main graph over their table
 (`MainAcceptedAt`); or a qualified body accepted by one call at its
 checker, as `MemberAccepted` states them. -/
-inductive GraphAccepted (f : FilePlans) (i : Nat) (fr : List (Nat × List Footprints.Footprint)) (fb : Bool) : Prop where
+inductive GraphAccepted (f : FilePlans) (i : Nat) (fr : List (Nat × List Confinement.FrameSpec)) (fb : Bool) : Prop where
   | ordinary (name : String) (pos : Span) (r : Req f) (a₀ a₁ : Answered (StoreView.graph f.F.store)) :
       PlanAt f i name pos r → r.qualification = none → declaredEffect r = true →
       (∀ Φ regions, r.regional = some (Φ, regions) → r.async = false ∧ r.fresh = false ∧

@@ -55,6 +55,9 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
       | .elem => some .elem
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
+      | .parallel s' p' k ep => do
+          let (sl, pr) ← now s'
+          pure (.parallel sl (pr ++ p') k ep)
     pure (.atIndex slot (pre ++ path) idx guard body)
   | f => f.mapM fun p => do
     let (slot, path) ← now p

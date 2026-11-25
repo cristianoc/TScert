@@ -46,18 +46,24 @@ structure Table where
   nodes : Array NodeConf
   framedNodes : List Nat := []
   allocPriv : List Nat := []
+  outsideNodes : List (Nat × Nat) := []
   deriving DecidableEq, Repr
 
 def Table.at (t : Table) (l : Nat) : NodeConf :=
   t.nodes.getD l {}
 
 /-- The `SinglePass.framed` list induced by `t`: for each framed node with at
-least one owned slot, its `confinedFootprint`. -/
-def Table.framed (t : Table) : List (Nat × List Footprint) :=
-  t.framedNodes.filterMap fun l =>
+least one owned slot, its `confinedFootprint`, and for each confined-call
+outside-framed node `(l, w)`, its `FrameSpec.outside w nc.holders`. -/
+def Table.framed (t : Table) : List (Nat × List FrameSpec) :=
+  (t.framedNodes.filterMap fun l =>
     let nc := t.at l
     if nc.owned.isEmpty && nc.ownedArr.isEmpty then none
-    else some (l, [confinedFootprint nc.owned nc.ownedArr])
+    else some (l, [.footprint (confinedFootprint nc.owned nc.ownedArr)])) ++
+  (t.outsideNodes.filterMap fun (l, w) =>
+    let nc := t.at l
+    if nc.owned.isEmpty && nc.ownedArr.isEmpty then none
+    else some (l, [.outside w nc.holders]))
 
 def NodeConf.shift (nc : NodeConf) : NodeConf :=
   { owned := nc.owned.map (· + 1)
@@ -546,6 +552,18 @@ theorem confinedCallNormal_reassign (G : NormalGraph ι) (η : MixedAssignment �
   | none => rfl
   | some d => simp only [confinedCallNormal, derivChecked_reassign]
 
+/-- Whether `expr` is an element write `x[i] = y` on an `ownedArr` slot `x`
+(with variable or numeric-literal index). -/
+def isConfArrElemWrite (width : Nat) (pre : NodeConf) : Tm → Bool
+  | .writeAt f (.var x) (.setElem (.readAt f' (.var x')) iv (.var y)) =>
+      f == arraySpineKey && f' == arraySpineKey && x == x' &&
+      x < width && y < width && pre.ownedArr.contains x &&
+      match iv with
+      | .var i => i < width
+      | .num _ => true
+      | _ => false
+  | _ => false
+
 /-- Graph-independent core of `nodePostN`, factored over `isInert` and `isConfCall`. -/
 def nodePostNCore (width : Nat) (expr : Tm) (isInert isConfCall : Bool)
     (pre : NodeConf) (allocIntoPriv : Bool) : NodeConf :=
@@ -579,6 +597,8 @@ def nodePostNCore (width : Nat) (expr : Tm) (isInert isConfCall : Bool)
           else {}
       | _ => { sh with holders := 0 :: sh.holders }
   else if unreach then
+    sh
+  else if isConfArrElemWrite width pre expr then
     sh
   else
     match expr with
@@ -634,6 +654,10 @@ def checkNode (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Code
   let pre := conf.at l
   let width := c.context.length
   let framedOk := !conf.framedNodes.contains l || freeSlotsNotIn width 0 pre.holders node.expression
+  let outsideOk := !conf.outsideNodes.any (·.1 == l) ||
+    (conf.outsideNodes.all (fun p => p.1 != l || p.2 == width) &&
+      (confinedCallNormal G images codes sums c node stepK deriv pre ||
+        isConfArrElemWrite width pre node.expression))
   let postN := nodePostN G images codes sums node c stepK deriv pre (conf.allocPriv.contains l)
   let dstW := fun lbl => ((claims[lbl]?).map (·.context.length)).getD 0
   let normOk := (normalExits node).all fun (t, pushed) =>
@@ -643,7 +667,7 @@ def checkNode (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Code
     | some t =>
         let dst := conf.at t.label
         dst.owned.isEmpty && dst.ownedArr.isEmpty && dst.ownedSpines.isEmpty
-  framedOk && normOk && handOk
+  framedOk && outsideOk && normOk && handOk
 
 theorem nodePostN_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (images : InstanceImageCheck G)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) (node : Node) (c : PointClaim ι)
@@ -659,7 +683,7 @@ theorem checkNode_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (image
     (deriv : Option (ProgramCertificates.Evidence ι)) :
     checkNode (reassign G η) (images.reassign η) codes sums claims conf l node c stepK deriv =
       checkNode G images codes sums claims conf l node c stepK deriv := by
-  simp only [checkNode, nodePostN_reassign]
+  simp only [checkNode, nodePostN_reassign, confinedCallNormal_reassign]
 
 /-! ## Soundness of `checkNode` -/
 
@@ -862,6 +886,8 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
     (hsteps : Steps k s.h (instantiate 0 ρ node.expression) s'.h v) (hkn : k < s.n) :
     (l ∈ conf.framedNodes →
       Supported (confinedFootprint (conf.at l).owned (conf.at l).ownedArr) ρ s.h s'.h) ∧
+    (∀ w, (l, w) ∈ conf.outsideNodes →
+      (FrameSpec.outside w (conf.at l).holders).Supported ρ s.h s'.h) ∧
     ∀ t pushed, (t, pushed) ∈ normalExits node →
       ConfinedAt conf (fun lbl => ((claims[lbl]?).map (·.context.length)).getD 0)
         t.label (mapEnv t.mapping (if pushed then push v ρ else ρ)) m₀ s'.h := by
@@ -870,7 +896,7 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
   have hval_lt : ∀ i, i < c.context.length → isVal (ρ i) = true := fun i hi =>
     (meaning_value (he.2 i (c.context[i]'hi) (List.getElem?_eq_getElem hi))).1
   simp only [checkNode, Bool.and_eq_true] at hchk
-  obtain ⟨⟨hfrOk, hnormOk⟩, _⟩ := hchk
+  obtain ⟨⟨⟨hfrOk, houtOk⟩, hnormOk⟩, _⟩ := hchk
   obtain ⟨Priv, hbd, hcl, hof, hoa, hos, hhl⟩ := hconf
   dsimp only at hhl; rw [hwl] at hhl
   have hge : ∀ loc, Priv loc → m₀ ≤ loc := fun loc hp => (hbd loc hp).1
@@ -883,6 +909,276 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
       | next hs _ ih => exact Nat.le_trans (Footprints.step_length_le hs) ih
     exact key hsteps
 
+  let PrivExt : Nat → Prop := fun loc => Priv loc ∨ (s.h.length ≤ loc ∧ loc < s'.h.length)
+  have hElemWriteKeep : isConfArrElemWrite c.context.length pre node.expression = true →
+      (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
+      OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := by
+    intro hcw
+    cases hex : node.expression with
+    | writeAt f a b =>
+      cases a with
+      | var x =>
+        cases b with
+        | setElem rd iv rhs =>
+          cases rd with
+          | readAt f' a' =>
+            cases a' with
+            | var x' =>
+              cases rhs with
+              | var y =>
+                rw [hex] at hcw hsteps
+                simp only [isConfArrElemWrite, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
+                  List.contains_iff_mem] at hcw
+                obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, hxlt⟩, hylt⟩, hxmem⟩, hivc⟩ := hcw
+                have hvx : isVal (ρ x) = true := hval_lt x hxlt
+                have hvy : isVal (ρ y) = true := hval_lt y hylt
+                have hviv : isVal (instantiate 0 ρ iv) = true := by
+                  cases iv with
+                  | var i =>
+                    simp only [decide_eq_true_eq] at hivc
+                    simpa [instantiate] using hval_lt i hivc
+                  | num _ => rfl
+                  | _ => cases hivc
+                simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hsteps
+                have hrun : ∀ {k' h1 h2}, Steps k' h1 (.writeAt arraySpineKey (ρ x)
+                    (.setElem (.readAt arraySpineKey (ρ x)) (instantiate 0 ρ iv) (ρ y))) h2 v →
+                    h1 = s.h → h2 = s'.h →
+                    (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
+                    OwnedArrays s'.h ρ pre.ownedArr PrivExt ∧ v = .nul := by
+                  intro k' h1 h2 hst hh1 hh2
+                  subst hh1
+                  have hnoWrite : ∀ (m : Nat) {hm t0},
+                      (match ρ x with | .objAt fs _ _ => fs.lookup arraySpineKey = none | _ => True) →
+                      Steps m hm (.writeAt arraySpineKey (ρ x) t0) h2 v → False := by
+                    intro m
+                    induction m with
+                    | zero => intro hm t0 _ hst'; cases hst'; simp [isVal] at hval
+                    | succ m ih =>
+                      intro hm t0 hnone hst'
+                      cases hst' with
+                      | next st hrest =>
+                        cases hrx : ρ x with
+                        | objAt fs c oid =>
+                          rw [hrx] at st hrest hnone
+                          cases st with
+                          | writeC1 s1 => exact value_no_step (by rw [← hrx]; exact hvx) s1
+                          | writeC2 _ _ => exact ih (by rw [hrx]; exact hnone) (by rw [hrx]; exact hrest)
+                          | writeField hfd _ => simp [hfd] at hnone
+                        | _ =>
+                          rw [hrx] at st hrest
+                          cases st with
+                          | writeC1 s1 => exact value_no_step (by rw [← hrx]; exact hvx) s1
+                          | writeC2 _ _ => exact ih (by simp [hrx]) (by rw [hrx]; exact hrest)
+                  cases hrx : ρ x with
+                  | objAt flds cd oid =>
+                    rw [hrx] at hst
+                    cases hst with
+                    | refl => simp [isVal] at hval
+                    | next st1 hst1 =>
+                      cases st1 with
+                      | writeC1 s1 => exact absurd s1 (value_no_step rfl)
+                      | writeC2 _ s1 =>
+                        cases s1 with
+                        | setC1 s2 =>
+                          cases s2 with
+                          | readC s3 => exact absurd s3 (value_no_step rfl)
+                          | readProto hnone _ => exact False.elim (hnoWrite _ (by simp [hrx, hnone]) (by rw [hrx]; exact hst1))
+                          | readMissing hnone _ => exact False.elim (hnoWrite _ (by simp [hrx, hnone]) (by rw [hrx]; exact hst1))
+                          | readField hfd hlu =>
+                            rename_i target u
+                            have htargetP : Priv target := (hoa x hxmem).1 target (by
+                              simp [hrx, Footprints.spineOf, Footprints.fieldsOf, hfd])
+                            cases hst1 with
+                            | refl => simp [isVal] at hval
+                            | next st2 hst2 =>
+                              have huval : isVal u = true := HeapExpressionRules.heap_values s.adm s.ok target u hlu
+                              obtain ⟨b', xs, _, rfl, hcase⟩ :=
+                                ExpressionEffects.elem_set_inv rfl huval hviv hvy st2
+                              rcases hcase with ⟨cell, hcell, rfl, rfl⟩ | ⟨idx, _, _, rfl, rfl⟩
+                              · have hcm : some cell ∈ xs := by
+                                  unfold elemLoc at hcell
+                                  cases hi' : indexOfBits b' with
+                                  | none => simp [hi'] at hcell
+                                  | some ix =>
+                                    simp only [hi', Option.bind_some] at hcell
+                                    cases hq : xs[ix]? with
+                                    | none => simp [hq] at hcell
+                                    | some o =>
+                                      simp only [hq, Option.bind_some] at hcell
+                                      cases hcell
+                                      exact List.mem_of_getElem? hq
+                                have hcellP : Priv cell := (hoa x hxmem).2 cell (by
+                                  simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
+                                    Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some,
+                                    List.mem_append]
+                                  exact .inl hcm)
+                                cases hst2 with
+                                | refl => simp [isVal] at hval
+                                | next st3 hst3 =>
+                                  cases st3 with
+                                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
+                                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr xs) = true))
+                                  | writeField hfd' _ =>
+                                    rename_i target'
+                                    rw [hfd] at hfd'; cases hfd'
+                                    have hv_eq : s'.h = (s.h.set cell (ρ y)).set target (.arr xs) ∧ v = .nul := by
+                                      cases hst3 with
+                                      | refl => exact ⟨hh2.symm, rfl⟩
+                                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
+                                    obtain ⟨hh', rfl⟩ := hv_eq
+                                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
+                                      intro loc _ hnp
+                                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
+                                      have hnc : cell ≠ loc := fun e => hnp (e ▸ hcellP)
+                                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_set_ne hnc]
+                                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
+                                      fun loc hl => ?_⟩, rfl⟩
+                                    have hsp : spineCells s'.h (ρ z) = spineCells s.h (ρ z) := by
+                                      have hloc : ∀ l, s'.h[l]?.bind HeapKnowledge.spineEntries =
+                                          s.h[l]?.bind HeapKnowledge.spineEntries := by
+                                        intro l
+                                        rw [hh']
+                                        by_cases hlt' : target = l
+                                        · subst hlt'
+                                          have hlt0 : target < s.h.length := (List.getElem?_eq_some_iff.mp hlu).1
+                                          rw [List.getElem?_set_self (by simpa using hlt0), hlu]
+                                        · rw [List.getElem?_set_ne hlt']
+                                          by_cases hlc' : cell = l
+                                          · subst hlc'
+                                            have href := HeapExpressionRules.heap_refs s.adm s.ok target (.arr xs) hlu
+                                            have hmem : Ref.cell cell ∈ refs (.arr xs) := by
+                                              simp [refs, hcm]
+                                            have ⟨hclt, hrole⟩ := href _ hmem
+                                            have hnotarr : ∀ w, s.h[cell]? = some w → HeapKnowledge.spineEntries w = none := by
+                                              intro w hw
+                                              cases w with
+                                              | arr _ =>
+                                                have hcs := s.ok.2.2 cell (.arr _) hw
+                                                rw [hrole] at hcs; exact hcs.elim
+                                              | _ => rfl
+                                            have hnotarrY : HeapKnowledge.spineEntries (ρ y) = none := by
+                                              cases hy' : ρ y with
+                                              | arr _ =>
+                                                have hvy' := he.2 y (c.context[y]'hylt) (List.getElem?_eq_getElem hylt)
+                                                rw [hy'] at hvy'
+                                                exact absurd (meaning_value hvy').2 (by simp [notArr])
+                                              | _ => rfl
+                                            rw [List.getElem?_set_self hclt]
+                                            cases hq : s.h[cell]? with
+                                            | none => simp [hnotarrY]
+                                            | some w => simp [hnotarrY, hnotarr w hq]
+                                          · rw [List.getElem?_set_ne hlc']
+                                      simp only [spineCells, entriesAt, hloc]
+                                    rw [hsp] at hl
+                                    exact .inl ((hoa z hz).2 loc hl)
+                              · cases hst2 with
+                                | refl => simp [isVal] at hval
+                                | next st3 hst3 =>
+                                  cases st3 with
+                                  | writeC1 s4 => exact absurd s4 (value_no_step rfl)
+                                  | writeC2 _ s4 => exact absurd s4 (value_no_step (by rfl : isVal (.arr _) = true))
+                                  | writeField hfd' _ =>
+                                    rename_i target'
+                                    rw [hfd] at hfd'; cases hfd'
+                                    have hv_eq : s'.h = (s.h ++ [ρ y]).set target (.arr (placeAt xs idx s.h.length)) ∧ v = .nul := by
+                                      cases hst3 with
+                                      | refl => exact ⟨hh2.symm, rfl⟩
+                                      | next s4 _ => exact absurd s4 (value_no_step (by rfl : isVal .nul = true))
+                                    obtain ⟨hh', rfl⟩ := hv_eq
+                                    have hkeep : ∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]? := by
+                                      intro loc hlt0 hnp
+                                      have hnt : target ≠ loc := fun e => hnp (e ▸ htargetP)
+                                      rw [hh', List.getElem?_set_ne hnt, List.getElem?_append_left hlt0]
+                                    refine ⟨hkeep, fun z hz => ⟨fun loc hl => .inl ((hoa z hz).1 loc hl),
+                                      fun loc hl => ?_⟩, rfl⟩
+                                    have hcellIn : ∀ {sp : Option Nat},
+                                        (∀ m, sp = some m → m < s.h.length) →
+                                        (∀ c, some c ∈ entriesAt s.h sp → Priv c) →
+                                        some loc ∈ entriesAt s'.h sp → PrivExt loc := by
+                                      intro sp hspLt hspOld hme
+                                      cases sp with
+                                      | none => simp [entriesAt] at hme
+                                      | some m =>
+                                        by_cases hteq : target = m
+                                        · subst hteq
+                                          have hlt0 : target < s.h.length := (List.getElem?_eq_some_iff.mp hlu).1
+                                          simp only [entriesAt, hh', List.getElem?_set_self (by simp; omega),
+                                            Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some] at hme
+                                          rcases ExpressionEffects.placeAt_mem hme with hme | rfl
+                                          · exact .inl ((hoa x hxmem).2 loc (by
+                                              simp only [hrx, spineCells, Footprints.fieldsOf, hfd, entriesAt, hlu,
+                                                Option.bind_some, HeapKnowledge.spineEntries, Option.getD_some,
+                                                List.mem_append]
+                                              exact .inl hme))
+                                          · exact .inr ⟨Nat.le_refl _, by rw [hh']; simp⟩
+                                        · have hlt0 : m < s.h.length := hspLt m rfl
+                                          simp only [entriesAt, hh', List.getElem?_set_ne hteq,
+                                            List.getElem?_append_left hlt0] at hme
+                                          exact .inl (hspOld loc hme)
+                                    simp only [spineCells, List.mem_append] at hl
+                                    rcases hl with hl | hl
+                                    · exact hcellIn
+                                        (fun m hm => hlt m ((hoa z hz).1 m (by
+                                          cases hrz : ρ z <;> simp_all [Footprints.spineOf, Footprints.fieldsOf])))
+                                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inl hc))
+                                        hl
+                                    · exact hcellIn
+                                        (fun m hm => by
+                                          cases hrz : ρ z with
+                                          | objAt fs cc oid =>
+                                            cases cc with
+                                            | view s' fmt len =>
+                                              simp only [hrz, HeapKnowledge.descriptorSpine, Option.some.injEq] at hm
+                                              subst hm
+                                              exact ((hρ_ok z) _ (by rw [hrz]; simp [refs] :
+                                                Ref.view s' fmt len (fs.lookup arraySpineKey).isNone ∈ refs (ρ z))).1
+                                            | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm
+                                          | _ => simp [hrz, HeapKnowledge.descriptorSpine] at hm)
+                                        (fun c hc => (hoa z hz).2 c (by simp only [spineCells, List.mem_append]; exact .inr hc))
+                                        hl
+                        | setC2 _ s2 => exact absurd s2 (value_no_step hviv)
+                        | setC3 _ _ s2 => exact absurd s2 (value_no_step hvy)
+                      | writeField _ _ _ => simp [isVal] at hval
+                  | _ => exact False.elim (hnoWrite _ (by simp [hrx]) hst)
+                exact hrun hsteps rfl rfl
+              | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+            | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+          | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+        | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+      | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+    | _ => rw [hex] at hcw; simp [isConfArrElemWrite] at hcw
+  have hCallKeep : confinedCallNormal G images codes sums c node stepK deriv pre = true →
+      (∀ loc, loc < s.h.length → ¬ Priv loc → s'.h[loc]? = s.h[loc]?) ∧
+      OwnedArrays s'.h ρ pre.ownedArr PrivExt := by
+    intro hcc
+    unfold confinedCallNormal at hcc
+    cases hd : deriv with
+    | none => rw [hd] at hcc; cases hcc
+    | some d =>
+      rw [hd] at hcc
+      simp only [Bool.and_eq_true] at hcc
+      obtain ⟨⟨hdc, hops⟩, hfc⟩ := hcc
+      cases heff : ExpressionEffects.selectedEffect d with
+      | none => rw [heff] at hfc; cases hfc
+      | some eff =>
+        rw [heff] at hfc
+        simp only [derivChecked, Bool.and_eq_true, beq_iff_eq] at hdc
+        obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
+        have hsafe : SafePost (excOf G) (meaning G (claim d).type)
+            (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
+              (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) s.h) s.n s.W s.h
+            (instantiate 0 ρ (claim d).term) := by
+          rcases Bool.or_eq_true_iff.mp htree with htree | hreq
+          · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums
+              (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) s.adm s.ok (by rw [hterm]; exact href)
+          · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
+            rw [heff] at heff'; cases heff'
+            exact hs (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hkS s.adm s.ok (by rw [hterm]; exact href)
+        rw [hterm] at hsafe
+        have hcp := GraphCode.returnsPost_of_safePost hsafe k s'.h v hkn hsteps hval
+        have hpf : Post (PromiseCalls.callerFrame eff node.expression) ρ s.h s'.h :=
+          PromiseCalls.callerFrame_post (CallEffects.Effect.callPost_within hcp)
+        exact frameConfined_sound hfc hpf s.ok s'.ok hof hoa hρ_ok hρ'_ok
   have unreach_run : freeSlotsNotIn c.context.length 0 pre.holders node.expression = true →
       (∀ loc, Priv loc → s'.h[loc]? = s.h[loc]?) ∧ ClosedOut s'.h Priv ∧ NoPriv Priv v := by
     intro hun
@@ -899,7 +1195,23 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
     rcases hfrOk with hnm | hun
     · rw [List.contains_iff_mem.mpr hmem] at hnm; cases hnm
     · exact confinedFootprint_supported hof hoa (unreach_run hun).1
-  refine ⟨hframed, fun t pushed hmem => ?_⟩
+  have houtside : ∀ w, (l, w) ∈ conf.outsideNodes →
+      (FrameSpec.outside w pre.holders).Supported ρ s.h s'.h := by
+    intro w hmem
+    simp only [Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_true] at houtOk
+    rcases houtOk with hno | ⟨hwAll, hcc⟩
+    · have hany : conf.outsideNodes.any (·.1 == l) = true :=
+        List.any_eq_true.mpr ⟨(l, w), hmem, beq_self_eq_true l⟩
+      rw [hany] at hno; cases hno
+    · have hweq : w = c.context.length := by
+        have h1 := List.all_eq_true.mp hwAll (l, w) hmem
+        simp only [Bool.or_eq_true, bne_iff_ne, beq_iff_eq] at h1
+        exact h1.resolve_left (fun h => h rfl)
+      subst hweq
+      rcases hcc with hcc | hcw
+      · exact outside_supported hcl hhl (hCallKeep hcc).1
+      · exact outside_supported hcl hhl (hElemWriteKeep hcw).1
+  refine ⟨hframed, houtside, fun t pushed hmem => ?_⟩
   have hedge := List.all_eq_true.mp hnormOk (t, pushed) hmem
   let postN := nodePostN G images codes sums node c stepK deriv pre (conf.allocPriv.contains l)
   suffices hpost : ∃ Priv' : Nat → Prop,
@@ -911,7 +1223,6 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
       HoldersCoverB (c.context.length + 1) (push v ρ) postN.holders Priv' by
     obtain ⟨Priv', h1, h2, h3, h4, h5, h6⟩ := hpost
     exact confinedAt_edge (width := widthFn) hedge h1 h2 h3 h4 h5 h6
-  let PrivExt : Nat → Prop := fun loc => Priv loc ∨ (s.h.length ≤ loc ∧ loc < s'.h.length)
   have hbd_ext : ∀ loc, PrivExt loc → m₀ ≤ loc ∧ loc < s'.h.length := by
     intro loc hp
     rcases hp with hp | ⟨h1, h2⟩
@@ -1174,96 +1485,79 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
     by_cases hun : freeSlotsNotIn c.context.length 0 pre.holders node.expression = true
     · simp only [hun, ↓reduceIte]; exact hShiftUnreach hun
     · simp only [hun, Bool.false_eq_true, ↓reduceIte]
-      have hCallCase : confinedCallNormal G images codes sums c node stepK deriv pre = true →
-          ∃ Priv' : Nat → Prop,
-            (∀ loc, Priv' loc → m₀ ≤ loc ∧ loc < s'.h.length) ∧
-            ClosedOut s'.h Priv' ∧
-            OwnedFields (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).owned Priv' ∧
-            OwnedArrays s'.h (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).ownedArr Priv' ∧
-            OwnedSpines (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).ownedSpines Priv' ∧
-            HoldersCoverB (c.context.length + 1) (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).holders Priv' := by
-        intro hcc
-        unfold confinedCallNormal at hcc
-        cases hd : deriv with
-        | none => rw [hd] at hcc; cases hcc
-        | some d =>
-          rw [hd] at hcc
-          simp only [Bool.and_eq_true] at hcc
-          obtain ⟨⟨hdc, hops⟩, hfc⟩ := hcc
-          cases heff : ExpressionEffects.selectedEffect d with
-          | none => rw [heff] at hfc; cases hfc
-          | some eff =>
-            rw [heff] at hfc
-            simp only [derivChecked, Bool.and_eq_true, beq_iff_eq] at hdc
-            obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
-            have hsafe : SafePost (excOf G) (meaning G (claim d).type)
-                (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
-                  (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) s.h) s.n s.W s.h
-                (instantiate 0 ρ (claim d).term) := by
-              rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-              · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums
-                  (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) s.adm s.ok (by rw [hterm]; exact href)
-              · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
-                rw [heff] at heff'; cases heff'
-                exact hs (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hkS s.adm s.ok (by rw [hterm]; exact href)
-            rw [hterm] at hsafe
-            have hcp := GraphCode.returnsPost_of_safePost hsafe k s'.h v hkn hsteps hval
-            have hpf : Post (PromiseCalls.callerFrame eff node.expression) ρ s.h s'.h :=
-              PromiseCalls.callerFrame_post (CallEffects.Effect.callPost_within hcp)
-            obtain ⟨hkeep_out, hoa_c⟩ := frameConfined_sound hfc hpf s.ok s'.ok hof hoa hρ_ok hρ'_ok
-            have hcl_c : ClosedOut s'.h PrivExt := closedOut_of_keep_outside s.ok hcl hkeep_out
-            have hoa_sh : OwnedArrays s'.h (push v ρ) pre.shift.ownedArr PrivExt := shift_ownedArrays hoa_c
-            by_cases hinert : inertTy G c.type = true
-            · simp only [hinert, ↓reduceIte]
-              have hni : Inert allC v := inertTy_sound hinert (he'.2 0 c.type rfl)
-              exact ⟨PrivExt, hbd_ext, hcl_c, hof_ext, hoa_sh, hos_ext,
-                shift_holdersCoverB (NoPriv.of_inert hni) hhl_ext⟩
-            · simp only [hinert, Bool.false_eq_true, ↓reduceIte]
-              exact ⟨PrivExt, hbd_ext, hcl_c, hof_ext, hoa_sh, hos_ext, shift_holdersCoverB_add0 hhl_ext⟩
-      cases hex : node.expression with
-      | writeAt f a b =>
-        cases a with
-        | var x =>
-          cases b with
-          | var y =>
-            by_cases hwc : (f != arraySpineKey && x < c.context.length && y < c.context.length &&
-                (!pre.holders.contains y || pre.owned.contains x)) = true
-            · simp only [hwc, ↓reduceIte]
-              simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, decide_eq_true_eq,
-                Bool.not_eq_true', List.contains_iff_mem] at hwc
-              obtain ⟨⟨⟨hfne, hxlt⟩, hylt⟩, hy_or_x⟩ := hwc
-              rw [hex] at hsteps; simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hsteps
-              have hcond : NoPriv Priv (ρ y) ∨ ∀ loc ∈ fieldLocs (ρ x), Priv loc :=
-                hy_or_x.imp (fun hnm => hhl y hylt (fun hm => by rw [List.contains_iff_mem.mpr hm] at hnm; cases hnm)) (hof x)
-              obtain ⟨hlenw, hcl', -, hsp⟩ := steps_writeAt_val_confined (hval_lt x hxlt) (hval_lt y hylt) hval hfne (hρ_ok x) hcl hcond hsteps
-              have hbd' : ∀ loc, Priv loc → m₀ ≤ loc ∧ loc < s'.h.length := by
-                intro loc hp; rw [hlenw]; exact hbd loc hp
-              have hoa' : OwnedArrays s'.h (push v ρ) pre.shift.ownedArr Priv := by
-                intro z hz
-                obtain ⟨z₀, hz₀, rfl⟩ := List.mem_map.mp hz
-                refine ⟨fun loc hl => (hoa z₀ hz₀).1 loc (by simpa [push] using hl), fun loc hl => ?_⟩
-                have := hsp (ρ z₀) (hρ_ok z₀)
-                exact (hoa z₀ hz₀).2 loc (by simpa [push, this] using hl)
-              have hvnul : v = .nul := by
-                have hvx := hval_lt x hxlt
-                have hvy := hval_lt y hylt
-                generalize hh' : s'.h = h' at hsteps
-                generalize hx : ρ x = rx at hsteps hvx
-                generalize hy : ρ y = ry at hsteps hvy
-                cases hsteps with
-                | refl => simp [isVal] at hval
-                | next hs hr =>
-                  cases hs with
-                  | writeC1 hs' => exact absurd hs' (value_no_step hvx)
-                  | writeC2 _ hs' => exact absurd hs' (value_no_step hvy)
-                  | writeField _ _ _ =>
-                    cases hr with
-                    | refl => rfl
-                    | next hs2 _ => exact absurd hs2 (value_no_step (by rfl : isVal .nul = true))
-              subst hvnul
-              exact ⟨Priv, hbd', hcl', shift_ownedFields hof, hoa', shift_ownedSpines hos,
-                shift_holdersCoverB (NoPriv.of_inert inert_nul) hhl⟩
-            · simp only [hwc, Bool.false_eq_true, ↓reduceIte]; exact hEmpty
+      by_cases hcw : isConfArrElemWrite c.context.length pre node.expression = true
+      · simp only [hcw, ↓reduceIte]
+        obtain ⟨hkeep_out, hoa_c, rfl⟩ := hElemWriteKeep hcw
+        exact ⟨PrivExt, hbd_ext, closedOut_of_keep_outside s.ok hcl hkeep_out, hof_ext,
+          shift_ownedArrays hoa_c, hos_ext, shift_holdersCoverB (NoPriv.of_inert inert_nul) hhl_ext⟩
+      · simp only [hcw, Bool.false_eq_true, ↓reduceIte]
+        have hCallCase : confinedCallNormal G images codes sums c node stepK deriv pre = true →
+            ∃ Priv' : Nat → Prop,
+              (∀ loc, Priv' loc → m₀ ≤ loc ∧ loc < s'.h.length) ∧
+              ClosedOut s'.h Priv' ∧
+              OwnedFields (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).owned Priv' ∧
+              OwnedArrays s'.h (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).ownedArr Priv' ∧
+              OwnedSpines (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).ownedSpines Priv' ∧
+              HoldersCoverB (c.context.length + 1) (push v ρ) (if inertTy G c.type then pre.shift else { pre.shift with holders := 0 :: pre.shift.holders }).holders Priv' := by
+          intro hcc
+          obtain ⟨hkeep_out, hoa_c⟩ := hCallKeep hcc
+          have hcl_c : ClosedOut s'.h PrivExt := closedOut_of_keep_outside s.ok hcl hkeep_out
+          have hoa_sh : OwnedArrays s'.h (push v ρ) pre.shift.ownedArr PrivExt := shift_ownedArrays hoa_c
+          by_cases hinert : inertTy G c.type = true
+          · simp only [hinert, ↓reduceIte]
+            have hni : Inert allC v := inertTy_sound hinert (he'.2 0 c.type rfl)
+            exact ⟨PrivExt, hbd_ext, hcl_c, hof_ext, hoa_sh, hos_ext,
+              shift_holdersCoverB (NoPriv.of_inert hni) hhl_ext⟩
+          · simp only [hinert, Bool.false_eq_true, ↓reduceIte]
+            exact ⟨PrivExt, hbd_ext, hcl_c, hof_ext, hoa_sh, hos_ext, shift_holdersCoverB_add0 hhl_ext⟩
+        cases hex : node.expression with
+        | writeAt f a b =>
+          cases a with
+          | var x =>
+            cases b with
+            | var y =>
+              by_cases hwc : (f != arraySpineKey && x < c.context.length && y < c.context.length &&
+                  (!pre.holders.contains y || pre.owned.contains x)) = true
+              · simp only [hwc, ↓reduceIte]
+                simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, decide_eq_true_eq,
+                  Bool.not_eq_true', List.contains_iff_mem] at hwc
+                obtain ⟨⟨⟨hfne, hxlt⟩, hylt⟩, hy_or_x⟩ := hwc
+                rw [hex] at hsteps; simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hsteps
+                have hcond : NoPriv Priv (ρ y) ∨ ∀ loc ∈ fieldLocs (ρ x), Priv loc :=
+                  hy_or_x.imp (fun hnm => hhl y hylt (fun hm => by rw [List.contains_iff_mem.mpr hm] at hnm; cases hnm)) (hof x)
+                obtain ⟨hlenw, hcl', -, hsp⟩ := steps_writeAt_val_confined (hval_lt x hxlt) (hval_lt y hylt) hval hfne (hρ_ok x) hcl hcond hsteps
+                have hbd' : ∀ loc, Priv loc → m₀ ≤ loc ∧ loc < s'.h.length := by
+                  intro loc hp; rw [hlenw]; exact hbd loc hp
+                have hoa' : OwnedArrays s'.h (push v ρ) pre.shift.ownedArr Priv := by
+                  intro z hz
+                  obtain ⟨z₀, hz₀, rfl⟩ := List.mem_map.mp hz
+                  refine ⟨fun loc hl => (hoa z₀ hz₀).1 loc (by simpa [push] using hl), fun loc hl => ?_⟩
+                  have := hsp (ρ z₀) (hρ_ok z₀)
+                  exact (hoa z₀ hz₀).2 loc (by simpa [push, this] using hl)
+                have hvnul : v = .nul := by
+                  have hvx := hval_lt x hxlt
+                  have hvy := hval_lt y hylt
+                  generalize hh' : s'.h = h' at hsteps
+                  generalize hx : ρ x = rx at hsteps hvx
+                  generalize hy : ρ y = ry at hsteps hvy
+                  cases hsteps with
+                  | refl => simp [isVal] at hval
+                  | next hs hr =>
+                    cases hs with
+                    | writeC1 hs' => exact absurd hs' (value_no_step hvx)
+                    | writeC2 _ hs' => exact absurd hs' (value_no_step hvy)
+                    | writeField _ _ _ =>
+                      cases hr with
+                      | refl => rfl
+                      | next hs2 _ => exact absurd hs2 (value_no_step (by rfl : isVal .nul = true))
+                subst hvnul
+                exact ⟨Priv, hbd', hcl', shift_ownedFields hof, hoa', shift_ownedSpines hos,
+                  shift_holdersCoverB (NoPriv.of_inert inert_nul) hhl⟩
+              · simp only [hwc, Bool.false_eq_true, ↓reduceIte]; exact hEmpty
+            | _ =>
+              by_cases hcc : confinedCallNormal G images codes sums c node stepK deriv pre = true
+              · simpa only [hex, hcc, ↓reduceIte] using hCallCase hcc
+              · simpa only [hex, hcc, Bool.false_eq_true, ↓reduceIte] using hEmpty
           | _ =>
             by_cases hcc : confinedCallNormal G images codes sums c node stepK deriv pre = true
             · simpa only [hex, hcc, ↓reduceIte] using hCallCase hcc
@@ -1272,10 +1566,6 @@ theorem checkNode_sound_normal {G : NormalGraph ι} {images : InstanceImageCheck
           by_cases hcc : confinedCallNormal G images codes sums c node stepK deriv pre = true
           · simpa only [hex, hcc, ↓reduceIte] using hCallCase hcc
           · simpa only [hex, hcc, Bool.false_eq_true, ↓reduceIte] using hEmpty
-      | _ =>
-        by_cases hcc : confinedCallNormal G images codes sums c node stepK deriv pre = true
-        · simpa only [hex, hcc, ↓reduceIte] using hCallCase hcc
-        · simpa only [hex, hcc, Bool.false_eq_true, ↓reduceIte] using hEmpty
 
 /-- **Single-node soundness of `checkNode` on the handler edge**: the handler
 target's `owned`, `ownedArr`, `ownedSpines` are empty, so `ConfinedAt` holds
@@ -1288,7 +1578,7 @@ theorem checkNode_sound_handler {G : NormalGraph ι} {images : InstanceImageChec
     (hh : node.handler = some t) :
     ConfinedAt conf (fun lbl => ((claims[lbl]?).map (·.context.length)).getD 0) t.label ρ m₀ h := by
   simp only [checkNode, hh, Bool.and_eq_true, List.isEmpty_iff] at hchk
-  obtain ⟨⟨_, _⟩, ⟨⟨ho, ha⟩, hs⟩⟩ := hchk
+  obtain ⟨⟨⟨_, _⟩, _⟩, ⟨⟨ho, ha⟩, hs⟩⟩ := hchk
   refine ⟨fun _ => False, fun _ hf => False.elim hf, ClosedOut.empty h, ?_, ?_, ?_, ?_⟩
   · intro x hx; rw [ho] at hx; cases hx
   · intro x hx; rw [ha] at hx; cases hx
@@ -1376,6 +1666,8 @@ private def proposePostN (G : NormalGraph ι) (node : Node) (c : PointClaim ι)
           else ({}, true)
       | _ => ({ sh with holders := 0 :: sh.holders }, false)
   else if unreach then
+    (sh, false)
+  else if isConfArrElemWrite width pre node.expression then
     (sh, false)
   else
     match node.expression with
@@ -1465,7 +1757,7 @@ def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (
   let hasCall := P.any fun node => match node.expression with
     | .invoke .. | .construct .. => true
     | _ => false
-  if !hasCall then return ⟨#[], [], []⟩
+  if !hasCall then return ⟨#[], [], [], []⟩
   let mut allocs : List Nat := []
   for l in List.range n do
     let some nd := nodes[l]? | continue
@@ -1478,7 +1770,22 @@ def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (
                k1 == arraySpineKey && k2 == CallArguments.protoField && 0 < pi
            | _ => false) then
         allocs := allocs ++ [l]
-  if allocs.isEmpty then return ⟨#[], [], []⟩
+  if allocs.isEmpty then return ⟨#[], [], [], []⟩
+  let collect := fun (t : Array NodeConf) => Id.run do
+    let mut fr : List Nat := []
+    let mut out : List (Nat × Nat) := []
+    for l in List.range n do
+      let some node := nodes[l]? | continue
+      let nc := t.getD l {}
+      let width := ((cls[l]?).map (·.context.length)).getD 0
+      if !(nc.owned.isEmpty && nc.ownedArr.isEmpty) &&
+          !Purity.inspectTerm node.expression then
+        if freeSlotsNotIn width 0 nc.holders node.expression then
+          fr := fr ++ [l]
+        else if callLikelyConfined G ((cls[l]?).getD ⟨[], []⟩) node nc ||
+            isConfArrElemWrite width nc node.expression then
+          out := out ++ [(l, width)]
+    return (fr, out)
   let (tbl0, esc0) := runFixedPoint G P claims start allocs
   let mut chosen := allocs
   let mut tbl := tbl0
@@ -1491,21 +1798,26 @@ def propose (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι)) (
         chosen := tryList
         tbl := t'
     if chosen.isEmpty then
-      return ⟨#[], [], []⟩
+      chosen := allocs
+      tbl := tbl0
     else
-      let (tFinal, _) := runFixedPoint G P claims start chosen
-      tbl := tFinal
-  let mut framed : List Nat := []
-  for l in List.range n do
-    let some node := nodes[l]? | continue
-    let nc := tbl.getD l {}
-    let width := ((cls[l]?).map (·.context.length)).getD 0
-    if !(nc.owned.isEmpty && nc.ownedArr.isEmpty) &&
-        !Purity.inspectTerm node.expression &&
-        freeSlotsNotIn width 0 nc.holders node.expression then
-      framed := framed ++ [l]
-  if framed.isEmpty then return ⟨#[], [], []⟩
-  return ⟨tbl, framed, chosen⟩
+      let (tBase, _) := runFixedPoint G P claims start chosen
+      tbl := tBase
+      let (f0, o0) := collect tbl
+      let mut bestScore := f0.length + o0.length
+      for a in allocs do
+        if !chosen.contains a then
+          let tryList := chosen ++ [a]
+          let (t', _) := runFixedPoint G P claims start tryList
+          let (f', o') := collect t'
+          let sc := f'.length + o'.length
+          if sc > bestScore then
+            chosen := tryList
+            tbl := t'
+            bestScore := sc
+  let (framed, outside) := collect tbl
+  if framed.isEmpty && outside.isEmpty then return ⟨#[], [], [], []⟩
+  return ⟨tbl, framed, chosen, outside⟩
 
 end Propose
 

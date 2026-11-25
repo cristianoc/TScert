@@ -980,30 +980,58 @@ def mergeTerm (asA asB : List Nat) (okA okB : String → Bool) (t : HeapKnowledg
     let (moved, s') := mergePath asA asB okA okB t.slot t.path
     (moved, HeapKnowledge.Term.now t.kind s' t.path)
 
+/-- Rewrites a quantified body guard target across a merge. -/
+def mergeTarget (asA asB : List Nat) (okA okB : String → Bool) : HeapKnowledge.ElemTarget → Bool × HeapKnowledge.ElemTarget
+  | .self ep => (false, .self ep)
+  | .parallel s p ep =>
+    let (m, s') := mergePath asA asB okA okB s p
+    (m, .parallel s' p ep)
+
+/-- Rewrites a quantified body variable across a merge. -/
+def mergeBound (asA asB : List Nat) (okA okB : String → Bool) : HeapKnowledge.Bound → Bool × HeapKnowledge.Bound
+  | .free t => let (m, t') := mergeTerm asA asB okA okB t; (m, .free t')
+  | .parallel s p k ep => let (m, s') := mergePath asA asB okA okB s p; (m, .parallel s' p k ep)
+  | b => (false, b)
+
+/-- Rewrites a quantified body clause across a merge. -/
+def mergeBodyClause (asA asB : List Nat) (okA okB : String → Bool) :
+    HeapKnowledge.BodyClause → Option (Bool × HeapKnowledge.BodyClause)
+  | .clause C =>
+    let mb := C.vars.any fun b => (mergeBound asA asB okA okB b).1
+    (C.mapVars fun b => some (mergeBound asA asB okA okB b).2).map fun C' => (mb, .clause C')
+  | .guarded t g b => do
+    let (mt, t') := mergeTarget asA asB okA okB t
+    let (mb, b') ← mergeBodyClause asA asB okA okB b
+    pure (mt || mb, .guarded t' g b')
+
+/-- Rewrites a guard path root across a merge: field-rooted paths on `b` (when
+`a` never holds the field or a prototype) or `a` (when `b` never copies the
+field) re-root onto slot `0`, preserving both present values and absent
+(`undefined`) fields; all other roots shift by `1`. -/
+def mergeGuardPath (asA asB : List Nat) (okA okBGuard : String → Bool) (s : Nat) : List String → Bool × Nat
+  | f :: _ =>
+    if (asB.contains s && okBGuard f) || (asA.contains s && okA f) then (true, 0) else (false, s + 1)
+  | [] => (false, s + 1)
+
 /-- Rewrites an unconditional index fact across a merge, returning `(moved, F')`
 where `moved` records whether at least one path moved onto slot `0`. -/
-def mergeFact (asA asB : List Nat) (okA okB : String → Bool) : IndexFact → Option (Bool × IndexFact)
+def mergeFact (asA asB : List Nat) (okA okB okBGuard : String → Bool) : IndexFact → Option (Bool × IndexFact)
   | .linear F =>
     let pairs := F.vars.map fun t => (t, mergeTerm asA asB okA okB t)
-    if pairs.any (·.2.1) then
-      (F.mapVars fun t => some (mergeTerm asA asB okA okB t).2).map fun F' => (true, .linear F')
-    else none
+    (F.mapVars fun t => some (mergeTerm asA asB okA okB t).2).map fun F' => (pairs.any (·.2.1), .linear F')
   | .spineApart s p o q =>
     let (m1, s') := mergePath asA asB okA okB s p
     let (m2, o') := mergePath asA asB okA okB o q
-    if m1 || m2 then some (true, .spineApart s' p o' q) else none
+    some (m1 || m2, .spineApart s' p o' q)
   | .every s p stop body =>
     let (ms, s') := mergePath asA asB okA okB s p
     let (mst, stop') := mergeTerm asA asB okA okB stop
-    let mapVar : HeapKnowledge.Bound → Option HeapKnowledge.Bound
-      | .free t => some (.free (mergeTerm asA asB okA okB t).2)
-      | b => some b
-    let mb := body.any fun C => C.vars.any fun
-      | .free t => (mergeTerm asA asB okA okB t).1
-      | _ => false
-    if ms || mst || mb then
-      (body.mapM (LinearClause.mapVars mapVar)).map fun body' => (true, .every s' p stop' body')
-    else none
+    match body.mapM (mergeBodyClause asA asB okA okB) with
+    | some pairs => some (ms || mst || pairs.any (·.1), .every s' p stop' (pairs.map (·.2)))
+    | none => none
+  | .guarded s p tag inner =>
+    let (mg, s') := mergeGuardPath asA asB okA okBGuard s p
+    (mergeFact asA asB okA okB okBGuard inner).map fun (mi, inner') => (mg || mi, .guarded s' p tag inner')
   | _ => none
 
 /-- The index atoms preserved onto the freshly merged object at slot `0`. -/
@@ -1011,12 +1039,17 @@ def mergeFact (asA asB : List Nat) (okA okB : String → Bool) : IndexFact → O
     (d : List PropKey) (a b : Nat) : List IndexAtom :=
   let asA := HeapLinks.aliases k.links a
   let asB := HeapLinks.aliases k.links b
+  let A := Γ.getD a []
   let B := Γ.getD b []
   let okB := fun f => copiedKey (.str f) && !d.contains (.str f)
   let okA := fun f => f != "[]" && ObjectMerge.srcNever G B d (.str f)
+  let okBGuard := fun f => okB f && !ObjectMerge.indexKey (.str f) &&
+    ObjectMerge.accNever G A (.str f) && ObjectMerge.accNever G A CallArguments.protoField
   k.indices.filterMap fun atom =>
     if atom.cond.isSome then none
-    else (mergeFact asA asB okA okB atom.fact).map fun (_, F') => { fact := F' }
+    else match mergeFact asA asB okA okB okBGuard atom.fact with
+      | some (true, F') => some { fact := F' }
+      | _ => none
 
 /-- A merge's output knowledge: the fresh allocation's knowledge plus read links
 and field-rooted index facts preserved from `a` and `b`. -/
@@ -1181,6 +1214,265 @@ private theorem linearClause_holdsAt_mapVars_mp {V W : Type} {f : V → Option W
     · exact Or.inl (ihA hA (fun x hx => hf x (List.mem_append_left _ hx)) hA')
     · exact Or.inr (ihB hB (fun x hx => hf x (List.mem_append_right _ hx)) hB')
 
+private theorem mergeBodyClause_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
+    {d : List PropKey} {a b : Nat} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {ps : List (PropKey × Tm)}
+    {ls : List (Option Nat)} {i : Nat}
+    (hb : b < Γ.length) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h)
+    (hparts : mergeParts h d (ρ a) (ρ b) = some ps) :
+    ∀ {C C' : HeapKnowledge.BodyClause} {m : Bool},
+      mergeBodyClause (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+        (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+        (fun f => copiedKey (.str f) && !d.contains (.str f)) C = some (m, C') →
+      C.HoldsAt ε ρ h ls i →
+      C'.HoldsAt ε
+        (push (Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)) ρ)
+        (h ++ ps.map Prod.snd ++ [.nul]) ls i
+  | .clause F, C', m, hm, hF => by
+    obtain ⟨F', hF', hpair⟩ := Option.map_eq_some_iff.mp hm
+    simp only [Prod.mk.injEq] at hpair
+    obtain ⟨-, rfl⟩ := hpair
+    have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
+      simp [List.append_assoc]
+    refine linearClause_holdsAt_mapVars_mp hF' (fun x _ y z hy hz => ?_) hF
+    cases x with
+    | free t =>
+      cases hy
+      exact merge_termValue_eq hb he hk hh hparts hz
+    | index => cases hy; exact hz
+    | elem | offset _ =>
+      cases hy
+      rw [hext_eq]
+      exact HeapKnowledge.boundValue_extend (ps.map Prod.snd ++ [.nul]) hz
+    | project k q =>
+      cases hy
+      rw [hext_eq]
+      exact HeapKnowledge.boundValue_extend (ps.map Prod.snd ++ [.nul]) hz
+    | parallel s1 p1 k1 ep1 =>
+      cases hy
+      simp only [mergeBound, HeapKnowledge.boundValue] at hz ⊢
+      cases hrp : HeapKnowledge.readPath h (ρ s1) p1 with
+      | none => simp [hrp] at hz
+      | some arr =>
+        simp only [hrp] at hz
+        rw [merge_readPath_eq hb he hk hh hparts hrp]
+        cases hea : HeapKnowledge.elementsOf arr with
+        | none => simp [hea] at hz
+        | some st' =>
+          simp only [hea] at hz
+          cases hls' : h[st']?.bind spineEntries with
+          | none => simp [hls'] at hz
+          | some ls' =>
+            simp only [hls'] at hz
+            simp only [hea, hext_eq, HeapKnowledge.spineEntries_extend _ hls']
+            cases hli : ls'[i]? with
+            | none => simp [hli] at hz
+            | some o =>
+              cases o with
+              | none => simp [hli] at hz
+              | some l =>
+                simp only [hli] at hz
+                obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hz
+                exact Option.bind_eq_some_iff.mpr
+                  ⟨v, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
+                    HeapKnowledge.termValue_extend _ ht⟩
+  | .guarded t g B, C', m, hm, ⟨w, hw, hor⟩ => by
+    simp only [mergeBodyClause, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq, Prod.mk.injEq] at hm
+    obtain ⟨⟨mb, B'⟩, hB', -, rfl⟩ := hm
+    have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
+      simp [List.append_assoc]
+    refine ⟨w, ?_, hor.imp id (mergeBodyClause_holds hb he hk hh hparts hB')⟩
+    cases t with
+    | self ep =>
+      rw [hext_eq]
+      exact HeapKnowledge.ElemTarget.read_extend _ hw
+    | parallel s1 p1 ep1 =>
+      simp only [mergeTarget, HeapKnowledge.ElemTarget.read] at hw ⊢
+      cases hrp : HeapKnowledge.readPath h (ρ s1) p1 with
+      | none => simp [hrp] at hw
+      | some arr =>
+        simp only [hrp] at hw
+        rw [merge_readPath_eq hb he hk hh hparts hrp]
+        cases hea : HeapKnowledge.elementsOf arr with
+        | none => simp [hea] at hw
+        | some st' =>
+          simp only [hea] at hw
+          cases hls' : h[st']?.bind spineEntries with
+          | none => simp [hls'] at hw
+          | some ls' =>
+            simp only [hls'] at hw
+            simp only [hea, hext_eq, HeapKnowledge.spineEntries_extend _ hls']
+            cases hli : ls'[i]? with
+            | none => simp [hli] at hw
+            | some o =>
+              cases o with
+              | none => simp [hli] at hw
+              | some l =>
+                simp only [hli] at hw
+                obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+                exact Option.bind_eq_some_iff.mpr
+                  ⟨v, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
+                    HeapKnowledge.readGuard_extend _ hrg⟩
+
+private theorem merge_readGuard_eq [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
+    {d : List PropKey} {a b : Nat} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {ps : List (PropKey × Tm)}
+    (ha : a < Γ.length) (hb : b < Γ.length) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h)
+    (hparts : mergeParts h d (ρ a) (ρ b) = some ps)
+    {s : Nat} {p : List String} {w : Val}
+    (hr : HeapKnowledge.readGuard h (ρ s) p = some w) :
+    HeapKnowledge.readGuard (h ++ ps.map Prod.snd ++ [.nul])
+      (push (Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)) ρ
+        (mergeGuardPath (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+          (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+          (fun f => copiedKey (.str f) && !d.contains (.str f) && !ObjectMerge.indexKey (.str f) &&
+            ObjectMerge.accNever G (Γ.getD a []) (.str f) && ObjectMerge.accNever G (Γ.getD a []) CallArguments.protoField) s p).2) p = some w := by
+  let h' := h ++ ps.map Prod.snd ++ [.nul]
+  have hext : ∀ {u : Val} {q : List String} {z : Val},
+      HeapKnowledge.readGuard h u q = some z → HeapKnowledge.readGuard h' u q = some z := fun hq => by
+    have : h' = h ++ (ps.map Prod.snd ++ [.nul]) := by simp [h', List.append_assoc]
+    rw [this]; exact HeapKnowledge.readGuard_extend _ hq
+  cases p with
+  | nil =>
+    simp only [mergeGuardPath, push]
+    exact hext hr
+  | cons f q =>
+    simp only [mergeGuardPath]
+    split
+    · rename_i hcond
+      simp only [push]
+      simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hcond
+      cases hs : ρ s with
+      | objAt fs cd oid =>
+        rw [hs] at hr
+        simp only [HeapKnowledge.readGuard] at hr
+        cases hlk : fs.lookup (.str f) with
+        | some l =>
+          simp only [hlk] at hr
+          cases hvl : h[l]? with
+          | none => simp only [hvl] at hr; cases hr
+          | some v =>
+            simp only [hvl] at hr
+            have hval : isVal v = true := heap_val_isVal hh hvl
+            have hps : ps.lookup (.str f) = some v := by
+              rcases hcond with ⟨hmemB, ⟨⟨⟨⟨hkB, hdB⟩, _⟩, _⟩, _⟩⟩ | ⟨hmemA, hspA, hnev⟩
+              · have hsb : ρ b = .objAt fs cd oid := (HeapLinks.aliases_eq hk.2.2.1 hmemB).symm.trans hs
+                exact ObjectMerge.mergeParts_lookup_b hparts hsb hkB hdB hlk hvl hval
+              · have hsa : ρ a = .objAt fs cd oid := (HeapLinks.aliases_eq hk.2.2.1 hmemA).symm.trans hs
+                have hBm : meaning G (Γ.getD b []) n W (ρ b) := by
+                  have hg := List.getElem?_eq_getElem hb
+                  rw [List.getD_eq_getElem?_getD, hg]
+                  exact he.2 b _ hg
+                have hsp : PropKey.str f ≠ arraySpineKey := by
+                  intro heq; simp [arraySpineKey] at heq; subst heq; simp at hspA
+                exact ObjectMerge.mergeParts_lookup_a hnev hBm hparts hsa hsp hlk hvl hval
+            obtain ⟨l', hl', hv'⟩ := lookup_slots_of_lookup (h := h) (ObjectMerge.mergeParts_nodup hparts) hps rfl
+            simp only [HeapKnowledge.readGuard, hl', hv']
+            exact hext hr
+        | none =>
+          simp only [hlk] at hr
+          split at hr
+          · rename_i hproto
+            have ⟨hps_none, hproto_none⟩ : ps.lookup (.str f) = none ∧ ps.lookup CallArguments.protoField = none := by
+              rcases hcond with ⟨hmemB, ⟨⟨⟨⟨_, _⟩, hni⟩, hna⟩, hnp⟩⟩ | ⟨hmemA, _, hnev⟩
+              · have hsb : ρ b = .objAt fs cd oid := (HeapLinks.aliases_eq hk.2.2.1 hmemB).symm.trans hs
+                have hAm : meaning G (Γ.getD a []) n W (ρ a) := by
+                  have hg := List.getElem?_eq_getElem ha
+                  rw [List.getD_eq_getElem?_getD, hg]
+                  exact he.2 a _ hg
+                exact ⟨ObjectMerge.mergeParts_lookup_b_none hna hAm hparts hsb hni hlk,
+                  ObjectMerge.mergeParts_proto_none_acc hnp hAm hparts⟩
+              · have hsa : ρ a = .objAt fs cd oid := (HeapLinks.aliases_eq hk.2.2.1 hmemA).symm.trans hs
+                have hBm : meaning G (Γ.getD b []) n W (ρ b) := by
+                  have hg := List.getElem?_eq_getElem hb
+                  rw [List.getD_eq_getElem?_getD, hg]
+                  exact he.2 b _ hg
+                exact ⟨ObjectMerge.mergeParts_lookup_a_none hnev hBm hparts hsa hlk,
+                  ObjectMerge.mergeParts_proto_none hparts hsa hproto⟩
+            have hnotin_f : PropKey.str f ∉ ps.map Prod.fst := by
+              intro hmem; obtain ⟨_, hv⟩ := ObjectMerge.lookup_isSome hmem; rw [hps_none] at hv; cases hv
+            have hnotin_p : CallArguments.protoField ∉ ps.map Prod.fst := by
+              intro hmem; obtain ⟨_, hv⟩ := ObjectMerge.lookup_isSome hmem; rw [hproto_none] at hv; cases hv
+            simp only [HeapKnowledge.readGuard, ObjectMerge.lookup_slots_none hnotin_f,
+              ObjectMerge.lookup_slots_none hnotin_p, ite_true]
+            exact hext hr
+          · cases hr
+      | _ => rw [hs] at hr; simp [HeapKnowledge.readGuard] at hr
+    · simp only [push]
+      exact hext hr
+
+private theorem mergeFact_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
+    {d : List PropKey} {a b : Nat} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {ps : List (PropKey × Tm)}
+    (ha : a < Γ.length) (hb : b < Γ.length) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h)
+    (hparts : mergeParts h d (ρ a) (ρ b) = some ps) :
+    ∀ {F F' : IndexFact} {m : Bool},
+      mergeFact (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+        (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+        (fun f => copiedKey (.str f) && !d.contains (.str f))
+        (fun f => copiedKey (.str f) && !d.contains (.str f) && !ObjectMerge.indexKey (.str f) &&
+          ObjectMerge.accNever G (Γ.getD a []) (.str f) && ObjectMerge.accNever G (Γ.getD a []) CallArguments.protoField) F = some (m, F') →
+      F.HoldsAt ε ρ h →
+      F'.HoldsAt ε
+        (push (Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)) ρ)
+        (h ++ ps.map Prod.snd ++ [.nul]) := by
+  let r := Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)
+  let h' := h ++ ps.map Prod.snd ++ [.nul]
+  intro F
+  induction F with
+  | linear L =>
+    intro F' m hmf hF
+    simp only [mergeFact] at hmf
+    obtain ⟨L', hL', hpair⟩ := Option.map_eq_some_iff.mp hmf
+    simp only [Prod.mk.injEq] at hpair
+    obtain ⟨-, rfl⟩ := hpair
+    have hval : ∀ x ∈ L.vars, ∀ y,
+        some (mergeTerm (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
+          (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
+          (fun f => copiedKey (.str f) && !d.contains (.str f)) x).2 = some y →
+        HeapKnowledge.termValuation ε (push r ρ) h' y = HeapKnowledge.termValuation ε ρ h x := by
+      intro x hx y hy
+      cases hy
+      obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
+      have htv := merge_termValue_eq hb he hk hh hparts hz
+      simp only [HeapKnowledge.termValuation, hz, htv, r, h']
+    refine ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hL' hval).mpr hF.2⟩
+    obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hL' y hy
+    cases hxy
+    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
+    have htv := merge_termValue_eq hb he hk hh hparts hz
+    simp only [htv, Option.isSome_some]
+  | spineApart s1 p1 s2 p2 =>
+    intro F' m hmf hF
+    simp only [mergeFact, Option.some.injEq, Prod.mk.injEq] at hmf
+    obtain ⟨-, rfl⟩ := hmf
+    obtain ⟨u, w, hu, hw, hne⟩ := hF
+    exact ⟨u, w, merge_readPath_eq hb he hk hh hparts hu, merge_readPath_eq hb he hk hh hparts hw, hne⟩
+  | every s1 p1 stop body =>
+    intro F' m hmf hF
+    simp only [mergeFact] at hmf
+    split at hmf
+    · rename_i pairs hpairs
+      simp only [Option.some.injEq, Prod.mk.injEq] at hmf
+      obtain ⟨-, rfl⟩ := hmf
+      obtain ⟨w, sto, ls, m', hw, hsto, hls, hm', hall⟩ := hF
+      have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
+        simp [List.append_assoc]
+      refine ⟨w, sto, ls, m', merge_readPath_eq hb he hk hh hparts hw, hsto, ?_,
+        merge_termValue_eq hb he hk hh hparts hm', fun i hi C' hC' => ?_⟩
+      · rw [hext_eq]; exact HeapKnowledge.spineEntries_extend _ hls
+      · obtain ⟨⟨mb, C''⟩, hp, rfl⟩ := List.mem_map.mp hC'
+        obtain ⟨C, hC, hCC'⟩ := mapM_mem_rev hpairs (mb, C'') hp
+        exact mergeBodyClause_holds hb he hk hh hparts hCC' (hall i hi C hC)
+    · cases hmf
+  | guarded s1 p1 tag inner ih =>
+    intro F' m hmf hF
+    simp only [mergeFact] at hmf
+    obtain ⟨⟨mi, inner'⟩, hinner, hpair⟩ := Option.map_eq_some_iff.mp hmf
+    simp only [Prod.mk.injEq] at hpair
+    obtain ⟨-, rfl⟩ := hpair
+    obtain ⟨w, hw, hor⟩ := hF
+    exact ⟨w, merge_readGuard_eq ha hb he hk hh hparts hw, hor.imp id (ih hinner)⟩
+  | _ => intro F' m hmf _; simp [mergeFact] at hmf
+
 /-- A merge of two values reads the heap and allocates a fresh object: what
 was known of the heap stays known, the new object's fields are distinct from
 the context's contract fields, and read links and field-rooted index facts from
@@ -1272,90 +1564,15 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
               · cases hmap
               · rename_i hnone
                 have hnone' : orig.cond = none := by cases hc : orig.cond <;> simp_all
-                obtain ⟨⟨_, F'⟩, hmf, rfl⟩ := Option.map_eq_some_iff.mp hmap
-                dsimp only
-                have hF := hk.2.2.2.2.2 orig horig fun c hc => by rw [hnone'] at hc; cases hc
-                let r := Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + ps.length)
-                let h' := h ++ ps.map Prod.snd ++ [.nul]
-                have hlen : (ps.map Prod.snd).length = ps.length := List.length_map ..
-                have hr_eq : Tm.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length) = r := by
-                  simp [r, hlen]
-                rw [hr_eq]
-                cases hof : orig.fact with
-                | linear L =>
-                  rw [hof] at hmf hF
-                  simp only [mergeFact] at hmf
-                  split at hmf
-                  · obtain ⟨L', hL', hpair⟩ := Option.map_eq_some_iff.mp hmf
-                    simp only [Prod.mk.injEq] at hpair
-                    obtain ⟨-, rfl⟩ := hpair
-                    have hval : ∀ x ∈ L.vars, ∀ y,
-                        some (mergeTerm (HeapLinks.aliases k.links a) (HeapLinks.aliases k.links b)
-                          (fun f => f != "[]" && ObjectMerge.srcNever G (Γ.getD b []) d (.str f))
-                          (fun f => copiedKey (.str f) && !d.contains (.str f)) x).2 = some y →
-                        HeapKnowledge.termValuation ε (push r ρ) h' y = HeapKnowledge.termValuation ε ρ h x := by
-                      intro x hx y hy
-                      cases hy
-                      obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
-                      have htv := merge_termValue_eq hb he hk hh hparts hz
-                      simp only [HeapKnowledge.termValuation, hz, htv, r, h']
-                    refine ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hL' hval).mpr hF.2⟩
-                    obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hL' y hy
-                    cases hxy
-                    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
-                    have htv := merge_termValue_eq hb he hk hh hparts hz
-                    simp only [htv, Option.isSome_some, r]
-                  · cases hmf
-                | spineApart s1 p1 s2 p2 =>
-                  rw [hof] at hmf hF
-                  simp only [mergeFact] at hmf
-                  split at hmf
-                  · simp only [Option.some.injEq, Prod.mk.injEq] at hmf
-                    obtain ⟨-, rfl⟩ := hmf
-                    obtain ⟨u, w, hu, hw, hne⟩ := hF
-                    exact ⟨u, w, merge_readPath_eq hb he hk hh hparts hu, merge_readPath_eq hb he hk hh hparts hw, hne⟩
-                  · cases hmf
-                | every s1 p1 stop body =>
-                  rw [hof] at hmf hF
-                  simp only [mergeFact] at hmf
-                  split at hmf
-                  · obtain ⟨body', hbody', hpair⟩ := Option.map_eq_some_iff.mp hmf
-                    simp only [Prod.mk.injEq] at hpair
-                    obtain ⟨-, rfl⟩ := hpair
-                    obtain ⟨w, sto, ls, m, hw, hsto, hls, hm, hall⟩ := hF
-                    have hext_eq : h ++ ps.map Prod.snd ++ [.nul] = h ++ (ps.map Prod.snd ++ [.nul]) := by
-                      simp [List.append_assoc]
-                    refine ⟨w, sto, ls, m, merge_readPath_eq hb he hk hh hparts hw, hsto, ?_,
-                      merge_termValue_eq hb he hk hh hparts hm, fun i hi C' hC' => ?_⟩
-                    · rw [hext_eq]; exact HeapKnowledge.spineEntries_extend _ hls
-                    · obtain ⟨C, hC, hCC'⟩ := mapM_mem_rev hbody' C' hC'
-                      refine linearClause_holdsAt_mapVars_mp hCC' (fun x _ y z hy hz => ?_) (hall i hi C hC)
-                      cases x with
-                      | free t =>
-                        cases hy
-                        exact merge_termValue_eq hb he hk hh hparts hz
-                      | index => cases hy; exact hz
-                      | elem | offset _ =>
-                        cases hy
-                        rw [hext_eq]
-                        simp only [HeapKnowledge.boundValue, HeapKnowledge.elementInt] at hz ⊢
-                        split at hz
-                        · obtain ⟨u, hu, hi'⟩ := Option.bind_eq_some_iff.mp hz
-                          exact Option.bind_eq_some_iff.mpr
-                            ⟨u, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1]; exact hu, hi'⟩
-                        · cases hz
-                      | project k q =>
-                        cases hy
-                        rw [hext_eq]
-                        simp only [HeapKnowledge.boundValue] at hz ⊢
-                        split at hz
-                        · obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hz
-                          exact Option.bind_eq_some_iff.mpr
-                            ⟨v, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
-                              HeapKnowledge.termValue_extend _ ht⟩
-                        · cases hz
-                  · cases hmf
-                | _ => rw [hof] at hmf; simp [mergeFact] at hmf
+                split at hmap
+                · rename_i F' hmf
+                  simp only [Option.some.injEq] at hmap
+                  subst hmap
+                  have hF := hk.2.2.2.2.2 orig horig fun c hc => by rw [hnone'] at hc; cases hc
+                  have hlen : (ps.map Prod.snd).length = ps.length := List.length_map ..
+                  rw [hlen]
+                  exact mergeFact_holds ha hb he hk hh hparts hmf hF
+                · cases hmap
 
 /-- An allocation at a computed key, of two values, allocates a fresh
 object: what was known of the heap stays known, and the new object's field is

@@ -1008,7 +1008,7 @@ def boundValue (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) 
 /-- Whether a body clause holds at index `i` of spine elements `ls`. -/
 def BodyClause.HoldsAt (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : BodyClause → Prop
   | .clause c => c.HoldsAt (boundValue ε ρ h ls i)
-  | .guarded t g b => ∃ w, t.read ρ h ls i = some w ∧ (w = g.val ∨ b.HoldsAt ε ρ h ls i)
+  | .guarded t g b => ∃ w, t.read ρ h ls i = some w ∧ (g.holds w ∨ b.HoldsAt ε ρ h ls i)
 
 theorem ElemTarget.read_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : List (Option Nat)} {i : Nat}
     {t : ElemTarget} {w : Val} (hr : t.read ρ h ls i = some w) : t.read ρ (h ++ vs) ls i = some w := by
@@ -1611,6 +1611,12 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
       | elem => cases hy; rfl
       | offset _ => cases hy; rfl
       | project _ _ => cases hy; rfl
+      | parallel s' p' k ep =>
+        simp only [Bound.mapM, Option.map_eq_some_iff] at hy
+        obtain ⟨t', ht', rfl⟩ := hy
+        have hsp := hf s' (List.mem_cons_of_mem _ (List.mem_append_right _
+          (List.mem_flatMap.mpr ⟨.parallel s' p' k ep, hx, by simp [Bound.slots]⟩))) t' ht'
+        simp only [boundValue, hsp]
       | free t =>
         simp only [Bound.mapM, Option.map_eq_some_iff] at hy
         obtain ⟨t', ht', rfl⟩ := hy
@@ -2126,7 +2132,7 @@ theorem holdsAt_entry {F : IndexFact} (hF : F.entrySlots = []) (ε' : EntryState
       · have := hF.1; simp [Term.entrySlots, he] at this
     have hbe : ∀ (ls : List (Option Nat)) (i : Nat),
         body.HoldsAt (boundValue ε ρ h ls i) ↔ body.HoldsAt (boundValue ε' ρ h ls i) :=
-      fun ls i => BodyClause.holdsAt_congr_noEntry (B := .clause body) hF.2
+      fun ls i => BodyClause.holdsAt_entry (B := .clause body) hF.2
     simp only [HoldsAt, hst]
     cases guard with
     | none => simp only [hbe]
@@ -2345,7 +2351,7 @@ theorem holdsAt_congr_entryTerms {F : IndexFact} {ε' : EntryState} {ρ : Env} {
     have hbe : ∀ (ls : List (Option Nat)) (i : Nat),
         body.HoldsAt (boundValue ε ρ h ls i) ↔ body.HoldsAt (boundValue ε' ρ h ls i) :=
       fun ls i => BodyClause.holdsAt_congr_entryTerms (B := .clause body) fun t htm =>
-        hterm t fun _ => ht t (List.mem_append_right _ htm)
+        ht t (List.mem_append_right _ htm)
     simp only [HoldsAt, hst]
     cases guard with
     | none => simp only [hbe]

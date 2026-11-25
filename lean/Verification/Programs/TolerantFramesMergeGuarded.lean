@@ -183,20 +183,20 @@ theorem OnPath.projection_holds (P : OnPath preds width fresh0 p ε ρ η h) {v 
   obtain ⟨n, hn⟩ := selectedFromIndex v slots true a ha
   exact hv a (about_storeAll hn)
 
-theorem foldl_indicesFilter_sub : ∀ (ps : List Knowledge) (cs : List IndexAtom) (x : IndexAtom),
-    x ∈ ps.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) cs → x ∈ cs
+theorem foldl_indicesFilter_sub (useCases : Bool := true) : ∀ (ps : List Knowledge) (cs : List IndexAtom) (x : IndexAtom),
+    x ∈ ps.foldl (fun cs p => HeapKnowledge.indicesFilter p cs useCases) cs → x ∈ cs
   | [], _, _, hx => hx
-  | _ :: ps, _, x, hx => HeapKnowledge.indicesFilter_sub (foldl_indicesFilter_sub ps _ x hx)
+  | _ :: ps, _, x, hx => HeapKnowledge.indicesFilter_sub (foldl_indicesFilter_sub useCases ps _ x hx)
 
-theorem foldl_indicesFilter_holds {ρ : Env} {h : Heap} :
+theorem foldl_indicesFilter_holds {ρ : Env} {h : Heap} (useCases : Bool := true) :
     ∀ (ps : List Knowledge) (cs : List IndexAtom) {p : Knowledge},
-      p ∈ ps → Holds p ε ρ h → IndexHolds ε (ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs) cs) ρ h
+      p ∈ ps → Holds p ε ρ h → IndexHolds ε (ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs useCases) cs) ρ h
   | [], _, _, hp, _ => by cases hp
   | q :: ps, cs, p, hp, hk => by
     rcases List.mem_cons.mp hp with rfl | hp
     · intro x hx hcond
-      exact HeapKnowledge.indicesFilter_holds hk x (foldl_indicesFilter_sub ps _ x hx) hcond
-    · exact foldl_indicesFilter_holds ps (HeapKnowledge.indicesFilter q cs) hp hk
+      exact HeapKnowledge.indicesFilter_holds hk x (foldl_indicesFilter_sub useCases ps _ x hx) hcond
+    · exact foldl_indicesFilter_holds useCases ps (HeapKnowledge.indicesFilter q cs useCases) hp hk
 
 theorem joinGuarded_holds {ρ : Env} {h : Heap} {ps : List Knowledge} {k : Knowledge} {p : Knowledge} {x : IndexAtom}
     (hx : x ∈ CertificateProducer.joinGuarded ps k) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
@@ -204,14 +204,14 @@ theorem joinGuarded_holds {ρ : Env} {h : Heap} {ps : List Knowledge} {k : Knowl
   intro y hy
   rw [List.mem_singleton.mp hy]
   unfold CertificateProducer.joinGuarded at hx
-  exact foldl_indicesFilter_holds ps _ hp hk x hx
+  exact foldl_indicesFilter_holds true ps _ hp hk x hx
 
-theorem mem_foldl_indicesFilter_holds {ρ : Env} {h : Heap} {ps : List Knowledge} {cs : List IndexAtom} {p : Knowledge} {x : IndexAtom}
-    (hx : x ∈ ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs) cs) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
+theorem mem_foldl_indicesFilter_holds {ρ : Env} {h : Heap} {useCases : Bool} {ps : List Knowledge} {cs : List IndexAtom} {p : Knowledge} {x : IndexAtom}
+    (hx : x ∈ ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs useCases) cs) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
     IndexHolds ε [x] ρ h := by
   intro y hy
   rw [List.mem_singleton.mp hy]
-  exact foldl_indicesFilter_holds ps cs hp hk x hx
+  exact foldl_indicesFilter_holds useCases ps cs hp hk x hx
 
 /-- **(Guarded join) The guarded facts the merge keeps hold** at the slot
 environment on the path through any predecessor `p`: `GuardedHolds`. -/
@@ -237,11 +237,19 @@ theorem guardedHolds_of_path (P : OnPath preds width fresh0 p ε ρ η h) : Guar
       exact mem_foldl_indicesFilter_holds hx
         (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
         (filter_holds (P.projection_holds hv hvn _ _))
-  · -- the disjoined facts: each checked against every filtered view at its own slots
+  · -- the disjoined facts: batched `indicesFilter` over filtered views
     simp only [SinglePass.timedKind] at hx
     replace hx := mem_ite_nil hx
-    have hc := List.all_eq_true.mp (List.mem_filter.mp hx).2 _ hvm
-    exact check_holds (filter_holds (P.projection_holds hv hvn _ _)) hc
+    replace hx := mem_ite_nil hx
+    rcases List.mem_append.mp hx with hx | hx
+    · replace hx := mem_ite_nil hx
+      exact mem_foldl_indicesFilter_holds hx
+        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
+        (filter_holds (P.projection_holds hv hvn _ _))
+    · replace hx := mem_ite_nil hx
+      exact mem_foldl_indicesFilter_holds hx
+        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
+        (filter_holds (P.projection_holds hv hvn _ _))
 
 end Path
 

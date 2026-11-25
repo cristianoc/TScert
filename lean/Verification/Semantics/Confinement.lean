@@ -496,6 +496,191 @@ theorem entryCoveredBy_supported {S T : Footprint} {ρ : Env} {h h' : Heap}
     rw [hkeep] at hv'
     exact ⟨v, hv', Change.Holds.refl e.2 h.length v⟩
 
+/-! ## Outside-of-`Priv` regions and frame specs -/
+
+/-- Whether region `r` is rooted at a slot `< width` outside `holders`, so
+under `ClosedOut` and `HoldersCoverB` every location it selects lies outside `Priv`. -/
+def outsideRegion (width : Nat) (holders : List Nat) : Region → Bool
+  | .field x _ | .path x _ _ | .spine x _ | .cells x | .pathCells x _ | .elemSpines x _ =>
+      x < width && !holders.contains x
+  | .fields _ | .pathFields _ _ | .cls _ | .all => false
+
+/-- A frame support specification kept at a framed node: either an explicit
+`.keep` footprint (e.g. `confinedFootprint` of owned slots) or every region
+rooted at a slot `< width` outside `holders`. -/
+inductive FrameSpec where
+  | footprint (S : Footprint)
+  | outside (width : Nat) (holders : List Nat)
+  deriving DecidableEq, Repr
+
+/-- Whether a frame specification covers every entry of a fact's support `T`. -/
+def FrameSpec.covers : FrameSpec → Footprint → Bool
+  | .footprint S, T => T.all (entryCoveredBy S)
+  | .outside width holders, T => T.all (fun e => outsideRegion width holders e.1)
+
+/-- Semantic validity of a frame specification from `h` to `h'` at `ρ`. -/
+def FrameSpec.Supported (ρ : Env) (h h' : Heap) : FrameSpec → Prop
+  | .footprint S => Footprints.Supported S ρ h h'
+  | .outside width holders =>
+      ∀ T, T.all (fun e => outsideRegion width holders e.1) = true → Footprints.Supported T ρ h h'
+
+theorem FrameSpec.covers_supported {spec : FrameSpec} {T : Footprint} {ρ : Env} {h h' : Heap}
+    (hS : spec.Supported ρ h h') (hc : spec.covers T = true) : Footprints.Supported T ρ h h' := by
+  cases spec with
+  | footprint S => exact entryCoveredBy_supported hS hc
+  | outside width holders => exact hS T hc
+
+private theorem noPriv_lookup {Priv : Nat → Prop} {u : Val} {k : PropKey} {loc : Nat}
+    (hu : NoPriv Priv u) (hl : (fieldsOf u).lookup k = some loc) : ¬ Priv loc :=
+  hu.of_next (a := .key k) hl
+
+private theorem noPriv_elementsOf {Priv : Nat → Prop} {u : Val} {loc : Nat}
+    (hu : NoPriv Priv u) (he : HeapKnowledge.elementsOf u = some loc) : ¬ Priv loc := by
+  cases u with
+  | objAt fs c oid =>
+    simp only [HeapKnowledge.elementsOf] at he
+    cases hl : fs.lookup arraySpineKey with
+    | some l =>
+      rw [hl] at he; cases he
+      exact hu.of_next (a := .key arraySpineKey) hl
+    | none =>
+      rw [hl] at he
+      cases c <;> simp at he
+      subst he
+      exact hu.of_next (a := .view) rfl
+  | _ => simp [HeapKnowledge.elementsOf] at he
+
+private theorem noPriv_readPath {h : Heap} {Priv : Nat → Prop} (hcl : ClosedOut h Priv) :
+    ∀ {p : List String} {u w : Val}, NoPriv Priv u → HeapKnowledge.readPath h u p = some w → NoPriv Priv w
+  | [], _, _, hu, hr => by simp only [HeapKnowledge.readPath, Option.some.injEq] at hr; subst hr; exact hu
+  | f :: q, u, w, hu, hr => by
+    cases u with
+    | objAt fs c oid =>
+      simp only [HeapKnowledge.readPath] at hr
+      cases hl : fs.lookup (.str f) with
+      | none => rw [hl] at hr; cases hr
+      | some l =>
+        simp only [hl] at hr
+        cases hv : h[l]? with
+        | none => simp only [hv] at hr; cases hr
+        | some v =>
+          simp only [hv] at hr
+          have hnp : ¬ Priv l := hu.of_next (a := .key (.str f)) hl
+          have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hv).1
+          exact noPriv_readPath hcl (hcl l hlt hnp v hv) hr
+    | _ => simp [HeapKnowledge.readPath] at hr
+
+private theorem noPriv_entriesAt {h : Heap} {Priv : Nat → Prop} (hcl : ClosedOut h Priv)
+    {sp loc : Nat} (hnp : ¬ Priv sp) (hm : some loc ∈ entriesAt h (some sp)) : ¬ Priv loc := by
+  simp only [entriesAt] at hm
+  cases hu : h[sp]? with
+  | none => rw [hu] at hm; cases hm
+  | some u =>
+    rw [hu] at hm
+    cases hse : spineEntries u with
+    | none => simp only [Option.bind_some, hse, Option.getD_none, List.not_mem_nil] at hm
+    | some ls =>
+      simp only [Option.bind_some, hse, Option.getD_some] at hm
+      obtain ⟨i, hi, hgi⟩ := List.mem_iff_getElem.mp hm
+      have hlt : sp < h.length := (List.getElem?_eq_some_iff.mp hu).1
+      have hnu : NoPriv Priv u := hcl sp hlt hnp u hu
+      exact hnu.of_next (a := .cell i) (by simp [next, hse, List.getElem?_eq_getElem hi, hgi])
+
+private theorem noPriv_spineCells {h : Heap} {Priv : Nat → Prop} (hcl : ClosedOut h Priv)
+    {u : Val} {loc : Nat} (hu : NoPriv Priv u) (hm : some loc ∈ spineCells h u) : ¬ Priv loc := by
+  simp only [spineCells, List.mem_append] at hm
+  rcases hm with hm | hm
+  · cases hl : (fieldsOf u).lookup arraySpineKey with
+    | none => rw [hl] at hm; simp [entriesAt] at hm
+    | some sp =>
+      rw [hl] at hm
+      exact noPriv_entriesAt hcl (noPriv_lookup hu hl) hm
+  · cases hd : HeapKnowledge.descriptorSpine u with
+    | none => rw [hd] at hm; simp [entriesAt] at hm
+    | some sp =>
+      rw [hd] at hm
+      exact noPriv_entriesAt hcl (hu.of_next (a := .view) hd) hm
+
+/-- Under `ClosedOut` and bounded `HoldersCover`, every location selected by an
+`outsideRegion` lies outside `Priv`. -/
+theorem outsideRegion_not_priv {h : Heap} {ρ : Env} {width : Nat} {holders : List Nat} {Priv : Nat → Prop}
+    (hcl : ClosedOut h Priv) (hhl : ∀ y, y < width → y ∉ holders → NoPriv Priv (ρ y))
+    {r : Region} (hout : outsideRegion width holders r = true) {loc : Nat} (hm : r.mem ρ h loc = true) :
+    ¬ Priv loc := by
+  have rootNoPriv : ∀ x, (x < width && !holders.contains x) = true → NoPriv Priv (ρ x) := fun x hx => by
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hx
+    exact hhl x hx.1 (fun hm' => by rw [List.contains_iff_mem.mpr hm'] at hx; cases hx.2)
+  cases r with
+  | field x k =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem, beq_iff_eq] at hm
+    exact noPriv_lookup hnp hm
+  | path x p k =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem] at hm
+    cases hr : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hr] at hm; cases hm
+    | some w =>
+      rw [hr] at hm
+      simp only [beq_iff_eq] at hm
+      exact noPriv_lookup (noPriv_readPath hcl hnp hr) hm
+  | spine x p =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem] at hm
+    cases hr : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hr] at hm; cases hm
+    | some w =>
+      rw [hr] at hm
+      simp only [beq_iff_eq] at hm
+      exact noPriv_elementsOf (noPriv_readPath hcl hnp hr) hm
+  | cells x =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem, List.contains_iff_mem] at hm
+    exact noPriv_spineCells hcl hnp hm
+  | pathCells x p =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem] at hm
+    cases hr : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hr] at hm; cases hm
+    | some w =>
+      rw [hr] at hm
+      simp only [List.contains_iff_mem] at hm
+      exact noPriv_spineCells hcl (noPriv_readPath hcl hnp hr) hm
+  | elemSpines x p =>
+    have hnp := rootNoPriv x hout
+    simp only [Region.mem] at hm
+    cases hr : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hr] at hm; cases hm
+    | some w =>
+      rw [hr] at hm
+      have hnw : NoPriv Priv w := noPriv_readPath hcl hnp hr
+      obtain ⟨c, hc, hce⟩ := List.any_eq_true.mp hm
+      cases c with
+      | none => simp at hce
+      | some cl =>
+        have hnpc : ¬ Priv cl := noPriv_spineCells hcl hnw hc
+        simp only at hce
+        cases he : h[cl]? with
+        | none => rw [he] at hce; cases hce
+        | some e =>
+          rw [he] at hce
+          simp only [beq_iff_eq] at hce
+          have hlt : cl < h.length := (List.getElem?_eq_some_iff.mp he).1
+          exact noPriv_elementsOf (hcl cl hlt hnpc e he) hce
+  | fields _ | pathFields _ _ | cls _ | all => simp [outsideRegion] at hout
+
+/-- When every allocated location outside `Priv` keeps its contents from `h` to `h'`,
+`FrameSpec.outside width holders` is `Supported`. -/
+theorem outside_supported {h h' : Heap} {ρ : Env} {width : Nat} {holders : List Nat} {Priv : Nat → Prop}
+    (hcl : ClosedOut h Priv) (hhl : ∀ y, y < width → y ∉ holders → NoPriv Priv (ρ y))
+    (hkeep : ∀ loc, loc < h.length → ¬ Priv loc → h'[loc]? = h[loc]?) :
+    (FrameSpec.outside width holders).Supported ρ h h' := by
+  intro T hT e he loc v hmem hv
+  have hout := List.all_eq_true.mp hT e he
+  have hnp := outsideRegion_not_priv hcl hhl hout hmem
+  have hlt : loc < h.length := (List.getElem?_eq_some_iff.mp hv).1
+  exact ⟨v, (hkeep loc hlt hnp).trans hv, Change.Holds.refl e.2 h.length v⟩
+
 /-! ## References in source terms below the entry mark -/
 
 /-- Every location reference (other than identities) in a term lies below `m`. -/
