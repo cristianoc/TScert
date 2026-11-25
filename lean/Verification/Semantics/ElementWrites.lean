@@ -254,28 +254,39 @@ theorem ElementKind.intValue_convert (k : ElementKind) (v : Tm) :
            exact SafeIntegers.safeIntOfBits_complete
              (SafeIntegers.safeInt_int32Bits (SafeIntegers.safeIntOfBits_sound hb).1))
 
+/-- **The conversion keeps every masked 32-bit integer a value denotes.** -/
+theorem ElementKind.bitMaskOf_convert (k : ElementKind) (m : Nat) (v : Tm) :
+    HeapKnowledge.bitMaskOf m (k.convert v) = HeapKnowledge.bitMaskOf m v := by
+  cases k <;> cases v <;> simp only [ElementKind.convert] <;>
+    first
+      | rfl
+      | (rename_i b
+         cases hb : SafeIntegers.safeIntOfBits b with
+         | none => rfl
+         | some i =>
+           have hsb := SafeIntegers.safeIntOfBits_sound hb
+           have hsc := SafeIntegers.safeInt_int32Bits hsb.1
+           simp only [HeapKnowledge.bitMaskOf, SafeIntegers.toInt32_safe hsb, SafeIntegers.toInt32_safe hsc])
+
 /-- **Every integer a term reads of a converted value is the one it reads of
 the value**: a number has no field, and its kinds read its integer alone. -/
 theorem ElementKind.readPath_convert (k : ElementKind) (h : Heap) (v : Tm) (p : List String)
     (kd : HeapKnowledge.Term.Kind) :
     (HeapKnowledge.readPath h (k.convert v) p).bind (HeapKnowledge.kindValue h kd) =
       (HeapKnowledge.readPath h v p).bind (HeapKnowledge.kindValue h kd) := by
-  have hnum : ∀ b b', HeapKnowledge.intValue (.num b) = HeapKnowledge.intValue (.num b') →
-      (HeapKnowledge.readPath h (.num b) p).bind (HeapKnowledge.kindValue h kd) =
-        (HeapKnowledge.readPath h (.num b') p).bind (HeapKnowledge.kindValue h kd) := by
-    intro b b' he
-    cases p with
-    | cons _ _ => rfl
-    | nil =>
-      cases kd <;> simp [HeapKnowledge.readPath, HeapKnowledge.kindValue, HeapKnowledge.lengthOf,
-        HeapKnowledge.viewLengthOf, HeapKnowledge.strLengthOf, Footprints.spineOf, Footprints.fieldsOf, he]
   have hc := k.intValue_convert v
+  have hm : ∀ m, HeapKnowledge.bitMaskOf m (k.convert v) = HeapKnowledge.bitMaskOf m v :=
+    fun m => k.bitMaskOf_convert m v
   cases v with
   | num b =>
     obtain ⟨b', hb'⟩ : ∃ b', k.convert (.num b) = .num b' := by
       cases k <;> simp only [ElementKind.convert] <;> first | exact ⟨_, rfl⟩ | (split <;> exact ⟨_, rfl⟩)
-    rw [hb'] at hc ⊢
-    exact hnum _ _ hc
+    rw [hb'] at hc hm ⊢
+    cases p with
+    | cons _ _ => rfl
+    | nil =>
+      cases kd <;> simp [HeapKnowledge.readPath, HeapKnowledge.kindValue, HeapKnowledge.lengthOf,
+        HeapKnowledge.viewLengthOf, HeapKnowledge.strLengthOf, Footprints.spineOf, Footprints.fieldsOf, hc, hm]
   | _ => cases k <;> rfl
 
 /-- A number in its canonical form, a natural below `2^53`, is its own

@@ -245,17 +245,17 @@ def spineRead (c : ReadContext) (x : Nat) (p : List String) (δ : Change) : Foot
 /-- The change the last location a term's path reads tolerates: a number
 or a string is kept by `init`, an object by `grow`. -/
 def lastChange : Term.Kind → Change
-  | .value | .strLength => .init
+  | .value | .strLength | .bitMask _ => .init
   | .length | .view => .grow
 
 /-- **A term's support** at the change `δ` its spine tolerates: nothing for
 an entry term; else its path's reads, and what its kind reads of the value
 the path ends at: a length its spine (`spineRead`); a typed array's length,
-which its descriptor holds, a value or a string's length nothing more. -/
+which its descriptor holds, a value, masked value, or a string's length nothing more. -/
 def _root_.Verification.HeapKnowledge.Term.support (c : ReadContext) (δ : Change) (t : Term) : Footprint :=
   if t.atEntry then [] else
   pathReads c t.slot (lastChange t.kind) [] t.path ++ match t.kind with
-    | .value | .strLength | .view => []
+    | .value | .strLength | .view | .bitMask _ => []
     | .length => spineRead c t.slot t.path δ
 
 /-- What a supported spine read keeps: the spine, grown at most where `δ` is
@@ -320,6 +320,9 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
     | strLength =>
       cases w <;> simp [kindValue, strLengthOf] at hk
       exact keeps_defined (by decide) rfl
+    | bitMask _ =>
+      cases w <;> simp [kindValue, bitMaskOf] at hk
+      exact keeps_defined (show Change.init.le .init = true by decide) rfl
     | length =>
       obtain ⟨s, -, hst, -⟩ := lengthOf_spine hk
       cases w <;> simp [spineOf, fieldsOf] at hst
@@ -335,6 +338,7 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
   cases kind with
   | value => exact ⟨n, hk, Int.le_refl n, fun _ => rfl⟩
   | strLength => exact ⟨n, hk, Int.le_refl n, fun _ => rfl⟩
+  | bitMask _ => exact ⟨n, hk, Int.le_refl n, fun _ => rfl⟩
   | length =>
     simp only [kindValue] at hk ⊢
     obtain ⟨s, ls, hst, hls, rfl, hmax⟩ := lengthOf_spine hk
@@ -439,7 +443,7 @@ def Bound.supported : Bound → Bool
 index, scalar element, direct element array/view/string length, or a free term. -/
 def Bound.atIndexSupported : Bound → Bool
   | .index | .elem | .free _ => true
-  | .project .length [] | .project .view [] | .project .strLength [] => true
+  | .project .length [] | .project .view [] | .project .strLength [] | .project (.bitMask _) [] => true
   | .offset _ | .project _ _ | .parallel _ _ _ _ => false
 
 /-- Whether an indexed-element body reads the element's array spine length. -/
@@ -617,7 +621,7 @@ private theorem elemKindValue_kept {x : Nat} {q : List String} {k : Term.Kind} {
     termValue ε (fun _ => v) h' (Term.now k 0 []) = some z := by
   simp only [termValue, termAt, Bool.false_eq_true, ite_false, readPath, Option.bind_some] at hz ⊢
   cases k with
-  | value | strLength | view => exact hz
+  | value | strLength | view | bitMask _ => exact hz
   | length =>
     simp only [kindValue] at hz ⊢
     obtain ⟨sv, lv, hsv, hlv, rfl, hmax⟩ := lengthOf_spine hz
@@ -801,9 +805,8 @@ theorem FactSupport.check_sound (c : ReadContext) :
         | nil =>
           have hkeep : body.any BodyClause.needsKeep = true :=
             List.any_eq_true.mpr ⟨F, hFm, by
-              cases F with
-              | clause _ => simp [BodyClause.targets] at htm
-              | guarded _ _ _ => simp [BodyClause.needsKeep, BodyClause.targets]⟩
+              simp only [BodyClause.needsKeep, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff_exists_mem]
+              exact .inl ⟨.self [], htm⟩⟩
           simp only [hkeep, ite_true] at hpc
           simp only [ElemTarget.read] at hv ⊢
           split at hv
@@ -984,14 +987,14 @@ theorem FactSupport.check_sound (c : ReadContext) :
         | nil =>
           cases k with
           | value => simp [Bound.atIndexSupported] at hbs
-          | view | strLength =>
+          | view | strLength | bitMask _ =>
             simp only [boundValue] at hz ⊢
             split at hz
             · rename_i l hli
               obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hz
               have hnn : Footprints.nullish v = false := by
                 cases v with
-                | nul | undef => simp [termValue, termAt, readPath, kindValue, viewLengthOf, strLengthOf] at ht
+                | nul | undef => simp [termValue, termAt, readPath, kindValue, viewLengthOf, strLengthOf, bitMaskOf] at ht
                 | _ => rfl
               rw [hcell w st ls i l v hw he hls hli hv (fun _ => hnn), Option.bind_some]
               exact ht

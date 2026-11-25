@@ -395,6 +395,169 @@ theorem mask_bitAnd_index (x : UInt64) {m : UInt64} {M : Nat} (hm : toInt32 m = 
   simp only [arithBits, hm, hr, int32Bits_nat]
   exact indexOfBits_bitsOfNat (by omega)
 
+/-! ## Bitwise algebra over two's-complement integers -/
+
+private def intBit : Int → Nat → Bool
+  | .ofNat n, k => n.testBit k
+  | .negSucc n, k => !(n.testBit k)
+
+private theorem intBit_intAnd (a b : Int) (k : Nat) :
+    intBit (intAnd a b) k = (intBit a k && intBit b k) := by
+  cases a <;> cases b <;>
+    simp only [intAnd, intBit, Nat.testBit_and, Nat.testBit_or, Nat.testBit_xor] <;>
+    cases Nat.testBit _ k <;> cases Nat.testBit _ k <;> rfl
+
+private theorem intBit_intOr (a b : Int) (k : Nat) :
+    intBit (intOr a b) k = (intBit a k || intBit b k) := by
+  cases a <;> cases b <;>
+    simp only [intOr, intBit, Nat.testBit_and, Nat.testBit_or, Nat.testBit_xor] <;>
+    cases Nat.testBit _ k <;> cases Nat.testBit _ k <;> rfl
+
+private theorem ofNat_eq_of_intBit {a b : Int} (ha : 0 ≤ a) (hb : 0 ≤ b)
+    (h : ∀ k, intBit a k = intBit b k) : a = b := by
+  cases a with
+  | negSucc _ => omega
+  | ofNat m =>
+    cases b with
+    | negSucc _ => omega
+    | ofNat n =>
+      exact congrArg Int.ofNat (Nat.eq_of_testBit_eq fun k => h k)
+
+theorem intAnd_mask_range (t : Int) (M : Nat) : 0 ≤ intAnd t (M : Int) ∧ intAnd t (M : Int) ≤ (M : Int) := by
+  cases t with
+  | ofNat a =>
+    have := Nat.and_le_right (n := a) (m := M)
+    simp only [intAnd, Int.ofNat_eq_natCast]; omega
+  | negSucc a =>
+    have : M ^^^ (a &&& M) ≤ M := Nat.le_of_testBit fun i h => by
+      simp only [Nat.testBit_xor, Nat.testBit_and] at h
+      cases hm : M.testBit i <;> simp_all
+    simp only [intAnd, Int.ofNat_eq_natCast]; omega
+
+theorem intAnd_comm_mask (a : Int) (M : Nat) : intAnd a (M : Int) = intAnd (M : Int) a :=
+  ofNat_eq_of_intBit (intAnd_mask_range a M).1
+    (by cases a with | ofNat _ => simp [intAnd] | negSucc _ => simp [intAnd])
+    fun k => by simp [intBit_intAnd, Bool.and_comm]
+
+theorem intAnd_idem_mask (t : Int) (M : Nat) : intAnd (intAnd t (M : Int)) (M : Int) = intAnd t (M : Int) :=
+  ofNat_eq_of_intBit (intAnd_mask_range _ M).1 (intAnd_mask_range t M).1 fun k => by
+    simp only [intBit_intAnd, Bool.and_assoc, Bool.and_self]
+
+theorem intAnd_assoc_mask (a b : Int) (M : Nat) :
+    intAnd (intAnd a b) (M : Int) = intAnd a (intAnd b (M : Int)) := by
+  have hb0 := (intAnd_mask_range b M).1
+  have hab0 : 0 ≤ intAnd a (intAnd b (M : Int)) := by
+    cases hb : intAnd b (M : Int) with
+    | ofNat n => exact (intAnd_mask_range a n).1
+    | negSucc _ => omega
+  exact ofNat_eq_of_intBit (intAnd_mask_range _ M).1 hab0 fun k => by
+    simp only [intBit_intAnd, Bool.and_assoc]
+
+theorem intAnd_intOr_mask (a b : Int) (M : Nat) :
+    intAnd (intOr a b) (M : Int) = intOr (intAnd a (M : Int)) (intAnd b (M : Int)) := by
+  have ha0 := (intAnd_mask_range a M).1
+  have hb0 := (intAnd_mask_range b M).1
+  have hor0 : 0 ≤ intOr (intAnd a (M : Int)) (intAnd b (M : Int)) := by
+    cases h1 : intAnd a (M : Int) with
+    | negSucc _ => omega
+    | ofNat m =>
+      cases h2 : intAnd b (M : Int) with
+      | negSucc _ => omega
+      | ofNat n => simp [intOr]
+  exact ofNat_eq_of_intBit (intAnd_mask_range _ M).1 hor0 fun k => by
+    simp only [intBit_intAnd, intBit_intOr]
+    cases intBit a k <;> cases intBit b k <;> cases intBit (M : Int) k <;> rfl
+
+theorem intAnd_zero_right (a : Int) : intAnd a 0 = 0 :=
+  ofNat_eq_of_intBit (intAnd_mask_range a 0).1 (Int.le_refl 0) fun k => by
+    simp only [intBit_intAnd]
+    have h0 : intBit 0 k = false := Nat.zero_testBit k
+    rw [h0]; simp
+
+theorem intOr_zero_right_nat {a : Int} (ha : 0 ≤ a) : intOr a 0 = a :=
+  ofNat_eq_of_intBit (by cases a with | ofNat _ => simp [intOr] | negSucc _ => omega) ha fun k => by
+    simp only [intBit_intOr]
+    have h0 : intBit 0 k = false := Nat.zero_testBit k
+    rw [h0]; simp
+
+theorem intOr_self_mask (a : Int) (M : Nat) : intOr (intAnd a (M : Int)) (M : Int) = (M : Int) := by
+  have ha0 := (intAnd_mask_range a M).1
+  have hor0 : 0 ≤ intOr (intAnd a (M : Int)) (M : Int) := by
+    cases h1 : intAnd a (M : Int) with
+    | negSucc _ => omega
+    | ofNat _ => simp [intOr]
+  exact ofNat_eq_of_intBit hor0 (Int.natCast_nonneg M) fun k => by
+    simp only [intBit_intOr, intBit_intAnd]
+    cases intBit a k <;> cases intBit (M : Int) k <;> rfl
+
+theorem intOr_lt_two_pow {a b : Int} {k : Nat} (ha0 : 0 ≤ a) (ha1 : a < 2 ^ k)
+    (hb0 : 0 ≤ b) (hb1 : b < 2 ^ k) : 0 ≤ intOr a b ∧ intOr a b < 2 ^ k := by
+  cases a with
+  | negSucc _ => omega
+  | ofNat m =>
+    cases b with
+    | negSucc _ => omega
+    | ofNat n =>
+      have hm : m < 2 ^ k := by
+        have : (m : Int) < ((2 ^ k : Nat) : Int) := by simpa using ha1
+        exact Int.ofNat_lt.mp this
+      have hn : n < 2 ^ k := by
+        have : (n : Int) < ((2 ^ k : Nat) : Int) := by simpa using hb1
+        exact Int.ofNat_lt.mp this
+      have hlt := Nat.or_lt_two_pow hm hn
+      simp only [intOr, Int.ofNat_eq_natCast]
+      exact ⟨Int.natCast_nonneg _, by exact_mod_cast hlt⟩
+
+private theorem nat_and_lowMask : ∀ (m x : Nat), m &&& (m + 1) = 0 → x ≤ m → x &&& m = x := by
+  intro m
+  induction m using Nat.strongRecOn with
+  | ind m ih =>
+    intro x hm hx
+    cases m with
+    | zero =>
+      have : x = 0 := by omega
+      subst this; rfl
+    | succ m' =>
+      have hodd : (m' + 1) % 2 = 1 := by
+        rcases Nat.mod_two_eq_zero_or_one (m' + 1) with hmod | hmod
+        · have h1 : (m' + 1) / 2 = (m' + 2) / 2 := by omega
+          have hdiv : ((m' + 1) &&& (m' + 2)) / 2 = (m' + 1) / 2 := by
+            rw [Nat.and_div_two_pow (n := 1), Nat.pow_one, ← h1, Nat.and_self]
+          rw [hm] at hdiv
+          omega
+        · exact hmod
+      have hsub : (m' + 1) / 2 &&& ((m' + 1) / 2 + 1) = 0 := by
+        have h1 : (m' + 2) / 2 = (m' + 1) / 2 + 1 := by omega
+        have hdiv : ((m' + 1) &&& (m' + 2)) / 2 = (m' + 1) / 2 &&& (m' + 2) / 2 := by
+          simpa using Nat.and_div_two_pow (a := m' + 1) (b := m' + 2) (n := 1)
+        rw [hm, h1] at hdiv
+        simpa using hdiv.symm
+      have hrec := ih ((m' + 1) / 2) (by omega) (x / 2) hsub (by omega)
+      have hdiv_eq : (x &&& (m' + 1)) / 2 = x / 2 := by
+        rw [Nat.and_div_two_pow (n := 1), Nat.pow_one]
+        exact hrec
+      have hmod_eq : (x &&& (m' + 1)) % 2 = x % 2 := by
+        rw [Nat.and_mod_two_pow (n := 1), Nat.pow_one, hodd]
+        rcases Nat.mod_two_eq_zero_or_one x with h | h <;> simp [h]
+      omega
+
+/-- For a low-bit mask `m` (`m &&& (m + 1) = 0`, `m < 2^31`) and `0 ≤ a ≤ m`,
+`intAnd a m = a`. -/
+theorem intAnd_lowMask {a : Int} {m : Nat} (hm : m &&& (m + 1) = 0)
+    (ha0 : 0 ≤ a) (ham : a ≤ (m : Int)) : intAnd a (m : Int) = a := by
+  cases a with
+  | negSucc _ => omega
+  | ofNat n =>
+    simp only [intAnd, Int.ofNat_eq_natCast]
+    exact congrArg (Int.ofNat) (nat_and_lowMask m n hm (Int.ofNat_le.mp ham))
+
+/-- For nonnegative `a`, `intAnd a m` equals `(a.toNat &&& m : Nat)`. -/
+theorem intAnd_of_nonneg {a : Int} {m : Nat} (ha0 : 0 ≤ a) :
+    intAnd a (m : Int) = ((a.toNat &&& m : Nat) : Int) := by
+  cases a with
+  | negSucc _ => omega
+  | ofNat n => rfl
+
 /-! ## An index against a length -/
 
 /-- The answers of the relational operator `op` that give an index at most a

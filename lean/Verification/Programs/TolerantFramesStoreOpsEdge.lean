@@ -34,17 +34,32 @@ theorem restateAddedAtIndex_wf {s : Store} (w : StoreWF s) (x : HeapKnowledge.In
     StoreWF (SinglePass.restateAddedAtIndex s x v) := by
   unfold SinglePass.restateAddedAtIndex; simp only [Id.run]
   split
-  · exact w
+  · split
+    · split
+      · exact w
+      · exact forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w (fun _ _ z hz => add_wf hz _) (fun _ h => h)
+    · exact w
   · split
     all_goals first
       | exact w
-      | (refine forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w ?_ (fun _ h => h)
-         intro r _ w' hw'
-         split
-         · split
-           · exact forIn_inv _ _ _ StoreWF hw' fun _ _ z hz => add_wf hz _
+      | (refine forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w ?_ ?_
+         · intro r _ w' hw'
+           split
+           · split
+             · exact forIn_inv _ _ _ StoreWF hw' fun _ _ z hz => add_wf hz _
+             · exact hw'
            · exact hw'
-         · exact hw')
+         · intro s1 hs1
+           split
+           · exact forIn_inv_bind (R := StoreWF) _ s1 _ StoreWF _ hs1 (fun _ _ z hz => add_wf hz _) (fun _ h => h)
+           · exact hs1)
+      | (split
+         · exact w
+         · split
+           · exact w
+           · split
+             · exact w
+             · exact forIn_inv_bind (R := StoreWF) _ s _ StoreWF _ w (fun _ _ z hz => add_wf hz _) (fun _ h => h))
 
 theorem deltaRestate_wf {s : Store} (w : StoreWF s) (added : List HeapKnowledge.IndexAtom) :
     StoreWF (deltaRestate s added) := by

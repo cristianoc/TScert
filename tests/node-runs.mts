@@ -3560,7 +3560,22 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-offset-parallel-gap", ["gap"]),
     "JSON.stringify(appendSubRange({ advances: [[1]], extras: [[2]] }, [3, 4]))"),
     '{"advances":[[1],[3],[4]],"extras":[[2],[3,0],[4,0]]}', "quantified-offset-parallel-gap (#397): safe sub-range offset copy");
-  assert.equal(runExample(ofKind("quantified-bitmask-guard-gap", ["gap"]),
+  assert.equal(runExample(ofKind("quantified-bitmask-guard", ["positive"]),
     "JSON.stringify(buildAndPatchPreservedSpace(new Uint8Array([1, 2]), 1).advances)"),
-    "[[10,20],[5,5,5]]", "quantified-bitmask-guard-gap (#398): safe bitmask-guarded overwrite");
+    "[[10,20],[5,5,5]]", "quantified-bitmask-guard (#398): safe bitmask-guarded overwrite");
+  assert.deepEqual(runPlain(ofKind("quantified-bitmask-guard", ["positive"]),
+    "(() => { const r = setExtraFlag(buildAndPatchPreservedSpace(new Uint8Array([1, 2]), 1), 1); return [r.flags[1], r.advances[1].length]; })()"),
+    [10, 3], "quantified-bitmask-guard (#398): disjoint-bit OR preserves invariant");
+  assert.deepEqual(runPlain(ofKind("quantified-bitmask-guard", ["positive"]),
+    "(() => { const r = buildSetExtraFlagAndPatch(new Uint8Array([1, 2]), 1); return [r.flags[1], r.advances[1].length]; })()"),
+    [10, 3], "quantified-bitmask-guard (#398): disjoint-bit OR followed by bitmask-guarded overwrite");
+  assert.equal(runExample(negative("invalid-quantified-bitmask-guard"),
+    "(() => { const r = patchOnTextTag(new Uint8Array([1, 2]), 0); return String(Number.isNaN(r.extras[0][r.advances[0].length - 1] + 1)); })()"),
+    "true", "invalid-quantified-bitmask-guard (#398): patching on TEXT reads undefined/NaN from shorter extras");
+  assert.equal(runExample(negative("invalid-quantified-bitmask-guard"),
+    "(() => { const r = patchWithWrongMask(new Uint8Array([6]), 0); return String(Number.isNaN(r.extras[0][r.advances[0].length - 1] + 1)); })()"),
+    "true", "invalid-quantified-bitmask-guard (#398): wrong mask matches tag 6 and reads undefined/NaN from shorter extras");
+  assert.deepEqual(runPlain(negative("invalid-quantified-bitmask-guard"),
+    "(() => { const r = setOverlappingBit({ flags: new Uint8Array([0]), advances: [[10, 20]], extras: [[1, 2]] }, 0); return [r.flags[0] & 7, r.extras[0] !== null]; })()"),
+    [2, true], "invalid-quantified-bitmask-guard (#398): overlapping OR bit turns tag 0 into PRESERVED_SPACE with non-null extras");
 }

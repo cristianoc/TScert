@@ -37,13 +37,15 @@ theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : int
 
 /-- What a term reads of the value its path ends at: the safe integer it is
 (`value`), the length of its array spine (`length`), the length of
-the typed array it is (`view`), or the count of UTF-16 code units of the
-string it is (`strLength`). -/
+the typed array it is (`view`), the count of UTF-16 code units of the
+string it is (`strLength`), or its 32-bit integer masked by `mask` (`bitMask`,
+for `0 ≤ mask < 2^31`). -/
 inductive Term.Kind where
   | value
   | length
   | view
   | strLength
+  | bitMask (mask : Nat)
   deriving DecidableEq, Repr, Hashable
 
 /-- A term of a linear fact (ARITHMETIC.md, "Linear facts"): a root slot,
@@ -118,19 +120,26 @@ def length (s : Nat) : Term := ⟨.length, s, [], false⟩
 /-- The length of the string a slot holds. -/
 def strLength (s : Nat) : Term := ⟨.strLength, s, [], false⟩
 
+/-- Whether a kind reads a number directly (`.value` or `.bitMask`). -/
+def Kind.isNum : Kind → Bool
+  | .value | .bitMask _ => true
+  | _ => false
+
 /-- Whether a term reads no current heap: an entry term, which reads the
-entry state, or a slot's own value, or the length of the string it is. -/
+entry state, or a slot's own value, masked value, or string length. -/
 def envOnly (t : Term) : Bool :=
-  t.atEntry || ((t.kind == .value || t.kind == .strLength) && t.path.isEmpty)
+  t.atEntry || ((t.kind.isNum || t.kind == .strLength) && t.path.isEmpty)
 
 def Kind.code : Kind → Nat
   | .value => 0
   | .length => 1
   | .view => 2
   | .strLength => 3
+  | .bitMask _ => 4
 
-/-- A term's place by slot and kind, which normal forms sort by. -/
-def code (t : Term) : Nat := 8 * t.slot + 2 * t.kind.code + (if t.atEntry then 1 else 0)
+def Kind.before : Kind → Kind → Bool
+  | .bitMask m1, .bitMask m2 => decide (m1 < m2)
+  | k1, k2 => decide (k1.code < k2.code)
 
 /-- Paths in lexicographic order, the empty path first. -/
 def pathBefore : List String → List String → Bool
@@ -139,8 +148,10 @@ def pathBefore : List String → List String → Bool
   | _ :: _, [] => false
   | a :: p, b :: q => decide (a < b) || (a == b && pathBefore p q)
 
-/-- An order on terms: by slot and kind, then by path. -/
-def before (a b : Term) : Bool := a.code < b.code || (a.code == b.code && pathBefore a.path b.path)
+/-- An order on terms: by slot, kind, entry flag, then path. -/
+def before (a b : Term) : Bool :=
+  a.slot < b.slot || (a.slot == b.slot && (a.kind.before b.kind ||
+    (a.kind == b.kind && ((!a.atEntry && b.atEntry) || (a.atEntry == b.atEntry && pathBefore a.path b.path)))))
 
 instance : LT Term := ⟨fun a b => a.before b = true⟩
 
@@ -497,12 +508,32 @@ theorem strLengthOf_range {v : Val} {n : Int} (hv : strLengthOf v = some n) :
     · cases hv
   · cases hv
 
+/-- The 32-bit masked integer `ToInt32(v) & m` of a numeric value, for a
+non-negative 32-bit mask `m < 2^31`. -/
+def bitMaskOf (m : Nat) : Val → Option Int
+  | .num b => if m < 2 ^ 31 then some (intAnd (toInt32 b) (m : Int)) else none
+  | _ => none
+
+theorem bitMaskOf_range {m : Nat} {v : Val} {n : Int} (hv : bitMaskOf m v = some n) :
+    0 ≤ n ∧ n ≤ (m : Int) ∧ m < 2 ^ 31 := by
+  cases v with
+  | num b =>
+    simp only [bitMaskOf] at hv
+    split at hv
+    · rename_i hm
+      cases hv
+      have hr := IndexNumbers.intAnd_mask_range (toInt32 b) m
+      exact ⟨hr.1, hr.2, hm⟩
+    · cases hv
+  | _ => cases hv
+
 /-- What a kind of term reads of a value. -/
 def kindValue (h : Heap) : Term.Kind → Val → Option Int
   | .value, v => intValue v
   | .length, v => lengthOf h v
   | .view, v => viewLengthOf v
   | .strLength, v => strLengthOf v
+  | .bitMask m, v => bitMaskOf m v
 
 /-- The integer a term denotes, where it denotes one: what its kind reads of
 the value its path reads from its slot's value. -/
@@ -659,7 +690,8 @@ theorem termValue_envOnly {ρ : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = 
     simp only at he; subst he
     simp only [Term.envOnly, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
       List.isEmpty_iff] at ht
-    obtain ⟨rfl | rfl, rfl⟩ := ht <;> rfl
+    obtain ⟨hk, rfl⟩ := ht
+    cases k <;> simp [Term.Kind.isNum] at hk <;> rfl
   · exact termValue_entry_invariant he
 
 theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n : Int} (hk : kindValue h k v = some n) :
@@ -669,6 +701,7 @@ theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n
   | length => exact lengthOf_extend vs hk
   | view => exact hk
   | strLength => exact hk
+  | bitMask _ => exact hk
 
 theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ε ρ h t = some n) :
     termValue ε ρ (h ++ vs) t = some n := by
@@ -761,6 +794,110 @@ theorem holdsAt_mapVars {f : V → Option W} {val : V → Option Int} {val' : W 
     exact factAt_mapVars hG hf
   | either A B ihA ihB =>
     simp only [mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    exact or_congr (ihA hA fun x hx => hf x (List.mem_append_left _ hx))
+      (ihB hB fun x hx => hf x (List.mem_append_right _ hx))
+
+/-- Map each variable in a linear form to either a target variable or an integer
+constant, folding constants into the accumulated offset `k`. -/
+def formMapVarsOrConst (f : V → Option (W ⊕ Int)) : Linear.Form V → Option (Linear.Form W × Int)
+  | [] => some ([], 0)
+  | (x, c) :: rest => do
+    let (F', k) ← formMapVarsOrConst f rest
+    match ← f x with
+    | .inl y => pure ((y, c) :: F', k)
+    | .inr v => pure (F', k + c * v)
+
+/-- Map each variable in a linear fact to either a target variable or an integer
+constant. -/
+def factMapVarsOrConst (f : V → Option (W ⊕ Int)) : Linear.Fact V → Option (Linear.Fact W)
+  | .le F d => (formMapVarsOrConst f F).map fun (F', k) => .le F' (d - k)
+  | .ne F d => (formMapVarsOrConst f F).map fun (F', k) => .ne F' (d - k)
+
+/-- Map each variable in a `LinearClause` to either a target variable or an
+integer constant. -/
+def mapVarsOrConst (f : V → Option (W ⊕ Int)) : LinearClause V → Option (LinearClause W)
+  | .atom F => (factMapVarsOrConst f F).map .atom
+  | .either A B => do pure (.either (← A.mapVarsOrConst f) (← B.mapVarsOrConst f))
+
+private theorem formMapVarsOrConst_eval {f : V → Option (W ⊕ Int)}
+    {val : V → Option Int} {val' : W → Option Int} :
+    ∀ {F : Linear.Form V} {F' : Linear.Form W} {k : Int},
+      formMapVarsOrConst f F = some (F', k) →
+      (∀ x ∈ F.map (·.1),
+        (∀ y, f x = some (.inl y) → val' y = val x) ∧
+        (∀ v, f x = some (.inr v) → val x = some v)) →
+      (Linear.Form.eval (fun w => (val' w).getD 0) F' + k = Linear.Form.eval (fun v => (val v).getD 0) F) ∧
+      ((∀ y ∈ F'.map (·.1), (val' y).isSome) ↔ (∀ x ∈ F.map (·.1), (val x).isSome))
+  | [], F', k, hm, _ => by
+    simp only [formMapVarsOrConst, Option.some.injEq, Prod.mk.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hm
+    simp [Linear.Form.eval]
+  | (x, c) :: rest, F', k, hm, hf => by
+    simp only [formMapVarsOrConst, Option.bind_eq_bind, Option.bind_eq_some_iff] at hm
+    obtain ⟨⟨R', kr⟩, hR, o, ho, hres⟩ := hm
+    have hrest := formMapVarsOrConst_eval hR fun z hz => hf z (List.mem_cons_of_mem _ hz)
+    have hfx := hf x (List.mem_cons_self ..)
+    cases o with
+    | inl y =>
+      simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at hres
+      obtain ⟨rfl, rfl⟩ := hres
+      have hxy := hfx.1 y ho
+      refine ⟨?_, ?_⟩
+      · simp only [Linear.Form.eval, hxy]; omega
+      · constructor
+        · intro hall z hz
+          rcases List.mem_cons.mp hz with rfl | hz
+          · rw [← hxy]; exact hall y (List.mem_cons_self ..)
+          · exact hrest.2.mp (fun w hw => hall w (List.mem_cons_of_mem _ hw)) z hz
+        · intro hall w hw
+          rcases List.mem_cons.mp hw with rfl | hw
+          · rw [hxy]; exact hall x (List.mem_cons_self ..)
+          · exact hrest.2.mpr (fun z hz => hall z (List.mem_cons_of_mem _ hz)) w hw
+    | inr v =>
+      simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at hres
+      obtain ⟨rfl, rfl⟩ := hres
+      have hxv := hfx.2 v ho
+      refine ⟨?_, ?_⟩
+      · simp only [Linear.Form.eval, hxv, Option.getD_some]; omega
+      · constructor
+        · intro hall z hz
+          rcases List.mem_cons.mp hz with rfl | hz
+          · simp [hxv]
+          · exact hrest.2.mp hall z hz
+        · intro hall w hw
+          exact hrest.2.mpr (fun z hz => hall z (List.mem_cons_of_mem _ hz)) w hw
+
+theorem factAt_mapVarsOrConst {f : V → Option (W ⊕ Int)} {val : V → Option Int} {val' : W → Option Int}
+    {F : Linear.Fact V} {G : Linear.Fact W} (hm : factMapVarsOrConst f F = some G)
+    (hf : ∀ x ∈ F.vars,
+      (∀ y, f x = some (.inl y) → val' y = val x) ∧
+      (∀ v, f x = some (.inr v) → val x = some v)) : FactAt val' G ↔ FactAt val F := by
+  cases F with
+  | le F d =>
+    simp only [factMapVarsOrConst, Option.map_eq_some_iff] at hm
+    obtain ⟨⟨F', k⟩, hF, rfl⟩ := hm
+    obtain ⟨heval, hdef⟩ := formMapVarsOrConst_eval hF hf
+    simp only [FactAt, Linear.Fact.vars, Linear.Fact.Holds]
+    exact and_congr hdef (by omega)
+  | ne F d =>
+    simp only [factMapVarsOrConst, Option.map_eq_some_iff] at hm
+    obtain ⟨⟨F', k⟩, hF, rfl⟩ := hm
+    obtain ⟨heval, hdef⟩ := formMapVarsOrConst_eval hF hf
+    simp only [FactAt, Linear.Fact.vars, Linear.Fact.Holds]
+    exact and_congr hdef (by omega)
+
+theorem holdsAt_mapVarsOrConst {f : V → Option (W ⊕ Int)} {val : V → Option Int} {val' : W → Option Int}
+    {F : LinearClause V} {G : LinearClause W} (hm : F.mapVarsOrConst f = some G)
+    (hf : ∀ x ∈ F.vars,
+      (∀ y, f x = some (.inl y) → val' y = val x) ∧
+      (∀ v, f x = some (.inr v) → val x = some v)) : G.HoldsAt val' ↔ F.HoldsAt val := by
+  induction F generalizing G with
+  | atom F =>
+    obtain ⟨G, hG, rfl⟩ := Option.map_eq_some_iff.mp hm
+    exact factAt_mapVarsOrConst hG hf
+  | either A B ihA ihB =>
+    simp only [mapVarsOrConst, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨A', hA, B', hB, rfl⟩ := hm
     exact or_congr (ihA hA fun x hx => hf x (List.mem_append_left _ hx))
       (ihB hB fun x hx => hf x (List.mem_append_right _ hx))
@@ -909,11 +1046,12 @@ def read (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : ElemTarget �
 end ElemTarget
 
 /-- A body clause of a quantified fact (`IndexFact.every`): a linear clause over
-bound variables, or one guarded by a tag test on an element (`xs[i] === null || …`,
-`ys[i] === null || …`). -/
+bound variables, one guarded by a tag test on an element (`xs[i] === null || …`,
+`ys[i] === null || …`), or a disjunction of two body clauses. -/
 inductive BodyClause where
   | clause (c : LinearClause Bound)
   | guarded (target : ElemTarget) (tag : GuardTag) (body : BodyClause)
+  | either (left right : BodyClause)
   deriving DecidableEq, Repr, Hashable
 
 namespace BodyClause
@@ -921,18 +1059,22 @@ namespace BodyClause
 def slots : BodyClause → List Nat
   | .clause c => c.vars.flatMap Bound.slots
   | .guarded t _ b => t.slots ++ b.slots
+  | .either a b => a.slots ++ b.slots
 
 def entrySlots : BodyClause → List Nat
   | .clause c => c.vars.flatMap fun | .free t => t.entrySlots | _ => []
   | .guarded _ _ b => b.entrySlots
+  | .either a b => a.entrySlots ++ b.entrySlots
 
 def entryTerms : BodyClause → List Term
   | .clause c => c.vars.filterMap fun | .free t => if t.atEntry then some t else none | _ => none
   | .guarded _ _ b => b.entryTerms
+  | .either a b => a.entryTerms ++ b.entryTerms
 
 def mapM (f : Nat → Option Nat) : BodyClause → Option BodyClause
   | .clause c => (c.mapVars (Bound.mapM f)).map .clause
   | .guarded t g b => do pure (.guarded (← t.mapM f) g (← b.mapM f))
+  | .either a b => do pure (.either (← a.mapM f) (← b.mapM f))
 
 theorem mapM_some (f : Nat → Nat) : ∀ b : BodyClause, ∃ b', b.mapM (some ∘ f) = some b'
   | .clause c => by
@@ -941,14 +1083,20 @@ theorem mapM_some (f : Nat → Nat) : ∀ b : BodyClause, ∃ b', b.mapM (some �
   | .guarded t g b => by
     obtain ⟨b', hb⟩ := mapM_some f b
     exact ⟨.guarded (t.mapTotal f) g b', by simp only [mapM, ElemTarget.mapM_total, hb]; rfl⟩
+  | .either a b => by
+    obtain ⟨a', ha⟩ := mapM_some f a
+    obtain ⟨b', hb⟩ := mapM_some f b
+    exact ⟨.either a' b', by simp only [mapM, ha, hb]; rfl⟩
 
 def mapEntry (g : Nat → Option Nat) : BodyClause → Option BodyClause
   | .clause c => (c.mapVars (Bound.mapEntry g)).map .clause
   | .guarded t tg b => (b.mapEntry g).map (.guarded t tg)
+  | .either a b => do pure (.either (← a.mapEntry g) (← b.mapEntry g))
 
 def toNow (bt : Bound → Bound) : BodyClause → BodyClause
   | .clause c => .clause ((c.mapVars (some ∘ bt)).getD c)
   | .guarded t g b => .guarded t g (b.toNow bt)
+  | .either a b => .either (a.toNow bt) (b.toNow bt)
 
 end BodyClause
 
@@ -1031,6 +1179,7 @@ def BodyClause.HoldsAt (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Optio
   | .guarded t g b =>
     (∃ w, t.read ρ h ls i = some w ∧ g.holds w) ∨
     ((t.ownElement = false → ∃ w, t.read ρ h ls i = some w) ∧ b.HoldsAt ε ρ h ls i)
+  | .either a b => a.HoldsAt ε ρ h ls i ∨ b.HoldsAt ε ρ h ls i
 
 theorem ElemTarget.read_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : List (Option Nat)} {i : Nat}
     {t : ElemTarget} {w : Val} (hr : t.read ρ h ls i = some w) : t.read ρ (h ++ vs) ls i = some w := by
@@ -1116,6 +1265,7 @@ theorem BodyClause.holdsAt_extend {h : Heap} (vs : List Val) {ρ : Env} {ls : Li
   | .clause _, hB => LinearClause.holdsAt_extend (fun _ _ _ hm => boundValue_extend vs hm) hB
   | .guarded t _ _, .inl ⟨w, hw, hg⟩ => .inl ⟨w, t.read_extend vs hw, hg⟩
   | .guarded t _ _, .inr ⟨hp, hb⟩ => .inr ⟨fun hne => let ⟨w, hw⟩ := hp hne; ⟨w, t.read_extend vs hw⟩, holdsAt_extend vs hb⟩
+  | .either _ _, hB => hB.imp (holdsAt_extend vs) (holdsAt_extend vs)
 
 theorem BodyClause.holdsAt_mapM {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B B' : BodyClause}, B.mapM f = some B' →
@@ -1151,6 +1301,12 @@ theorem BodyClause.holdsAt_mapM {f : Nat → Option Nat} {ρ ρ' : Env} {h : Hea
     have hep := ElemTarget.mapM_ownElement ht
     have ih := holdsAt_mapM (h := h) (ls := ls) (i := i) hb (fun s hs => hf s (List.mem_append_right _ hs))
     simp only [BodyClause.HoldsAt, htr, hep, ih]
+  | .either a b, B', hm, hf => by
+    simp only [BodyClause.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    have iha := holdsAt_mapM (h := h) (ls := ls) (i := i) ha (fun s hs => hf s (List.mem_append_left _ hs))
+    have ihb := holdsAt_mapM (h := h) (ls := ls) (i := i) hb (fun s hs => hf s (List.mem_append_right _ hs))
+    exact or_congr iha ihb
 
 theorem BodyClause.holdsAt_congr {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause}, (∀ s ∈ B.slots, ρ s = ρ' s) →
@@ -1178,6 +1334,9 @@ theorem BodyClause.holdsAt_congr {ρ ρ' : Env} {h : Heap} {ls : List (Option Na
     have ih := holdsAt_congr (h := h) (ls := ls) (i := i) (B := b)
       (fun s hsb => hs s (List.mem_append_right _ hsb))
     simp only [BodyClause.HoldsAt, htr, ih]
+  | .either a b, hs =>
+    or_congr (holdsAt_congr (B := a) fun s h => hs s (List.mem_append_left _ h))
+      (holdsAt_congr (B := b) fun s h => hs s (List.mem_append_right _ h))
 
 private theorem boundValue_parallel_entry {ε' : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)}
     {i s : Nat} {p ep : List String} {k : Term.Kind} :
@@ -1214,6 +1373,9 @@ theorem BodyClause.holdsAt_congr_entry {ε' : EntryState} {ρ : Env} {h : Heap} 
   | .guarded t g b, hs => by
     have ih := holdsAt_congr_entry (ε' := ε') (ρ := ρ) (h := h) (ls := ls) (i := i) (B := b) hh hs
     simp only [BodyClause.HoldsAt, ih]
+  | .either a b, hs =>
+    or_congr (holdsAt_congr_entry (ε' := ε') (B := a) hh fun s h => hs s (List.mem_append_left _ h))
+      (holdsAt_congr_entry (ε' := ε') (B := b) hh fun s h => hs s (List.mem_append_right _ h))
 
 theorem BodyClause.holdsAt_entry {ε' : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause}, B.entrySlots = [] → (B.HoldsAt ε ρ h ls i ↔ B.HoldsAt ε' ρ h ls i)
@@ -1233,6 +1395,9 @@ theorem BodyClause.holdsAt_entry {ε' : EntryState} {ρ : Env} {h : Heap} {ls : 
   | .guarded t g b, hB => by
     have ih := holdsAt_entry (ε' := ε') (ρ := ρ) (h := h) (ls := ls) (i := i) (B := b) hB
     simp only [BodyClause.HoldsAt, ih]
+  | .either a b, hB => by
+    obtain ⟨ha, hb⟩ := List.append_eq_nil_iff.mp hB
+    exact or_congr (holdsAt_entry (ε' := ε') (B := a) ha) (holdsAt_entry (ε' := ε') (B := b) hb)
 
 theorem BodyClause.holdsAt_mapEntry {g : Nat → Option Nat} {ε' : EntryState} {ρ : Env} {h : Heap}
     {ls : List (Option Nat)} {i : Nat} (hh : ε'.heap = ε.heap) :
@@ -1255,6 +1420,11 @@ theorem BodyClause.holdsAt_mapEntry {g : Nat → Option Nat} {ε' : EntryState} 
     obtain ⟨b', hb, rfl⟩ := Option.map_eq_some_iff.mp hm
     have ih := holdsAt_mapEntry (ε' := ε') (ρ := ρ) (h := h) (ls := ls) (i := i) hh hb hg
     simp only [BodyClause.HoldsAt, ih]
+  | .either a b, B', hm, hg => by
+    simp only [BodyClause.mapEntry, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    exact or_congr (holdsAt_mapEntry (ε' := ε') hh ha fun s h => hg s (List.mem_append_left _ h))
+      (holdsAt_mapEntry (ε' := ε') hh hb fun s h => hg s (List.mem_append_right _ h))
 
 theorem BodyClause.holdsAt_congr_entryTerms {ε' : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause}, (∀ t ∈ B.entryTerms, termAt ε.env ε.heap t = termAt ε'.env ε'.heap t) →
@@ -1276,16 +1446,21 @@ theorem BodyClause.holdsAt_congr_entryTerms {ε' : EntryState} {ρ : Env} {h : H
   | .guarded t g b, ht => by
     have ih := holdsAt_congr_entryTerms (ε' := ε') (ρ := ρ) (h := h) (ls := ls) (i := i) (B := b) ht
     simp only [BodyClause.HoldsAt, ih]
+  | .either a b, ht =>
+    or_congr (holdsAt_congr_entryTerms (ε' := ε') (B := a) fun t h => ht t (List.mem_append_left _ h))
+      (holdsAt_congr_entryTerms (ε' := ε') (B := b) fun t h => ht t (List.mem_append_right _ h))
 
 /-- All guard targets named in a body clause. -/
 def BodyClause.targets : BodyClause → List ElemTarget
   | .clause _ => []
   | .guarded t _ b => t :: b.targets
+  | .either a b => a.targets ++ b.targets
 
 /-- All bound variables named in a body clause's linear clause. -/
 def BodyClause.vars : BodyClause → List Bound
   | .clause c => c.vars
   | .guarded _ _ b => b.vars
+  | .either a b => a.vars ++ b.vars
 
 theorem BodyClause.holdsAt_frame {ρ : Env} {h h' : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {B : BodyClause},
@@ -1298,6 +1473,10 @@ theorem BodyClause.holdsAt_frame {ρ : Env} {h h' : Heap} {ls : List (Option Nat
   | .guarded t _ _, ht, hb, .inr ⟨hp, hB⟩ =>
     .inr ⟨fun hne => let ⟨w, hw⟩ := hp hne; ⟨w, ht t (List.mem_cons_self ..) w hw⟩,
       holdsAt_frame (fun t' ht' => ht t' (List.mem_cons_of_mem _ ht')) hb hB⟩
+  | .either _ _, ht, hb, hB =>
+    hB.imp
+      (holdsAt_frame (fun t h => ht t (List.mem_append_left _ h)) (fun b h => hb b (List.mem_append_left _ h)))
+      (holdsAt_frame (fun t h => ht t (List.mem_append_right _ h)) (fun b h => hb b (List.mem_append_right _ h)))
 
 /-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw spine
 lists its element cells and has no spine cell; an array object has its spine
@@ -1963,6 +2142,8 @@ theorem _root_.Verification.HeapKnowledge.BodyClause.holdsAt_toNow {ρ : Env} {h
     | _ => rfl
   | .guarded t g b => by
     simp only [BodyClause.toNow, BodyClause.HoldsAt, BodyClause.holdsAt_toNow hρ hh b]
+  | .either a b =>
+    or_congr (BodyClause.holdsAt_toNow hρ hh a) (BodyClause.holdsAt_toNow hρ hh b)
 
 theorem _root_.Verification.HeapKnowledge.BodyClause.entrySlots_toNow :
     ∀ C : BodyClause, (C.toNow Bound.toNow).entrySlots = []
@@ -1974,6 +2155,8 @@ theorem _root_.Verification.HeapKnowledge.BodyClause.entrySlots_toNow :
     cases hx
     cases x <;> simp [Bound.toNow, Term.entrySlots, Term.toNow]
   | .guarded _ _ b => BodyClause.entrySlots_toNow b
+  | .either a b => by
+    simp only [BodyClause.toNow, BodyClause.entrySlots, BodyClause.entrySlots_toNow a, BodyClause.entrySlots_toNow b, List.append_nil]
 
 /-- **At the entry state, `old(t)` is `t`**: where the current environment
 and heap are the entry state's, a fact holds exactly where its restatement
@@ -2863,7 +3046,7 @@ path reads holds an object, but the last, which holds a number for a value
 term; a length term then reads a spine, a view term a number. The first
 location, field `g` of the root's object, may instead be one `first` keeps. -/
 def Term.pathKeptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
-  let last := if t.kind == .value then c.num else c.obj
+  let last := if t.kind.isNum then c.num else c.obj
   match t.path with
     | [] => true
     | g :: q => (first t.slot g || !(if q.isEmpty then last else c.obj)) &&
@@ -2876,7 +3059,7 @@ def Changes.keepsLength (c : Changes) : Bool := c.spine == .keep || c.spine == .
 def Term.keptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
   t.atEntry || t.pathKeptBy c first &&
   (match t.kind with
-    | .value => true
+    | .value | .bitMask _ => true
     | .length => c.keepsLength || (t.path.isEmpty && first t.slot "[]")
     | .view => true
     | .strLength => t.path.isEmpty)
@@ -2921,6 +3104,7 @@ theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term
   cases k with
   | value => exact hk
   | strLength => exact hk
+  | bitMask _ => exact hk
   | length =>
     obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_spine hk
     have hst := hlen rfl
@@ -2939,7 +3123,7 @@ theorem pathRead_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env}
     {kind : Term.Kind} {s : Nat} {p : List String} {w : Val}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h')
     (hpath : Term.pathKeptBy c first ⟨kind, s, p, false⟩ = true)
-    (hlast : c.alters w = (if kind == .value then c.num else c.obj))
+    (hlast : c.alters w = (if kind.isNum then c.num else c.obj))
     (hw : readPath h (ρ s) p = some w) : readPath h' (ρ s) p = some w := by
   simp only [Term.pathKeptBy] at hpath
   cases p with
@@ -2994,11 +3178,14 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
     simp only [List.isEmpty_iff] at hkind
     subst hkind
     exact ⟨w, hw, hkw⟩
-  have hlast : c.alters w = (if kind == .value then c.num else c.obj) := by
+  have hlast : c.alters w = (if kind.isNum then c.num else c.obj) := by
     cases kind with
     | value =>
       simp only [kindValue] at hkw
       obtain ⟨b, rfl, -⟩ := intValue_safe hkw
+      rfl
+    | bitMask m =>
+      cases w <;> simp only [kindValue, bitMaskOf, reduceCtorEq] at hkw
       rfl
     | length =>
       obtain ⟨st, ls, hs, -⟩ := lengthOf_spine hkw
@@ -3025,12 +3212,12 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
       exact lengthOf_of_spine hst (hf s "[]" fs cd o st _ hfs hv hl hls) hm
     all_goals rw [hv] at hst; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
   have hkind' : (match kind with
-      | .value => true
+      | .value | .bitMask _ => true
       | .length => c.keepsLength
       | .view => true
       | .strLength => true) = true := by
     cases kind with
-    | value => rfl
+    | value | bitMask _ => rfl
     | strLength => rfl
     | view => rfl
     | length =>
@@ -3219,6 +3406,7 @@ clause whose target and body are kept. -/
 def bodyClauseKeptBy (c : Changes) (first : Nat → String → Bool) : BodyClause → Bool
   | .clause F => bodyKeptBy c first F
   | .guarded t _ b => t.keptBy && bodyClauseKeptBy c first b
+  | .either a b => bodyClauseKeptBy c first a && bodyClauseKeptBy c first b
 
 theorem BodyClause.holdsAt_monotone {c : Changes} {first : Nat → String → Bool}
     {ρ : Env} {h h' : Heap} {ls ls' : List (Option Nat)} {i : Nat}
@@ -3235,6 +3423,9 @@ theorem BodyClause.holdsAt_monotone {c : Changes} {first : Nat → String → Bo
     · refine .inr ⟨fun hne => ?_, holdsAt_monotone ht hk hg hm.2 hb⟩
       obtain ⟨w, hw⟩ := hp hne
       exact ⟨w, ht t hm.1 w hw⟩
+  | .either _ _, hm, hB => by
+    simp only [bodyClauseKeptBy, Bool.and_eq_true] at hm
+    exact hB.imp (holdsAt_monotone ht hk hg hm.1) (holdsAt_monotone ht hk hg hm.2)
 
 def IndexBound.keptBy (c : Changes) (first : Nat → String → Bool) (b : IndexBound) : Bool :=
   match b.base with
@@ -3265,7 +3456,7 @@ def everyKept (c : Changes) (first : Nat → String → Bool) : IndexFact → Bo
             | .free t => t.keptBy c first
             | .project _ _ | .parallel _ _ _ _ => false
             | _ => true
-        | .guarded _ _ _ => false
+        | .guarded _ _ _ | .either _ _ => false
   | _ => false
 
 theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ h h'}
@@ -3287,7 +3478,7 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
     IndexBound.eval_kept hc hf hstart hm, IndexBound.eval_kept hc hf hstop hz, fun i hlo hi F hFm => ?_⟩
   have hBF := hbody F hFm
   cases F with
-  | guarded _ _ _ => simp at hBF
+  | guarded _ _ _ | either _ _ => simp at hBF
   | clause C =>
     have hA := hall i hlo hi (.clause C) hFm
     apply LinearClause.holdsAt_extend (fun x hx a ha => ?_) hA

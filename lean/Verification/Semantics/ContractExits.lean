@@ -349,6 +349,37 @@ theorem Effect.callPost_viewGrowth
     (Kinds.ViewWrite.frame_iff s.ok (callEnv r (args ++ pad))).mpr ⟨hF.1, s'.ok, hF.2⟩
   exact hw.changes s.ok .spines
 
+/-- **Every non-view location is preserved by `{all-views: grow}`**: a view
+write modifies only view spines, leaving every ordinary array spine, element
+cell, and object field untouched (`Kinds.ViewWrite.keep`). -/
+theorem Effect.callPost_nonView_kept
+    (hg : (.transition [(.cls .views, .grow)] : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) :
+    ∀ (l : Nat) (u : Val), before[l]? = some u → (∀ f cs, u ≠ Tm.viewSpine f cs) → after[l]? = some u := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  have hF := hH _ hg
+  have hw : Kinds.ViewWrite s.W s.h s'.W s'.h :=
+    (Kinds.ViewWrite.frame_iff s.ok (callEnv r (args ++ pad))).mpr ⟨hF.1, s'.ok, hF.2⟩
+  intro l u hu hnv
+  have hlt : l < (entries s.W).length := by
+    have h1 := (List.getElem?_eq_some_iff.mp hu).1
+    have h2 : s.h.length = (entries s.W).length := by simpa using s.ok.1.1
+    omega
+  obtain ⟨r, hr⟩ : ∃ r, roleAt s.W l = some r := by
+    unfold roleAt
+    cases hget : (roles s.W)[l]? with
+    | none =>
+      have hlen : (roles s.W).length = (entries s.W).length := by simp [roles]
+      exact absurd (List.getElem?_eq_none_iff.mp hget) (by omega)
+    | some r => exact ⟨r, rfl⟩
+  have hkeq := hw.keep l r hr fun f N heq => by
+    subst heq
+    obtain ⟨u', hu', hsh⟩ := s.ok.2 l (.spine (.view f N)) hr
+    rw [hu] at hu'; cases hu'
+    obtain ⟨cs, rfl, -⟩ := hsh.1
+    exact hnv f cs rfl
+  rw [hkeq, hu]
+
 /-- **An exact element write**, where the normal exit states View-Write at
 the element type's format and the facts of its precondition
 (`exactPre_iff`). -/

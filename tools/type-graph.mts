@@ -278,7 +278,8 @@ type Shape =
 const elementKindOrder: readonly ElementKind[] =
   ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
 const strings: Shape = { list: "string" };
-const termShape: Shape = { record: { kind: { names: ["value", "length", "view", "strLength"] }, slot: "nat", path: strings },
+const kindShape: Shape = { union: { bitMask: { record: { mask: "nat" } } }, names: ["value", "length", "view", "strLength"] };
+const termShape: Shape = { record: { kind: kindShape, slot: "nat", path: strings },
   optional: { atEntry: "true" } };
 const linear = (v: Shape): Shape => ({ union: { le: { record: { form: { list: { pair: [v, "int"] } }, bound: "int" } },
   ne: { record: { form: { list: { pair: [v, "int"] } }, bound: "int" } } } });
@@ -302,12 +303,13 @@ const grammar: { readonly [name: string]: Shape } = {
     stable: { list: "nat" } } },
   stepVar: { union: { before: { record: { t: termShape } }, after: { record: { t: termShape } } } },
   bodyVariable: { union: { offset: { record: { delta: "nat" } },
-    project: { record: { kind: { names: ["value", "length", "view", "strLength"] }, path: strings } },
-    parallel: { record: { slot: "nat", path: strings, kind: { names: ["value", "length", "view", "strLength"] }, elemPath: strings } },
+    project: { record: { kind: kindShape, path: strings } },
+    parallel: { record: { slot: "nat", path: strings, kind: kindShape, elemPath: strings } },
     free: { record: { t: termShape } } }, names: ["index", "elem"] },
   elemTarget: { union: { self: { record: { path: strings } },
     parallel: { record: { slot: "nat", path: strings, elemPath: strings } } } },
   clause: { union: { guarded: { record: { target: { ref: "elemTarget" }, tag: { names: ["null", "undefined", "true", "false"] }, body: { ref: "clause" } } },
+    bodyEither: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
     either: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
     le: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } },
     ne: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } } } },

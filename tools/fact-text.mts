@@ -20,12 +20,17 @@ const asOperand = (t: string): string => (operand(t) ? t : `(${t})`);
 const pathText = (slot: number, path: readonly string[], name: Namer): string =>
   [asOperand(name(slot)), ...path].join(".");
 
-/** A linear term: the slot's value, length, view length or string length,
- * read through its path of data fields, at the entry state (`old`) where it
- * is read there. */
+function termKindText(kind: LinearTerm["kind"], at: string): string {
+  if (typeof kind !== "string") return `(${at} & ${kind.bitMask.mask})`;
+  return kind === "value" ? at : kind === "length" ? `${at}.length` : `${kind}(${at})`;
+}
+
+/** A linear term: the slot's value, length, view length, string length or
+ * bitmask, read through its path of data fields, at the entry state (`old`)
+ * where it is read there. */
 function term(t: LinearTerm, name: Namer): string {
   const at = pathText(t.slot, t.path, name);
-  const read = t.kind === "value" ? at : t.kind === "length" ? `${at}.length` : `${t.kind}(${at})`;
+  const read = termKindText(t.kind, at);
   return t.atEntry === true ? `old(${read})` : read;
 }
 
@@ -68,12 +73,12 @@ function bodyVariable(v: BodyVariable, array: string, name: Namer): string {
   if ("offset" in v) return `${array}[k + ${v.offset.delta}]`;
   if ("project" in v) {
     const at = ["e", ...v.project.path].join(".");
-    return v.project.kind === "value" ? at : v.project.kind === "length" ? `${at}.length` : `${v.project.kind}(${at})`;
+    return termKindText(v.project.kind, at);
   }
   if ("parallel" in v) {
     const arr = pathText(v.parallel.slot, v.parallel.path, name);
     const at = [`${arr}[k]`, ...v.parallel.elemPath].join(".");
-    return v.parallel.kind === "value" ? at : v.parallel.kind === "length" ? `${at}.length` : `${v.parallel.kind}(${at})`;
+    return termKindText(v.parallel.kind, at);
   }
   return term(v, name);
 }

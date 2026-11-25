@@ -145,7 +145,8 @@ export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | Li
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
-export type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[]; atEntry?: true };
+export type LinearTermKind = "value" | "length" | "view" | "strLength" | { bitMask: { mask: number } };
+export type LinearTerm = { kind: LinearTermKind; slot: number; path: string[]; atEntry?: true };
 /** A property key (`PropKey`): a string, or a well-known symbol by its
  * number. */
 export type PropertyKey = string | { symbol: number };
@@ -644,6 +645,10 @@ function indexFact(f: Json | undefined): IndexFact {
           throw Error("an element guard's tag");
         return { guarded: { target: bodyTarget(g.target), tag: g.tag, body: bodyFormula(g.body) } };
       }
+      if (typeof b === "object" && b !== null && !Array.isArray(b) && "bodyEither" in b) {
+        const e = record(record(b,["bodyEither"]).bodyEither,["left","right"]);
+        return { either: { left: bodyFormula(e.left), right: bodyFormula(e.right) } };
+      }
       if (typeof b === "object" && b !== null && !Array.isArray(b) && "either" in b) {
         const e = record(record(b,["either"]).either,["left","right"]);
         return { either: { left: bodyFormula(e.left), right: bodyFormula(e.right) } };
@@ -718,8 +723,13 @@ function indexFact(f: Json | undefined): IndexFact {
  * the entry state (`old(t)`) carries `atEntry`. */
 function linearTerm(t: Json | undefined): LinearTerm {
   const term = record(t, ["kind", "slot", "path"], ["atEntry"]);
-  const kind = term.kind;
-  if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") throw Error("a linear term's kind");
+  const rawKind = term.kind;
+  let kind: LinearTermKind;
+  if (rawKind === "value" || rawKind === "length" || rawKind === "view" || rawKind === "strLength") kind = rawKind;
+  else if (isParsedObject(rawKind) && "bitMask" in rawKind) {
+    const bm = record(record(rawKind, ["bitMask"]).bitMask, ["mask"]);
+    kind = { bitMask: { mask: nat(bm.mask) } };
+  } else throw Error("a linear term's kind");
   const path = term.path;
   if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
   if (term.atEntry !== undefined && term.atEntry !== true) throw Error("a linear term's entry flag");

@@ -463,13 +463,30 @@ def changeOf (j : Json) : Except String Change := do
 
 def kindJ : HeapKnowledge.Term.Kind → Json
   | .value => "value" | .length => "length" | .view => "view" | .strLength => "strLength"
+  | .bitMask mask => tagged "bitMask" (obj ["mask"] [natJ mask])
 
-def kindOf (j : Json) : Except String HeapKnowledge.Term.Kind := do
-  match ← strOf j with
-  | "value" => pure .value | "length" => pure .length | "view" => pure .view | "strLength" => pure .strLength
-  | k => throw s!"'{k}' is no term kind"
+def kindOf : Json → Except String HeapKnowledge.Term.Kind
+  | .str "value" => pure .value
+  | .str "length" => pure .length
+  | .str "view" => pure .view
+  | .str "strLength" => pure .strLength
+  | .str k => throw s!"'{k}' is no term kind"
+  | j@(.obj _) => do
+    let (k, v) ← tagOf j
+    match k with
+    | "bitMask" => under k do
+      let [m] ← fields v ["mask"] | throw "bitMask"
+      pure (.bitMask (← under "mask" (natOf m)))
+    | k => throw s!"'{k}' is no term kind"
+  | _ => throw "a term kind is a string or bitMask object"
 
-@[simp] theorem kindOf_kindJ (k : HeapKnowledge.Term.Kind) : kindOf (kindJ k) = .ok k := by cases k <;> rfl
+@[simp] theorem kindOf_kindJ (k : HeapKnowledge.Term.Kind) : kindOf (kindJ k) = .ok k := by
+  cases k with
+  | bitMask mask =>
+    simp only [kindJ, tagged, Json.mkObj, kindOf]
+    rw [← Json.mkObj, ← tagged]
+    simp [fields_obj]
+  | _ => rfl
 
 def guardJ : GuardTag → Json
   | .null => "null" | .undef => "undefined" | .tru => "true" | .fls => "false"
@@ -909,10 +926,12 @@ theorem clauseOf_clauseJ {V : Type} (vOf : Json → Except String V) (vJ : V →
 def bodyClauseDepth : BodyClause → Nat
   | .clause c => clauseDepth c
   | .guarded _ _ b => bodyClauseDepth b + 1
+  | .either a b => max (bodyClauseDepth a) (bodyClauseDepth b) + 1
 
 def bodyClauseJ : BodyClause → Json
   | .clause c => clauseJ boundJ c
   | .guarded t g b => tagged "guarded" (obj ["target", "tag", "body"] [elemTargetJ t, guardJ g, bodyClauseJ b])
+  | .either a b => tagged "bodyEither" (obj ["left", "right"] [bodyClauseJ a, bodyClauseJ b])
 
 def bodyClauseOf : Nat → Json → Except String BodyClause
   | 0, _ => .error "a body clause nested beyond the limit"
@@ -923,6 +942,9 @@ def bodyClauseOf : Nat → Json → Except String BodyClause
       let [t, g, b] ← fields v ["target", "tag", "body"] | throw "guarded"
       pure (.guarded (← under "target" (elemTargetOf t)) (← under "tag" (guardOf g))
         (← under "body" (bodyClauseOf n b)))
+    | "bodyEither" => under k do
+      let [l, r] ← fields v ["left", "right"] | throw "bodyEither"
+      pure (.either (← under "left" (bodyClauseOf n l)) (← under "right" (bodyClauseOf n r)))
     | _ => .clause <$> clauseOf boundOf (n + 1) j
 
 theorem bodyClauseOf_bodyClauseJ (B : BodyClause) : ∀ n, bodyClauseDepth B ≤ n →
@@ -940,6 +962,12 @@ theorem bodyClauseOf_bodyClauseJ (B : BodyClause) : ∀ n, bodyClauseDepth B ≤
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [bodyClauseDepth] at hn; omega⟩
     have hb := ih m (by simp [bodyClauseDepth] at hn; omega)
     simp [bodyClauseJ, bodyClauseOf, fields_obj, hb] <;> try rfl
+  | either a b iha ihb =>
+    intro n hn
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by simp [bodyClauseDepth] at hn; omega⟩
+    have ha := iha m (by simp [bodyClauseDepth] at hn; omega)
+    have hb := ihb m (by simp [bodyClauseDepth] at hn; omega)
+    simp [bodyClauseJ, bodyClauseOf, fields_obj, ha, hb] <;> try rfl
 
 /-! ## Index facts -/
 

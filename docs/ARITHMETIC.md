@@ -635,15 +635,15 @@ D &::= n \mid -n \mid S \mid S + n \mid S - n\\
 S &::= P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length})\\
 A &::= \mathtt{safeInteger}(P) \mid \mathtt{safeInteger}(I) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P \mid P[Q]\ \texttt{===}\ t \mid P[Q]\ \texttt{!==}\ t\\
 I &::= P[Q] \mid P[Q].p\\
-E &::= n \mid P \mid P.\mathtt{length} \mid I \mid I.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid n\cdot I \mid n\cdot I.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
+E &::= n \mid P \mid P.\mathtt{length} \mid I \mid I.\mathtt{length} \mid (P\ \texttt{\&}\ m) \mid (I\ \texttt{\&}\ m) \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid n\cdot I \mid n\cdot I.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
 P,Q &::= x \mid P.f\\
 B &::= A' \mid P[x]\ \texttt{===}\ t \mid P[x].p\ \texttt{===}\ t \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
-E' &::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid P[x].p.\mathtt{length} \mid n\cdot E'
+E' &::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid P[x].p.\mathtt{length} \mid (P[x]\ \texttt{\&}\ m) \mid n\cdot E'
 \end{aligned}
 ```
 
-with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`t`$ one of `null`, `undefined`, `true`, `false`, $`n`$ and $`d`$
-integer literals ($`d\ge 0`$), $`x`$ a parameter (`result` in an
+with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, `!==`, $`t`$ one of `null`, `undefined`, `true`, `false`, $`n`$, $`d`$ and $`m`$
+decimal or hexadecimal (`0x…`) integer literals ($`d\ge 0`$, $`0\le m < 2^{31}`$), $`x`$ a parameter (`result` in an
 `@ensures`, `this` in a type invariant, a binding in a loop invariant) or a
 quantified atom's index, $`f`$ a field name, $`p`$ a field path, and $`A'`$ an atom over terms
 $`E'`$, `safeInteger(P[x])` among them. A clause starts with its
@@ -1564,11 +1564,10 @@ integer constant. The fact holds only where each bound denotes an integer;
 the clause states no other fact of a bound. A body atom `P[i] === t` or
 `P[i].p === t`, with $`t`$ one of `null`, `undefined`, `true`, `false`,
 states the guarded clause $`P[i]=t\lor\bot`$: at each index of the interval
-the read evaluates and gives $`t`$. Where the clause is read, a body atom
-`P[i] !== t` is refused (`quantified-negated-tag-refused`), as is a tag atom
-in a disjunction of the body other than its leading guards
-(`quantified-tag-disjunction-refused`) and a bound of any other form
-(`quantified-malformed-bound-refused`).
+the read evaluates and gives $`t`$; in a disjunction of the body, it is that
+disjunction's arm (`BodyClause.either`). Where the clause is read, a body atom
+`P[i] !== t` is refused (`quantified-negated-tag-refused`), as is a bound of
+any other form (`quantified-malformed-bound-refused`).
 
 **Subintervals.** Every entailment of index facts (an edge, a loop head, a
 return, a call's precondition) derives a quantified fact over a subinterval
@@ -1680,6 +1679,43 @@ put that index at least zero and below the prefix bound.
 Across calls and heap transitions, a body
 projecting an element's length depends on the array's element spines region
 (`Footprints.Region.elemSpines`, proved by `Survival.every_supported`).
+
+**Bitmask terms and disjunctive body clauses.** A linear term kind
+$`\mathrm{bitMask}(m)`$ ($`0 \le m < 2^{31}`$) denotes the signed 32-bit
+bitwise AND $`\mathrm{toInt32}(x) \mathbin{\&} m`$ of a numeric value $`x`$.
+Bitwise AND (`x & c`) emits the exact identity $`r = (x \mathbin{\&} c)`$ and
+propagates every active mask $`M`$ whose bits are contained in $`c`$ or
+cleared by $`c`$; bitwise OR (`x | c`) preserves $`(r \mathbin{\&} M) = (x \mathbin{\&} M)`$
+when $`(c \mathbin{\&} M) = 0`$ and fixes $`(r \mathbin{\&} M) = M`$ when
+$`(c \mathbin{\&} M) = M`$ (`IndexWrites.bitMaskAtoms`, proved by
+`bitMaskAtoms_holds`). Inside a quantified body, `BodyClause.either` states a
+disjunction of arbitrary body clauses (linear comparisons or guarded clauses),
+and a standalone element tag atom `P[i] === null` elaborates to the guarded
+contradiction $`P[i] = \mathtt{null} \lor (1 \le 0)`$:
+
+```ts
+/** @invariant forall i in this.extras: (this.flags[i] & 0x7) !== 2 || this.extras[i] === null */
+```
+
+When a typed-array write `flags[i] = cur | 0x8` updates a parallel view whose
+active mask $`M`$ is preserved (such as `0x7` under `| 0x8`, since
+`(0x8 & 0x7) === 0`), `PromiseCalls.everyParallelViewWritten` (proved by
+`every_parallel_view_written`) preserves a quantified clause over `extras`
+on any interval $`[a, b)`$: the written index lies outside the interval
+($`b \le i`$ or $`i + 1 \le a`$), or the written value keeps every projection
+the body reads of the view. When a branch tests `(flags[patchAt]! & KIND_BITS) === PRESERVED_SPACE`,
+`HeapKnowledge.restateAtIndex` links `(flags[patchAt] & 7)` to the branch value
+and promotes `atIndex flags patchAt ((e & 7) = 2)`; an element write
+`advances[patchAt] = [5, 5, 5]` then instantiates the bitmask-guarded clause on
+`extras` at `patchAt` (an index $`k`$ the facts put at least zero and inside
+the clause's interval, $`a \le k < b`$), refutes `(flags[patchAt] & 7) !== 2`, derives
+`extras[patchAt] === null` (`HeapKnowledge.instantiateEveryAtK`,
+`HeapKnowledge.atIndexTag`), and preserves
+`forall i in advances: advances[i] === null || extras[i] === null || advances[i].length <= extras[i].length`.
+A non-number array element write cannot modify any typed-array view spine or
+view cell (`HeapExpressionRules.viewPathOf`, `ElementWriteHeap.viewCellKept`),
+so parallel-view quantified clauses survive across non-number overwrites of
+apart arrays.
 
 **Frame conditions.** A body containing an element projection, element guard, parallel array or offset is preserved
 across heap extension and unchanged heaps. The growth and element-write

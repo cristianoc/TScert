@@ -45,6 +45,7 @@ def invariantFact (now entry : Nat → Option (Nat × List String)) :
       | .guarded (.parallel s' p' ep) g b => do
           let (sl, pr) ← now s'
           pure (.guarded (.parallel sl (pr ++ p') ep) g (← rerootBody b))
+      | .either a b => do pure (.either (← rerootBody a) (← rerootBody b))
     let body ← body.mapM rerootBody
     pure (.every slot (pre ++ path) start stop body)
   | .atIndex p path idx guard body => do
@@ -414,6 +415,17 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
         pure (b, c)
       pure (.atom (.le form bound))
+    | .ne terms bound => do
+      let form ← terms.mapM fun (v, c) => do
+        let b : HeapKnowledge.Bound ← match v with
+          | .index => pure .index
+          | .elem => pure .elem
+          | .offset d => pure (.offset d)
+          | .project k p => pure (.project k p)
+          | .parallel n path kind ep => do let (z, r) ← root n path; pure (.parallel z r kind ep)
+          | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
+        pure (b, c)
+      pure (.atom (.ne form bound))
     | .either A B => do pure (.either (← linearBody A) (← linearBody B))
     | .guarded .. => throw (locatedRefusal tbl node.source .entryClaim
         "an element guard may not appear inside a disjunction")
@@ -422,6 +434,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | .guarded (.parallel n path ep) g b => do
       let (z, r) ← root n path
       pure (.guarded (.parallel z r ep) g (← bodyClause b))
+    | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
     | c => .clause <$> linearBody c
   let lowerBound : SourceClaims.BoundClaim → Compiler HeapKnowledge.IndexBound := fun (bs, off) => do
     let base ← bs.mapM fun (sn, sp, sk) => do

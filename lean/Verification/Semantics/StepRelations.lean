@@ -657,6 +657,7 @@ def bodyClause : BodyClause → List BodyClause
   | .guarded t g b => match t.mapM P.slot with
     | some t' => (bodyClause b).map (.guarded t' g)
     | none => []
+  | .either a b => (bodyClause a).flatMap fun a' => (bodyClause b).map (.either a' ·)
 
 /-- The disjunction of two facts neither of which is `isFalsum`: two bounds
 on one linear form are the larger bound; any other two are their
@@ -1168,6 +1169,10 @@ theorem Composer.bodyClause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : L
       rcases hB with ⟨w, hw, hg⟩ | ⟨hp, hb⟩
       · exact .inl ⟨w, htr ▸ hw, hg⟩
       · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, htr ▸ hw⟩, bodyClause_holds hs hb d hd⟩
+  | .either a b, hB, D, hD => by
+    simp only [Composer.bodyClause, List.mem_flatMap, List.mem_map] at hD
+    obtain ⟨a', ha', b', hb', rfl⟩ := hD
+    exact hB.imp (fun h => bodyClause_holds hs h a' ha') (fun h => bodyClause_holds hs h b' hb')
 
 /-- **Composition is sound for every form of fact** (proved): where a post
 fact holds at the callee's states and the composition's assumptions hold of

@@ -620,25 +620,53 @@ def restateAddedReads (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : Stor
   return s
 
 /-- Whether an unconditional linear or singly guarded linear fact accesses a
-projection (a length, view or field) on `r`, or a length slot of `r`. -/
-def mentionsElemProj (r : Nat) (lens : List HeapKnowledge.IndexAtom) (F : HeapKnowledge.IndexFact) : Bool :=
+projection (a length, view, bitmask or field) on `r`, or a length/mask slot of `r`. -/
+def mentionsElemProj (r : Nat) (lens masks : List HeapKnowledge.IndexAtom) (F : HeapKnowledge.IndexFact) : Bool :=
   let lenSlots := lens.filterMap fun a => match a.fact with | .length _ n => some n | _ => none
+  let maskSlots := masks.filterMap fun a => (HeapKnowledge.matchMaskLe r a.fact).map Prod.fst
   let hit (t : HeapKnowledge.Term) : Bool :=
     (!t.atEntry && t.slot == r && (t.kind != .value || !t.path.isEmpty)) ||
-    (!t.atEntry && t.kind == .value && t.path.isEmpty && lenSlots.contains t.slot)
+    (!t.atEntry && t.kind == .value && t.path.isEmpty && (lenSlots.contains t.slot || maskSlots.contains t.slot))
   match F with
   | .linear L => L.vars.any hit
   | .guarded s [] _ (.linear L) => s == r && L.vars.any hit
   | _ => false
 
+/-- Source element slot of a mask equality `v - (r & mask) ≤ 0`. -/
+def maskSourceOf (v : Nat) : HeapKnowledge.IndexFact → Option Nat
+  | .linear (.le [(t1, 1), (t2, -1)] 0) =>
+    if !t1.atEntry && t1.kind == .value && t1.path.isEmpty && t1.slot == v &&
+       !t2.atEntry && t2.path.isEmpty then
+      match t2.kind with
+      | .bitMask _ => some t2.slot
+      | _ => none
+    else none
+  | _ => none
+
 /-- Restate an added linear or singly guarded linear fact over an element read's
-projection (or length slot) as `atIndex` (`HeapKnowledge.restateAtIndex`). -/
+projection (or length/bitmask slot), or an integer element read over a field-read
+array, as `atIndex` (`HeapKnowledge.restateAtIndex`). -/
 def restateAddedAtIndex (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : Store := Id.run do
-  if !x.cond.isNone then return s
+  if !x.cond.isNone then
+    match x.fact with
+    | .linear _ =>
+      let atEqs := (s.about v).filterMap fun b => match b with
+        | .index a => if a.cond.isNone then match a.fact with
+            | .atIndex _ _ _ none _ => some a
+            | _ => none
+          else none
+        | _ => none
+      if atEqs.isEmpty then return s
+      let mut s := s
+      for y in HeapKnowledge.restateAtIndex [] (· == v) (x :: atEqs) do
+        s := s.add (.index y)
+      return s
+    | _ => return s
   match x.fact with
   | .linear _ | .guarded _ [] _ (.linear _) =>
     let elemSlots := v :: (s.about v).filterMap fun b => match b with
       | .index ⟨.length r n, none, _⟩ => if n == v then some r else none
+      | .index ⟨F, none, _⟩ => maskSourceOf v F
       | _ => none
     let mut s := s
     for r in elemSlots do
@@ -655,7 +683,13 @@ def restateAddedAtIndex (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : St
               | _ => none
             else none
           | _ => none
-        if mentionsElemProj r lens x.fact then
+        let masks := (s.about r).filterMap fun b => match b with
+          | .index a => if a.cond.isNone then match a.fact with
+              | .linear _ => some a
+              | _ => none
+            else none
+          | _ => none
+        if mentionsElemProj r lens masks x.fact then
           let arrReads := elems.flatMap fun a => match a.fact with
             | .element _ arr _ => (s.about arr).filterMap fun b => match b with
                 | .link g => if !g.alias && g.value == arr then some g else none
@@ -664,9 +698,36 @@ def restateAddedAtIndex (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : St
           let dropped : Nat → Bool := fun w =>
             w == r ||
             lens.any (fun a => match a.fact with | .length _ n => n == w | _ => false) ||
+            masks.any (fun a => match HeapKnowledge.matchMaskLe r a.fact with | some (ms, _) => ms == w | none => false) ||
             arrReads.any (·.value == w)
-          for y in HeapKnowledge.restateAtIndex arrReads dropped (elems ++ lens ++ [x]) do
+          for y in HeapKnowledge.restateAtIndex arrReads dropped (elems ++ lens ++ masks ++ [x]) do
             s := s.add (.index y)
+    let atEqs := (s.about v).filterMap fun b => match b with
+      | .index a => if a.cond.isNone then match a.fact with
+          | .atIndex _ _ _ none _ => some a
+          | _ => none
+        else none
+      | _ => none
+    if !atEqs.isEmpty then
+      for y in HeapKnowledge.restateAtIndex [] (· == v) (x :: atEqs) do
+        s := s.add (.index y)
+    return s
+  | .element r arr _ =>
+    if r != v then return s
+    let arrReads := (s.about arr).filterMap fun b => match b with
+      | .link g => if !g.alias && g.value == arr then some g else none
+      | _ => none
+    if arrReads.isEmpty then return s
+    let ints := (s.about r).filterMap fun b => match b with
+      | .index a => if a.cond.isNone then match a.fact with
+          | .int r' => if r' == r then some a else none
+          | _ => none
+        else none
+      | _ => none
+    if ints.isEmpty then return s
+    let mut s := s
+    for y in HeapKnowledge.restateAtIndex arrReads (fun w => arrReads.any (·.value == w)) (x :: ints) do
+      s := s.add (.index y)
     return s
   | _ => return s
 

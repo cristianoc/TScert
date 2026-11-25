@@ -394,6 +394,8 @@ def bodyClauseFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : BodyCla
   | .clause F, .clause F' => bodyFactFollows M m F F'
   | .guarded t g B, .guarded t' g' B' =>
     elemTargetFollows M m t t' && g == g' && bodyClauseFollows M m B B'
+  | .either A B, .either A' B' =>
+    bodyClauseFollows M m A A' && bodyClauseFollows M m B B'
   | _, _ => false
 
 theorem bodyClauseFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
@@ -415,7 +417,12 @@ theorem bodyClauseFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping}
     · exact .inl ⟨w, htr.symm.trans hw, hg⟩
     · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hep ▸ hne); ⟨w, htr.symm.trans hw⟩,
         bodyClauseFollows_sound hM hB' hb⟩
-  | .clause _, .guarded _ _ _, hm, _ | .guarded _ _ _, .clause _, hm, _ => by
+  | .either A B, .either A' B', hm, hB => by
+    simp only [bodyClauseFollows, Bool.and_eq_true] at hm
+    exact hB.imp (bodyClauseFollows_sound hM hm.1) (bodyClauseFollows_sound hM hm.2)
+  | .clause _, .guarded _ _ _, hm, _ | .guarded _ _ _, .clause _, hm, _
+  | .clause _, .either _ _, hm, _ | .either _ _, .clause _, hm, _
+  | .guarded _ _ _, .either _ _, hm, _ | .either _ _, .guarded _ _ _, hm, _ => by
     simp [bodyClauseFollows] at hm
 
 def indexBoundFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (b b' : IndexBound) : Bool :=
@@ -641,13 +648,18 @@ def viewRange (t : Term) : List (Linear.Fact Term) :=
 def valueRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] (2 ^ 53 - 1), .le [(t, 1)] (2 ^ 53 - 1)]
 
-/-- The range a term's kind gives it: a length's, a typed-array length's or a
-string's length's, none of a value, whose range the entailment reads apart
-(`valueRanges`). -/
+/-- The range of a masked 32-bit integer `0 ≤ t ≤ m`. -/
+def bitMaskRange (t : Term) (m : Nat) : List (Linear.Fact Term) :=
+  if m < 2 ^ 31 then [.le [(t, -1)] 0, .le [(t, 1)] (m : Int)] else []
+
+/-- The range a term's kind gives it: a length's, a typed-array length's, a
+string's length's, or a bitmask's, none of a value, whose range the entailment
+reads apart (`valueRanges`). -/
 def termRange (t : Term) : List (Linear.Fact Term) :=
   match t.kind with
   | .length => lengthRange t
   | .view | .strLength => viewRange t
+  | .bitMask m => bitMaskRange t m
   | .value => []
 
 /-- The linear facts a fact states: a linear fact itself, with the range of
@@ -687,6 +699,7 @@ integer (`intSlot`); a slot's length, where a length atom names it. -/
 def termDefined (as : List IndexAtom) (t : Term) : Bool :=
   (!t.atEntry && t.path.isEmpty && match t.kind with
     | .value => intSlot as t.slot
+    | .bitMask m => decide (m < 2 ^ 31) && intSlot as t.slot
     | .length => as.any fun a => a.cond.isNone && match a.fact with
       | .length y _ => y == t.slot
       | _ => false
@@ -740,6 +753,16 @@ theorem valueRange_holds {ρ h} {t : Term} (hk : t.kind = .value) (hx : (termVal
   simp only [valueRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
+theorem bitMaskRange_holds {ρ h} {t : Term} {m : Nat} (hk : t.kind = .bitMask m) (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ bitMaskRange t m, F.Holds (termValuation ε ρ h) := by
+  obtain ⟨H, v, n, hkv, hn⟩ := termValue_kind hx
+  rw [hk] at hkv
+  obtain ⟨h0, h1, hm⟩ := bitMaskOf_range (v := v) hkv
+  have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
+  intro F hF
+  simp only [bitMaskRange, hm, ite_true, List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
+
 theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ε ρ h t).isSome) :
     ∀ F ∈ termRange t, F.Holds (termValuation ε ρ h) := by
   unfold termRange
@@ -747,6 +770,7 @@ theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ε ρ h t).isSome) :
   · exact lengthRange_holds (by assumption) hx
   · exact viewRange_holds (by assumption) hx
   · exact strRange_holds (by assumption) hx
+  · exact bitMaskRange_holds (by assumption) hx
   · simp
 
 theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
@@ -815,6 +839,12 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ
     simp only [List.isEmpty_nil, Bool.true_and] at ht
     cases k with
     | value => exact intSlot_sound he ht
+    | bitMask m =>
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at ht
+      obtain ⟨hm, hi⟩ := ht
+      obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (intSlot_sound he hi)
+      obtain ⟨b, hb, -⟩ := intValue_safe hz
+      simp only [termValue_nil, kindValue, bitMaskOf, hb, hm, ite_true, Option.isSome_some]
     | length =>
       obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -1046,7 +1076,7 @@ theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.
       have hnone : readPath h (ρ g.cell) (f :: p) = none := by simp [he, readPath, hlk]
       simp only [termValue, termAt, Bool.false_eq_true, ite_false, hnone, Option.bind_none, hr.2]
       cases p with
-      | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, strLengthOf,
+      | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, bitMaskOf,
           Footprints.spineOf, Footprints.fieldsOf]
       | cons q p => simp [readPath]
 
@@ -1327,6 +1357,7 @@ theorem renameClause_mapVars {V W : Type} (g : V → W) (F : LinearClause V) :
 def lowerBodyClause (reads : List (Nat × String × Nat)) : BodyClause → BodyClause
   | .clause F => .clause (renameClause (lowerBound reads) F)
   | .guarded t g b => .guarded (lowerTarget reads t) g (lowerBodyClause reads b)
+  | .either a b => .either (lowerBodyClause reads a) (lowerBodyClause reads b)
 
 theorem lowerBodyClause_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) {ls' : List (Option Nat)} {i : Nat} :
@@ -1365,6 +1396,7 @@ theorem lowerBodyClause_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl :
     · exact .inl ⟨w, hread w hw, hg⟩
     · exact .inr ⟨fun hne => let ⟨w, hw⟩ := hp (hown ▸ hne); ⟨w, hread w hw⟩,
         lowerBodyClause_holds hl hr hb⟩
+  | .either _ _, hB => hB.imp (lowerBodyClause_holds hl hr) (lowerBodyClause_holds hl hr)
 
 /-- The plain read links: a slot's value read as field `f` of slot `c`. -/
 def plainReads (ls : HeapLinks.Links) : List (Nat × String × Nat) :=
@@ -1442,6 +1474,8 @@ theorem lowerRequiredBody_iff {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
       | parallel s p ep => simp only [lowerTarget, ElemTarget.read, lowerRequiredRoot_eq hl]
     have hown : (lowerTarget (plainReads ls) t).ownElement = t.ownElement := by cases t <;> rfl
     simp only [lowerBodyClause, BodyClause.HoldsAt, heq, hown, lowerRequiredBody_iff hl b]
+  | .either a b =>
+    or_congr (lowerRequiredBody_iff hl a) (lowerRequiredBody_iff hl b)
 
 def lowerIndexBound (reads : List (Nat × String × Nat)) (b : IndexBound) : IndexBound :=
   { b with base := b.base.map (lowerTerm reads) }
@@ -2470,16 +2504,19 @@ private theorem impossibleLinearBody_sound {val : Bound → Option Int} :
     obtain ⟨ha, hb'⟩ := Bool.and_eq_true_iff.mp hc
     exact hb.elim (impossibleLinearBody_sound ha) (impossibleLinearBody_sound hb')
 
-/-- A guarded body whose continuation is an impossible linear clause holds
-only through its tag. -/
-private def impossibleBody : BodyClause → Bool
+/-- A body clause with no satisfying interpretation (`⊥`, or `⊥ ∨ ⊥`). -/
+def impossibleBody : BodyClause → Bool
   | .clause c => impossibleLinearBody c
   | .guarded .. => false
+  | .either a b => impossibleBody a && impossibleBody b
 
-private theorem impossibleBody_sound {ε : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
+theorem impossibleBody_sound {ε : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} :
     ∀ {b : BodyClause}, impossibleBody b = true → b.HoldsAt ε ρ h ls i → False
   | .clause _, hc, hb => impossibleLinearBody_sound hc hb
   | .guarded .., hc, _ => by cases hc
+  | .either _ _, hc, hb => by
+    obtain ⟨ha, hb'⟩ := Bool.and_eq_true_iff.mp hc
+    exact hb.elim (impossibleBody_sound ha) (impossibleBody_sound hb')
 
 /-- A quantified guard witnesses its element read where it holds through its
 tag, or where its read is one that can fail (`ElemTarget.ownElement`), since
@@ -2494,7 +2531,7 @@ private def elementGuardReadFollows (M : Nat → List Nat) (m : PointClaims.Mapp
       match want with
       | none => !t.ownElement || impossibleBody b
       | some tag => g == tag && impossibleBody b
-  | .clause _ => false
+  | .clause _ | .either _ _ => false
 
 private theorem elementGuardReadFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x)
@@ -2508,7 +2545,7 @@ private theorem elementGuardReadFollows_sound {M : Nat → List Nat} {m : PointC
     (hb : b.HoldsAt ε ρ h ls i) :
     ∃ v, target.read (PointClaims.mapEnv m ρ) h ls' i = some v ∧ ∀ g, want = some g → g.holds v := by
   cases b with
-  | clause _ => cases hf
+  | clause _ | either _ _ => cases hf
   | guarded source tag body =>
     obtain ⟨he, hg⟩ := Bool.and_eq_true_iff.mp hf
     have hr := elemTargetFollows_sound (h := h) (ls := ls) (i := i) hM he
@@ -2539,6 +2576,7 @@ where its read evaluates: always for the quantified array's own element
 private def bodyFromGuards (check : ElemTarget → Option GuardTag → Bool) : BodyClause → Bool
   | .clause _ => false
   | .guarded t g b => check t (some g) || ((t.ownElement || check t none) && bodyFromGuards check b)
+  | .either a b => bodyFromGuards check a || bodyFromGuards check b
 
 private theorem bodyFromGuards_sound {check : ElemTarget → Option GuardTag → Bool} {ρ : Env} {h : Heap}
     {ls : List (Option Nat)} {i : Nat}
@@ -2555,6 +2593,8 @@ private theorem bodyFromGuards_sound {check : ElemTarget → Option GuardTag →
       rw [hown, Bool.false_or] at hr
       obtain ⟨v, hv, _⟩ := hc t none hr
       exact ⟨v, hv⟩
+  | .either _ _, hf =>
+    (Bool.or_eq_true_iff.mp hf).imp (bodyFromGuards_sound hc) (bodyFromGuards_sound hc)
 
 /-- A target guarded body holds where the same element test is known for an
 interval covering its domain. Its array must itself have an element spine. -/
@@ -3608,14 +3648,16 @@ theorem bodyClauseEntails_sound {lt : Term → Term} {as : List IndexAtom} {lbod
 
 /-- Whether a quantified body clause, read at one index, gives an `atIndex`
 fact with guard `guard` and (lifted) body `lbody`: a linear clause entailing
-`lbody`, or a chain of guards on the element itself, each with tag `guard`,
-ending in a clause that entails `lbody` or one that cannot hold. -/
+`lbody`, a chain of guards on the element itself, each with tag `guard`,
+ending in a clause that entails `lbody` or one that cannot hold, or a
+disjunction both of whose arms give it. -/
 def everyBodyGivesAtIndex (lt : Term → Term) (as : List IndexAtom) (guard : Option GuardTag)
     (lbody : LinearClause Bound) : BodyClause → Bool
   | .clause F' => bodyClauseEntails lt as (renameClause (liftBound lt) F') lbody
   | .guarded (.self []) g inner =>
     guard == some g && (impossibleBody inner || everyBodyGivesAtIndex lt as guard lbody inner)
   | .guarded .. => false
+  | .either A B => everyBodyGivesAtIndex lt as guard lbody A && everyBodyGivesAtIndex lt as guard lbody B
 
 theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {ρ : Env} {h : Heap}
     {ls : List (Option Nat)} {i : Nat} {guard : Option GuardTag} {body : LinearClause Bound}
@@ -3659,6 +3701,10 @@ theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {
         · rcases hcase with himp | hmatch
           · exact (impossibleBody_sound himp hinner).elim
           · exact ih hmatch hinner
+  | either A B ihA ihB =>
+    intro hf hB
+    simp only [everyBodyGivesAtIndex, Bool.and_eq_true] at hf
+    exact hB.elim (ihA hf.1) (ihB hf.2)
 
 /-- Whether an indexed-element fact `atIndex s p idx guard body` follows from
 the source atoms `as`: by matching an existing `atIndex` (at a shared array
@@ -4840,27 +4886,32 @@ theorem liftPath_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env} {
     · cases ht; rfl
 
 /-- Abstract a term relative to an element slot `r` (with its known length
-slots `lenSlots`), lifting all other dropped slots through `breads`. -/
-def abstractAtElem (r : Nat) (lenSlots : List Nat) (dropped : Nat → Bool)
-    (breads : List (Nat × String × Nat)) (t : Term) : Option Bound :=
+slots `lenSlots` and bitmask slots `maskSlots`), lifting all other dropped slots
+through `breads`. -/
+def abstractAtElem (r : Nat) (lenSlots : List Nat) (maskSlots : List (Nat × Nat))
+    (dropped : Nat → Bool) (breads : List (Nat × String × Nat)) (t : Term) : Option Bound :=
   if !t.atEntry && t.slot == r then
     match t.kind, t.path with
     | .value, [] => some .elem
     | k, p => some (.project k p)
   else if !t.atEntry && t.kind == .value && t.path.isEmpty && lenSlots.contains t.slot then
     some (.project .length [])
+  else if !t.atEntry && t.kind == .value && t.path.isEmpty && (maskSlots.lookup t.slot).isSome then
+    (maskSlots.lookup t.slot).map fun m => .project (.bitMask m) []
   else
     (liftDropped dropped breads breads.length t).map .free
 
 theorem abstractAtElem_eq {ls : HeapLinks.Links} {dropped : Nat → Bool}
     {breads : List (Nat × String × Nat)} {r : Nat} {lenSlots : List Nat}
+    {maskSlots : List (Nat × Nat)}
     {elemLs : List (Option Nat)} {i : Nat} {ρ : Env} {h : Heap}
     (hl : HeapLinks.Holds ls ρ h) (hbr : ∀ g ∈ breads, g ∈ bridgeReads ls)
     (hlt : i < elemLs.length)
     (hpres : ∀ l, elemLs[i]? = some (some l) → h[l]? = some (ρ r))
     (hhole : elemLs[i]? = some none → ρ r = .undef)
     (hlen : ∀ n ∈ lenSlots, termValue ε ρ h (.value n) = termValue ε ρ h (.length r))
-    {t : Term} {b : Bound} (hab : abstractAtElem r lenSlots dropped breads t = some b) :
+    (hmask : ∀ s m, maskSlots.lookup s = some m → termValue ε ρ h (.value s) = termValue ε ρ h (.now (.bitMask m) r []))
+    {t : Term} {b : Bound} (hab : abstractAtElem r lenSlots maskSlots dropped breads t = some b) :
     boundValue ε ρ h elemLs i b = termValue ε ρ h t := by
   have hproj : ∀ k p, boundValue ε ρ h elemLs i (.project k p) = termValue ε ρ h (.now k r p) := by
     intro k p
@@ -4897,7 +4948,7 @@ theorem abstractAtElem_eq {ls : HeapLinks.Links} {dropped : Nat → Bool}
       | cons f q =>
         simp only [Option.some.injEq] at hab; subst hab
         exact hproj .value (f :: q)
-    | length | view | strLength =>
+    | length | view | strLength | bitMask _ =>
       simp only [Option.some.injEq] at hab; subst hab
       exact hproj _ p
   · split at hab
@@ -4909,8 +4960,41 @@ theorem abstractAtElem_eq {ls : HeapLinks.Links} {dropped : Nat → Bool}
       simp only at hne hk hp hmem; subst hne; subst hk; subst hp
       rw [hproj .length []]
       exact (hlen s hmem).symm
-    · obtain ⟨t', ht', rfl⟩ := Option.map_eq_some_iff.mp hab
-      exact liftDropped_eq hl hbr _ t t' ht'
+    · split at hab
+      · rename_i hcond
+        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hcond
+        obtain ⟨⟨⟨hne, hk⟩, hp⟩, _⟩ := hcond
+        obtain ⟨m, hm, rfl⟩ := Option.map_eq_some_iff.mp hab
+        obtain ⟨k, s, p, ae⟩ := t
+        simp only at hne hk hp hm; subst hne; subst hk; subst hp
+        rw [hproj (.bitMask m) []]
+        exact (hmask s m hm).symm
+      · obtain ⟨t', ht', rfl⟩ := Option.map_eq_some_iff.mp hab
+        exact liftDropped_eq hl hbr _ t t' ht'
+
+/-- Match an unconditional linear inequality `ms - (r & mask) ≤ 0` on slot `r`. -/
+def matchMaskLe (r : Nat) : IndexFact → Option (Nat × Nat)
+  | .linear (.le [(t1, 1), (t2, -1)] 0) =>
+    if !t1.atEntry && t1.kind == .value && t1.path.isEmpty &&
+       !t2.atEntry && t2.path.isEmpty && t2.slot == r then
+      match t2.kind with
+      | .bitMask mask => some (t1.slot, mask)
+      | _ => none
+    else none
+  | _ => none
+
+def Bound.isDirectProj : Bound → Bool
+  | .elem | .project _ [] => true
+  | _ => false
+
+/-- Match an unconditional `atIndex s p idx none (bd - ms <= 0)` linking a direct
+element projection `bd` to a dropped integer slot `ms`. -/
+def matchAtIndexSlotEq (dropped : Nat → Bool) : IndexFact → Option (Nat × List String × Term × Bound × Nat)
+  | .atIndex s p idx none (.atom (.le [(bd, 1), (.free t, -1)] 0)) =>
+    if !t.atEntry && t.kind == .value && t.path.isEmpty && dropped t.slot && bd.isDirectProj then
+      some (s, p, idx, bd, t.slot)
+    else none
+  | _ => none
 
 /-- Indexed-element facts restated across dropped slots: existing `atIndex`
 atoms naming a dropped slot lifted through reads, and linear (or singly guarded
@@ -4946,34 +5030,82 @@ def restateAtIndex (ls : HeapLinks.Links) (dropped : Nat → Bool) (as : List In
           | .length r' n => if r' == r then some n else none
           | _ => none
           else none
+        let maskSlots : List (Nat × Nat) := as.filterMap fun a => if a.cond.isNone then
+          match matchMaskLe r a.fact with
+          | some (ms, mask) =>
+            if as.any (fun b => b.cond.isNone &&
+                b.fact == .linear (.le [(.value ms, -1), (.now (.bitMask mask) r [], 1)] 0))
+            then some (ms, mask) else none
+          | none => none
+          else none
         let mentionsR (t : Term) : Bool :=
           (!t.atEntry && t.slot == r) ||
-            (!t.atEntry && t.kind == .value && t.path.isEmpty && lenSlots.contains t.slot)
-        as.filterMap fun a => if a.cond.isNone then match a.fact with
+            (!t.atEntry && t.kind == .value && t.path.isEmpty &&
+              (lenSlots.contains t.slot || (maskSlots.lookup t.slot).isSome))
+        let maskLinks : List IndexAtom := maskSlots.flatMap fun (ms, mask) =>
+          if ms != r then
+            [{ fact := .atIndex x' p' idx' none (.atom (.le [(.project (.bitMask mask) [], 1), (.free (.value ms), -1)] 0)) },
+             { fact := .atIndex x' p' idx' none (.atom (.le [(.free (.value ms), 1), (.project (.bitMask mask) [], -1)] 0)) }]
+          else []
+        let facts := as.filterMap fun a => if a.cond.isNone then match a.fact with
           | .linear F =>
             if F.vars.any mentionsR then
-              (F.mapVars (abstractAtElem r lenSlots dropped breads)).map fun F' =>
+              (F.mapVars (abstractAtElem r lenSlots maskSlots dropped breads)).map fun F' =>
                 { fact := .atIndex x' p' idx' none (.atom F') }
             else none
           | .guarded s [] g (.linear F) =>
             if s == r && F.vars.any mentionsR then
-              (F.mapVars (abstractAtElem r lenSlots dropped breads)).map fun F' =>
+              (F.mapVars (abstractAtElem r lenSlots maskSlots dropped breads)).map fun F' =>
                 { fact := .atIndex x' p' idx' (some g) (.atom F') }
             else none
           | _ => none
           else none
+        maskLinks ++ facts
       | _, _ => []
-  lifted ++ introduced
+  let liftedElems : List IndexAtom :=
+    if preads.isEmpty then [] else
+    as.flatMap fun a => if a.cond.isNone then match a.fact with
+      | .element r x j =>
+        if dropped x && !dropped r && intSlot as r then
+          match liftPath dropped preads preads.length (x, []), liftDropped dropped breads breads.length (.value j) with
+          | some (x', p'), some idx' =>
+            [{ fact := .atIndex x' p' idx' none (.atom (.le [(.elem, 1), (.free (.value r), -1)] 0)) },
+             { fact := .atIndex x' p' idx' none (.atom (.le [(.free (.value r), 1), (.elem, -1)] 0)) }]
+          | _, _ => []
+        else []
+      | _ => []
+      else []
+  let substLinks : List IndexAtom :=
+    as.flatMap fun a => if a.cond.isNone then
+      match matchAtIndexSlotEq dropped a.fact with
+      | some (s, p, idx, bd, ms) =>
+        if !dropped s && !idx.slots.any dropped &&
+           as.any (fun b => b.cond.isNone &&
+             b.fact == .atIndex s p idx none (.atom (.le [(.free (.value ms), 1), (bd, -1)] 0))) then
+          as.filterMap fun bf => match bf.fact with
+            | .linear F =>
+              if !(bf.cond.any dropped) && F.vars.contains (.value ms) then
+                (F.mapVars fun t =>
+                  if t == .value ms then some bd
+                  else if t.slots.any dropped then none
+                  else some (.free t)).map fun F' =>
+                    { fact := .atIndex s p idx none (.atom F'), cond := bf.cond, negated := bf.negated }
+              else none
+            | _ => none
+        else []
+      | none => []
+      else []
+  lifted ++ introduced ++ liftedElems ++ substLinks
 
 theorem restateAtIndex_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {ρ h}
     (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (restateAtIndex ls dropped as) ρ h := by
-  intro a ha _
+  intro a ha hcondA
   simp only [restateAtIndex, List.mem_append] at ha
   have hpr : ∀ g ∈ (plainReads ls).filter (fun g => dropped g.2.2), g ∈ plainReads ls :=
     fun g hg => (List.mem_filter.mp hg).1
   have hbr : ∀ g ∈ (bridgeReads ls).filter (fun g => dropped g.2.2), g ∈ bridgeReads ls :=
     fun g hg => (List.mem_filter.mp hg).1
-  rcases ha with ha | ha
+  rcases ha with ((ha | ha) | ha) | ha
   · split at ha
     · cases ha
     · obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
@@ -5040,61 +5172,290 @@ theorem restateAtIndex_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as
                   · cases hblm
                 · cases hblm
               · cases hblm
+            have hmaskMem : ∀ s m, (s, m) ∈ as.filterMap (fun a => if a.cond.isNone then
+                match matchMaskLe r a.fact with
+                | some (ms, mask) =>
+                  if as.any (fun b => b.cond.isNone &&
+                      b.fact == .linear (.le [(.value ms, -1), (.now (.bitMask mask) r [], 1)] 0))
+                  then some (ms, mask) else none
+                | none => none
+                else none) →
+                ∃ z, termValue ε ρ h (.value s) = some z ∧ termValue ε ρ h (.now (.bitMask m) r []) = some z := by
+              intro s m hmem
+              obtain ⟨b1, hb1, hb1m⟩ := List.mem_filterMap.mp hmem
+              split at hb1m
+              · rename_i hc1
+                cases hm1 : matchMaskLe r b1.fact with
+                | none => simp [hm1] at hb1m
+                | some q1 =>
+                  obtain ⟨ms, mask⟩ := q1
+                  simp only [hm1] at hb1m
+                  split at hb1m
+                  · rename_i hcond
+                    simp only [Option.some.injEq, Prod.mk.injEq] at hb1m
+                    obtain ⟨rfl, rfl⟩ := hb1m
+                    have hf1 : b1.fact = .linear (.le [(.value ms, 1), (.now (.bitMask mask) r [], -1)] 0) := by
+                      unfold matchMaskLe at hm1
+                      split at hm1
+                      · rename_i t1 t2 hf1'
+                        split at hm1
+                        · rename_i hts
+                          cases ht2k : t2.kind <;> rw [ht2k] at hm1 <;> simp at hm1
+                          rename_i mask'
+                          obtain ⟨rfl, rfl⟩ := hm1
+                          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hts
+                          obtain ⟨⟨⟨⟨⟨ht1e, ht1k⟩, ht1p⟩, ht2e⟩, ht2p⟩, ht2s⟩ := hts
+                          have ht1_eq : t1 = .value t1.slot := by
+                            cases t1; simp only at ht1e ht1k ht1p; subst ht1e; subst ht1k; subst ht1p; rfl
+                          have ht2_eq : t2 = .now (.bitMask mask') r [] := by
+                            cases t2; simp only at ht2e ht2p ht2s ht2k; subst ht2e; subst ht2p; subst ht2s; subst ht2k; rfl
+                          rw [hf1', ht2_eq]
+                          conv => lhs; rw [ht1_eq]
+                        · cases hm1
+                      · cases hm1
+                    simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hcond
+                    obtain ⟨b2, hb2, hc2, hf2⟩ := hcond
+                    have h1 := he b1 hb1 fun c hc => by rw [Option.isNone_iff_eq_none.mp hc1] at hc; cases hc
+                    have h2 := he b2 hb2 fun c hc => by rw [Option.isNone_iff_eq_none.mp hc2] at hc; cases hc
+                    rw [hf1] at h1; rw [hf2] at h2
+                    obtain ⟨z1, hz1⟩ := Option.isSome_iff_exists.mp (h1.1 (.value ms) (by simp [Linear.Fact.vars]))
+                    obtain ⟨z2, hz2⟩ := Option.isSome_iff_exists.mp (h1.1 (.now (.bitMask mask) r []) (by simp [Linear.Fact.vars]))
+                    have hl1 := h1.2
+                    have hl2 := h2.2
+                    simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hz1, hz2, Option.getD_some] at hl1 hl2
+                    exact ⟨z1, hz1, by rw [hz2]; congr 1; omega⟩
+                  · cases hb1m
+              · cases hb1m
+            have hmask : ∀ s m, (as.filterMap (fun a => if a.cond.isNone then
+                match matchMaskLe r a.fact with
+                | some (ms, mask) =>
+                  if as.any (fun b => b.cond.isNone &&
+                      b.fact == .linear (.le [(.value ms, -1), (.now (.bitMask mask) r [], 1)] 0))
+                  then some (ms, mask) else none
+                | none => none
+                else none)).lookup s = some m →
+                termValue ε ρ h (.value s) = termValue ε ρ h (.now (.bitMask m) r []) := by
+              intro s m hlk
+              have hmem : (s, m) ∈ as.filterMap (fun a => if a.cond.isNone then
+                  match matchMaskLe r a.fact with
+                  | some (ms, mask) =>
+                    if as.any (fun b => b.cond.isNone &&
+                        b.fact == .linear (.le [(.value ms, -1), (.now (.bitMask mask) r [], 1)] 0))
+                    then some (ms, mask) else none
+                  | none => none
+                  else none) := by
+                clear hlen hmaskMem
+                generalize as.filterMap _ = ps at hlk ⊢
+                induction ps with
+                | nil => simp at hlk
+                | cons p ps ih =>
+                  simp only [List.lookup] at hlk
+                  split at hlk
+                  · rename_i heq; simp only [Option.some.injEq] at hlk; subst hlk
+                    have : s = p.1 := beq_iff_eq.mp heq
+                    subst this; exact List.mem_cons_self ..
+                  · exact List.mem_cons_of_mem _ (ih hlk)
+              obtain ⟨z, hz1, hz2⟩ := hmaskMem s m hmem
+              rw [hz1, hz2]
             split at ha
             · rename_i x' p' idx' hxp hidx
-              obtain ⟨ba, hba, hab⟩ := List.mem_filterMap.mp ha
-              split at hab
-              · rename_i hca
-                have hbah := he ba hba fun c hc => by rw [Option.isNone_iff_eq_none.mp hca] at hc; cases hc
-                have hji : termValue ε ρ h idx' = some (i : Int) := by
-                  rw [liftDropped_eq hl hbr _ _ _ hidx, termValue_value, hj]; exact intValue_num hbi
-                have hread : readPath h (ρ x') p' = some (ρ x) := by
-                  rw [liftPath_eq hl hpr _ _ _ _ _ hxp]; rfl
+              have hji : termValue ε ρ h idx' = some (i : Int) := by
+                rw [liftDropped_eq hl hbr _ _ _ hidx, termValue_value, hj]; exact intValue_num hbi
+              have hread : readPath h (ρ x') p' = some (ρ x) := by
+                rw [liftPath_eq hl hpr _ _ _ _ _ hxp]; rfl
+              rcases List.mem_append.mp ha with hml | ha
+              · obtain ⟨⟨ms, mask⟩, hmsm, hml⟩ := List.mem_flatMap.mp hml
+                split at hml
+                · obtain ⟨z, hz1, hz2⟩ := hmaskMem ms mask hmsm
+                  have hproj : boundValue ε ρ h elemLs i (.project (.bitMask mask) []) = some z := by
+                    simp only [boundValue]
+                    cases hli : elemLs[i]? with
+                    | none => exact absurd (List.getElem?_eq_none_iff.mp hli) (by omega)
+                    | some o =>
+                      cases o with
+                      | none =>
+                        have hru := hhole hli
+                        simp [termValue, termAt, readPath, kindValue, bitMaskOf, hru] at hz2
+                      | some l =>
+                        simp only [hpres l hli, Option.bind_some]
+                        simpa [Term.now, termValue, termAt, readPath] using hz2
+                  have hfree : boundValue ε ρ h elemLs i (.free (.value ms)) = some z := by
+                    simpa [boundValue] using hz1
+                  rcases List.mem_cons.mp hml with rfl | hml
+                  · refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, fun y hy => ?_,
+                      by simp only [Linear.Fact.Holds, Linear.Form.eval, hproj, hfree, Option.getD_some]; omega⟩
+                    simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hy
+                    rcases hy with rfl | rfl <;> simp [hproj, hfree]
+                  · simp only [List.mem_singleton] at hml; subst hml
+                    refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, fun y hy => ?_,
+                      by simp only [Linear.Fact.Holds, Linear.Form.eval, hproj, hfree, Option.getD_some]; omega⟩
+                    simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hy
+                    rcases hy with rfl | rfl <;> simp [hproj, hfree]
+                · cases hml
+              · obtain ⟨ba, hba, hab⟩ := List.mem_filterMap.mp ha
                 split at hab
-                · rename_i F hfa
+                · rename_i hca
+                  have hbah := he ba hba fun c hc => by rw [Option.isNone_iff_eq_none.mp hca] at hc; cases hc
                   split at hab
-                  · obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp hab
-                    rw [hfa] at hbah
-                    refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, ?_⟩
-                    refine ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hF' fun t _ b hb => ?_).mpr hbah.2⟩
-                    · obtain ⟨t, ht, htb⟩ := Linear.Fact.mapVars_vars hF' y hy
-                      rw [abstractAtElem_eq hl hbr hlt hpres hhole hlen htb]
-                      exact hbah.1 t ht
-                    · simp only [abstractAtElem_eq hl hbr hlt hpres hhole hlen hb, termValuation]
-                  · cases hab
-                · rename_i s g F hfa
-                  split at hab
-                  · rename_i hcond
-                    obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp hab
-                    have hsr : s = r := beq_iff_eq.mp (Bool.and_eq_true_iff.mp hcond).1
-                    subst hsr
-                    rw [hfa] at hbah
-                    obtain ⟨v, hv, hor⟩ := hbah
-                    simp only [readGuard, Option.some.injEq] at hv; subst hv
-                    refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, ?_⟩
-                    rcases hor with htag | hlin
-                    · cases hli : elemLs[i]? with
-                      | none => simp at hli; omega
-                      | some o =>
-                        cases o with
-                        | none =>
-                          have hru := hhole hli
-                          rw [hru] at htag
-                          exact .inr (.inl ⟨rfl, htag⟩)
-                        | some l =>
-                          exact .inl ⟨l, ρ s, rfl, hpres l hli, htag⟩
-                    · refine .inr (.inr ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hF' fun t _ b hb => ?_).mpr hlin.2⟩)
+                  · rename_i F hfa
+                    split at hab
+                    · obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp hab
+                      rw [hfa] at hbah
+                      refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, ?_⟩
+                      refine ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hF' fun t _ b hb => ?_).mpr hbah.2⟩
                       · obtain ⟨t, ht, htb⟩ := Linear.Fact.mapVars_vars hF' y hy
-                        rw [abstractAtElem_eq hl hbr hlt hpres hhole hlen htb]
-                        exact hlin.1 t ht
-                      · simp only [abstractAtElem_eq hl hbr hlt hpres hhole hlen hb, termValuation]
+                        rw [abstractAtElem_eq hl hbr hlt hpres hhole hlen hmask htb]
+                        exact hbah.1 t ht
+                      · simp only [abstractAtElem_eq hl hbr hlt hpres hhole hlen hmask hb, termValuation]
+                    · cases hab
+                  · rename_i s g F hfa
+                    split at hab
+                    · rename_i hcond
+                      obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp hab
+                      have hsr : s = r := beq_iff_eq.mp (Bool.and_eq_true_iff.mp hcond).1
+                      subst hsr
+                      rw [hfa] at hbah
+                      obtain ⟨v, hv, hor⟩ := hbah
+                      simp only [readGuard, Option.some.injEq] at hv; subst hv
+                      refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, ?_⟩
+                      rcases hor with htag | hlin
+                      · cases hli : elemLs[i]? with
+                        | none => simp at hli; omega
+                        | some o =>
+                          cases o with
+                          | none =>
+                            have hru := hhole hli
+                            rw [hru] at htag
+                            exact .inr (.inl ⟨rfl, htag⟩)
+                          | some l =>
+                            exact .inl ⟨l, ρ s, rfl, hpres l hli, htag⟩
+                      · refine .inr (.inr ⟨fun y hy => ?_, (Linear.Fact.holds_mapVars hF' fun t _ b hb => ?_).mpr hlin.2⟩)
+                        · obtain ⟨t, ht, htb⟩ := Linear.Fact.mapVars_vars hF' y hy
+                          rw [abstractAtElem_eq hl hbr hlt hpres hhole hlen hmask htb]
+                          exact hlin.1 t ht
+                        · simp only [abstractAtElem_eq hl hbr hlt hpres hhole hlen hmask hb, termValuation]
+                    · cases hab
                   · cases hab
                 · cases hab
-              · cases hab
             · cases ha
           · cases hbem
         · cases hbem
       · cases hbem
+  · split at ha
+    · cases ha
+    · obtain ⟨be, hbe, ha⟩ := List.mem_flatMap.mp ha
+      split at ha
+      · rename_i hcen
+        split at ha
+        · rename_i r x j hfe
+          split at ha
+          · rename_i hcond
+            simp only [Bool.and_eq_true] at hcond
+            have hint := hcond.2
+            have hel := he be hbe fun c hc => by rw [Option.isNone_iff_eq_none.mp hcen] at hc; cases hc
+            rw [hfe] at hel
+            obtain ⟨sto, elemLs, bits, i, hsto, hls, hj, hbi, hlt, hpres, hhole⟩ := hel
+            obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (intSlot_sound he hint)
+            have helem : boundValue ε ρ h elemLs i .elem = some z := by
+              simp only [boundValue, elementInt]
+              cases hli : elemLs[i]? with
+              | none => exact absurd (List.getElem?_eq_none_iff.mp hli) (by omega)
+              | some o =>
+                cases o with
+                | none =>
+                  have hru := hhole hli
+                  rw [hru] at hz; simp [intValue] at hz
+                | some l =>
+                  simp only [hpres l hli, Option.bind_some, hz]
+            have hfree : boundValue ε ρ h elemLs i (.free (.value r)) = some z := by
+              simpa [boundValue, termValue_value] using hz
+            split at ha
+            · rename_i x' p' idx' hxp hidx
+              have hji : termValue ε ρ h idx' = some (i : Int) := by
+                rw [liftDropped_eq hl hbr _ _ _ hidx, termValue_value, hj]; exact intValue_num hbi
+              have hread : readPath h (ρ x') p' = some (ρ x) := by
+                rw [liftPath_eq hl hpr _ _ _ _ _ hxp]; rfl
+              rcases List.mem_cons.mp ha with rfl | ha
+              · refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, fun y hy => ?_,
+                  by simp only [Linear.Fact.Holds, Linear.Form.eval, helem, hfree, Option.getD_some]; omega⟩
+                simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hy
+                rcases hy with rfl | rfl <;> simp [helem, hfree]
+              · simp only [List.mem_singleton] at ha; subst ha
+                refine ⟨ρ x, sto, elemLs, i, hread, hsto, hls, hji, hlt, fun y hy => ?_,
+                  by simp only [Linear.Fact.Holds, Linear.Form.eval, helem, hfree, Option.getD_some]; omega⟩
+                simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hy
+                rcases hy with rfl | rfl <;> simp [helem, hfree]
+            · cases ha
+          · cases ha
+        · cases ha
+      · cases ha
+  · obtain ⟨b1, hb1, ha⟩ := List.mem_flatMap.mp ha
+    split at ha
+    · rename_i hc1
+      cases hm1 : matchAtIndexSlotEq dropped b1.fact with
+      | none => simp [hm1] at ha
+      | some q =>
+        obtain ⟨s, p, idx, bd, ms⟩ := q
+        simp only [hm1] at ha
+        split at ha
+        · rename_i hcond
+          simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at hcond
+          obtain ⟨⟨_, _⟩, b2, hb2, hc2, hf2⟩ := hcond
+          have hf1 : b1.fact = .atIndex s p idx none (.atom (.le [(bd, 1), (.free (.value ms), -1)] 0)) := by
+            unfold matchAtIndexSlotEq at hm1
+            split at hm1
+            · rename_i s' p' idx' bd' t' hfeq
+              split at hm1
+              · rename_i hts
+                simp only [Option.some.injEq, Prod.mk.injEq] at hm1
+                obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hm1
+                simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hts
+                obtain ⟨⟨⟨⟨ht1, ht2⟩, ht3⟩, _⟩, _⟩ := hts
+                have ht_eq : t' = .value t'.slot := by
+                  cases t'; simp only at ht1 ht2 ht3; subst ht1; subst ht2; subst ht3; rfl
+                rw [hfeq]; conv => lhs; rw [ht_eq]
+              · cases hm1
+            · cases hm1
+          have h1 := he b1 hb1 fun c hc => by rw [Option.isNone_iff_eq_none.mp hc1] at hc; cases hc
+          have h2 := he b2 hb2 fun c hc => by rw [Option.isNone_iff_eq_none.mp hc2] at hc; cases hc
+          rw [hf1] at h1; rw [hf2] at h2
+          obtain ⟨w, sto, elemLs, i, hw, hsto, hls, hi, hlt, hbd1⟩ := h1
+          obtain ⟨w2, sto2, elemLs2, i2, hw2, hsto2, hls2, hi2, _, hbd2⟩ := h2
+          rw [hw] at hw2; cases hw2
+          rw [hsto] at hsto2; cases hsto2
+          rw [hls] at hls2; cases hls2
+          rw [hi] at hi2; cases hi2
+          obtain ⟨z1, hz1⟩ := Option.isSome_iff_exists.mp (hbd1.1 bd (by simp [Linear.Fact.vars]))
+          obtain ⟨z2, hz2⟩ := Option.isSome_iff_exists.mp (hbd1.1 (.free (.value ms)) (by simp [Linear.Fact.vars]))
+          have hle1 := hbd1.2
+          have hle2 := hbd2.2
+          simp only [Linear.Fact.Holds, Linear.Form.eval, hz1, hz2, Option.getD_some] at hle1 hle2
+          have hbdEq : boundValue ε ρ h elemLs i bd = termValue ε ρ h (.value ms) := by
+            rw [hz1]; simpa [boundValue] using (show some z1 = some z2 by congr 1; omega).trans hz2.symm
+          obtain ⟨bf, hbf, ha⟩ := List.mem_filterMap.mp ha
+          split at ha
+          · rename_i F hff
+            split at ha
+            · obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp ha
+              have hfh := he bf hbf hcondA
+              rw [hff] at hfh
+              have hmap : ∀ t b, (if t == .value ms then some bd else if t.slots.any dropped then none else some (.free t)) = some b →
+                  boundValue ε ρ h elemLs i b = termValue ε ρ h t := by
+                intro t b htb
+                split at htb
+                · rename_i heq; cases htb; rw [beq_iff_eq.mp heq]; exact hbdEq
+                · split at htb
+                  · cases htb
+                  · cases htb; rfl
+              refine ⟨w, sto, elemLs, i, hw, hsto, hls, hi, hlt, fun y hy => ?_,
+                (Linear.Fact.holds_mapVars hF' fun t _ b hb => by simp only [hmap t b hb, termValuation]).mpr hfh.2⟩
+              obtain ⟨t, ht, htb⟩ := Linear.Fact.mapVars_vars hF' y hy
+              rw [hmap t y htb]
+              exact hfh.1 t ht
+            · cases ha
+          · cases ha
+        · cases ha
+    · cases ha
 
 /-- The spine separations and indexed-element facts of unconditional atoms
 naming a dropped slot, restated where plain reads give the slot's value as
@@ -6305,6 +6666,191 @@ def instantiateBodyClause (K : Linear.Known Term) (ls : HeapLinks.Links) (as : L
       let r' ← parallelSlot K ls as s' p' k
       let b' ← instantiateBodyClause K ls as cls r k b
       pure (.guarded r' ep tag b')
+  | .either a b => do
+      let a' ← instantiateBodyClause K ls as cls r k a
+      let b' ← instantiateBodyClause K ls as cls r k b
+      pure (.either a' b')
+
+/-- Whether linear knowledge `K` refutes a linear fact `F`: for `c·x ≤ d`,
+entails `-c·x ≤ -(d + 1)`; for `c·x ≠ d`, entails `c·x ≤ d` and `-c·x ≤ -d`. -/
+def refutesLinear (K : Linear.Known Term) : Linear.Fact Term → Bool
+  | .le form d => K.entails (.le (form.scale (-1)) (-(d + 1)))
+  | .ne form d => K.entails (.le form d) && K.entails (.le (form.scale (-1)) (-d))
+
+theorem refutesLinear_sound {K : Linear.Known Term} {v : Term → Int} {F : Linear.Fact Term}
+    (hK : K.Holds v) (hr : refutesLinear K F = true) (hF : F.Holds v) : False := by
+  cases F with
+  | le form d =>
+    have h1 := Linear.Known.entails_sound hK hr
+    simp only [Linear.Fact.Holds, Linear.Form.eval_scale] at h1 hF
+    omega
+  | ne form d =>
+    simp only [refutesLinear, Bool.and_eq_true] at hr
+    have h1 := Linear.Known.entails_sound hK hr.1
+    have h2 := Linear.Known.entails_sound hK hr.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval_scale] at h1 h2 hF
+    omega
+
+/-- Match an unconditional `atIndex` constant upper bound `b ≤ c`. -/
+def matchAtIndexConstLe : IndexFact → Option (Nat × List String × Term × Bound × Int)
+  | .atIndex s p idx none (.atom (.le [(b, 1)] c)) => some (s, p, idx, b, c)
+  | _ => none
+
+/-- Match an unconditional `atIndex` constant lower bound `-b ≤ -c` (i.e. `c ≤ b`). -/
+def matchAtIndexConstGe : IndexFact → Option (Nat × List String × Term × Bound × Int)
+  | .atIndex s p idx none (.atom (.le [(b, -1)] negc)) => some (s, p, idx, b, -negc)
+  | _ => none
+
+/-- Match an unconditional `atIndex` term upper bound `b - rhs ≤ 0`. -/
+def matchAtIndexTermLe : IndexFact → Option (Nat × List String × Term × Bound × Term)
+  | .atIndex s p idx none (.atom (.le [(b, 1), (.free rhs, -1)] 0)) => some (s, p, idx, b, rhs)
+  | _ => none
+
+/-- Match an unconditional `atIndex` term lower bound `rhs - b ≤ 0`. -/
+def matchAtIndexTermGe : IndexFact → Option (Nat × List String × Term × Bound × Term)
+  | .atIndex s p idx none (.atom (.le [(.free rhs, 1), (b, -1)] 0)) => some (s, p, idx, b, rhs)
+  | _ => none
+
+/-- Resolve a direct element projection `kd` of `(s, p)[k]` to an integer
+constant `c` from two unconditional `atIndex` constant bounds in `as`. -/
+def atIndexConst (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s : Nat) (p : List String) (k : Nat) (kd : Term.Kind) : Option Int :=
+  let M := HeapLinks.aliases ls
+  let S := pathSites M ls s p
+  let matchesIdx (idxT : Term) : Bool :=
+    (!idxT.atEntry && idxT.kind == .value && idxT.path.isEmpty && (M k).contains idxT.slot) ||
+    (termDefined as idxT &&
+      K.entails (.le [(idxT, 1), (.value k, -1)] 0) &&
+      K.entails (.le [(.value k, 1), (idxT, -1)] 0))
+  let matchesBound (b : Bound) : Bool :=
+    b == .project kd [] || (kd == .value && b == .elem)
+  as.findSome? fun a1 =>
+    if a1.cond.isSome then none
+    else match matchAtIndexConstLe a1.fact with
+      | some (s1, p1, idx1, b1, c) =>
+        if sitesMeet M S (pathSites M ls s1 p1) && matchesBound b1 && matchesIdx idx1 &&
+            as.any (fun a2 => a2.cond.isNone && match matchAtIndexConstGe a2.fact with
+              | some (s2, p2, idx2, b2, c2) =>
+                sitesMeet M S (pathSites M ls s2 p2) && b2 == b1 && c2 == c && matchesIdx idx2
+              | none => false)
+        then some c else none
+      | none => none
+
+/-- Resolve a direct element projection `kd` of `(s, p)[k]` to a term `rhs`
+from two unconditional `atIndex` term bounds in `as`. -/
+def atIndexTerm (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s : Nat) (p : List String) (k : Nat) (kd : Term.Kind) : Option Term :=
+  let M := HeapLinks.aliases ls
+  let S := pathSites M ls s p
+  let matchesIdx (idxT : Term) : Bool :=
+    (!idxT.atEntry && idxT.kind == .value && idxT.path.isEmpty && (M k).contains idxT.slot) ||
+    (termDefined as idxT &&
+      K.entails (.le [(idxT, 1), (.value k, -1)] 0) &&
+      K.entails (.le [(.value k, 1), (idxT, -1)] 0))
+  let matchesBound (b : Bound) : Bool :=
+    b == .project kd [] || (kd == .value && b == .elem)
+  as.findSome? fun a1 =>
+    if a1.cond.isSome then none
+    else match matchAtIndexTermLe a1.fact with
+      | some (s1, p1, idx1, b1, rhs) =>
+        if sitesMeet M S (pathSites M ls s1 p1) && matchesBound b1 && matchesIdx idx1 &&
+            as.any (fun a2 => a2.cond.isNone && match matchAtIndexTermGe a2.fact with
+              | some (s2, p2, idx2, b2, rhs2) =>
+                sitesMeet M S (pathSites M ls s2 p2) && b2 == b1 && rhs2 == rhs && matchesIdx idx2
+              | none => false)
+        then some rhs else none
+      | none => none
+
+/-- Resolve a direct element projection `kd` (at empty element path `[]`) of
+`(s, p)[k]` from two unconditional `atIndex` bounds in `as` equating it either
+with an integer constant `c` (`Sum.inr c`) or with a term `rhs` (`Sum.inl rhs`). -/
+def atIndexTermOrConst (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s : Nat) (p : List String) (k : Nat) (kd : Term.Kind) : Option (Term ⊕ Int) :=
+  match atIndexConst K ls as s p k kd with
+  | some c => some (.inr c)
+  | none => (atIndexTerm K ls as s p k kd).map .inl
+
+/-- Instantiate a bound variable at index `k` of `(s, p)` using any element
+reads (`parallelSlot`) or `atIndex` equalities (`atIndexTermOrConst`) in `as`. -/
+def boundAtK (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s : Nat) (p : List String) (k : Nat) : Bound → Option (Term ⊕ Int)
+  | .index => some (.inl (.value k))
+  | .elem =>
+    match parallelSlot K ls as s p k with
+    | some r => some (.inl (.value r))
+    | none => atIndexTermOrConst K ls as s p k .value
+  | .offset _ => none
+  | .project kd ep =>
+    match parallelSlot K ls as s p k with
+    | some r => some (.inl (Term.now kd r ep))
+    | none => if ep.isEmpty then atIndexTermOrConst K ls as s p k kd else none
+  | .parallel s' p' kd ep =>
+    match parallelSlot K ls as s' p' k with
+    | some r' => some (.inl (Term.now kd r' ep))
+    | none => if ep.isEmpty then atIndexTermOrConst K ls as s' p' k kd else none
+  | .free t => some (.inl t)
+
+/-- Instantiate a body clause at index `k` of `(s, p)` without requiring a
+runtime read of `(s, p)[k]` or of a pure element-tag target (`atIndex`), and
+discharging disjuncts refuted by `K` (`refutesLinear`). -/
+def instantiateBodyAtK (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s : Nat) (p : List String) (k : Nat) : BodyClause → Option IndexFact
+  | .clause F => (F.mapVarsOrConst (boundAtK K ls as s p k)).map LinearClause.toIndexFact
+  | .guarded target tag b =>
+    if impossibleBody b then
+      match target with
+      | .self [] => some (.atIndex s p (.value k) (some tag) (.atom (.le [] (-1))))
+      | .parallel s' p' [] => some (.atIndex s' p' (.value k) (some tag) (.atom (.le [] (-1))))
+      | _ => none
+    else
+      match target with
+      | .self ep => do
+          let r ← parallelSlot K ls as s p k
+          let b' ← instantiateBodyAtK K ls as s p k b
+          pure (.guarded r ep tag b')
+      | .parallel s' p' ep => do
+          let r' ← parallelSlot K ls as s' p' k
+          let b' ← instantiateBodyAtK K ls as s p k b
+          pure (.guarded r' ep tag b')
+  | .either a b =>
+    match instantiateBodyAtK K ls as s p k a, instantiateBodyAtK K ls as s p k b with
+    | some (.linear F), some b' => if refutesLinear K F then some b' else some (.either (.linear F) b')
+    | some a', some (.linear F) => if refutesLinear K F then some a' else some (.either a' (.linear F))
+    | some a', some b' => some (.either a' b')
+    | _, _ => none
+
+/-- Instantiate disjunctive quantified clauses over `[start, stop)` at an index
+`k` with `0 ≤ k`, `start ≤ k` and `k < stop`, without requiring a runtime read
+of the root array at `k`. -/
+def instantiateEveryAtK (K : Thunk (Linear.Known Term)) (ls : HeapLinks.Links) (as : List IndexAtom) (k : Nat) :
+    IndexAtom → List IndexAtom
+  | ⟨.every s p start stop body, none, _⟩ =>
+    if intSlot as k && start.defined as && stop.defined as &&
+        body.any (fun | .either _ _ => true | _ => false) then
+      let kB := IndexBound.ofTerm (.value k)
+      if K.get.entails (.le [(.value k, -1)] 0) && K.get.entails (start.leFact kB) &&
+          K.get.entails (kB.leFact stop 1) then
+        body.filterMap fun B => (instantiateBodyAtK K.get ls as s p k B).map fun F => { fact := F }
+      else []
+    else []
+  | _ => []
+
+/-- Whether an unconditional `atIndex` fact in `as` proves that `(s', p')[k]`
+is a present element satisfying `tag` (where `tag` does not hold of `undefined`). -/
+def atIndexTag (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List IndexAtom)
+    (s' : Nat) (p' : List String) (k : Nat) (tag : GuardTag) : Bool :=
+  !tag.holdsUndef &&
+  let M := HeapLinks.aliases ls
+  let S' := pathSites M ls s' p'
+  as.any fun a => a.cond.isNone && match a.fact with
+    | .atIndex s p idx (some g) body =>
+      g == tag && impossibleLinearBody body &&
+      sitesMeet M S' (pathSites M ls s p) &&
+      ((!idx.atEntry && idx.kind == .value && idx.path.isEmpty && (M k).contains idx.slot) ||
+        (termDefined as idx &&
+          K.entails (.le [(.value k, 1), (idx, -1)] 0) &&
+          K.entails (.le [(idx, 1), (.value k, -1)] 0)))
+    | _ => false
 
 /-- The facts a read of the element at the index the slot `k` holds, its
 value in the slot `r`, states of a quantified fact over an array whose path
@@ -6383,6 +6929,7 @@ def elementFacts (k : Knowledge) : List IndexAtom :=
     let cls := HeapLinks.aliases k.links x
     let kCls := if atIdxs.isEmpty then [] else HeapLinks.aliases k.links i
     everys.flatMap (instantiateEvery K k.links k.indices cls r x i) ++
+    everys.flatMap (instantiateEveryAtK K k.links k.indices i) ++
     atIdxs.flatMap (instantiateAtIndex K k cls kCls r i)) ++
   guardedElems.flatMap fun (g, tag, r, x, i) =>
     let cls := HeapLinks.aliases k.links x
@@ -6541,6 +7088,590 @@ theorem instantiateBodyClause_holds {K : Linear.Known Term} {ls_links : HeapLink
     · have hbH := instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb' hb
       obtain ⟨w, hw⟩ := hpath rfl
       exact ⟨w, hpar w hw, .inr hbH⟩
+  | .either a b, G, hinst, hB => by
+    simp only [instantiateBodyClause, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at hinst
+    obtain ⟨a', ha', b', hb', rfl⟩ := hinst
+    exact hB.imp
+      (instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole ha')
+      (instantiateBodyClause_holds hK hl ha hcls hsto hls hki hlt hpres hhole hb')
+
+private theorem matchAtIndexConstLe_inv {F : IndexFact} {s : Nat} {p : List String} {idx : Term} {b : Bound} {c : Int}
+    (h : matchAtIndexConstLe F = some (s, p, idx, b, c)) :
+    F = .atIndex s p idx none (.atom (.le [(b, 1)] c)) := by
+  unfold matchAtIndexConstLe at h
+  split at h <;> cases h; rfl
+
+private theorem matchAtIndexConstGe_inv {F : IndexFact} {s : Nat} {p : List String} {idx : Term} {b : Bound} {c : Int}
+    (h : matchAtIndexConstGe F = some (s, p, idx, b, c)) :
+    ∃ negc, F = .atIndex s p idx none (.atom (.le [(b, -1)] negc)) ∧ c = -negc := by
+  unfold matchAtIndexConstGe at h
+  split at h
+  · rename_i s0 p0 idx0 b0 negc
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
+    exact ⟨negc, rfl, rfl⟩
+  · cases h
+
+private theorem matchAtIndexTermLe_inv {F : IndexFact} {s : Nat} {p : List String} {idx : Term} {b : Bound} {rhs : Term}
+    (h : matchAtIndexTermLe F = some (s, p, idx, b, rhs)) :
+    F = .atIndex s p idx none (.atom (.le [(b, 1), (.free rhs, -1)] 0)) := by
+  unfold matchAtIndexTermLe at h
+  split at h <;> cases h; rfl
+
+private theorem matchAtIndexTermGe_inv {F : IndexFact} {s : Nat} {p : List String} {idx : Term} {b : Bound} {rhs : Term}
+    (h : matchAtIndexTermGe F = some (s, p, idx, b, rhs)) :
+    F = .atIndex s p idx none (.atom (.le [(.free rhs, 1), (b, -1)] 0)) := by
+  unfold matchAtIndexTermGe at h
+  split at h <;> cases h; rfl
+
+private theorem boundValue_project_eq_elem {ε : EntryState} {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
+    {kd : Term.Kind} {b : Bound} (hb : (b == .project kd [] || (kd == .value && b == .elem)) = true) :
+    boundValue ε ρ h ls i b = boundValue ε ρ h ls i (.project kd []) := by
+  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hb
+  rcases hb with rfl | ⟨rfl, rfl⟩
+  · rfl
+  · simp only [boundValue, elementInt]
+    cases hli : ls[i]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | none => rfl
+      | some l =>
+        cases h[l]? with
+        | none => rfl
+        | some v => simp [termValue, termAt, readPath, kindValue]
+
+/-- `atIndexTermOrConst` is sound: if it resolves `(s, p)[k]`'s `kd` projection
+to `Sum.inr c`, then `boundValue` equals `some c`; if to `Sum.inl rhs`, then
+`boundValue` equals `termValue ε ρ h rhs` (and is defined). -/
+theorem atIndexTermOrConst_read {K : Linear.Known Term} {ls_links : HeapLinks.Links} {as : List IndexAtom}
+    {s k sto i : Nat} {p : List String} {kd : Term.Kind} {res : Term ⊕ Int}
+    {w0 : Val} {ls : List (Option Nat)} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (hl : HeapLinks.Holds ls_links ρ h) (ha : IndexHolds ε as ρ h)
+    (hwp : readPath h (ρ s) p = some w0) (hsto : elementsOf w0 = some sto)
+    (hls : h[sto]?.bind spineEntries = some ls) (hki : intValue (ρ k) = some (i : Int))
+    (hres : atIndexTermOrConst K ls_links as s p k kd = some res) :
+    match res with
+    | .inr c => boundValue ε ρ h ls i (.project kd []) = some c
+    | .inl rhs => ∃ z, termValue ε ρ h rhs = some z ∧ boundValue ε ρ h ls i (.project kd []) = some z := by
+  have hM : ∀ x, ∀ y ∈ HeapLinks.aliases ls_links x, ρ y = ρ x := fun _ _ hy => HeapLinks.aliases_eq hl hy
+  have hidx_eq : ∀ {idxT : Term} {j : Nat},
+      ((!idxT.atEntry && idxT.kind == .value && idxT.path.isEmpty && (HeapLinks.aliases ls_links k).contains idxT.slot) ||
+        (termDefined as idxT && K.entails (.le [(idxT, 1), (.value k, -1)] 0) &&
+          K.entails (.le [(.value k, 1), (idxT, -1)] 0))) = true →
+      termValue ε ρ h idxT = some (j : Int) → j = i := by
+    intro idxT j hm hj
+    simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff,
+      List.contains_iff_mem] at hm
+    rcases hm with ⟨⟨⟨hae, hkd⟩, hp⟩, hmem⟩ | ⟨⟨-, h1⟩, h2⟩
+    · have htv : termValue ε ρ h idxT = intValue (ρ k) := by
+        obtain ⟨tk, ts, tp, tae⟩ := idxT
+        simp only at hae hkd hp hmem; subst hae; subst hkd; subst hp
+        change termValue ε ρ h (.value ts) = intValue (ρ k)
+        simp only [termValue_value, hM k ts hmem]
+      rw [hki] at htv
+      rw [htv] at hj; cases hj; rfl
+    · have f1 := Linear.Known.entails_sound hK h1
+      have f2 := Linear.Known.entails_sound hK h2
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hj, termValue_value, hki,
+        Option.getD_some] at f1 f2
+      omega
+  unfold atIndexTermOrConst at hres
+  cases hbc : atIndexConst K ls_links as s p k kd with
+  | some c0 =>
+    rw [hbc] at hres
+    cases hres
+    unfold atIndexConst at hbc
+    dsimp only at hbc
+    obtain ⟨_, a1, _, hsp1, hm1, -⟩ := List.findSome?_eq_some_iff.mp hbc
+    have ha1 : a1 ∈ as := hsp1 ▸ List.mem_append_right _ (List.mem_cons_self ..)
+    split at hm1
+    · cases hm1
+    rename_i hc1
+    cases hml1 : matchAtIndexConstLe a1.fact with
+    | none => rw [hml1] at hm1; cases hm1
+    | some v1 =>
+      obtain ⟨s1, p1, idx1, b1, c⟩ := v1
+      simp only [hml1] at hm1
+      split at hm1
+      · rename_i hcond
+        cases hm1
+        simp only [Bool.and_eq_true, List.any_eq_true] at hcond
+        obtain ⟨⟨⟨hs1, hb1⟩, hi1⟩, a2, ha2, hc2, hm2⟩ := hcond
+        cases hml2 : matchAtIndexConstGe a2.fact with
+        | none => rw [hml2] at hm2; cases hm2
+        | some v2 =>
+          obtain ⟨s2, p2, idx2, b2, c2⟩ := v2
+          simp only [hml2] at hm2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hm2
+          obtain ⟨⟨⟨hs2, rfl⟩, rfl⟩, hi2⟩ := hm2
+          have hf1 := ha a1 ha1 fun _ h => by simp only [Option.isSome_iff_exists] at hc1; exact absurd ⟨_, h⟩ hc1
+          have hf2 := ha a2 ha2 fun _ h => by rw [Option.isNone_iff_eq_none.mp hc2] at h; cases h
+          rw [matchAtIndexConstLe_inv hml1] at hf1
+          obtain ⟨negc, hfeq2, hc_eq⟩ := matchAtIndexConstGe_inv hml2
+          rw [hfeq2] at hf2
+          obtain ⟨w1, sto1, ls1, j1, hwp1, hsto1, hls1, hj1, _, hbody1⟩ := hf1
+          obtain ⟨w2, sto2, ls2, j2, hwp2, hsto2, hls2, hj2, _, hbody2⟩ := hf2
+          have hji1 : j1 = i := hidx_eq hi1 hj1
+          have hji2 : j2 = i := hidx_eq hi2 hj2
+          subst hji1; subst hji2
+          have hw1 : w1 = w0 := Option.some.inj (hwp1.symm.trans ((sitesMeet_read hM hl hs1).symm.trans hwp))
+          have hw2 : w2 = w0 := Option.some.inj (hwp2.symm.trans ((sitesMeet_read hM hl hs2).symm.trans hwp))
+          subst hw1; subst hw2
+          rw [hsto] at hsto1 hsto2; cases hsto1; cases hsto2
+          rw [hls] at hls1 hls2; cases hls1; cases hls2
+          dsimp only at hbody1 hbody2
+          obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (hbody1.1 b2 (by simp [Linear.Fact.vars]))
+          have hl1 := hbody1.2
+          have hl2 := hbody2.2
+          simp only [Linear.Fact.Holds, Linear.Form.eval, hz, Option.getD_some] at hl1 hl2
+          have hzeq : z = -negc := by omega
+          subst hzeq
+          dsimp only
+          rw [← boundValue_project_eq_elem hb1, hz, hc_eq]
+      · cases hm1
+  | none =>
+    rw [hbc] at hres
+    obtain ⟨rhs0, hbt, rfl⟩ := Option.map_eq_some_iff.mp hres
+    unfold atIndexTerm at hbt
+    dsimp only at hbt
+    obtain ⟨_, a1, _, hsp1, hm1, -⟩ := List.findSome?_eq_some_iff.mp hbt
+    have ha1 : a1 ∈ as := hsp1 ▸ List.mem_append_right _ (List.mem_cons_self ..)
+    split at hm1
+    · cases hm1
+    rename_i hc1
+    cases hml1 : matchAtIndexTermLe a1.fact with
+    | none => rw [hml1] at hm1; cases hm1
+    | some v1 =>
+      obtain ⟨s1, p1, idx1, b1, rhs⟩ := v1
+      simp only [hml1] at hm1
+      split at hm1
+      · rename_i hcond
+        cases hm1
+        simp only [Bool.and_eq_true, List.any_eq_true] at hcond
+        obtain ⟨⟨⟨hs1, hb1⟩, hi1⟩, a2, ha2, hc2, hm2⟩ := hcond
+        cases hml2 : matchAtIndexTermGe a2.fact with
+        | none => rw [hml2] at hm2; cases hm2
+        | some v2 =>
+          obtain ⟨s2, p2, idx2, b2, rhs2⟩ := v2
+          simp only [hml2] at hm2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hm2
+          obtain ⟨⟨⟨hs2, rfl⟩, rfl⟩, hi2⟩ := hm2
+          have hf1 := ha a1 ha1 fun _ h => by simp only [Option.isSome_iff_exists] at hc1; exact absurd ⟨_, h⟩ hc1
+          have hf2 := ha a2 ha2 fun _ h => by rw [Option.isNone_iff_eq_none.mp hc2] at h; cases h
+          rw [matchAtIndexTermLe_inv hml1] at hf1
+          rw [matchAtIndexTermGe_inv hml2] at hf2
+          obtain ⟨w1, sto1, ls1, j1, hwp1, hsto1, hls1, hj1, _, hbody1⟩ := hf1
+          obtain ⟨w2, sto2, ls2, j2, hwp2, hsto2, hls2, hj2, _, hbody2⟩ := hf2
+          have hji1 : j1 = i := hidx_eq hi1 hj1
+          have hji2 : j2 = i := hidx_eq hi2 hj2
+          subst hji1; subst hji2
+          have hw1 : w1 = w0 := Option.some.inj (hwp1.symm.trans ((sitesMeet_read hM hl hs1).symm.trans hwp))
+          have hw2 : w2 = w0 := Option.some.inj (hwp2.symm.trans ((sitesMeet_read hM hl hs2).symm.trans hwp))
+          subst hw1; subst hw2
+          rw [hsto] at hsto1 hsto2; cases hsto1; cases hsto2
+          rw [hls] at hls1 hls2; cases hls1; cases hls2
+          dsimp only at hbody1 hbody2
+          obtain ⟨zb, hzb⟩ := Option.isSome_iff_exists.mp (hbody1.1 b2 (by simp [Linear.Fact.vars]))
+          obtain ⟨zr, hzr⟩ := Option.isSome_iff_exists.mp (hbody1.1 (.free rhs2) (by simp [Linear.Fact.vars]))
+          have hl1 := hbody1.2
+          have hl2 := hbody2.2
+          simp only [Linear.Fact.Holds, Linear.Form.eval, hzb, hzr, Option.getD_some] at hl1 hl2
+          have hzeq : zb = zr := by omega
+          subst hzeq
+          exact ⟨zb, hzr, by rw [← boundValue_project_eq_elem hb1, hzb]⟩
+      · cases hm1
+
+/-- If `atIndexTermOrConst` resolves `(s, p)[k]`'s `kd` projection, then
+`(s, p)` reads a value with a live spine in `h`. -/
+theorem atIndexTermOrConst_spine {K : Linear.Known Term} {ls_links : HeapLinks.Links} {as : List IndexAtom}
+    {s k : Nat} {p : List String} {kd : Term.Kind} {res : Term ⊕ Int} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls_links ρ h) (ha : IndexHolds ε as ρ h)
+    (hres : atIndexTermOrConst K ls_links as s p k kd = some res) :
+    ∃ w0 st ls, readPath h (ρ s) p = some w0 ∧ elementsOf w0 = some st ∧ h[st]?.bind spineEntries = some ls := by
+  have hM : ∀ x, ∀ y ∈ HeapLinks.aliases ls_links x, ρ y = ρ x := fun _ _ hy => HeapLinks.aliases_eq hl hy
+  unfold atIndexTermOrConst at hres
+  cases hbc : atIndexConst K ls_links as s p k kd with
+  | some c0 =>
+    unfold atIndexConst at hbc; dsimp only at hbc
+    obtain ⟨_, a1, _, hsp1, hm1, -⟩ := List.findSome?_eq_some_iff.mp hbc
+    have ha1 : a1 ∈ as := hsp1 ▸ List.mem_append_right _ (List.mem_cons_self ..)
+    split at hm1
+    · cases hm1
+    rename_i hc1
+    cases hml1 : matchAtIndexConstLe a1.fact with
+    | none => rw [hml1] at hm1; cases hm1
+    | some v1 =>
+      obtain ⟨s1, p1, idx1, b1, c⟩ := v1
+      simp only [hml1] at hm1
+      split at hm1
+      · rename_i hcond
+        have hs1 := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp hcond).1).1).1
+        have hf1 := ha a1 ha1 fun _ h => by simp only [Option.isSome_iff_exists] at hc1; exact absurd ⟨_, h⟩ hc1
+        rw [matchAtIndexConstLe_inv hml1] at hf1
+        obtain ⟨w1, st1, ls1, _, hwp1, hsto1, hls1, -⟩ := hf1
+        exact ⟨w1, st1, ls1, (sitesMeet_read hM hl hs1).trans hwp1, hsto1, hls1⟩
+      · cases hm1
+  | none =>
+    rw [hbc] at hres
+    obtain ⟨rhs0, hbt, -⟩ := Option.map_eq_some_iff.mp hres
+    unfold atIndexTerm at hbt; dsimp only at hbt
+    obtain ⟨_, a1, _, hsp1, hm1, -⟩ := List.findSome?_eq_some_iff.mp hbt
+    have ha1 : a1 ∈ as := hsp1 ▸ List.mem_append_right _ (List.mem_cons_self ..)
+    split at hm1
+    · cases hm1
+    rename_i hc1
+    cases hml1 : matchAtIndexTermLe a1.fact with
+    | none => rw [hml1] at hm1; cases hm1
+    | some v1 =>
+      obtain ⟨s1, p1, idx1, b1, rhs⟩ := v1
+      simp only [hml1] at hm1
+      split at hm1
+      · rename_i hcond
+        have hs1 := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp hcond).1).1).1
+        have hf1 := ha a1 ha1 fun _ h => by simp only [Option.isSome_iff_exists] at hc1; exact absurd ⟨_, h⟩ hc1
+        rw [matchAtIndexTermLe_inv hml1] at hf1
+        obtain ⟨w1, st1, ls1, _, hwp1, hsto1, hls1, -⟩ := hf1
+        exact ⟨w1, st1, ls1, (sitesMeet_read hM hl hs1).trans hwp1, hsto1, hls1⟩
+      · cases hm1
+
+private theorem linearClause_holdsAt_mapVarsOrConst_imp {f : V → Option (W ⊕ Int)}
+    {val : V → Option Int} {val' : W → Option Int} {F : LinearClause V} {G : LinearClause W}
+    (hm : F.mapVarsOrConst f = some G)
+    (hf : ∀ x ∈ F.vars, ∀ n, val x = some n →
+      (∀ y, f x = some (.inl y) → val' y = some n) ∧
+      (∀ v, f x = some (.inr v) → n = v))
+    (hF : F.HoldsAt val) : G.HoldsAt val' := by
+  induction F generalizing G with
+  | atom F =>
+    obtain ⟨G, hG, rfl⟩ := Option.map_eq_some_iff.mp hm
+    refine (LinearClause.factAt_mapVarsOrConst hG (val := val) (val' := val') ?_).mpr hF
+    intro x hx
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
+    have hfx := hf x hx n hn
+    exact ⟨fun y hy => by rw [hn, hfx.1 y hy], fun v hv => by rw [hn, hfx.2 v hv]⟩
+  | either A B ihA ihB =>
+    simp only [LinearClause.mapVarsOrConst, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at hm
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    exact hF.imp (ihA hA fun x hx => hf x (List.mem_append_left _ hx))
+      (ihB hB fun x hx => hf x (List.mem_append_right _ hx))
+
+theorem instantiateBodyAtK_holds {K : Linear.Known Term} {ls_links : HeapLinks.Links} {as : List IndexAtom}
+    {s k sto i : Nat} {p : List String} {w0 : Val} {ls : List (Option Nat)} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (hl : HeapLinks.Holds ls_links ρ h) (ha : IndexHolds ε as ρ h)
+    (hwp : readPath h (ρ s) p = some w0) (hsto : elementsOf w0 = some sto)
+    (hls : h[sto]?.bind spineEntries = some ls) (hki : intValue (ρ k) = some (i : Int)) :
+    ∀ {B : BodyClause} {G : IndexFact},
+      instantiateBodyAtK K ls_links as s p k B = some G →
+      B.HoldsAt ε ρ h ls i → G.HoldsAt ε ρ h
+  | .clause F, G, hinst, hB => by
+    obtain ⟨G', hmG, rfl⟩ := Option.map_eq_some_iff.mp hinst
+    refine LinearClause.toIndexFact_holds.mpr (linearClause_holdsAt_mapVarsOrConst_imp hmG (fun y _ n hn => ?_) hB)
+    cases y with
+    | index =>
+      refine ⟨fun t ht => ?_, fun v hv => by simp [boundAtK] at hv⟩
+      simp only [boundAtK, Option.some.injEq, Sum.inl.injEq] at ht; subst ht
+      simp only [boundValue, Option.some.injEq] at hn; subst hn
+      exact hki
+    | elem =>
+      have hproj_elem : boundValue ε ρ h ls i (.project .value []) = some n := by
+        rw [← boundValue_project_eq_elem (b := .elem) (kd := .value) (by decide)]; exact hn
+      cases hp : parallelSlot K ls_links as s p k with
+      | some r =>
+        obtain ⟨-, hpres, -⟩ := parallelSlot_read hK hl ha hki hp hwp hsto hls
+        refine ⟨fun t ht => ?_, fun v hv => by simp [boundAtK, hp] at hv⟩
+        simp only [boundAtK, hp, Option.some.injEq, Sum.inl.injEq] at ht; subst ht
+        simp only [boundValue, elementInt] at hn
+        split at hn
+        · rename_i l hli
+          obtain ⟨v, hv, hi⟩ := Option.bind_eq_some_iff.mp hn
+          have hveq : v = ρ r := Option.some.inj (hv.symm.trans (hpres l hli))
+          subst hveq; exact hi
+        · cases hn
+      | none =>
+        refine ⟨fun t ht => ?_, fun v hv => ?_⟩
+        · simp only [boundAtK, hp] at ht
+          obtain ⟨z, hz, hzb⟩ := atIndexTermOrConst_read hK hl ha hwp hsto hls hki ht
+          rw [hproj_elem] at hzb; cases hzb; exact hz
+        · simp only [boundAtK, hp] at hv
+          have hvb := atIndexTermOrConst_read hK hl ha hwp hsto hls hki hv
+          rw [hproj_elem] at hvb; exact Option.some.inj hvb
+    | offset _ => exact ⟨fun _ ht => by simp [boundAtK] at ht, fun _ hv => by simp [boundAtK] at hv⟩
+    | project kd ep =>
+      cases hp : parallelSlot K ls_links as s p k with
+      | some r =>
+        obtain ⟨-, hpres, -⟩ := parallelSlot_read hK hl ha hki hp hwp hsto hls
+        refine ⟨fun t ht => ?_, fun v hv => by simp [boundAtK, hp] at hv⟩
+        simp only [boundAtK, hp, Option.some.injEq, Sum.inl.injEq] at ht; subst ht
+        simp only [boundValue] at hn
+        split at hn
+        · rename_i l hli
+          obtain ⟨v, hv, htv⟩ := Option.bind_eq_some_iff.mp hn
+          have hveq : v = ρ r := Option.some.inj (hv.symm.trans (hpres l hli))
+          subst hveq; exact htv
+        · cases hn
+      | none =>
+        cases ep with
+        | cons _ _ => exact ⟨fun _ ht => by simp [boundAtK, hp] at ht, fun _ hv => by simp [boundAtK, hp] at hv⟩
+        | nil =>
+          refine ⟨fun t ht => ?_, fun v hv => ?_⟩
+          · simp only [boundAtK, hp, List.isEmpty_nil, ite_true] at ht
+            obtain ⟨z, hz, hzb⟩ := atIndexTermOrConst_read hK hl ha hwp hsto hls hki ht
+            rw [hn] at hzb; cases hzb; exact hz
+          · simp only [boundAtK, hp, List.isEmpty_nil, ite_true] at hv
+            have hvb := atIndexTermOrConst_read hK hl ha hwp hsto hls hki hv
+            rw [hn] at hvb; exact Option.some.inj hvb
+    | parallel s' p' kd ep =>
+      simp only [boundValue] at hn
+      cases hrp : readPath h (ρ s') p' with
+      | none => simp [hrp] at hn
+      | some a =>
+        simp only [hrp] at hn
+        cases hea : elementsOf a with
+        | none => simp [hea] at hn
+        | some st' =>
+          simp only [hea] at hn
+          cases hls' : h[st']?.bind spineEntries with
+          | none => simp [hls'] at hn
+          | some ls' =>
+            simp only [hls'] at hn
+            cases hp : parallelSlot K ls_links as s' p' k with
+            | some r' =>
+              obtain ⟨-, hpres', -⟩ := parallelSlot_read hK hl ha hki hp hrp hea hls'
+              refine ⟨fun t ht => ?_, fun v hv => by simp [boundAtK, hp] at hv⟩
+              simp only [boundAtK, hp, Option.some.injEq, Sum.inl.injEq] at ht; subst ht
+              split at hn
+              · rename_i l hli
+                obtain ⟨v, hv, htv⟩ := Option.bind_eq_some_iff.mp hn
+                have hveq : v = ρ r' := Option.some.inj (hv.symm.trans (hpres' l hli))
+                subst hveq; exact htv
+              · cases hn
+            | none =>
+              cases ep with
+              | cons _ _ => exact ⟨fun _ ht => by simp [boundAtK, hp] at ht, fun _ hv => by simp [boundAtK, hp] at hv⟩
+              | nil =>
+                have hn' : boundValue ε ρ h ls' i (.project kd []) = some n := hn
+                refine ⟨fun t ht => ?_, fun v hv => ?_⟩
+                · simp only [boundAtK, hp, List.isEmpty_nil, ite_true] at ht
+                  obtain ⟨z, hz, hzb⟩ := atIndexTermOrConst_read hK hl ha hrp hea hls' hki ht
+                  rw [hn'] at hzb; cases hzb; exact hz
+                · simp only [boundAtK, hp, List.isEmpty_nil, ite_true] at hv
+                  have hvb := atIndexTermOrConst_read hK hl ha hrp hea hls' hki hv
+                  rw [hn'] at hvb; exact Option.some.inj hvb
+    | free t' =>
+      refine ⟨fun t ht => ?_, fun v hv => by simp [boundAtK] at hv⟩
+      simp only [boundAtK, Option.some.injEq, Sum.inl.injEq] at ht; subst ht; exact hn
+  | .guarded target tag b, G, hinst, hB => by
+    simp only [instantiateBodyAtK] at hinst
+    split at hinst
+    · rename_i himp
+      have htg : ∃ w, target.read ρ h ls i = some w ∧ tag.holds w := by
+        rcases hB with h1 | ⟨_, hb⟩
+        · exact h1
+        · exact (impossibleBody_sound himp hb).elim
+      obtain ⟨w, hw, htag⟩ := htg
+      cases target with
+      | self ep =>
+        cases ep with
+        | cons _ _ => cases hinst
+        | nil =>
+          simp only [Option.some.injEq] at hinst; subst hinst
+          simp only [ElemTarget.read] at hw
+          split at hw
+          · rename_i l hli
+            obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+            simp only [readGuard, Option.some.injEq] at hrg; subst hrg
+            have hlt : i < ls.length := (List.getElem?_eq_some_iff.mp hli).1
+            exact ⟨w0, sto, ls, i, hwp, hsto, hls, hki, hlt, .inl ⟨l, v, hli, hv, htag⟩⟩
+          · cases hw
+      | parallel s' p' ep =>
+        cases ep with
+        | cons _ _ => cases hinst
+        | nil =>
+          simp only [Option.some.injEq] at hinst; subst hinst
+          simp only [ElemTarget.read] at hw
+          cases hrp : readPath h (ρ s') p' with
+          | none => simp [hrp] at hw
+          | some a =>
+            simp only [hrp] at hw
+            cases hea : elementsOf a with
+            | none => simp [hea] at hw
+            | some st' =>
+              simp only [hea] at hw
+              cases hls' : h[st']?.bind spineEntries with
+              | none => simp [hls'] at hw
+              | some ls' =>
+                simp only [hls'] at hw
+                split at hw
+                · rename_i l hli
+                  obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+                  simp only [readGuard, Option.some.injEq] at hrg; subst hrg
+                  have hlt : i < ls'.length := (List.getElem?_eq_some_iff.mp hli).1
+                  exact ⟨a, st', ls', i, hrp, hea, hls', hki, hlt, .inl ⟨l, v, hli, hv, htag⟩⟩
+                · cases hw
+    · cases target with
+      | self ep =>
+        simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hinst
+        obtain ⟨r, hr, b', hb', rfl⟩ := hinst
+        obtain ⟨-, hpres, -⟩ := parallelSlot_read hK hl ha hki hr hwp hsto hls
+        have hself : ∀ w, (ElemTarget.self ep).read ρ h ls i = some w → readGuard h (ρ r) ep = some w := by
+          intro w hw
+          simp only [ElemTarget.read] at hw
+          split at hw
+          · rename_i l hli
+            obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+            have hveq : v = ρ r := Option.some.inj (hv.symm.trans (hpres l hli))
+            subst hveq; exact hrg
+          · cases hw
+        rcases hB with ⟨w, hw, htag⟩ | ⟨hpath, hb⟩
+        · exact ⟨w, hself w hw, .inl htag⟩
+        · have hbH := instantiateBodyAtK_holds hK hl ha hwp hsto hls hki hb' hb
+          cases ep with
+          | nil => exact ⟨ρ r, rfl, .inr hbH⟩
+          | cons _ _ => obtain ⟨w, hw⟩ := hpath rfl; exact ⟨w, hself w hw, .inr hbH⟩
+      | parallel s' p' ep =>
+        simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hinst
+        obtain ⟨r', hr', b', hb', rfl⟩ := hinst
+        have hpar : ∀ w, (ElemTarget.parallel s' p' ep).read ρ h ls i = some w → readGuard h (ρ r') ep = some w := by
+          intro w hw
+          simp only [ElemTarget.read] at hw
+          cases hrp : readPath h (ρ s') p' with
+          | none => simp [hrp] at hw
+          | some a =>
+            simp only [hrp] at hw
+            cases hea : elementsOf a with
+            | none => simp [hea] at hw
+            | some st' =>
+              simp only [hea] at hw
+              cases hls' : h[st']?.bind spineEntries with
+              | none => simp [hls'] at hw
+              | some ls' =>
+                simp only [hls'] at hw
+                obtain ⟨-, hpres', -⟩ := parallelSlot_read hK hl ha hki hr' hrp hea hls'
+                split at hw
+                · rename_i l hli
+                  obtain ⟨v, hv, hrg⟩ := Option.bind_eq_some_iff.mp hw
+                  have hveq : v = ρ r' := Option.some.inj (hv.symm.trans (hpres' l hli))
+                  subst hveq; exact hrg
+                · cases hw
+        rcases hB with ⟨w, hw, htag⟩ | ⟨hpath, hb⟩
+        · exact ⟨w, hpar w hw, .inl htag⟩
+        · have hbH := instantiateBodyAtK_holds hK hl ha hwp hsto hls hki hb' hb
+          obtain ⟨w, hw⟩ := hpath rfl
+          exact ⟨w, hpar w hw, .inr hbH⟩
+  | .either a b, G, hinst, hB => by
+    simp only [instantiateBodyAtK] at hinst
+    cases ha' : instantiateBodyAtK K ls_links as s p k a <;>
+    cases hb' : instantiateBodyAtK K ls_links as s p k b <;>
+      simp only [ha', hb'] at hinst
+    · cases hinst
+    · cases hinst
+    · cases hinst
+    · rename_i A' B'
+      have hAB : A'.HoldsAt ε ρ h ∨ B'.HoldsAt ε ρ h :=
+        hB.imp (instantiateBodyAtK_holds hK hl ha hwp hsto hls hki ha')
+          (instantiateBodyAtK_holds hK hl ha hwp hsto hls hki hb')
+      cases A' with
+      | linear F =>
+        simp only at hinst
+        split at hinst
+        · rename_i href
+          simp only [Option.some.injEq] at hinst; subst hinst
+          exact hAB.resolve_left fun hF => refutesLinear_sound hK href hF.2
+        · simp only [Option.some.injEq] at hinst; subst hinst; exact hAB
+      | _ =>
+        cases B' with
+        | linear F =>
+          simp only at hinst
+          split at hinst
+          · rename_i href
+            simp only [Option.some.injEq] at hinst; subst hinst
+            exact hAB.resolve_right fun hF => refutesLinear_sound hK href hF.2
+          · simp only [Option.some.injEq] at hinst; subst hinst; exact hAB
+        | _ => simp only [Option.some.injEq] at hinst; subst hinst; exact hAB
+
+theorem instantiateEveryAtK_holds {K : Thunk (Linear.Known Term)} {ls_links : HeapLinks.Links}
+    {as : List IndexAtom} {k : Nat} {ρ : Env} {h : Heap}
+    (hK : K.get.Holds (termValuation ε ρ h)) (hl : HeapLinks.Holds ls_links ρ h) (ha : IndexHolds ε as ρ h)
+    {a : IndexAtom} (hm : a ∈ as) : IndexHolds ε (instantiateEveryAtK K ls_links as k a) ρ h := by
+  intro c hc _
+  match a, hm, hc with
+  | ⟨.every s p start stop body, none, ng⟩, hm, hc =>
+    simp only [instantiateEveryAtK] at hc
+    split at hc
+    · rename_i hpre
+      split at hc
+      · rename_i hent
+        simp only [Bool.and_eq_true] at hpre hent
+        obtain ⟨⟨⟨hki0, -⟩, -⟩, -⟩ := hpre
+        obtain ⟨⟨e0, e1⟩, e2⟩ := hent
+        obtain ⟨B, hB, hG⟩ := List.mem_filterMap.mp hc
+        obtain ⟨G, hmG, rfl⟩ := Option.map_eq_some_iff.mp hG
+        have hat := ha _ hm (fun b hb => by cases hb)
+        obtain ⟨w, sto, ls, m0, n, hw, hsto, hls, hm0, hn, hall⟩ := hat
+        obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (intSlot_sound ha hki0)
+        have f0 := Linear.Known.entails_sound hK e0
+        simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, termValue_value, hz,
+          Option.getD_some] at f0
+        have hkEval : (IndexBound.ofTerm (.value k)).eval ε ρ h = some z := by
+          simp [IndexBound.ofTerm, IndexBound.eval, termValue_value, hz]
+        have f1 := IndexBound.leFact_sound hm0 hkEval (Linear.Known.entails_sound hK e1)
+        have f2 := IndexBound.leFact_sound hkEval hn (Linear.Known.entails_sound hK e2)
+        have hzNat : intValue (ρ k) = some (z.toNat : Int) := by
+          rw [hz]; congr; omega
+        exact instantiateBodyAtK_holds hK hl ha hw hsto hls hzNat hmG
+          (hall z.toNat (by omega) (by omega) B hB)
+      · cases hc
+    · cases hc
+  | ⟨.every _ _ _ _ _, some _, _⟩, _, hc => simp [instantiateEveryAtK] at hc
+  | ⟨.index _, _, _⟩, _, hc | ⟨.length _ _, _, _⟩, _, hc | ⟨.bound _ _ _, _, _⟩, _, hc
+  | ⟨.int _, _, _⟩, _, hc | ⟨.pastSafe _, _, _⟩, _, hc | ⟨.linear _, _, _⟩, _, hc
+  | ⟨.guarded _ _ _ _, _, _⟩, _, hc | ⟨.either _ _, _, _⟩, _, hc
+  | ⟨.element _ _ _, _, _⟩, _, hc | ⟨.fieldRead _ _ _, _, _⟩, _, hc | ⟨.atIndex _ _ _ _ _, _, _⟩, _, hc
+  | ⟨.apart _ _, _, _⟩, _, hc | ⟨.spineApart _ _ _ _, _, _⟩, _, hc | ⟨.same _ _, _, _⟩, _, hc =>
+    simp [instantiateEveryAtK] at hc
+
+theorem atIndexTag_read {K : Linear.Known Term} {ls : HeapLinks.Links} {as : List IndexAtom}
+    {s' k i : Nat} {p' : List String} {tag : GuardTag} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds ε as ρ h)
+    (hki : intValue (ρ k) = some (i : Int)) (hm : atIndexTag K ls as s' p' k tag = true)
+    {ls0 : List (Option Nat)} :
+    ∃ v, (ElemTarget.parallel s' p' []).read ρ h ls0 i = some v ∧ tag.holds v := by
+  simp only [atIndexTag, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true] at hm
+  obtain ⟨hnu, a, haMem, hcond, hf⟩ := hm
+  have hnotu := GuardTag.not_holds_undef hnu
+  have hat := ha a haMem (fun b hb => by rw [Option.isNone_iff_eq_none.mp hcond] at hb; cases hb)
+  cases hfa : a.fact with
+  | atIndex s p idx g body =>
+    rw [hfa] at hf hat
+    cases g with
+    | none => simp at hf
+    | some g =>
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.contains_iff_mem, List.isEmpty_iff,
+        Bool.not_eq_true'] at hf
+      obtain ⟨⟨⟨rfl, himp⟩, hpath⟩, hidx⟩ := hf
+      obtain ⟨w, sto, ls', n, hw, hsto, hls', hn, hlt, hrest⟩ := hat
+      have hwp : readPath h (ρ s') p' = some w :=
+        (sitesMeet_read (fun _ _ h => HeapLinks.aliases_eq hl h) hl hpath).trans hw
+      have hneq : n = i := by
+        rcases hidx with ⟨⟨⟨hae, hkd⟩, hpt⟩, hmem⟩ | ⟨⟨_, hle1⟩, hle2⟩
+        · have hρj : ρ idx.slot = ρ k := HeapLinks.aliases_eq hl hmem
+          simp only [termValue, termAt, hae, Bool.false_eq_true, ite_false, hpt, hkd, readPath,
+            Option.bind_some, kindValue, hρj, hki, Option.some.injEq] at hn
+          omega
+        · have f1 := Linear.Known.entails_sound hK hle1
+          have f2 := Linear.Known.entails_sound hK hle2
+          simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, termValue_value, hki, hn,
+            Option.getD_some] at f1 f2
+          omega
+      subst hneq
+      rcases hrest with ⟨l, v, hli, hlv, hgv⟩ | ⟨_, hgu⟩ | hB
+      · exact ⟨v, by simp [ElemTarget.read, hwp, hsto, hls', hli, hlv, readGuard], hgv⟩
+      · exact (hnotu hgu).elim
+      · exact (impossibleLinearBody_sound himp hB).elim
+  | _ => rw [hfa] at hf; cases hf
 
 theorem instantiateEvery_holds {K : Thunk (Linear.Known Term)} {ls_links : HeapLinks.Links} {as : List IndexAtom} {cls : List Nat}
     {r x k : Nat} {ρ : Env} {h : Heap}
@@ -6698,10 +7829,15 @@ theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds
               obtain ⟨rfl, rfl, rfl⟩ := hme
               have hel := hk.2.2.2.2.2 _ hem (fun b hb => by cases hb)
               rcases List.mem_append.mp hm with hm | hm
-              · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
-                exact instantiateEvery_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
-                  (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
-                  (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
+              · rcases List.mem_append.mp hm with hm | hm
+                · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
+                  exact instantiateEvery_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
+                    (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
+                    (fun y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hel (List.mem_filter.mp hcm).1 a hm hc
+                · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
+                  exact instantiateEveryAtK_holds (K := Thunk.mk fun _ => Linear.Known.build (linearRaw k.indices) [])
+                    (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)) hk.2.2.1 hk.2.2.2.2.2
+                    (List.mem_filter.mp hcm).1 a hm hc
               · obtain ⟨c, hcm, hm⟩ := List.mem_flatMap.mp hm
                 have hne : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty = false := by
                   cases hne' : (k.indices.filter fun a => a.cond.isNone && a.fact.hasAtIndex).isEmpty

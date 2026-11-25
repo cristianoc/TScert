@@ -765,7 +765,7 @@ theorem termAt_var {η : Env} {h : Heap} {t : Term} (ht : t.path = []) :
 /-- A defined term reads a value neither `null` nor `undefined`. -/
 theorem kindValue_nonNullish {h : Heap} {k : Term.Kind} {v : Val} (hk : (kindValue h k v).isSome) :
     nullish v = false := by
-  cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, nullish, spineOf, fieldsOf]
+  cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, bitMaskOf, nullish, spineOf, fieldsOf]
 
 /-- **A fact stays true when the term increases** (the note, §5, Definition
 "Support", the row of a length in an inequality: `δ` is `grow` where the
@@ -937,13 +937,13 @@ private theorem readPath_init {η : Env} {s s' : IndexedHeap} (hS : SupportedBy 
               cases p with
               | nil =>
                 simp only [readPath, Option.some.injEq] at h; subst h
-                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, spineOf, fieldsOf] at hk
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, bitMaskOf, spineOf, fieldsOf] at hk
               | cons g p => simp [readPath] at h
             | viewSpine _ _ =>
               cases p with
               | nil =>
                 simp only [readPath, Option.some.injEq] at h; subst h
-                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, spineOf, fieldsOf] at hk
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, bitMaskOf, spineOf, fieldsOf] at hk
               | cons g p => simp [readPath] at h
             | _ => simp [Region.mem, hu, Selector.selects, contentsCategory, Selector.has]
           obtain ⟨u', hu', hc⟩ := hS _ (List.mem_cons_self ..) l u hin hu
@@ -1149,7 +1149,7 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
         have hin : (Region.cls .spines).mem η s.h st = true := by
           simp [Region.mem, hls, Selector.selects, contentsCategory, Selector.has]
         exact lengthOf_of_spine hsto (kept_of_supported hS hst hin hls) hm
-      | _ => rw [hkd] at hk; rwa [kindValue_heapFree (by decide) s'.h s.h]
+      | _ => rw [hkd] at hk; rwa [kindValue_heapFree (by intro h; cases h) s'.h s.h]
     · cases h
 
 /-! ### The tolerant frame of one atom -/

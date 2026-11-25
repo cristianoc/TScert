@@ -28,6 +28,7 @@ inductive ElemTargetRef where
 
 inductive BodyClaim where
   | linear (terms : List (BodyRef × Int)) (bound : Int)
+  | ne (terms : List (BodyRef × Int)) (bound : Int)
   | either (left right : BodyClaim)
   | guarded (target : ElemTargetRef) (tag : HeapKnowledge.GuardTag) (body : BodyClaim)
 

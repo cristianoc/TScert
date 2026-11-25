@@ -245,75 +245,227 @@ theorem restateAddedAtIndex_below {s : Store} {next : Nat} (hs : FactsBelow s ne
     FactsBelow (SinglePass.restateAddedAtIndex s x v) next := by
   unfold SinglePass.restateAddedAtIndex; simp only [Id.run]
   split
-  · exact hs
   · split
-    all_goals first
-      | exact hs
-      | (refine forIn_inv_bind (R := fun t => FactsBelow t next) _ s _ (fun t => FactsBelow t next) _ hs ?_ (fun _ h => h)
-         intro r _ w hw
-         split
-         · split
-           · have hlinks : ∀ g ∈ (((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .element r' _ _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none).flatMap fun a => match a.fact with
-                 | .element _ arr _ => (w.about arr).filterMap fun b => match b with
-                     | .link g => if !g.alias && g.value == arr then some g else none
-                     | _ => none
-                 | _ => []), AtomBelow next (.link g) := by
-               intro g hg
-               obtain ⟨a, -, hg⟩ := List.mem_flatMap.mp hg
-               split at hg
-               · obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
-                 split at hbg
-                 · split at hbg
-                   · cases hbg; exact hw _ (about_storeAll hb)
-                   · cases hbg
-                 · cases hbg
-               · cases hg
-             have hatoms : ∀ a ∈ (((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .element r' _ _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none) ++ ((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .length r' _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none) ++ [x]), AtomBelow next (.index a) := by
-               intro a ha'
-               rcases List.mem_append.mp ha' with ha' | ha'
-               · rcases List.mem_append.mp ha' with ha' | ha'
-                 · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
-                   split at hba
-                   · split at hba
-                     · split at hba
-                       · split at hba
-                         · cases hba; exact hw _ (about_storeAll hb)
-                         · cases hba
-                       · cases hba
-                     · cases hba
-                   · cases hba
-                 · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
-                   split at hba
-                   · split at hba
-                     · split at hba
-                       · split at hba
-                         · cases hba; exact hw _ (about_storeAll hb)
-                         · cases hba
-                       · cases hba
-                     · cases hba
-                   · cases hba
-               · rw [List.mem_singleton.mp ha']; exact hx
-             refine forIn_inv _ _ _ (fun t => FactsBelow t next) hw fun y hy w' hw' => add_below hw' fun z hz => ?_
-             rcases restateAtIndex_named hy hz with h | h
-             · exact namedIn_below hatoms h
-             · exact linkNamed_below hlinks h
-           · exact hw
-         · exact hw)
+    · split
+      · exact hs
+      · have hatoms : ∀ a ∈ (x :: (s.about v).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .atIndex _ _ _ none _ => some a
+                | _ => none
+              else none
+            | _ => none), AtomBelow next (.index a) := by
+          intro a ha'
+          rcases List.mem_cons.mp ha' with rfl | ha'
+          · exact hx
+          · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+            split at hba
+            · split at hba
+              · split at hba
+                · cases hba; exact hs _ (about_storeAll hb)
+                · cases hba
+              · cases hba
+            · cases hba
+        exact forIn_inv_bind (R := fun t => FactsBelow t next) _ s _ (fun t => FactsBelow t next) _ hs
+          (fun y hy w' hw' => add_below hw' fun z hz =>
+            (restateAtIndex_named hy hz).elim (namedIn_below hatoms) (linkNamed_below fun _ hg => by cases hg))
+          (fun _ h => h)
+    · exact hs
+  · have hlin : FactsBelow (Id.run do
+      let mut s := s
+      for r in v :: (s.about v).filterMap fun b => match b with
+        | .index ⟨.length r n, none, _⟩ => if n == v then some r else none
+        | .index ⟨F, none, _⟩ => SinglePass.maskSourceOf v F
+        | _ => none do
+        let elems := (s.about r).filterMap fun b => match b with
+          | .index a => if a.cond.isNone then match a.fact with
+              | .element r' _ _ => if r' == r then some a else none
+              | _ => none
+            else none
+          | _ => none
+        if !elems.isEmpty then
+          let lens := (s.about r).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .length r' _ => if r' == r then some a else none
+                | _ => none
+              else none
+            | _ => none
+          let masks := (s.about r).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .linear _ => some a
+                | _ => none
+              else none
+            | _ => none
+          if SinglePass.mentionsElemProj r lens masks x.fact then
+            let arrReads := elems.flatMap fun a => match a.fact with
+              | .element _ arr _ => (s.about arr).filterMap fun b => match b with
+                  | .link g => if !g.alias && g.value == arr then some g else none
+                  | _ => none
+              | _ => []
+            let dropped : Nat → Bool := fun w =>
+              w == r ||
+              lens.any (fun a => match a.fact with | .length _ n => n == w | _ => false) ||
+              masks.any (fun a => match HeapKnowledge.matchMaskLe r a.fact with | some (ms, _) => ms == w | none => false) ||
+              arrReads.any (·.value == w)
+            for y in HeapKnowledge.restateAtIndex arrReads dropped (elems ++ lens ++ masks ++ [x]) do
+              s := s.add (.index y)
+      let atEqs := (s.about v).filterMap fun b => match b with
+        | .index a => if a.cond.isNone then match a.fact with
+            | .atIndex _ _ _ none _ => some a
+            | _ => none
+          else none
+        | _ => none
+      if !atEqs.isEmpty then
+        for y in HeapKnowledge.restateAtIndex [] (· == v) (x :: atEqs) do
+          s := s.add (.index y)
+      return s) next := by
+      simp only [Id.run]
+      refine forIn_inv_bind (R := fun t => FactsBelow t next) _ s _ (fun t => FactsBelow t next) _ hs ?_ ?_
+      · intro r _ w hw
+        split
+        · split
+          · have hlinks : ∀ g ∈ (((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .element r' _ _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none).flatMap fun a => match a.fact with
+                | .element _ arr _ => (w.about arr).filterMap fun b => match b with
+                    | .link g => if !g.alias && g.value == arr then some g else none
+                    | _ => none
+                | _ => []), AtomBelow next (.link g) := by
+              intro g hg
+              obtain ⟨a, -, hg⟩ := List.mem_flatMap.mp hg
+              split at hg
+              · obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+                split at hbg
+                · split at hbg
+                  · cases hbg; exact hw _ (about_storeAll hb)
+                  · cases hbg
+                · cases hbg
+              · cases hg
+            have hatoms : ∀ a ∈ (((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .element r' _ _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none) ++ ((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .length r' _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none) ++ ((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .linear _ => some a
+                    | _ => none
+                  else none
+                | _ => none) ++ [x]), AtomBelow next (.index a) := by
+              intro a ha'
+              rcases List.mem_append.mp ha' with ha' | ha'
+              · rcases List.mem_append.mp ha' with ha' | ha'
+                · rcases List.mem_append.mp ha' with ha' | ha'
+                  · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+                    split at hba
+                    · split at hba
+                      · split at hba
+                        · split at hba
+                          · cases hba; exact hw _ (about_storeAll hb)
+                          · cases hba
+                        · cases hba
+                      · cases hba
+                    · cases hba
+                  · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+                    split at hba
+                    · split at hba
+                      · split at hba
+                        · split at hba
+                          · cases hba; exact hw _ (about_storeAll hb)
+                          · cases hba
+                        · cases hba
+                      · cases hba
+                    · cases hba
+                · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+                  split at hba
+                  · split at hba
+                    · split at hba
+                      · cases hba; exact hw _ (about_storeAll hb)
+                      · cases hba
+                    · cases hba
+                  · cases hba
+              · rw [List.mem_singleton.mp ha']; exact hx
+            refine forIn_inv _ _ _ (fun t => FactsBelow t next) hw fun y hy w' hw' => add_below hw' fun z hz => ?_
+            rcases restateAtIndex_named hy hz with h | h
+            · exact namedIn_below hatoms h
+            · exact linkNamed_below hlinks h
+          · exact hw
+        · exact hw
+      · intro s1 hs1
+        split
+        · have hatoms : ∀ a ∈ (x :: (s1.about v).filterMap fun b => match b with
+              | .index a => if a.cond.isNone then match a.fact with
+                  | .atIndex _ _ _ none _ => some a
+                  | _ => none
+                else none
+              | _ => none), AtomBelow next (.index a) := by
+            intro a ha'
+            rcases List.mem_cons.mp ha' with rfl | ha'
+            · exact hx
+            · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+              split at hba
+              · split at hba
+                · split at hba
+                  · cases hba; exact hs1 _ (about_storeAll hb)
+                  · cases hba
+                · cases hba
+              · cases hba
+          exact forIn_inv_bind (R := fun t => FactsBelow t next) _ s1 _ (fun t => FactsBelow t next) _ hs1
+            (fun y hy w' hw' => add_below hw' fun z hz =>
+              (restateAtIndex_named hy hz).elim (namedIn_below hatoms) (linkNamed_below fun _ hg => by cases hg))
+            (fun _ h => h)
+        · exact hs1
+    split
+    · exact hlin
+    · exact hlin
+    · rename_i r arr _ _
+      split
+      · exact hs
+      · split
+        · exact hs
+        · split
+          · exact hs
+          · have hlinks : ∀ g ∈ ((s.about arr).filterMap fun b => match b with
+                | .link g => if !g.alias && g.value == arr then some g else none
+                | _ => none), AtomBelow next (.link g) := by
+              intro g hg
+              obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+              split at hbg
+              · split at hbg
+                · cases hbg; exact hs _ (about_storeAll hb)
+                · cases hbg
+              · cases hbg
+            have hatoms : ∀ a ∈ (x :: (s.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .int r' => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none), AtomBelow next (.index a) := by
+              intro a ha'
+              rcases List.mem_cons.mp ha' with rfl | ha'
+              · exact hx
+              · obtain ⟨b, hb, hba⟩ := List.mem_filterMap.mp ha'
+                split at hba
+                · split at hba
+                  · split at hba
+                    · split at hba
+                      · cases hba; exact hs _ (about_storeAll hb)
+                      · cases hba
+                    · cases hba
+                  · cases hba
+                · cases hba
+            exact forIn_inv_bind (R := fun t => FactsBelow t next) _ s _ (fun t => FactsBelow t next) _ hs
+              (fun y hy w' hw' => add_below hw' fun z hz =>
+                (restateAtIndex_named hy hz).elim (namedIn_below hatoms) (linkNamed_below hlinks))
+              (fun _ h => h)
+    · exact hs
 
 theorem deltaRestate_below {s : Store} {next : Nat} (hs : FactsBelow s next) {added : List HeapKnowledge.IndexAtom}
     (ha : ∀ x ∈ added, AtomBelow next (.index x)) : FactsBelow (deltaRestate s added) next := by

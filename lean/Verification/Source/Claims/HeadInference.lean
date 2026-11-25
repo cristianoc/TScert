@@ -55,14 +55,17 @@ inductive BodyKey where
 leading element guards. -/
 inductive BodyFact where
   | lin (terms : List (BodyKey × Int)) (bound : Int)
+  | ne (terms : List (BodyKey × Int)) (bound : Int)
+  | either (left right : BodyFact)
   | guarded (target : ElemTargetKey) (tag : HeapKnowledge.GuardTag) (body : BodyFact)
   deriving BEq, Inhabited
 
 def BodyFact.names : BodyFact → List String
-  | .lin ts _ => ts.filterMap fun
+  | .lin ts _ | .ne ts _ => ts.filterMap fun
       | (.term k, _) => some k.1
       | (.parallel n .., _) => some n
       | _ => none
+  | .either a b => a.names ++ b.names
   | .guarded (.self _) _ b => b.names
   | .guarded (.parallel n ..) _ b => n :: b.names
 
@@ -119,6 +122,8 @@ def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
       | .term (n, p, k) => .term n p k
     let rec toClaim : BodyFact → SourceClaims.BodyClaim
       | .lin ts d => .linear (ts.map fun (v, c) => (ref v, c)) d
+      | .ne ts d => .ne (ts.map fun (v, c) => (ref v, c)) d
+      | .either a b => .either (toClaim a) (toClaim b)
       | .guarded (.self ep) g b => .guarded (.self ep) g (toClaim b)
       | .guarded (.parallel n p ep) g b => .guarded (.parallel n p ep) g (toClaim b)
     some (gs, (a, pa), start, stop, body.map toClaim)
@@ -184,6 +189,7 @@ partial def Fact.text : Fact → String
       | .value => path
       | .length | .strLength => path ++ ".length"
       | .view => path ++ ".length"
+      | .bitMask m => s!"({path} & {m})"
     let pos := l.terms.filter (·.2 > 0)
     let neg := l.terms.filter (·.2 < 0)
     let side := fun (ts : List (Key × Int)) (c : Int) =>
@@ -206,12 +212,18 @@ partial def Fact.text : Fact → String
     let arr := String.intercalate "." (a :: pa)
     let v := fun (b : BodyKey) => match b with
       | .index => "i" | .elem => s!"{arr}[i]" | .offset d => s!"{arr}[i + {d}]"
+      | .project (.bitMask m) p => s!"({String.intercalate "." (s!"{arr}[i]" :: p)} & {m})"
       | .project _ p => String.intercalate "." (s!"{arr}[i]" :: p)
+      | .parallel n p (.bitMask m) ep => s!"({String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)} & {m})"
       | .parallel n p _ ep => String.intercalate "." (s!"{String.intercalate "." (n :: p)}[i]" :: ep)
+      | .term (n, p, .bitMask m) => s!"({String.intercalate "." (n :: p)} & {m})"
       | .term (n, p, _) => String.intercalate "." (n :: p)
     let rec clause : BodyFact → String
       | .lin ts d =>
         " + ".intercalate (ts.map fun (b, c) => if c == 1 then v b else s!"{c} * {v b}") ++ s!" <= {d}"
+      | .ne ts d =>
+        " + ".intercalate (ts.map fun (b, c) => if c == 1 then v b else s!"{c} * {v b}") ++ s!" !== {d}"
+      | .either a b => s!"({clause a} || {clause b})"
       | .guarded (.self ep) g b =>
         guardCond (String.intercalate "." (s!"{arr}[i]" :: ep)) g ++ clause b
       | .guarded (.parallel n p ep) g b =>
@@ -642,7 +654,7 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
     l.terms.all fun ((n, p, k), _) =>
       if !p.isEmpty then true
       else match k with
-        | .value | .strLength => true
+        | .value | .strLength | .bitMask _ => true
         | .length | .view => !t.contains n
   -- A quantified fact: across expressions writing no element and resizing
   -- none of its arrays by name (a write through an alias or a callback is
@@ -650,12 +662,13 @@ partial def Fact.keptAcross (es : List Expr) (inBounds : String → Expr → Boo
   | .every _ a pa start stop body =>
     es.all quiet || (!es.any (fun | .objectAssign .. => true | _ => false) &&
       let t := touched es inBounds
-      let kept := fun ((n, p, k) : Key) => !p.isEmpty || k == .value || k == .strLength || !t.contains n
+      let kept := fun ((n, p, k) : Key) => !p.isEmpty || k == .value || k == .strLength || k.isNum || !t.contains n
       let rec bodyKept : BodyFact → Bool
-        | .lin ts _ => ts.all fun
+        | .lin ts _ | .ne ts _ => ts.all fun
             | (.term k, _) => kept k
             | (.parallel n p _ _, _) => !p.isEmpty || !t.contains n
             | _ => true
+        | .either a b => bodyKept a && bodyKept b
         | .guarded (.self _) _ b => bodyKept b
         | .guarded (.parallel n p _) _ b => (!p.isEmpty || !t.contains n) && bodyKept b
       (!pa.isEmpty || !t.contains a) && start.1.all kept && stop.1.all kept && body.all bodyKept)
@@ -805,7 +818,9 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
       | .free t => (termName t).map fun n => .term (n, t.path, t.kind)
     let rec ofBody : HeapKnowledge.BodyClause → Option BodyFact
       | .clause (.atom (.le form d)) => do pure (.lin (← form.mapM fun (b, c) => do pure (← var b, c)) d)
-      | .clause (.either ..) | .clause (.atom (.ne ..)) => none
+      | .clause (.atom (.ne form d)) => do pure (.ne (← form.mapM fun (b, c) => do pure (← var b, c)) d)
+      | .clause (.either a b) => do pure (.either (← ofBody (.clause a)) (← ofBody (.clause b)))
+      | .either a b => do pure (.either (← ofBody a) (← ofBody b))
       | .guarded (.self ep) g b => (ofBody b).map (.guarded (.self ep) g)
       | .guarded (.parallel s' p' ep) g b => do
           pure (.guarded (.parallel (← nameAt s') p' ep) g (← ofBody b))
@@ -913,6 +928,11 @@ def Fact.restate (n root : String) (path : List String) : Fact → Option Fact
           | (.term k, c) => (.term (move k), c)
           | (.parallel m p k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' k ep, c)
           | v => v) d
+      | .ne ts d => .ne (ts.map fun
+          | (.term k, c) => (.term (move k), c)
+          | (.parallel m p k ep, c) => let (m', p') := (through m p).getD (m, p); (.parallel m' p' k ep, c)
+          | v => v) d
+      | .either a b => .either (moveBody a) (moveBody b)
       | .guarded (.self ep) g b => .guarded (.self ep) g (moveBody b)
       | .guarded (.parallel m p ep) g b =>
           let (m', p') := (through m p).getD (m, p)
@@ -943,6 +963,7 @@ def Ctx.entails (ctx : Ctx) (l : Lin) : Bool :=
   let rangeMax := fun (ts : List (Key × Int)) => ts.foldlM (init := (0 : Int)) fun acc ((_, _, k), c) =>
     match k with
     | .value => none
+    | .bitMask m => some (if c < 0 then acc else acc + c * m)
     | .strLength => some (if c < 0 then acc else acc + c * (2 ^ 53 - 1))
     | _ => some (if c < 0 then acc else acc + c * (2 ^ 32 - 1))
   let via := fun (terms : List (Key × Int)) (b : Int) =>
@@ -991,7 +1012,7 @@ partial def Ctx.elemBound (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (
           if b != xs || !loOk || !hiOk then [] else
           body.filterMap fun
             | .lin ts d => bodyBound upper kt kc ts d
-            | .guarded .. => none
+            | .guarded .. | .ne .. | .either .. => none
         | _ => []
   | _ => []
 
@@ -1018,7 +1039,7 @@ def Ctx.pushed (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) : Expr → L
     | none => []
     | some (at_, ac) => ctx.filter fun
       | .every [] b [] _ stop body => b == xs && stop == (some (xs, [], K xs), 0) && body.all fun
-        | .guarded .. => false
+        | .guarded .. | .ne .. | .either .. => false
         | .lin ts d =>
         let k := ((ts.find? (·.1 == .elem)).map (·.2)).getD 0
         let terms := ts.foldl (init := (some [] : Option (List (Key × Int)))) fun acc (v, c) => do
@@ -1477,6 +1498,7 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
         match conv with
         | some terms => [if gs.isEmpty then .lin ⟨terms, d⟩ else .guarded gs ⟨terms, d⟩]
         | none => []
+    | .ne .. | .either .. => []
   if let some (arr, ap, idx, nullable) := elemPathOf init then
     if arr != x && idx != x && hasEveryOn arr then
       let readGuards : List (String × List String × HeapKnowledge.GuardTag) :=

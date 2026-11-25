@@ -169,76 +169,228 @@ theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Na
   unfold SinglePass.restateAddedAtIndex
   simp only [Id.run]
   split
-  · exact hs
   · split
-    all_goals first
-      | exact hs
-      | (refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs ?_
-           (fun _ h => h)
-         intro r _ w hw
-         split
-         · split
-           · have hlinks : HeapLinks.Holds (((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .element r' _ _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none).flatMap fun a => match a.fact with
-                 | .element _ arr _ => (w.about arr).filterMap fun b => match b with
-                     | .link g => if !g.alias && g.value == arr then some g else none
-                     | _ => none
-                 | _ => []) η h := by
-               intro g hg
-               obtain ⟨a, -, hg⟩ := List.mem_flatMap.mp hg
-               split at hg
-               · obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
-                 split at hbg
-                 · split at hbg
-                   · cases hbg; exact hw _ (about_storeAll hb) g (List.mem_singleton_self _)
-                   · cases hbg
-                 · cases hbg
-               · cases hg
-             have hatoms : HeapKnowledge.IndexHolds ε (((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .element r' _ _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none) ++ ((w.about r).filterMap fun b => match b with
-                 | .index a => if a.cond.isNone then match a.fact with
-                     | .length r' _ => if r' == r then some a else none
-                     | _ => none
-                   else none
-                 | _ => none) ++ [x]) η h := by
-               intro y hy hc
-               rcases List.mem_append.mp hy with hy | hy
-               · rcases List.mem_append.mp hy with hy | hy
-                 · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
-                   split at hby
-                   · split at hby
-                     · split at hby
-                       · split at hby
-                         · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
-                         · cases hby
-                       · cases hby
-                     · cases hby
-                   · cases hby
-                 · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
-                   split at hby
-                   · split at hby
-                     · split at hby
-                       · split at hby
-                         · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
-                         · cases hby
-                       · cases hby
-                     · cases hby
-                   · cases hby
-               · exact hx y hy hc
-             have hy := fun d => HeapKnowledge.restateAtIndex_holds (dropped := d) hlinks hatoms
-             refine forIn_inv _ _ _ (fun t => StoreOk ε t η h) hw ?_
-             intro y hyl z hz
-             exact add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy _ a hyl hc
-           · exact hw
-         · exact hw)
+    · split
+      · exact hs
+      · have hatoms : HeapKnowledge.IndexHolds ε (x :: (s.about v).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .atIndex _ _ _ none _ => some a
+                | _ => none
+              else none
+            | _ => none) η h := by
+          intro y hy hc
+          rcases List.mem_cons.mp hy with rfl | hy
+          · exact hx _ (List.mem_singleton_self _) hc
+          · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+            split at hby
+            · split at hby
+              · split at hby
+                · cases hby; exact hs _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                · cases hby
+              · cases hby
+            · cases hby
+        have hy := HeapKnowledge.restateAtIndex_holds (ls := []) (dropped := (· == v)) (fun _ hg => by cases hg) hatoms
+        exact forIn_inv_bind (R := fun t => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs
+          (fun y hyl z hz => add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy a hyl hc)
+          (fun _ h => h)
+    · exact hs
+  · have hlin : StoreOk ε (Id.run do
+      let mut s := s
+      for r in v :: (s.about v).filterMap fun b => match b with
+        | .index ⟨.length r n, none, _⟩ => if n == v then some r else none
+        | .index ⟨F, none, _⟩ => SinglePass.maskSourceOf v F
+        | _ => none do
+        let elems := (s.about r).filterMap fun b => match b with
+          | .index a => if a.cond.isNone then match a.fact with
+              | .element r' _ _ => if r' == r then some a else none
+              | _ => none
+            else none
+          | _ => none
+        if !elems.isEmpty then
+          let lens := (s.about r).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .length r' _ => if r' == r then some a else none
+                | _ => none
+              else none
+            | _ => none
+          let masks := (s.about r).filterMap fun b => match b with
+            | .index a => if a.cond.isNone then match a.fact with
+                | .linear _ => some a
+                | _ => none
+              else none
+            | _ => none
+          if SinglePass.mentionsElemProj r lens masks x.fact then
+            let arrReads := elems.flatMap fun a => match a.fact with
+              | .element _ arr _ => (s.about arr).filterMap fun b => match b with
+                  | .link g => if !g.alias && g.value == arr then some g else none
+                  | _ => none
+              | _ => []
+            let dropped : Nat → Bool := fun w =>
+              w == r ||
+              lens.any (fun a => match a.fact with | .length _ n => n == w | _ => false) ||
+              masks.any (fun a => match HeapKnowledge.matchMaskLe r a.fact with | some (ms, _) => ms == w | none => false) ||
+              arrReads.any (·.value == w)
+            for y in HeapKnowledge.restateAtIndex arrReads dropped (elems ++ lens ++ masks ++ [x]) do
+              s := s.add (.index y)
+      let atEqs := (s.about v).filterMap fun b => match b with
+        | .index a => if a.cond.isNone then match a.fact with
+            | .atIndex _ _ _ none _ => some a
+            | _ => none
+          else none
+        | _ => none
+      if !atEqs.isEmpty then
+        for y in HeapKnowledge.restateAtIndex [] (· == v) (x :: atEqs) do
+          s := s.add (.index y)
+      return s) η h := by
+      simp only [Id.run]
+      refine forIn_inv_bind (R := fun (t : Store) => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs ?_ ?_
+      · intro r _ w hw
+        split
+        · split
+          · have hlinks : HeapLinks.Holds (((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .element r' _ _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none).flatMap fun a => match a.fact with
+                | .element _ arr _ => (w.about arr).filterMap fun b => match b with
+                    | .link g => if !g.alias && g.value == arr then some g else none
+                    | _ => none
+                | _ => []) η h := by
+              intro g hg
+              obtain ⟨a, -, hg⟩ := List.mem_flatMap.mp hg
+              split at hg
+              · obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+                split at hbg
+                · split at hbg
+                  · cases hbg; exact hw _ (about_storeAll hb) g (List.mem_singleton_self _)
+                  · cases hbg
+                · cases hbg
+              · cases hg
+            have hatoms : HeapKnowledge.IndexHolds ε (((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .element r' _ _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none) ++ ((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .length r' _ => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none) ++ ((w.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .linear _ => some a
+                    | _ => none
+                  else none
+                | _ => none) ++ [x]) η h := by
+              intro y hy hc
+              rcases List.mem_append.mp hy with hy | hy
+              · rcases List.mem_append.mp hy with hy | hy
+                · rcases List.mem_append.mp hy with hy | hy
+                  · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                    split at hby
+                    · split at hby
+                      · split at hby
+                        · split at hby
+                          · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                          · cases hby
+                        · cases hby
+                      · cases hby
+                    · cases hby
+                  · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                    split at hby
+                    · split at hby
+                      · split at hby
+                        · split at hby
+                          · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                          · cases hby
+                        · cases hby
+                      · cases hby
+                    · cases hby
+                · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                  split at hby
+                  · split at hby
+                    · split at hby
+                      · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                      · cases hby
+                    · cases hby
+                  · cases hby
+              · exact hx y hy hc
+            have hy := fun d => HeapKnowledge.restateAtIndex_holds (dropped := d) hlinks hatoms
+            refine forIn_inv _ _ _ (fun t => StoreOk ε t η h) hw ?_
+            intro y hyl z hz
+            exact add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy _ a hyl hc
+          · exact hw
+        · exact hw
+      · intro s1 hs1
+        split
+        · have hatoms : HeapKnowledge.IndexHolds ε (x :: (s1.about v).filterMap fun b => match b with
+              | .index a => if a.cond.isNone then match a.fact with
+                  | .atIndex _ _ _ none _ => some a
+                  | _ => none
+                else none
+              | _ => none) η h := by
+            intro y hy hc
+            rcases List.mem_cons.mp hy with rfl | hy
+            · exact hx _ (List.mem_singleton_self _) hc
+            · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+              split at hby
+              · split at hby
+                · split at hby
+                  · cases hby; exact hs1 _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                  · cases hby
+                · cases hby
+              · cases hby
+          have hy := HeapKnowledge.restateAtIndex_holds (ls := []) (dropped := (· == v)) (fun _ hg => by cases hg) hatoms
+          exact forIn_inv_bind (R := fun t => StoreOk ε t η h) _ s1 _ (fun t => StoreOk ε t η h) _ hs1
+            (fun y hyl z hz => add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy a hyl hc)
+            (fun _ h => h)
+        · exact hs1
+    split
+    · exact hlin
+    · exact hlin
+    · -- element
+      rename_i r arr _ _
+      split
+      · exact hs
+      · split
+        · exact hs
+        · split
+          · exact hs
+          · have hlinks : HeapLinks.Holds ((s.about arr).filterMap fun b => match b with
+                | .link g => if !g.alias && g.value == arr then some g else none
+                | _ => none) η h := by
+              intro g hg
+              obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
+              split at hbg
+              · split at hbg
+                · cases hbg; exact hs _ (about_storeAll hb) g (List.mem_singleton_self _)
+                · cases hbg
+              · cases hbg
+            have hatoms : HeapKnowledge.IndexHolds ε (x :: (s.about r).filterMap fun b => match b with
+                | .index a => if a.cond.isNone then match a.fact with
+                    | .int r' => if r' == r then some a else none
+                    | _ => none
+                  else none
+                | _ => none) η h := by
+              intro y hy hc
+              rcases List.mem_cons.mp hy with rfl | hy
+              · exact hx _ (List.mem_singleton_self _) hc
+              · obtain ⟨b, hb, hby⟩ := List.mem_filterMap.mp hy
+                split at hby
+                · split at hby
+                  · split at hby
+                    · split at hby
+                      · cases hby; exact hs _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                      · cases hby
+                    · cases hby
+                  · cases hby
+                · cases hby
+            have hy := fun d => HeapKnowledge.restateAtIndex_holds (dropped := d) hlinks hatoms
+            exact forIn_inv_bind (R := fun t => StoreOk ε t η h) _ s _ (fun t => StoreOk ε t η h) _ hs
+              (fun y hyl z hz => add_ok hz fun a ha hc => by simp only [List.mem_singleton] at ha; subst ha; exact hy _ a hyl hc)
+              (fun _ h => h)
+    · exact hs
 
 theorem deltaRestate_ok {s : Store} {added : List HeapKnowledge.IndexAtom} {η : Env} {h : Heap}
     (hs : StoreOk ε s η h) (hadd : HeapKnowledge.IndexHolds ε added η h) : StoreOk ε (deltaRestate s added) η h := by

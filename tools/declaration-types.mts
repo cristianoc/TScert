@@ -180,6 +180,7 @@ export type ElemTarget =
 /** A clause of a quantified fact's body, optionally under element guards. */
 export type BodyFact =
   | { readonly guarded: { readonly target: ElemTarget; readonly tag: GuardTag; readonly body: BodyFact } }
+  | { readonly bodyEither: { readonly left: BodyFact; readonly right: BodyFact } }
   | { readonly either: { readonly left: BodyFact; readonly right: BodyFact } }
   | { readonly le: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } }
   | { readonly ne: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } };
@@ -195,13 +196,17 @@ export type Integer = number | string;
 export type LinearFactOf<V> =
   | { readonly le: { readonly form: readonly (readonly [V, Integer])[]; readonly bound: Integer } }
   | { readonly ne: { readonly form: readonly (readonly [V, Integer])[]; readonly bound: Integer } };
+/** What a linear term reads of the value its path ends at (`HeapKnowledge.Term.Kind`):
+ * the safe integer it is, the length of its array spine, the length of the
+ * typed array it is, the length of the string it is, or the masked 32-bit
+ * integer `ToInt32(x) & mask` for a nonnegative 31-bit integer `mask`. */
+export type LinearTermKind = "value" | "length" | "view" | "strLength" | { readonly bitMask: { readonly mask: number } };
 /** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends
- * at (`kind`): the safe integer it is, the length of its array spine, the
- * length of the typed array it is, or the length of the string it is. */
+ * at (`kind`). */
 export type LinearTerm = {
-  readonly kind: "value" | "length" | "view" | "strLength";
+  readonly kind: LinearTermKind;
   readonly slot: number;
   readonly path: readonly string[];
   /** An entry term `old(t)` of a postcondition (the note "Tolerant frames",

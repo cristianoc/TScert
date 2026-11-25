@@ -345,20 +345,27 @@ type Witness = { path: Path } | { literal: Literal };
 type WitnessSeq = { fixed: { xs: Witness[] } } | { restFrom: { first: Nat } }
   | { append: { left: WitnessSeq; right: WitnessSeq } };
 type TransportSchema = { shift: Nat; overrides: [Nat, Witness][]; boxed: boolean; stable: Nat[] };
-type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: Nat; path: string[]; atEntry?: true };
+type LinearTermKind = "value" | "length" | "view" | "strLength" | { bitMask: { mask: Nat } };
+type LinearTerm = { kind: LinearTermKind; slot: Nat; path: string[]; atEntry?: true };
 type StepVar = { before: { t: LinearTerm } } | { after: { t: LinearTerm } };
 type LinearFact<V> = { le: { form: [V, Integer][]; bound: Integer } }
   | { ne: { form: [V, Integer][]; bound: Integer } };
 type Clause<V> = LinearFact<V> | { either: { left: Clause<V>; right: Clause<V> } };
 type BodyVariable = "index" | "elem" | { offset: { delta: Nat } }
-  | { project: { kind: LinearTerm["kind"]; path: string[] } } | { free: { t: LinearTerm } };
+  | { project: { kind: LinearTermKind; path: string[] } }
+  | { parallel: { slot: Nat; path: string[]; kind: LinearTermKind; elemPath: string[] } }
+  | { free: { t: LinearTerm } };
 type IndexBound = { base: LinearTerm | null; offset: Integer };
+type ElemTarget = { self: { path: string[] } } | { parallel: { slot: Nat; path: string[]; elemPath: string[] } };
+type BodyClause = Clause<BodyVariable>
+  | { guarded: { target: ElemTarget; tag: "null" | "undefined" | "true" | "false"; body: BodyClause } }
+  | { bodyEither: { left: BodyClause; right: BodyClause } };
 type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe: { slot: Nat } }
   | { length: { array: Nat; length: Nat } } | { bound: { array: Nat; index: Nat; strict: boolean } }
   | { linear: { fact: LinearFact<LinearTerm> } } | { either: { left: IndexFact; right: IndexFact } }
   | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } }
   | { element: { value: Nat; array: Nat; index: Nat } }
-  | { every: { slot: Nat; path: string[]; start: IndexBound; stop: IndexBound; body: Clause<BodyVariable>[] } }
+  | { every: { slot: Nat; path: string[]; start: IndexBound; stop: IndexBound; body: BodyClause[] } }
   | { apart: { slot: Nat; other: Nat } }
   | { spineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
 type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];

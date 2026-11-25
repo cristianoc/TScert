@@ -460,7 +460,8 @@ private theorem term_support_envOnly (c : ReadContext) (δ : Change) {t : Term} 
   cases a
   · simp only [Term.envOnly, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
       List.isEmpty_iff] at ht
-    obtain ⟨rfl | rfl, rfl⟩ := ht <;> rfl
+    obtain ⟨hk, rfl⟩ := ht
+    cases k <;> simp [Term.Kind.isNum] at hk <;> rfl
   · rfl
 
 private theorem produceSupport_envOnly (c : ReadContext) :

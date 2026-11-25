@@ -248,9 +248,13 @@ whose regions an allocation states apart (`IndexWrites.regionAtoms`, a
 literal's spine apart from every array slot), each with its allocation,
 carried along every edge to the slots whose mappings read them, those every
 predecessor carries; at each loop head, the pairs of array slots
-(`IndexWrites.arraySlot`) of an allocation whose array the loop writes an
-element of outside every loop it holds (`elementWritten`: the write keeps a quantified fact over an
-array apart from it, `IndexWrites.overwriteAtoms`), as `IndexFact.apart`. With
+(`IndexWrites.arraySlot`) of an allocation (a literal, or a split array
+wrapper, `IndexWrites.freshApart`) where the allocation's array or either
+slot's array is written at an element somewhere in the unit
+(`elementWritten`: the write keeps a quantified fact over an array apart from
+it, `IndexWrites.overwriteAtoms`), as `IndexFact.apart`; and, in a loop
+calling a function that states a fresh array region, each nullable array
+slot `x` guarded apart from every other array slot. With
 `force` (`--force-proposals head-apart`), each such side also stated apart from
 itself, the adversarial pair the pass's edge check refuses. -/
 def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := false) :
@@ -260,29 +264,37 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   let ctxOf := fun (l : Nat) => ((r.claims[l]?).map (·.context)).getD []
   let width := fun (l : Nat) => (ctxOf l).length
   let heads := (SinglePass.loopHeads P.toArray r.start).1
-  -- (no element write in a loop: no pair to propose)
-  if !P.any fun node => (elementWritten node.expression).isSome then return []
-  let bodies := (r.cuts.filter (heads.getD · false)).map fun h => (h, loopBody P h)
-  -- The element writes each loop holds outside every loop inside it.
+  -- (no element write in the unit: no pair to propose)
   let A := P.toArray
   let writeNodes : List (Nat × Nat) := (List.range A.size).filterMap fun l => ((A[l]?).bind (elementWritten ·.expression)).map (l, ·)
-  let writes := bodies.map fun (h, body) =>
-    let inner := fun (l : Nat) => bodies.any fun (h', b) => h' != h && body.getD h' false && b.getD l false
-    (h, writeNodes.filter fun (p : Nat × Nat) => body.getD p.1 false && !inner p.1)
-  if writes.all (·.2.isEmpty) then return []
+  if writeNodes.isEmpty then return []
+  let bodies := (r.cuts.filter (heads.getD · false)).map fun h => (h, loopBody P h)
+  let isArrayWrap := fun (Γ : List (Ty ι)) (e : Tm) => match e with
+    | .makeAt .absent [s, p] [.var 0, .var proto] =>
+      s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length) && IndexWrites.spineSlot G Γ 0
+    | _ => false
+  let isArrayAlloc := fun (Γ : List (Ty ι)) (e : Tm) =>
+    isArrayWrap Γ e || match e with
+      | .arrLit _ | .letE (.arrLit _) (.makeAt .absent _ _) => true
+      | _ => false
   let allocates := fun (l : Nat) => ((A[l]?).map fun node =>
-    (IndexWrites.regionAtoms G (ctxOf l) {} node.expression).filterMap fun a => match a.fact with
+    let Γ := ctxOf l
+    let atoms :=
+      if isArrayWrap Γ node.expression then IndexWrites.freshApart G Γ
+      else IndexWrites.regionAtoms G Γ {} node.expression
+    atoms.filterMap fun a => match a.fact with
       | .apart x y => some (x, y, l)
       | _ => none).getD []
   -- The slot each allocation's result is carried to, then the allocations
-  -- a loop writes an element of: only their pairs are carried.
-  let held := carryForward P r.start width (fun l => if (allocates l).isEmpty then [] else [(0, 0, l)]) true
-  let writtenAt := fun (h : Nat) => ((writes.find? (·.1 == h)).map (·.2)).getD [] |>.flatMap fun (l, w) =>
+  -- written at an element anywhere in the unit. Carry every allocation's
+  -- apart pairs so pairs where either side is written survive to loop heads.
+  let held := carryForward P r.start width (fun l =>
+    if (A[l]?).any (fun node => isArrayAlloc (ctxOf l) node.expression) || !(allocates l).isEmpty then [(0, 0, l)] else []) true
+  let written := writeNodes.flatMap fun (l, w) =>
     ((held.getD l none).getD []).filterMap fun (a, _, o) => if a == w then some o else none
-  let written := (writes.map (·.1)).flatMap writtenAt
   let table : Array (Option (List (Nat × Nat × Nat))) :=
     if written.isEmpty then Array.replicate P.length none
-    else carryForward P r.start width (fun l => if written.contains l then allocates l else []) false
+    else carryForward P r.start width allocates false
   -- Loops that call a function stating a fresh array region (`freshRegionResult`,
   -- e.g. `new Array(n).fill(v)`) and hold a nullable array slot `x`: propose
   -- `x === null || apart(a, x)` for each other array slot `a` at the head. A call
@@ -309,9 +321,12 @@ def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := fa
   return r.cuts.filterMap fun h => do
     guard (heads.getD h false)
     let Γ := ctxOf h
-    let written := writtenAt h
+    let writtenSlots := ((held.getD h none).getD []).filterMap fun (s, _, o) =>
+      if written.contains o then some s else none
     let ps : List (Nat × Nat) := match table.getD h none with
-      | some ps => (ps.filter fun (a, b, o) => written.contains o && IndexWrites.arraySlot G Γ a && IndexWrites.arraySlot G Γ b).map
+      | some ps => (ps.filter fun (a, b, o) =>
+          (written.contains o || writtenSlots.contains a || writtenSlots.contains b) &&
+            IndexWrites.arraySlot G Γ a && IndexWrites.arraySlot G Γ b).map
           fun (a, b, _) => (a, b)
       | none => []
     let ps := ps.eraseDups

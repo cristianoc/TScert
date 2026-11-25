@@ -620,20 +620,40 @@ theorem relevant_mem [DecidableEq V] [Hashable V] {known : List (Fact V)} {goal 
     (h : F ∈ relevant known goal) : F ∈ known :=
   relevantTo_mem h
 
-/-- Whether the facts `near` entail `goal`: it is one of them, or a
-certificate the search over `P` finds `check` accepts over them. Any `P`
-is sound, since `check` decides the certificate; the search finds what it
-finds over `near` where `P` is `prepare near`. -/
-def searchInFrom [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (P : Prepared V) (goal : Fact V) : Bool :=
+/-- Whether the facts `near` entail a `≤` goal `c·x ≤ d`, directly or via `proveFrom`. -/
+private def searchLeFrom [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)]
+    (near : List (Fact V)) (P : Prepared V) (c : Form V) (d : Int) : Bool :=
+  let goal : Fact V := .le c d
   near.contains goal ||
-  match goal with
-  | .le c d =>
     match proveFrom P c d with
     | some steps => match check near steps with
       | some out => out.contains goal
       | none => false
     | none => false
-  | .ne _ _ => false
+
+private theorem searchLeFrom_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)]
+    {v : V → Int} {near : List (Fact V)} {P : Prepared V} {c : Form V} {d : Int}
+    (h : searchLeFrom near P c d = true) (hk : ∀ F ∈ near, F.Holds v) : Form.eval v c ≤ d := by
+  unfold searchLeFrom at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact hk (.le c d) (List.contains_iff_mem.mp h)
+  · split at h
+    · split at h
+      · rename_i out hc
+        exact check_sound hk hc _ (List.contains_iff_mem.mp h)
+      · cases h
+    · cases h
+
+/-- Whether the facts `near` entail `goal`: it is one of them, a
+certificate the search over `P` finds `check` accepts over them, or for a
+disequality `c·x ≠ d`, a strict bound `c·x ≤ d - 1` or `-c·x ≤ -d - 1`. Any `P`
+is sound, since `check` decides the certificate; the search finds what it
+finds over `near` where `P` is `prepare near`. -/
+def searchInFrom [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (P : Prepared V) (goal : Fact V) : Bool :=
+  near.contains goal ||
+  match goal with
+  | .le c d => searchLeFrom near P c d
+  | .ne c d => searchLeFrom near P c (d - 1) || searchLeFrom near P (c.scale (-1)) (-d - 1)
 
 theorem searchInFrom_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
     {P : Prepared V} {goal : Fact V} (h : searchInFrom near P goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v := by
@@ -641,27 +661,17 @@ theorem searchInFrom_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α
   rcases Bool.or_eq_true_iff.mp h with h | h
   · exact hk goal (List.contains_iff_mem.mp h)
   · cases goal with
-    | ne _ _ => cases h
-    | le c d =>
-      simp only at h
-      split at h
-      · split at h
-        · rename_i out hc
-          exact check_sound hk hc _ (List.contains_iff_mem.mp h)
-        · cases h
-      · cases h
+    | le c d => exact searchLeFrom_sound h hk
+    | ne c d =>
+      rcases Bool.or_eq_true_iff.mp h with h1 | h2
+      · have := searchLeFrom_sound h1 hk; show Form.eval v c ≠ d; omega
+      · have := searchLeFrom_sound h2 hk
+        rw [Form.eval_scale] at this
+        show Form.eval v c ≠ d; omega
 
 /-- Whether the facts `near` entail `goal` (`searchInFrom` over `prepare near`). -/
 def searchIn [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (goal : Fact V) : Bool :=
-  near.contains goal ||
-  match goal with
-  | .le c d =>
-    match prove near c d with
-    | some steps => match check near steps with
-      | some out => out.contains goal
-      | none => false
-    | none => false
-  | .ne _ _ => false
+  searchInFrom near (prepare near) goal
 
 theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
     {goal : Fact V} (h : searchIn near goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v :=
@@ -876,48 +886,62 @@ theorem near_mem {K : Known V} {lim : Nat} {goal F : Fact V} (h : F ∈ K.near l
   · exact Array.mem_of_getElem?
   · intro hi; cases hi
 
+/-- Direct answer for a `≤` goal `c·x ≤ d`. -/
+private def directLe (K : Known V) (c : Form V) (d : Int) : Bool :=
+  let n := normalize c
+  (n.isEmpty && decide (0 ≤ d)) ||
+  match K.leForm[n]? with
+  | some i => match K.facts[i]? with
+    | some (.le F b) => normalize F == n && decide (b ≤ d)
+    | _ => false
+  | none => false
+
+private theorem directLe_sound {K : Known V} {v : V → Int} {c : Form V} {d : Int} (hK : K.Holds v)
+    (h : K.directLe c d = true) : Form.eval v c ≤ d := by
+  unfold directLe at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · simp only [Bool.and_eq_true, List.isEmpty_iff, decide_eq_true_eq] at h
+    rw [← eval_normalize v c, h.1]
+    simpa [Form.eval] using h.2
+  · split at h
+    · split at h
+      · rename_i i F b hi
+        simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+        have hF : Form.eval v F ≤ b := hK _ (Array.mem_of_getElem? hi)
+        rw [← eval_normalize v c, ← h.1, eval_normalize]
+        omega
+      · cases h
+    · cases h
+
 /-- The direct answer: the goal `c·x ≤ d` with `c` of normal form empty and
 `0 ≤ d`; or a held `≤` fact of the goal's normal form with a bound at most
-`d`; or a `≠` goal held itself. -/
+`d`; or a `≠` goal held itself or directly separated by a held `≤` fact. -/
 def direct (K : Known V) (goal : Fact V) : Bool :=
   match goal with
-  | .le c d =>
-    let n := normalize c
-    (n.isEmpty && decide (0 ≤ d)) ||
-    match K.leForm[n]? with
-    | some i => match K.facts[i]? with
-      | some (.le F b) => normalize F == n && decide (b ≤ d)
-      | _ => false
-    | none => false
-  | .ne _ _ => match K.pos[goal]? with
+  | .le c d => K.directLe c d
+  | .ne c d =>
+    (match K.pos[goal]? with
     | some i => K.facts[i]? == some goal
-    | none => false
+    | none => false) ||
+    K.directLe c (d - 1) || K.directLe (c.scale (-1)) (-d - 1)
 
 theorem direct_sound {K : Known V} {v : V → Int} {goal : Fact V} (hK : K.Holds v) (h : K.direct goal = true) :
     goal.Holds v := by
   unfold direct at h
   split at h
+  · exact directLe_sound hK h
   · rename_i c d
-    rcases Bool.or_eq_true_iff.mp h with h | h
-    · simp only [Bool.and_eq_true, List.isEmpty_iff, decide_eq_true_eq] at h
-      show Form.eval v c ≤ d
-      rw [← eval_normalize v c, h.1]
-      simpa [Form.eval] using h.2
-    · split at h
-      · split at h
-        · rename_i i F b hi
-          simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-          have hF : Form.eval v F ≤ b := hK _ (Array.mem_of_getElem? hi)
-          show Form.eval v c ≤ d
-          rw [← eval_normalize v c, ← h.1, eval_normalize]
-          omega
-        · cases h
-      · cases h
-  · split at h
-    · rename_i i _
-      simp only [beq_iff_eq] at h
-      exact hK _ (Array.mem_of_getElem? h)
-    · cases h
+    rcases Bool.or_eq_true_iff.mp h with h0 | h2
+    · rcases Bool.or_eq_true_iff.mp h0 with hp | h1
+      · split at hp
+        · rename_i i _
+          simp only [beq_iff_eq] at hp
+          exact hK _ (Array.mem_of_getElem? hp)
+        · cases hp
+      · have := directLe_sound hK h1; show Form.eval v c ≠ d; omega
+    · have := directLe_sound hK h2
+      rw [Form.eval_scale] at this
+      show Form.eval v c ≠ d; omega
 
 /-- Whether the facts `near`, prepared as `P`, entail `goal`, alone or with
 the strict bounds their inequalities give. When `goal` names a variable,

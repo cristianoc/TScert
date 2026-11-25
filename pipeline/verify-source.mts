@@ -1171,6 +1171,7 @@ function factOf(f: StatedFact): IndexFact {
         : { parallel: { slot: t.parallel.slot, path: [...t.parallel.path], elemPath: [...t.parallel.elemPath] } };
       return { guarded: { target, tag: b.guarded.tag, body: body(b.guarded.body) } };
     }
+    if ("bodyEither" in b) return { either: { left: body(b.bodyEither.left), right: body(b.bodyEither.right) } };
     if ("either" in b) return { either: { left: body(b.either.left), right: body(b.either.right) } };
     return "le" in b ? { form: form(b.le.form, variable), bound: b.le.bound, ne: false } : { form: form(b.ne.form, variable), bound: b.ne.bound, ne: true };
   };
