@@ -3491,9 +3491,12 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("quantified-guarded-push-gap", ["gap"]),
     "JSON.stringify([buildChunks([0, 3]), appendNonEmpty({ chunks: [[1]] }, [2], 4)])"),
     '[[null,[3]],{"chunks":[[1],[2,4]]}]', "quantified-guarded-push-gap (#394): safe guarded push and disjoint inner push");
-  assert.equal(runExample(ofKind("quantified-dense-append-write-gap", ["gap"]),
-    "String(copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]))"),
-    "14", "quantified-dense-append-write-gap (#395): safe lockstep dense-append write");
+  assert.equal(runExample(ofKind("quantified-dense-append-write", ["positive"]),
+    "JSON.stringify([copyLockstep([[5, 6], null, [7]], [[2, 3], null, null]), copyNonEmpty([[1, 2], [3]])])"),
+    "[14,4]", "quantified-dense-append-write (#395): safe lockstep and single-array dense-append writes");
+  assert.equal(runExample(negative("invalid-quantified-dense-append-write"),
+    "String(Number.isNaN(copyLockstepShorterExtra([[5, 6]])))"),
+    "true", "invalid-quantified-dense-append-write (#395): appending shorter extra breaks parallel length invariant and returns NaN");
   assert.equal(runExample(ofKind("quantified-suffix-null-gap", ["gap"]),
     "JSON.stringify(buildLazyExtras([[1], [2, 3], [4]], [null, [10, 20], null]))"),
     '{"advances":[[1],[2,3],[4]],"extras":[null,[10,20],null]}', "quantified-suffix-null-gap (#396): safe lazy parallel allocation");

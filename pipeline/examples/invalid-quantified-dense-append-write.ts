@@ -1,15 +1,11 @@
-// Building two parallel arrays in lockstep via dense-append element writes
-// (`if (i > a.length) throw; a[i] = v`) extends both the single-array
-// guarded length invariant and the parallel-array length invariant.
-// Safe (run under Node).
+// Dense-append element write placing an empty array into `extras` violates the
+// parallel length invariant `advances[j].length <= extras[j].length`.
+// Unsafe (run under Node: `copyLockstepShorterExtra([[5, 6]])` returns `NaN`).
 /**
- * @requires srcAdvances.length === srcExtras.length
  * @requires forall i in srcAdvances: srcAdvances[i] === null || 1 <= srcAdvances[i].length
- * @requires forall i in srcAdvances: srcAdvances[i] === null || srcExtras[i] === null || srcAdvances[i].length <= srcExtras[i].length
  */
-export function copyLockstep(
+export function copyLockstepShorterExtra(
   srcAdvances: (number[] | null)[],
-  srcExtras: (number[] | null)[],
 ): number {
   const advances: (number[] | null)[] = [];
   const extras: (number[] | null)[] = [];
@@ -20,10 +16,12 @@ export function copyLockstep(
    */
   for (let i = 0; i < srcAdvances.length; i++) {
     const adv = srcAdvances[i] ?? null;
-    const ex = srcExtras[i] ?? null;
-    if ((i & 0x7fffffff) !== i || i > advances.length) throw new RangeError("index");
+    const ex: number[] = [];
+    if ((i & 0x7fffffff) !== i || i > advances.length)
+      throw new RangeError("index");
     advances[i] = adv;
-    if ((i & 0x7fffffff) !== i || i > extras.length) throw new RangeError("index");
+    if ((i & 0x7fffffff) !== i || i > extras.length)
+      throw new RangeError("index");
     extras[i] = ex;
   }
   let sum = 0;
