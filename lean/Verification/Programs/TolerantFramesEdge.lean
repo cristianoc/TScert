@@ -234,13 +234,13 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
     {F : List Nat} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat}
     {s : IndexedHeap} {o : BranchRefinement.Observation} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
-    StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false).2.1
-      (HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false).1 0 o)) false
+    StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false true true).2.1
+      (HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false true true).1 0 o)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
-        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
-  have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true
+        (materialize ⟨N, S, []⟩ d [0] false true true).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
+  have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true true
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
-  obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false
+  obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false true true
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
@@ -252,13 +252,13 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {q : Bool} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (hq : tagHolds .truthy (ρ 0) = q) :
-    StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false).2.1
-      (HeapKnowledge.withElements (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false).1 0 q)) false
+    StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false true true).2.1
+      (HeapKnowledge.withElements (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false true true).1 0 q)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
-        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
-  have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true
+        (materialize ⟨N, S, []⟩ d [0] false true true).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
+  have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true true
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
-  obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false
+  obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false true true
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
