@@ -1992,8 +1992,9 @@ theorem binop_bitOr {a b u : Tm} (h : binop .bitOr a b = some u) :
 
 /-- Bitmask facts emitted on one side of `r = x & c` (where `x` is a slot and
 the other operand denotes constant `c`): exact mask identity `r = bitMask(c, x)`,
-idempotence `bitMask(c, r) = r`, and preservation/clearing of every active mask
-`m ∈ masks`. -/
+idempotence `bitMask(c, r) = r`, and, for every active mask `M ∈ masks`, the
+law `bitMask(M, x & c) = bitMask(M & c, x)`, stated as the constant `0` where
+`M & c = 0`. -/
 def bitAndSideAtoms (masks : List Nat) (x : Nat) (c : Int) : List IndexAtom :=
   (if 0 ≤ c && c < 2 ^ 31 then
     let M := c.toNat
@@ -2002,11 +2003,10 @@ def bitAndSideAtoms (masks : List Nat) (x : Nat) (c : Int) : List IndexAtom :=
   else []) ++
   (if -2 ^ 31 ≤ c && c < 2 ^ 31 then
     masks.flatMap fun (M : Nat) =>
-      if intAnd c (M : Int) == (M : Int) then
-        termEqAtoms (.now (.bitMask M) 0 []) (.now (.bitMask M) (x + 1) [])
-      else if intAnd c (M : Int) == 0 then
+      if intAnd c (M : Int) == 0 then
         termConstAtoms (.now (.bitMask M) 0 []) 0
-      else []
+      else
+        termEqAtoms (.now (.bitMask M) 0 []) (.now (.bitMask (intAnd c (M : Int)).toNat) (x + 1) [])
   else [])
 
 /-- Bitmask facts emitted on one side of `r = x | other`: for every active mask
@@ -2132,19 +2132,18 @@ private theorem bitAndSideAtoms_holds {masks : List Nat} {x : Nat} {c : Int}
         simp only [termValue_nil, push, kindValue, bitMaskOf, hMlt, ite_true, hto32_u, hby,
           IndexNumbers.intAnd_assoc_mask]
       split at hma
-      · rename_i heq
-        have hcm : intAnd c (M : Int) = (M : Int) := beq_iff_eq.mp heq
-        rw [hcm] at hbm_0
-        have hbm_x : termValue ε (push (.num (arithBits .bitAnd bx by_)) ρ) h (.now (.bitMask M) (x + 1) []) =
-            some (intAnd (toInt32 bx) (M : Int)) := by
-          simp only [termValue_nil, push, hx, kindValue, bitMaskOf, hMlt, ite_true]
+      · rename_i hzero
+        have hc0 : intAnd c (M : Int) = 0 := beq_iff_eq.mp hzero
+        rw [hc0, IndexNumbers.intAnd_zero_right] at hbm_0
+        exact termConstAtoms_holds hbm_0 atom hma hcd
+      · have hr := IndexNumbers.intAnd_mask_range c M
+        have hm' : (((intAnd c (M : Int)).toNat : Nat) : Int) = intAnd c (M : Int) := Int.toNat_of_nonneg hr.1
+        have hm'lt : (intAnd c (M : Int)).toNat < 2 ^ 31 := by omega
+        have hbm_x : termValue ε (push (.num (arithBits .bitAnd bx by_)) ρ) h
+            (.now (.bitMask (intAnd c (M : Int)).toNat) (x + 1) []) =
+            some (intAnd (toInt32 bx) (intAnd c (M : Int))) := by
+          simp only [termValue_nil, push, hx, kindValue, bitMaskOf, hm'lt, ite_true, hm']
         exact termEqAtoms_holds hbm_0 hbm_x atom hma hcd
-      · split at hma
-        · rename_i hzero
-          have hc0 : intAnd c (M : Int) = 0 := beq_iff_eq.mp hzero
-          rw [hc0, IndexNumbers.intAnd_zero_right] at hbm_0
-          exact termConstAtoms_holds hbm_0 atom hma hcd
-        · cases hma
     · exact indexHolds_nil _ _
 
 private theorem bitOrSideAtoms_holds {k : Knowledge} {masks : List Nat} {x : Nat} {other : Tm}

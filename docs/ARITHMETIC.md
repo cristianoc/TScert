@@ -1683,12 +1683,17 @@ projecting an element's length depends on the array's element spines region
 **Bitmask terms and disjunctive body clauses.** A linear term kind
 $`\mathrm{bitMask}(m)`$ ($`0 \le m < 2^{31}`$) denotes the signed 32-bit
 bitwise AND $`\mathrm{toInt32}(x) \mathbin{\&} m`$ of a numeric value $`x`$.
-Bitwise AND (`x & c`) emits the exact identity $`r = (x \mathbin{\&} c)`$ and
-propagates every active mask $`M`$ whose bits are contained in $`c`$ or
-cleared by $`c`$; bitwise OR (`x | c`) preserves $`(r \mathbin{\&} M) = (x \mathbin{\&} M)`$
-when $`(c \mathbin{\&} M) = 0`$ and fixes $`(r \mathbin{\&} M) = M`$ when
-$`(c \mathbin{\&} M) = M`$ (`IndexWrites.bitMaskAtoms`, proved by
-`bitMaskAtoms_holds`). Inside a quantified body, `BodyClause.either` states a
+Bitwise AND (`x & c`) emits the exact identity $`r = (x \mathbin{\&} c)`$
+and, for every active mask $`M`$, the law
+$`(r \mathbin{\&} M) = (x \mathbin{\&} (M \mathbin{\&} c))`$, the constant
+$`0`$ where $`M \mathbin{\&} c = 0`$. Bitwise OR (`x | c`) preserves
+$`(r \mathbin{\&} M) = (x \mathbin{\&} M)`$ when $`(c \mathbin{\&} M) = 0`$
+(or when the other operand is known to have $`(y \mathbin{\&} M) = 0`$) and
+fixes $`(r \mathbin{\&} M) = M`$ when $`(c \mathbin{\&} M) = M`$
+(`IndexWrites.bitMaskAtoms`, proved by `bitMaskAtoms_holds`). The rules state
+less than the OR law $`(r \mathbin{\&} M) = (x \mathbin{\&} (M \mathbin{\&} {\sim}c)) + (c \mathbin{\&} M)`$
+for a constant $`c`$ whose bits under $`M`$ are neither none nor all; such a
+write keeps no fact under $`M`$. Inside a quantified body, `BodyClause.either` states a
 disjunction of arbitrary body clauses (linear comparisons or guarded clauses),
 and a standalone element tag atom `P[i] === null` elaborates to the guarded
 contradiction $`P[i] = \mathtt{null} \lor (1 \le 0)`$:
@@ -1716,6 +1721,22 @@ A non-number array element write cannot modify any typed-array view spine or
 view cell (`HeapExpressionRules.viewPathOf`, `ElementWriteHeap.viewCellKept`),
 so parallel-view quantified clauses survive across non-number overwrites of
 apart arrays.
+
+The pass looks for these facts in fixed shapes, and states less than the
+rules where a fact has another shape:
+
+- An index instantiation without an element read
+  (`HeapKnowledge.instantiateEveryAtK`) is tried for a quantified clause whose
+  body holds a disjunction (`BodyClause.either`, at its top or beneath its
+  guards); a body without one is instantiated at an element read only.
+- An element projection is equated with a constant or a term
+  (`HeapKnowledge.atIndexConst`, `atIndexTerm`) from a pair of `atIndex`
+  bounds $`b \le c`$ and $`c \le b`$ whose projection has coefficient $`1`$
+  and whose other side is a constant or a single term; an equality stated
+  with other coefficients or several terms is not used.
+- A store restates a fact about a masked element read
+  (`SinglePass.maskSourceOf`) where the fact is the atom
+  $`v - (r \mathbin{\&} m) \le 0`$, coefficients $`1`$ and $`-1`$.
 
 **Frame conditions.** A body containing an element projection, element guard, parallel array or offset is preserved
 across heap extension and unchanged heaps. The growth and element-write

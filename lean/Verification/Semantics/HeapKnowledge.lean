@@ -6819,14 +6819,20 @@ def instantiateBodyAtK (K : Linear.Known Term) (ls : HeapLinks.Links) (as : List
     | some a', some b' => some (.either a' b')
     | _, _ => none
 
+/-- Whether a body clause holds a disjunction of body clauses (`.either`),
+at its top or beneath its guards. -/
+def BodyClause.hasEither : BodyClause → Bool
+  | .clause _ => false
+  | .guarded _ _ b => b.hasEither
+  | .either _ _ => true
+
 /-- Instantiate disjunctive quantified clauses over `[start, stop)` at an index
 `k` with `0 ≤ k`, `start ≤ k` and `k < stop`, without requiring a runtime read
 of the root array at `k`. -/
 def instantiateEveryAtK (K : Thunk (Linear.Known Term)) (ls : HeapLinks.Links) (as : List IndexAtom) (k : Nat) :
     IndexAtom → List IndexAtom
   | ⟨.every s p start stop body, none, _⟩ =>
-    if intSlot as k && start.defined as && stop.defined as &&
-        body.any (fun | .either _ _ => true | _ => false) then
+    if intSlot as k && start.defined as && stop.defined as && body.any BodyClause.hasEither then
       let kB := IndexBound.ofTerm (.value k)
       if K.get.entails (.le [(.value k, -1)] 0) && K.get.entails (start.leFact kB) &&
           K.get.entails (kB.leFact stop 1) then
