@@ -1654,7 +1654,7 @@ step leaving the heap unchanged preserves them; a growth of a receiver's
 spine preserves a quantified fact as below, an exact element write of a
 typed array as below, and a write at a checked index one over an array whose
 [element region](FOOTPRINTS.md#element-regions) is apart from the written
-one (`every-apart-write`); a scalar field write preserves a quantified fact
+one (`every-write`, [quantified facts across a write](FOOTPRINTS.md#element-regions)); a scalar field write preserves a quantified fact
 when it satisfies the rule below. Any other heap change preserves neither, a stated
 limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
@@ -1839,6 +1839,17 @@ fact over a view does not transfer to a `subarray` of it either
 (`typed-array-subarray-facts-gap`, a stated limit). An array's length is at
 most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
 `Int32Array`: the clause states the bound (`v <= 2147483647`).
+
+**Overwriting an ordinary array element.** Distinct indices of an ordinary
+array that have cells address distinct locations (`listT_distinct`). Two
+cells can hold the same value. On a write at an index known in bounds, the
+checker keeps a quantified body at each other index where its reads survive
+the write. At the written index it checks the body with the replacement as
+the element. A parallel read needs its own evidence of survival or a checked
+read of the replacement at the same index (`every-write`, stated with its
+limits in [FOOTPRINTS.md](FOOTPRINTS.md#element-regions);
+`IndexWrites.boundedOverwrite_sound`). Writing `[42]` satisfies
+`1 <= chunks[i].length` at the written index. Writing `[]` violates it.
 
 **Extending a prefix.** An exact element write at index $`k`$ establishes a
 prefix with bound $`m`$ where the old prefix has bound $`n`$,

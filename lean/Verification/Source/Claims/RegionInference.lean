@@ -250,7 +250,7 @@ carried along every edge to the slots whose mappings read them, those every
 predecessor carries; at each loop head, the pairs of array slots
 (`IndexWrites.arraySlot`) of an allocation whose array the loop writes an
 element of outside every loop it holds (`elementWritten`: the write keeps a quantified fact over an
-array apart from it, `IndexWrites.writeAtoms`), as `IndexFact.apart`. With
+array apart from it, `IndexWrites.overwriteAtoms`), as `IndexFact.apart`. With
 `force` (`--force-proposals head-apart`), each such side also stated apart from
 itself, the adversarial pair the pass's edge check refuses. -/
 def freshApartAt (r : SourceElaboration.SourceRequest σ ι) (force : Bool := false) :

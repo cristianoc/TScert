@@ -1022,20 +1022,40 @@ under $`\Sigma`$'s query (`region-grow`). Both proved (`writeAtoms_holds`,
      {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{apart}(x,y)}\ \textsf{region-write}
 ```
 
-**Quantified facts across a write.** A write at a checked index of $`a`$'s
-spine keeps $`\forall i<t.\ \Phi`$ over $`z[i]`$ where $`z`$ is an array slot with
-$`\mathrm{apart}_\Sigma(a,z)`$ and the bound and every free body term read
-nothing of $`a`$'s region: a slot's value, a string's length, or the length
-of a slot $`w`$ with $`\mathrm{apart}_\Sigma(a,w)`$ (`every-apart-write`,
-proved: `writeAtoms_holds`, through
-`IndexFact.every_frame`). Across a growth of $`a`$'s spine, the length of a
-slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
-fact too.
+**Quantified facts across a write.** A write $`a[k]:=v`$ at a checked
+index ($`0\le k\le|a|`$) changes $`a`$'s spine and one element cell: distinct
+indices of an ordinary array list distinct cells (`listT_distinct`). It keeps
+$`\forall i<t.\ \Phi`$ over $`z[i]`$ ($`z`$ a slot or a field path from one)
+when the write keeps the body at every index $`i\ne k`$ and the fact holds at
+$`k`$ (`every-write`, proved: `boundedOverwrite_sound`).
+
+- **Other indices,** $`\mathrm{framed}_a(z,\Phi)`$: the root $`z`$ and each
+  array $`\Phi`$ reads in parallel is an alias of $`a`$ or apart from it under
+  $`\Sigma`$'s query, spine and cells (`classifyArrayPath`); an offset read
+  $`z[i+d]`$ has a root apart from $`a`$, since $`i+d`$ can be $`k`$
+  (`bodyClauseOtherOk`). A body with an offset read over $`a`$ itself is not
+  kept, a stated limit.
+- **Index $`k`$, written in bounds.** Where $`K\vdash k<|a|`$, the write
+  keeps every spine's length, so every term keeps its value, and the fact
+  holds at $`k`$ when $`K\vdash t\le k`$ or each body clause holds with $`v`$
+  as the element at $`k`$ of each array aliasing $`a`$
+  ($`\mathrm{at}_k`$, `writtenBodyClause`).
+- **Index $`k`$, otherwise.** The write may append, so the fact reads
+  nothing of $`a`$'s region, $`\mathrm{apart}_a(z,t,\Phi)`$: $`z`$ and every
+  array $`\Phi`$ reads in parallel are apart from $`a`$, the bound and every
+  free body term read no length of a slot not apart from $`a`$ (a slot's
+  value, a string's length, or the length of a slot $`w`$ with
+  $`\mathrm{apart}_\Sigma(a,w)`$: `termApart`), and no read through an
+  element is a length.
 
 ```math
-\frac{(\forall i<t.\ \Phi)\in\Sigma\quad \mathrm{array}(z)\quad \mathrm{apart}_\Sigma(a,z)\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
-     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-apart-write}
+\frac{(\forall i<t.\ \Phi)\in\Sigma\quad \mathrm{framed}_a(z,\Phi)\quad (K\vdash k<|a|\ \land\ \mathrm{at}_k)\ \lor\ \mathrm{apart}_a(z,t,\Phi)}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-write}
 ```
+
+Across a growth of $`a`$'s spine, the length of a slot apart from $`a`$ is
+kept (`growFirst`), so `every-grow` keeps a fact reading nothing of $`a`$'s
+region too.
 
 The separations at a unit's loop heads are inferred (`freshApartAt`,
 `RegionInference.lean`): the pairs of slots whose regions an allocation

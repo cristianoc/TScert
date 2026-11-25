@@ -795,7 +795,7 @@ mappings read them and kept where every predecessor carries them, of an
 allocation whose array the loop writes an element of outside every loop
 it holds (`freshApartAt`), as `IndexFact.apart`: an element write keeps a
 quantified fact over an array apart from the written one
-(`IndexWrites.writeAtoms`, `every-apart-write`). The pass checks each on
+(`IndexWrites.overwriteAtoms`, `every-write`). The pass checks each on
 every edge into the head; a member an edge refuses one for is run again
 without it. `--force-proposals head-apart` also states each written side apart
 from itself: `quantified-freshness-builder` `build`, accepted unforced, is
