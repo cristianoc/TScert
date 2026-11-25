@@ -180,7 +180,7 @@ theorem OnPath.projection_holds (P : OnPath preds width fresh0 p ε ρ η h) {v 
     Holds (SinglePass.materialize v d slots false).1 ε ρ h := by
   rw [materialize_eq]
   refine materializeFrom_holds (η := mVal preds width fresh0 ρ η) (hn ▸ P.slotsNamed) fun a ha => ?_
-  obtain ⟨n, hn⟩ := selectedFromIndex v slots true a ha
+  obtain ⟨n, hn⟩ := selectedFromIndex v slots true false a ha
   exact hv a (about_storeAll hn)
 
 theorem foldl_indicesFilter_sub (useCases : Bool := true) : ∀ (ps : List Knowledge) (cs : List IndexAtom) (x : IndexAtom),

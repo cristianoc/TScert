@@ -118,8 +118,9 @@ theorem stateHolds_throw {G : NormalGraph ι} {st : SinglePass.State} {I : List 
   · exact atomHolds_heapFree hfr (hst a hx) s'.h
 
 /-- The table `materialize` returns is a slot table of the state's names. -/
-theorem materialize_table (st : SinglePass.State) (d : Nat) (ms : List Nat) (whole : Bool) :
-    ∃ want, (materialize st d ms whole).2.2 = SinglePass.slotTable st.names want whole := by
+theorem materialize_table (st : SinglePass.State) (d : Nat) (ms : List Nat) (whole : Bool)
+    (observeElements : Bool := false) :
+    ∃ want, (materialize st d ms whole (observeElements := observeElements)).2.2 = SinglePass.slotTable st.names want whole := by
   rw [materialize_eq]; exact materializeFrom_table
 
 /-- **A preserving step's store holds after the step**: every fact of the
