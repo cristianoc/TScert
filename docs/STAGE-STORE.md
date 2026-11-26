@@ -60,8 +60,8 @@ Excluded from every key (`unkeyed`), by role:
   to process stages;
 - `pipeline/stage-store.mts`: the store's lookup, validation, publication and
   cleanup;
-- `pipeline/verify-source.mts`: the orchestration of one check, passing
-  values to the stages' calls, and its outcome;
+- `pipeline/verify-source.mts`: the orchestration of file checks, passing
+  values to the stages' calls, and their outcomes;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
   case inventory;
 - `pipeline/run-example.mts`, `pipeline/fixture-links.mts`: running an
@@ -368,6 +368,12 @@ everything the stage reads.
 
 The orchestration and diagnostic presentation run under their current
 implementation; a stored raw refusal is not a stored final Outcome.
+
+The CLI's batch checks run sequentially in one process. Each file gets its
+own snapshot, attempts and verdict. The process shares the loaded runtime
+and the memoized executable identities. Each stage validates its inputs
+and observations as in a single-file invocation. If Node's caches become
+inconsistent or require retirement, subsequent files run in fresh processes.
 
 ## Retained declaration sessions
 

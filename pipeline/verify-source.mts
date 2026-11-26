@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { fork, type ChildProcess } from "node:child_process";
+import { fork, spawn, type ChildProcess } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
@@ -1407,7 +1407,27 @@ export function contractsDeclarations(units: readonly UnitContracts[], document:
   lines.push("", `// Members of the checked file's own types read: ${ownMembers}`);
   return lines.join("\n") + "\n";
 }
-// A worker of `checkApart`'s pool: one check per message, answered with its outcome.
+/** Check one remaining batch input in a fresh process. Feed its output through
+ * the same streams as the preceding verdicts so pending writes stay ordered. */
+function freshBatchCheck(args: string[]): Promise<number> {
+  const child = spawn(process.execPath, [...process.execArgv, import.meta.filename, "--batch", ...args], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr.pipe(process.stderr, { end: false });
+  let verdict = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { verdict += chunk; });
+  return new Promise((done, fail) => {
+    child.once("error", fail);
+    child.once("close", (code, signal) => {
+      const newline = verdict.indexOf("\n");
+      if ((code === 0 || code === 1) && newline > 0 && newline === verdict.length - 1) {
+        process.stdout.write(verdict);
+        done(code);
+      } else fail(Error(`fresh check exited with ${signal ?? code} without a complete verdict`));
+    });
+  });
+}
+
 const entryPoint = (): boolean => {
   try {
     return process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.meta.filename;
@@ -1417,6 +1437,7 @@ const entryPoint = (): boolean => {
 };
 const isEntryPoint = entryPoint();
 
+// A worker of `checkApart`'s pool: one check per message, answered with its outcome.
 if (isEntryPoint && process.argv[2] === "--serve") {
   // A worker keeps one declaration session between its checks (STAGE-STORE.md,
   // "Retained declaration sessions"), released when it ends.
@@ -1462,39 +1483,77 @@ if (isEntryPoint && process.argv[2] === "--serve") {
   // standard error: as text, or with `--contracts=ts` as a TypeScript
   // declaration file (`contractsDeclarations`).
   const contracts = all.includes("--contracts=ts") ? "ts" : all.includes("--contracts") ? "text" : null;
-  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts" && a !== "--contracts=ts");
+  const usage = "tscert [--batch] file.ts [more-files.ts ...] [--project tsconfig-or-directory]" +
+    " [--typescript-errors] [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]";
+  const batch = all.includes("--batch");
+  const args = all.filter((a) => a !== "--batch" && a !== "--typescript-errors" && a !== "--contracts" && a !== "--contracts=ts");
+  const projectAt = args.indexOf("--project");
+  const sources = projectAt === -1 ? args : args.slice(0, projectAt);
+  const project = projectAt === -1 ? undefined : args[projectAt + 1];
   if (all.length === 1 && (all[0] === "--help" || all[0] === "-h")) {
-    process.stdout.write("Usage: tscert file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]\n\n" +
+    process.stdout.write(`Usage: ${usage}\n\n` +
+      "Use --batch for one JSON line per input file. Options apply to every file.\n\n" +
       "Research preview. A verified result applies to the checked units under the contracts used for that run.\n" +
       "Use --contracts to inspect those contracts. The supported TypeScript fragment, CLI, and output format may change.\n");
-  } else if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]\n");
+  } else if (sources.length === 0 || (!batch && sources.length !== 1) ||
+      (projectAt !== -1 && projectAt !== args.length - 2)) {
+    process.stderr.write(`Usage: ${usage}\n`);
     process.exitCode = 2;
   } else {
-    // The printed outcome names the run's directory, kept for inspection.
+    // Each printed outcome names its own run directory. Keep them for inspection.
     keepRunDirectories();
-    // The check's collections share a declaration session, released at its end.
     retainDeclarationSessions(true);
     try {
-      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
-        units);
-      if (contracts !== null) {
-        const reads = result.contractReads;
-        const document = reads === undefined ? null : readFragmentFile(join(result.artifacts, "fragment.json")).declarations;
-        const relied = reads === undefined || document === null ? null : contractsOf(reads, document);
-        process.stdout.write(JSON.stringify({ ...result, contracts: relied }, null, 2) + "\n");
-        process.stderr.write(reads === undefined || document === null || relied === null
-          ? "Contracts: no unit's check recorded its reads\n"
-          : contracts === "ts" ? contractsDeclarations(reads, document) : contractsText(relied));
-      } else process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-      process.exitCode = result.status === "verified" ? 0 : 1;
-    } catch (error) {
-      process.stderr.write(messageOf(error) + "\n");
-      process.exitCode = 1;
+      for (const source of sources) {
+        try {
+          if (sources.length > 1 && (processInconsistency() !== null || processRetirement() !== null)) {
+            // Node's resolver and loader caches live for the process's lifetime.
+            // Start a fresh process for each remaining file, keeping this run root
+            // and emitting its verdict in the original order.
+            retainDeclarationSessions(false);
+            const status = await freshBatchCheck([
+              source,
+              ...(project === undefined ? [] : ["--project", project]),
+              ...(typescriptErrors ? ["--typescript-errors"] : []),
+              ...(subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)]),
+              ...(omitted.length === 0 ? [] : ["--omit", omitted.join(",")]),
+              ...(contracts === null ? [] : [contracts === "ts" ? "--contracts=ts" : "--contracts"]),
+            ]);
+            if (status === 1) process.exitCode = 1;
+            continue;
+          }
+
+          const result = check(source, project ? tsconfigOf(project) : undefined, typescriptErrors, subtypeRounds, false,
+            units);
+          const output = batch ? { source, ...result } : result;
+          const print = (value: object): void => {
+            process.stdout.write(JSON.stringify(value, null, batch ? undefined : 2) + "\n");
+          };
+          if (contracts !== null) {
+            const reads = result.contractReads;
+            const document = reads === undefined ? null : readFragmentFile(join(result.artifacts, "fragment.json")).declarations;
+            const relied = reads === undefined || document === null ? null : contractsOf(reads, document);
+            const report = reads === undefined || document === null || relied === null
+              ? `${batch && contracts === "ts" ? "// " : ""}Contracts: no unit's check recorded its reads\n`
+              : contracts === "ts" ? contractsDeclarations(reads, document) : contractsText(relied);
+            print({ ...output, contracts: relied });
+            if (batch) {
+              const label = JSON.stringify(source).replace(/[\u2028\u2029]/gu, (s) => `\\u${s.charCodeAt(0).toString(16)}`);
+              process.stderr.write(`${contracts === "ts" ? "// " : ""}Contracts for ${label}\n`);
+            }
+            process.stderr.write(report);
+          } else print(output);
+          if (result.status !== "verified") process.exitCode = 1;
+        } catch (error) {
+          const detail = messageOf(error);
+          if (batch) process.stdout.write(JSON.stringify({ source, status: "error", phase: "source", detail }) + "\n");
+          else process.stderr.write(detail + "\n");
+          process.exitCode = 1;
+        }
+      }
     } finally {
       retainDeclarationSessions(false);
+      closeParser();
     }
   }
 }
