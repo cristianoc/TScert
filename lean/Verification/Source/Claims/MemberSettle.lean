@@ -272,6 +272,11 @@ def candidateShown : HeapKnowledge.Candidate → String
   | .index a => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
   | .link g => (reprStr g).replace "\n" " " |>.replace "  " ""
 
+/-- A regional check refused its own table without identifying a missing
+edge fact. The deciding retry can discard that table directly. -/
+private def regionalTableRefused (w : String × Option (Nat × List HeapKnowledge.Candidate)) : Bool :=
+  w.2.isNone && ((w.1.dropPrefix "footprint by spine regions: ").toString.startsWith "spine regions")
+
 /-- What a refusal `w` of member `i`'s run calls for (its text, and the entry
 and lacking facts of a refusal of an edge into a statement entry, as data):
 the plans and given lines of its next run, the lines saying what was left
@@ -294,7 +299,7 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
   -- (a regional check's own refusal: a refusal stating the facts an edge
   -- lacks is that edge's, whichever route's run made it, the regional
   -- fallback's included, and is the next branch's)
-  else if w.2.isNone && ((w.1.dropPrefix "footprint by spine regions: ").toString.startsWith "spine regions") then
+  else if regionalTableRefused w then
     if fixed then none else do
     let g ← given.bind (withoutRegional · (f.fr.unitId i))
     pure (f, some g, ["inferred heads: dropped the regional tables"], 0)
@@ -346,8 +351,9 @@ def FilePlans.dropAll (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnow
 lacking on some edge into their head (`lackingAt`, the given file's
 facts `protect` kept), those facts at the heads that read their head's
 (`laterDrops`), and the implications of the heads it finds refusing one,
-left out. With `fixed` (an adversarial proposal forced),
-`inferredNext`'s alone. -/
+left out. A refusal of the regional tables alone retries without those
+tables before gathering any missing edge facts. With `fixed` (an
+adversarial proposal forced), use `inferredNext`'s state alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
     (protect : List (Nat × List HeapKnowledge.Candidate)) («given» : Option (Std.HashMap String Json)) (i : Nat)
     (w : String × Option (Nat × List HeapKnowledge.Candidate)) (layer : Option SinglePass.PassLayer := none) :
@@ -355,7 +361,9 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
   match f.inferredNext fixed protect given i w with
   | none => none
   | some (f₁, g₁, ls, d) =>
-    if fixed then some (f₁, g₁, ls, d) else
+    -- A rejected regional table gives a deciding retry on its own. A
+    -- subsequent missing edge fact still takes the ordinary diagnostic route.
+    if fixed || regionalTableRefused w then some (f₁, g₁, ls, d) else
     let candidates := match f₁.plans[i]? with
       | some (.ok (.graph _ _ r)) => r.candidates
       | _ => []
