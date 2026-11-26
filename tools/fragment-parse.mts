@@ -853,7 +853,7 @@ export class Gate {
             part => this.keyType(part)), span,
             message => this.fail(node, message), this.termScope().record, this.termScope().alias);
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
-          : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
+          : this.namespaceMember(node.typeName);
         const answered = this.blockTypeAt(node);
         if (answered && !answered.ok) return this.fail(node, answered.refused);
         const block = answered?.value;
@@ -865,6 +865,7 @@ export class Gate {
           if (!computed.ok) return this.fail(node, computed.refused);
           return this.settled(computed.value, node);
         }
+        if (name === undefined) return this.fail(node, "type reference outside the fragment");
         // A type declared in a block, at the binders it closes over, which
         // TypeScript resolves to themselves here (`blockTypes`).
         if (block) {
@@ -2350,9 +2351,12 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     // The declaration graph decides which named types have computed
     // equations or members, including defaulted applications with no
-    // arguments written. Block references also retain their captured scope.
-    if ((ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
-        !enclosingBinders(node).includes(node.typeName.text)) || blockReference(node))
+    // arguments written. An ambient namespace type is also read by span,
+    // so different declarations with the same leaf name stay distinct.
+    // Block references also retain their captured scope.
+    if ((ts.isTypeReferenceNode(node) && (ts.isQualifiedName(node.typeName)
+        ? gate.namespaceMember(node.typeName) === undefined
+        : !enclosingBinders(node).includes(node.typeName.text))) || blockReference(node))
       computedNodes.push(node);
     // So does the computed key of a class method or an object literal's
     // property or method, `[Symbol.iterator]() { … }`.

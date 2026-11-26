@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "types": []
+  },
+  "include": ["./types.d.ts", "../examples/*qualified-ambient-type.ts"]
+}

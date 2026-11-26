@@ -543,6 +543,14 @@ imported one is refused already ([derived classes](SOURCE-ELABORATION.md#derived
 
 ### Types stated by annotations
 
+A qualified type name can read a type alias or interface through namespaces
+declared in `.d.ts` files. TypeScript binds each qualifier and the final
+identifier. The reader uses the final declaration's identity, including its
+file and span, and reads its equation and type arguments as for an
+unqualified reference. This reads a type equation and creates no value
+binding for a namespace. Standard library namespaces use their reviewed
+overlays.
+
 The written annotations that determine a declaration's exposed type, by its
 kind. These, and only these, are read for a declaration a type reaches; no
 function body, initializer's code or static block is read. A declaration

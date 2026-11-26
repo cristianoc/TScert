@@ -1197,21 +1197,45 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       hostTypes.set(node, result);
       return result;
     };
+    // An ambient namespace path reads a declared type only. Every qualifier
+    // must resolve to a namespace from a declaration file, and the leaf to
+    // a type equation from a declaration file. The standard library keeps
+    // its reviewed overlay. No binding for a namespace value is introduced.
+    const ambientQualifiedType = (name: ts.QualifiedName): Identifier | null => {
+      let qualifier = name.left;
+      for (;;) {
+        const identifier = ts.isIdentifier(qualifier) ? qualifier : qualifier.right;
+        const declarations = targetOf(checker, identifier)?.declarations ?? [];
+        if (!declarations.length || !declarations.every(d => {
+          const node = d.resolve();
+          return node && ts.isModuleDeclaration(node) &&
+            node.getSourceFile().isDeclarationFile && !libraryFile(node.getSourceFile());
+        })) return null;
+        if (ts.isIdentifier(qualifier)) break;
+        qualifier = qualifier.left;
+      }
+      const declarations = targetOf(checker, name.right)?.declarations ?? [];
+      return declarations.length > 0 && declarations.every(d => {
+        const node = d.resolve();
+        return node && (isTypeAlias(node) || ts.isInterfaceDeclaration(node)) &&
+          node.getSourceFile().isDeclarationFile && !libraryFile(node.getSourceFile());
+      }) ? name.right : null;
+    };
     // The name a type reference reads: an identifier, the member of a
     // namespace import a qualified name `ns.T` reads, which TypeScript binds
     // to the export it names (`namespace-members.mts`), or an interface of
     // the standard library's namespace `Intl` the overlay of library types
-    // states (`Intl.Segmenter`); null for any other qualified name.
+    // states (`Intl.Segmenter`), or an ambient namespace's type above.
     const memberName = (name: ts.EntityName): Identifier | null => {
       if (ts.isIdentifier(name)) return name;
-      if (!ts.isIdentifier(name.left)) return null;
+      if (!ts.isIdentifier(name.left)) return ambientQualifiedType(name);
       const declarations = (checker.getSymbolAtLocation(name.left)?.declarations ?? []).map(d => d.resolve());
       const [declaration] = declarations;
       if (declaration && ts.isNamespaceImport(declaration)) return name.right;
       const intl = name.left.text === "Intl" && declarations.length > 0 && declarations.every(d =>
         !!d && ts.isModuleDeclaration(d) && libraryFile(d.getSourceFile()));
       const stated = intl && statedType((targetOf(checker, name.right)?.declarations ?? []).map(d => d.resolve()));
-      return stated ? name.right : null;
+      return stated ? name.right : ambientQualifiedType(name);
     };
     // The enum a name denotes, every declaration TypeScript binds it to an
     // enum's (merged enums are one), or null.
@@ -1698,7 +1722,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => resolutionDeclarationOf(clean, idOf, partners, aliasNodes, identityOf, nodes, what);
     const lookup = (identifier: Identifier, what: string): TypeDeclaration => resolutionLookup(resolveDeclarations, declarationOf, identifier, what);
     // The type alias a reference names, if it names one the program declares.
-    const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => resolutionAliasOf(lookup, reference);
+    const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null =>
+      resolutionAliasOf(lookup, ts.isIdentifier(reference.typeName)
+        ? reference.typeName : ambientQualifiedType(reference.typeName));
     // A standard library type read at its meaning (`LibraryType`). Every
     // declaration TypeScript binds the name to must be the library's, so a
     // client that declares its own `Array`, merging into the global one, is
@@ -4490,15 +4516,19 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const node = computedAt(client, span);
       if (!node) throw declarationError(span, "TypeScript computed type missing");
       // A global or an imported type's application is computed when the alias it names is.
-      const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
+      const ambient = ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) &&
+        ambientQualifiedType(node.typeName) !== null;
+      const alias = ts.isTypeReferenceNode(node) && !ambient ? aliasOf(node) : null;
       const aggregate = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
         && typeDeclarationsOf(node.typeName).some(d => ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d))
         ? lookup(node.typeName, node.typeName.text) : null;
-      if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf)) && !(aggregate && computedMembers(aggregate))) continue;
+      if (ts.isTypeReferenceNode(node) && !ambient &&
+          !(alias && computedAlias(alias, aliasOf)) && !(aggregate && computedMembers(aggregate))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
       const scope = valueScope(emptyDeclarationReading, node, what, enclosingBinders(node));
       try {
-        typeAnswers.computedType?.(span, { ok: true, value: aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
+        if (ambient) clean(node, what);
+        typeAnswers.computedType?.(span, { ok: true, value: ambient || aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
           : computedType(computedContext(emptyDeclarationReading), node, span, part => typeTerm(scope, part)) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
@@ -7063,10 +7093,10 @@ function resolutionLookup(resolveDeclarations: (identifier: Identifier, what: st
 }
 
 /** Read a reference’s alias, retaining tool failures. */
-function resolutionAliasOf(lookup: (identifier: Identifier, what: string) => TypeDeclaration, reference: ts.TypeReferenceNode): TypeAliasDeclaration | null {
-  if (!ts.isIdentifier(reference.typeName)) return null;
+function resolutionAliasOf(lookup: (identifier: Identifier, what: string) => TypeDeclaration, name: Identifier | null): TypeAliasDeclaration | null {
+  if (!name) return null;
   try {
-    const node = lookup(reference.typeName, reference.typeName.text);
+    const node = lookup(name, name.text);
     return isTypeAlias(node) ? node : null;
   } catch (error) {
     passToolFailure(error);
