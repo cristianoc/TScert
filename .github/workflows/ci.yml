@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
 
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
 
@@ -90,7 +90,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
 
@@ -118,7 +118,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
           persist-credentials: false
@@ -163,7 +163,7 @@ jobs:
     env:
       TSCERT_STAGE_MEMORY: "4"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
 
@@ -242,13 +242,13 @@ jobs:
       TSCERT_STAGE_MEMORY: "4"
       PRETEXT_COMMIT: 3084c5096104a415067d3560be9b27aec4c2466a
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TSCERT_BUILD_REF }}
 
       # pretext's sources at the pinned commit; the tier's own project reads
       # them with no type package, so pretext needs no install.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: cristianoc/pretext
           ref: ${{ env.PRETEXT_COMMIT }}
