@@ -20,7 +20,8 @@ runs:
       env:
         PLATFORM: ${{ inputs.platform }}
       run: |
-        version="0.1.0-ci.${GITHUB_SHA:0:12}"
+        commit="$(git rev-parse --short=12 HEAD)"
+        version="0.1.0-preview.$commit"
         make build-runner
         node dev/pack-cli.mts "$version"
         node tests/installed-cli.mts "_build/npm/tscert-$version-$PLATFORM.tgz"

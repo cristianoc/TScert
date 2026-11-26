@@ -17,6 +17,12 @@ try {
   if (installed.error) throw installed.error;
   assert.equal(installed.status, 0);
 
+  const bin = join(cwd, "node_modules/.bin/tscert");
+  const help = spawnSync(bin, ["--help"], { cwd, encoding: "utf8" });
+  if (help.error) throw help.error;
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Research preview/);
+
   writeFileSync(join(cwd, "tsconfig.json"), JSON.stringify({
     compilerOptions: {
       strict: true,
@@ -33,7 +39,7 @@ try {
     "export function wrong(): number { return 'wrong'; }\n");
 
   for (const [source, status, code] of [["accepted.ts", "verified", 0], ["refused.ts", "unverified", 1]] as const) {
-    const result = spawnSync(join(cwd, "node_modules/.bin/tscert"), [source, "--project", "."], {
+    const result = spawnSync(bin, [source, "--project", "."], {
       cwd, encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(cwd, "stage-store"), TMPDIR: cwd },
     });
     if (result.error) throw result.error;

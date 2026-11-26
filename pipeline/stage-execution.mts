@@ -11,8 +11,9 @@
 // here and returning an entry whose stored description is its own.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync }
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync }
   from "node:fs";
+import { createRequire } from "node:module";
 import { arch, constants, platform, release } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
@@ -20,6 +21,19 @@ import type { Cpu } from "./stage-store.mts";
 
 const here = import.meta.dirname;
 const installed = import.meta.filename.endsWith(".mjs");
+
+function installedNativeDirectory(): string {
+  const bundled = resolve(here, "../native");
+  if (existsSync(bundled)) return bundled;
+  const name = `@cristianoc/tscert-${platform()}-${arch()}`;
+  try {
+    return dirname(createRequire(import.meta.url).resolve(`${name}/package.json`));
+  } catch (error) {
+    throw Error(`TScert requires ${name}. The preview supports Linux x64 and macOS arm64. Install with optional dependencies enabled.`, { cause: error });
+  }
+}
+
+const nativeDirectory = installed ? installedNativeDirectory() : null;
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
 export type StageName = "parse" | "module" | "lower" | "interface-plan" | "module-interface" | "pass" | "diagnostics";
@@ -29,13 +43,13 @@ export const isStageName = (value: unknown): value is StageName => stageNames.so
 
 /** The repository's build of the audited program, the Lean verifier, at its
  * build location. */
-export const verifierBuild: string = resolve(here, installed ? "../native/verifier" : "../lean/.lake/build/bin/verifier");
+export const verifierBuild: string = nativeDirectory === null ? resolve(here, "../lean/.lake/build/bin/verifier") : join(nativeDirectory, "verifier");
 /** The verifier every production stage runs. */
 export const verifier: string = verifierBuild;
 /** The runner every process stage's program runs under
  * (`runner/stage-runner.c`, built by `make build-runner`), which reports the
  * CPU time of the stage's processes. */
-export const runnerBuild: string = resolve(here, installed ? "../native/stage-runner" : "runner/_build/stage-runner");
+export const runnerBuild: string = nativeDirectory === null ? resolve(here, "runner/_build/stage-runner") : join(nativeDirectory, "stage-runner");
 
 /** A JSON value with object keys sorted, arrays in their order: the
  * canonical encoding keys are digests of. */
