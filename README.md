@@ -225,6 +225,20 @@ with status zero when it verifies the source. Projects that use TScert effect
 annotations can add `"@cristianoc/tscert/effects"` to
 `compilerOptions.types` in their TypeScript configuration.
 
+To check several files in one process, use a shared project and options:
+
+```sh
+npx tscert --batch src/first.ts src/second.ts --project .
+```
+
+Batch mode prints one JSON object per line in argument order. Each object
+includes the input path as `source` alongside its verdict and, when a run
+directory was created, its `artifacts` path. The command checks every file
+and exits with status zero only when all files verify. Use `--batch` with
+one file when a script needs the same format for any input count.
+With `--contracts=ts`, stderr contains a separate declaration report for
+each file.
+
 GitHub Actions also provides standalone `tscert-linux-x64` and
 `tscert-darwin-arm64` artifacts. Extract your platform's artifact and pass
 the resulting `.tgz` to `npm install --save-dev`.
