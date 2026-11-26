@@ -1415,7 +1415,10 @@ function freshBatchCheck(args: string[]): Promise<number> {
   });
   child.stderr.pipe(process.stderr, { end: false });
   let verdict = "";
-  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { verdict += chunk; });
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: unknown) => {
+    if (typeof chunk === "string") verdict += chunk;
+  });
   return new Promise((done, fail) => {
     child.once("error", fail);
     child.once("close", (code, signal) => {

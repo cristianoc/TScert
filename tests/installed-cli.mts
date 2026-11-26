@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { fieldOf } from "../tools/thrown.mts";
 
 const [file] = process.argv.slice(2);
@@ -40,9 +41,11 @@ try {
   writeFileSync(join(cwd, "refused.ts"),
     "export function wrong(): number { return 'wrong'; }\n");
 
-  function run(args: string[], code: number): string {
+  function run(args: string[], code: number, extraEnv: NodeJS.ProcessEnv = {}): string {
     const result = spawnSync(bin, args, {
-      cwd, encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(scratch, "stage-store"), TMPDIR: scratch },
+      cwd, encoding: "utf8", env: {
+        ...process.env, TSCERT_STAGE_STORE: join(scratch, "stage-store"), TMPDIR: scratch, ...extraEnv,
+      },
     });
     if (result.error) throw result.error;
     assert.equal(result.status, code, result.stderr || result.stdout);
@@ -55,8 +58,8 @@ try {
     console.log(`installed tscert: ${source} ${status}`);
   }
 
-  function batch(sources: string[], code: number): unknown[] {
-    const stdout = run(["--batch", ...sources, "--project", "."], code);
+  function batch(sources: string[], code: number, extraEnv?: NodeJS.ProcessEnv): unknown[] {
+    const stdout = run(["--batch", ...sources, "--project", "."], code, extraEnv);
     return stdout.trimEnd().split("\n").map((line): unknown => JSON.parse(line));
   }
   run(["--batch"], 2);
@@ -77,6 +80,51 @@ try {
   }
 
   assert.deepEqual(batch(["accepted.ts"], 0).map((r) => fieldOf(r, "status")), ["verified"]);
+  // A package with a legacy main field leaves a Node resolution unobserved.
+  // Resolve it during the first collection so later inputs must use fresh processes.
+  const legacy = join(cwd, "node_modules", "retirement-fixture");
+  mkdirSync(legacy);
+  writeFileSync(join(legacy, "package.json"), '{"main":"index.js"}\n');
+  writeFileSync(join(legacy, "index.js"), "export {};\n");
+
+  const trace = join(scratch, "retirement.log");
+  const preload = join(scratch, "retire.mjs");
+  const installedModule = (name: string): string =>
+    JSON.stringify(pathToFileURL(join(cwd, "node_modules", "@cristianoc", "tscert", "tools", name)).href);
+  writeFileSync(preload, String.raw`
+    import assert from "node:assert/strict";
+    import { appendFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { injectSessionFaultForTests } from ${installedModule("declaration-session.mjs")};
+    import { nodeResolve, processRetirement } from ${installedModule("files.mjs")};
+    const trace = ${JSON.stringify(trace)};
+    const args = process.argv.slice(2);
+    if (args[0] === "--batch") {
+      appendFileSync(trace, "started " + process.pid + "\n");
+      if (args.indexOf("--project") > 2) {
+        injectSessionFaultForTests({ kind: "during", during() {
+          injectSessionFaultForTests(null);
+          nodeResolve("retirement-fixture", join(process.cwd(), "accepted.ts"));
+          assert.match(processRetirement() ?? "", /states no exports/);
+          appendFileSync(trace, "retired " + process.pid + "\n");
+        } });
+      }
+    }
+  `);
+  const retirementSources = ["accepted.ts", "refused.ts", "accepted.ts"];
+  const afterRetirement = batch(retirementSources, 1, {
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${pathToFileURL(preload).href}`].filter(Boolean).join(" "),
+  });
+  assert.deepEqual(afterRetirement.map((r) => fieldOf(r, "source")), retirementSources);
+  assert.deepEqual(afterRetirement.map((r) => fieldOf(r, "status")), ["verified", "unverified", "verified"]);
+  const [started, retired, ...replacements] = readFileSync(trace, "utf8").trimEnd().split("\n");
+  assert.match(started, /^started \d+$/);
+  assert.equal(retired, started.replace("started ", "retired "));
+  assert.equal(replacements.length, 2);
+  for (const replacement of replacements) assert.match(replacement, /^started \d+$/);
+  assert.equal(new Set([started, ...replacements]).size, 3, "each remaining source runs in a fresh process");
+  console.log("installed tscert: forced batch retirement");
+
   writeFileSync(join(cwd, "accepted.ts"), "export function count(): number { return 'wrong'; }\n");
   assert.deepEqual(batch(["accepted.ts", "refused.ts"], 1).map((r) => fieldOf(r, "status")), ["unverified", "unverified"]);
   console.log("installed tscert: ordered batch verdicts, warm replay and changed source");
