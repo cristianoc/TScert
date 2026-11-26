@@ -96,6 +96,7 @@ def heapTerm (t : HeapKnowledge.Term) : String :=
   let base := s!"n{t.slot}" ++ String.join (t.path.map ("." ++ ·)) ++ (if t.atEntry then "@entry" else "")
   match t.kind with
   | .value => base | .length => s!"len({base})" | .view => s!"view({base})" | .strLength => s!"slen({base})"
+  | .bitMask m => s!"mask{m}({base})"
 
 def form (F : Linear.Form HeapKnowledge.Term) : String :=
   if F.isEmpty then "0" else
@@ -111,7 +112,7 @@ partial def indexFact : HeapKnowledge.IndexFact → String
   | .length a l => s!"length(n{a}) = n{l}"
   | .bound a i strict => s!"n{i} {if strict then "<" else "≤"} len(n{a})"
   | .either a b => s!"({indexFact a}) ∨ ({indexFact b})"
-  | .apart a b => s!"apart(n{a}, n{b})"
+  | .apart a p b q => s!"apart(n{a}{String.join (p.map ("." ++ ·))}, n{b}{String.join (q.map ("." ++ ·))})"
   | .same a b => s!"same(n{a}, n{b})"
   | f => oneLine f |>.replace "Verification.HeapKnowledge.IndexFact." ""
 
