@@ -202,6 +202,29 @@ for foundational proof-carrying code,
 [Lean 4](docs/REFERENCES.md#lean-4). [REFERENCES](docs/REFERENCES.md) lists
 every work, with what TScert takes from it and where.
 
+## Install the CLI
+
+The GitHub Actions CI run provides `tscert-linux-x64` and
+`tscert-darwin-arm64` artifacts. Download the artifact for your platform and
+extract the npm tarball. On the Node version pinned in [`.nvmrc`](.nvmrc),
+install it from your project and check a source in a strict TypeScript project:
+
+```sh
+npm install --save-dev ./tscert-VERSION-PLATFORM.tgz
+npx tscert src/example.ts --project .
+```
+
+The tarball contains the JavaScript CLI, Lean verifier executable, and native
+stage runner. Linux runs the compiler inside Bubblewrap and requires
+unprivileged user namespaces. The CLI prints the verdict as JSON and exits
+with status zero when it verifies the source. Projects that use TScert effect
+annotations can add `"@cristianoc/tscert/effects"` to
+`compilerOptions.types` in their TypeScript configuration.
+
+From a source checkout, `make package-cli CLI_VERSION=0.1.0-dev` builds the
+local platform's tarball in `_build/npm/`. Run `make setup` first to install
+dependencies. `make test-installed-cli` runs the CLI from a clean npm install.
+
 ## Try it
 
 Prerequisites: Node at the version [`.nvmrc`](.nvmrc) pins and the pinned

@@ -100,7 +100,7 @@ export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   const compiler = /[/\\](typescript|@typescript)[/\\]/;
   const frames = (thrown.stack ?? "").split("\n").map(l => l.trim()).filter(l => l.startsWith("at "));
   const inCompiler = frames.map(f => compiler.test(f));
-  const own = (f: string): boolean => !compiler.test(f) && !(io && /^at ioFailure \(/.test(f)) && !/compiler-channel\.mts/.test(f) && /\.mts:\d+/.test(f);
+  const own = (f: string): boolean => !compiler.test(f) && !(io && /^at ioFailure \(/.test(f)) && !/compiler-channel\.m[jt]s/.test(f) && /\.m[jt]s:\d+/.test(f);
   const firstOwn = frames.findIndex(own);
   const stack = stackExhaustion(thrown) || (request !== null && stackExhaustion(request.cause));
   const panic = thrown.message.startsWith("panic:");

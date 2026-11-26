@@ -19,6 +19,7 @@ import { runDirectory } from "./run-directory.mts";
 import type { Cpu } from "./stage-store.mts";
 
 const here = import.meta.dirname;
+const installed = import.meta.filename.endsWith(".mjs");
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
 export type StageName = "parse" | "module" | "lower" | "interface-plan" | "module-interface" | "pass" | "diagnostics";
@@ -28,13 +29,13 @@ export const isStageName = (value: unknown): value is StageName => stageNames.so
 
 /** The repository's build of the audited program, the Lean verifier, at its
  * build location. */
-export const verifierBuild: string = resolve(here, "../lean/.lake/build/bin/verifier");
+export const verifierBuild: string = resolve(here, installed ? "../native/verifier" : "../lean/.lake/build/bin/verifier");
 /** The verifier every production stage runs. */
 export const verifier: string = verifierBuild;
 /** The runner every process stage's program runs under
  * (`runner/stage-runner.c`, built by `make build-runner`), which reports the
  * CPU time of the stage's processes. */
-export const runnerBuild: string = resolve(here, "runner/_build/stage-runner");
+export const runnerBuild: string = resolve(here, installed ? "../native/stage-runner" : "runner/_build/stage-runner");
 
 /** A JSON value with object keys sorted, arrays in their order: the
  * canonical encoding keys are digests of. */
@@ -107,18 +108,20 @@ export const inProcessOnly: readonly string[] = [
   "pipeline/parse-stage.mts", "pipeline/in-process-execution.mts",
 ];
 
-/** The digests, by sorted repository path, of the `.mts` files directly in
+/** The digests, by sorted repository path, of the executable modules directly in
  * `directories` of `root` but `excluded`; or why they are not read. */
 export function directoryIdentity(directories: readonly string[], excluded: readonly string[], root: string = repository):
     { identity: Canonical } | { unidentified: string } {
   try {
+    const extension = installed ? ".mjs" : ".mts";
+    const skip = new Set(excluded.map((path) => installed ? path.replace(/\.mts$/, ".mjs") : path));
     const files = directories.flatMap((d) => readdirSync(join(root, d), { withFileTypes: true })
-      .filter((e) => e.name.endsWith(".mts")).map((e) => {
+      .filter((e) => e.name.endsWith(extension)).map((e) => {
         const path = `${d}/${e.name}`;
         if (!e.isFile()) throw Error(`${path} is no file`);
         return path;
       }))
-      .filter((path) => !excluded.includes(path)).sort();
+      .filter((path) => !skip.has(path)).sort();
     return { identity: files.map((path) => [path, fileDigest(join(root, path))]) };
   } catch (error) {
     return { unidentified: `the node side's code is not read: ${error instanceof Error ? error.message : String(error)}` };
@@ -138,11 +141,11 @@ function captureIdentity(directories: readonly string[], excluded: readonly stri
   } };
 }
 
-/** A process stage's code: the `.mts` files directly in `pipeline/` but the
+/** A process stage's code: the executable modules directly in `pipeline/` but the
  * unkeyed ones and the in-process stages' own. */
 export const processCode: LoadedCode | { unidentified: string } =
   captureIdentity(["pipeline"], [...unkeyed, ...inProcessOnly]);
-/** An in-process stage's code: the `.mts` files directly in `pipeline/` and
+/** An in-process stage's code: the executable modules directly in `pipeline/` and
  * `tools/` but the unkeyed ones. */
 export const inProcessCode: LoadedCode | { unidentified: string } = captureIdentity(["pipeline", "tools"], unkeyed);
 /** Why a captured code identity gives no key now, or null. */
