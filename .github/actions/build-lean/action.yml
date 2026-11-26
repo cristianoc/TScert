@@ -26,7 +26,10 @@ runs:
         log=$(mktemp)
         trap 'rm -f "$log"' EXIT
         status=0
-        lake --no-ansi -v build 2>&1 | tee "$log" || status=$?
+        lake --no-ansi -v build > "$log" 2>&1 || status=$?
+        if [ "$status" -ne 0 ]; then
+          cat "$log"
+        fi
         {
           printf '### Lean build\n\n'
           printf 'Exact cache hit: %s\n\n' "${EXACT_HIT:-false}"
@@ -42,10 +45,10 @@ runs:
             /\] Reused / { reused++ }
             END {
               printf "Built: %d (%d Lean modules, %d C objects, %d executable links)\n\n", built, modules, objects, links
-              printf "Replayed: %d\n\nReused: %d\n", replayed, reused
+              printf "Cached jobs: %d (%d replayed, %d reused)\n", replayed + reused, replayed, reused
             }
           ' "$log"
-        } >> "$GITHUB_STEP_SUMMARY"
+        } | tee -a "$GITHUB_STEP_SUMMARY"
         exit "$status"
 
     - name: Save the Lean build
