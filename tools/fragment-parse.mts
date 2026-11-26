@@ -2753,7 +2753,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // there, a snapshot's included.
   const root = tsconfigPath ? (tsconfigPath.endsWith(".json") ? dirname(resolve(tsconfigPath)) : resolve(tsconfigPath))
     : null;
-  const importedFrom = importedModules(importNodes, checker, declarations.values, root);
+  const importedFrom = importedModules(importNodes, members, checker, declarations.values, root);
   const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init,
     omittedMentions: [...omittedMentions].sort(), modules: [] };
   const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
@@ -2766,16 +2766,16 @@ function lowerFile(file: string, carriesContext: boolean,
 }
 
 /** The program modules a file imports values from: each named or default
- * value import that TypeScript binds to a declaration in a source file of the
- * program, outside the standard library, the tool's own declarations,
+ * value import or namespace value read that TypeScript binds to a declaration
+ * in a source file of the program, outside the standard library, the tool's own declarations,
  * declaration files and installed packages, with the module identity the
  * declaration document gives it. Every such binding resolves to its origin
  * (`resolveRead`, `Claims/Imports.lean`), whatever value it holds. */
-function importedModules(importNodes: ImportDeclaration[], checker: Checker,
+function importedModules(importNodes: ImportDeclaration[], members: ReadonlyMap<string, NamespaceMember>, checker: Checker,
     values: Ast["declarations"]["values"], root: string | null): ImportedModule[] {
   // Each value import's local name: a named import's, and a default
   // import's, which binds the module's `default` export.
-  const elements = importNodes.flatMap((node) => {
+  const direct = importNodes.flatMap((node) => {
     const bindings = node.importClause?.namedBindings;
     const clause = node.importClause;
     const typeOnly = !!clause && clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
@@ -2784,10 +2784,17 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
       : bindings.elements.filter((e) => !e.isTypeOnly).map((e) => e.name);
     return clause.name ? [clause.name, ...named] : named;
   });
-  if (elements.length === 0) return [];
-  const symbols = checker.getSymbolAtLocation(elements);
-  return elements.flatMap((element, i) => {
-    const value = values.find((v) => v.binding.local === element.text);
+  const bindings = [
+    ...direct.map((at) => ({ local: at.text, at })),
+    ...[...members.values()].flatMap((member) => {
+      const use = member.uses.find((use) => use.value);
+      return use ? [{ local: member.local, at: use.name }] : [];
+    }),
+  ];
+  if (bindings.length === 0) return [];
+  const symbols = checker.getSymbolAtLocation(bindings.map((binding) => binding.at));
+  return bindings.flatMap((binding, i) => {
+    const value = values.find((v) => v.binding.local === binding.local);
     if (!value) return [];
     const location = value.declaration.module;
     if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];
