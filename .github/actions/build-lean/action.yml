@@ -25,8 +25,14 @@ runs:
       run: |
         log=$(mktemp)
         trap 'rm -f "$log"' EXIT
+        set -o pipefail
         status=0
-        lake --no-ansi -v build > "$log" 2>&1 || status=$?
+        lake --no-ansi -v build 2>&1 | tee "$log" | awk '
+          /\[[0-9]+\/[0-9]+\] Built / && ($0 !~ /:.* \(/ || $0 ~ /:exe /) {
+            print
+            fflush()
+          }
+        ' || status=$?
         if [ "$status" -ne 0 ]; then
           cat "$log"
         fi
