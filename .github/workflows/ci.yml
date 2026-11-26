@@ -38,7 +38,7 @@ jobs:
         with:
           save-cache: "true"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: verifier-linux-x64
           path: lean/.lake/build/bin/verifier
@@ -50,7 +50,7 @@ jobs:
         if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
         run: tar -cf "$RUNNER_TEMP/lean-build.tar" lean/.lake
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
         with:
           name: lean-build
@@ -74,7 +74,7 @@ jobs:
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: verifier-linux-x64
           path: lean/.lake/build/bin
@@ -123,11 +123,11 @@ jobs:
           ref: ${{ env.TSCERT_BUILD_REF }}
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: tscert-*
           path: _build/preview-artifacts
@@ -175,7 +175,7 @@ jobs:
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
@@ -185,7 +185,7 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: lean-build
           path: ${{ runner.temp }}
@@ -260,7 +260,7 @@ jobs:
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
@@ -270,7 +270,7 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: lean-build
           path: ${{ runner.temp }}
