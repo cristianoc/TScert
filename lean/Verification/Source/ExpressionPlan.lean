@@ -77,6 +77,21 @@ private def effect : Expr → Effect
 
 
 
+/-- The discriminant checked first by a positive conjunction. -/
+private partial def leadingTagTest : Expr → Option (String × Option PropKey × List Tag)
+  | .logical _ true left _ => leadingTagTest left
+  | .tagMember _ _ field tags _ (.var _ name) => some (name, field, tags)
+  | _ => none
+
+/-- Three alternatives guarded by disjoint cases of one discriminant.
+The right-hand alternative establishes its own discriminator fact. -/
+private def separateTagAlternatives (first second third : Expr) : Bool :=
+  match leadingTagTest first, leadingTagTest second, leadingTagTest third with
+  | some (a, af, atags), some (b, bf, btags), some (c, cf, ctags) =>
+    a == b && b == c && af == bf && bf == cf &&
+      !(atags.any btags.contains) && !(atags.any ctags.contains) && !(btags.any ctags.contains)
+  | _, _, _ => false
+
 mutual
 private partial def operand (root : Span) (e : Expr) (role : String)
     (next : Saved → Builder Plan) : Builder Plan := do
@@ -281,7 +296,20 @@ private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (
 private partial def jump (root place : Span) (cond : Expr) (yes no : Plan) : Builder Plan :=
   match cond with
   | .logical p true a b => do jump root p a (← jump root p b yes no) no
-  | .logical p false a b => do jump root p a yes (← jump root p b yes no)
+  | .logical p false a b => do
+    if let (.logical _ false first second, .atom _ (.outcome ..), .atom _ (.outcome ..)) := (a, yes, no) then
+      if separateTagAlternatives first second b then
+        -- Join the first two alternatives before the last one. Their
+        -- Boolean result gates the suffix without replaying any operand.
+        let internal := (p.1, p.1)
+        let earlier ← jump root a.span a (.atom internal (.outcome internal true)) (.atom internal (.outcome internal false))
+        let result ← saved root internal "short-circuit-prefix"
+        let test ← saved root internal "condition"
+        let value := readSaved result
+        let suffix ← jump root p b yes no
+        return .sequence p result earlier (.choose internal internal .truthy test
+          (.atom internal (.evaluate value value .none)) yes suffix)
+    jump root p a yes (← jump root p b yes no)
   | .not _ a => jump root place a no yes
   | .ifBody _ c a b => do jump root place c (← jump root place a yes no) (← jump root place b yes no)
   | .comma _ left right => operand root left "discard" fun _ => jump root place right yes no
