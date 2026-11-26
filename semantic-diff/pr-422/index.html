@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-422"><code>598523d30e7151c10dd776d11acd021f728196fe..pr-422</code></a><ul><li>4 commits</li><li>changes: 6 Tooling</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-422"><code>598523d30e7151c10dd776d11acd021f728196fe..pr-422</code></a><ul><li>5 commits</li><li>changes: 8 Tooling</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
 <h2 id="g-pr-422"><code>598523d30e7151c10dd776d11acd021f728196fe..pr-422</code></h2><article class="card" id="c-1cb3e4af6"><header><div><div class="sha">1cb3e4af6 · Cristiano Calcagno · Nov 26, 01:53</div><h3>Package the verifier as an installable CLI</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>A consuming project needs an npm dependency it can install in CI. The source driver requires the TScert checkout and local native builds.</p></div>
 <h4 class="change"><span class="act added">added</span>Tooling <span class="target">npm CLI tarball</span></h4><div class="versions"><figure><figcaption>After</figcaption><pre class="code"><span class="ln">npm install --save-dev ./tscert-VERSION-PLATFORM.tgz</span><span class="ln">npx tscert FILE.ts --project .</span></pre></figure></div>
@@ -128,5 +128,20 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">Lean build logs</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Hold all Lake output until the build ends.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Stream new Lean modules and executable links while Lake builds.</span><span class="ln">Summarize cache reuse and show the complete log on a failure.</span></pre></figure></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">tests</span></dd><dt>Tests</dt><dd>live output before Lake exits · successful build filters replay traces · failed build retains trace and exit status</dd></dl>
 <details><summary>1 file changed, 7 insertions(+), 1 deletion(-)</summary><pre class="code"> .github/actions/build-lean/action.yml | 8 +++++++-</pre></details>
+</article>
+<article class="card" id="c-20580cdfd"><header><div><div class="sha">20580cdfd · Cristiano Calcagno · Nov 26, 02:19</div><h3>Publish commit-pinned TScert research previews</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A downstream project needs a reproducible npm install with the verifier included so it can check its sources on Linux and macOS.</p></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">research preview packages</span></h4><pre class="code"><span class="ln">Successful Linux and macOS package jobs supply a common CLI and two</span><span class="ln">native packages for one commit-pinned pkg.pr.new install. npm selects</span><span class="ln">the platform package. The publication job installs the preview URL</span><span class="ln">and checks that the CLI starts.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">CLI documentation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">The install instructions describe the workflow tarballs.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">The install instructions and CLI help give the scope of a research</span><span class="ln">preview verdict and name the option that reports its contracts.</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Tests</dt><dd>TypeScript typecheck · docs · macOS standalone and split npm install smoke · workflow YAML</dd></dl>
+<details><summary>9 files changed, 192 insertions(+), 14 deletions(-)</summary><pre class="code"> .github/actions/package-cli/action.yml |  3 +-
+ .github/preview/package-lock.json      | 21 ++++++++++++
+ .github/preview/package.json           |  5 +++
+ .github/workflows/ci.yml               | 61 ++++++++++++++++++++++++++++++++++
+ README.md                              | 24 ++++++++-----
+ dev/stage-preview-packages.mts         | 57 +++++++++++++++++++++++++++++++
+ pipeline/stage-execution.mts           | 20 +++++++++--
+ pipeline/verify-source.mts             |  7 +++-
+ tests/installed-cli.mts                |  8 ++++-</pre></details>
 </article>
 </main></body></html>
