@@ -1680,9 +1680,10 @@ def IndexFact.hasAtIndex : IndexFact → Bool
   | .either A B => A.hasAtIndex || B.hasAtIndex
   | _ => false
 
-/-- Lower an indexed-element fact (or a disjunction containing one) through read
-links: its array path, index term and free body terms lowered toward the ends
-of their paths. -/
+/-- Lower an indexed-element fact, a linear fact, or a disjunction of such facts
+through read links: an indexed-element fact's array path, index term and free
+body terms, and a linear fact's terms, lowered toward the ends of their paths;
+a disjunction disjunct by disjunct. -/
 def lowerAtIndexFact (reads : List (Nat × String × Nat)) : IndexFact → Option IndexFact
   | .atIndex s p idx g body =>
     let root := lowerRoot reads s p
@@ -1696,7 +1697,6 @@ def lowerAtIndexFact (reads : List (Nat × String × Nat)) : IndexFact → Optio
       some (.linear (renameFact (lowerTerm reads) F))
     else none
   | .either A B =>
-    if !(A.hasAtIndex || B.hasAtIndex) then none else
     match lowerAtIndexFact reads A, lowerAtIndexFact reads B with
     | some A', some B' => some (.either A' B')
     | some A', none => some (.either A' B)
@@ -1734,18 +1734,16 @@ theorem lowerAtIndexFact_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl 
   | either A B ihA ihB =>
     intro F' hab ha
     simp only [lowerAtIndexFact] at hab
-    split at hab
+    cases hA : lowerAtIndexFact reads A <;> cases hB : lowerAtIndexFact reads B <;>
+      simp only [hA, hB, Option.some.injEq] at hab
     · cases hab
-    · cases hA : lowerAtIndexFact reads A <;> cases hB : lowerAtIndexFact reads B <;>
-        simp only [hA, hB, Option.some.injEq] at hab
-      · cases hab
-      · subst hab; exact ha.imp id (ihB hB)
-      · subst hab; exact ha.imp (ihA hA) id
-      · subst hab; exact ha.imp (ihA hA) (ihB hB)
+    · subst hab; exact ha.imp id (ihB hB)
+    · subst hab; exact ha.imp (ihA hA) id
+    · subst hab; exact ha.imp (ihA hA) (ihB hB)
   | _ => intro F' hab; simp [lowerAtIndexFact] at hab
 
-/-- An indexed-element fact (or a disjunction containing one) restated through
-read links (`lowerAtIndexFact`). -/
+/-- An indexed-element fact or a disjunction restated through read links
+(`lowerAtIndexFact`). -/
 def readAtIndex (reads : List (Nat × String × Nat)) (a : IndexAtom) : Option IndexAtom :=
   (lowerAtIndexFact reads a.fact).map fun f => { a with fact := f }
 
