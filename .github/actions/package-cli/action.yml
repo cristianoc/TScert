@@ -1,0 +1,32 @@
+name: Pack and test the installed CLI
+description: Package an existing verifier and check it from a clean npm install.
+inputs:
+  platform:
+    description: Platform suffix of the tarball.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+
+    - name: Install the CLI build dependencies
+      shell: bash
+      run: npm ci --prefix tools
+
+    - name: Pack and test the installed CLI
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+      run: |
+        version="0.1.0-ci.${GITHUB_SHA:0:12}"
+        make build-runner
+        node dev/pack-cli.mts "$version"
+        node tests/installed-cli.mts "_build/npm/tscert-$version-$PLATFORM.tgz"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: tscert-${{ inputs.platform }}
+        path: _build/npm/*-${{ inputs.platform }}.tgz
+        if-no-files-found: error
