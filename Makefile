@@ -29,6 +29,15 @@ $(RUNNER): pipeline/runner/stage-runner.c
 build-lean: ## build the Lean verifier
 	cd lean && lake build --log-level=warning
 
+CLI_VERSION ?= 0.1.0-dev
+CLI_ARCHIVE = _build/npm/tscert-$(CLI_VERSION)-$(shell node -p 'process.platform + "-" + process.arch').tgz
+
+package-cli: build ## pack the CLI tarball for this platform (CLI_VERSION sets its version)
+	node dev/pack-cli.mts "$(CLI_VERSION)"
+
+test-installed-cli: package-cli ## install the CLI tarball in a clean project and check acceptance and refusal
+	node tests/installed-cli.mts "$(CLI_ARCHIVE)"
+
 test: test-checks test-cases ## build, then the fast checks and the controls, then the pipeline cases
 
 test-checks: build ## build, then the fast checks and the controls no case can make (replayed from the stage store)

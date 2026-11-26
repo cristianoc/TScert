@@ -1,5 +1,6 @@
+#!/usr/bin/env node
 import { fork, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -1407,7 +1408,16 @@ export function contractsDeclarations(units: readonly UnitContracts[], document:
   return lines.join("\n") + "\n";
 }
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
-if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && process.argv[2] === "--serve") {
+const entryPoint = (): boolean => {
+  try {
+    return process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.meta.filename;
+  } catch {
+    return false;
+  }
+};
+const isEntryPoint = entryPoint();
+
+if (isEntryPoint && process.argv[2] === "--serve") {
   // A worker keeps one declaration session between its checks (STAGE-STORE.md,
   // "Retained declaration sessions"), released when it ends.
   retainDeclarationSessions(true);
@@ -1437,7 +1447,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     });
   });
   process.on("disconnect", () => end(0));
-} else if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+} else if (isEntryPoint) {
   const all = process.argv.slice(2);
   const budgetAt = all.indexOf("--subtype-rounds");
   const subtypeRounds = budgetAt < 0 ? undefined : Number(all.splice(budgetAt, 2)[1]);

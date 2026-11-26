@@ -18,15 +18,16 @@ execution adapter, the code the stage runs and the runtime it runs on.
 A package version or executable pathname alone does not identify it.
 
 Code identity uses whole-directory enumeration, complete by construction
-within the declared universe: the direct-child `.mts` files of `pipeline/`
-and `tools/`, with the exclusions below. It involves no import discovery.
+within the declared universe: direct-child executable modules of `pipeline/`
+and `tools/`, with the exclusions below. A source checkout uses `.mts` files
+and an installed CLI uses its emitted `.mjs` files. It involves no import discovery.
 `tests/` and `dev/` are outside this universe. A key covers:
 
 - for a process stage, the digest, by sorted path and content, of every
-  `.mts` file directly in `pipeline/` but those excluded below, with the
+  executable module directly in `pipeline/` but those excluded below, with the
   executable and its libraries, the stage runner and its libraries
   ([timing](#timing)) and the Node runtime;
-- for an in-process stage, the same digest over every `.mts` file directly in
+- for an in-process stage, the same digest over every executable module directly in
   `pipeline/` and in `tools/` but those excluded below, with the Node runtime
   and, for an observed stage, the compiler's packages and the system's
   build.
@@ -85,7 +86,7 @@ do not execute.
 excluded files contribute no result-affecting code; process-stage binding,
 execution, classification and materialization execute no in-process stage
 or `tools/` code; and result-affecting repository code is confined to the
-direct-child `.mts` files of `pipeline/` and `tools/`. External code is
+direct-child executable modules of `pipeline/` and `tools/`. External code is
 limited to identified executables and their libraries, Node built-ins
 covered by the runtime identity, the observed stage's compiler packages
 covered by compiler identity, and family loads covered by the loader's

@@ -46,6 +46,53 @@ jobs:
           compression-level: 3
           overwrite: true
 
+  package-cli:
+    needs: lean-build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x64
+          - runner: macos-26
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: ./.github/actions/build-lean
+        with:
+          save-cache: "true"
+
+      - name: Install the node dependencies
+        run: make setup
+
+      - name: Pack and test the installed CLI
+        run: make test-installed-cli CLI_VERSION="0.1.0-ci.${GITHUB_SHA:0:12}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tscert-${{ matrix.platform }}
+          path: _build/npm/*-${{ matrix.platform }}.tgz
+          if-no-files-found: error
+
   test:
     needs: lean-build
     if: github.event_name != 'push' || github.ref != 'refs/heads/single-pass'
