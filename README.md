@@ -204,22 +204,30 @@ every work, with what TScert takes from it and where.
 
 ## Install the CLI
 
-The GitHub Actions CI run provides `tscert-linux-x64` and
-`tscert-darwin-arm64` artifacts. Download the artifact for your platform and
-extract the npm tarball. On the Node version pinned in [`.nvmrc`](.nvmrc),
-install it from your project and check a source in a strict TypeScript project:
+**Research preview.** A verified result applies to the checked units under
+the contracts used for that run. Use `--contracts` to inspect those contracts.
+The supported TypeScript fragment, CLI, and output format may change.
+
+The pkg.pr.new check on a TScert pull request shows its commit-pinned install
+URL. With the Node version pinned in [`.nvmrc`](.nvmrc), install a preview
+from your project and check a source in a strict TypeScript project:
 
 ```sh
-npm install --save-dev ./tscert-VERSION-PLATFORM.tgz
-npx tscert src/example.ts --project .
+npm install --save-dev 'https://pkg.pr.new/cristianoc/TScert/@cristianoc/tscert@COMMIT'
+npx tscert src/example.ts --project . --contracts
 ```
 
-The tarball contains the JavaScript CLI, Lean verifier executable, and native
-stage runner. Linux runs the compiler inside Bubblewrap and requires
+The preview installs the JavaScript CLI and selects its native verifier and
+stage runner for Linux x64 or Apple Silicon macOS. Linux runs the compiler
+inside Bubblewrap and requires
 unprivileged user namespaces. The CLI prints the verdict as JSON and exits
 with status zero when it verifies the source. Projects that use TScert effect
 annotations can add `"@cristianoc/tscert/effects"` to
 `compilerOptions.types` in their TypeScript configuration.
+
+GitHub Actions also provides standalone `tscert-linux-x64` and
+`tscert-darwin-arm64` artifacts. Extract your platform's artifact and pass
+the resulting `.tgz` to `npm install --save-dev`.
 
 From a source checkout, `make package-cli CLI_VERSION=0.1.0-dev` builds the
 local platform's tarball in `_build/npm/`. Run `make setup` first to install

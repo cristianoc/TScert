@@ -1463,7 +1463,12 @@ if (isEntryPoint && process.argv[2] === "--serve") {
   // declaration file (`contractsDeclarations`).
   const contracts = all.includes("--contracts=ts") ? "ts" : all.includes("--contracts") ? "text" : null;
   const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts" && a !== "--contracts=ts");
-  if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
+  if (all.length === 1 && (all[0] === "--help" || all[0] === "-h")) {
+    process.stdout.write("Usage: tscert file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
+      " [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]\n\n" +
+      "Research preview. A verified result applies to the checked units under the contracts used for that run.\n" +
+      "Use --contracts to inspect those contracts. The supported TypeScript fragment, CLI, and output format may change.\n");
+  } else if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
       " [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]\n");
     process.exitCode = 2;
