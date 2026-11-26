@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">18 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-423"><code>81da23f735b58cc8b693649971fea8402e1e17e9..pr-423</code></a><ul><li>18 commits, units 7 verified</li><li>changes: 6 Tooling, 15 Definition, 18 Docs, 10 Theorem, 2 Rule, 2 Proposal, 1 Lowering, 1 Counterexample, 2 Check</li><li>agreement lines: 1</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">20 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-423"><code>81da23f735b58cc8b693649971fea8402e1e17e9..pr-423</code></a><ul><li>20 commits, units 7 verified</li><li>changes: 7 Tooling, 15 Definition, 18 Docs, 10 Theorem, 2 Rule, 2 Proposal, 2 Lowering, 1 Counterexample, 2 Check</li><li>agreement lines: 1</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></li></ul></li></ul></section>
 <h2 id="g-pr-423"><code>81da23f735b58cc8b693649971fea8402e1e17e9..pr-423</code></h2><article class="card" id="c-10e1ca686"><header><div><div class="sha">10e1ca686 · Cristiano Calcagno · Nov 24, 17:38</div><h3>Print each walk's nodes and facts under TSCERT_DUMP</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Finding where a unit's memory goes needed the facts the pass holds at each node of a closure's walk, beside the node's lowered term. TSCERT_OBSERVE reaches a file's top-level runs only, and prints JSON over slot numbers. Program: a closure comparing two enum values, <code>if (a.kind !== b.kind) return false</code>, whose walk holds a fact per alias, per polarity and per enum member at every node.</p></div>
 <h4 class="change"><span class="act added">added</span>Tooling <span class="target">TSCERT_DUMP, SinglePass.dumpWalk, SinglePass.walkText</span></h4><pre class="code"><span class="ln">every walk the pass makes, closures' and proposals' included, prints at</span><span class="ln">its end each node's term and continuation, the names at its slots, and</span><span class="ln">the facts after its step, `+` where the step added one and `-` where it</span><span class="ln">dropped one; `dumping` (WorkTable.lean) is set from the environment</span><span class="ln">beside `profiling`</span></pre>
@@ -852,5 +852,52 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>HeapKnowledge.lowerAtIndexFact · HeapKnowledge.lowerAtIndexFact_holds · HeapKnowledge.readAtIndex</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
 <details><summary>1 file changed, 11 insertions(+), 13 deletions(-)</summary><pre class="code"> lean/Verification/Semantics/HeapKnowledge.lean | 24 +++++++++++-------------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2f8ff114e"><header><div><div class="sha">2f8ff114e · Cristiano Calcagno · Nov 26, 12:59</div><h3>Retry a refused regional table before diagnosing edge facts</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A regional table refusal with no missing edge fact can be retried by dropping the table. The diagnosing walk also rechecks the nested function bodies, even when it finds no facts to remove.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">settling after a regional table refusal</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Drop the table, look for additional missing edge facts, and retry.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Drop the table and try the checked walk. If that walk reports</span><span class="ln">missing edge facts, use the ordinary diagnostic route.</span></pre></figure></div>
+<h4 class="change">Validation</h4><div class="prose"><p>The focused regional and loop implication cases and the invalid guarded-bound case produce their expected results.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span></dd><dt>Lean</dt><dd>FilePlans.inferredNextAll</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">regional-walk-lacking-head-fact</span> <span class="test pos">head-implication-alone</span> <span class="test pos">loop-implication-after-branch</span> <span class="test neg">invalid-if-merge-guarded-bound</span></dd></dl>
+<details><summary>1 file changed, 12 insertions(+), 4 deletions(-)</summary><pre class="code"> lean/Verification/Source/Claims/MemberSettle.lean | 16 ++++++++++++----</pre></details>
+</article>
+<article class="card" id="c-f81df6313"><header><div><div class="sha">f81df6313 · Cristiano Calcagno · Nov 26, 12:59</div><h3>Share the last alternative of a disjoint tag test</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>fragment-classes.mts#localClass</span><span>blocker-disjoint-tag-join.ts#guarded</span><span>blocker-disjoint-tag-join.ts#narrowed</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>A Boolean disjunction of guarded alternatives can reach its last operand by failing earlier tests in several ways. The lowering checks the last operand in each of those contexts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">short-circuit conditions on disjoint tag cases</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">(tag₁(x) &amp;&amp; a) || (tag₂(x) &amp;&amp; b) || (tag₃(x) &amp;&amp; c)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">separate continuations for the last alternative</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">(tag₁(x) &amp;&amp; a) || (tag₂(x) &amp;&amp; b) || (tag₃(x) &amp;&amp; c)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">decide the first two alternatives, then enter one copy of the last when both fail</span></span></div></div><div class="cond"><span class="label">label</span><span class="tgt"><span class="m-text">the alternatives test disjoint tags on the same variable and field</span></span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-disjoint-tag-join</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the joined condition and a field read in its true branch</span></summary><pre class="code"><span class="tk-k">import</span> * <span class="tk-k">as</span> ts <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-k">type</span> <span class="tk-t">Parent</span> =
+  | ts.<span class="tk-t">NewExpression</span>
+  | ts.<span class="tk-t">CallExpression</span>
+  | ts.<span class="tk-t">ExpressionWithTypeArguments</span>
+  | ts.<span class="tk-t">Identifier</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> guarded(parent: <span class="tk-t">Parent</span>, child: ts.<span class="tk-t">Node</span>): boolean {
+  <span class="tk-k">return</span> (ts.isNewExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isCallExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isExpressionWithTypeArguments(parent) &amp;&amp; parent.expression === child)
+    ? <span class="tk-k">true</span>
+    : <span class="tk-k">false</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> narrowed(
+  parent: <span class="tk-t">Parent</span>,
+  child: ts.<span class="tk-t">Node</span>,
+): ts.<span class="tk-t">Expression</span> | <span class="tk-k">undefined</span> {
+  <span class="tk-k">if</span> (
+    (ts.isNewExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isCallExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isExpressionWithTypeArguments(parent) &amp;&amp; parent.expression === child)
+  ) {
+    <span class="tk-k">return</span> parent.expression;
+  }
+  <span class="tk-k">return</span> <span class="tk-k">undefined</span>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The prefix evaluates its operands by the existing short-circuit rules. The saved Boolean chooses whether the suffix runs. The sequence uses the existing checked join and the suffix establishes its guards on entry.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>The 19-entry fragment-classes interface retains 10 established entries and the same enclosing footprint refusal for localClass.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExecution.buildCondition</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>77.50 → 42.87 process CPU seconds for the frozen 19-entry interface with both changes on the grouped benchmark verifier</dd><dt>Tests</dt><dd><span class="test pos">blocker-disjoint-tag-join</span> <span class="test pos">condition-short-circuit</span> <span class="test pos">guard-negated-short-circuit</span> <span class="test pos">blocker-compiler-api-optional-path-join</span></dd></dl>
+<details><summary>3 files changed, 59 insertions(+), 1 deletion(-)</summary><pre class="code"> lean/Verification/Source/ExpressionPlan.lean   | 30 +++++++++++++++++++++++++-
+ pipeline/cases.mts                             |  1 +
+ pipeline/examples/blocker-disjoint-tag-join.ts | 29 +++++++++++++++++++++++++</pre></details>
 </article>
 </main></body></html>
