@@ -469,7 +469,9 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
     -- Execution.lean:19-31; the producer's `narrow_rigid`,
     -- semantic.ml:498-508): `T ⊓ (null | number)` is `T ⊓ number` where a
     -- nullish test fails.
-    if let .meet p cs also := StoreView.row (← table) a then
+    -- (the row is instantiated only where its form is a meet)
+    let T ← table
+    if let .meet p cs also := (if EquationStore.rowForm T a == .meet then StoreView.row T a else .clauses []) then
       -- A rigid value tested as a function keeps its parameter and meets
       -- the function kinds (refinement.ml:58, `T & Function`).
       if tag == .isFun && q then
@@ -520,7 +522,8 @@ def excludeNumbers (tags : List Tag) (A : Ty Tree) : Compiler (Ty Tree) := do
 `A`: one label for one meaning where the two state it twice. -/
 def joinTy (A B : Ty Tree) : Compiler (Ty Tree) := do
   let T ← table
-  return norm (A ++ B.filter fun b => !within T [b] A)
+  -- (a label `A` holds is within `A`, by reflexivity, without the comparison)
+  return norm (A ++ B.filter fun b => !(A.contains b || within T [b] A))
 
 def nonNullish (A : Ty Tree) : Compiler (Ty Tree) := slice A .isNullish false
 
@@ -546,7 +549,8 @@ def declaredAt (D A : Ty Tree) : Compiler (Ty Tree) := do
       !(ProgramTyping.callSigs G [a]).isEmpty ||
       (match PositiveRules.expand G [a] with | [.ctors ..] => true | _ => false)
   if objs.isEmpty then return ← assigned D A
-  let kept := D.filter fun d => objs.any fun a => within T [a] [d]
+  -- (a member of `D` the actual holds itself is kept, by reflexivity)
+  let kept := D.filter fun d => objs.contains d || objs.any fun a => within T [a] [d]
   if kept.isEmpty then return ← assigned D A
   let ps ← if prims.isEmpty then pure [] else assigned D prims
   return norm (ps ++ kept)
@@ -869,7 +873,8 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOper
 def narrowTo (env : Env) (target : Expr) (R : Ty Tree) : Compiler Env := do
   let T ← table
   let at_ (A : Ty Tree) : Ty Tree :=
-    let kept := A.filter fun a => within T [a] R
+    -- (a member `R` holds itself is within `R`, by reflexivity)
+    let kept := A.filter fun a => R.contains a || within T [a] R
     if kept.isEmpty then R else kept
   match memberPath target with
   | some (root, []) =>
@@ -1556,6 +1561,9 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
     (siblings : List Tree := []) : Compiler (Option (Ty Tree)) := do
   if isBinder b P then return some A
   if fuel == 0 || A.isEmpty then return none
+  -- (a type not mentioning `b` determines no type for it: every path
+  -- below returns `none` where no member of `P` mentions `b`)
+  if !P.any (occurs b) then return none
   let T ← table
   let G := SourceTypes.graph T
   let (withB, others) := P.partition (occurs b)
