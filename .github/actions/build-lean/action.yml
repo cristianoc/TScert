@@ -9,7 +9,7 @@ runs:
   steps:
     - name: Restore the Lean build
       id: lake
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: lean/.lake
         key: lake-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
@@ -59,7 +59,7 @@ runs:
 
     - name: Save the Lean build
       if: inputs.save-cache == 'true' && steps.lake.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: lean/.lake
         key: ${{ steps.lake.outputs.cache-primary-key }}
