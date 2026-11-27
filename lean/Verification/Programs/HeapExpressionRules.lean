@@ -379,10 +379,9 @@ theorem fieldSets_mem {G : NormalGraph ι} : ∀ {Els : List (Ty ι)} {V : Value
   | E :: rest, V, El, n, W, v, hs, hEl, hm => by
     simp only [fieldSets, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hs
     obtain ⟨R, hR, V', hV', rfl⟩ := hs
-    rw [ValueSets.ValueSet.mem_join]
     rcases List.mem_cons.mp hEl with rfl | hEl
-    · simp [ValueSets.ofAtoms_holds ((HeapKnowledge.atoms_sem hR n W v).mp hm)]
-    · simp [fieldSets_mem hV' hEl hm]
+    · exact ValueSets.ValueSet.mem_join_left (ValueSets.ofAtoms_holds ((HeapKnowledge.atoms_sem hR n W v).mp hm))
+    · exact ValueSets.ValueSet.mem_join_right (fieldSets_mem hV' hEl hm)
 
 /-- The value set every value stored at `fld` of an object of type `Ref` is
 in, where every alternative of `Ref` states `fld` as a location and every type
@@ -762,10 +761,33 @@ by slot `i`, holds what that slot held, one slot further. -/
 def freshLinks (parts : List (PropKey × Nat)) : HeapLinks.Links :=
   parts.map fun p => ⟨0, p.2 + 1, false, p.1, false⟩
 
-/-- A literal's allocation output, with the read links of its fields. -/
+/-- A literal's allocation output, with the read links of its fields and, where
+the literal allocates no prototype, its own-key upper bound. -/
 def allocLinked (k : Knowledge) (Rs : List (PropKey × ValueSets.ValueSet)) (n : Nat)
     (others : List (Nat × PropKey)) (parts : List (PropKey × Nat)) : Knowledge :=
-  { allocOutput k Rs n others with links := (allocOutput k Rs n others).links ++ freshLinks parts }
+  let base := allocOutput k Rs n others
+  let keys := parts.map Prod.fst
+  let ownVal : Facts :=
+    if keys.contains CallArguments.protoField then []
+    else [⟨0, ValueSets.ValueSet.ofOwnKeys keys, valueField⟩]
+  { base with values := ownVal ++ base.values, links := base.links ++ freshLinks parts }
+
+private theorem lookup_slots_none : ∀ {base : Nat} {ns : List PropKey} {k : PropKey},
+    k ∉ ns → (slots base ns).lookup k = none
+  | _, [], _, _ => rfl
+  | base, f :: fs, k, h => by
+    have hne : (k == f) = false := beq_false_of_ne (fun heq => h (heq ▸ List.mem_cons_self ..))
+    simp only [slots, List.lookup, hne]
+    exact lookup_slots_none (fun hm => h (List.mem_cons_of_mem _ hm))
+
+private theorem slots_fst_mem : ∀ {base : Nat} {ns : List PropKey} {p : PropKey × Nat},
+    p ∈ slots base ns → p.1 ∈ ns
+  | _, [], _, h => by simp [slots] at h
+  | base, f :: fs, p, h => by
+    simp only [slots, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (slots_fst_mem h)
 
 theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
     l ∈ (slots base ns).map Prod.snd → base ≤ l
@@ -895,7 +917,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       simp only [Nat.add_sub_cancel_left]
       rw [List.getElem?_eq_getElem (by simpa using hi)]
       simp
-  refine ⟨?_, hshift.2.1, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro f hf
     simp only [allocLinked, allocOutput] at hf
     rcases List.mem_append.mp hf with hf | hf
@@ -914,6 +936,21 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
         rw [List.getElem?_eq_getElem (by simpa using hi)]
         simp [hpi]
     · exact hshiftx.1 f hf
+  · intro f hf
+    simp only [allocLinked, allocOutput] at hf
+    rcases List.mem_append.mp hf with hf | hf
+    · split at hf
+      · cases hf
+      · rename_i hnp
+        simp only [List.mem_singleton] at hf
+        subst hf
+        have hnot : CallArguments.protoField ∉ parts.map Prod.fst := by
+          simpa [List.contains_iff_mem] using hnp
+        simp only [push, ValueSets.ValueSet.ofOwnKeys, ValueSets.ValueSet.mem, ValueSets.Obj.mem,
+          List.all_nil, Bool.true_and, ValueSets.OwnKeys.mem, Bool.and_eq_true,
+          Option.isNone_iff_eq_none, List.all_eq_true, List.contains_iff_mem]
+        exact ⟨lookup_slots_none hnot, fun p hp => slots_fst_mem hp⟩
+    · exact hshift.2.1 f hf
   · simp only [allocLinked, allocOutput]
     refine ⟨fun g hg => ?_, HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
       hshiftx.2.2.2.2.1, hshiftx.2.2.2.2.2⟩

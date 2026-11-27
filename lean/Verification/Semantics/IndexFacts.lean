@@ -331,6 +331,9 @@ def GuardTag.holdsUndef : GuardTag → Bool
 theorem GuardTag.not_holds_undef {t : GuardTag} (h : t.holdsUndef = false) : ¬ t.holds .undef := by
   cases t <;> simp_all [GuardTag.holdsUndef, GuardTag.holds]
 
+theorem GuardTag.holds_undef {t : GuardTag} (h : t.holdsUndef = true) : t.holds .undef := by
+  cases t <;> simp_all [GuardTag.holdsUndef, GuardTag.holds]
+
 /-- The value a guard's path reads from a value: each step the read of a
 string key, the location's value where the object owns the key, `undefined`
 where it owns neither the key nor a prototype (`HeapFacts.ReadGave`). A

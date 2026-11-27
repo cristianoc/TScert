@@ -106,7 +106,7 @@ assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
 // by kind, an elements fact's predicate the kinds it admits.
 const contents = { nul: false, undef: false, tru: true, fls: false, sym: false, arr: false,
   num: { allBut: { xs: ["0"] } }, str: { these: { xs: ["checked"] } }, big: { these: { xs: [] } },
-  obj: [[{ tag: "isStr", answer: true }]] };
+  obj: [[{ tag: "isStr", answer: true }]], ownKeys: ["id"] };
 const pred = { nul: false, undef: false, bool: false, num: true, str: true, big: false, sym: false, obj: false };
 const heap = readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
   kind: "node-typing", id: "heap", sequent,
