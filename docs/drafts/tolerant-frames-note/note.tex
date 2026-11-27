@@ -43,11 +43,10 @@
 \newcommand{\LF}{\mathit{Loc}_{\kF}}\newcommand{\LC}{\mathit{Loc}_{\kC}}\newcommand{\LE}{\mathit{Loc}_{\kE}}\newcommand{\LS}{\mathit{Loc}_{\kS}}\newcommand{\LI}{\mathit{Loc}_{\kI}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\status}[1]{\textsf{\small[#1]}}
-\newcommand{\cC}{\mathcal{C}}
 
 \title{Tolerant frames\\[2pt]\large A modal account of fact preservation without ownership}
 \author{TScert working note}
-\date{24 November 2026}
+\date{27 November 2026}
 
 \emergencystretch=3em
 \begin{document}
@@ -66,7 +65,7 @@ from the locations the fact reads; the effect alters those locations
 only within a relational change bound that the fact tolerates; or the
 world's invariants fix what the fact reads. Thirteen verification
 patterns from a TypeScript code base reduce to one-line modal
-derivations, and four further patterns delineate extensions beyond the
+derivations, and three further patterns delineate extensions beyond the
 present closed-effect calculus. Core semantic definitions, modal laws,
 the tolerant frame theorem, and selected program rules are mechanized
 without axioms in Lean~4.
@@ -147,8 +146,8 @@ one of the following primitive operations:
 \code{y = x[a]},\ \code{x[a] = a'} & \text{an array element read and write}\\
 \code{y = b[a]},\ \code{b[a] = a'},\ \code{y = b.length} & \text{a read, write, and length of a typed array \code{b}}\\
 \code{y = s[a]},\ \code{y = s.length} & \text{a code-unit read and length of a string \code{s}}\\
-\code{y = \{f: a, ...\}},\ \code{y = [a, ...]} & \text{an object or array allocation}\\
-\code{y = x.m(x, ...)} & \text{a call of a native method, such as \code{push}}\\
+\code{y = \{f: a, ...\}},\ \code{y = [a, ...]},\ \code{y = new C(a, ...)} & \text{an object, array, or typed-array allocation}\\
+\code{y = x.m(a, ...)} & \text{a call of a native method, such as \code{push}}\\
 \code{y = f(x, ...)} & \text{a function call}
 \end{array}
 \end{displaymath}}
@@ -187,7 +186,8 @@ environments are:
 \text{Keys} & f,g &\in& \mathit{Key}\\
 \text{Locations} & l &\in& \mathit{Loc} = \mathbb{N}\\
 \text{Values} & v,u &\in& \mathit{Val} = \mathit{Scalar} \uplus \mathit{Obj}\\
-\text{Spines} & \sigma,\tau &\in& \mathit{Spine} = (\mathit{Loc}\uplus\{\circ\})^{*}\\
+\text{Cell sequences} & \sigma,\tau &\in& (\mathit{Loc}\uplus\{\circ\})^{*}\\
+\text{Spines} & \mathsf{arr}(\sigma),\,\mathsf{view}_{t}(\sigma) &\in& \mathit{Spine} = \mathsf{arr}\bigl((\mathit{Loc}\uplus\{\circ\})^{*}\bigr)\ \uplus\ \mathsf{view}_{t}(\mathit{Loc}^{*})\\
 \text{Heaps} & h &\in& \mathit{Heap} = \mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Spine}\\
 \text{Environments} & \rho &\in& \mathit{Env} = \mathit{Var}\rightharpoonup\mathit{Val}
 \end{array}
@@ -196,9 +196,10 @@ Here $\mathit{Scalar}$ comprises \code{null}, \code{undefined},
 booleans, strings, bigints, and $\mathit{Num}$ (IEEE~754 doubles,
 including NaN, infinities, and $-0$). The subset
 $\mathit{SafeInt}\subset\mathit{Num}$ contains the integers in $[-M,M]$,
-where $M=2^{53}-1$ and $-0$ denotes $0$; the annotation
-\code{safeInteger(x)} and the type \code{SafeInt} denote membership in
-$\mathit{SafeInt}$.
+where $M=2^{53}-1$ ($+0$ and $-0$ are distinct values in $\mathit{Val}$
+for $\doteq$, whereas integer term evaluation maps both to $0\in\mathbb{Z}$);
+the annotation \code{safeInteger(x)} and the type \code{SafeInt} denote
+membership in $\mathit{SafeInt}$.
 \end{definition}
 
 \noindent
@@ -233,17 +234,19 @@ cells $l_0$ (holding $10$) and $l_2$ (holding $30$), and a \emph{hole}
 $\circ$ at index $1$ with no location. The write \code{a[0] = 11}
 updates $l_0$. Class: \emph{value}.
 \item[Spine location, kind $\kS$] One for each indexed collection,
-holding its \emph{spine}: the sequence $\sigma=\langle c_0,\ldots,c_{n-1}\rangle$
-of element cells and holes in index order, with length $\len\sigma=n$
+holding its \emph{spine}: a tagged sequence $\mathsf{arr}(\sigma)$ (for an
+array) or $\mathsf{view}_t(\sigma)$ (for a typed array of element format
+$t$) whose cell sequence $\sigma=\langle c_0,\ldots,c_{n-1}\rangle$
+lists element cells and holes in index order, with length $\len\sigma=n$
 and listed cells $\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$. An
 array's spine lists each cell once: $c_i=c_j\ne\circ$ implies $i=j$, so a
 write to the cell at one index leaves every other index's element
 unchanged
 \status{Lean: \lean{listT\_distinct}, a conjunct of the array contract \lean{listT}}. For
-\code{a} above the spine is $\langle l_0,\circ,l_2\rangle$;
+\code{a} above the spine is $\mathsf{arr}\langle l_0,\circ,l_2\rangle$;
 \code{a.push(40)} allocates a fresh element cell $l_3$ and updates the
-spine to $\langle l_0,\circ,l_2,l_3\rangle$; \code{a.length = 1}
-truncates it to $\langle l_0\rangle$. Class: \emph{spine}.
+spine to $\mathsf{arr}\langle l_0,\circ,l_2,l_3\rangle$; \code{a.length = 1}
+truncates it to $\mathsf{arr}\langle l_0\rangle$. Class: \emph{spine}.
 
 A spine location has one of two \emph{forms}, fixed with its kind:
 $\mathsf{array}$ for a mutable-length array, or $\mathsf{view}_L$
@@ -280,8 +283,9 @@ allocation); a function is an object that also carries code. We write
 $\mathit{fields}(v)=\{v(f)\mid f\in\mathrm{dom}\,v\}$. Reading field $f$
 of $v$ in heap $h$ yields $h(v(f))$. An \emph{indexed collection} (or
 \emph{collection}) is an array or typed array: an object that also
-carries a spine location $\mathit{sp}(v)\in\LS$. Its spine is
-$h(\mathit{sp}(v))=\langle c_0,\dots,c_{n-1}\rangle$, its length is $n$,
+carries a spine location $\mathit{sp}(v)\in\LS$. Its spine carries sequence
+$\sigma=\langle c_0,\dots,c_{n-1}\rangle$ (tagged $\mathsf{arr}(\sigma)$ or
+$\mathsf{view}_t(\sigma)$), its length is $n$,
 and its element at a present index $i$ is $h(c_i)$. Every other object
 is an \emph{ordinary object}.
 
@@ -307,7 +311,7 @@ locations gives $\mathrm{dom}\,h=\{0,\dots,9\}$:
 0 & \kF_{\code{n}} & 1 & \text{field \code{n} of \code{o}}\\
 1 & \kF_{\code{m}} & 2 & \text{field \code{m} of \code{o}}\\
 2 & \kC_{\code{value}} & 0 & \text{field \code{value} of private cell \code{r}}\\
-3 & \kS\ (\mathsf{array}) & \langle 4,\circ,5\rangle & \text{spine of \code{a}}\\
+3 & \kS\ (\mathsf{array}) & \mathsf{arr}\langle 4,\circ,5\rangle & \text{spine of \code{a}}\\
 4 & \kE & 10 & \text{element \code{a[0]}}\\
 5 & \kE & 30 & \text{element \code{a[2]}}\\
 6,7,8,9 & \kI & \code{null} & \text{identity locations of \code{o}, \code{r}, \code{inc}, and \code{a}}
@@ -333,12 +337,12 @@ Operation & Locations written & Class written\\
 \midrule
 \code{y = a} & none & ---\\
 \code{r.value = a} (\code{r} a private cell) & the cell's contents location & \emph{value}\\
-\code{o.f = e} & the field location & \emph{value}\\
-\code{a[i] = e} (index present) & the element cell & \emph{value}\\
-\code{a[i] = e} (hole or past end); \code{push} & the spine (grown or extended) and a fresh cell & \emph{spine}\\
+\code{o.f = a} & the field location & \emph{value}\\
+\code{a[i] = v} (index present) & the element cell & \emph{value}\\
+\code{a[i] = v} (hole or past end); \code{push} & the spine (grown or extended) and a fresh cell & \emph{spine}\\
 \code{pop}, \code{a.length = n} & the spine (possibly shorter) & \emph{spine}\\
 \code{shift}, \code{reverse}, \code{splice} & the spine and element cells of the array & \emph{spine} and \emph{value}\\
-\code{b[i] = e} (\code{b} a typed array) & view spines (same lengths) and fresh cells & \emph{spine}\\
+\code{b[i] = v} (\code{b} a typed array) & view spines (same lengths) and fresh cells & \emph{spine}\\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -412,8 +416,10 @@ when:
 \begin{description}[leftmargin=1.5em,style=sameline]
 \item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
 \item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
-$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a spine when $\kappa=\kS$ (of length $L$ and without holes when its
-form is $\mathsf{view}_L$), and \code{null} when $\kappa=\kI$.
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, an array spine
+$\mathsf{arr}(\sigma)$ when $\kappa=\kS$ with form $\mathsf{array}$, a view
+spine $\mathsf{view}_t(\sigma)$ of length $L$ without holes when $\kappa=\kS$
+with form $\mathsf{view}_L$ (format $t$), and \code{null} when $\kappa=\kI$.
 \item[(W3) valid references] Every cell that a spine of $h$ lists is a
 location of kind $\kE$. For every object $v$ occurring in $h$ or in $\rho$,
 each field location $v(f)$ is of kind $\kF_f$ or $\kC_f$, and its identity location
@@ -443,9 +449,11 @@ that the preservation logic below relies on.
 \begin{definition}[Admissible transition]\label{def:adm}
 Let $s=(\rho,h,W,k)$ and $s'=(\rho',h',W',k')$ be states. The state $s'$ is
 \emph{admissible from} $s$ when $W\sqsubseteq W'$ and $k'\le k$, with the
-contracts of $W$ read at budget $k'$. When $\rho'$ extends $\rho$, we write
-$h\tr{}_\rho h'$ for this relation between $s$ and $s'$, leaving the
-world and budget of each state implicit
+contracts of $W$ read at budget $k'$. At a fixed environment ($\rho'=\rho$),
+we write $s\tr{} s'$ for this relation on states, and $h\tr{}_\rho h'$ when
+the surrounding states' worlds and budgets are fixed by context. (Commands
+that bind a fresh variable extend $\rho$ to $\rho'\supseteq\rho$ without
+altering existing variables.)
 \status{Lean: \lean{Admissible}}.
 \end{definition}
 
@@ -477,23 +485,24 @@ location's allocation; that every write respects its target location's
 contract; and the safety of steps that require no heap facts (such as
 reading a required field of a typed object).
 
-Admissible transitions satisfy four structural properties used throughout:
+Admissible transitions satisfy four structural properties used throughout
+(writing $s=(\rho,h,W,k)$ and $s'=(\rho,h',W',k')$):
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[(T1) Preorder] $h\tr{}_\rho h$; and if $h\tr{}_\rho h'$ and
-$h'\tr{}_\rho h''$, then $h\tr{}_\rho h''$, composing through the
-intermediate state's world
+\item[(T1) Preorder] $s\tr{} s$; and if $s\tr{} s'$ and $s'\tr{} s''$, then
+$s\tr{} s''$, composing worlds by $W\sqsubseteq W'\sqsubseteq W''$ and
+budgets by $k''\le k'\le k$
 \status{Lean: \lean{Admissible.refl}, \lean{Admissible.trans}}.
-\item[(T2) Growth] If $h\tr{}_\rho h'$, then $\len h\le\len{h'}$, and
+\item[(T2) Growth] If $s\tr{} s'$, then $\len h\le\len{h'}$, and
 every location of $h$ retains in $h'$ its kind, form, and key: a
 transition allocates without removing or repurposing locations
 \status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}; the Lean world records the key in \lean{Role.key?}}.
 \item[(T3) Fixed objects] For any object value
-$v:\mathit{Key}\rightharpoonup\LF\cup\LC$ and $h\tr{}_\rho h'$, the
+$v:\mathit{Key}\rightharpoonup\LF\cup\LC$ and $s\tr{} s'$, the
 domain of $v$ and each location $v(f)$ are unchanged: field $f$ of $v$
 reads $h(v(f))$ before and $h'(v(f))$ after, because $v$ is a value
 independent of the heap.
-\item[(T4) Immutable locations] If $h\tr{}_\rho h'$, $l<\len h$, and the
-contract of $l$ admits a single value $u$, then $h(l)=h'(l)=u$
+\item[(T4) Immutable locations] If $s\tr{} s'$, $l<\len h$, and the
+contract of $l$ in $W$ admits a single value $u$, then $h(l)=h'(l)=u$
 \status{Lean: \lean{Admissible.stable\_value}}.
 \end{description}
 
@@ -515,9 +524,10 @@ $u,u'$ by:
 \keep_b(u,u') &\iff& u'=u\\[2pt]
 \init_b(u,u') &\iff& u'=u\ \vee\ (u\in\{\code{null},\code{undefined}\}\wedge u'\in\mathit{Val})\\[2pt]
 \kw{scalar}_b(u,u') &\iff& u'=u\ \vee\ (u\in\mathit{Val}\setminus\mathit{Obj}\wedge u'\in\mathit{Val})\\[2pt]
-\extend_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\text{ array spines}\wedge u'=u\cdot\tau\\
- & & \qquad\wedge\;\mathit{cells}(\tau)\subseteq\{l\mid l\ge b\}\wedge(\len u\le N\Rightarrow\len{u'}\le N))\\[2pt]
-\grow_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\in\mathit{Spine}\wedge u\preceq_b u')\\[2pt]
+\extend_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ \bigl(u=\mathsf{arr}(\sigma)\wedge u'=\mathsf{arr}(\sigma\cdot\tau)\\
+ & & \qquad\wedge\;\mathit{cells}(\tau)\subseteq\{l\mid l\ge b\}\wedge(\len\sigma\le N\Rightarrow\len{\sigma\cdot\tau}\le N)\bigr)\\[2pt]
+\grow_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ \bigl(u=\mathsf{arr}(\sigma)\wedge u'=\mathsf{arr}(\sigma')\wedge\sigma\preceq_b\sigma'\bigr)\\
+ & & \qquad\vee\ \bigl(u=\mathsf{view}_t(\sigma)\wedge u'=\mathsf{view}_t(\sigma')\wedge\len\sigma=\len{\sigma'}\wedge\sigma\preceq_b\sigma'\bigr)\\[2pt]
 \any_b(u,u') &\iff& \kw{true}
 \end{array}
 \end{displaymath}}
@@ -552,11 +562,12 @@ it.
 \begin{example}[Relational changes in action]
 For a location holding \code{undefined}, \code{c ??= build()} transitions
 within $\init_b$. Updating \code{o.n} from $1$ to $3$ lies within
-$\kw{scalar}_b$. At $b=10$, $\grow_{10}$ relates the spine
-$\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,10\rangle$ (\code{push})
-and to $\langle 4,10,5\rangle$ (filling the hole), but neither to
-$\langle 4\rangle$ (violating~(i)) nor to $\langle 4,\circ,5,0\rangle$
-(violating~(iv), since $0<10$).
+$\kw{scalar}_b$. At $b=10$, $\extend_{10}$ (and hence $\grow_{10}$) relates
+the array spine $\mathsf{arr}\langle 4,\circ,5\rangle$ to
+$\mathsf{arr}\langle 4,\circ,5,10\rangle$ (\code{push}), while $\grow_{10}$
+also relates it to $\mathsf{arr}\langle 4,10,5\rangle$ (filling the hole),
+but neither to $\mathsf{arr}\langle 4\rangle$ (violating~(i)) nor to
+$\mathsf{arr}\langle 4,\circ,5,0\rangle$ (violating~(iv), since $0<10$).
 \end{example}
 
 \subsection{Paths and regions}
@@ -637,12 +648,13 @@ whenever the resulting regions remain well-formed.
 \needspace{12\baselineskip}
 \begin{definition}[Regions]\label{def:regions}
 A \emph{region} $r$ is one of three class regions ($\st$, $\vw$, $\val$)
-or four path regions ($\pi.\kw{spine}$, $\pi.\kw{cells}$, $\pi.f$,
-$\pi.\kw{fields}$). A path region is \emph{well-formed} when $\pi$ is a
-collection path (for $\pi.\kw{spine}$ and $\pi.\kw{cells}$), an object
-path (for $\pi.\kw{fields}$), or an object path every object member of
-whose declared type has key $f$, required or optional (for $\pi.f$).
-Effects, supports, and annotations contain well-formed regions only.
+or five path regions ($\pi.\kw{spine}$, $\pi.\kw{cells}$,
+$\pi.\kw{elemSpines}$, $\pi.f$, $\pi.\kw{fields}$). A path region is
+\emph{well-formed} when $\pi$ is a collection path (for $\pi.\kw{spine}$,
+$\pi.\kw{cells}$, and $\pi.\kw{elemSpines}$), an object path (for
+$\pi.\kw{fields}$), or an object path every object member of whose declared
+type has key $f$, required or optional (for $\pi.f$). Effects, supports,
+and annotations contain well-formed regions only.
 
 Relative to a state with environment $\rho$ and heap $h$ (writing
 $v=\mathit{read}(\pi,\rho,h)$), each region denotes a subset
@@ -654,11 +666,12 @@ $r(\rho,h)\subseteq\mathrm{dom}\,h$:
 \val(\rho,h) &=& \LF\cup\LC\cup\LE\cup\LI\\[2pt]
 (\pi.\kw{spine})(\rho,h) &=& \{\mathit{sp}(v)\}\quad\text{if }v\text{ is a collection (else }\emptyset\text{)}\\[2pt]
 (\pi.\kw{cells})(\rho,h) &=& \mathit{cells}(h(\mathit{sp}(v)))\quad\text{if }v\text{ is a collection (else }\emptyset\text{)}\\[2pt]
+(\pi.\kw{elemSpines})(\rho,h) &=& \{\mathit{sp}(h(c))\mid c\in\mathit{cells}(h(\mathit{sp}(v))),\ h(c)\text{ an array}\}\quad\text{if }v\text{ is a collection (else }\emptyset\text{)}\\[2pt]
 (\pi.f)(\rho,h) &=& \{v(f)\}\quad\text{if }v\in\mathit{Obj}\text{ and }f\in\mathrm{dom}\,v\text{ (else }\emptyset\text{)}\\[2pt]
 (\pi.\kw{fields})(\rho,h) &=& \mathit{fields}(v)\quad\text{if }v\in\mathit{Obj}\text{ (else }\emptyset\text{)}
 \end{array}
 \end{displaymath}}
-\status{Lean: \lean{spine}, \lean{cells}, \lean{pathCells}, \lean{path}, \lean{fields}, \lean{pathFields} are total and evaluate to $\emptyset$ on mismatched values; stated frame spine regions are checked well-formed by \lean{regionKindOk}, while support regions are unkinded}.
+\status{Lean: \lean{spine}, \lean{cells}, \lean{pathCells}, \lean{elemSpines}, \lean{path}, \lean{fields}, \lean{pathFields} are total and evaluate to $\emptyset$ on mismatched values; stated frame spine regions are checked well-formed by \lean{regionKindOk}, while support regions are unkinded}.
 \end{definition}
 
 \noindent
@@ -698,16 +711,19 @@ well-formed region with a change:
 {\small\begin{displaymath}
 \begin{array}{@{}l@{\quad}r@{\;\;}c@{\;\;}l@{}}
 \text{Effects} & \Phi,\Psi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[2pt]
-\text{Regions} & r &::=& \st \mid \vw \mid \val \mid \pi.\kw{spine} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{fields}\\[2pt]
+\text{Regions} & r &::=& \st \mid \vw \mid \val \mid \pi.\kw{spine} \mid \pi.\kw{cells} \mid \pi.\kw{elemSpines} \mid \pi.f \mid \pi.\kw{fields}\\[2pt]
 \text{Changes} & \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\extend\mid\grow\mid\any
 \end{array}
 \end{displaymath}}
-The \emph{action} $\tr{\Phi}_\rho$ of $\Phi$ is the binary relation on
-heaps defined by:
+For a mark $m\le\len h$, the \emph{mark-restricted action} $\tr{\Phi}_m$ of
+$\Phi$ is the binary relation on states $s=(\rho,h,W,k)$ and
+$s'=(\rho,h',W',k')$ (at fixed $\rho$) defined by:
 {\small\begin{displaymath}
-h\tr{\Phi}_\rho h' \iff h\tr{}_\rho h'\ \wedge\ \forall l<\len h.\ \Bigl(h'(l)=h(l)\ \vee\ \exists (r:\delta)\in\Phi.\ l\in r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l))\Bigr).
+s\tr{\Phi}_m s' \iff s\tr{} s'\ \wedge\ \forall l<m.\ \Bigl(h'(l)=h(l)\ \vee\ \exists (r:\delta)\in\Phi.\ l\in r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l))\Bigr).
 \end{displaymath}}
-Regions are evaluated in the entry heap $h$, as in dynamic
+The \emph{action} $s\tr{\Phi} s'$ of $\Phi$ is $s\tr{\Phi}_{\len h} s'$
+(also written $h\tr{\Phi}_\rho h'$ when $W,k,W',k'$ are clear from
+context). Regions are evaluated in the entry heap $h$, as in dynamic
 frames~\cite{kassios}; locations allocated during the step ($l\ge\len h$)
 are constrained by admissibility alone.
 \end{definition}
@@ -717,20 +733,20 @@ Let $h$ be the heap of Example~\ref{ex:heap} ($\len h=10$). The effect
 $\{\val:\any,\ \st:\grow\}$ bounds an element write \code{out[j] = v} to
 an unknown array, while $\{\val:\any,\ y.\kw{spine}:\any\}$ bounds a call
 that may shorten $y$ (such as \code{y.splice(...)}). After
-\code{a.push(40)}, $h'(3)=\langle 4,\circ,5,10\rangle$, $h'(10)=40$, and
+\code{a.push(40)}, $h'(3)=\mathsf{arr}\langle 4,\circ,5,10\rangle$, $h'(10)=40$, and
 all other old locations are unchanged; hence
-$h\tr{\{\st:\grow\}}_\rho h'$. After \code{a.length = 1}, the spine
-shrinks to $\langle 4\rangle$, which lies in $\tr{\{a.\kw{spine}:\any\}}_\rho$
-but not in $\tr{\{\st:\grow\}}_\rho$.
+$h\tr{\{\st:\extend\}}_\rho h'$ (and hence $h\tr{\{\st:\grow\}}_\rho h'$).
+After \code{a.length = 1}, the spine shrinks to $\mathsf{arr}\langle 4\rangle$,
+which lies in $\tr{\{a.\kw{spine}:\any\}}_\rho$ but not in $\tr{\{\st:\grow\}}_\rho$.
 \end{example}
 
 \begin{definition}[Effect order and rigidity]\label{def:rigidity}
-Write $\Phi\sqsubseteq\Psi$ when $h\tr{\Phi}_\rho h'$ implies
-$h\tr{\Psi}_\rho h'$ for all $\rho,h,h'$. The top effect
+Write $\Phi\sqsubseteq\Psi$ when $s\tr{\Phi} s'$ implies
+$s\tr{\Psi} s'$ for all states $s,s'$. The top effect
 $\top=\{\val:\any,\ \st:\any\}$ bounds every admissible transition.
 An effect $\Phi$ is \emph{rigid} when its action is transitive:
-$h\tr{\Phi}_\rho h'$ and $h'\tr{\Phi}_\rho h''$ imply
-$h\tr{\Phi}_\rho h''$.
+$s\tr{\Phi} s'$ and $s'\tr{\Phi} s''$ imply
+$s\tr{\Phi} s''$.
 \end{definition}
 
 \noindent
@@ -738,13 +754,16 @@ Rigidity allows a fact that survives a single $\Phi$-step to survive any
 sequence of them:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Rigid: class regions] Any effect over $\st$, $\vw$, and $\val$ is
-rigid at every named change: changes below $\any$ preserve each location's
-class, and $\any$ absorbs subsequent changes.
-\item[Rigid: spine or fields at a rigid path] Both $\{\pi.\kw{spine}:\delta\}$
-and $\{\pi.\kw{fields}:\delta\}$ are rigid on states where $\pi$ is rigid
-(Section~\ref{sec:assertions}): $\pi$ reads the same collection or object
-in $h$ and $h'$, fixing its spine or field locations by (T3)
-\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound} for \lean{pathFields}}.
+rigid at every named change: every admissible transition preserves each
+pre-existing location's class by~(T2), and each named change $\delta$ is
+transitive (with $\len h\le\len{h'}$ and antitonicity in $b$).
+\item[Rigid: field, fields, or spine at a rigid path] Each of
+$\{\pi.f:\delta\}$, $\{\pi.\kw{fields}:\delta\}$, and
+$\{\pi.\kw{spine}:\delta\}$ (as well as any union of rigid entries) is
+rigid on states where $\pi$ is rigid (Section~\ref{sec:assertions}): $\pi$
+reads the same object or collection in $h$ and $h'$, fixing its field or
+spine locations by~(T3)
+\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound} for \lean{path}, \lean{pathFields}, and \lean{spine}}.
 For an iterator \code{it} whose \code{next} mutates only its receiver's
 fields, $\code{it.next()}:\{\mathit{it}.\kw{fields}:\any\}$
 \status{Lean: \lean{ownCall\_sound} for a call whose normal effect alters the receiver's own fields and keeps all other locations; no theorem states the effect judgment as displayed}.
@@ -755,11 +774,15 @@ mutate $l$, which did not belong to $(x[\ast])(\rho,h)$.
 \end{description}
 
 \paragraph{Effect judgments for commands.}
-The judgment $c:\Phi\mid\Phi^{e}$ states that whenever $c$ runs from
-$(\rho,h)$ and exits normally (completing, returning, or breaking) in
-$h'$, $h\tr{\Phi}_\rho h'$; and whenever $c$ exits via an uncaught throw
-in $h'$, $h\tr{\Phi^{e}}_\rho h'$. Writing $c:\Phi$ abbreviates
-$c:\Phi\mid\top$. A throw caught inside $c$ is not an exceptional exit of
+For an entry mark $m\le\len h$, the judgment $c:_{m}\Phi\mid\Phi^{e}$
+states that whenever $c$ runs from state $s=(\rho,h,W,k)$ and exits
+normally (completing, returning, or breaking) in $s'$ (at the same
+bindings for pre-existing variables), $s\tr{\Phi}_m s'$; and whenever $c$
+exits via an uncaught throw in $s'$, $s\tr{\Phi^{e}}_m s'$. Writing
+$c:\Phi\mid\Phi^{e}$ abbreviates $c:_{\len h}\Phi\mid\Phi^{e}$ (bounding
+all pre-existing locations of the entry state), and writing $c:_{m}\Phi$
+(resp.\ $c:\Phi$) abbreviates $c:_{m}\Phi\mid\top$ (resp.\ $c:\Phi\mid\top$).
+A throw caught inside $c$ is not an exceptional exit of
 $c$: the normal bound of \code{try c catch (x) d} covers both normal
 completion of \code{c} and a throw of \code{c} followed by normal
 completion of \code{d}. Effect judgments may assume the assertions
@@ -775,36 +798,43 @@ of Section~\ref{sec:programs}
 
 \begin{definition}[Assertion syntax]\label{def:assert-syntax}
 Paths $\pi$, integer terms $t$, linear combinations $e$, atoms $a$,
-quantified bodies $\varphi$, body terms $u$, assertions $F,G$, and
+quantified bodies $\varphi$, body terms $b$, assertions $F,G$, two-state
+terms $\hat t$ (with linear combinations $\hat e$ over $\hat t$), and
 two-state postconditions $Q$ are generated by:
 {\small\begin{displaymath}
 \begin{array}{@{}l@{\quad}r@{\;\;}c@{\;\;}l@{}}
 \text{Paths} & \pi &::=& x \mid \pi.f\\[2pt]
-\text{Terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid z[e] \mid z[e].\vec f \mid \len{z[e].\vec f} \mid \len{z[e]}\\[2pt]
+\text{Terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid t\mathbin{\&}m \mid z[e] \mid z[e].\vec f \mid \len{z[e].\vec f} \mid \len{z[e]}\\[2pt]
 \text{Linear combinations} & e &::=& c \mid c\cdot t \mid e+e\\[2pt]
 \text{Atoms} & a &::=& e\le e \mid \pi\doteq v \mid \pi.f^{?}\doteq v \mid \dense(x,e) \mid \pi\in V\\
- & & \mid & z[e]\doteq v \mid \forall e\le i<e.\ \varphi\\[2pt]
-\text{Quantified bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi\\[2pt]
-\text{Body terms} & u &::=& i \mid p[i] \mid p[i+d] \mid p[i].\vec f \mid \len{p[i].\vec f} \mid \len{p[i]} \mid t\\[2pt]
+ & & \mid & z[e]\doteq v \mid \forall_{p}\, e\le i<e.\ \varphi\\[2pt]
+\text{Quantified bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi \mid \tau\in V\Rightarrow\psi\\[2pt]
+\text{Body terms} & b &::=& i \mid p[i] \mid p[i+d] \mid p[i].\vec f \mid \len{p[i].\vec f} \mid \len{p[i]} \mid b\mathbin{\&}m \mid t\\
+ & & \mid & q[i+e_s] \mid q[i+e_s].\vec f \mid \len{q[i+e_s].\vec f} \mid \len{q[i+e_s]}\\[2pt]
 \text{Assertions} & F,G &::=& \kw{true} \mid \kw{false} \mid a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
- & & \mid & \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
-\text{Postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q \mid \forall u.\,Q
+ & & \mid & \pi\sep\pi' \mid \pi\sep\pi'.\kw{elemSpines} \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
+\text{Two-state terms} & \hat t &::=& t \mid \old(t)\\[2pt]
+\text{Postconditions} & Q &::=& F \mid \hat a \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q \mid \forall u.\,Q
 \end{array}
 \end{displaymath}}
 \end{definition}
 
 \paragraph{Conventions.}
-A path $\pi$ is as in Definition~\ref{def:paths}, and a \emph{field
-suffix} $\vec f$ is a non-empty sequence of field keys $f_1\ldots f_k$.
-In terms, $n$ ranges over safe-integer literals; in linear combinations,
-$c$ ranges over integers; in atoms, $v$ and $w$ stand for scalar
-literals, program variables, or logical variables (and in typed-array
-rules of format $t$, also $\mathit{conv}_t$ of one of these;
-Section~\ref{sec:programs}). Inside $\forall e_0\le i<e.\ \varphi$, linear
-combinations range over body terms $u$ (with literal offset $d\ge 0$ and
-non-indexed terms $t$ free of $i$), $i$ is bound in $\varphi$ (renamed
-$j$ or $k$ where $i$ is a program variable), and element terms read a
-single path $p$.
+A path $\pi$ is as in Definition~\ref{def:paths}, $p,q,z$ range over
+collection paths, and a \emph{field suffix} $\vec f$ is a non-empty
+sequence of field keys $f_1\ldots f_k$. In terms, $n$ ranges over
+safe-integer literals and $m$ over integer masks $0\le m<2^{31}$; in
+linear combinations, $c$ ranges over integers; in atoms, $v$ and $w$ stand
+for scalar literals, program variables, or logical variables (and in
+typed-array rules of format $t$, also $\mathit{conv}_t$ of one of these;
+Section~\ref{sec:programs}). Inside $\forall_{p}\, e_0\le i<e.\ \varphi$,
+linear combinations range over body terms $b$ (with literal offset
+$d\ge 0$, affine shift $e_s$ free of $i$, and non-indexed terms $t$ free
+of $i$), $i$ is bound in $\varphi$ (renamed $j$ or $k$ where $i$ is a
+program variable), and an element guard target $\tau$ is $p[i]$,
+$p[i].\vec f$, or a parallel access $q[i+e_s]$ or $q[i+e_s].\vec f$. We
+drop the subscript $p$ and write $\forall e_0\le i<e.\ \varphi$ whenever
+the collection path $p$ is evident from $\varphi$'s element reads.
 
 Standard comparisons abbreviate $\le$: $e=e'$ stands for
 $e\le e'\wedge e'\le e$, and $e<e'$ for $e+1\le e'$. Writing
@@ -814,7 +844,12 @@ for a tested condition $a$ (in rules \textsc{If}, \textsc{Test},
 \textsc{Loop}, and Example~\ref{ex:full}) to stand for the false-branch
 assertion supplied by \textsc{Test}. A postcondition $Q$ relates two
 states (Section~\ref{sec:programs}), quantifying over indices $j$ and
-values $u$, and permitting pre-state terms $\old(t)$. Where a rule writes
+values $u$, and permitting two-state atoms $\hat a$ (atoms whose terms
+range over $\hat t$, such as $\len x=\old(\len x)+1$ or
+$x[\old(\len x)]\doteq v$). Bounded and disequality postcondition
+quantifiers abbreviate implication: $\forall j<\hat e.\,Q$ stands for
+$\forall j.\,(0\le j<\hat e\Rightarrow Q)$ and $\forall j\ne\hat e.\,Q$
+for $\forall j.\,(j\ne\hat e\Rightarrow Q)$. Where a rule writes
 $F[a/y]$ for a literal $a$, it denotes $F$ at a variable $y$ holding $a$.
 Note that \emph{atom} refers either to an atomic assertion $a$ here or to
 a variable/literal operand in commands (Definition~\ref{def:cmd});
@@ -828,7 +863,9 @@ undefined there. A literal $n\in\mathit{SafeInt}$ denotes itself; a
 variable $x$ and path $\pi$ denote the numbers they hold or read.
 $\len\pi$ denotes JavaScript's \code{length} of what $\pi$ reads: the
 spine length of an array, the fixed length of a typed array, or the
-length of a string. $z[e]$ denotes the number stored in collection $z$ at
+length of a string. $t\mathbin{\&}m$ (for $0\le m<2^{31}$) denotes the
+masked 32-bit integer $\mathrm{ToInt32}(v)\mathbin{\&}m$ of the value $v$
+read by $t$. $z[e]$ denotes the number stored in collection $z$ at
 index $e$, $z[e].\vec f$ the number read along $\vec f$ from that
 element, and $\len{z[e].\vec f}$ and $\len{z[e]}$ the corresponding
 lengths. A term is \emph{defined} when its read succeeds, yields a value
@@ -858,62 +895,65 @@ the first $n$ indices of array $x$ are present. For
 union of value kinds (number, string, object, \code{null},
 \code{undefined}, boolean, bigint), optionally with literals added or
 excluded (e.g.\ $x.f\in\mathit{number}$, $x.f\notin\{\code{null}\}$).
-\item[Element $z{[i]}\doteq v$] The linear combination $i$ is defined with
-$0\le i<\len z$, and collection $z$ reads $v$ at index $i$ (the contents
+\item[{Element $z[e]\doteq v$}] The linear combination $e$ is defined with
+$0\le e<\len z$, and collection $z$ reads $v$ at index $e$ (the contents
 of its listed element cell, or \code{undefined} at an array hole). For
 \code{a = [10, , 30]}, $a[0]\doteq 10$ and $a[1]\doteq\code{undefined}$;
 for a typed array, $b[1]\doteq 4$.
-\item[Bounded quantification $\forall t_0\le i<t.\ \varphi$] The path $p$ read
-by element terms in $\varphi$ reads a collection, $t_0$ and $t$ are
-defined, and the conjunction of disjunctions of linear inequalities
-$\varphi$ holds for every integer $i$ with $0\le i$, $t_0\le i$ and
-$i<t$. Each inequality holds only where its body terms are defined:
-$a[i]>0$ requires a present safe-integer element at $i$. An empty
-interval ($t\le t_0$ or $t\le 0$) imposes no constraint on elements. We
-write $\forall i<t.\ \varphi$ for $\forall 0\le i<t.\ \varphi$. For
+\item[Bounded quantification $\forall_{p}\, t_0\le i<t.\ \varphi$] The
+collection path $p$ reads a collection, $t_0$ and $t$ are defined, and the
+body $\varphi$ (a conjunction of clauses built from linear inequalities,
+disjunctions, and element value-set guards $\tau\in V\Rightarrow\psi$)
+holds for every integer $i$ with $0\le i$, $t_0\le i$, and $i<t$. Each
+inequality holds only where its body terms are defined: $a[i]>0$ requires
+a present safe-integer element at $i$. A guarded clause
+$\tau\in V\Rightarrow\psi$ holds when $\tau$ reads a value outside $V$, or
+when $\tau$ evaluates and $\psi$ holds. An empty interval ($t\le t_0$ or
+$t\le 0$) imposes no constraint on elements. We write
+$\forall_{p}\, i<t.\ \varphi$ for $\forall_{p}\, 0\le i<t.\ \varphi$. For
 \code{a = [10, , 30]}, $\forall i<1.\ a[i]>0$ and
 $\forall 2\le i<3.\ a[i]>0$ hold while $\forall i<3.\ a[i]>0$ fails at
 the hole;
 $\forall i<n.\ 0\le\mathit{items}[i].\mathit{at}<\len{\mathit{widths}}$
-bounds every item's \code{at} field; and
+bounds every item's \code{at} field;
 $\forall i<n.\ \mathit{xs}[i]\le\mathit{xs}[i+1]$ states sortedness of
-the first $n+1$ elements.
+the first $n+1$ elements; and
+$\forall i<n.\ \mathit{starts}[i]\le\mathit{ends}[i]$ relates parallel
+arrays.
 \end{description}
 \noindent
 We write $\varphi(v)$ for a body over the single element term $p[i]$ with
 $v$ substituted for $p[i]$ (so $\forall i<1.\ \varphi(a[i])$ is
 $\forall i<1.\ a[i]>0$ when $\varphi(v)$ is $v>0$)
-\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four reading kinds, and an entry flag; element terms occur only in bodies, and a bound of a quantification is an optional term plus an integer offset (\lean{IndexBound}). \lean{Parity.Derivation} states bounded quantification for arrays with every index below $t$ present, and element atoms for typed arrays}.
+\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{BodyClause}, \lean{Bound.parallel}, \lean{ElemTarget.parallel}, \lean{IndexShift}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the five reading kinds (\lean{value}, \lean{length}, \lean{view}, \lean{strLength}, \lean{bitMask}), and an entry flag; element terms occur only in bodies, and a bound of a quantification is an optional term plus an integer offset (\lean{IndexBound}). \lean{Parity.Derivation} states bounded quantification for arrays with every index below $t$ present, and element atoms for typed arrays}.
 
 \begin{definition}[Satisfaction]\label{def:sat}
 An assertion $F$ is interpreted at a state $s=(\rho,h,W,k)$ and an
 \emph{entry mark} $m\le\len h$ (the heap length at entry of the enclosing
 function invocation, so locations $l\ge m$ are those allocated by this
-invocation), written $\rho,m,h\models F$ with $W$ and $k$ left implicit.
+invocation), written $s,m\models F$ (or $\rho,m,h\models F$ when $F$ does
+not depend on $W$ and $k$).
 Atoms depend on $\rho$ and $h$ alone, and $\wedge$, $\vee$, $\exists$
 have their standard meaning (a disjunction holds when either disjunct
-holds regardless of what the other reads). The remaining four forms are
+holds regardless of what the other reads). The remaining five forms are
 defined by:
 {\small\begin{displaymath}
 \begin{array}{@{}lcl@{}}
-\rho,m,h\models\pi\sep\pi' &\iff& \pi,\pi'\text{ are defined, and if both read arrays their spines differ},\\[2pt]
-\rho,m,h\models\apart(x,y) &\iff& x\text{ and }y\text{ read arrays with distinct spines listing no common cell},\\[2pt]
-\rho,m,h\models\fresh(r) &\iff& \forall l\in r(\rho,h).\ l\ge m,\\[2pt]
-\rho,m,h\models\bx{\Phi}F &\iff& \forall h'.\ h\tr{\Phi}_\rho h'\ \Rightarrow\ \rho,m,h'\models F .
+s,m\models\pi\sep\pi' &\iff& \pi,\pi'\text{ are defined, and if both read arrays their spines differ},\\[2pt]
+s,m\models\pi\sep\pi'.\kw{elemSpines} &\iff& \pi,\pi'\text{ are defined, and if }\pi\text{ reads an array and }\pi'\text{ a collection,}\\
+ & & \qquad\text{no present element of }\pi'\text{ shares }\pi\text{'s spine},\\[2pt]
+s,m\models\apart(x,y) &\iff& x\text{ and }y\text{ read arrays with distinct spines listing no common cell},\\[2pt]
+s,m\models\fresh(r) &\iff& \forall l\in r(\rho,h).\ l\ge m,\\[2pt]
+s,m\models\bx{\Phi}F &\iff& \forall s'=(\rho,h',W',k').\ s\tr{\Phi} s'\ \Rightarrow\ s',m\models F .
 \end{array}
 \end{displaymath}}
 We abbreviate $\fresh(x)$ for $\fresh(x.\kw{spine})$, while
 $\fresh(x.\kw{fields})$ states that $x$'s field locations were allocated
 by the current invocation
-\status{Lean: \lean{PathSpinesApart} for $\sep$; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for array spines and object fields; \lean{Parity.Derivation} states $\sep$ for two arrays}.
+\status{Lean: \lean{PathSpinesApart} for $\sep$; \lean{PathElemSpinesApart} / \lean{IndexFact.elemSpineApart} for element-spine separation; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for array spines and object fields; \lean{Parity.Derivation} states $\sep$ for two arrays}.
 \end{definition}
 
 \noindent
-Each invocation also carries a ghost \emph{component} tag naming the
-innermost component of its function's code; no assertion reads this tag,
-which is used solely by rule \textsc{Read-only frame}
-(Section~\ref{sec:programs}).
-
 The modality $\bx{\Phi}F$ asserts that $F$ holds in every admissible
 successor reached by a $\Phi$-bounded change. Because admissibility reads
 the world $W$, $\bx{\Phi}F$ is the sole assertion form sensitive to $W$:
@@ -984,20 +1024,21 @@ Lean, transitivity is \lean{Closed.Holds.trans\_on} for class regions and
 \lean{ArgumentSpineRegionsWithin.trans} for a spine at a rigid path.
 
 \begin{proposition}[Guards and quantified facts]\label{prop:every}
-For terms $t_0,t,t_0',t',k$, a body $\varphi$ whose element terms read path $p$,
+For terms $t_0,t,t_0',t',k$, a body $\varphi$ over collection path $p$,
 a path $\pi$, values $v,w$, and an assertion $F$:
 {\small\begin{displaymath}
 \begin{array}{@{}ll@{}}
 \textsc{(Guard)} & (\pi\doteq v\vee F)\wedge\pi\doteq w\ \vdash\ F\qquad (v\ne w)\\[2pt]
-\textsc{(Inst)} & (\forall t_0\le i<t.\ \varphi)\wedge t_0\le k\wedge 0\le k<t\ \vdash\ \varphi[k/i]\\[2pt]
-\textsc{(Sub)} & (\forall t_0\le i<t.\ \varphi)\wedge t_0\le t_0'\wedge t'\le t\ \vdash\ \forall t_0'\le i<t'.\ \varphi\\[2pt]
-\textsc{(Empty)} & \kw{defined}(\len p)\wedge\kw{defined}(t_0)\wedge(t\le t_0\vee t\le 0)\ \vdash\ \forall t_0\le i<t.\ \varphi
+\textsc{(Inst)} & (\forall_{p}\, t_0\le i<t.\ \varphi)\wedge t_0\le k\wedge 0\le k<t\ \vdash\ \varphi[k/i]\\[2pt]
+\textsc{(Sub)} & (\forall_{p}\, t_0\le i<t.\ \varphi)\wedge t_0\le t_0'\wedge t'\le t\ \vdash\ \forall_{p}\, t_0'\le i<t'.\ \varphi\\[2pt]
+\textsc{(Empty)} & \kw{defined}(\len p)\wedge\kw{defined}(t_0)\wedge(t\le t_0\vee t\le 0)\ \vdash\ \forall_{p}\, t_0\le i<t.\ \varphi
 \end{array}
 \end{displaymath}}
 In \textsc{(Guard)}, $\pi$ may end at an optional field; in
-\textsc{(Inst)}, $\varphi[k/i]$ substitutes $p[k]$ for $p[i]$ (equaling
-$\varphi(v)$ after \code{v = p[k]}); in \textsc{(Empty)}, $p$ is a
-collection path
+\textsc{(Inst)}, $\varphi[k/i]$ substitutes $k$ for $i$ throughout
+$\varphi$ (mapping bare $i$ to $k$ and $p[i+d]$ to $p[k+d]$, and equaling
+$\varphi(v)$ when $p[i]$ is the only indexed term after \code{v = p[k]});
+in \textsc{(Empty)}, $p$ is a collection path
 \status{Each rule follows from Definition~\ref{def:sat}. Lean proves instances: \lean{unguardIndices\_holds}, \lean{releaseEither\_holds} (for a read guard path or linearly refuted alternatives); \lean{instantiateEvery\_holds}, \lean{elementInstances\_holds} (at a read element); \lean{everySubinterval\_sound}; \lean{everyEmpty\_sound}, \lean{Derivation.everyEmpty} (for a dense array)}.
 \end{proposition}
 
@@ -1017,15 +1058,15 @@ how much change on each location it tolerates, and checking that $\Phi$
 respects those tolerances.
 
 \begin{definition}[Support]\label{def:support}
-Let $C$ be a binary condition on heaps. A \emph{support} for an assertion
+Let $C$ be a binary condition on states. A \emph{support} for an assertion
 $F$ \emph{under} $C$ is a finite set $S$ of pairs $r:\delta$ (a region
-and a change) such that for all states with heaps $h,h'$ and every mark
-$m$: if $\rho,m,h\models F$, $h\tr{}_\rho h'$, $C(h,h')$, and every
-location $l<\len h$ belonging to $r(\rho,h)$ for some $(r:\delta)\in S$
-satisfies $\delta_{\len h}(h(l),h'(l))$, then $\rho,m,h'\models F$.
-Locations outside every region of $S$ may change in any admissible way.
-We say $S$ \emph{supports} $F$ when it supports $F$ under the trivially
-true condition.
+and a change) such that for all states $s=(\rho,h,W,k)$ and
+$s'=(\rho,h',W',k')$ and every mark $m$: if $s,m\models F$, $s\tr{} s'$,
+$C(s,s')$, and every location $l<\len h$ belonging to $r(\rho,h)$ for some
+$(r:\delta)\in S$ satisfies $\delta_{\len h}(h(l),h'(l))$, then
+$s',m\models F$. Locations outside every region of $S$ may change in any
+admissible way. We say $S$ \emph{supports} $F$ when it supports $F$ under
+the trivially true condition.
 \end{definition}
 
 \noindent
@@ -1039,8 +1080,9 @@ $F$ after that step rather than a general support.
 
 \begin{definition}[Respect]\label{def:respect}
 Let $K$ be an assertion. An effect $\Phi$ \emph{respects} a support $S$
-under $K$, written $\Phi\resp_K S$, when for all $\rho,m,h,h'$ with
-$\rho,m,h\models K$ and $h\tr{\Phi}_\rho h'$, every location $l<\len h$
+under $K$, written $\Phi\resp_K S$, when for all states
+$s=(\rho,h,W,k)$ and $s'=(\rho,h',W',k')$ and every mark $m$ with
+$s,m\models K$ and $s\tr{\Phi} s'$, every location $l<\len h$
 in $r(\rho,h)$ for some $(r:\delta)\in S$ satisfies
 $\delta_{\len h}(h(l),h'(l))$
 \status{Lean: \lean{Supported} on every action of $\Phi$ from a state of $K$; \lean{respect\_sound} proves it from the pairwise condition below}.
@@ -1059,18 +1101,18 @@ because $\st:\grow$ meets $\grow\sqsubseteq\grow$ and $\val:\any$ is
 disjoint from $x.\kw{spine}$ by class.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
-Let $S$ support $F$ under $C$, let $\Phi\resp_K S$, and let $C(h,h')$
-hold for every transition $h\tr{\Phi}_\rho h'$ from a state satisfying
+Let $S$ support $F$ under $C$, let $\Phi\resp_K S$, and let $C(s,s')$
+hold for every transition $s\tr{\Phi} s'$ from a state $s$ satisfying
 $K$. Then $K\wedge F\vdash\bx{\Phi}F$. In particular, if $S$ supports
 $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$
 \status{Lean: \lean{frame\_step} at one transition over any state domain; \lean{frame\_box} in modal form with \lean{ConditionOnActions}; \lean{Parity.tolerant\_frame} for Lean's assertion language; \lean{IndexFact.keeps\_sound} on the acceptance path}.
 \end{theorem}
 \begin{proof}
-Suppose $\rho,m,h\models K\wedge F$ and $h\tr{\Phi}_\rho h'$. Because
+Suppose $s,m\models K\wedge F$ and $s\tr{\Phi} s'$. Because
 $\Phi\resp_K S$, every location $l<\len h$ in any region $r(\rho,h)$ of
 $(r:\delta)\in S$ satisfies $\delta_{\len h}(h(l),h'(l))$. By hypothesis
-$C(h,h')$ holds, and since $S$ supports $F$ under $C$,
-$\rho,m,h'\models F$.
+$C(s,s')$ holds, and since $S$ supports $F$ under $C$,
+$s',m\models F$.
 \end{proof}
 
 \noindent
@@ -1091,7 +1133,7 @@ $\mathrm{supp}(F)$ is defined inductively by:
 {\small\begin{displaymath}
 \begin{array}{@{}ll@{}}
 \kw{true},\ \kw{false},\text{ literals, variables} & \emptyset\\[2pt]
-\text{a path }\pi\text{ read as a number} & \mathrm{reads}_{\init}(\pi)\\[2pt]
+\text{a path }\pi\text{ read as a number, or }\pi\mathbin{\&}m & \mathrm{reads}_{\init}(\pi)\\[2pt]
 \len\pi,\ \pi\text{ a string path} & \mathrm{reads}_{\init}(\pi)\\[2pt]
 \len\pi,\ \pi\text{ a typed-array path} & \mathrm{reads}_{\grow}(\pi)\\[2pt]
 \len\pi,\ \pi\text{ an array path} & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{spine}:\delta\}\\[2pt]
@@ -1100,9 +1142,10 @@ $\mathrm{supp}(F)$ is defined inductively by:
 \pi\doteq v,\ \pi\in V,\ \pi.f^{?}\doteq v & \mathrm{reads}_{\keep}(\pi)\quad(\text{resp.\ }\mathrm{reads}_{\keep}(\pi.f))\\[2pt]
 \dense(x,n) & \{x.\kw{spine}:\grow\}\cup\mathrm{supp}(n)\\[2pt]
 z[t]\doteq v & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\\[2pt]
-\forall t_0\le i<t.\ \varphi & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t_0)\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
+\forall_{p}\, t_0\le i<t.\ \varphi & \mathrm{reads}_{\grow}(p)\cup\{p.\kw{spine}:\delta_p,\ p.\kw{cells}:\delta_c\}\cup\mathrm{supp}(t_0)\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
 F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
-\pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
+\pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')\\[2pt]
+\pi\sep\pi'.\kw{elemSpines} & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')\cup\{\pi'.\kw{spine}:\keep,\ \pi'.\kw{cells}:\keep\}
 \end{array}
 \end{displaymath}}
 For an array length in a linear inequality, $\delta=\grow$ when
@@ -1111,13 +1154,15 @@ $\delta=\keep$ otherwise; in element indices, density bounds, and
 quantified bounds or bodies, every length takes $\delta=\keep$. When
 $\pi$'s declared type admits multiple length-bearing sorts (array, typed
 array, string), $\mathrm{supp}(\len\pi)$ is the union of their rows.
-In $\forall t_0\le i<t.\ \varphi$, $z$ reads an array and $\varphi$ mentions
-only $z[i]$ and $i$-free terms whose union of supports is
-$\mathrm{supp}(\varphi)$; element-field terms $z[t].\vec f$ and other
-quantified bodies have no canonical support. Any field kept unchanged by
+In $\forall_{p}\, t_0\le i<t.\ \varphi$, for an array path $p$,
+$\delta_p=\extend$ (and $\keep$ for a typed-array path), while
+$\delta_c=\init$ when $\varphi$ reads only safe-integer elements of $p$
+without value-set guards and $\delta_c=\keep$ otherwise; $\mathrm{supp}(\varphi)$
+is the union of supports of $i$-free terms, parallel collection accesses
+in $\varphi$ (for a parallel array $q$, $\mathrm{reads}_{\grow}(q)\cup\{q.\kw{spine}:\extend,\ q.\kw{cells}:\keep\}$, plus the shift's support), and $p.\kw{elemSpines}:\keep$ (or $q.\kw{elemSpines}:\keep$) when $\varphi$ reads element array lengths. Element-field terms $p[i].\vec f$ and $z[t].\vec f$ have no canonical support. Any field kept unchanged by
 a condition $C$ may be omitted from $\mathrm{reads}$, yielding a support
 under $C$
-\status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}; \lean{Parity.SupportEvidence} adds element support for typed arrays}.
+\status{Lean: \lean{Term.support\_sound}, \lean{everyCells}, \lean{everySupport}, \lean{IndexFact.support?\_supports}; \lean{Parity.SupportEvidence} adds element support for typed arrays}.
 \end{definition}
 
 \noindent
@@ -1152,24 +1197,26 @@ element-field terms $z[t].\vec f$. This does not extend to $\bx{\Phi}F$,
 whose truth depends on the world $W$
 \status{Lean: \lean{HeapKnowledge.alloc\_frames}, \lean{atomHolds\_extend} for Lean's represented facts; conj.\ for the full language}.
 \item[Multiple incomparable supports] An assertion need not have a unique
-weakest support. Both $\{x[\ast]:\grow,\ y[\ast]:\keep\}$ and
-$\{x[\ast]:\keep,\ y[\ast]:\grow\}$ support $\apart(x,y)$ (a growing
-spine adds only fresh cells), whereas $\{x[\ast]:\grow,\ y[\ast]:\grow\}$
-does not, as both spines could come to list the same fresh cell
-\status{Lean: \lean{apart\_grow\_keep}, \lean{apartGrow\_supports} for the first support when all other spines are kept and roots are valid; conj.\ for the mirror image and counterexample to the third}.
+weakest support. Both $\{x.\kw{spine}:\grow,\ y.\kw{spine}:\keep\}$ and
+$\{x.\kw{spine}:\keep,\ y.\kw{spine}:\grow\}$ support $\apart(x,y)$
+(element cell writes never alter which cell locations spines list, and a
+growing spine adds only fresh cells that cannot belong to the kept spine),
+whereas $\{x.\kw{spine}:\grow,\ y.\kw{spine}:\grow\}$ does not, as both
+spines could come to list the same fresh cell
+\status{Lean: \lean{apartGrowSupport}, \lean{apartGrow\_supports}, \lean{apartGrow\_supports\_mirror} in \lean{ApartSupport.lean} and \lean{apart\_grow\_keep} in \lean{ModelRules.lean} prove both directions under valid roots without keeping unrelated spines; the counterexample to $\{x.\kw{spine}:\grow,\ y.\kw{spine}:\grow\}$ is semantic}.
 \end{description}
 
 \needspace{12\baselineskip}
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
-For variables $x,y,z,w$ (with $x,y,\pi$ array paths and $w$ a typed-array
-path where lengths appear), a term $n$, an effect $\Phi$, and an atom
-$a$ reading only variables and what is displayed:
+For variables $x,y,z,w$ and paths $\pi,\pi'$ (with $x,y,\pi,\pi'$ array
+paths and $w$ a typed-array path where lengths appear), a term $n$, an
+effect $\Phi$, and an atom $a$ reading only variables and what is displayed:
 {\small\begin{displaymath}
 \begin{array}{@{}ll@{}}
 \textsc{(Grow)} & n\le\len x\ \vdash\ \bx{\val:\any,\ \st:\grow}\,(n\le\len x)\\[2pt]
 \textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\qquad (n\text{ a variable or literal})\\[2pt]
-\textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{spine}:\any}\,a(\len x)\\[2pt]
-\textsc{(Every)} & \apart(x,z)\wedge\forall t_0\le i<t.\ \varphi\ \vdash\ \bx{x[\ast]:\any}\,\forall t_0\le i<t.\ \varphi\\
+\textsc{(Sep)} & \pi\sep\pi'\wedge a(\len\pi)\ \vdash\ \bx{\val:\any,\ \pi'.\kw{spine}:\any}\,a(\len\pi)\qquad (\text{array paths }\pi,\pi'\text{ with }\rigid(\pi))\\[2pt]
+\textsc{(Every)} & \apart(x,z)\wedge\forall_{z}\, t_0\le i<t.\ \varphi\ \vdash\ \bx{x[\ast]:\any}\,\forall_{z}\, t_0\le i<t.\ \varphi\\
  & \qquad (t_0\text{ a variable or literal, }t\text{ a variable, }\varphi\text{ over }z[i]\text{ and scalars})\\[2pt]
 \textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\,a(\len\pi)\\[2pt]
 \textsc{(Rigid)} & \rigid(\pi)\wedge a(\len{\pi})\ \vdash\ \bx{\Phi}\,a(\len\pi)\qquad (\text{if }a(\len y)\vdash\bx{\Phi}\,a(\len y)\text{ for fresh }y)\\[2pt]
@@ -1188,9 +1235,11 @@ grows arrays, requiring no separation (Example~\ref{ex:alias})
 survives spine growth (a heap-dependent bound such as $\len y$ could
 increase under growth and invalidate density)
 \status{Lean: \lean{dense\_support} gives support $\{x.\kw{spine}:\grow\}$ for fixed $n$; the axiom follows by Theorem~\ref{thm:frame}}.
-\item[\textsc{(Sep)}] A length fact on $x$ survives arbitrary mutation of
-a separated array $y$ (Example~\ref{ex:sep}); when $y$ is \code{null} or
-\code{undefined}, $y.\kw{spine}$ is empty and the fact is invariant
+\item[\textsc{(Sep)}] A length fact on a rigid array path $\pi$ (in
+particular, a variable $x$) survives arbitrary mutation of a separated
+array path $\pi'$ (Example~\ref{ex:sep}); when $\pi'$ or a prefix of it is
+\code{null} or \code{undefined}, $\pi'.\kw{spine}$ is empty and the fact
+is invariant
 \status{Lean: \lean{RawDerivation.sep}, \lean{checkScoped\_sound}, for linear facts over variables and $\len x$ when $x,y$ read arrays}.
 \item[\textsc{(Every)}] A quantified element fact over $z$ survives
 arbitrary mutation of an array $x$ sharing no spine or element cell with
@@ -1220,10 +1269,10 @@ The logic uses six judgments, summarized below for reference:
 \toprule
 Judgment & Meaning\\
 \midrule
-$\rho,m,h\models F$ & Satisfaction of assertion $F$ at state $(\rho,h,W,k)$ and entry mark $m$ (Def.~\ref{def:sat}).\\
+$s,m\models F$ & Satisfaction of assertion $F$ at state $s=(\rho,h,W,k)$ and entry mark $m$ (Def.~\ref{def:sat}).\\
 $\Gamma\vdash F$ & Semantic entailment / two-state derivation of $F$ from $\Gamma$ (Def.~\ref{def:deriv}).\\
 $\Phi\resp_K S$ & Effect $\Phi$ respects support $S$ under state knowledge $K$ (Def.~\ref{def:respect}).\\
-$c:\Phi\mid\Phi^{e}$ & Effect bound: normal exit of $c$ satisfies $\tr{\Phi}$, uncaught throw satisfies $\tr{\Phi^{e}}$ ($c:\Phi$ abbreviates $c:\Phi\mid\top$; Sec.~\ref{sec:semantics}).\\
+$c:_{m}\Phi\mid\Phi^{e}$ & Effect bound at mark $m$: normal exit satisfies $\tr{\Phi}_m$, uncaught throw satisfies $\tr{\Phi^{e}}_m$ ($c:\Phi\mid\Phi^{e}$ abbreviates $c:_{\len h}\Phi\mid\Phi^{e}$, $c:\Phi$ abbreviates $c:\Phi\mid\top$; Sec.~\ref{sec:semantics}).\\
 $\hoarex{P}{c}{Q}{Q^{e}}$ & Partial-correctness Hoare triple ($\hoare{P}{c}{Q}$ abbreviates $\hoarex{P}{c}{Q}{\kw{true}}$).\\
 $\mathrm{Check}(c,\Sigma,e,A)$ & Checked transfer of knowledge $\Sigma$ across exit edge $e$ of $c$ to $A$ (Def.~\ref{def:transfer}).\\
 \bottomrule
@@ -1270,15 +1319,15 @@ selects the entry state of the command whose triple contains it (for
 example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$, and
 $Q_{<}$, $Q_{\ne i}$ below use the postcondition quantifiers). A sequence
 composes entry states without altering $m$; a call opens a new invocation
-mark and component, rebasing freshness in \textsc{Call}. Because each
+mark, rebasing freshness in \textsc{Call}. Because each
 step binds only a fresh variable (Section~\ref{sec:model}), assertions
 over previously in-scope variables are unaffected by the binding.
 
 \subsection{Structural, framing, and effect rules}
 
-For assertions $P,Q,Q^{e},R,R^{e},B,I$, commands $c,c_1,c_2$, effects
-$\Phi,\Phi^{e},\Psi,\Psi'$, variables $x,y$, atoms $\vec x$, and
-parameters $\vec p$:
+For assertions $P,Q,Q^{e},R,R^{e},B,I,J$, commands $c,c_1,c_2$, effects
+$\Phi,\Phi^{e},\Psi,\Psi'$, region $r$, variables $x,y$, atoms $\vec x$,
+and parameters $\vec p$:
 \begin{mathpar}
 \inferrule*[left=Entry]{\hoarex PcQ{Q^{e}} \\ c:\Phi\mid\Phi^{e}}{\hoarex{P\wedge B}{c}{Q\wedge\old(B)\wedge\kw{tr}_{\Phi}}{Q^{e}\wedge\old(B)\wedge\kw{tr}_{\Phi^{e}}}}
 \and
@@ -1286,15 +1335,15 @@ parameters $\vec p$:
 \and
 \inferrule*[left=Frame$^{+}$]{\hoare PcQ \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{P\wedge\bx{\Phi}R}{c}{Q\wedge\bx{\Phi}R}}
 \and
-\inferrule*[left=Loop]{\hoare{I\wedge\bx{\Phi}R}{c}{I} \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{I\wedge\bx{\Phi}R}{\code{loop}\ c}{I\wedge\bx{\Phi}R}}
+\inferrule*[left=Loop]{\hoare{I\wedge\bx{\Phi}R}{c}{I}\text{ at }\code{break}\text{ target }J\wedge\bx{\Phi}R \\ c:\Phi \\ \Phi\text{ rigid} \\ \mathrm{fv}(R,\Phi)\cap\mathrm{mod}(c)=\emptyset}{\hoare{I\wedge\bx{\Phi}R}{\code{loop}\ c}{J\wedge\bx{\Phi}R}}
 \and
 \inferrule*[left=Call]{\hoare{P}{y=f(\vec p)}{Q} \\ y=f(\vec p):\Phi}{\hoare{P[\vec x/\vec p]}{y=f(\vec x)}{Q[\vec x/\vec p]}\qquad y=f(\vec x):\Phi[\vec x/\vec p]}
 \and
-\inferrule*[left=Alloc]{x\text{ fresh} \\ y\text{ ranges over arrays in scope}}{\hoare{\kw{true}}{x=\code{[]}}{\fresh(x)\wedge\len x=0\wedge\textstyle\bigwedge_y\apart(x,y)}}
+\inferrule*[left=Alloc]{x\text{ fresh} \\ y\text{ ranges over non-nullish arrays in scope}}{\hoare{\kw{true}}{x=\code{[]}}{\fresh(x)\wedge\len x=0\wedge\textstyle\bigwedge_y\apart(x,y)}}
 \and
-\inferrule*[left=Seq-Eff]{c_1:\Phi \\ c_2:\Psi \\ \Psi\rightsquigarrow^{\Phi}_{\mathit{ev}}\Psi' \\ \Phi\cup\Psi'\sqsubseteq\Phi}{c_1;c_2:\Phi}
+\inferrule*[left=Seq-Eff]{c_1:_{m}\Phi \\ c_2:_{m}\Psi \\ \Psi\rightsquigarrow^{\Phi}_{\mathit{ev}}\Psi' \\ \Phi\cup\Psi'\sqsubseteq\Phi}{c_1;c_2:_{m}\Phi}
 \and
-\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{x.\kw{spine}:\delta\} \\ \fresh(x)\text{ holds before }c}{c:\Phi\ \text{on locations below the mark}}
+\inferrule*[left=Fresh-Eff]{c:_{m}\Phi\cup\{r:\delta\} \\ \fresh(r)\text{ holds before }c}{c:_{m}\Phi}
 \end{mathpar}
 
 \noindent
@@ -1320,12 +1369,17 @@ only along rigid paths (Section~\ref{sec:assertions})
 \item[\textsc{Frame}$^{+}$] For rigid $\Phi$, law~(e) of
 Proposition~\ref{prop:laws} preserves the modality across $c$.
 \item[\textsc{Loop}] Induction on iterations applies \textsc{Frame}$^{+}$
-to obtain $\hoare{I\wedge\bx{\Phi}R}{c}{I\wedge\bx{\Phi}R}$, where $c$
-includes the guard. Exits via \code{break} meet $I\wedge\bx{\Phi}R$ by
-\textsc{Break}, while \code{return} and \code{throw} leave via
-\textsc{Return} and the exceptional postcondition. Loop-carried variables
-appear in $I$ alone, not in $R$ or $\Phi$. Inside the body, $R$ holds at
-any point reachable from iteration entry by a $\Phi$-bounded transition
+to obtain $\hoare{I\wedge\bx{\Phi}R}{c}{I\wedge\bx{\Phi}R}$ on
+fall-through, while exits via \code{break} establish the departure
+postcondition $J\wedge\bx{\Phi}R$ by \textsc{Break} (for example,
+\code{while (b) d}, lowered to \code{loop \{ if (!b) break; d \}}, exits
+with $J=(I\wedge\neg b)$). Exits via \code{return} and \code{throw} leave
+via \textsc{Return} and the exceptional postcondition. The premise
+$\mathrm{fv}(R,\Phi)\cap\mathrm{mod}(c)=\emptyset$ ensures that
+loop-carried variables (those assigned in $c$) appear in $I$ and $J$
+alone, so $R$ and $\Phi$ denote the same assertions and regions across
+iterations. Inside the body, $R$ holds at any point reachable from
+iteration entry by a $\Phi$-bounded transition
 (Proposition~\ref{prop:rely}), not merely at iteration exit.
 \item[\textsc{If} and \textsc{Seq}] Conditionals join branches under the
 tested condition, and sequential composition connects single-state
@@ -1352,11 +1406,12 @@ Inside the callee body, $r$ is freshly allocated with $\fresh(r)$,
 $\len r=n$, $\dense(r,n)$, and $r[j]\doteq r_j$ for $j<n$
 \status{Lean: \lean{call\_exits\_exact} for both exits including rest arguments; \lean{call\_rule} for a checked graph's normal exit}.
 \item[\textsc{Alloc}] A freshly allocated array is fresh, empty, and
-apart from every pre-existing array $y$. Array and object literals
-allocate analogously for atoms $a,a_1,\ldots,a_k$:
+apart from every pre-existing variable $y$ of non-nullish array type in
+scope. Array and object literals allocate analogously for $k\le N$ and
+atoms $a,a_1,\ldots,a_k$:
 {\small\begin{displaymath}
 \begin{array}{@{}l@{}}
-\hoare{\kw{true}}{\code{x = [a1, ..., ak]}}{\fresh(x)\wedge\len x=k\wedge\dense(x,k)\wedge\textstyle\bigwedge_{j<k}x[j]\doteq a_{j+1}\wedge\bigwedge_y\apart(x,y)}\\[3pt]
+\hoare{\kw{true}}{\code{x = [a1, ..., ak]}}{\fresh(x)\wedge\len x=k\wedge\dense(x,k)\wedge\textstyle\bigwedge_{0\le j<k}x[j]\doteq a_{j+1}\wedge\bigwedge_y\apart(x,y)}\\[3pt]
 \hoare{\kw{true}}{\code{y = \{f: a, ...\}}}{\fresh(y.\kw{fields})\wedge y.f\doteq a\wedge\cdots}
 \end{array}
 \end{displaymath}}
@@ -1364,20 +1419,25 @@ These separations are ordinary post-state facts: spine growth preserves
 them, whereas an arbitrary spine change may invalidate them by listing a
 cell of $y$
 \status{Lean: \lean{alloc\_post}, \lean{alloc\_apart} for empty arrays; \lean{literalArrayAtoms\_holds} for array-literal length; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}; conj.\ for literal elements, literal density, and object literals}.
-\item[\textsc{Seq-Eff}] Composes effects stated at the entry of $c_1;c_2$
-by rebasing $c_2$'s effect $\Psi$ to that entry
-(Definition~\ref{def:rebasing}). Exceptional exits compose identically: a
+\item[\textsc{Seq-Eff}] Composes effects at mark $m\le\len{h_0}$ by
+rebasing $c_2$'s effect $\Psi$ to $c_1$'s entry
+(Definition~\ref{def:rebasing}); because $\len{h_0}\le\len{h_1}$ and
+changes are antitone in $b$, a bound at $c_2$'s entry refines the bound at
+$c_1$'s entry. Exceptional exits compose identically: a
 throw of $c_1$ is bounded by $c_1$'s exceptional effect, and a throw of
 $c_2$ composes $c_1$'s normal effect with $\Psi^{e}$. For
 \code{try c catch (x) d}, a throw of \code{c} followed by normal return
 of \code{d} contributes to the normal bound, while a throw of \code{d}
 contributes to the exceptional bound
 \status{Lean: \lean{Post.compose\_rebases}, \lean{CommandSummary.seq\_sound}, \lean{CommandSummary.handle\_sound}}.
-\item[\textsc{Fresh-Eff}] Because a fresh array's spine lies at or above
-the invocation mark, mutating it alters no location below the mark, so
-that entry drops from $c$'s effect on pre-existing locations (composed
-with preceding steps via \textsc{Seq-Eff}). Element cells listed by a
-fresh spine may still lie below the mark and are not erased.
+\item[\textsc{Fresh-Eff}] Because every location of $r(\rho,h)$ lies at or
+above the invocation mark $m$, mutating $r$ alters no location $l<m$, so
+$r:\delta$ drops from $c$'s effect at mark $m$ (composed with preceding
+steps via \textsc{Seq-Eff}). This covers both fresh array spines
+($\fresh(x)$, i.e.\ $\fresh(x.\kw{spine})$) and fresh object fields
+($\fresh(y.\kw{fields})$, as in \code{const o = \{ n: 0 \}; o.n = 1}).
+Element cells listed by a fresh array spine may still lie below $m$, so
+$x.\kw{cells}$ is not erased unless $\fresh(x.\kw{cells})$ holds.
 \end{description}
 
 \begin{definition}[Independence of the world]\label{def:indep}
@@ -1456,52 +1516,51 @@ gives $F$ at every element read whenever \code{f} is bounded by $\Phi$
 (by \textsc{(Dense)} and Proposition~\ref{prop:rely}); density of the
 returned array belongs to \code{map}'s own postcondition.
 
-\subsection{Calls of code outside a component}
+\subsection{Confined local state across unknown calls}
 
-A callback of unknown effect has effect $\top$, so
-Proposition~\ref{prop:rely} preserves no fact across it. Rule
-\textsc{Read-only frame} preserves facts about the storage of a
-\emph{component} $\cC$---a set of functions entered only through its
-\emph{interface} (such as a module and its exports) whose storage outside
-code reaches only at read-only types. A call runs outside $\cC$ when its
-callee lies outside $\cC$, as recorded by the invocation's component tag
-(Section~\ref{sec:assertions}):
+A callback $g$ of unknown effect has effect $\top$, so
+Proposition~\ref{prop:rely} alone preserves no heap fact across
+\code{g(x)}. However, storage allocated locally and unreachable from any
+external root cannot be read or mutated by \code{g(x)}. A set
+$L\subseteq\{l\mid m\le l<\len h\}$ of invocation-fresh locations is
+\emph{confined} in $h$ when every allocated location $l'\notin L$ holds a
+value with no direct or closure-captured reference into $L$ (so by
+induction on path length, no value carrying no direct reference into $L$
+can reach $L$ through $h$). Write $\Phi\setminus L$ for the transition
+relation restricting $\Phi$ to keep every $l\in L$:
+$s\tr{\Phi\setminus L} s'\iff s\tr{\Phi} s'\wedge\forall l\in L.\ h'(l)=h(l)$.
 \begin{mathpar}
-\inferrule*[left=Read-only frame]{c:\Phi\mid\Phi^{e} \\ c\text{ a call, inside a call of }\cC\text{, of code outside }\cC \\ \Psi_\cC\text{ bounds the members} \\ \text{(S)} \\ \text{(K)} \\ \text{(O)}}{c:\ \Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)\ \mid\ \Phi^{e}\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)}
+\inferrule*[left=Confine]{c:\Phi\mid\Phi^{e} \\ c\text{ a call }\code{y = g(}\vec x\code{)} \\ L\text{ confined in }h \\ \text{roots of }g,\vec x\text{ carry no reference into }L}{c:\Phi\setminus L\mid\Phi^{e}\setminus L}
 \end{mathpar}
 \noindent
-Here $\Phi\oplus_\cC\Gamma$ bounds every location in $\cC$'s
-\emph{protected region} $R_\cC$ (storage of $\cC$ exposed at most
-read-only, plus read-only arguments during a call of $\cC$) by $\Gamma$
-and all other locations by $\Phi$. The premises state: $\Psi_\cC$ bounds
-changes to $R_\cC$ by $\cC$'s interface members; (S)~$\cC$ does not
-suspend, so the outside call returns inside the call of $\cC$;
-(K)~boundary values reach $\cC$'s storage only as permitted by allocation
-marks; and (O)~writes into $R_\cC$ store only storage of $R_\cC$ or
-read-only exposed storage. $\Theta_\cC$ is the client obligation
-(defaulting to $\keep$), assumed of unanalysed clients. For example, in
+By the calculus's no-forge property, execution of \code{g($\vec x$)}
+keeps every location in $L$ on both normal return and uncaught throw,
+preserves confinement of $L$, and returns (or throws) a value carrying no
+reference into $L$. Consequently, for any region $r$ with
+$r(\rho,h)\subseteq L$, $(\top\setminus L)\resp\{r:\keep\}$, so
+Theorem~\ref{thm:frame} preserves every fact supported by $r$ across
+arbitrary callbacks. For example, in
 \begin{quote}\small
-\code{type H = \{ readonly widths: readonly number[] \};}\\
-\code{export function prepare(n: number): H}\\
-\code{~~\{ return \{ widths: new Array<number>(n).fill(1) \}; \}}\\
-\code{export function walk(h: H, visit: () => void): number[] \{}\\
-\code{~~const w = h.widths, n = w.length, out: number[] = [];}\\
-\code{~~for (let i = 0; i < n; i++) \{ visit(); out.push(w[i]!); \}}\\
+\code{function collect(n: number, onStep: (i: number) => void): number[] \{}\\
+\code{~~const out: number[] = [];}\\
+\code{~~for (let i = 0; i < n; i++) \{ out.push(i); onStep(i); \}}\\
 \code{~~return out; \}}
 \end{quote}
-both members write only fresh storage, so $\Psi_\cC=\keep$ and
-\code{visit()} has effect $\top\oplus_\cC\keep$. Since \code{w}'s spine
-lies in $R_\cC$, it respects $\{w.\kw{spine}:\grow\}$ and keeps
-$i<\len w$ for \code{w[i]!}. The working note \emph{Read-only
-frames}~\cite{rof} states the full definitions, checks, and proof
-\status{assumed: client obligation and members' certified effects; conj.: soundness of the rule in TScert's calculus (not mechanized in TScert's Lean development)}.
+\code{out}'s fresh spine and cells stay confined in $L$, unreachable from
+\code{onStep} and \code{i}, so facts supported by \code{out} (such as its
+length, density, and element invariants) survive \code{onStep(i)} even
+when \code{onStep} has effect $\top$
+\status{Lean: \lean{ClosedOut}, \lean{NoPriv}, \lean{steps\_confined\_unreachable} in \lean{Confinement.lean}; \lean{run\_sound\_checked\_confined} in \lean{TolerantFramesConfined.lean} on the acceptance path}.
+Module-private state across re-entrant callbacks and bounded effect
+polymorphism are treated in the companion paper \emph{An Effect Language
+for TScert}.
 
 \subsection{Primitive steps, exact postconditions, and library contracts}
 
 \paragraph{Reads, writes, and tests.}
-With $x$ an object or array variable (an array in \textsc{Elem-Read} and
-\textsc{Arr-Length}), $a$ an atom, $i$ a $\mathit{SafeInt}$ atom, and $P$
-an assertion:
+With $x$ a variable of non-nullish object or array type (a non-nullish
+array in \textsc{Elem-Read} and \textsc{Arr-Length}), $a$ an atom, $i$ a
+$\mathit{SafeInt}$ atom, and $P$ an assertion:
 {\small\begin{displaymath}
 \begin{array}{@{}lll@{}}
 \textsc{Field-Read} & \hoare{\kw{true}}{\code{y = x.f}}{x.f\doteq y} & :\emptyset\\[3pt]
@@ -1521,7 +1580,7 @@ In \textsc{Test}, the tested atom is a variable $y$ bound by an earlier
 step (Definition~\ref{def:cmd}), determining the branch facts $a$ and
 $\neg a$ as follows:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Numeric comparison] For defined terms $a_1,a_2$, \code{y = a1 < a2}
+\item[Numeric comparison] For safe-integer atoms $a_1,a_2$, \code{y = a1 < a2}
 yields $a_1<a_2$ (true) and $a_2\le a_1$ (false), and analogously for
 \code{<=}, \code{>}, \code{>=}; \code{y = a1 === a2} yields $a_1=a_2$
 (true) and $a_1<a_2\vee a_2<a_1$ (false), swapped for \code{!==}.
@@ -1548,10 +1607,10 @@ $t<1$ but not $o.n<1$)
 
 \paragraph{Functions.}
 A function \code{f} with parameters $\vec p$ and body $c$ satisfies its
-specification when its body establishes both exits and its effect on
-locations below entry mark $m$:
+specification when its body establishes both exits and its effect at entry
+mark $m=\len{h_0}$:
 \begin{mathpar}
-\inferrule*[left=Fun]{\hoarex{P}{c}{Q[\code{undefined}/y]}{Q^{e}} \\ c:\Phi\mid\Phi^{e}\ \text{on locations below the mark}}{\hoarex{P}{y=f(\vec p)}{Q}{Q^{e}}\qquad y=f(\vec p):\Phi\mid\Phi^{e}}
+\inferrule*[left=Fun]{\hoarex{P}{c}{Q[\code{undefined}/y]}{Q^{e}} \\ c:_{m}\Phi\mid\Phi^{e}}{\hoarex{P}{y=f(\vec p)}{Q}{Q^{e}}\qquad y=f(\vec p):\Phi\mid\Phi^{e}}
 \end{mathpar}
 Falling off the end of $c$ returns \code{undefined}, and each
 \code{return a} checks $Q[a/y]$ via \textsc{Return}. A specification
@@ -1571,20 +1630,23 @@ $\mathit{SafeInt}$ atom $i$:
 {\small\begin{displaymath}
 \begin{array}{@{}ll@{}}
 \textsc{Write-In} & \hoare{0\le i<\len x\wedge\kw{defined}(\len\pi)}{\code{x[i] = v}}{\len\pi=\old(\len\pi)}\qquad (\text{any array path }\pi)\\[3pt]
-\textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1}\\[3pt]
+\textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1\wedge x[\old(\len x)]\doteq v}\\[3pt]
 \textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1\wedge x[\old(\len x)]\doteq v\wedge Q_{<}}
 \end{array}
 \end{displaymath}}
 where $Q_{<}\triangleq\forall j<\old(\len x).\ \forall u.\ \old(x[j]\doteq u)\Rightarrow x[j]\doteq u$
 preserves every pre-existing element. Their effects are
 $\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}$ for \textsc{Write-In} (a
-present index mutates one cell; a hole below length grows the spine) and
-$\{x.\kw{spine}:\grow\}$ for \textsc{Write-End} and \textsc{Push}.
+present index mutates one cell; a hole below length grows the spine),
+narrowing to $\{x.\kw{cells}:\any\}$ for an in-bounds write on a hole-free
+\code{Dense<T>} array (\lean{denseWriteWithin});
+$\{x.\kw{spine}:\grow\}$ for \textsc{Write-End}; and
+$\{x.\kw{spine}:\extend\}$ for \textsc{Push}.
 Because \textsc{Write-In} changes no spine's length (even at a hole), it
 preserves $\len\pi=\old(\len\pi)$ for every array path $\pi$ regardless
 of aliasing. At length $N$, \code{push} throws, so $\len x<N$ is not
 required for normal-return soundness
-\status{Lean: \lean{elem\_var\_write\_length}, \lean{keepsLengths}, \lean{boundedLength\_sound} for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for \textsc{Write-End}; \lean{ReceiverAppends}, \lean{ReceiverGrows} (assumed) and \lean{receiverExtendFrame}, \lean{Effect.callPost\_receiverExtendFrame} for \textsc{Push}; \lean{elemWriteFrame}, \lean{ElemWritten}, \lean{elemWriteStep\_sound} for element writes}.
+\status{Lean: \lean{elem\_var\_write\_length}, \lean{keepsLengths}, \lean{boundedLength\_sound}, \lean{denseWriteWithin} for \textsc{Write-In}; \lean{atLengthAtoms\_sound} and \lean{denseAppendAtoms\_sound} (also proving quantified prefix extension) for \textsc{Write-End}; \lean{ReceiverAppends}, \lean{ReceiverGrows} (assumed) and \lean{receiverExtendFrame}, \lean{Effect.callPost\_receiverExtendFrame} for \textsc{Push}; \lean{elemWriteFrame}, \lean{ElemWritten}, \lean{elemWriteStep\_sound} for element writes}.
 
 \paragraph{Writes that keep or extend a fact.}
 Five value-dependent rules preserve or extend facts across writes that
@@ -1597,10 +1659,8 @@ element term $v$, and step-preserved terms:
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
 \textsc{Push-Every} & \hoare{(\forall t_0\le i<n.\ \varphi(i,x[i]))\wedge n=\len x\wedge\varphi(n,v)}{\code{x.push(v)}}{\forall t_0\le i<n+1.\ \varphi(i,x[i])}\\[3pt]
 \textsc{Write-Every} & \hoare{(\forall t_0\le i<n.\ \varphi(i,x[i]))\wedge 0\le k<\len x\wedge(n\le k\vee k<t_0\vee\varphi(k,v))}{\code{x[k] = v}}{\forall t_0\le i<n.\ \varphi(i,x[i])}\\[3pt]
-\textsc{Write-Split} & \{(\forall t_0\le i<n.\ \varphi(i,x[i]))\wedge 0\le k<\len x\wedge t_0\le k<n\}\ \code{x[k] = v}\\
- & \qquad\{(\forall t_0\le i<k.\ \varphi(i,x[i]))\wedge(\forall k+1\le i<n.\ \varphi(i,x[i]))\}\\[3pt]
-\textsc{View-Every} & \{(\forall t_0\le i<n.\ \varphi(i,b[i]))\wedge 0\le k<\len b\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
- & \qquad\{(\forall t_0\le i<n.\ \varphi(i,b[i]))\wedge(k=n\Rightarrow\forall t_0\le i<n+1.\ \varphi(i,b[i]))\}
+\textsc{Write-Split} & \hoare{\begin{array}[t]{@{}l@{}}(\forall t_0\le i<n.\ \varphi(i,x[i]))\\ \quad\wedge\, 0\le k<\len x\wedge t_0\le k<n\end{array}}{\code{x[k] = v}}{\begin{array}[t]{@{}l@{}}(\forall t_0\le i<k.\ \varphi(i,x[i]))\\ \quad\wedge\,(\forall k+1\le i<n.\ \varphi(i,x[i]))\end{array}}\\[8pt]
+\textsc{View-Every} & \hoare{\begin{array}[t]{@{}l@{}}(\forall t_0\le i<n.\ \varphi(i,b[i]))\\ \quad\wedge\, 0\le k<\len b\wedge\varphi(k,\mathit{conv}_t(v))\end{array}}{\code{b[k] = v}}{\begin{array}[t]{@{}l@{}}(\forall t_0\le i<n.\ \varphi(i,b[i]))\\ \quad\wedge\,(k=n\Rightarrow\forall t_0\le i<n+1.\ \varphi(i,b[i]))\end{array}}
 \end{array}
 \end{displaymath}}
 In \textsc{Write-Kept}, even if \code{x.g} aliases \code{y.f}, the
@@ -1620,9 +1680,12 @@ it holds of the written value at every reachable target
 \status{Lean: \lean{keptCells\_holds}; \lean{every\_appended}, \lean{appendKept\_holds} for appended safe integers; \lean{boundedOverwrite\_sound}, \lean{everyOverwrittenList\_holds} for \textsc{Write-Every} and \textsc{Write-Split}; \lean{every\_written}, \lean{every\_written\_prefix}, \lean{writeKept\_holds} for format-unchanged integers; no standalone theorem states the general principle}.
 
 Spine growth alone does not preserve quantified element facts (a growing
-spine could replace cells at old indices; Section~\ref{sec:semantics}).
-Across \code{x.push(v)}, however, $Q_{<}$ preserves $\forall i<t.\ \varphi$
-for $t\le\old(\len x)$ when $t$ and the other terms are kept; and across
+spine could fill a hole or replace cells at old indices;
+Section~\ref{sec:semantics}). Across \code{x.push(v)}, whose effect is
+$\{x.\kw{spine}:\extend\}$, Theorem~\ref{thm:frame} directly preserves
+$\forall_{x}\, t_0\le i<t.\ \varphi$ whenever $t_0,t$ and any other terms
+in $\varphi$ tolerate the step (since $\mathrm{supp}(\forall_{x}\, t_0\le i<t.\ \varphi)$
+tolerates $x.\kw{spine}:\extend$); and across
 a field write, Theorem~\ref{thm:frame} preserves quantified element facts
 over $x[i]$ (whose support touches only $x$'s spine and element cells,
 disjoint from field locations), though not bodies reading element fields
@@ -1697,10 +1760,17 @@ with weaker return facts; for example,
 verifies via the nonempty-needle triple
 \status{assumed as host contracts. Lean: \lean{ArithmeticRules.rules} entries \lean{charCodeAt}, \lean{codePointAt}, \lean{codePointPair}, \lean{indexOf}, \lean{indexOfNonempty}, \lean{slice}, \lean{arrayIndexOf}, \lean{newView}; UTF-16 model proofs \lean{unit\_bound}, \lean{code\_unit\_safe}, \lean{slice\_length}, \lean{search\_bounds}}.
 Additionally, \code{xs.slice()} has contract
-$\hoare{\kw{true}}{\code{r = xs.slice()}}{\len r=\len{\mathit{xs}}}$
-with normal effect $\emptyset$, allocating a fresh array preserving holes
-under standard array species and constructors
-\status{assumed as a host contract; not listed in \lean{ArithmeticRules.rules}}.
+$\hoare{\kw{true}}{\code{r = xs.slice()}}{\len r=\len{\mathit{xs}}\wedge\bigwedge_y\apart(r,y)}$
+with normal effect $\emptyset$, allocating a fresh array region (preserving
+holes and shallow-copying elements, so quantified facts over \code{xs}
+transfer to \code{r}) under standard array species and constructors
+\status{assumed as a host contract, not listed in \lean{ArithmeticRules.rules}; Lean: \lean{ExitSchema.freshRegionResult} and \lean{shallowCopyKept\_holds} in \lean{PromiseCalls.lean}}.
+Likewise, for a typed array $b$ and safe integers $p,q$,
+\code{r = b.subarray(p, q)} has audited host contract
+$\hoare{0\le p\le q\le\len b}{\code{r = b.subarray(p, q)}}{\len r=q-p}$
+with normal effect $\emptyset$, allocating a fresh view spine sharing
+$b$'s underlying bytes (lowered to \code{\%ByteSubarray\%}, outside
+\lean{ArithmeticRules.rules}).
 
 \paragraph{Typed-array steps.}
 Let $b$ be a typed array of format $t$, and let $i,v:\mathit{Num}$. The
@@ -1796,7 +1866,7 @@ establishes definedness as well.
 \begin{theorem}[Transfer]\label{thm:transfer}
 If $s\models_m\Sigma$, node $c$ runs from $s$ through exit $e$ to $s'$,
 and $\mathrm{Check}(c,\Sigma,e,A)$, then $\theta_e(s')\models_m A$
-\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst} proves the entailment for every effect including path regions; \lean{transfer} connects node runs to the premises for class-region exit effects, and \lean{graph\_safe} composes exits into safety of graphs satisfying \lean{NodesChecked} and \lean{AdminClosed}; conj.\ for connecting node runs to path-region exit effects}.
+\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst} proves the entailment for every effect including path regions; \lean{run\_sound\_single\_pass} and \lean{graph\_safeR} (via \lean{TolerantFramesRegionalTyping}) connect node runs to regional and path-region exit effects on the acceptance path without axioms; \lean{Bridges.Transfer.transfer} states the class-region projection and \lean{graph\_safe} composes class-region exits for graphs satisfying \lean{NodesChecked} and \lean{AdminClosed}}.
 \end{theorem}
 \begin{proof}
 Immediate from \textsc{Entry} with $B=\bigwedge\Sigma$ and consequence.
@@ -1817,12 +1887,12 @@ available linear inequalities whenever every conclusion term is defined
 (and $\len\pi\le N$ for arrays); for safe-integer literal $n$,
 $\pi\doteq n$ implies $\pi=n$, while $\pi=n$ implies $\pi\doteq n$ for
 $n\ne 0$ and $\pi\doteq 0\vee\pi\doteq -0$ for $n=0$.
-\item[Atoms] Proposition~\ref{prop:every}; $z[t]\doteq v$ implies
-$0\le t<\len z$; $z[t]\doteq y$ substitutes $z[t]$ and $y$ in the same
-state; instantiating quantified postconditions and modus ponens;
-contradictions from $\pi\doteq v\wedge\pi\doteq w$ ($v\ne w$),
-$\pi\doteq v\wedge\pi\in V$ ($v\notin V$), or
-$z[i]\doteq v\wedge z[i]\doteq w$ ($v\ne w$).
+\item[Atoms] Proposition~\ref{prop:every}; $\apart(x,y)$ implies
+$x\sep y$; $z[t]\doteq v$ implies $0\le t<\len z$; $z[t]\doteq y$
+substitutes $z[t]$ and $y$ in the same state; instantiating quantified
+postconditions and modus ponens; contradictions from
+$\pi\doteq v\wedge\pi\doteq w$ ($v\ne w$), $\pi\doteq v\wedge\pi\in V$
+($v\notin V$), or $z[i]\doteq v\wedge z[i]\doteq w$ ($v\ne w$).
 \item[Modality] Proposition~\ref{prop:laws}; modal elimination
 $\old(\bx{\Phi}F)\wedge\kw{tr}_\Phi\vdash F$; Theorem~\ref{thm:frame}
 with $\mathrm{supp}(F)$ or $\mathrm{all}$ (Definition~\ref{def:supports})
@@ -1837,10 +1907,15 @@ For the pairwise respect check, two regions are disjoint when no location
 kind belongs to both, when they are $\pi.f$ and $\pi'.g$ with $f\ne g$
 (by (W3), every field/cell location carries one key
 \status{Lean: \lean{Region.apart\_of\_keys} via \lean{SlotRole}}), or
-when state knowledge entails it: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and
-$\pi'.\kw{spine}$ on non-typed-array paths (note $b\sep b$ holds for a
-typed array $b$), $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and
-$\fresh(r)$ for $r$ against any region of locations below the mark $m$.
+when state knowledge entails it: when knowledge entails
+$\pi\doteq\code{null}$ or $\pi\doteq\code{undefined}$, any region rooted
+at $\pi$ or $\pi.\vec f$ denotes $\emptyset$ and is disjoint from every
+region; $\pi\sep\pi'$ separates $\pi.\kw{spine}$ and $\pi'.\kw{spine}$ on
+non-typed-array paths (note $b\sep b$ holds for a typed array $b$);
+$\pi\sep\pi'.\kw{elemSpines}$ separates $\pi.\kw{spine}$ and
+$\pi'.\kw{elemSpines}$; $\apart(x,y)$ separates $x[\ast]$ and $y[\ast]$;
+and $\fresh(r)$ separates $r$ from any region of locations below the
+mark $m$.
 A path region $\pi.f$, $\pi.\kw{fields}$, or $\pi.\kw{spine}$ lies below
 $m$ whenever $\pi$ reads a value existing at entry (so its locations
 existed at entry by (W3) and stay fixed by (T3)): specifically, an
@@ -1876,7 +1951,7 @@ dropped and line~6 is refused; indeed, for such a \code{moveTo},
 and returns \code{NaN} (observed under Node~26).
 \end{example}
 
-\paragraph{Sound graphs and the forward pass.}
+\subsection{What verifies: sound graphs and the forward pass}
 An annotated control-flow graph is \emph{sound} when entry states satisfy
 entry knowledge, every node's knowledge entails its step's precondition,
 and $\mathrm{Check}$ holds on every exit edge (including exceptional
@@ -1900,21 +1975,24 @@ claimed complete
 Parameterizing the loop head by $j$ with invariant
 $\Sigma_H(j)=\{0\le j,\ j\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$,
 the eight edges verify as follows:
-\[
-\resizebox{\linewidth}{!}{$
-\begin{array}{@{}rlll@{}}
- & \text{node or edge} & \text{effect} & \text{obligation and its reason}\\[2pt]
-1 & \text{entry}\to H(\mathit{from}) & & 0\le\mathit{from}\le\mathit{to}\le\len{\mathit{xs}}\ \text{given}\\
-2 & H(j):\ \code{j < to}\ \text{true} & \emptyset & B=(j<\mathit{to});\ \Sigma_H\ \text{by preservation of existing locations}\\
-3 & k=\code{out.length};\ \code{j > k}\ \text{false} & \emptyset & B=(j\le k),\ Q=(k=\len{\mathit{out}});\ \text{throw edge has obligation }\kw{true}\\
-4 & v=\code{xs[j]} & \emptyset & \text{read precondition: }0\le j<\mathit{to}\le\len{\mathit{xs}}\\
-5 & \code{out[j] = v} & \val{:}\any,\ \st{:}\grow & \text{write: }0\le j\le\len{\mathit{out}},\ j<\len{\mathit{xs}}\le 2^{32}-1;\ \mathit{to}\le\len{\mathit{xs}}\ \text{by \textsc{(Grow)}}\\
-6 & j'=j+1 & \emptyset & Q=(j'=j+1),\ \text{exact since }j<\mathit{to}\le 2^{32}-1\\
-7 & \text{back edge},\ \theta=[j\mapsto j'] & & \theta^{*}\Sigma_H=\{0\le j',\ j'\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}\ \text{from rows 2, 5, 6}\\
-8 & H(j):\ \code{j < to}\ \text{false} & \emptyset & \text{exit with }\Sigma_H\wedge\neg(j<\mathit{to})
-\end{array}
-$}
-\]
+{\footnotesize
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}rll>{\raggedright\arraybackslash}X@{}}
+\toprule
+ & node or edge & effect & obligation and its reason\\
+\midrule
+1 & $\text{entry}\to H(\mathit{from})$ & & $0\le\mathit{from}\le\mathit{to}\le\len{\mathit{xs}}$ given\\
+2 & $H(j)$: \code{j < to} true & $\emptyset$ & $B=(j<\mathit{to})$; $\Sigma_H$ by preservation of existing locations\\
+3 & $k=\code{out.length}$; \code{j > k} false & $\emptyset$ & $B=(j\le k)$, $Q=(k=\len{\mathit{out}})$; throw edge has obligation $\kw{true}$\\
+4 & $v=\code{xs[j]}$ & $\emptyset$ & read precondition: $0\le j<\mathit{to}\le\len{\mathit{xs}}$\\
+5 & \code{out[j] = v} & $\val{:}\any,\ \st{:}\grow$ & write: $0\le j\le\len{\mathit{out}}$, $j<\len{\mathit{xs}}\le 2^{32}-1$; $\mathit{to}\le\len{\mathit{xs}}$ by \textsc{(Grow)}\\
+6 & $j'=j+1$ & $\emptyset$ & $Q=(j'=j+1)$, exact since $j<\mathit{to}\le 2^{32}-1$\\
+7 & back edge, $\theta=[j\mapsto j']$ & & $\theta^{*}\Sigma_H=\{0\le j',\ j'\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$ from rows 2, 5, 6\\
+8 & $H(j)$: \code{j < to} false & $\emptyset$ & exit with $\Sigma_H\wedge\neg(j<\mathit{to})$\\
+\bottomrule
+\end{tabularx}
+\end{center}}
+\noindent
 No row assumes whether \code{out} aliases \code{xs} (comparison rows
 abbreviate binding and branching; element presence in row~4 comes from
 \code{xs}'s hole-free array type). If $\Sigma_H$ also included an upper
@@ -1924,7 +2002,7 @@ deriving it semantically requires splitting on whether \code{out} equals
 not), a case split the derivation system omits. With regional effect
 $\{\val:\any,\ \mathit{out}.\kw{spine}:\grow\}$ and $\mathit{out}\sep\mathit{xs}$
 in $\Sigma_H$, \textsc{(Sep)} and law~(c) preserve the upper bound
-\status{Lean: \lean{loop\_safe}, \lean{loop\_done}, \lean{loop\_no\_raise}, \lean{alias\_loop\_safe} in \lean{ModelLoop.lean}, proving graph safety for the six-node loop over arrays of source values with \code{out} possibly aliasing \code{xs}}.
+\status{Lean: \lean{loop\_safe}, \lean{loop\_done}, \lean{loop\_no\_raise}, \lean{alias\_loop\_safe} in \lean{ModelLoop.lean}, proving graph safety for the six-node loop over arrays of source values with \code{out} possibly aliasing \code{xs} (omitting the \code{RangeError} guard and $j\le\mathit{to}$, as \lean{Step.setGrow} permits sparse writes below $2^{32}-1$)}.
 \end{example}
 
 \needspace{16\baselineskip}
@@ -1945,7 +2023,7 @@ Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$ & Prop.~\ref{prop:rely}\\[3pt]
 Quantified fact across a write & $\apart(a,z)\wedge\forall t_0\le i<t.\ \varphi\vdash\bx{a[\ast]:\any}\forall t_0\le i<t.\ \varphi$ ($t_0$ var.\ or lit., $t$ var., $\varphi$ over $z[i]$, scalars) & \textsc{(Every)}\\[3pt]
 Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$ & \textsc{Push}, \textsc{(Sep)}\\[3pt]
-Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$ & \textsc{(Sep)}, law~(d)\\[3pt]
+Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$ & Thm.~\ref{thm:frame}, $\vee$-elim\\[3pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$ & \textsc{(Rigid)}\\[3pt]
 Typed-array length & $i<\len w\vdash\bx{\top}(i<\len w)$ ($w$ a typed-array path) & \textsc{(View)}\\[3pt]
 Index from a shift or mask & $0\le c<2^{31}$: \code{y = c >> d} gives $0\le y\wedge 2^{d}y\le c$; \code{y = c \& m} gives $0\le y\le m$ ($0\le d<32$, $0\le m<2^{31}$) & \textsc{Shr}, \textsc{Mask}\\[3pt]
@@ -1999,17 +2077,20 @@ proof in the Lean development:
 \item[UTF-16 code unit of a string read] \code{y = s[i]} yields the
 UTF-16 code unit of $s$ at index $i$ (\textsc{Str-Read} specifies only
 $\len y=1$).
-\item[Stored element and density at \textsc{Write-End}] After
-\code{x[i] = v} with $i=\len x$ and $i<N$, both $x[i]\doteq v$ and
-$\old(\dense(x,i))\Rightarrow\dense(x,i+1)$ hold (\textsc{Write-End}
-specifies only $\len x=\old(\len x)+1$).
+\item[Standalone density extension at \textsc{Write-End}] After
+\code{x[i] = v} with $i=\len x$ and $i<N$,
+$\old(\dense(x,i))\Rightarrow\dense(x,i+1)$ holds (while
+\lean{denseAppendAtoms\_sound} proves $x[i]\doteq v$ and quantified
+prefix extension, no standalone Lean rule derives $\dense(x,i+1)$).
 \item[Return value of \code{push}] \code{y = x.push(v)} yields
 $y=\len x$ (\textsc{Push} leaves $y$ unconstrained).
 \end{description}
 
 \paragraph{Extensions of the language.}
-Four further patterns call for expressive extensions absent from the
-closed-effect language:
+Three further patterns call for expressive extensions absent from the
+closed-effect language (object-field separation for freshly allocated
+loop records, by contrast, is already verified on TScert's single pass
+via \lean{HeapSeparation} and key-typed roles \lean{Role.key?}):
 \begin{description}[leftmargin=1.5em,style=nextline,itemsep=1pt,topsep=2pt]
 \item[Fields of array elements] Preserving
 $\forall i<t.\ \mathit{rows}[i].n\ge 0$ across a field write to \code{n}
@@ -2023,11 +2104,8 @@ overlap.
 \item[Polymorphic callback effects] Giving
 \code{walk(xs, v => out.push(v))} each caller's own callback effect
 rather than a fixed closed bound $\{\val:\any,\ \st:\grow\}$ requires
-effect quantification $\forall\varepsilon.\ \Phi\cup\varepsilon$.
-\item[Records replaced on each loop iteration] Re-establishing
-disjointness between a freshly allocated loop record and the loop's
-iterator on every back edge requires object-field separation (beyond
-$\sep$ and $\apart$) and a matching postcondition on object allocation.
+effect quantification $\forall\varepsilon.\ \Phi\cup\varepsilon$,
+developed in the companion paper \emph{An Effect Language for TScert}.
 \end{description}
 
 \section{Limits}\label{sec:limits}
@@ -2046,10 +2124,13 @@ intermediate states.
 \item[Fixed contracts] World extension (Section~\ref{sec:semantics})
 excludes type-changing strong updates.
 \item[Transfer at regional effects] Theorem~\ref{thm:transfer} records
-the mechanized scope.
+the mechanized scope: \lean{run\_sound\_single\_pass} and
+\lean{graph\_safeR} cover regional and path-region exit effects on the
+acceptance path, whereas the paper-bridge wrapper
+\lean{Bridges.Transfer.transfer} states the class-region projection.
 \end{description}
 
-\begin{thebibliography}{12}\small\itemsep0pt
+\begin{thebibliography}{11}\small\itemsep0pt
 \bibitem{ahmed} A.~Ahmed. \emph{Semantics of Types for Mutable State}. PhD thesis, Princeton University, 2004.
 \bibitem{adr} A.~Ahmed, D.~Dreyer, A.~Rossberg. State-dependent representation independence. POPL 2009.
 \bibitem{ahman} D.~Ahman, C.~Fournet, C.~Hri\c{t}cu, K.~Maillard, A.~Rastogi, N.~Swamy. Recalling a witness: foundations and applications of monotonic state. PACMPL 2(POPL), 2018.
@@ -2061,7 +2142,6 @@ the mechanized scope.
 \bibitem{kassios} I.~Kassios. Dynamic frames: support for framing, dependencies and sharing without restrictions. FM 2006.
 \bibitem{ohearn} P.~O'Hearn, J.~Reynolds, H.~Yang. Local reasoning about programs that alter data structures. CSL 2001.
 \bibitem{wickerson} J.~Wickerson, M.~Dodds, M.~Parkinson. Explicit stabilisation for modular rely-guarantee reasoning. ESOP 2010.
-\bibitem{rof} TScert working note. \emph{Read-only frames: facts of a component across calls of code outside it}. 18 November 2026.
 \end{thebibliography}
 
 \end{document}

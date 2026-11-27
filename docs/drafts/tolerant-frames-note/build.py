@@ -13,8 +13,10 @@ items=re.findall(r'<h1 data-number="(\d+)"\s+id="([^"]+)"[^>]*>(.*?)</h1>',rest,
 toc='<ul>'+''.join('<li><a href="#%s">%s</a></li>'%(i,re.sub(r'\s+',' ',t)) for n,i,t in items)+'</ul>'
 rest=re.sub(r'(<table.*?</table>)',r'<div class="tablewrap">\1</div>',rest,flags=re.S)
 rest=re.sub(r'(<h4[^>]*>)\s*<span\s+class="header-section-number">[\d.]+</span>\s*',r'\1',rest)
+date_m=re.search(r'\\date\{([^}]*)\}',src)
+date_str=date_m.group(1) if date_m else ''
 body=('<main>\n<header>\n<h1>Tolerant frames</h1>\n<p class="sub">A modal account of fact preservation without ownership</p>\n'
- '<p class="meta">TScert working note · 11 November 2026, revised 17 November</p>\n</header>\n<section class="abstract">'+abh+'</section>\n'
+ '<p class="meta">TScert working note · '+date_str+'</p>\n</header>\n<section class="abstract">'+abh+'</section>\n'
  '<details class="toc"><summary>Contents</summary>'+toc+'</details>\n'+rest+'\n</main>\n')
 ABBR=('e.g','i.e','cf','conj','resp','vs','etc','Fig','Sec','Prop','Thm','Def','Ex')
 def split(inner):

@@ -12,11 +12,15 @@ def grp(s,i):
 # every inference rule, inside a mathpar or a display, as a named fraction
 def rule(part):
     mm=re.match(r'\\inferrule\*\[left=(.*?)\]',part)
-    name=mm.group(1).replace('$','')
-    name=re.sub(r'\^\{\+\}',r'}^{+}\\text{',name)
+    raw=mm.group(1).replace('$','')
+    if '^{+}' in raw:
+        base,rest=raw.split('^{+}',1)
+        label=r'(\text{%s}^{+}'%base+(r'\text{%s})'%rest if rest else ')')
+    else:
+        label=r'\text{(%s)}'%raw
     a,i=grp(part,mm.end()); c,j=grp(part,i)
     a=a.replace(r'\\',r'\qquad ')
-    return r'\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}' % (name,a,c), j
+    return r'\class{rulec}{%s}\quad \dfrac{%s}{%s}' % (label,a,c), j
 def rules(t):
     out='';k=0
     while True:
@@ -51,10 +55,11 @@ def swap(old,new):
 swap(r'\newcommand{\bx}[1]{\Box_{#1}}',r'\newcommand{\bx}[1]{\class{boxc}{\Box}_{#1}}')
 swap(r'F\text{ is \emph{invariant}}',r'F\text{ is }\textit{invariant}')
 swap(r'\newcommand{\sep}{\mathrel{\#}}',r'\newcommand{\sep}{\mathrel{\class{asr}{\#}}}')
-for n in ['keep','init','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{chg}{\mathsf{%s}}}'%(n,n))
+for n in ['keep','init','extend','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{chg}{\mathsf{%s}}}'%(n,n))
 for n in ['rigid','fresh','old','dense','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
 swap(r'\newcommand{\val}{\kw{values}}',r'\newcommand{\val}{\class{reg}{\mathsf{values}}}')
 swap(r'\newcommand{\st}{\kw{spines}}',r'\newcommand{\st}{\class{reg}{\mathsf{spines}}}')
+swap(r'\newcommand{\vw}{\kw{views}}',r'\newcommand{\vw}{\class{reg}{\mathsf{views}}}')
 src=src.replace(r'\kw{scalar}',r'\class{chg}{\mathsf{scalar}}').replace(r'\kw{spine}',r'\class{reg}{\mathsf{spine}}')
 swap(r'\newcommand{\lean}[1]{\texttt{\small #1}}',r'\newcommand{\lean}[1]{\emph{\texttt{#1}}}')
 open(sys.argv[2],'w').write(src)
