@@ -256,6 +256,146 @@ theorem Obj.le_sound {a b : Obj} {v : Tm} (h : Obj.le a b = true) (hv : a.mem v 
       obtain ⟨l, hl, hs⟩ := List.any_eq_true.mp (hv d hd)
       exact List.any_eq_true.mpr ⟨l, List.contains_iff_mem.mp (hdc l hl), hs⟩
 
+/-! Own-key upper bound on plain (prototype-free) objects: `none` states no
+bound; `some ks` states the object has no prototype (`CallArguments.protoField`)
+and every own key of it lies in `ks`. -/
+namespace OwnKeys
+
+def mem : Option (List PropKey) → List (PropKey × Nat) → Bool
+  | none, _ => true
+  | some ks, fs => (fs.lookup CallArguments.protoField).isNone && fs.all fun p => ks.contains p.1
+
+def join (ao bo : Obj) (ak bk : Option (List PropKey)) : Option (List PropKey) :=
+  match ao, bo with
+  | none, _ => bk
+  | _, none => ak
+  | some _, some _ => match ak, bk with
+    | some xs, some ys => some (xs ++ ys.filter (!xs.contains ·))
+    | _, _ => none
+
+def meet (ao bo : Obj) (ak bk : Option (List PropKey)) : Option (List PropKey) :=
+  match ao, bo with
+  | none, _ | _, none => none
+  | some _, some _ => match ak, bk with
+    | some xs, some ys => some (xs.filter (ys.contains ·))
+    | some xs, none => some xs
+    | none, some ys => some ys
+    | none, none => none
+
+def le (ao : Obj) (ak bk : Option (List PropKey)) : Bool :=
+  match ao with
+  | none => true
+  | some _ => match ak, bk with
+    | _, none => true
+    | none, some _ => false
+    | some xs, some ys => xs.all ys.contains
+
+@[simp] theorem mem_none (fs : List (PropKey × Nat)) : mem none fs = true := rfl
+
+@[simp] theorem join_none_none (ao bo : Obj) : join ao bo none none = none := by
+  cases ao <;> cases bo <;> rfl
+
+theorem join_none_left (bo : Obj) (ak bk : Option (List PropKey)) : join none bo ak bk = bk := rfl
+
+theorem mem_join_left {ao bo : Obj} {ak bk : Option (List PropKey)} {fs : List (PropKey × Nat)}
+    (hao : ao.isSome = true) (h : mem ak fs = true) : mem (join ao bo ak bk) fs = true := by
+  cases ao with
+  | none => simp at hao
+  | some a =>
+    cases bo with
+    | none => simpa [join] using h
+    | some b =>
+      cases ak with
+      | none => simp [join, mem]
+      | some xs =>
+        cases bk with
+        | none => simp [join, mem]
+        | some ys =>
+          simp only [join, mem, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem,
+            List.mem_append] at h ⊢
+          exact ⟨h.1, fun p hp => .inl (h.2 p hp)⟩
+
+theorem mem_join_right {ao bo : Obj} {ak bk : Option (List PropKey)} {fs : List (PropKey × Nat)}
+    (hbo : bo.isSome = true) (h : mem bk fs = true) : mem (join ao bo ak bk) fs = true := by
+  cases bo with
+  | none => simp at hbo
+  | some b =>
+    cases ao with
+    | none => simpa [join] using h
+    | some a =>
+      cases ak with
+      | none => simp [join, mem]
+      | some xs =>
+        cases bk with
+        | none => simp [join, mem]
+        | some ys =>
+          simp only [join, mem, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem,
+            List.mem_append, List.mem_filter, Bool.not_eq_true'] at h ⊢
+          refine ⟨h.1, fun p hp => ?_⟩
+          by_cases hx : p.1 ∈ xs
+          · exact .inl hx
+          · exact .inr ⟨h.2 p hp, by simpa using hx⟩
+
+theorem mem_meet_some {a b : List Clause} (ak bk : Option (List PropKey)) (fs : List (PropKey × Nat)) :
+    mem (meet (some a) (some b) ak bk) fs = (mem ak fs && mem bk fs) := by
+  cases ak with
+  | none => cases bk <;> simp [meet, mem]
+  | some xs =>
+    cases bk with
+    | none => simp [meet, mem]
+    | some ys =>
+      apply Bool.eq_iff_iff.mpr
+      simp only [meet, mem, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem, List.mem_filter]
+      constructor
+      · rintro ⟨hp, hall⟩
+        exact ⟨⟨hp, fun p hm => (hall p hm).1⟩, ⟨hp, fun p hm => (hall p hm).2⟩⟩
+      · rintro ⟨⟨hp, h1⟩, ⟨_, h2⟩⟩
+        exact ⟨hp, fun p hm => ⟨h1 p hm, h2 p hm⟩⟩
+
+theorem le_sound {ao : Obj} {ak bk : Option (List PropKey)} {fs : List (PropKey × Nat)}
+    (hao : ao.isSome = true) (hle : le ao ak bk = true) (h : mem ak fs = true) :
+    mem bk fs = true := by
+  cases ao with
+  | none => simp at hao
+  | some a =>
+    cases bk with
+    | none => rfl
+    | some ys =>
+      cases ak with
+      | none => simp [le] at hle
+      | some xs =>
+        simp only [le, List.all_eq_true, List.contains_iff_mem] at hle
+        simp only [mem, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem] at h ⊢
+        exact ⟨h.1, fun p hp => hle p.1 (h.2 p hp)⟩
+
+private theorem lookup_mem_fst : ∀ {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat},
+    fs.lookup k = some l → ∃ p ∈ fs, p.1 = k
+  | [], _, _, h => by simp at h
+  | (k', l') :: rest, k, l, h => by
+    simp only [List.lookup] at h
+    split at h
+    · rename_i heq
+      exact ⟨(k', l'), List.mem_cons_self .., (beq_iff_eq.mp heq).symm⟩
+    · obtain ⟨p, hp, hpk⟩ := lookup_mem_fst h
+      exact ⟨p, List.mem_cons_of_mem _ hp, hpk⟩
+
+theorem lookup_none_of_mem {ks : List PropKey} {fs : List (PropKey × Nat)} {k : PropKey}
+    (hmem : mem (some ks) fs = true) (hnot : ks.contains k = false) :
+    fs.lookup k = none ∧ fs.lookup CallArguments.protoField = none := by
+  simp only [mem, Bool.and_eq_true, Option.isNone_iff_eq_none, List.all_eq_true,
+    List.contains_iff_mem] at hmem
+  refine ⟨?_, hmem.1⟩
+  cases hlk : fs.lookup k with
+  | none => rfl
+  | some l =>
+    obtain ⟨p, hp, rfl⟩ := lookup_mem_fst hlk
+    have hm := hmem.2 p hp
+    have : ks.contains p.1 = true := List.contains_iff_mem.mpr hm
+    rw [hnot] at this
+    cases this
+
+end OwnKeys
+
 /-- A set of values, one component per kind of value. -/
 structure ValueSet where
   nul : Bool := false
@@ -269,6 +409,8 @@ structure ValueSet where
   str : Lit String := .none
   big : Lit Int := .none
   obj : Obj := none
+  /-- Own-key upper bound on plain (prototype-free) objects (`OwnKeys`). -/
+  ownKeys : Option (List PropKey) := none
   deriving DecidableEq, Hashable, Repr
 
 namespace ValueSet
@@ -283,34 +425,72 @@ def mem (V : ValueSet) : Tm → Bool
   | .bigint i => V.big.mem i
   | .sym _ => V.sym
   | .arr _ | .viewSpine .. => V.arr
-  | v@(.objAt ..) => V.obj.mem v
+  | v@(.objAt fs _ _) => V.obj.mem v && OwnKeys.mem V.ownKeys fs
   | _ => false
 
 def bot : ValueSet := {}
 
 def top : ValueSet :=
-  ⟨true, true, true, true, true, true, .all, .all, .all, some []⟩
+  ⟨true, true, true, true, true, true, .all, .all, .all, some [], none⟩
+
+/-- The set of plain (prototype-free) objects whose own keys all lie in `ks`. -/
+def ofOwnKeys (ks : List PropKey) : ValueSet :=
+  { obj := some [], ownKeys := some ks }
+
+/-- Whether every value in the set is an object (`.objAt`), excluding all
+primitives and element spines. -/
+def onlyObj (V : ValueSet) : Bool :=
+  !V.nul && !V.undef && !V.tru && !V.fls && !V.sym && !V.arr &&
+    V.num == .none && V.str == .none && V.big == .none
+
+/-- Whether every value in `V` is a plain (prototype-free) object omitting
+property key `k`, so reading `k` on it always yields `undefined`. -/
+def omitsKey (V : ValueSet) (k : PropKey) : Bool :=
+  V.onlyObj && match V.ownKeys with
+    | some ks => !ks.contains k
+    | none => false
+
+theorem omitsKey_sound {V : ValueSet} {k : PropKey} {v : Tm}
+    (ho : V.omitsKey k = true) (hv : V.mem v = true) :
+    ∃ fs c oid, v = .objAt fs c oid ∧ fs.lookup k = none ∧ fs.lookup CallArguments.protoField = none := by
+  simp only [omitsKey, onlyObj, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at ho
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hnul, hundef⟩, htru⟩, hfls⟩, hsym⟩, harr⟩, hnum⟩, hstr⟩, hbig⟩, hok⟩ := ho
+  cases hkeys : V.ownKeys with
+  | none => rw [hkeys] at hok; cases hok
+  | some ks =>
+    rw [hkeys] at hok
+    have hnot : ks.contains k = false := by simpa using hok
+    cases v with
+    | objAt fs c oid =>
+      simp only [mem, hkeys, Bool.and_eq_true] at hv
+      obtain ⟨hlk, hproto⟩ := OwnKeys.lookup_none_of_mem hv.2 hnot
+      exact ⟨fs, c, oid, rfl, hlk, hproto⟩
+    | _ => simp_all [mem, Lit.mem_none]
 
 def join (a b : ValueSet) : ValueSet :=
   ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
-    a.num.join b.num, a.str.join b.str, a.big.join b.big, a.obj.join b.obj⟩
+    a.num.join b.num, a.str.join b.str, a.big.join b.big, a.obj.join b.obj,
+    OwnKeys.join a.obj b.obj a.ownKeys b.ownKeys⟩
 
 /-- `join`, its literal components joined by hashing (`Lit.joinHash`). -/
 def joinHash (a b : ValueSet) : ValueSet :=
   ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
-    a.num.joinHash b.num, a.str.joinHash b.str, a.big.joinHash b.big, a.obj.join b.obj⟩
+    a.num.joinHash b.num, a.str.joinHash b.str, a.big.joinHash b.big, a.obj.join b.obj,
+    OwnKeys.join a.obj b.obj a.ownKeys b.ownKeys⟩
 
 @[csimp] theorem join_eq_hash : @join = @joinHash := by
   funext a b; simp only [join, joinHash, Lit.joinHash_eq]
 
 def meet (a b : ValueSet) : ValueSet :=
   ⟨a.nul && b.nul, a.undef && b.undef, a.tru && b.tru, a.fls && b.fls, a.sym && b.sym, a.arr && b.arr,
-    a.num.meet b.num, a.str.meet b.str, a.big.meet b.big, a.obj.meet b.obj⟩
+    a.num.meet b.num, a.str.meet b.str, a.big.meet b.big, a.obj.meet b.obj,
+    OwnKeys.meet a.obj b.obj a.ownKeys b.ownKeys⟩
 
 /-- `meet`, its literal components met by hashing (`Lit.meetHash`). -/
 def meetHash (a b : ValueSet) : ValueSet :=
   ⟨a.nul && b.nul, a.undef && b.undef, a.tru && b.tru, a.fls && b.fls, a.sym && b.sym, a.arr && b.arr,
-    a.num.meetHash b.num, a.str.meetHash b.str, a.big.meetHash b.big, a.obj.meet b.obj⟩
+    a.num.meetHash b.num, a.str.meetHash b.str, a.big.meetHash b.big, a.obj.meet b.obj,
+    OwnKeys.meet a.obj b.obj a.ownKeys b.ownKeys⟩
 
 @[csimp] theorem meet_eq_hash : @meet = @meetHash := by
   funext a b; simp only [meet, meetHash, Lit.meetHash_eq]
@@ -318,7 +498,7 @@ def meetHash (a b : ValueSet) : ValueSet :=
 def le (a b : ValueSet) : Bool :=
   (!a.nul || b.nul) && (!a.undef || b.undef) && (!a.tru || b.tru) && (!a.fls || b.fls) &&
     (!a.sym || b.sym) && (!a.arr || b.arr) && a.num.le b.num && a.str.le b.str && a.big.le b.big &&
-    a.obj.le b.obj
+    a.obj.le b.obj && OwnKeys.le a.obj a.ownKeys b.ownKeys
 
 theorem mem_isVal {V : ValueSet} {v : Tm} (h : V.mem v = true) : isVal v = true := by
   cases v <;> simp_all [mem, isVal]
@@ -326,15 +506,36 @@ theorem mem_isVal {V : ValueSet} {v : Tm} (h : V.mem v = true) : isVal v = true 
 @[simp] theorem mem_bot (v : Tm) : bot.mem v = false := by
   cases v <;> simp [bot, mem, Obj.mem]
 
-theorem mem_join (a b : ValueSet) (v : Tm) : (join a b).mem v = (a.mem v || b.mem v) := by
-  cases v <;> simp [join, mem, Lit.mem_join, Obj.mem_join]
+theorem mem_join_left {a b : ValueSet} {v : Tm} (h : a.mem v = true) : (join a b).mem v = true := by
+  cases v with
+  | objAt fs c oid =>
+    simp only [mem, join, Obj.mem_join, Bool.and_eq_true, Bool.or_eq_true] at h ⊢
+    have hao : a.obj.isSome = true := by cases ha : a.obj <;> simp_all [Obj.mem]
+    exact ⟨.inl h.1, OwnKeys.mem_join_left hao h.2⟩
+  | _ => simp_all [join, mem, Lit.mem_join]
+
+theorem mem_join_right {a b : ValueSet} {v : Tm} (h : b.mem v = true) : (join a b).mem v = true := by
+  cases v with
+  | objAt fs c oid =>
+    simp only [mem, join, Obj.mem_join, Bool.and_eq_true, Bool.or_eq_true] at h ⊢
+    have hbo : b.obj.isSome = true := by cases hb : b.obj <;> simp_all [Obj.mem]
+    exact ⟨.inr h.1, OwnKeys.mem_join_right hbo h.2⟩
+  | _ => simp_all [join, mem, Lit.mem_join]
+
+theorem mem_join_of_none {a b : ValueSet} (ha : a.ownKeys = none) (hb : b.ownKeys = none) (v : Tm) :
+    (join a b).mem v = (a.mem v || b.mem v) := by
+  cases v <;> simp [join, mem, ha, hb, Lit.mem_join, Obj.mem_join]
 
 theorem mem_meet (a b : ValueSet) (v : Tm) : (meet a b).mem v = (a.mem v && b.mem v) := by
-  cases v <;> simp [meet, mem, Lit.mem_meet, Obj.mem_meet]
+  cases v with
+  | objAt fs c oid =>
+    simp only [meet, mem, Obj.mem_meet]
+    cases ha : a.obj <;> cases hb : b.obj <;> simp [Obj.mem, OwnKeys.mem_meet_some, Bool.and_assoc, Bool.and_left_comm]
+  | _ => simp [meet, mem, Lit.mem_meet]
 
 theorem le_sound {a b : ValueSet} {v : Tm} (h : le a b = true) (hv : a.mem v = true) : b.mem v = true := by
   simp only [le, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hn, hu⟩, ht⟩, hf⟩, hs⟩, har⟩, hnum⟩, hstr⟩, hbig⟩, hobj⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hn, hu⟩, ht⟩, hf⟩, hs⟩, har⟩, hnum⟩, hstr⟩, hbig⟩, hobj⟩, hok⟩ := h
   cases v with
   | nul => simp only [mem] at hv ⊢; rcases hn with h | h <;> simp_all
   | undef => simp only [mem] at hv ⊢; rcases hu with h | h <;> simp_all
@@ -346,7 +547,10 @@ theorem le_sound {a b : ValueSet} {v : Tm} (h : le a b = true) (hv : a.mem v = t
   | num => exact Lit.le_sound hnum hv
   | str => exact Lit.le_sound hstr hv
   | bigint => exact Lit.le_sound hbig hv
-  | objAt => exact Obj.le_sound hobj hv
+  | objAt fs c oid =>
+    simp only [mem, Bool.and_eq_true] at hv ⊢
+    have hao : a.obj.isSome = true := by cases ha : a.obj <;> simp_all [Obj.mem]
+    exact ⟨Obj.le_sound hobj hv.1, OwnKeys.le_sound hao hok hv.2⟩
   | _ => simp [mem] at hv
 
 end ValueSet
@@ -428,12 +632,12 @@ theorem tagObj_mem {t : Tag} {q : Bool} {flds c oid}
 /-- The values answering `t` with `q`, or reading a prototype for it. -/
 def ofTag (t : Tag) (q : Bool) : ValueSet :=
   ⟨tagHolds t .nul == q, tagHolds t .undef == q, tagHolds t .tru == q, tagHolds t .fls == q,
-    tagHolds t (.sym 0) == q, tagHolds t (.arr []) == q, tagNum t q, tagStr t q, tagBig t q, tagObj t q⟩
+    tagHolds t (.sym 0) == q, tagHolds t (.arr []) == q, tagNum t q, tagStr t q, tagBig t q, tagObj t q, none⟩
 
 theorem ofTag_holds {t : Tag} {q : Bool} {v : Tm} (hv : isVal v = true)
     (hq : tagHolds t v = q ∨ protoFree t v = false) : (ofTag t q).mem v = true := by
   cases v with
-  | objAt flds c oid => exact tagObj_mem hq
+  | objAt flds c oid => simp only [ofTag, ValueSet.mem, OwnKeys.mem_none, Bool.and_true]; exact tagObj_mem hq
   | _ =>
     simp only [isVal] at hv
     all_goals first
@@ -492,13 +696,24 @@ theorem Lit.mem_append {α : Type} [DecidableEq α] (l m : Lit α) (x : α) :
 
 def ValueSet.append (a b : ValueSet) : ValueSet :=
   ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
-    a.num.append b.num, a.str.append b.str, a.big.append b.big, a.obj.join b.obj⟩
+    a.num.append b.num, a.str.append b.str, a.big.append b.big, a.obj.join b.obj,
+    OwnKeys.join a.obj b.obj a.ownKeys b.ownKeys⟩
 
-theorem ValueSet.mem_append (a b : ValueSet) (v : Tm) : (a.append b).mem v = (a.mem v || b.mem v) := by
-  cases v <;> simp [ValueSet.append, ValueSet.mem, Lit.mem_append, Obj.mem_join]
+theorem ValueSet.mem_append_of_none {a b : ValueSet} (ha : a.ownKeys = none) (hb : b.ownKeys = none) (v : Tm) :
+    (a.append b).mem v = (a.mem v || b.mem v) := by
+  cases v <;> simp [ValueSet.append, ValueSet.mem, ha, hb, Lit.mem_append, Obj.mem_join]
+
+theorem ofAtom_ownKeys (a : Atom) : (ofAtom a).ownKeys = none := by
+  cases a <;> rfl
 
 /-- A list of atoms denotes the union of their sets. -/
 def ofAtoms (as : List Atom) : ValueSet := as.foldr (fun a V => (ofAtom a).append V) ValueSet.bot
+
+theorem ofAtoms_ownKeys : ∀ as : List Atom, (ofAtoms as).ownKeys = none
+  | [] => rfl
+  | a :: as => by
+    change ((ofAtom a).append (ofAtoms as)).ownKeys = none
+    simp only [ValueSet.append, ofAtom_ownKeys, ofAtoms_ownKeys as, OwnKeys.join_none_none]
 
 /-- `(ofAtom a).append V`, a primitive atom's by updating the one component
 it names (`consAtom_eq`). -/
@@ -519,7 +734,7 @@ private theorem Obj.join_none (o : Obj) : Obj.join none o = o := by
   cases o <;> rfl
 
 theorem consAtom_eq (a : Atom) (V : ValueSet) : consAtom a V = (ofAtom a).append V := by
-  cases a <;> simp [consAtom, ofAtom, ValueSet.append, Lit.append_none, Obj.join_none]
+  cases a <;> simp [consAtom, ofAtom, ValueSet.append, Lit.append_none, Obj.join_none, OwnKeys.join_none_left]
 
 /-- `ofAtoms`, one atom at a time by `consAtom`. The compiler runs it in
 place of `ofAtoms` (`ofAtoms_eq_cons`). -/
@@ -537,7 +752,8 @@ theorem ofAtoms_holds {as : List Atom} {v : Tm} (h : ∃ a ∈ as, a.holds v) : 
   induction as with
   | nil => simp at h
   | cons a as ih =>
-    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_append, Bool.or_eq_true] at ih ⊢
+    change ((ofAtom a).append (ofAtoms as)).mem v = true
+    rw [ValueSet.mem_append_of_none (ofAtom_ownKeys a) (ofAtoms_ownKeys as), Bool.or_eq_true]
     obtain ⟨b, hb, hv⟩ := h
     rcases List.mem_cons.mp hb with rfl | hb
     · exact Or.inl (ofAtom_holds hv)
@@ -548,7 +764,8 @@ theorem holds_ofAtoms {as : List Atom} {v : Tm} (ht : as.all (!·.isTag) = true)
   induction as with
   | nil => simp [ofAtoms] at h
   | cons a as ih =>
-    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_append, Bool.or_eq_true] at ih h
+    change ((ofAtom a).append (ofAtoms as)).mem v = true at h
+    rw [ValueSet.mem_append_of_none (ofAtom_ownKeys a) (ofAtoms_ownKeys as), Bool.or_eq_true] at h
     simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at ht
     rcases h with h | h
     · exact ⟨a, List.mem_cons_self .., holds_ofAtom ht.1 h⟩
@@ -615,7 +832,8 @@ in its normal form (heap-knowledge draft, §2.5). -/
 def normIn (C V : ValueSet) : ValueSet :=
   ⟨V.nul && C.nul, V.undef && C.undef, V.tru && C.tru, V.fls && C.fls, V.sym && C.sym, V.arr && C.arr,
     C.num.normIn V.num, C.str.normIn V.str, C.big.normIn V.big,
-    match C.obj with | none => none | some _ => objNorm V.obj⟩
+    match C.obj with | none => none | some _ => objNorm V.obj,
+    match C.obj with | none => none | some _ => V.ownKeys.map List.eraseDups⟩
 
 /-- Widening at a merge (heap-knowledge draft, §2.3): the object component
 in its normal form, keeping at most 8 clauses. Fewer clauses admit more
@@ -742,7 +960,7 @@ theorem ValueSet.answers_sound {V : ValueSet} {t : Tag} {q : Bool} {v : Tm} (h :
   simp only [answers, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hn, hu⟩, ht⟩, hf⟩, hs⟩, ha⟩, hnum⟩, hstr⟩, hbig⟩, hobj⟩ := h
   cases v with
-  | objAt flds c oid => exact objAnswers_sound hobj hv
+  | objAt flds c oid => exact objAnswers_sound hobj (Bool.and_eq_true_iff.mp hv).1
   | num b => exact Or.inl (numAnswers_sound hnum hv)
   | str x => exact Or.inl (strAnswers_sound hstr hv)
   | bigint i => exact Or.inl (bigAnswers_sound hbig hv)

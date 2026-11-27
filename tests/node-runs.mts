@@ -3613,4 +3613,13 @@ for (const [file, call] of [
   assert.deepEqual(runPlain(negative("invalid-quantified-bitmask-guard-overlapping-bit"),
     "(() => { const r = setOverlappingBit({ flags: new Uint8Array([0]), advances: [[10, 20]], extras: [[1, 2]] }, 0); return [r.flags[0] & 7, r.extras[0] !== null]; })()"),
     [2, true], "invalid-quantified-bitmask-guard-overlapping-bit (#398): overlapping OR bit turns tag 0 into PRESERVED_SPACE with non-null extras");
+  assert.deepEqual(runPlain(ofKind("object-literal-omitted-optional", ["positive"]),
+    "(() => { const a = makeWithoutItems([1, 2]); const b = makeEnsuresOmitted([3]); const c = makeJoinedWithoutItems([4], true); return [a.items === undefined, b.items === undefined, c.items === undefined, readOmittedOptional([5]) === undefined, useData(a)]; })()"),
+    [true, true, true, true, 2], "object-literal-omitted-optional: omitted optional property reads undefined");
+  assert.deepEqual(runPlain(negative("invalid-object-literal-present-optional"),
+    "(() => { const r = makeWithShortExtras(); return [r.items !== undefined, r.widths.length, r.items.extras.length, r.items.extras[1] === undefined]; })()"),
+    [true, 2, 1, true], "invalid-object-literal-present-optional: present items with shorter extras breaks guarded invariant");
+  assert.deepEqual(runPlain(negative("invalid-object-spread-present-optional"),
+    "(() => { const r = spreadWithItems({ widths: [1], items: { extras: [10] } }); return [r.items !== undefined, r.widths.length, r.items.extras.length, r.items.extras[1] === undefined]; })()"),
+    [true, 2, 1, true], "invalid-object-spread-present-optional: object spread copies items from base and breaks guarded invariant");
 }

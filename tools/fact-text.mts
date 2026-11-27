@@ -226,10 +226,13 @@ export function valueSet(v: ValueSet): string {
     ["number", full(v.num) ? "all" : none(v.num) ? "none" : literals("number", v.num, double) ?? "none"],
     ["string", full(v.str) ? "all" : none(v.str) ? "none" : literals("string", v.str, (x) => JSON.stringify(x)) ?? "none"],
     ["bigint", full(v.big) ? "all" : none(v.big) ? "none" : literals("bigint", v.big, (x) => `${x}n`) ?? "none"],
-    ["object", v.obj === null ? "none" : v.obj.length === 0 ? "all" : `object where ${v.obj.map((clause) => {
-      const tests = clause.map((l) => `${l.answer ? "" : "!"}${tagText(l.tag)}`);
-      return tests.length === 1 ? tests.join("") : `(${tests.join(" || ")})`;
-    }).join(" && ")}`],
+    ["object", v.obj === null ? "none" : v.obj.length === 0 && v.ownKeys === null ? "all" : `object where ${[
+      ...v.obj.map((clause) => {
+        const tests = clause.map((l) => `${l.answer ? "" : "!"}${tagText(l.tag)}`);
+        return tests.length === 1 ? tests.join("") : `(${tests.join(" || ")})`;
+      }),
+      ...(v.ownKeys === null ? [] : [`ownKeys ⊆ {${v.ownKeys.map(keyText).join(", ")}}`]),
+    ].join(" && ")}`],
   ];
   const absent = parts.filter(([, p]) => p === "none").map(([k]) => k);
   if (absent.length > 0 && parts.every(([, p]) => p === "all" || p === "none") && absent.length * 2 < parts.length)

@@ -140,8 +140,6 @@ function prepareInternal(
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
   }
-  // PAPER: workaround (omitted-optional-property): object literal omitting optional `items` does not establish `result.items === undefined` for `PreparedLineData` invariant (`source ensures refusal` on `return result`)
-  if (result.items !== undefined) throw new RangeError('items')
   return result
 }
 

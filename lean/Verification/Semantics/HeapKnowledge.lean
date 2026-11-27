@@ -5048,7 +5048,9 @@ def GuardTagTable.ofKnowledge (k : Knowledge) : GuardTagTable :=
 def GuardTagTable.check (gt : GuardTagTable) (s : Nat) (p : List String) (t : GuardTag) : Bool :=
   match p with
   | [] => (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (onlyTag · t)
-  | [g] => (gt.cellByRep.getD (HeapLinks.repOf gt.rep s, g) []).any (onlyTag · t)
+  | [g] =>
+    (gt.cellByRep.getD (HeapLinks.repOf gt.rep s, g) []).any (onlyTag · t) ||
+    (t.holdsUndef && (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (·.omitsKey (.str g)))
   | _ => false
 
 theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
@@ -5056,45 +5058,45 @@ theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Ho
   intro s p t ht
   have hr : ∀ x, ρ (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x) = ρ x :=
     HeapLinks.repOf_eq (HeapLinks.classes_one hk.2.2.1)
+  have hvalMap : ∀ {rs : Nat} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
+      (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
+        let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
+        m.insert key (f.contents :: m.getD key [])) {})[rs]? = some vs →
+      c ∈ vs → ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+    have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap Nat (List ValueSets.ValueSet)),
+        (∀ f ∈ xs, f ∈ k.values) →
+        (∀ {rs vs c}, m[rs]? = some vs → c ∈ vs →
+          ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
+        ∀ {rs vs c}, (xs.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
+          let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
+          m.insert key (f.contents :: m.getD key [])) m)[rs]? = some vs →
+          c ∈ vs → ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+      intro xs
+      induction xs with
+      | nil => intro m _ hm rs vs c h hc; exact hm h hc
+      | cons f0 xs ih =>
+        intro m hsub hm
+        apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
+        intro rs vs c h hc
+        rw [Std.HashMap.getElem?_insert] at h
+        split at h
+        · rename_i heq
+          simp only [Option.some.injEq] at h
+          subst h
+          have heq : HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot = rs := by simpa using heq
+          rcases List.mem_cons.mp hc with rfl | hc
+          · exact ⟨f0, hsub f0 (List.mem_cons_self ..), heq, rfl⟩
+          · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
+            cases hm0 : m[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot]? with
+            | none => rw [hm0] at hc; cases hc
+            | some vs0 =>
+              rw [hm0] at hc
+              rw [heq] at hm0
+              exact hm hm0 hc
+        · exact hm h hc
+    exact fun {rs vs c} => hstep k.values {} (fun _ h => h) (by intro rs vs c h; simp at h)
   match p, ht with
   | [], ht =>
-    have hvalMap : ∀ {rs : Nat} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
-        (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
-          let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
-          m.insert key (f.contents :: m.getD key [])) {})[rs]? = some vs →
-        c ∈ vs → ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-      have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap Nat (List ValueSets.ValueSet)),
-          (∀ f ∈ xs, f ∈ k.values) →
-          (∀ {rs vs c}, m[rs]? = some vs → c ∈ vs →
-            ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
-          ∀ {rs vs c}, (xs.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
-            let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
-            m.insert key (f.contents :: m.getD key [])) m)[rs]? = some vs →
-            c ∈ vs → ∃ f ∈ k.values, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-        intro xs
-        induction xs with
-        | nil => intro m _ hm rs vs c h hc; exact hm h hc
-        | cons f0 xs ih =>
-          intro m hsub hm
-          apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
-          intro rs vs c h hc
-          rw [Std.HashMap.getElem?_insert] at h
-          split at h
-          · rename_i heq
-            simp only [Option.some.injEq] at h
-            subst h
-            have heq : HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot = rs := by simpa using heq
-            rcases List.mem_cons.mp hc with rfl | hc
-            · exact ⟨f0, hsub f0 (List.mem_cons_self ..), heq, rfl⟩
-            · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
-              cases hm0 : m[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot]? with
-              | none => rw [hm0] at hc; cases hc
-              | some vs0 =>
-                rw [hm0] at hc
-                rw [heq] at hm0
-                exact hm hm0 hc
-          · exact hm h hc
-      exact fun {rs vs c} => hstep k.values {} (fun _ h => h) (by intro rs vs c h; simp at h)
     unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
     dsimp only at ht
     rw [Std.HashMap.getD_eq_getD_getElem?] at ht
@@ -5111,73 +5113,89 @@ theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Ho
       rw [hfs] at hv
       exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
   | [g], ht =>
-    have hcellMap : ∀ {rs : Nat} {g' : String} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
-        (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
-          | .str g0 =>
-            let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
-            m.insert key (f.contents :: m.getD key [])
-          | .sym _ => m) {})[(rs, g')]? = some vs →
-        c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-      have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)),
-          (∀ f ∈ xs, f ∈ k.cells) →
-          (∀ {rs g' vs c}, m[(rs, g')]? = some vs → c ∈ vs →
-            ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
-          ∀ {rs g' vs c}, (xs.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+    unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
+    dsimp only at ht
+    rcases Bool.or_eq_true_iff.mp ht with ht | ht
+    · have hcellMap : ∀ {rs : Nat} {g' : String} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
+          (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
             | .str g0 =>
               let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
               m.insert key (f.contents :: m.getD key [])
-            | .sym _ => m) m)[(rs, g')]? = some vs →
-            c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-        intro xs
-        induction xs with
-        | nil => intro m _ hm rs g' vs c h hc; exact hm h hc
-        | cons f0 xs ih =>
-          intro m hsub hm
-          apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
-          cases hfld : f0.field with
-          | sym _ =>
-            intro rs g' vs c h hc
-            dsimp only at h; rw [hfld] at h
-            exact hm h hc
-          | str g0 =>
-            intro rs g' vs c h hc
-            dsimp only at h; rw [hfld] at h; dsimp only at h
-            rw [Std.HashMap.getElem?_insert] at h
-            split at h
-            · rename_i heq
-              simp only [Option.some.injEq] at h
-              subst h
-              simp only [beq_iff_eq, Prod.mk.injEq] at heq
-              obtain ⟨heq, rfl⟩ := heq
-              rcases List.mem_cons.mp hc with rfl | hc
-              · exact ⟨f0, hsub f0 (List.mem_cons_self ..), hfld, heq, rfl⟩
-              · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
-                cases hm0 : m[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot, g0)]? with
-                | none => rw [hm0] at hc; cases hc
-                | some vs0 =>
-                  rw [hm0] at hc
-                  rw [heq] at hm0
-                  exact hm hm0 hc
-            · exact hm h hc
-      exact fun {rs g' vs c} => hstep k.cells {} (fun _ h => h) (by intro rs g' vs c h; simp at h)
-    unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
-    dsimp only at ht
-    rw [Std.HashMap.getD_eq_getD_getElem?] at ht
-    cases hm : (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
-        | .str g0 =>
-          let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
-          m.insert key (f.contents :: m.getD key [])
-        | .sym _ => m) {})[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, g)]? with
-    | none => rw [hm] at ht; simp at ht
-    | some vs =>
-      rw [hm] at ht
-      obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
-      obtain ⟨f, hf, hfld, heq, rfl⟩ := hcellMap hm hc
-      obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
-      have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-      rw [hfs] at he
-      rw [hfld] at hrg
-      exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+            | .sym _ => m) {})[(rs, g')]? = some vs →
+          c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+        have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)),
+            (∀ f ∈ xs, f ∈ k.cells) →
+            (∀ {rs g' vs c}, m[(rs, g')]? = some vs → c ∈ vs →
+              ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
+            ∀ {rs g' vs c}, (xs.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+              | .str g0 =>
+                let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
+                m.insert key (f.contents :: m.getD key [])
+              | .sym _ => m) m)[(rs, g')]? = some vs →
+              c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+          intro xs
+          induction xs with
+          | nil => intro m _ hm rs g' vs c h hc; exact hm h hc
+          | cons f0 xs ih =>
+            intro m hsub hm
+            apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
+            cases hfld : f0.field with
+            | sym _ =>
+              intro rs g' vs c h hc
+              dsimp only at h; rw [hfld] at h
+              exact hm h hc
+            | str g0 =>
+              intro rs g' vs c h hc
+              dsimp only at h; rw [hfld] at h; dsimp only at h
+              rw [Std.HashMap.getElem?_insert] at h
+              split at h
+              · rename_i heq
+                simp only [Option.some.injEq] at h
+                subst h
+                simp only [beq_iff_eq, Prod.mk.injEq] at heq
+                obtain ⟨heq, rfl⟩ := heq
+                rcases List.mem_cons.mp hc with rfl | hc
+                · exact ⟨f0, hsub f0 (List.mem_cons_self ..), hfld, heq, rfl⟩
+                · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
+                  cases hm0 : m[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot, g0)]? with
+                  | none => rw [hm0] at hc; cases hc
+                  | some vs0 =>
+                    rw [hm0] at hc
+                    rw [heq] at hm0
+                    exact hm hm0 hc
+              · exact hm h hc
+        exact fun {rs g' vs c} => hstep k.cells {} (fun _ h => h) (by intro rs g' vs c h; simp at h)
+      rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+      cases hm : (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+          | .str g0 =>
+            let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
+            m.insert key (f.contents :: m.getD key [])
+          | .sym _ => m) {})[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, g)]? with
+      | none => rw [hm] at ht; simp at ht
+      | some vs =>
+        rw [hm] at ht
+        obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
+        obtain ⟨f, hf, hfld, heq, rfl⟩ := hcellMap hm hc
+        obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
+        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+        rw [hfs] at he
+        rw [hfld] at hrg
+        exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+    · obtain ⟨htu, ht⟩ := Bool.and_eq_true_iff.mp ht
+      rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+      cases hm : (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
+          let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
+          m.insert key (f.contents :: m.getD key [])) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
+      | none => rw [hm] at ht; simp at ht
+      | some vs =>
+        rw [hm] at ht
+        obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
+        obtain ⟨f, hf, heq, rfl⟩ := hvalMap hm hc
+        have hv := hk.2.1 f hf
+        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+        rw [hfs] at hv
+        obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
+        exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
   | _ :: _ :: _, ht => simp [GuardTagTable.check] at ht
 
 /-- Which guard paths a knowledge states satisfy a guard tag: lightweight
@@ -5191,7 +5209,8 @@ def guardTags (k : Knowledge) (s : Nat) (p : List String) (t : GuardTag) : Bool 
     k.values.any fun f => onlyTag f.contents t && r f.slot == rs
   | [g] =>
     let rs := r s
-    k.cells.any fun f => f.field == .str g && onlyTag f.contents t && r f.slot == rs
+    k.cells.any (fun f => f.field == .str g && onlyTag f.contents t && r f.slot == rs) ||
+    (t.holdsUndef && k.values.any fun f => f.contents.omitsKey (.str g) && r f.slot == rs)
   | _ => false
 
 theorem guardTags_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
@@ -5208,13 +5227,18 @@ theorem guardTags_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε �
     rw [hfs] at hv
     exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
   | [g], ht =>
-    simp only [guardTags, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at ht
-    obtain ⟨f, hf, ⟨hg, ho⟩, heq⟩ := ht
-    obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
-    have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-    rw [hfs] at he
-    rw [hg] at hrg
-    exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+    simp only [guardTags, Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at ht
+    rcases ht with ⟨f, hf, ⟨hg, ho⟩, heq⟩ | ⟨htu, f, hf, ho, heq⟩
+    · obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
+      have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+      rw [hfs] at he
+      rw [hg] at hrg
+      exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+    · have hv := hk.2.1 f hf
+      have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+      rw [hfs] at hv
+      obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
+      exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
   | _ :: _ :: _, ht => simp [guardTags] at ht
 
 /-- Discharges guarded index atoms in `k` whose guard's complement holds under
@@ -7130,20 +7154,25 @@ def valueBy (a : Knowledge) (M : Nat → List Nat) (s : Nat) : Option ValueSets.
   meetSome ((a.values.filter fun F => ms.contains F.slot).map (·.contents) ++
     reads.flatMap fun (c, f) =>
       let rs := M c
-      (a.cells.filter fun F => rs.contains F.slot && F.field == f).map (·.contents))
+      (a.cells.filter fun F => rs.contains F.slot && F.field == f).map (·.contents) ++
+      if a.values.any fun F => rs.contains F.slot && F.contents.omitsKey f then [{ undef := true }] else [])
 
 /-- What a knowledge states of the read of field `f` from slot `s`'s object:
-the cell facts on the slots `M s`, and the value facts of each read of `f`
-from them. -/
+the cell facts on the slots `M s`, the value facts of each read of `f` from
+them, and `undefined` where a value fact on `M s` states a plain object
+omitting `f`. -/
 def cellBy (a : Knowledge) (M : Nat → List Nat) (s : Nat) (f : PropKey) : Option ValueSets.ValueSet :=
   let ms := M s
   -- Each read value's class once, by its least slot.
   let dests := ((a.links.filter fun g => !g.alias && g.field == f && ms.contains g.cell).map fun g =>
     (M g.value).foldl min g.value).eraseDups
+  let omitted : List ValueSets.ValueSet :=
+    if a.values.any fun F => ms.contains F.slot && F.contents.omitsKey f then [{ undef := true }] else []
   meetSome ((a.cells.filter fun F => ms.contains F.slot && F.field == f).map (·.contents) ++
-    dests.flatMap fun d =>
+    dests.flatMap (fun d =>
       let ds := M d
-      (a.values.filter fun F => ds.contains F.slot).map (·.contents))
+      (a.values.filter fun F => ds.contains F.slot).map (·.contents)) ++
+    omitted)
 
 /-- The value a link reads, as a `ReadGave`. -/
 theorem link_readGave {g : HeapLinks.Link} {ρ : Env} {h : Heap} (ha : g.alias = false)
@@ -7187,49 +7216,77 @@ theorem valueBy_mem (ha : Holds a ε ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ
     subst hcf
     obtain ⟨hg, hgs⟩ := List.mem_filter.mp hg
     simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hgs
-    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
-    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
-    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
-    obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
     obtain ⟨flds', c', oid', he', hr'⟩ := link_readGave hgs.1 fun x hx => by
       rw [List.mem_singleton.mp hx]; exact ha.2.2.1 g hg
     -- The least slot of the receiver's class holds the receiver's value.
     have hmin : ρ ((M g.cell).foldl min g.cell) = ρ g.cell :=
       foldl_min_eq g.cell _ _ rfl fun y hy => hs g.cell y hy
-    rw [hs _ F.slot hk.1, hmin, he'] at he
-    cases he
-    rw [hk.2] at hr
-    rw [← hs s g.value hgs.2, ← ReadGave.unique hr hr']
-    exact hm
+    rcases List.mem_append.mp hx with hx | hx
+    · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+      obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+      simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
+      obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
+      rw [hs _ F.slot hk.1, hmin, he'] at he
+      cases he
+      rw [hk.2] at hr
+      rw [← hs s g.value hgs.2, ← ReadGave.unique hr hr']
+      exact hm
+    · split at hx
+      · rename_i hom
+        simp only [List.mem_singleton] at hx
+        subst hx
+        obtain ⟨F, hF, hk⟩ := List.any_eq_true.mp hom
+        simp only [Bool.and_eq_true, List.contains_iff_mem] at hk
+        have hv := ha.2.1 F hF
+        rw [hs _ F.slot hk.1, hmin] at hv
+        obtain ⟨flds, c, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound hk.2 hv
+        rw [he'] at he
+        cases he
+        have hr : ReadGave flds' g.field h .undef := by simp [ReadGave, hlk, hproto]
+        rw [← hs s g.value hgs.2, ← ReadGave.unique hr hr']
+        rfl
+      · cases hx
 
 theorem cellBy_holds (ha : Holds a ε ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {f : PropKey}
     {V : ValueSets.ValueSet} (hV : cellBy a M s f = some V) :
     ∃ flds c oid u, ρ s = .objAt flds c oid ∧ ReadGave flds f h u ∧ V.mem u = true := by
   refine meetSome_read hV fun x hx => ?_
   rcases List.mem_append.mp hx with hx | hx
-  · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
-    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
-    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
-    obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
-    rw [hs s F.slot hk.1] at he
-    rw [hk.2] at hr
-    exact ⟨flds, c, oid, u, he, hr, hm⟩
-  · obtain ⟨d, hd, hx⟩ := List.mem_flatMap.mp hx
-    obtain ⟨g, hg, rfl⟩ := List.mem_map.mp (List.mem_eraseDups.mp hd)
-    obtain ⟨hg, hgs⟩ := List.mem_filter.mp hg
-    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hgs
-    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
-    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
-    simp only [List.contains_iff_mem] at hk
-    obtain ⟨flds, c, oid, he, hr⟩ := link_readGave hgs.1.1 fun x hx => by
-      rw [List.mem_singleton.mp hx]; exact ha.2.2.1 g hg
-    rw [hs s g.cell hgs.2] at he
-    rw [hgs.1.2] at hr
-    refine ⟨flds, c, oid, ρ g.value, he, hr, ?_⟩
-    have hmin : ρ ((M g.value).foldl min g.value) = ρ g.value :=
-      foldl_min_eq g.value _ _ rfl fun y hy => hs g.value y hy
-    rw [← hmin, ← hs _ F.slot hk]
-    exact ha.2.1 F hF
+  · rcases List.mem_append.mp hx with hx | hx
+    · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+      obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+      simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
+      obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
+      rw [hs s F.slot hk.1] at he
+      rw [hk.2] at hr
+      exact ⟨flds, c, oid, u, he, hr, hm⟩
+    · obtain ⟨d, hd, hx⟩ := List.mem_flatMap.mp hx
+      obtain ⟨g, hg, rfl⟩ := List.mem_map.mp (List.mem_eraseDups.mp hd)
+      obtain ⟨hg, hgs⟩ := List.mem_filter.mp hg
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hgs
+      obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+      obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+      simp only [List.contains_iff_mem] at hk
+      obtain ⟨flds, c, oid, he, hr⟩ := link_readGave hgs.1.1 fun x hx => by
+        rw [List.mem_singleton.mp hx]; exact ha.2.2.1 g hg
+      rw [hs s g.cell hgs.2] at he
+      rw [hgs.1.2] at hr
+      refine ⟨flds, c, oid, ρ g.value, he, hr, ?_⟩
+      have hmin : ρ ((M g.value).foldl min g.value) = ρ g.value :=
+        foldl_min_eq g.value _ _ rfl fun y hy => hs g.value y hy
+      rw [← hmin, ← hs _ F.slot hk]
+      exact ha.2.1 F hF
+  · split at hx
+    · rename_i hom
+      simp only [List.mem_singleton] at hx
+      subst hx
+      obtain ⟨F, hF, hk⟩ := List.any_eq_true.mp hom
+      simp only [Bool.and_eq_true, List.contains_iff_mem] at hk
+      have hv := ha.2.1 F hF
+      rw [hs s F.slot hk.1] at hv
+      obtain ⟨flds, c, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound hk.2 hv
+      exact ⟨flds, c, oid, .undef, he, by simp [ReadGave, hlk, hproto], rfl⟩
+    · cases hx
 
 /-- A slot's aliases hold its value. -/
 theorem aliases_class (hl : HeapLinks.Holds a.links ρ h) :

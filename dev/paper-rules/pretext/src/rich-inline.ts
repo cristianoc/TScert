@@ -1113,7 +1113,6 @@ function prepareSingleSegments(
     minimumTabAdvance: prepared.minimumTabAdvance,
     segments,
   }
-  if (result.items !== undefined) throw new RangeError('items')   // PAPER: workaround (omitted optional field fact): object literal omitting optional `items?` does not synthesize `result.items === undefined` under exactOptionalPropertyTypes
   return result
 }
 
@@ -1152,7 +1151,6 @@ function prepareSingleLineData(
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
   }
-  if (result.items !== undefined) throw new RangeError('items')   // PAPER: workaround (omitted optional field fact): object literal omitting optional `items?` does not synthesize `result.items === undefined` under exactOptionalPropertyTypes
   return result
 }
 

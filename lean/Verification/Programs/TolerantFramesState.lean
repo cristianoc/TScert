@@ -307,21 +307,31 @@ its value is 0 at every valuation (`Linear.eval_normalize`), and `0 ≤ d` with
 theorem contradiction_false {a : Atom} (hc : a.contradiction = true) {η : Env} {h : Heap} :
     ¬ AtomHolds ε a η h := by
   intro ha
-  match a, hc with
-  | .index ⟨.linear (.le F d), none, neg⟩, hc =>
-    simp only [Atom.contradiction, Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at hc
-    have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
-    simp only [Linear.Fact.Holds] at this
-    rw [← Linear.eval_normalize, hc.2] at this
-    simp only [Linear.Form.eval] at this
-    omega
-  | .index ⟨.linear (.ne F d), none, neg⟩, hc =>
-    simp only [Atom.contradiction, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hc
-    have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
-    simp only [Linear.Fact.Holds] at this
-    rw [← Linear.eval_normalize, hc.2] at this
-    simp only [Linear.Form.eval] at this
-    exact this hc.1.symm
+  cases a with
+  | index x =>
+    obtain ⟨f, c, neg⟩ := x
+    cases c with
+    | some _ => simp [Atom.contradiction] at hc
+    | none =>
+      cases f with
+      | linear lf =>
+        cases lf with
+        | le F d =>
+          simp only [Atom.contradiction, Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at hc
+          have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
+          simp only [Linear.Fact.Holds] at this
+          rw [← Linear.eval_normalize, hc.2] at this
+          simp only [Linear.Form.eval] at this
+          omega
+        | ne F d =>
+          simp only [Atom.contradiction, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hc
+          have := (ha _ (List.mem_singleton_self _) (fun _ h => by cases h)).2
+          simp only [Linear.Fact.Holds] at this
+          rw [← Linear.eval_normalize, hc.2] at this
+          simp only [Linear.Form.eval] at this
+          exact this hc.1.symm
+      | _ => simp [Atom.contradiction] at hc
+  | _ => simp [Atom.contradiction] at hc
 
 /-- **An impossible store holds nowhere**: it holds `Atom.bot`. -/
 theorem storeOk_impossible {s : Store} {η : Env} {h : Heap} (hs : StoreOk ε s η h)

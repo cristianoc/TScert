@@ -45,6 +45,7 @@ export interface ValueSet {
   /** Numbers by their IEEE-754 bit patterns, as decimal digits. */
   num: LitSet<string>; str: LitSet<string>; big: LitSet<number>;
   obj: { tag: Tag; answer: boolean }[][] | null;
+  ownKeys: PropertyKey[] | null;
 }
 function litSet<T>(v: Json | undefined, item: (x: Json) => T): LitSet<T> {
   const r = isParsedObject(v) && "these" in v ? record(v,["these"]).these : record(v,["allBut"]).allBut;
@@ -53,8 +54,11 @@ function litSet<T>(v: Json | undefined, item: (x: Json) => T): LitSet<T> {
   const items = xs.map(item);
   return isParsedObject(v) && "these" in v ? { these: items } : { allBut: items };
 }
+function decodePropertyKey(f: Json | undefined): PropertyKey {
+  return typeof f === "string" ? f : { symbol: nat(record(f,["symbol"]).symbol) };
+}
 function valueSet(v: Json): ValueSet {
-  const f = record(v,["nul","undef","tru","fls","sym","arr","num","str","big","obj"]);
+  const f = record(v,["nul","undef","tru","fls","sym","arr","num","str","big","obj","ownKeys"]);
   const flag = (x: Json | undefined): boolean => {
     if (typeof x !== "boolean") throw Error("invalid value set flag");
     return x;
@@ -83,8 +87,13 @@ function valueSet(v: Json): ValueSet {
       });
     });
   }
+  let ownKeys: ValueSet["ownKeys"] = null;
+  if (f.ownKeys !== null) {
+    if (!Array.isArray(f.ownKeys)) throw Error("invalid value set ownKeys");
+    ownKeys = f.ownKeys.map(decodePropertyKey);
+  }
   return { nul: flag(f.nul), undef: flag(f.undef), tru: flag(f.tru), fls: flag(f.fls), sym: flag(f.sym), arr: flag(f.arr),
-    num: litSet(f.num, bits), str: litSet(f.str, text), big: litSet(f.big, number), obj };
+    num: litSet(f.num, bits), str: litSet(f.str, text), big: litSet(f.big, number), obj, ownKeys };
 }
 interface HeapFact {
   slot: number;
@@ -431,8 +440,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 function knowledge(v: Json | undefined): HeapKnowledge | null {
   if (v === null) return null;
   const k = record(v,["cells","values","links","separation","elems","indices"]);
-  const key = (f: Json | undefined): PropertyKey =>
-    typeof f === "string" ? f : { symbol: nat(record(f,["symbol"]).symbol) };
+  const key = decodePropertyKey;
   const factsOf = (facts: Json | undefined): HeapFact[] => {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
     const result: HeapFact[] = [];
