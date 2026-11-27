@@ -9,7 +9,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import type { SourceTypeParameter, TypeTerm, WrittenApplication } from "./declaration-types.mts";
-import { visitType } from "./type-term.mts";
+import { isAmbientClass, visitType } from "./type-term.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { messageOf } from "./thrown.mts";
 
@@ -239,8 +239,18 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       }
       return { inferred: d };
     }
-    if (ts.isPropertyDeclaration(d) || ts.isPropertySignatureDeclaration(d))
-      return d.type ? { nodes: [d.type] } : { inferred: d };
+    if (ts.isPropertyDeclaration(d) || ts.isPropertySignatureDeclaration(d)) {
+      if (d.type) return { nodes: [d.type] };
+      // An untyped non-static field of an ambient class (including `private`
+      // fields emitted without a type annotation in `.d.ts` files) has no
+      // initializer and is read as readonly `unknown` by `classInstance`,
+      // never through TypeScript's inference.
+      if (ts.isPropertyDeclaration(d) && !d.initializer &&
+          !d.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword) &&
+          d.parent && ts.isClassDeclaration(d.parent) && isAmbientClass(d.parent))
+        return none;
+      return { inferred: d };
+    }
     // A property assignment or a default export: the annotations of its
     // value.
     if (ts.isPropertyAssignment(d)) return value(d.initializer, d);

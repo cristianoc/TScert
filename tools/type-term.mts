@@ -1767,16 +1767,26 @@ function indexKinds(scope: TermScope, node: TypeNode): Modifies<{ values: "any";
 export const CLASS_ACCESS: ts.SyntaxKind[] = [ts.SyntaxKind.PublicKeyword, ts.SyntaxKind.PrivateKeyword,
   ts.SyntaxKind.ProtectedKeyword];
 
+/** Whether a class declaration is ambient: inside a declaration file (`.d.ts`)
+ * or carrying (or enclosed by) a `declare` modifier. */
+export function isAmbientClass(node: ts.ClassDeclaration): Modifies<{ values: "any"; spines: "grow" }, boolean> {
+  if (node.getSourceFile().isDeclarationFile) return true;
+  for (let at: Node | undefined = node; at; at = at.parent)
+    if (childrenOf(at, "modifiers").some(m => m.kind === ts.SyntaxKind.DeclareKeyword)) return true;
+  return false;
+}
+
 /** A class declaration's instance type: its fields at their annotations and
  * its methods as readonly fields whose receiver is the instance. An instance
  * reaches a method through the prototype; within the fragment nothing tells a
  * prototype member from an own one, and no write reaches either, so the
  * readonly field is exact. Construction is the class value's concern. */
 export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span: Span,
-    admit: (member: ts.ClassElement) => boolean = () => true): TypeTerm {
+    admit: (member: ts.ClassElement) => boolean = () => true,
+    variadicMethods: boolean = false): TypeTerm {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   const names = new Set<string>();
-  const ambient = node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
+  const ambient = isAmbientClass(node);
   // The field of an ambient class's bodyless method, by name: a later
   // overload of the name joins it, and the joined field takes the first's
   // place in the instance's fields. Member names are distinct (`named`), so
@@ -1823,8 +1833,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       // A field an ambient class declares without a type is read at
       // `unknown` and never written: nothing here says what it holds, or
       // what the code outside expects of it.
-      const untyped = !member.type &&
-        node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
+      const untyped = !member.type && ambient;
       const declared = (): TypeTerm => typeTerm(scope, member.type, member);
       fields.push({ name, optional,
         readonly: untyped || member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
@@ -1889,8 +1898,25 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         continue;
       }
       const forms = signature(scope, member.parameters, member.type, member, memberSpan, true);
+      const bound = forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) }));
+      // A concrete non-ambient class method in the checked module without a
+      // rest parameter, defaulted parameters, method type parameters or a guard
+      // discards actuals past its declared parameters, so its contract offers
+      // both its fixed signature and that signature extended by `...unknown[]`,
+      // as a module function's slot (`moduleArrow`) and an unannotated constant
+      // closure (`constant-closure`) do. Generic classes' async methods have no
+      // scheme claim (`writtenSchemes`) and keep their fixed signature alone.
+      const first = bound[0];
+      const asyncGeneric = !!node.typeParameters?.length &&
+        member.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) === true;
+      const unknownRest: TypeTerm = { k: "atom", name: "unknown", span: memberSpan };
+      const extended = variadicMethods && !ambient && !!member.body && !asyncGeneric &&
+          !member.parameters.some(p => !!p.dotDotDotToken || !!p.initializer) &&
+          bound.length === 1 && first && first.rest === null
+        ? [first, { ...first, rest: unknownRest }]
+        : bound;
       const field = { name, optional: false, readonly: true,
-        type: oneTerm(forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) })), memberSpan), span: memberSpan };
+        type: oneTerm(extended, memberSpan), span: memberSpan };
       fields.push(field);
       if (ambient && !member.body && typeof name === "string") overloads.set(name, field);
     } else if (ts.isConstructorDeclaration(member)) {

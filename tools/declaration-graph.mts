@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
-import { wildcardReadings, classInstance, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { wildcardReadings, classInstance, isAmbientClass, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, FRESH_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -4821,6 +4821,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           return null;
         }
       },
+      ownClass: (node) => node.getSourceFile() === client && !ambient(node) && node.parent === client,
       collecting: (node, key) => {
         if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
           programClasses.add(key);
@@ -5018,9 +5019,14 @@ function externalStatements(externals: readonly { what: string; type: TypeTerm }
 function untypedAmbientField(file: SourceFile, d: { readonly code: number; readonly pos: number; readonly end: number }): boolean {
   if (d.code !== 7008) return false;
   const inside = (node: Node) => node.getStart(file) <= d.pos && d.end <= node.end;
-  return file.statements.some(s => ts.isClassDeclaration(s) && inside(s) &&
-    s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true &&
-    s.members.some(m => ts.isPropertyDeclaration(m) && !m.type && inside(m.name)));
+  const visit = (node: Node): boolean => {
+    if (!inside(node)) return false;
+    if (ts.isClassDeclaration(node) && isAmbientClass(node))
+      return node.members.some(m => ts.isPropertyDeclaration(m) && !m.type &&
+        !m.modifiers?.some(k => k.kind === ts.SyntaxKind.StaticKeyword) && inside(m.name));
+    return node.forEachChild(c => visit(c) || undefined) ?? false;
+  };
+  return file.statements.some(visit);
 }
 
 /** The binders a `Promise<…>` or `PromiseLike<…>` argument of `type` names. */
@@ -6307,6 +6313,9 @@ interface DeclarationElaborationContext {
    * families' markers and their definitions' names: each the tag values of
    * its entry. */
   guardPromises: ReadonlyMap<string, ReadonlyMap<string, readonly TagValue[]>>;
+  /** Whether a class declaration is a concrete top-level class of the client
+   * module, whose method bodies are checked by this run (`classInstance`). */
+  ownClass: (node: ts.ClassDeclaration) => boolean;
 }
 
 interface DeclarationCollectionContext extends DeclarationElaborationContext {
@@ -6725,7 +6734,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
   let expression = isTypeAlias(node)
     ? typeTerm(scope, node.type)
     : ts.isClassDeclaration(node)
-      ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
+      ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted, context.ownClass(node)), parts.flatMap(part => {
           if (part === node || !ts.isInterfaceDeclaration(part)) return [];
           const file = part.getSourceFile();
           return [members(scopeOf(file), part.members.filter(admitted), part, [part.getStart(file), part.end], true)];

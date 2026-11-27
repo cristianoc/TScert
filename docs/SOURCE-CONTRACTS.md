@@ -575,7 +575,7 @@ nothing itself.
 | --- | --- |
 | Interface, type alias | Its whole syntax |
 | Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a parameter without one, its [literal default](#literal-defaults); a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
-| Property declaration or signature | Its annotation |
+| Property declaration or signature | Its annotation; an untyped non-static property of an ambient class (including a `private` field emitted in a `.d.ts` file) has no initializer and is read as readonly `unknown` (`classInstance`) |
 | Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
 | Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations; a function's or method's defaulted parameter is optional to its callers |
 | Accessor | The symbol's getter result or setter parameter, either for the pair |
@@ -1754,6 +1754,22 @@ named read, write and method call at $`\sigma_{C.\#x}`$, and a copy
 throws where `o` holds no slot of its own; the model reads `o.#x` along the
 prototype chain as any key, where only an object inheriting from an instance
 differs, and there JavaScript throws, which safety admits.
+
+A concrete, top-level, non-ambient class method of the checked module with a
+body, no rest parameter, no defaulted parameters, no method type parameters and
+no guard discards actuals past its declared parameters, so its instance-type
+entry states both its declared signature $`(\mathsf{self};\vec A\to B)`$ and
+that signature extended by a rest of `unknown` elements
+$`(\mathsf{self};\vec A,\ldots\top\to B)`$ (as `module-function` and
+`constant-closure` do; generic classes' non-async methods carry the same
+variadic row in their prototype scheme). A non-generic concrete class value's
+construct type likewise states both $`\mathsf{new}(\vec D)\Rightarrow C`$ and
+$`\mathsf{new}(\vec D,\ldots\top)\Rightarrow C`$. Ambient classes, imported
+classes, interfaces and methods with rest parameters carry only their declared
+signatures. Because a subclass's instance type meets its base's members, an
+override narrowing an extra optional parameter (such as `m(a: number, b?:
+string)` over `m(a: number)`) fails the base's variadic contract and is
+refused (`invalid-class-method-fewer-params-subclass`).
 
 The instance type states each member as what it is at run time: a field
 `f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` the

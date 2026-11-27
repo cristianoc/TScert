@@ -479,8 +479,9 @@ def meet : Clause α → Clause α → List (Clause α)
   | .dict a bs vs ix os ms ks cx st, .dict c ds ws iy ps ns ls cy su =>
       [.dict (a ++ c) (bs ++ ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy) (st ++ su)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
-  -- Two bags on one object are both; two bagless ones stay bagless.
-  | .ctors L S [] [] [], .ctors M T [] [] [] => [.ctors (L ++ M) (S ++ T)]
+  -- Two bags on one object are both; a bagless side contributes no bag.
+  | .ctors L S a bs vs, .ctors M T [] [] ws => [.ctors (L ++ M) (S ++ T) a bs (vs ++ ws)]
+  | .ctors L S [] [] vs, .ctors M T c ds ws => [.ctors (L ++ M) (S ++ T) c ds (vs ++ ws)]
   | .ctors L S a bs vs, .ctors M T c ds ws => [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
   | .callable a bs L S ms, .callable c ds M T ns => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T) (ms ++ ns)]
@@ -846,9 +847,10 @@ private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α)
 theorem meet_ctors (L M : List (MethodArrow α)) (S T : List (MethodRestArrow α))
     (a c : List (Stored α)) (bs ds : List (List (Stored α))) (vs ws : List (PropKey × α)) :
     meet (.ctors L S a bs vs) (.ctors M T c ds ws) =
-      if a = [] ∧ bs = [] ∧ vs = [] ∧ c = [] ∧ ds = [] ∧ ws = [] then [.ctors (L ++ M) (S ++ T)]
+      if c = [] ∧ ds = [] then [.ctors (L ++ M) (S ++ T) a bs (vs ++ ws)]
+      else if a = [] ∧ bs = [] then [.ctors (L ++ M) (S ++ T) c ds (vs ++ ws)]
       else [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)] := by
-  cases a <;> cases bs <;> cases vs <;> cases c <;> cases ds <;> cases ws <;> simp [meet]
+  cases a <;> cases bs <;> cases c <;> cases ds <;> simp [meet]
 
 theorem meet_numIn_num (X : α → Fam) (P : α → ArgFam) (S : List UInt64) (n : Nat) (W : WorldT n) (v : Val) :
     semList Ξ X P (meet (.numIn S) .num) n W v ↔
@@ -1147,27 +1149,47 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · -- ctors ∩ ctors: every construct signature of both, both bags
       rename_i L S a bs vs M T c ds ws
       show semList Ξ X P (meet (.ctors L S a bs vs) (.ctors M T c ds ws)) n W v ↔ _
+      have hbag_nil : ∀ {a' : List (Stored α)} {bs' : List (List (Stored α))},
+          CallableConjunctions.propsT (famsOf X a') (bs'.map (famsOf X)) n W v →
+          CallableConjunctions.propsT (famsOf X []) ([] : List Fields) n W v := by
+        intro a' bs' ⟨⟨flds, code, oid, hv, hval, _⟩, _⟩
+        exact ⟨⟨flds, code, oid, hv, hval, flds, oid, rfl, by simp [famsOf, mapStored], by simp [famsOf, mapStored]⟩, by simp⟩
       rw [meet_ctors]
       split
-      · obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := ‹_ ∧ _›
+      · obtain ⟨rfl, rfl⟩ := ‹_ ∧ _›
         simp only [singleton_sem, semWithArgs, List.map_append, List.map_nil, interT]
-        rw [ctorsT_append, ctorRestsT_append]
+        rw [ctorsT_append, ctorRestsT_append, viewsOf_append]
         constructor
-        · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, hb⟩
-          exact ⟨⟨⟨h1, h3⟩, hb⟩, ⟨h2, h4⟩, hb⟩
-        · rintro ⟨⟨⟨h1, h3⟩, hb⟩, ⟨h2, h4⟩, -⟩
-          exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, hb⟩
-      · simp only [singleton_sem, semWithArgs, List.map_append, List.map_cons, interT]
-        rw [ctorsT_append, ctorRestsT_append, CallableConjunctions.props_merge, viewsOf_append]
-        simp only [interT]
-        constructor
-        · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, hv⟩
+        · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, hp, hv⟩
           obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
           obtain ⟨hv1, hv2⟩ := (CallableConjunctions.views_append _ _).mp hv
-          exact ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
-        · rintro ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+          exact ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hbag_nil hp, hv2⟩
+        · rintro ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, -, hv2⟩
           obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
-          exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
+          exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, hp, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
+      · split
+        · obtain ⟨rfl, rfl⟩ := ‹_ ∧ _›
+          simp only [singleton_sem, semWithArgs, List.map_append, List.map_nil, interT]
+          rw [ctorsT_append, ctorRestsT_append, viewsOf_append]
+          constructor
+          · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, hq, hv⟩
+            obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+            obtain ⟨hv1, hv2⟩ := (CallableConjunctions.views_append _ _).mp hv
+            exact ⟨⟨⟨h1, h3⟩, hbag_nil hq, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+          · rintro ⟨⟨⟨h1, h3⟩, -, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+            obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+            exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, hq, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
+        · simp only [singleton_sem, semWithArgs, List.map_append, List.map_cons, interT]
+          rw [ctorsT_append, ctorRestsT_append, CallableConjunctions.props_merge, viewsOf_append]
+          simp only [interT]
+          constructor
+          · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, hv⟩
+            obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+            obtain ⟨hv1, hv2⟩ := (CallableConjunctions.views_append _ _).mp hv
+            exact ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+          · rintro ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+            obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+            exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
     · -- pack ∩ pack: every contract of both, on the one list
       rename_i a bs c ds
       simp [singleton_sem, semWithArgs, interT]

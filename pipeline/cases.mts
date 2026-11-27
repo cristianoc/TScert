@@ -5225,4 +5225,10 @@ export const cases: Case[] = [
   negative("invalid-clause-type-alias", "after unwrapping array type aliases in `@requires`, an off-by-one bound `i <= p.xs.length` permits reading `p.xs[p.xs.length]` (`undefined`), returning `NaN` (run under Node)",
     /source expression obligation|evidence search failed/i),
   positive("callables/variadic-arguments", "Collect any number of arguments into an array rest, and spread arrays among them."),
+  positive("class-method-fewer-params", "Concrete non-ambient class methods and constructors without rest parameters meet wider fixed and variadic signatures, including generic classes, sound subclass overrides, and ResourceClass constructor passing."),
+  { ...negative("invalid-class-method-fewer-params-rest", "A concrete class method with a rest parameter does not gain a `...unknown[]` extension (throws TypeError under Node when passed a number at position 2).", /no derivation of its binding-annotation claim/), typescriptErrors: true },
+  negative("invalid-class-method-fewer-params-ambient", "An ambient `declare class` method does not gain a `...unknown[]` extension, though TypeScript accepts widening it.", /no derivation of its binding-annotation claim/),
+  negative("invalid-class-method-fewer-params-subclass", "A subclass overriding `m(a: number)` with an optional second parameter `m(a: number, b?: string)` fails the base's variadic contract (TypeScript accepts `bad()`, which throws TypeError under Node).", /no derivation of its return-contract claim/),
+  { ...positive("ambient-dts-private-field-value-import", "An external `.d.ts` class with an unannotated `private` field and untyped field is admitted with those fields as readonly `unknown`."), project: "pipeline/imports-project" },
+  { ...negative("invalid-ambient-dts-private-field-value-import", "An untyped field of an imported `.d.ts` class is readonly `unknown`, refused as `string`.", /no derivation of its binding-annotation claim/), project: "pipeline/imports-project" },
 ];

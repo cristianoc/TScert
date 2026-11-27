@@ -101,6 +101,7 @@
     "./generated-names.d.ts",
     "./grades.ts",
     "./grades-relay.ts",
+    "./ambient-private.d.ts",
     "./grades-ambient.d.ts",
     "./stated.ts",
     "./identity-return.ts",
