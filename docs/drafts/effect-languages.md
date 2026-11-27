@@ -10,10 +10,12 @@ step must preserve are effects too and every check is inclusion. The
 language has regions at a closure's captures, effect variables bounded by
 effects, reach through declared keys, and module-private confined state
 ($`M.@\mathrm{state}`$); the paper derives Pretext's line-walker patterns
-W1--W5 in it. TScert's verified footprint calculus embeds into the language as the
-monomorphic fragment $`\mathcal L_0`$. The six effect-polymorphism,
-confined-state, and scoped-callback rules (`Bound`, `Anch`, `Meet`, `Inst`,
-`Confined`, `Callback-Inv`) are mechanized over an idealised heap model in
+W1--W5 and evaluates all 105/105 units across Pretext's four core modules
+with zero unproved assumptions. TScert's verified footprint calculus
+embeds into the language as the monomorphic fragment $`\mathcal L_0`$.
+All nine rules (`Bound`, `Anch`, `Meet`, `Inst`, `Confined`,
+`Callback-Inv`, `Fields-Disj`, `Plain-Cells-Disj`, `Elem-Len-Extend`) are
+mechanized over an idealised heap model in
 `lean/Verification/Paper/EffectLanguage/{Rules,Model}.lean` and
 exercised experimentally through [paper-rules-mode](paper-rules-mode.md);
 soundness for the full language in TScert's calculus remains conjectured.

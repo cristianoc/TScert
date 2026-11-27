@@ -6,7 +6,7 @@
 \usepackage[scaled=.95]{helvet}
 \usepackage{mathpartir,microtype,booktabs,tabularx,listings,xcolor,titlesec,enumitem}
 \usepackage[most]{tcolorbox}
-% Palette shared with Tolerant frames and Inferred callback preservation.
+% Palette shared with Tolerant frames.
 \definecolor{accent}{HTML}{1F5F8B}
 \definecolor{chgc}{HTML}{0B7A68}
 \definecolor{rulec}{HTML}{8A1C4A}
@@ -29,8 +29,9 @@
   keywordstyle=\color{ckc}\bfseries,
   commentstyle=\color{ccmc},stringstyle=\color{csc}}
 \lstdefinelanguage{TypeScript}{
-  morekeywords={type,export,function,const,let,while,if,throw,new,return,
-    number,void,boolean,extends,true,false,null,Modifies,AtMost,Effects,Join},
+  morekeywords={type,export,function,const,let,while,for,if,else,throw,new,return,
+    readonly,number,string,void,boolean,extends,true,false,null,undefined,
+    Record,SafeInt,Dense,Fresh,Footprint,Modifies,AtMost,Effects,Join},
   sensitive=true,morecomment=[l]{//},morecomment=[s]{/*}{*/},
   morestring=[b]",morestring=[b]',
 }
@@ -38,6 +39,7 @@
 \newtheorem{definition}{Definition}
 \newtheorem{example}[definition]{Example}
 \newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
 \newtheorem{conjecture}{Conjecture}
 \newcommand{\paperbox}[2]{\tcolorboxenvironment{#1}{enhanced,breakable,
   colback=#2,colframe=#2,boxrule=0pt,frame hidden,sharp corners,
@@ -45,6 +47,7 @@
   before skip=10pt,after skip=10pt}}
 \paperbox{definition}{defbg}
 \paperbox{theorem}{defbg}
+\paperbox{proposition}{defbg}
 \paperbox{conjecture}{exbg}
 \paperbox{example}{exbg}
 
@@ -59,8 +62,18 @@
 \newcommand{\val}{\kw{values}}
 \newcommand{\st}{\kw{spines}}
 \newcommand{\vw}{\kw{views}}
+\newcommand{\LF}{\mathit{Loc}_{\kw{field}}}
 \newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}
-\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}
+\ExplSyntaxOn
+\NewDocumentCommand{\lean}{m}{
+  \textcolor{leanc}{\texttt{\small
+    \tl_set:Nn \l_tmpa_tl { #1 }
+    \tl_replace_all:Nnn \l_tmpa_tl { . } { .\allowbreak }
+    \tl_replace_all:Nnn \l_tmpa_tl { \_ } { \_\allowbreak }
+    \tl_use:N \l_tmpa_tl
+  }}
+}
+\ExplSyntaxOff
 \newcommand{\status}[1]{\textcolor{leanc}{\textsf{\small[#1]}}}
 \newcommand{\sem}[1]{[\![#1]\!]}
 \newcommand{\tr}[1]{\xrightarrow{#1}}
@@ -69,6 +82,7 @@
 \newcommand{\Lang}{\mathcal{L}}
 \newcommand{\Reg}{\mathit{Reg}}
 \newcommand{\Eff}{\mathit{Eff}}
+\newcommand{\SemEff}{\mathit{SemEff}}
 \newcommand{\EExp}{\mathit{EExp}}
 \newcommand{\Var}{\mathit{Var}}
 \newcommand{\EVar}{\mathit{EVar}}
@@ -84,7 +98,7 @@
 \title{\sffamily\bfseries\color{accent}An Effect Language for TScert\\[2pt]
   \large\normalfont\color{black}Relational Effects, Bounded Effect Polymorphism, and Tolerant Framing}
 \author{TScert Working Paper}
-\date{24 November 2026}
+\date{27 November 2026}
 
 \emergencystretch=3em
 \begin{document}
@@ -105,12 +119,15 @@ declared reach ($\reach{\pi}{T}$), module-private confined state
 ($\modstate{M}$), and bounded effect polymorphism via nine rules
 (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst},
 \ruleName{Confined}, \ruleName{Callback-Inv}, \ruleName{Fields-Disj},
-\ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend}). On Pretext's line walkers, patterns W1--W5 derive
-directly given helper effects and local module confinement checks, and W6
-is an open-world API boundary assumption. TScert's verified footprint
-fragment $\Lang_0$ embeds directly into this language; all nine rules are
-mechanized in Lean over an idealised heap model and exercised on Pretext
-through an experimental prototype mode.
+\ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend}). TScert's
+verified footprint fragment $\Lang_0$ embeds directly into this language;
+all nine rules are mechanized in Lean over an idealised heap model and
+exercised through an experimental prototype mode. On Pretext's four core
+text-layout modules, all 105/105 units verify under the prototype with
+zero unproved assumptions and all 56 guarded walker and stepper reads
+restored, deriving patterns W1--W5 end-to-end while also surfacing two
+upstream bounds bugs and two public-API cursor boundary checks (W6
+remains an open-world API boundary assumption).
 \end{abstract}
 
 \section*{Epistemic Status}
@@ -127,29 +144,29 @@ tiers:
   (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst},
   \ruleName{Confined}, \ruleName{Callback-Inv}, \ruleName{Fields-Disj},
   \ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend})
-  are specified over an abstract semantics in the module
+  are specified over an abstract semantics in
   \lean{Verification.Paper.EffectLanguage.Rules} and proved sound over a
   heap-extension model with confined module regions and role-typed fields in
   \lean{Verification.Paper.EffectLanguage.Model} (\lean{model\_rules}).
+  Transitivity of anchored effects (Proposition~\ref{prop:anchored-trans})
+  follows directly from the anchoring definition.
 \item \textbf{Conjectured for TScert's full calculus:}
   Conjectures~\ref{conj:regions}--\ref{conj:generic} state the region
-  axioms, anchoring consequences, and soundness of the full rule system
+  axioms, syntactic anchoring, and soundness of the full rule system
   against TScert's operational semantics.
 \item \textbf{Experimental prototype:} An axiomatized prototype mode
-  (\code{paper-rules-prototype}, documented in
-  \code{docs/drafts/paper-rules-mode.md}) applies these rules on top of
-  the ordinary pass under one named axiom outside the verified library.
-  Section~\ref{sec:status} states where the prototype conservatively
-  approximates the paper's rules; live issue tracking lives in
-  \code{WORK.md}.
+  (\code{paper-rules-prototype}) applies these rules on top of TScert's
+  ordinary pass under one named axiom outside the verified library,
+  verifying all 105/105 units across Pretext's four core modules with
+  zero unproved assumptions. Section~\ref{sec:status} states the
+  prototype's soundness boundary and conservative approximations.
 \end{itemize}
 
 \section{Motivation}\label{sec:problem}
 
-Consider the higher-order array walker of \emph{Inferred callback
-preservation}~\cite{icp} (pattern P22 of \emph{Tolerant frames in
-practice}~\cite{patterns}), shown below with four callers in TScert's
-monomorphic footprint syntax ($\Lang_0$):
+Consider the higher-order array walker of pattern P22 of \emph{Tolerant
+frames in practice}~\cite{patterns}, shown below with four callers in
+TScert's monomorphic footprint syntax ($\Lang_0$):
 
 \begin{lstlisting}[language=TypeScript]
 type Visitor = (i: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
@@ -210,11 +227,24 @@ preserving $xs$'s spine; callers instantiate $\varepsilon$ with their
 closure's capture-rooted effect; and \ruleName{Anch} guarantees that
 $\varepsilon$ cannot modify storage allocated after the call to
 \code{walk}. Section~\ref{sec:walk} works out all four callers in detail.
+Scaling from a toy walker to a full text-layout library (Pretext,
+Section~\ref{sec:walkers}) brings five further framing obligations:
+lazy module-private caches (\ruleName{Confined}), caller invariants
+needed inside non-escaping closures (\ruleName{Callback-Inv}),
+object-field helper writes beside array invariants
+(\ruleName{Fields-Disj}), writes to element cells of type-disjoint plain
+arrays (\ruleName{Plain-Cells-Disj}), and quantified lower bounds on
+nested array lengths under extension (\ruleName{Elem-Len-Extend}).
 
 \section{The Effect Language}\label{sec:language}
 
 The underlying heap and transition model is that of \emph{Tolerant
-frames}~\cite{tf} (Sections ``What exists'' and ``Model'').
+frames}~\cite{tf} (Sections ``What exists'' and ``Model''), strengthened
+with one heap well-formedness invariant: \emph{plain-array cell
+ownership} (\lean{PlainElemCellsDisjoint}), under which distinct
+plain-array spines list disjoint element cells (preserved by allocation,
+\code{push}, and element writes; typed-array view spines are excluded
+because \code{.subarray()} views may share element cells).
 
 \subsection{Syntax and Semantic Domains}
 
@@ -229,10 +259,9 @@ signatures is:
 {\small\[
 \begin{array}{@{}l@{\quad}r@{\;\;}c@{\;\;}l@{}}
 \text{Changes} & \delta,\gamma &::=& \keep\mid\init\mid\scalar\mid\extend\mid\grow\mid\any\\
-\text{Categories} & G &\subseteq& \{\kw{value},\,\kw{array},\,\kw{view}\}\\
-\text{Access paths} & \pi &::=& x\mid\pi.f\mid\pi[\ast]\\
-\text{Regions} & r &::=& \val\mid\st\mid\vw\mid\kw{fields}\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.f\\
- & & \mid & \pi.\kw{fields}\mid\reach{\pi}{T}\mid\modstate{M}\mid r\cap\kw{cls}(G)\mid\kw{all}\mid\kw{old}\\
+\text{Field paths} & \pi &::=& x\mid\pi.f\\
+\text{Regions} & r &::=& \val\mid\st\mid\vw\mid\kw{fields}\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.\kw{elemSpines}\\
+ & & \mid & \pi.f\mid\pi.\kw{fields}\mid\reach{\pi}{T}\mid\modstate{M}\mid\kw{all}\mid\kw{old}\\
 \text{Basic effects} & \Phi,\Psi &::=& \{r_1:\delta_1,\dots,r_k:\delta_k;\ \kw{else}:\delta_0\}\mid N(\pi_1,\dots,\pi_n)\\
 \text{Effect expressions} & E &::=& \Phi\mid\varepsilon\mid E\sqcup E\mid E\sqcap E\\
 \text{Bounds \& contexts} & \kappa &::=& \varepsilon\sqsubseteq\Phi \qquad\qquad C\ ::=\ \emptyset\mid C,\kappa\\
@@ -256,19 +285,23 @@ closures, and semantic instantiations are:
 \text{Heaps} & h &\in& \mathit{Heap}=\Loc\rightharpoonup\Val\uplus\mathit{Spine}\\
 \text{Environments} & \rho,\eta &\in& \mathit{Env}=\Var\rightharpoonup\Val\\
 \text{Closures} & \mathit{cl} &::=& \langle q,\eta\rangle \quad\text{(code }q\text{ with captured environment }\eta\text{)}\\
-\text{Semantic inst.} & \theta &\in& \EVar\rightharpoonup\Eff
+\text{Semantic inst.} & \theta &\in& \EVar\rightharpoonup\SemEff
 \end{array}
 \]}
+where $\SemEff$ is the set of finite joins of environment-paired closed
+basic effects $\langle\Phi,\rho_{\mathrm{def}}\rangle$ with
+$\kw{else}:\keep$ (Definition~\ref{def:effexp}).
 \end{definition}
 
 \paragraph{Conventions.}
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
-\item \textbf{Paths.} A path $\pi$ evaluates in $(\rho,h)$ to a set of
-  values $\sem{\pi}(\rho,h)$: $\{\rho(x)\}$ for a variable $x$, the
-  values stored in field $f$ of every object in $\sem{\pi}(\rho,h)$ for
-  $\pi.f$, and all elements of every array in $\sem{\pi}(\rho,h)$ for
-  $\pi[\ast]$. Missing reads contribute nothing; a path without $[\ast]$
-  evaluates to at most one value.
+\item \textbf{Paths.} A field path $\pi$ evaluates in $(\rho,h)$ to at
+  most one value $\sem{\pi}(\rho,h)$: $\rho(x)$ for a variable $x$, and
+  the value stored in field $f$ of $\sem{\pi}(\rho,h)$ for $\pi.f$
+  (undefined on a missing read or non-object). Inside declared reach
+  (Definition~\ref{def:reach}), access-path suffixes $a$ also traverse
+  array elements via $[\ast]$, evaluating $\pi a$ to the set of values
+  reached (missing reads contribute nothing).
 \item \textbf{Change lattice.} Each $\delta\in\Delta$ denotes, at heap
   length $b$, a reflexive and transitive binary relation $\delta_b$ on
   heap contents (\emph{Footprints}~\cite{fp}, ``Changes and
@@ -295,15 +328,18 @@ $m\le\len h$, each region $r\in\Reg$ denotes a set of locations
 $\sem{r}_m(\rho,h)\subseteq\{0,\dots,\len h-1\}$ (written
 $\sem{r}(\rho,h)$ when $m$ is clear from context):
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
-\item $\val$, $\st$, and $\vw$ denote all value locations, all array or
-  typed-array spine locations, and all typed-array view spine locations
-  in $h$, respectively.
-\item $\pi.\kw{spine}$ denotes the spine locations of the arrays or typed
-  arrays in $\sem{\pi}(\rho,h)$; $\pi.\kw{cells}$ denotes the element
-  locations listed by those spines in $h$.
-\item $\pi.f$ denotes the field-$f$ locations of the objects in
+\item $\val$, $\st$, $\vw$, and $\kw{fields}$ denote all value locations,
+  all array or typed-array spine locations, all typed-array view spine
+  locations, and all non-spine object property locations ($\LF$ of
+  \emph{Tolerant frames}~\cite{tf}) in $h$, respectively.
+\item $\pi.\kw{spine}$ denotes the spine location of the array or typed
+  array (if any) at $\sem{\pi}(\rho,h)$; $\pi.\kw{cells}$ denotes the
+  element locations listed by that spine in $h$; and $\pi.\kw{elemSpines}$
+  denotes the plain-array spine locations of all present element values
+  stored in the cells listed by $\pi$'s spine in $h$.
+\item $\pi.f$ denotes the field-$f$ location of the object (if any) at
   $\sem{\pi}(\rho,h)$; $\pi.\kw{fields}$ denotes all non-spine field
-  locations of those objects.
+  locations of that object.
 \item $\reach{\pi}{T}$ denotes the declared reach of
   Definition~\ref{def:reach}.
 \item $\modstate{M}$ denotes the \emph{module-private confined state} of
@@ -319,10 +355,9 @@ $\sem{r}(\rho,h)$ when $m$ is clear from context):
     $\sem{\modstate{M}}(\rho,h')\subseteq\sem{\modstate{M}}(\rho,h)\cup[\len h,\len{h'})$,
     so $\modstate{M}$ never absorbs a pre-existing external location.
   \end{enumerate}
-\item $r\cap\kw{cls}(G)$ restricts $\sem{r}_m(\rho,h)$ to locations in
-  categories $G$; $\kw{all}=\{0,\dots,\len h-1\}$; and
-  $\kw{old}=\{l\mid l<m\}$, the locations already allocated at the entry
-  of the enclosing invocation.
+\item $\kw{all}=\{0,\dots,\len h-1\}$ denotes all allocated locations;
+  and $\kw{old}=\{l\mid l<m\}$ denotes the locations already allocated at
+  the entry of the enclosing invocation.
 \end{itemize}
 \end{definition}
 
@@ -345,19 +380,24 @@ The set $\mathit{Acc}(T)$ of finite access-path suffixes admitted by a
 type $T$ is the least set satisfying:
 \begin{align*}
 \mathit{Acc}(T) \;=\; \{\epsilon\}
-  &\;\cup\; \{\,.f\,a \mid f\text{ declared by }T,\; a\in\mathit{Acc}(T_f)\,\}\\
-  &\;\cup\; \{\,[\ast]\,a \mid T=U[\,]\text{ or }T=\kw{readonly}\;U[\,],\; a\in\mathit{Acc}(U)\,\},
+  &\;\cup\; \{\,.f\,a \mid T\text{ object/interface declaring }f,\; a\in\mathit{Acc}(T_f)\,\}\\
+  &\;\cup\; \{\,[\ast]\,a \mid T\in\{U[\,],\,\kw{readonly}\;U[\,]\},\; a\in\mathit{Acc}(U)\,\},
 \end{align*}
-where $T_f$ is the declared type of field $f$, and union/intersection
-types contribute the union of their components' access paths. Writing
-$T_a$ for the type reached along $a\in\mathit{Acc}(T)$, the declared
-reach of $\pi$ at $T$ is
-\[
-\reach{\pi}{T}\;=\;\bigcup_{a\in\mathit{Acc}(T)}
-  \Bigl(\{\,\pi a.f\mid f\text{ declared by }T_a\,\}\;\cup\;\{\pi a.\kw{spine},\;\pi a.\kw{cells}\}\Bigr),
-\]
+where $T_f$ is the declared type of field $f$, union and intersection
+types contribute the union of their components' access paths, and typed
+arrays (\code{Uint8Array}, \code{Int32Array}, \dots) contribute only
+$\{\epsilon\}$ (their interface properties are not traversed, while they
+qualify as collection types below). Writing $T_a$ for the type reached
+along $a\in\mathit{Acc}(T)$, the declared reach of $\pi$ at $T$ is
+\begin{align*}
+\reach{\pi}{T}\;=\;\bigcup_{a\in\mathit{Acc}(T)}\Bigl(
+  &\{\,\pi a.f\mid T_a\text{ object/interface declaring }f\,\}\\
+  &\cup\;\{\,\pi a.\kw{spine},\;\pi a.\kw{cells}\mid T_a\text{ array or typed array}\,\}\Bigr),
+\end{align*}
 where $T$ is the declared type of $\pi$ (or a refined type established
-for $\pi$).
+for $\pi$). When $a[\ast]\in\mathit{Acc}(T)$ reaches a plain array type
+$T_{a[\ast]}$, the inner spine locations $\pi a.\kw{elemSpines}$ are
+covered by $\pi a[\ast].\kw{spine}$.
 \end{definition}
 
 \begin{example}
@@ -376,9 +416,10 @@ contains: (i) the three field locations \code{widths},
 view spine and element cells of \code{prepared.segmentFlags}; (iv) the
 spine and element cells of \code{prepared.breakableFitAdvances}; and (v)
 the spine and element cells of every non-null inner array in
-\code{prepared.breakableFitAdvances[*]}. Any extra runtime property not
-declared by \code{PreparedLineData}, such as \code{wholeWidth}, lies
-outside this reach.
+\code{prepared.breakableFitAdvances[*]} (covering
+$\mathit{prepared}.\mathit{breakableFitAdvances}.\kw{elemSpines}$).
+Any extra runtime property not declared by \code{PreparedLineData}, such
+as \code{wholeWidth}, lies outside this reach.
 \end{example}
 
 \noindent
@@ -405,7 +446,9 @@ The proof rules rely on four semantic properties of regions and their
 decision procedures:
 \begin{description}[leftmargin=1.5em,itemsep=1pt]
 \item[(E1) Locality and bounds:] $\sem{r}_m(\rho,h)$ depends on $\rho$
-  only through the root of $r$ and contains only locations below $\len h$.
+  only through the root variable of $r$ (rootless regions
+  $\val,\st,\vw,\kw{fields},\modstate{M},\kw{all},\kw{old}$ are
+  independent of $\rho$) and contains only locations below $\len h$.
 \item[(E2) Substitution:] Substituting a path $\pi$ for a root $x$
   evaluates the region at $\sem{\pi}(\rho,h)$.
 \item[(E3) Sound decisions:] $r\subseteq_K r'$ and $r\sep_K r'$ imply
@@ -523,33 +566,41 @@ fresh array.
 \end{example}
 
 \begin{definition}[Semantic instances and anchoring]\label{def:effexp}
-A \emph{semantic instantiation} $\theta:\EVar\rightharpoonup\Eff$ maps
-each effect variable to a closed basic effect with $\kw{else}:\keep$,
-whose regions are rooted in the caller's environment and evaluated in
-that environment wherever the variable is invoked. Requiring
-$\kw{else}:\keep$ ensures an instance cannot modify storage allocated
-after the call.
+A \emph{semantic effect instance} $S\in\SemEff$ is a finite join
+$\bigsqcup_{j=1}^k\langle\Phi_j,\rho_j\rangle$ of environment-paired
+closed basic effects, each with $\kw{else}:\keep$, evaluated pointwise
+at heap $h$ and location $l<\len h$ as
+$S_h(l)=\bigsqcup_{j=1}^k(\Phi_j)_{\rho_j,h}(l)$. A \emph{semantic
+instantiation} $\theta:\EVar\rightharpoonup\SemEff$ maps each effect
+variable to such an instance, so forwarded joins $\varepsilon_1\sqcup\Phi_2$
+across distinct caller frames denote a single semantic instance without
+requiring both components to share one environment. Writing
+$\langle\Phi,\rho\rangle$ as $\Phi$ in $(\rho,h)$ recovers the single-frame
+case.
 
-A closed effect $\Phi$ is \emph{anchored} at $(\rho,h_0)$ (relative to
-the universe $\mathcal{C}=\bigcup_M\modstate{M}$ of confined module
-states), written $\Anch(\Phi,\rho,h_0)$, if $\Phi$ has $\kw{else}:\keep$
-and, for every heap $h$ reachable from $h_0$ by an admissible run:
+An instance $S\in\SemEff$ is \emph{anchored} at $h_0$ (relative to the
+universe $\mathcal{C}=\bigcup_M\modstate{M}$ of confined module states),
+written $\Anch(S,h_0)$ (or $\Anch(\Phi,\rho,h_0)$ for
+$S=\langle\Phi,\rho\rangle$), if:
 \begin{enumerate}[leftmargin=1.5em,itemsep=1pt]
-\item on pre-entry locations ($l<\len{h_0}$), $\Phi$'s pointwise bound
-  never widens beyond its entry bound:
-  $\Phi_{\rho,h}(l)\sqsubseteq\Phi_{\rho,h_0}(l)$; and
-\item on external post-entry locations ($l\ge\len{h_0}$ with
-  $l\notin\sem{\mathcal{C}}(\rho,h)$), $\Phi_{\rho,h}(l)=\keep$.
+\item \emph{Stepwise non-widening:} for every admissible run
+  $h_0\to^* h_1\to^* h_2$ and every location $l<\len{h_1}$, the
+  pointwise bound never widens:
+  $S_{h_2}(l)\sqsubseteq S_{h_1}(l)$; and
+\item \emph{External post-entry preservation:} for every heap $h$
+  reachable from $h_0$ by an admissible run and every external
+  post-entry location $l\ge\len{h_0}$ with
+  $l\notin\sem{\mathcal{C}}(h)$, $S_h(l)=\keep$.
 \end{enumerate}
-By (T3), any field, fields, or spine region along a rigid path is
-anchored, and by fresh-only growth, any confined module region
-$\modstate{M}$ is anchored (its newly allocated internal cache entries
-lie inside $\mathcal{C}$, never colliding with a callee's external
-allocations).
+Both rigid-path regions (by (T3), $\sem{r}(\rho,h_2)=\sem{r}(\rho,h_1)$)
+and confined module regions $\modstate{M}$ (by fresh-only growth,
+$l<\len{h_1}\wedge l\in\sem{\modstate{M}}(h_2)\Rightarrow l\in\sem{\modstate{M}}(h_1)$)
+satisfy Clause~(1), and finite joins of anchored instances remain
+anchored.
 
 A judgment or inclusion containing free effect variables holds iff it
 holds under every semantic instantiation $\theta$ that maps each
-quantified variable to an effect anchored at the call satisfying the
+quantified variable to an instance anchored at the call satisfying the
 signature's bounds $C$.
 \end{definition}
 
@@ -564,18 +615,36 @@ element cells).
 \end{example}
 
 \noindent
-Two semantic consequences of anchoring are used by \ruleName{Loop-Eff}
-and \ruleName{Anch}:
+All-pairs stepwise non-widening makes transitivity of anchored effects
+(used by \ruleName{Loop-Eff}) an immediate consequence of
+Definition~\ref{def:effexp}:
 
-\begin{conjecture}[Anchored effects are transitive]\label{conj:anchored-rigid}
-If $\Anch(\Phi,\rho,h_0)$, then the transition relation $\tr{\Phi}_\rho$
-is transitive on heaps reachable from $h_0$.
-\end{conjecture}
+\begin{proposition}[Anchored effects are transitive]\label{prop:anchored-trans}
+If $\Anch(S,h_0)$, then the transition relation $\tr{S}$ is transitive
+on heaps reachable from $h_0$.
+\end{proposition}
 
-\begin{conjecture}[Anchored effects miss external post-call allocations]\label{conj:anchored-fresh}
-If $\Anch(\Phi,\rho,h_0)$ and $l\ge\len{h_0}$ lies outside confined
-module state $\mathcal{C}$, then $\Phi_{\rho,h}(l)=\keep$ at every heap
-$h$ reachable from $h_0$.
+\begin{proof}
+Suppose $h_0\to^* h_1\tr{S} h_2\tr{S} h_3$. By (T1) and (T2) of
+\emph{Tolerant frames}~\cite{tf}, $h_1\tr{} h_3$ is admissible with
+$\len{h_1}\le\len{h_2}$. For any $l<\len{h_1}$, the first step gives
+$(S_{h_1}(l))_{\len{h_1}}(h_1(l),h_2(l))$ and the second gives
+$(S_{h_2}(l))_{\len{h_2}}(h_2(l),h_3(l))$. By Clause~(1) of
+Definition~\ref{def:effexp} on $h_0\to^* h_1\to^* h_2$,
+$S_{h_2}(l)\sqsubseteq S_{h_1}(l)$, so lattice monotonicity
+(\lean{Change.Holds.mono}) yields
+$(S_{h_1}(l))_{\len{h_2}}(h_2(l),h_3(l))$. Transitivity of change
+relations across $\len{h_1}\le\len{h_2}$ (\lean{Change.Holds.trans})
+then gives $(S_{h_1}(l))_{\len{h_1}}(h_1(l),h_3(l))$, establishing
+$h_1\tr{S} h_3$.
+\end{proof}
+
+\begin{conjecture}[Syntactic anchoring]\label{conj:anchored-syntax}
+In TScert's calculus, any closed basic effect $\Phi$ with
+$\kw{else}:\keep$ whose entries are field, fields, or spine regions along
+rigid paths or confined module regions $\modstate{M}$ satisfies
+$\Anch(\Phi,\rho,h_0)$ at every reachable state $(\rho,h_0)$; the same
+holds for any finite join of such environment-paired effects.
 \end{conjecture}
 
 \begin{definition}[Bounds and polymorphic signatures]\label{def:constraint}
@@ -629,7 +698,10 @@ $K;C\vdash_m \hoare{P}{s}{Q}$ & Assertion preservation: Hoare-style tolerant fra
 
 \noindent
 For any effect $E$, write $E|_{\kw{old}}$ for its restriction to
-locations $l<m$ (ignoring mutations to storage allocated since $h_0$).
+pre-entry locations, defined pointwise by
+$(E|_{\kw{old}})_{\rho,h}(l)=E_{\rho,h}(l)$ for $l<m$ and
+$(E|_{\kw{old}})_{\rho,h}(l)=\any$ for $l\ge m$ (ignoring mutations to
+storage allocated since $h_0$).
 In the structural rules below, normal-exit effects are displayed
 explicitly; exceptional exits compose by joining the exceptional effects
 of all reachable subcommands.
@@ -699,19 +771,38 @@ The nine rules below govern effect polymorphism, module-private confined
 state, scoped callback invariants, role-typed field disjointness,
 plain-array cell disjointness, and element-length monotonicity under
 $\extend$, corresponding one-to-one to
-\lean{BoundRule}, \lean{AnchRule}, \lean{MeetRule}, \lean{InstRule},
+\lean{BoundRule}, \lean{AnchRule}, \lean{MeetRule}, \lean{InstRule}
+(mechanizing the parameter-renaming obligation \lean{RenOk}, as the
+idealised model does not model closures or signatures),
 \lean{ConfinedRule}, \lean{CallbackInvRule}, \lean{FieldsDisjRule},
 \lean{PlainCellsDisjRule}, and \lean{ElemLenExtendRule} in
 \lean{Verification.Paper.EffectLanguage.Rules}.
-Here $\Same(\Phi,h_0,h)$ holds when $\Phi$ assigns every location $l<m$
-the same change bound in $h$ as at call entry $h_0$, and
-$\kw{old}_{\mathcal{C}}=\kw{old}\cup\mathcal{C}$ denotes pre-entry
-locations together with confined module state (so external post-entry
-allocations lie outside $\kw{old}_{\mathcal{C}}$).
+
+We use four abbreviations in the rules:
+\begin{itemize}[leftmargin=1.5em,itemsep=1pt]
+\item $\kw{same}_K(\Phi)$ holds when $K$ entails that $\Phi$'s root
+  variables are unassigned parameters and $\Phi$ assigns every pre-entry
+  location $l<m$ the same change bound as at call entry $h_0$
+  (semantically, $\Same(\Phi,h_a,h_b)$ means
+  $\forall l<\len{h_a}.\;\Phi_{\rho,h_b}(l)=\Phi_{\rho,h_a}(l)$).
+\item $\kw{old}_{\mathcal{C}}=\kw{old}\cup\mathcal{C}$ denotes pre-entry
+  locations together with confined module state (so external post-entry
+  allocations lie outside $\kw{old}_{\mathcal{C}}$).
+\item A region is \emph{externally rooted under $K$} if it is a concrete
+  path region or declared reach whose root variable holds no reference
+  into $\modstate{M}$ under $K$ (excluding rootless regions
+  $\val,\st,\vw,\kw{fields},\kw{all},\modstate{M}$)
+  \status{Lean: \lean{Confinement.NoPriv}}.
+\item $h_0\tr{\Phi_{\mathrm{own}}\cup\Phi_{\mathrm{cb}}}^*_\rho h$
+  denotes a finite run from $h_0$ to $h$ whose steps each satisfy
+  $h_a\tr{\Phi_{\mathrm{own}}}_\rho h_b$ or
+  $h_a\tr{\Phi_{\mathrm{cb}}}_\rho h_b$; and $\mathrm{prefix}(\pi)$
+  denotes the field locations traversed along path $\pi$.
+\end{itemize}
 
 \begin{mathpar}
 \inferrule*[left=Bound]
-  {(\varepsilon\sqsubseteq\Phi)\in C \\ \Same(\Phi,h_0,h)}
+  {(\varepsilon\sqsubseteq\Phi)\in C \\ \kw{same}_K(\Phi)}
   {K;C\vdash_m \varepsilon\sqsubseteq\Phi}
 \and
 \inferrule*[left=Anch]
@@ -719,8 +810,8 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
   {K;C\vdash_m \varepsilon\sqsubseteq\{\kw{old}_{\mathcal{C}}:\any\}}
 \and
 \inferrule*[left=Meet]
-  {K;C\vdash_m E\sqsubseteq\Phi_1 \\ K;C\vdash_m E\sqsubseteq\Phi_2}
-  {K;C\vdash_m E\sqsubseteq\Phi_1\sqcap\Phi_2}
+  {K;C\vdash_m E\sqsubseteq E_1 \\ K;C\vdash_m E\sqsubseteq E_2}
+  {K;C\vdash_m E\sqsubseteq E_1\sqcap E_2}
 \\
 \inferrule*[left=Inst]
   {\mathit{fn}:\forall\vec\varepsilon.\;C'\Rightarrow(\vec p:\vec T)\to T\ [E\mid E^e] \\
@@ -731,45 +822,51 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
 \\
 \inferrule*[left=Confined]
   {\modstate{M}\text{ confined in }M \\
-   \Phi\text{ has }\kw{else}:\any\text{ and every entry of }\Phi\text{ is externally rooted}}
-  {\Anch(\{\modstate{M}:\any\},\rho,h_0)\qquad K;C\vdash_m \{\modstate{M}:\any\}\sqsubseteq\Phi}
+   \Phi\text{ has }\kw{else}:\any\text{ and every entry of }\Phi\text{ is externally rooted under }K}
+  {K;C\vdash_m \{\modstate{M}:\any\}\text{ anchored}\qquad K;C\vdash_m \{\modstate{M}:\any\}\sqsubseteq\Phi}
 \\
 \inferrule*[left=Callback-Inv]
-  {P(h_0) \quad \mathrm{Preserves}(\Psi, P) \quad (\forall a,b.\;\mathrm{Act}(\Psi,a,b)\Rightarrow\Same(\Psi,a,b)) \\
-   K;C\vdash_m \Phi_{\mathrm{own}}\sqsubseteq\Psi \quad \Anch(\Phi_{\mathrm{own}},\rho,h_0) \\
-   K;C\vdash_m \Phi_{\mathrm{cb}}\sqsubseteq\Psi \quad \Anch(\Phi_{\mathrm{cb}},\rho,h_0) \\
-   \mathit{cb}\text{ does not escape }\mathit{fn}}
-  {\forall h.\;\mathrm{Steps}(\Phi_{\mathrm{own}},\Phi_{\mathrm{cb}},h_0,h)\Rightarrow P(h)}
+  {P(h_0) \quad P\text{ stable under }\Psi \\
+   \forall h_a,h_b.\;h_a\tr{\Psi}_\rho h_b\Rightarrow\Same(\Psi,h_a,h_b) \\
+   K;C\vdash_m \Phi_{\mathrm{own}}\sqsubseteq\Psi \quad \Phi_{\mathrm{own}}\text{ anchored} \\
+   K;C\vdash_m \Phi_{\mathrm{cb}}\sqsubseteq\Psi \quad \Phi_{\mathrm{cb}}\text{ anchored} \quad \text{callback does not escape}}
+  {\forall h.\;h_0\tr{\Phi_{\mathrm{own}}\cup\Phi_{\mathrm{cb}}}^*_\rho h\Rightarrow P(h)}
 \\
 \inferrule*[left=Fields-Disj]
-  {\Phi\text{ has }\kw{else}:\any\text{ and every constrained entry of }\Phi\text{ is non-field (spines, element cells, element spines)}}
+  {\Phi\text{ has }\kw{else}:\any \\
+   \text{every constrained entry of }\Phi\text{ is non-field (spines, element cells, or element spines)}}
   {K;C\vdash_m \{\kw{fields}:\any;\ \kw{else}:\keep\}\sqsubseteq\Phi}
 \\
 \inferrule*[left=Plain-Cells-Disj]
-  {\pi,\pi'\text{ plain arrays (not typed-array views)} \\
-   \pi.\kw{spine}\mathrel{\#}\pi'.\kw{spine}}
-  {K;C\vdash_m \{\pi.\kw{cells}:\delta;\ \kw{else}:\keep\}\sqsubseteq\{\pi'.\kw{cells}:\keep;\ \kw{else}:\any\}}
+  {\pi\text{ plain array} \quad \Phi\text{ has }\kw{else}:\any \\
+   \text{every constrained entry of }\Phi\text{ has the form }(\pi'.\kw{cells}:\gamma)\\
+   \text{with }\pi'\text{ plain array and }\pi.\kw{spine}\sep_K\pi'.\kw{spine}}
+  {K;C\vdash_m \{\pi.\kw{cells}:\delta;\ \kw{else}:\keep\}\sqsubseteq\Phi}
 \\
 \inferrule*[left=Elem-Len-Extend]
   {P:\mathbb{N}\to\mathrm{Prop}\text{ monotone} \\
-   \Phi\text{ keeps }\pi\text{'s path, spine, and element cells and bounds }\pi.\kw{elemSpines}\text{ by }\extend}
-  {\mathrm{Preserves}(\Phi,\;\forall i.\;P(\code{\pi[i].length}))}
+   \begin{aligned}
+     K;C\vdash_m \Phi\sqsubseteq\{&\mathrm{prefix}(\pi):\keep,\ \pi.\kw{spine}:\keep,\cr
+       &\pi.\kw{cells}:\keep,\ \pi.\kw{elemSpines}:\extend;\ \kw{else}:\any\}
+   \end{aligned}}
+  {(\forall i<\len\pi.\;\pi[i]\text{ plain array}\Rightarrow P(\len{\pi[i]}))\text{ is stable under }\Phi}
 \end{mathpar}
 
 \begin{description}[leftmargin=1.5em,itemsep=2pt]
 \item[\ruleName{Bound}] An effect variable is bounded by its declared
-  constraint $\Phi$ at any later heap $h$ where $\Same(\Phi,h_0,h)$
-  holds. A sufficient condition for $\Same(\Phi,h_0,h)$ is that $\Phi$
-  traverses only regions that $\Phi$ itself keeps unchanged and every
-  step since $h_0$ lies within $\Phi$.
+  constraint $\Phi$ at any later state where $\kw{same}_K(\Phi)$ holds.
+  A sufficient condition is that $\Phi$'s roots are unassigned parameters,
+  $\Phi$ traverses only regions that $\Phi$ itself keeps unchanged, and
+  every step since $h_0$ lies within $\Phi$.
 \item[\ruleName{Anch}] Every semantic instance of $\varepsilon$ is
-  anchored at $h_0$, so by Conjecture~\ref{conj:anchored-fresh} it leaves
-  every external post-entry location ($l\ge m$, $l\notin\mathcal{C}$)
-  unchanged; equivalently, it is included in
+  anchored at $h_0$, so by Clause~(2) of Definition~\ref{def:effexp} it
+  leaves every external post-entry location ($l\ge m$,
+  $l\notin\mathcal{C}$) unchanged; equivalently, it is included in
   $\{\kw{old}_{\mathcal{C}}:\any;\ \kw{else}:\keep\}$.
 \item[\ruleName{Meet}] Inclusion distributes over meets, allowing a
   callback call to combine \ruleName{Bound} (preserving the handle) with
-  \ruleName{Anch} (preserving freshly allocated locals).
+  \ruleName{Anch} (preserving freshly allocated locals) and chain
+  additional constraints.
 \item[\ruleName{Inst}] Instantiates a polymorphic signature at actual
   arguments $\vec x$ (substituted before $\hat\theta$, whose images live
   in the caller's scope). Four common syntactic instantiations arise:
@@ -799,44 +896,41 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
 \item[\ruleName{Confined}] A module-private confined state region
   $\modstate{M}$ is anchored at every state (fresh-only growth keeps
   external post-entry allocations unchanged) and is disjoint from every
-  externally rooted region---both concrete \lean{Footprints.Region} entries
-  and declared reaches $\reach{x}{T}$---by boundary closure
-  (\lean{Confinement.ClosedOut}). Consequently, $\{\modstate{M}:\any\}$
-  automatically satisfies any externally rooted callback bound with
-  $\kw{else}:\any$, and preserves external handle invariants across
-  helper calls.
+  externally rooted region---both concrete path regions and declared
+  reaches $\reach{x}{T}$---by boundary closure. Consequently,
+  $\{\modstate{M}:\any\}$ automatically satisfies any externally rooted
+  callback bound with $\kw{else}:\any$, and preserves external handle
+  invariants across helper calls
+  \status{Lean: \lean{Confinement.ClosedOut}, \lean{closedOut\_region\_disjoint}, \lean{closedOut\_reach\_disjoint}}.
 \item[\ruleName{Callback-Inv}] A caller invariant $P$ that holds at call
   entry $h_0$ and is preserved by a self-stabilizing support effect $\Psi$
   remains true at every heap reached by interleaving the callee's own steps
   ($\Phi_{\mathrm{own}}$) and the callback's steps ($\Phi_{\mathrm{cb}}$)
   whenever both are anchored and within $\Psi$ at $h_0$. When the callback
-  $\mathit{cb}$ does not escape the callee's dynamic extent (checked
-  syntactically in the prototype by requiring every reference to the
-  callback parameter to be a direct call, a nullish/truthiness test, or a
-  direct forward to another non-escaping parameter), every invocation of
-  $\mathit{cb}$ occurs in such a heap, so $\mathit{cb}$'s body may assume
-  $P$ over its captured variables on entry.
-\item[\ruleName{Fields-Disj}] Non-spine object field locations
-  (\code{"fields"}, \code{Role.field}) are disjoint by allocation role from
-  array/view spines (\code{Role.spine}), array element cells
-  (\code{Role.elem}), and element spines (\lean{fieldClass\_region\_disjoint}).
-  Consequently, a helper whose effect is $\{\kw{fields}:\any;\ \kw{else}:\keep\}$
-  (or $\{\kw{fields}:\any,\ \modstate{M}:\any;\ \kw{else}:\keep\}$) preserves
-  every spine, element-cell, and element-spine invariant.
-\item[\ruleName{Plain-Cells-Disj}] Distinct plain array spines own disjoint
-  element cells (\lean{PlainElemCellsDisjoint},
-  \lean{plainArray\_cells\_disjoint}); typed-array views (\code{.viewSpine})
-  are excluded because \code{.subarray()} views may share cells. When static
-  types guarantee two plain-array paths have apart spines
-  (\lean{typesPathSpinesApart\_sound} together with
-  \lean{tyArrayOrNonObj}), writes to one array's element cells preserve
-  facts over the other array's element cells.
-\item[\ruleName{Elem-Len-Extend}] Any $\extend$-bounded transition on an
-  array spine leaves it an array spine of at least the same length
-  (\lean{extend\_arr\_back}). Hence an effect that keeps an outer array's
-  path, spine, and element cells while bounding its element spines by
-  $\extend$ preserves every monotone lower bound on element lengths (such as
-  $\forall i.\;1\le\code{\pi[i].length}$).
+  does not escape the callee's dynamic extent, every invocation of the
+  callback occurs in such a heap, so the callback body may assume $P$ over
+  its captured variables on entry.
+\item[\ruleName{Fields-Disj}] Non-spine object property locations
+  ($\kw{fields}$) are disjoint by allocation role from array and view
+  spines, array element cells, and element spines. Consequently, a helper
+  whose effect is $\{\kw{fields}:\any;\ \kw{else}:\keep\}$ (or
+  $\{\kw{fields}:\any,\ \modstate{M}:\any;\ \kw{else}:\keep\}$) preserves
+  every spine, element-cell, and element-spine invariant
+  \status{Lean: \lean{Role.field}, \lean{fieldClass\_region\_disjoint}}.
+\item[\ruleName{Plain-Cells-Disj}] Under plain-array cell ownership,
+  distinct plain-array spines own disjoint element cells; typed-array
+  views are excluded because \code{.subarray()} views may share cells.
+  When static types or allocation separation guarantee two plain-array
+  paths have apart spines, writes to one array's element cells preserve
+  facts over the other array's element cells
+  \status{Lean: \lean{PlainElemCellsDisjoint}, \lean{plainArray\_cells\_disjoint}, \lean{typesPathSpinesApart\_sound}}.
+\item[\ruleName{Elem-Len-Extend}] Any $\extend$-bounded transition on a
+  plain-array spine leaves it an array spine of at least the same length.
+  Hence an effect that keeps an outer array's path, spine, and element
+  cells while bounding its element spines by $\extend$ preserves every
+  monotone lower bound on element lengths (such as
+  $\forall i<\len\pi.\;\pi[i]=\code{null}\vee 1\le\len{\pi[i]}$)
+  \status{Lean: \lean{extend\_arr\_back}}.
 \end{description}
 
 \begin{theorem}[Idealised model soundness]\label{thm:model}
@@ -861,25 +955,27 @@ $F$ (\lean{FieldClass}):
   \lean{plainCellsDisj\_of\_apart}); and $\extend$ preserves monotone
   element-length lower bounds (\lean{extend\_arr\_back}).
 \item All nine rules \ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet},
-  \ruleName{Inst}, \ruleName{Confined}, \ruleName{Callback-Inv},
-  \ruleName{Fields-Disj}, \ruleName{Plain-Cells-Disj}, and
-  \ruleName{Elem-Len-Extend} are sound
-  (\lean{model\_rules : (C : ModuleRegion) -> (F : FieldClass) -> PaperRules (semantics C F)}).
+  \ruleName{Inst} (its parameter-renaming obligation \lean{RenOk}),
+  \ruleName{Confined}, \ruleName{Callback-Inv}, \ruleName{Fields-Disj},
+  \ruleName{Plain-Cells-Disj}, and \ruleName{Elem-Len-Extend} are sound
+  (\lean{model\_rules}).
 \end{enumerate}
 \end{theorem}
 
 \subsection{Primitive Step Rules}
 
-For a field \code{x.f}, an array \code{x}, and a fresh variable \code{y}:
+For a field \code{x.f}, a plain array \code{x} (a typed-array element
+write \code{x[i] = a} carries effect $\{\vw:\grow\}$ because
+\code{.subarray()} views may share cells), and a fresh variable \code{y}:
 
 \begin{mathpar}
 \inferrule*[left=Field-Write]{ }{K;C\vdash_m \code{x.f = a}:\{x.f:\any\}}
 \and
 \inferrule*[left=Field-Write-Scalar]{x.f\text{ and }a\text{ primitive}}{K;C\vdash_m \code{x.f = a}:\{x.f:\scalar\}}
 \\
-\inferrule*[left=Elem-Write]{ }{K;C\vdash_m \code{x[i] = a}:\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}}
+\inferrule*[left=Elem-Write]{x\text{ plain array}}{K;C\vdash_m \code{x[i] = a}:\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}}
 \and
-\inferrule*[left=Push]{ }{K;C\vdash_m \code{x.push(a)}:\{x.\kw{spine}:\extend\}}
+\inferrule*[left=Push]{x\text{ plain array}}{K;C\vdash_m \code{x.push(a)}:\{x.\kw{spine}:\extend\}}
 \\
 \inferrule*[left=Alloc]{ }{K;C\vdash_m \code{y = \{f: a\}}:\{\}\qquad K;C\vdash_m \code{y = [a]}:\{\}}
 \and
@@ -887,22 +983,25 @@ For a field \code{x.f}, an array \code{x}, and a fresh variable \code{y}:
 \end{mathpar}
 
 \noindent
-\status{Verified in Lean: \lean{fieldWriteFrame} /
+\status{Verified in Lean by \lean{fieldWriteFrame} and
 \lean{fieldWriteStep\_sound}, \lean{ExpressionEffects.scalarWrite\_sound},
-\lean{elemWriteFrame} / \lean{elemWriteStep\_sound},
+\lean{elemWriteFrame} and \lean{elemWriteStep\_sound},
 \lean{receiverExtendFrame} (under \lean{ReceiverAppends}), and
 \lean{alloc\_post}. Native contracts are audited specifications
 (\emph{Footprints}~\cite{fp}).}
 
 \begin{conjecture}[Full calculus soundness]\label{conj:generic}
 The rules of Section~\ref{sec:rules} are sound for the full operational
-semantics of TScert's calculus.
+semantics of TScert's calculus, with heap well-formedness extended by
+plain-array cell ownership (\lean{PlainElemCellsDisjoint}) for
+\ruleName{Plain-Cells-Disj}.
 \end{conjecture}
 
 \section{Surface Syntax in TypeScript}\label{sec:annotations}
 
-Effects are written in TypeScript using \code{Modifies}~\cite{ann} and
-\code{AtMost}, both erased at runtime:
+Effects are written in TypeScript using \code{Modifies}~\cite{ann},
+\code{Effects}, \code{AtMost}, and \code{Footprint}, all erased at
+runtime:
 
 \begin{center}\small
 \begin{tabularx}{\textwidth}{@{}lX@{}}
@@ -910,14 +1009,16 @@ Effects are written in TypeScript using \code{Modifies}~\cite{ann} and
 Surface syntax & Denotation\\
 \midrule
 \code{values: "any"}, \code{spines: "grow"} & $\val:\any$, $\st:\grow$\\
-\code{"visited[*]": "extend"} & $\mathit{visited}.\kw{spine}:\extend$ (parameter or capture root)\\
-\code{"flow.wholeWidth": "any"} & field region $\mathit{flow}.\mathit{wholeWidth}:\any$\\
+\code{views: "grow"}, \code{fields: "any"} & $\vw:\grow$, non-spine object fields $\kw{fields}:\any$\\
+\code{"visited[*]": "extend"}, \code{"xs[\#]": "any"} & $\mathit{visited}.\kw{spine}:\extend$, element cells $xs.\kw{cells}:\any$\\
+\code{"flow.wholeWidth": "any"}, \code{"x.*": "any"} & field $\mathit{flow}.\mathit{wholeWidth}:\any$, all fields $x.\kw{fields}:\any$\\
 \code{"prepared.**": "keep"} & declared reach $\reach{\mathit{prepared}}{T}:\keep$ ($T$ declared type of \code{prepared})\\
 \code{"@state": "any"} & module-private confined state $\modstate{M}:\any$ of the defining module $M$\\
 \code{else: "any"} & default change $\delta_0$ (\code{"keep"} when omitted)\\
 \code{onThrow: true} & same effect at exceptional exit ($E^e=E$)\\
 \code{Modifies<P, T>} & return type $T$ with effect $P$ (read by ordinary TScert and the prototype)\\
-\code{Effects<P, T>} & return type $T$ with effect-language footprint $P$ (supports \code{"@state"}, \code{p.**}, joins; erased by ordinary TScert)\\
+\code{Effects<P, T>} & return type $T$ with effect-language footprint $P$ (supports \code{"@state"}, \code{fields}, \code{views}, \code{p.**}, joins; erased by ordinary TScert)\\
+\code{E extends Footprint} & effect type parameter constraint for callback types\\
 \code{<E extends AtMost<P>>} & quantified effect variable $\varepsilon$ with bound $\varepsilon\sqsubseteq P$\\
 \code{Modifies<E, T>}, \code{Join<E, P>} & effect $\varepsilon$, and pointwise join $\varepsilon\sqcup P$\\
 \code{f<P>(...)} & explicit syntactic instantiation $\hat\theta(\varepsilon)=P$\\
@@ -937,7 +1038,7 @@ callbacks and forwarded variables).
 Rewriting Section~\ref{sec:problem} with a bounded effect variable:
 
 \begin{lstlisting}[language=TypeScript]
-type Visitor<E> = (i: number) => Modifies<E, void>;
+type Visitor<E extends Footprint> = (i: number) => Modifies<E, void>;
 
 export function walk<E extends AtMost<{ "xs[*]": "keep"; else: "any" }>>(
   xs: number[], visit: Visitor<E>,
@@ -974,18 +1075,20 @@ export function sumAndAlias(xs: number[]): Modifies<{ "xs[*]": "extend" }, numbe
 \item[\code{walk} (checked once polymorphically).]
   At entry, $C=\{\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}\}$.
   Allocating \code{const c = \{ i: 0 \}} places $c$'s fields outside
-  $\kw{old}$ (\ruleName{Alloc}). The loop guard yields $c.i<\len{xs}$,
-  stable under $\Psi=\{c.i:\keep,\ xs.\kw{spine}:\grow;\ \kw{else}:\any\}$.
-  At \code{visit(c.i)}, \ruleName{Call-Var} gives effect $\varepsilon$.
-  By \ruleName{Bound} (using (T3) on parameter $xs$) and \ruleName{Anch},
+  $\kw{old}_{\mathcal{C}}$ (\ruleName{Alloc}, since $c$ is a fresh
+  external local outside both $\kw{old}$ and confined module state
+  $\mathcal{C}$). The loop guard yields $c.i<\len{xs}$, stable under
+  $\Psi=\{c.i:\keep,\ xs.\kw{spine}:\grow;\ \kw{else}:\any\}$. At
+  \code{visit(c.i)}, \ruleName{Call-Var} gives effect $\varepsilon$. By
+  \ruleName{Bound} (using (T3) on parameter $xs$) and \ruleName{Anch},
   \ruleName{Meet} yields
-  $\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}\sqcap\{\kw{old}:\any\}$.
+  $\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}\sqcap\{\kw{old}_{\mathcal{C}}:\any\}$.
   This meet is included in $\Psi$: the second component keeps $c.i$
-  (disjoint from $\kw{old}$), the first keeps $xs.\kw{spine}$ (within
-  $\grow$), and $\Psi$'s $\kw{else}$ is $\any$. Hence \ruleName{Frame}
-  preserves $c.i<\len{xs}$ and \code{xs[c.i]!} is in bounds. Finally,
-  \ruleName{Seq-Eff}, \ruleName{Loop-Eff} (via
-  Conjecture~\ref{conj:anchored-rigid}), \ruleName{Fresh-Eff} (removing
+  (disjoint from $\kw{old}_{\mathcal{C}}$), the first keeps
+  $xs.\kw{spine}$ (within $\grow$), and $\Psi$'s $\kw{else}$ is $\any$.
+  Hence \ruleName{Frame} preserves $c.i<\len{xs}$ and \code{xs[c.i]!} is
+  in bounds. Finally, \ruleName{Seq-Eff}, \ruleName{Loop-Eff} (via
+  Proposition~\ref{prop:anchored-trans}), \ruleName{Fresh-Eff} (removing
   writes to $c$), and \ruleName{Fun} establish \code{Modifies<E, number>}.
 \item[\code{sumAndTrace} (accepted).]
   \ruleName{Push} and \ruleName{Fun} give \code{trace} the anchored
@@ -1010,17 +1113,19 @@ export function sumAndAlias(xs: number[]): Modifies<{ "xs[*]": "extend" }, numbe
 
 \section{Case Study: Pretext's Line Walkers}\label{sec:walkers}
 
-We test the language against the six callback patterns W1--W6 in Pretext
-(commit \code{0dafecb3}). Define the named effect preserving a
-line-break handle's declared reach:
+We test the language against the six callback patterns W1--W6 and the
+four core text-layout modules of Pretext (commit \code{0dafecb3}). Define
+the named effect preserving a line-break handle's declared reach:
 \[
 \mathit{Geom}(p)\;\triangleq\;\{\reach{p}{\mathit{PreparedLineData}}:\keep;\ \kw{else}:\any\},
 \]
 written in TypeScript as
-\code{type Geom<p extends string> = Record<`\$\{p\}.**`, "keep"> \& \{ else: "any" \}}.
-The derivations below assume the effects of the internal helpers:
-\code{stepPreparedSimpleLineGeometry} writes only its cursor's fields
-(and module-scoped scratch state disjoint from the handle), while
+\code{type Geom<p extends string> = Record<`\$\{p\}.**`, "keep"> \& \{ else: "any" \}}
+(expanded inline in the prototype, which requires literal effect types;
+Section~\ref{sec:status}). In the end-to-end Pretext suite below, all
+internal helpers are verified directly: \code{stepPreparedSimpleLineGeometry}
+writes only its cursor's fields and confined module state (\code{"@state"},
+the lazy engine-profile cache in \code{measurement.ts}), while
 \code{getInternalPrepared}, \code{normalizeMaxWidth}, and
 \code{createLayoutLineRange} leave pre-existing storage unchanged.
 
@@ -1031,7 +1136,7 @@ handle's segments, updates \code{stats}, and invokes an optional visitor
 on each line:
 
 \begin{lstlisting}[language=TypeScript]
-type InternalLineVisitor<E> = (
+type InternalLineVisitor<E extends Footprint> = (
   width: number, startSeg: number, startGraph: number,
   endSeg: number, endGraph: number,
 ) => Modifies<E, void>;
@@ -1039,7 +1144,7 @@ type InternalLineVisitor<E> = (
 export function walkPreparedLinesRaw<E extends AtMost<Geom<"prepared">>>(
   prepared: PreparedLineData, maxWidth: number, onLine?: InternalLineVisitor<E>,
   stats: LineStats = { lineCount: 0, maxLineWidth: 0 },
-): Modifies<[E, { "stats.lineCount": "any"; "stats.maxLineWidth": "any" }], number> {
+): Effects<Join<E, { "stats.lineCount": "any"; "stats.maxLineWidth": "any"; "@state": "any" }>, number> {
   const cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 };
   const { segmentFlags } = prepared;
   const segmentCount = prepared.widths.length;
@@ -1065,7 +1170,7 @@ export function walkPreparedLinesRaw<E extends AtMost<Geom<"prepared">>>(
 Across \code{onLine?.(...)}:
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
 \item \textbf{W1 (local cursor):} \code{cursor} is allocated after
-  entry, so its fields lie outside $\kw{old}$ and survive by
+  entry, so its fields lie outside $\kw{old}_{\mathcal{C}}$ and survive by
   \ruleName{Anch}.
 \item \textbf{W2 (handle reach):} The handle invariants (such as
   $\len{\mathit{prepared}.\mathit{widths}}=\len{\mathit{prepared}.\mathit{segmentFlags}}$)
@@ -1073,9 +1178,11 @@ Across \code{onLine?.(...)}:
   \code{prepared.segmentFlags} are stable under
   $\mathit{Geom}(\mathit{prepared})$ and survive by \ruleName{Bound}.
   The walker's own writes to \code{stats} and \code{cursor} use keys
-  absent from \code{PreparedLineData}, so they are key-disjoint from the
-  handle's reach even if \code{stats} aliased \code{prepared}, preserving
-  $\Same(\mathit{Geom}(\mathit{prepared}),h_0,h)$.
+  absent from \code{PreparedLineData}, and
+  \code{stepPreparedSimpleLineGeometry}'s cache writes lie in
+  $\modstate{M}$, so all body steps are disjoint from the handle's reach
+  even if \code{stats} aliased \code{prepared}, preserving
+  $\kw{same}_K(\mathit{Geom}(\mathit{prepared}))$.
 \end{itemize}
 
 \subsection{W3: Key-Disjoint Writes on a Container}
@@ -1085,7 +1192,9 @@ directly onto the enclosing \code{flow} object:
 
 \begin{lstlisting}[language=TypeScript]
 function findWholeLine(flow: InternalPreparedRichInline): InternalPreparedRichInline {
-  const lineCount = walkPreparedLinesRaw(flow.data, Number.POSITIVE_INFINITY,
+  const lineCount = walkPreparedLinesRaw<{
+    "flow.wholeWidth": "any"; "flow.wholeStart": "any"; "flow.wholeEnd": "any";
+  }>(flow.data, Number.POSITIVE_INFINITY,
     (width, startSeg, _startGraph, endSeg) => {
       flow.wholeWidth = width;
       flow.wholeStart = startSeg;
@@ -1114,7 +1223,7 @@ effect $\varepsilon$ and forwards it to \code{walkPreparedLinesRaw}:
 export function walkLineRanges<E extends AtMost<Layout<"prepared">>>(
   prepared: PreparedText, maxWidth: number,
   onLine: (line: LayoutLineRange) => Modifies<E, void>,
-): Modifies<E, number> {
+): Effects<Join<E, { "@state": "any" }>, number> {
   return walkPreparedLinesRaw<E>(
     getInternalPrepared(prepared), normalizeMaxWidth(maxWidth),
     (w, sSeg, sGraph, eSeg, eGraph): Modifies<E, void> => {
@@ -1132,7 +1241,9 @@ $t=\code{getInternalPrepared(prepared)}$) discharges from
 $\varepsilon\sqsubseteq\mathit{Layout}(\mathit{prepared})$ once the
 module expands its private definition
 $\mathit{Layout}(p)\triangleq\mathit{Geom}(p)$ and links $t$ to
-\code{prepared}.
+\code{prepared}. Omitting \code{stats} allocates a fresh default object
+whose field mutations drop by \ruleName{Fresh-Eff}, leaving the returned
+effect $\varepsilon\sqcup\{\modstate{M}:\any\}$.
 
 \subsection{W5 and W6: Confined Module Caches and Open-World Boundaries}
 
@@ -1169,12 +1280,72 @@ $\mathit{Layout}(p)\triangleq\mathit{Geom}(p)$ and links $t$ to
   preconditions.
 \end{description}
 
+\subsection{Additional Pretext Patterns and End-to-End Evaluation}\label{sec:eval}
+
+Verifying Pretext's four core modules end-to-end exercises the remaining
+four proof rules alongside W1--W5:
+\begin{itemize}[leftmargin=1.5em,itemsep=2pt]
+\item \textbf{\ruleName{Callback-Inv}:} In \code{layoutWithLines} and
+  \code{walkRichInlineLineRanges}, the inline visitor passed to
+  \code{walkPreparedLinesRaw} reads captured handle arrays
+  (\code{prepared}, \code{flow}); because the callback does not escape
+  and both the walker and visitor preserve the handle's reach, the
+  caller's handle invariants hold on entry to every callback invocation.
+\item \textbf{\ruleName{Fields-Disj}:} Font-measurement, Han-kerning, and
+  DOM style helpers (\code{han-kerning.ts}, \code{measurement.ts},
+  \code{prepare.ts}) mutate object properties (\code{fields: "any"}) while
+  array preparation loops maintain length and element-cell invariants over
+  output arrays.
+\item \textbf{\ruleName{Plain-Cells-Disj} and \ruleName{Elem-Len-Extend}:}
+  The preparation builders (\code{prepare.ts}, \code{rich-inline.ts})
+  populate parallel plain arrays (\code{widths}, \code{segments}, and
+  the nested array \code{breakableFitAdvances}, written $b$) while
+  establishing the handle's quantified invariant
+  $\forall i<\len b.\;b[i]=\code{null}\vee 1\le\len{b[i]}$;
+  type-disjoint plain-array cell writes preserve sibling arrays' element
+  invariants, and appending to inner fit-advance arrays under $\extend$
+  preserves the non-empty lower bound.
+\end{itemize}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}lrrX@{}}
+\toprule
+Pretext module & Units accepted & Assumptions & Key obligations discharged\\
+\midrule
+\code{src/line-break.ts} & 17 / 17 & 0 & All 56 guarded walker and stepper reads restored; W1, W2, \ruleName{Confined}\\
+\code{src/layout.ts} & 18 / 18 & 0 & W4, W5, \ruleName{Callback-Inv}; 1 public-API cursor boundary check (\code{stepNextLine})\\
+\code{src/rich-inline.ts} & 38 / 38 & 0 & W3, W5, \ruleName{Callback-Inv}, \ruleName{Plain-Cells-Disj}; 1 cursor boundary check (\code{layoutNextRichInlineLineRange})\\
+\code{src/prepare.ts} & 32 / 32 & 0 & Full handle invariants, \ruleName{Fields-Disj}, \ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend}\\
+\midrule
+\textbf{Total} & \textbf{105 / 105} & \textbf{0} & \textbf{56 guards restored; 2 upstream bounds bugs + 2 cursor boundary checks}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+Verification also surfaced two genuine upstream bounds bugs in Pretext's
+supporting modules, both reproduced directly under Node:
+(i) \code{getGraphemeStart} in \code{line-text.ts} reads
+\code{ends[graphemeIndex - 1]!}, which returns \code{undefined} typed as
+\code{number} when a line range from a longer text is materialized on a
+shorter text past a segment's last grapheme (producing the whole segment
+or \code{NaN} source offsets); and
+(ii) \code{getCanvasFont} in \code{measurement.ts} indexes
+\code{families[...]} out of bounds when a profile lists fewer generic
+families than keywords, interpolating \code{"undefined"} into a CSS font
+family name. Separately, the two public streaming entry points
+(\code{stepNextLine} in \code{layout.ts} and
+\code{layoutNextRichInlineLineRange} in \code{rich-inline.ts}) add
+runtime cursor boundary checks validating caller-supplied cursors; these
+are public-API boundary guards rather than upstream bugs on
+Pretext-produced cursors.
+
 \section{\texorpdfstring{Embedding TScert's Verified Fragment $\Lang_0$}{Embedding TScert's Verified Fragment L0}}\label{sec:l0}
 
 TScert's proved verifier implements a monomorphic fragment $\Lang_0$
 without effect variables, declared reach, $\kw{old}$, or capture-rooted
 regions. Its regions are $\val$, $\st$, $\vw$, $\pi.\kw{spine}$,
-$\pi.\kw{cells}$, $\pi.f$, $\pi.\kw{fields}$, $r\cap\kw{cls}(G)$, and
+$\pi.\kw{cells}$, $\pi.\kw{elemSpines}$, $\pi.f$, $\pi.\kw{fields}$, and
 $\kw{all}$, rooted only at parameters and local variables. $\Lang_0$
 splits what this paper unifies into two interpretations of a footprint:
 
@@ -1217,34 +1388,46 @@ to forward a client's effect).
 \subsection{Experimental Prototype}
 
 To validate the rules on real Pretext code before refactoring TScert's
-verified exit schemas, an experimental mode (\code{paper-rules-prototype},
-detailed in \code{docs/drafts/paper-rules-mode.md}) layers these rules on
-top of TScert's ordinary pass:
+verified exit schemas, an experimental mode (\code{paper-rules-prototype})
+layers these rules on top of TScert's ordinary pass:
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
-\item \textbf{Architecture:} A source-level pre-pass extracts bounds and
-  instantiations and checks \ruleName{Inst}; during the pass, an
-  extension layer re-retains facts dropped at polymorphic callback calls
-  whenever their support is preserved by \ruleName{Bound} or
-  \ruleName{Anch}. At every non-callback step, the layer agrees with the
-  ordinary checker (proved, \lean{run\_eq\_base}).
+\item \textbf{Architecture:} A source-level front-end pre-pass extracts
+  effect bounds, instantiations, and \code{Effects<P, T>} signatures, and
+  checks \ruleName{Inst}, module-local confinement, callback non-escape,
+  and \code{Effects<P, T>} bodies coinductively (establishing cross-module
+  interfaces via \code{--module-interface}). During the pass, an extension
+  layer re-retains facts across polymorphic callback calls
+  (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}), frames caller-side
+  calls to quantified functions and monomorphic \code{Effects<P, T>}
+  helpers (\ruleName{Confined}, \ruleName{Fields-Disj},
+  \ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend}), and injects
+  scoped callback entry invariants (\ruleName{Callback-Inv}) for
+  non-escaping inline closures. Outside non-pure variable calls, the layer
+  agrees with the ordinary checker (proved, \lean{run\_eq\_base}). In
+  addition, evaluating changes per location category
+  (\lean{Change.onSpine}, \lean{Change.onValue}) provides a sound
+  refinement of unprojected Definition~\ref{def:order}.
 \item \textbf{Soundness boundary:} The prototype's verdict is distinct
-  from TScert's verified verdict and rests on one named axiom outside the
-  \lean{Verification} library (\lean{paperKeptFactsSurvive}). Neither
-  \lean{mode8Accepted\_sound} nor any ordinary verdict depends on it.
-\item \textbf{Tracked assumptions:} While verifying Pretext incrementally,
-  missing proofs in the source or gaps in the ordinary verifier are
-  isolated with \code{paperAssume(fact, "\#N")}, checked as
+  from TScert's verified verdict and rests on one named Lean axiom outside
+  the \lean{Verification} library (\lean{paperKeptFactsSurvive}), together
+  with the syntactic front-end checks (\ruleName{Inst}, confinement,
+  \code{Effects<P, T>} bodies, non-escape) and scoped callback fact
+  injection (\lean{closureFacts}). Neither \lean{mode8Accepted\_sound} nor
+  any ordinary verdict depends on it.
+\item \textbf{Tracked assumptions:} While verifying a library
+  incrementally, missing source proofs or verifier gaps can be isolated
+  with \code{paperAssume(fact, "\#N")}, checked as
   \code{if (!(fact)) throw "\#N"} in the target file only (never in
-  imported modules) and reported in the verdict. Live issue counts are
-  tracked in \code{WORK.md}.
+  imported modules, which are refused if they carry \code{paperAssume})
+  and reported in the verdict. All 105/105 units of the Pretext evaluation
+  (Section~\ref{sec:eval}) verify with zero \code{paperAssume} calls.
 \end{itemize}
 
 \subsection{Where the Prototype Conservatively Approximates the Rules}
 
 The prototype never accepts more than the paper's rules, but decides
 strictly less in the following ways (refusing where the rules would
-accept; see \code{docs/drafts/paper-rules-mode.md} for exact syntactic
-rules):
+accept):
 
 \begin{center}\small
 \begin{tabularx}{\textwidth}{@{}lX@{}}
@@ -1252,34 +1435,30 @@ rules):
 Rule / feature & Conservative approximation in \code{paper-rules-prototype}\\
 \midrule
 \ruleName{Anch} & Decided only for own fields and spines of locally allocated objects (from allocation separation facts), not nested elements or paths through fields.\\
-Declared reach & Expands finite local and imported object/interface/array/union/intersection types (leaving generics, tuples, index signatures, and recursive types open); read at $\keep$ only, matched via pass read/alias links and reach inclusion ($\reach{\pi.f}{U}\subseteq\reach{\pi}{T}$).\\
-Region keys & Bounds and call effects accept parameter-rooted paths \code{p.f$_1$.\dots.f$_k$[*]}, \code{p.f$_1$.\dots.f$_k$[\#]}, \code{p.f$_1$.\dots.f$_k$.f}, \code{p.f$_1$.\dots.f$_k$.*} (for any $k\ge 0$), \code{p.**}, \code{"@state"}, and class keys \code{"fields"} (non-spine object fields, \code{Role.field}, framed by \ruleName{Fields-Disj}) and \code{"views"} (typed-array view contents) in \code{Effects<P, T>} (no class keys in callback bounds, no structural region equality across different spellings). \ruleName{Plain-Cells-Disj} is applied up to path depth 2 (\code{typeRegionQuery}), and \ruleName{Elem-Len-Extend} is applied to linear lower-bound body clauses whose element-length terms carry negative coefficients (\code{onlyLowerElemLengthBody}).\\
-\ruleName{Inst} \& anchoring & Disjointness and anchoring are decided syntactically before the pass over \code{const} locals, unassigned parameters, and \code{"@state"} (fresh literal locals apart from parameter reaches if unescaped before the call; forwarded effect variables discharge callee bound entries on own locations of caller-allocated \code{const} literals via \ruleName{Anch} and \ruleName{Meet}; paths, reaches, and cells not decided anchored; joins \code{Join<E, P>} checked componentwise).\\
-\ruleName{Confined} & Checked locally per defining module: the variable cell (\code{Role.cell}) of any unexported module-level \code{let} binding (with interior writes through aliases charged to their target region, such as \code{"fields"}), and non-exported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) or lazy typed arrays that never escape; if a container's loaded values are mutated, every stored value must be fresh and never escape (refuses escaping containers, exported caches, or absorbed external references); verified monomorphic \code{Effects<P, T>} calls are framed at their call sites against \code{P}.\\
-Closures \& callbacks & Callback types must carry a bare effect variable \code{Modifies<E, T>}. Closure effects are inferred from field/element writes, array \code{push}, fresh typed-array and \code{new Array(n).fill(v)} allocations, conditional/helper fresh-or-path resolution, stated/forwarded calls, and pure/host natives; stated \code{Effects<P, T>} signatures are checked coinductively against their bodies and module confinement. Cross-module imports establish module interfaces under \code{paper-rules-prototype --module-interface} (refusing any dependency carrying \code{paperAssume}).\\
-\ruleName{Bound} stability & Decided for single-location fields/spines at parameters, and for a reach only when the body's own effect (excluding callback calls) keeps the reach (using \code{"@state"} and explicit helper \code{Effects}); calls through aliased callback locals or reassigned parameters are not read.\\
-Call sites \& exits & Checks \ruleName{Inst} across function declarations in the project (refusing unanalysed value escapes of quantified functions); reads call arguments that are plain variables, paths, or pure identity wrappers; ignores \code{onThrow}; evaluates changes per location category (\lean{Change.onSpine}, \lean{Change.onValue}) and over-approximates instantiated calls using their bounds.\\
+Declared reach & Expands finite local and imported object, interface, array, typed-array, union, and intersection types (leaving generics, tuples, index signatures, and recursive types open); read at $\keep$ only, matched via pass read/alias links and reach inclusion ($\reach{\pi.f}{U}\subseteq\reach{\pi}{T}$).\\
+Named effects & Named effect aliases (\code{type Geom<p> = ...}) are refused; bounds and \code{Effects<P, T>} require inline object type literals.\\
+Region keys & Bounds and \code{Effects<P, T>} accept parameter-rooted paths \code{p.f$_1$.\dots.f$_k$[*]}, \code{p.f$_1$.\dots.f$_k$[\#]}, \code{p.f$_1$.\dots.f$_k$.f}, \code{p.f$_1$.\dots.f$_k$.*} ($k\ge 0$), \code{p.**}, and \code{"@state"}; \code{Effects<P, T>} additionally accepts class keys \code{fields} and \code{views} (no class keys in callback bounds; no structural region equality across distinct spellings). \ruleName{Plain-Cells-Disj} applies up to path depth~2, and \ruleName{Elem-Len-Extend} applies to linear lower-bound quantified clauses on element lengths.\\
+\ruleName{Inst} \& anchoring & Disjointness and anchoring are decided syntactically before the pass over \code{const} locals, unassigned parameters, and \code{"@state"} (fresh literal locals are apart from parameter reaches when unescaped before the call; forwarded variables discharge callee bounds on own locations of caller-allocated fresh literals via \ruleName{Anch} and \ruleName{Meet}; paths, reaches, and cells are not decided anchored; \code{Join<E, P>} is checked componentwise).\\
+\ruleName{Confined} & Checked locally per defining module for unexported module-level \code{let} variable cells (with interior writes through aliases charged to their target region, such as \code{fields}) and unexported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) or lazy typed arrays that never escape; if loaded values are mutated, every stored value must be fresh and non-escaping.\\
+\ruleName{Callback-Inv} & Non-escape is checked syntactically (each reference to the callback parameter must be a direct call, a nullish/truthiness test, or a direct forward to another non-escaping parameter), and entry facts are filtered using the base knowledge separation query alone (without type-disjoint plain-array cell separation or \ruleName{Elem-Len-Extend}).\\
+Closures \& helpers & Callback types must carry a bare effect variable \code{Modifies<E, T>}. Closure effects are inferred from field/element writes, array \code{push}, fresh array/typed-array allocations, stated/forwarded calls, and pure/host natives; \code{Effects<P, T>} helper signatures are checked coinductively against their bodies outside Lean.\\
+\ruleName{Bound} stability & Decided for single-location fields/spines at parameters, and for a reach only when the body's own effect (excluding callback calls) keeps the reach; calls through aliased callback locals or reassigned parameters are not read.\\
+Call sites \& exits & Checks \ruleName{Inst} across function declarations in the project (refusing unanalysed value escapes of quantified functions); reads plain-variable, path, or pure-identity-wrapper arguments; refuses \code{onThrow: true} in effect-language literals (never erasing contracts); and over-approximates instantiated calls using their bounds.\\
 \bottomrule
 \end{tabularx}
 \end{center}
 
 \subsection{Limits of the Language}
 
-Six open design limits remain beyond the prototype:
+Five open design limits remain beyond the prototype:
 \begin{description}[leftmargin=1.5em,itemsep=2pt]
 \item[Per-instance confined state] Module-private confined state
   ($\modstate{M}$) covers module-scoped caches such as W5; per-instance
   abstract regions ($x.@\kw{rep}$) for encapsulated classes and
-  first-class maps remain open (drafted in
-  \code{docs/drafts/abstract-confined-regions.md}).
+  first-class maps remain open.
 \item[Abstract exported effects] Exporting a named effect abstractly
   requires module-level obligations proving both its operation bounds and
   any advertised disjointness between handles.
-\item[Helper specifications] Deriving W1--W5 end-to-end requires
-  verified effects and postconditions on internal helpers such as
-  \code{stepPreparedSimpleLineGeometry} and \code{createLayoutLine};
-  the prototype verifies \code{Effects<P, T>} signatures syntactically
-  outside Lean.
 \item[Explicit instantiations] Because TypeScript erases \code{Modifies}
   and \code{Effects}, call sites must write effect arguments explicitly.
 \item[Exceptional exits] Bounding a callback on throws requires explicit
@@ -1319,13 +1498,13 @@ imperative dependent systems such as Hoare Type Theory and F*'s
 monotonic state~\cite{ahman} quantify over arbitrary two-state heap
 predicates; our language trades arbitrary relational predicates for a
 small finite change lattice whose inclusion is decidable on idiomatic
-mutable code. Within TScert, this language generalizes \emph{Inferred
-callback preservation}~\cite{icp}: the demand inferred for a callback
-parameter there corresponds to a written bound
-$\varepsilon\sqsubseteq\Phi$ with $\delta^\Phi_0=\any$, caller checking
-to \ruleName{Inst}, and local-cursor preservation to \ruleName{Anch},
-while also supporting weaker bounds such as $\grow$ and propagating the
-callback's effect into the walker's own signature.
+mutable code. Compared with inferring a callback's preservation demand
+from a walker's body, writing a bounded effect variable
+$\varepsilon\sqsubseteq\Phi$ (with $\delta^\Phi_0=\any$) makes the
+contract explicit at the signature boundary, checks callers uniformly
+via \ruleName{Inst}, preserves local cursors via \ruleName{Anch},
+supports weaker bounds such as $\grow$, and propagates the callback's
+effect into the walker's own signature.
 
 \paragraph{TypeScript and JavaScript verification.}
 Prior refinement and dependent type systems for this family---Dependent
@@ -1359,12 +1538,11 @@ the dual setting---idiomatic TypeScript with unrestricted aliasing---using
 anchored effect polymorphism and the change lattice $\Delta$ to
 recover framing without imposing an ownership discipline on source code.
 
-\begin{thebibliography}{19}\small\itemsep1pt
-\bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 11 November 2026.
+\begin{thebibliography}{18}\small\itemsep1pt
+\bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 24 November 2026.
 \bibitem{patterns} TScert Working Note. \emph{Tolerant frames in practice: Pretext's patterns}.
-\bibitem{fp} TScert. \emph{Footprints: stable operations for the facts constructs rely on}. \texttt{docs/FOOTPRINTS.md}.
-\bibitem{ann} TScert. \emph{Annotations}. \texttt{docs/ANNOTATIONS.md}.
-\bibitem{icp} TScert Working Paper. \emph{Inferred callback preservation: effect requirements for heap-dependent refinements in TScert}. 22 November 2026.
+\bibitem{fp} TScert Working Note. \emph{Footprints: stable operations for the facts constructs rely on}.
+\bibitem{ann} TScert Documentation. \emph{Annotations}.
 \bibitem{kassios} I.~Kassios. Dynamic frames: support for framing, dependencies and sharing without restrictions. FM 2006.
 \bibitem{bnr} A.~Banerjee, D.~Naumann, S.~Rosenberg. Local reasoning for global invariants, part I: region logic. J.~ACM 60(3), 2013.
 \bibitem{bty} L.~Birkedal, N.~Torp-Smith, H.~Yang. Semantics of separation-logic typing and higher-order frame rules. LICS 2005.

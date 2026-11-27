@@ -126,17 +126,24 @@ states each of its notions as the note defines it is in
 
 ### The Effect languages paper
 
-*An effect language for TScert: effects as relations, bounds on callbacks,
-and the effects TScert has.* TScert working paper, 23 November 2026.
+*An effect language for TScert: relational effects, bounded effect
+polymorphism, and tolerant framing.* TScert working paper, 27 November
+2026.
 [PDF](drafts/effect-languages-note/effect-languages.pdf) ·
 [LaTeX source](drafts/effect-languages-note/note.tex).
 
 The paper proposes one effect language, in which an effect is a relation
 between heaps with an explicit change for uncovered locations, effect
-variables are bounded by effects, and every check is inclusion; it applies
-the language to Pretext's line walkers and maps TScert's footprints to a
-fragment of it. The language beyond that fragment has no implementation
-or proof.
+variables are bounded by effects, and every check is inclusion; it maps
+TScert's verified footprints to the monomorphic fragment $`\mathcal L_0`$
+and applies the language to Pretext's line walkers and core layout
+modules. All nine rules (`Bound`, `Anch`, `Meet`, `Inst`, `Confined`,
+`Callback-Inv`, `Fields-Disj`, `Plain-Cells-Disj`, `Elem-Len-Extend`) are
+mechanized in Lean over an idealised heap model
+(`lean/Verification/Paper/EffectLanguage/{Rules,Model}.lean`) and
+exercised through `paper-rules-prototype` (105/105 units across Pretext's
+four core modules with zero `paperAssume`s); soundness for the full
+language in TScert's calculus remains conjectured.
 **Discussed in** [effect languages](drafts/effect-languages.md).
 
 
