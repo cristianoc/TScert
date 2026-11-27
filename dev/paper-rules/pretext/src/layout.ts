@@ -110,11 +110,13 @@ function prepareInternal(
   // One language read: break rules and measurement both follow it.
   const language = getPreparationLanguage(engineProfile)
   const analysis = analyzeText(text, engineProfile, options?.whiteSpace, wordBreak, language)
+  // PAPER: workaround (call-ensures-arg-locals): `from` and `to` must be locals so `measureAnalysis`'s `@ensures` (`to - from`) substitutes at the call site
   const from = 0
   const to = analysis.flags.length
-  if (to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('analysis')
+  // PAPER: workaround (callee-spine-framing): re-establish `segments.length === 0` after `analyzeText` (whose unannotated transitive callees such as `getGeckoLineBreaks` / `removeItemsSkippableSegmentBreaks` infer `spines: "grow"` and clobber `segments.length`, failing `measureAnalysis`'s `@requires` with `node-typing claim`)
   if (segments !== null && segments.length !== 0) throw new RangeError('segments')
-  const prepared = measureAnalysis(analysis, from, to, font, segments, letterSpacing, engineProfile, language, true, null, 0)   // PAPER: the result through a local
+  const prepared = measureAnalysis(analysis, from, to, font, segments, letterSpacing, engineProfile, language, true, null, 0)
+  // PAPER: workaround (object-literal-field-locals): copy fields into locals and rebuild object explicitly so `PreparedLineData` invariant sees local length/forall facts (direct return, `{ ...prepared }`, and inline `prepared.<field>` all fail `binding-annotation` / `ensures`)
   const widths = prepared.widths
   const segmentFlags = prepared.segmentFlags
   const breakableFitAdvances = prepared.breakableFitAdvances
@@ -122,7 +124,7 @@ function prepareInternal(
   const lineStartExtras = prepared.lineStartExtras
   const lineEndTrims = prepared.lineEndTrims
   const overflowLineEndTrims = prepared.overflowLineEndTrims
-  const result: PreparedText = {   // PAPER: explicit fields so items is absent for PreparedLineData invariant
+  const result: PreparedText = {
     widths,
     segmentFlags,
     simpleLineWalkFastPath: prepared.simpleLineWalkFastPath,
@@ -138,6 +140,7 @@ function prepareInternal(
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
   }
+  // PAPER: workaround (omitted-optional-property): object literal omitting optional `items` does not establish `result.items === undefined` for `PreparedLineData` invariant (`source ensures refusal` on `return result`)
   if (result.items !== undefined) throw new RangeError('items')
   return result
 }
@@ -181,8 +184,7 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
    *  @invariant prepared.items === undefined || prepared.items.itemEndHalts === null || prepared.widths.length <= prepared.items.itemEndHalts.length
    *  @invariant prepared.items === undefined || prepared.items.openingEdges === null || prepared.widths.length <= prepared.items.openingEdges.length */
   for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
-  const result = { ...prepared, segments, kinds }   // PAPER: the result through a local
-  return result
+  return { ...prepared, segments, kinds }
 }
 
 function getInternalPrepared(prepared: PreparedText): InternalPreparedText {
@@ -214,7 +216,7 @@ function createLayoutLine(
   endSegmentIndex: number,
   endGraphemeIndex: number,
 ): Effects<{ "@state": "any" }, LayoutLine> {   // PAPER: annotation
-  const line = {   // PAPER: the result through a local
+  return {
     text: buildLineTextFromRange(
       prepared,
       startSegmentIndex,
@@ -232,7 +234,6 @@ function createLayoutLine(
       graphemeIndex: endGraphemeIndex,
     },
   }
-  return line
 }
 
 function createLayoutLineRange(
@@ -281,7 +282,7 @@ export function walkLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "
   maxWidth: number,
   onLine: (line: LayoutLineRange) => Modifies<E, void>,   // PAPER
 ): number {
-  const lineCount = walkPreparedLinesRaw<E>(   // PAPER: forwards E; the result through a local
+  return walkPreparedLinesRaw<E>(   // PAPER: forwards E
     getInternalPrepared(prepared),
     normalizeMaxWidth(maxWidth),
     (width, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex) => {
@@ -294,7 +295,6 @@ export function walkLineRanges<E extends AtMost<{ "prepared.**": "keep"; else: "
       ))
     },
   )
-  return lineCount   // PAPER: the walker's result
 }
 
 export function measureLineStats(
@@ -331,23 +331,21 @@ function stepNextLine(
   lineEnd.graphemeIndex = start.graphemeIndex
   // boundary check: validates caller-supplied LayoutCursor (segmentIndex, graphemeIndex,
   // and breakableFitAdvances bounds) at the public streaming API boundary (#365).
-  const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
-  if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')
-  const graphemeAtStart = lineEnd.graphemeIndex   // PAPER: a local copy for the check
-  if (!(Number.isSafeInteger(graphemeAtStart) && 0 <= graphemeAtStart)) throw new RangeError('cursor grapheme index out of range')
-  const breakableFitAdvances = internal.breakableFitAdvances   // PAPER: keep array read link across branch
-  if (graphemeAtStart > 0) {
-    if (segmentAtStart >= internal.widths.length || segmentAtStart >= breakableFitAdvances.length) return null
-    const advances = breakableFitAdvances[segmentAtStart]
-    if (advances === undefined || advances === null || graphemeAtStart >= advances.length) throw new RangeError('cursor grapheme index out of range')
+  if (!(Number.isSafeInteger(lineEnd.segmentIndex) && 0 <= lineEnd.segmentIndex)) throw new RangeError('cursor segment index out of range')
+  if (!(Number.isSafeInteger(lineEnd.graphemeIndex) && 0 <= lineEnd.graphemeIndex)) throw new RangeError('cursor grapheme index out of range')
+  if (lineEnd.graphemeIndex > 0) {
+    if (lineEnd.segmentIndex >= internal.widths.length || lineEnd.segmentIndex >= internal.breakableFitAdvances.length) return null
+    const advances = internal.breakableFitAdvances[lineEnd.segmentIndex]
+    if (advances === undefined || advances === null || lineEnd.graphemeIndex >= advances.length) throw new RangeError('cursor grapheme index out of range')
   }
   if (!normalizePreparedLineStart(internal, lineEnd)) return null
 
-  const lineStartSegmentIndex = lineEnd.segmentIndex   // PAPER: the line start through locals, written after the step
-  const lineStartGraphemeIndex = lineEnd.graphemeIndex   // PAPER: the line start through locals, written after the step
+  // PAPER: workaround (object-disjointness-requires): copy lineStart fields through locals and write after step because `@requires` only supports `!==` on arrays (`lineStart !== lineEnd` is rejected), so writing `lineStart.*` before `stepPreparedLineGeometryFromStart` clobbers `lineEnd` bounds
+  const lineStartSegmentIndex = lineEnd.segmentIndex
+  const lineStartGraphemeIndex = lineEnd.graphemeIndex
   const width = stepPreparedLineGeometryFromStart(internal, lineEnd, maxWidth)
-  lineStart.segmentIndex = lineStartSegmentIndex   // PAPER: the line start through locals, written after the step
-  lineStart.graphemeIndex = lineStartGraphemeIndex   // PAPER: the line start through locals, written after the step
+  lineStart.segmentIndex = lineStartSegmentIndex
+  lineStart.graphemeIndex = lineStartGraphemeIndex
   return width === null ? null : Math.max(0, width)
 }
 

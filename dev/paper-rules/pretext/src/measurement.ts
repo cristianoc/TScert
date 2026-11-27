@@ -583,8 +583,7 @@ export function getHyphenText(measurement: FontMeasurement): Effects<{ fields: "
   const size = fontSizeRe.exec(font)
   let hyphenText = '-'
   if (size !== null && getSegmentMetrics('\u2010', measurement).width !== getSegmentMetrics('-', measurement).width) {
-    getContext(measurement)
-    const context = measurement.state.context
+    const context = getContext(measurement)
     const start = size.index + size[0].length
     const prefix = font.slice(0, start)
     const families = font.slice(start).match(familyRe) ?? []
@@ -693,7 +692,8 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Eff
   const counts = measurement.glyphCounts
   // The font's context once Canvas is asked, under the counting spacing from then on, so
   // it changes its spacing once, and not at all for a segment whose prefixes are counted.
-  let asked = false
+  let context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
+  // PAPER: workaround (exported-empty-array-effect): null instead of `noExtraSpacings` because `noExtraSpacings` is an exported array, so writing through `extras` fails stated Effects verification (`writes a location no key of the instance can name`)
   let extras: Dense<number[]> | null = null
   try {
     let before = 0
@@ -702,24 +702,23 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Eff
       const text = seg.slice(prefixes ? 0 : start, ends[i])
       let glyphs = counts.get(text)
       if (glyphs === undefined) {
-        if (!asked) {
-          getContext(measurement)
-          measurement.state.context.letterSpacing = `${GLYPH_COUNT_SPACING}px`
-          asked = true
+        if (context === null) {
+          context = getContext(measurement)
+          context.letterSpacing = `${GLYPH_COUNT_SPACING}px`
         }
-        glyphs = Math.round(measurement.state.context.measureText(text).width / GLYPH_COUNT_SPACING)
+        glyphs = Math.round(context.measureText(text).width / GLYPH_COUNT_SPACING)
         counts.set(text, glyphs)
       }
       const extra = glyphs - (prefixes ? before : 0) - 1
       before = glyphs
       if (extra === 0 && extras === null) continue
       extras ??= zeros(count)
-      const extrasStore: Dense<number[]> = extras
-      if ((i & 0x7fffffff) !== i || i >= extrasStore.length) throw new RangeError('index')
+      const extrasStore = extras
+      if ((i & 0x7fffffff) !== i || i > extrasStore.length) throw new RangeError('index')
       extrasStore[i] = extra
     }
   } finally {
-    if (asked) measurement.state.context.letterSpacing = measurement.letterSpacing
+    if (context !== null) context.letterSpacing = measurement.letterSpacing
   }
   return extras ?? noExtraSpacings
 }
@@ -872,6 +871,24 @@ function sameInk(a: TextMetrics, b: TextMetrics): Effects<{}, boolean> {   // PA
     Math.abs(a.actualBoundingBoxRight - b.actualBoundingBoxRight) <= bound
 }
 
+// What is kept of the font's kerning between kana, or null for a font that shows none: one in
+// which KANA_PROBE, shaped whole, is as wide with kerning off (getFontSpaceKerning has what
+// `fontKerning` turns off). Canvas shapes a string whole by the list's first font alone, where
+// Blink's layout shapes the kana of a run together whatever font leads the list
+// (InlineNode::ShapeText, inline_node.cc:1551-1718), so a list that shows no kerning is asked
+// again without its first family, then without its first two, and so on: once the first
+// font's lookups cover the space glyph, as the kana's own font's do, Canvas shapes the probe
+// whole. A shorter list stands for the font only where the same font draws its kana, which
+// two answers tell. It draws the probe with the same glyphs, as wide and with the same ink
+// edges with kerning off: the first that doesn't ends the search, since a family left out
+// drew the kana. And the kerning Canvas does show under the font's own list, a kana's with a
+// U+3002 it keeps in the kana's word (NextWordEndIndex, plain_text_node.cc:129-153), is the
+// shorter list's and isn't nothing: Hiragino Sans GB draws Hiragino Sans's kana and kerns
+// none. A font that shows no kerning under any list stays as wide as Canvas measures its kana
+// apart. Asked once per font, with two measurements for each list tried and three more for
+// one that shows kerning. Premises: a font that kerns kana kerns one of the probe's pairs
+// (RESEARCH.md, Kerning At Line Edges, has the fonts measured), and one of its hiragana with
+// U+3002 (ENGINE_FOLLOWUPS.md, Kerning between kana).
 export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, Float64Array | null> {   // PAPER: annotation
   let kerning = measurement.kanaKerning
   if (kerning === undefined) {
@@ -885,9 +902,7 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
     for (let i = 0; i < lists; i++) {
       const list = i === 0 ? font : font.slice(0, start) + (families ?? missing()).slice(i).join(',')
       measurement.kanaFont = list
-      getWholeRunContext(measurement)
-      const context = measurement.state.wholeRunContext
-      if (context === null) throw new RangeError('missing value')
+      const context = getWholeRunContext(measurement)
       const kerned = context.measureText(KANA_PROBE).width
       context.fontKerning = 'none'
       const unkerned = context.measureText(KANA_PROBE)
@@ -901,9 +916,7 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
         for (let code = 0x3041; code <= 0x3096; code++) pairs += String.fromCharCode(code, 0x3002)
         const shorter = context.measureText(pairs).width
         measurement.kanaFont = font
-        getWholeRunContext(measurement)
-        const ownContext = measurement.state.wholeRunContext
-        if (ownContext === null) throw new RangeError('missing value')
+        const ownContext = getWholeRunContext(measurement)
         const ownKerned = ownContext.measureText(pairs).width
         ownContext.fontKerning = 'none'
         const ownUnkerned = ownContext.measureText(pairs).width
@@ -919,6 +932,16 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
   return kerning
 }
 
+// The kerning Blink's layout gives text[at - 1] and text[at] that no measured width holds, or
+// 0: that of two characters of the kana blocks that were measured apart. `start` is where the
+// segment that holds text[at] starts. Two segments are measured apart, so a segment's first
+// character takes its kerning with the one before it. Inside a segment Canvas cuts before a
+// kana letter where the word before it holds a letter already. A mark such as U+30FC stays in
+// the word before it, and a word that marks or CJK punctuation began takes the first letter
+// after them (NextWordEndIndex's has_any_script, plain_text_node.cc:129-153), so Canvas has
+// measured those pairs together; a character below the CJK ranges is in a word of other
+// scripts, which ends before the letter. Each pair is asked of Canvas once per font and kept
+// in the font's table by its two characters, where a pair not asked about yet is NaN.
 export function getKanaKerning(text: string, start: number, at: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ fields: "any"; views: "grow" }, number> {   // PAPER: annotation
   const second = text.charCodeAt(at)
   if (second < 0x3041 || second > 0x30ff) return 0
@@ -1196,14 +1219,15 @@ export function getSegmentFit(
   mode: BreakableFitMode,
   // When metrics measured seg together with one following U+0020, the width of
   // that space alone. The last grapheme then keeps its kerning with the space.
-  followingSpaceWidth: number | null,
+  followingSpaceWidth: number | null = null,
 ): Effects<{ fields: "any"; views: "grow"; "@state": "any" }, SegmentFit> {   // PAPER: annotation
+  // PAPER: workaround (map-type-invariant): re-check cached SegmentFit bounds because reading `metrics.fit` from `Map<string, SegmentMetrics>` does not assume `SegmentFit` field invariants (`source ensures refusal` on `return metrics.fit`)
   const cached = metrics.fit
   if (cached !== null && cached.mode === mode) {
     const cachedAdvances = cached.advances
     if (cachedAdvances === null) return cached
     const cachedExtras = cached.lineStartExtras
-    if (cachedAdvances.length >= 1 && (cachedExtras === null || cachedAdvances.length <= cachedExtras.length)) return cached   // PAPER: Map<string, SegmentMetrics> drops field invariants on cache lookup
+    if (cachedAdvances.length >= 1 && (cachedExtras === null || cachedAdvances.length <= cachedExtras.length)) return cached
   }
   const profile = getEngineProfile()
   const ends = new Int32Array(seg.length)
@@ -1230,10 +1254,10 @@ export function getSegmentFit(
       advances = measureFitAdvances(seg, ends, count, 'pair-context', metrics, measurement, emojiCorrection, followingSpaceWidth)
       pairs = count > MAX_PREFIX_FIT_GRAPHEMES || addUpTo(advances, width)
       if (!pairs) advances = measureFitAdvances(seg, ends, count, 'segment-prefixes', metrics, measurement, emojiCorrection, followingSpaceWidth)
-      const extras: Dense<number[]> = [0]
-      /** @invariant safeInteger(count) && safeInteger(i) && 1 <= i && i <= count && extras.length === i && advances.length === count */
-      for (let i = 1; i < count; i++) extras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
-      lineStartExtras = extras
+      lineStartExtras = [0]
+      /** @invariant safeInteger(count) && safeInteger(i) && 1 <= i && i <= count && advances.length === count
+       *  @invariant lineStartExtras === null || lineStartExtras.length === i */
+      for (let i = 1; i < count; i++) lineStartExtras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
     }
   } else {
     // Past MAX_PREFIX_FIT_GRAPHEMES, prefixes give way to pairs.
@@ -1261,17 +1285,17 @@ export function getSegmentFit(
           const idx = g - 1
           const advancesStore = advances
           const advancesValue = (advancesStore[idx] ?? missing()) + kerning
-          if ((idx & 0x7fffffff) !== idx || idx >= advancesStore.length) throw new RangeError('index')
+          if ((idx & 0x7fffffff) !== idx || idx > advancesStore.length) throw new RangeError('index')
           advancesStore[idx] = advancesValue
         } else if (kerning < 0) {
           const advancesStore = advances
           const advancesValue = (advancesStore[g] ?? missing()) + kerning
-          if ((g & 0x7fffffff) !== g || g >= advancesStore.length) throw new RangeError('index')
+          if ((g & 0x7fffffff) !== g || g > advancesStore.length) throw new RangeError('index')
           advancesStore[g] = advancesValue
           lineStartExtras ??= zeros(count)
           const lineStartExtrasStore = lineStartExtras
           const lineStartExtrasValue = (lineStartExtrasStore[g] ?? missing()) - kerning
-          if ((g & 0x7fffffff) !== g || g >= lineStartExtrasStore.length) throw new RangeError('index')
+          if ((g & 0x7fffffff) !== g || g > lineStartExtrasStore.length) throw new RangeError('index')
           lineStartExtrasStore[g] = lineStartExtrasValue
         }
       }
@@ -1295,15 +1319,16 @@ function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: De
   if (!measurement.state.shapesLetterSpaced || measurement.letterSpacing !== '0px') return
   // The grapheme the ligature that holds the grapheme before this one starts with, or that grapheme.
   let first = 0
+  /** @invariant safeInteger(first) && safeInteger(i) && 0 <= first && first < i && 1 <= i */
   for (let i = 1; i < advances.length; i++) {
     const start = ends[i - 1]
     if (start === undefined) throw new RangeError('missing value')
     const alone = getTextWidth(seg.slice(start, ends[i]), measurement, emojiCorrection)
     if (Math.round(((advances[i] ?? missing()) - alone) * 60) !== 0 && isLigature(seg.slice(i === 1 ? 0 : (ends[i - 2] ?? missing()), ends[i]), measurement)) {
       const advancesValue = (advances[first] ?? missing()) + (advances[i] ?? missing())
-      if ((first & 0x7fffffff) !== first || first >= advances.length) throw new RangeError('index')
+      if ((first & 0x7fffffff) !== first || first > advances.length) throw new RangeError('index')
       advances[first] = advancesValue
-      if ((i & 0x7fffffff) !== i || i >= advances.length) throw new RangeError('index')
+      if ((i & 0x7fffffff) !== i || i > advances.length) throw new RangeError('index')
       advances[i] = 0
     } else {
       first = i
@@ -1318,8 +1343,7 @@ function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: De
 function isLigature(pair: string, measurement: FontMeasurement): Effects<{ fields: "any" }, boolean> {   // PAPER: annotation
   let ligature = measurement.ligaturePairs.get(pair)
   if (ligature === undefined) {
-    getContext(measurement)
-    const context = measurement.state.context
+    const context = getContext(measurement)
     const width = getSegmentMetrics(pair, measurement).width
     context.letterSpacing = LETTER_SPACED_SHAPING
     ligature = context.measureText(pair).width !== width
@@ -1379,7 +1403,7 @@ function measureFitAdvances(
   if (followingSpaceWidth !== null && !prefixes) {
     const idx = count - 1
     const advancesValue = (advances[idx] ?? missing()) + metrics.width - getSegmentMetrics(seg, measurement).width - followingSpaceWidth
-    if ((idx & 0x7fffffff) !== idx || idx >= advances.length) throw new RangeError('index')
+    if ((idx & 0x7fffffff) !== idx || idx > advances.length) throw new RangeError('index')
     advances[idx] = advancesValue
   }
   return advances
