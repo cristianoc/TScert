@@ -217,6 +217,12 @@ export function getItemTabAdvance(prepared: PreparedLineData, items: ParagraphSe
   return getTabAdvance(lineWidth - endEdge, stopAdvance, minimumAdvance, appUnits) + (prepared.widths[index] ?? missing())
 }
 
+// PAPER: annotation
+/** @requires safeInteger(startSegmentIndex) && 0 <= startSegmentIndex
+ *  @requires safeInteger(endSegmentIndex) && 0 <= endSegmentIndex && endSegmentIndex <= prepared.widths.length
+ *  @requires safeInteger(endGraphemeIndex) && 0 <= endGraphemeIndex
+ *  @requires endGraphemeIndex === 0 || endSegmentIndex < prepared.widths.length
+ *  @requires openingEdges === null || prepared.widths.length <= openingEdges.length */
 function getTerminalLetterSpacing(
   prepared: PreparedLineData,
   openingEdges: number[] | null,
@@ -229,24 +235,23 @@ function getTerminalLetterSpacing(
   const { letterSpacing, segmentFlags } = prepared
   if (letterSpacing === 0) return 0
 
-  if (endGraphemeIndex > 0) return ((segmentFlags[endSegmentIndex] ?? missing()) & SPACED) !== 0 ? letterSpacing : 0
+  if (endGraphemeIndex > 0) return ((segmentFlags[endSegmentIndex]!) & SPACED) !== 0 ? letterSpacing : 0   // PAPER: guard removed
 
   const segmentCount = prepared.widths.length
   if (isDiscretionaryLineEnd(segmentFlags, segmentCount, endSegmentIndex, endGraphemeIndex)) return 0
   // A run of preserved spaces and tabs that hangs where the line wraps already
   // charged the gap after the glyph before it. Gecko doesn't hang tabs.
-  if (endSegmentIndex > startSegmentIndex && endSegmentIndex < segmentCount && ((segmentFlags[endSegmentIndex] ?? missing()) & KIND_BITS) !== HARD_BREAK &&
-    (1 << ((segmentFlags[endSegmentIndex - 1] ?? missing()) & KIND_BITS) & hangingKinds) !== 0) return 0
+  if (endSegmentIndex > startSegmentIndex && endSegmentIndex < segmentCount && ((segmentFlags[endSegmentIndex]!) & KIND_BITS) !== HARD_BREAK &&   // PAPER: guard removed
+    (1 << ((segmentFlags[endSegmentIndex - 1]!) & KIND_BITS) & hangingKinds) !== 0) return 0   // PAPER: guard removed
 
   for (let i = endSegmentIndex - 1; i >= startSegmentIndex; i--) {
-    const flags = segmentFlags[i]
-    if (flags === undefined) throw new RangeError('missing value')
+    const flags = segmentFlags[i]!   // PAPER: guard removed
     const kind = flags & KIND_BITS
     // Segments that take no letter spacing, such as zero-width glue or marks
     // shaped on the grapheme before them, leave that grapheme's gap last. A tab
     // that takes none follows that gap, which its stop counts from. An object
     // leaves none after itself, nor does the edge of a padded opening.
-    if (kind === SPACE || (kind !== CONTROL && kind !== TAB && (flags & SPACED) === 0 && kind !== OBJECT && (openingEdges === null || (openingEdges[i] ?? missing()) === 0))) continue
+    if (kind === SPACE || (kind !== CONTROL && kind !== TAB && (flags & SPACED) === 0 && kind !== OBJECT && (openingEdges === null || (openingEdges[i]!) === 0))) continue   // PAPER: guard removed
 
     if (i === startSegmentIndex && startGraphemeIndex > 0) return letterSpacing
 
@@ -292,8 +297,7 @@ export function normalizePreparedLineStart(
   let atChunkStart = segmentIndex === 0 || ((segmentFlags[segmentIndex - 1]!) & KIND_BITS) === HARD_BREAK   // PAPER: guard removed
   /** @invariant safeInteger(segmentIndex) && safeInteger(segmentCount) && 0 <= segmentIndex && segmentIndex < segmentCount && safeInteger(cursor.graphemeIndex) && cursor.graphemeIndex === 0 */   // PAPER: annotation
   while (true) {
-    const flags = segmentFlags[segmentIndex]
-    if (flags === undefined) throw new RangeError('missing value')
+    const flags = segmentFlags[segmentIndex]!   // PAPER: guard removed
     if ((flags & KIND_BITS) === HARD_BREAK) {
       if (atChunkStart) {
         cursor.segmentIndex = segmentIndex
@@ -378,10 +382,9 @@ export function countPreparedLines(prepared: PreparedLineData, maxWidth: number)
   let hasContent = false
 
   for (let i = 0; i < segmentCount; i++) {
-    const kind = (segmentFlags[i] ?? missing()) & KIND_BITS
-    const w = widths[i]
-    if (w === undefined) throw new RangeError('missing value')
-    const endTrim = lineEndTrims === null ? 0 : (lineEndTrims[i] ?? missing())
+    const kind = (segmentFlags[i]!) & KIND_BITS   // PAPER: guard removed
+    const w = widths[i]!   // PAPER: guard removed
+    const endTrim = lineEndTrims === null ? 0 : (lineEndTrims[i]!)   // PAPER: guard removed
     if (hasContent) {
       // A segment that fits only by its line-end trim ends the line, as the full
       // width it adds leaves no room after it.
@@ -397,9 +400,8 @@ export function countPreparedLines(prepared: PreparedLineData, maxWidth: number)
       continue
     }
 
-    const startW = lineStartExtras === null ? w : w + (lineStartExtras[i] ?? missing())
-    const advances = breakableFitAdvances[i]
-    if (advances === undefined) throw new RangeError('missing value')
+    const startW = lineStartExtras === null ? w : w + (lineStartExtras[i]!)   // PAPER: guard removed
+    const advances = breakableFitAdvances[i] ?? null   // PAPER: guard removed
     if (startW - endTrim <= fitLimit || advances === null) {
       lineW += startW
       hasContent = true
@@ -409,7 +411,7 @@ export function countPreparedLines(prepared: PreparedLineData, maxWidth: number)
     const startExtras = breakableLineStartExtras?.[i] ?? null
     let g = 0
     while (g < advances.length) {
-      if (startExtras !== null) lineW += (startExtras[g] ?? missing())
+      if (startExtras !== null) lineW += (startExtras[g]!)   // PAPER: guard removed
       lineW += advances[g++]!
       while (g < advances.length && lineW + advances[g]! <= fitLimit) lineW += advances[g++]!
       if (g < advances.length) {
@@ -443,7 +445,7 @@ function countSteppedLines(prepared: PreparedLineData, maxWidth: number): Effect
     const startSegmentIndex = cursor.segmentIndex
     const startGraphemeIndex = cursor.graphemeIndex
     stepPreparedSimpleLineGeometry(prepared, cursor, maxWidth)
-    if (cursor.graphemeIndex === 0 && cursor.segmentIndex < segmentCount && ((segmentFlags[cursor.segmentIndex] ?? missing()) & UNBROKEN) !== 0) {
+    if (cursor.graphemeIndex === 0 && cursor.segmentIndex < segmentCount && ((segmentFlags[cursor.segmentIndex]!) & UNBROKEN) !== 0) {   // PAPER: guard removed
       cursor.segmentIndex = startSegmentIndex
       cursor.graphemeIndex = startGraphemeIndex
       walkPreparedComplexLines(prepared, cursor, maxWidth, undefined, null, true)
@@ -466,10 +468,12 @@ function countSteppedLines(prepared: PreparedLineData, maxWidth: number): Effect
 // spaces and tabs (nsLineBreaker.cpp:323, :586) and doesn't hang a tab, so where the white space
 // runs into a tab, Firefox moves all of it to the next line with the tab. The walker asks once
 // per run, so a long run costs one pass.
+// PAPER: annotation
+/** @requires safeInteger(start) && 0 <= start && safeInteger(segmentCount) && start < segmentCount && segmentCount <= segmentFlags.length */
 function staysAfterObject(segmentFlags: Uint8Array, segmentCount: number, start: number, hangingKinds: number): Modifies<{}, boolean> {   // PAPER: annotation
   let after = start + 1
-  while (after < segmentCount && (1 << ((segmentFlags[after] ?? missing()) & KIND_BITS) & hangingKinds) !== 0) after++
-  return after === segmentCount || ((segmentFlags[after] ?? missing()) & KIND_BITS) !== TAB
+  while (after < segmentCount && (1 << ((segmentFlags[after]!) & KIND_BITS) & hangingKinds) !== 0) after++   // PAPER: guard removed
+  return after === segmentCount || ((segmentFlags[after]!) & KIND_BITS) !== TAB   // PAPER: guard removed
 }
 
 // Whether a line that would end at the break before `breakSegmentIndex`, painting
@@ -479,6 +483,9 @@ function staysAfterObject(segmentFlags: Uint8Array, segmentCount: number, start:
 // by less than the overflow. Those are the soft hyphens the line passes, whose text the
 // engine shapes whole, and with `endKeepsJoin` the one the line ends at too
 // (EngineProfile, unfitHyphenRetreat).
+// PAPER: annotation
+/** @requires safeInteger(lineStartSegmentIndex) && 0 <= lineStartSegmentIndex
+ *  @requires safeInteger(breakSegmentIndex) && 0 <= breakSegmentIndex && breakSegmentIndex <= prepared.widths.length */
 function returnsFromUnfitHyphen(
   prepared: PreparedLineData,
   lineStartSegmentIndex: number,
@@ -489,7 +496,7 @@ function returnsFromUnfitHyphen(
 ): Modifies<{}, boolean> {   // PAPER: annotation
   const { discretionaryHyphenContexts, segmentFlags } = prepared
   const softHyphenIndex = breakSegmentIndex - 1
-  if (softHyphenIndex < lineStartSegmentIndex || ((segmentFlags[softHyphenIndex] ?? missing()) & KIND_BITS) !== SOFT_HYPHEN || breakWidth <= fitLimit) return false
+  if (softHyphenIndex < lineStartSegmentIndex || ((segmentFlags[softHyphenIndex]!) & KIND_BITS) !== SOFT_HYPHEN || breakWidth <= fitLimit) return false   // PAPER: guard removed
   const overflow = breakWidth - fitLimit
   let narrowing = 0
   const last = endKeepsJoin ? softHyphenIndex : softHyphenIndex - 1
@@ -652,10 +659,10 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
          *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
          *  @invariant safeInteger(hangEndSegmentIndex) && hangEndSegmentIndex <= segmentCount && safeInteger(pendingBreakSegmentIndex) && pendingBreakSegmentIndex <= segmentCount
          *  @invariant hasContent === false || lineStartSegmentIndex < i
-         *  @invariant safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex
+         *  @invariant safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex && lineEndSegmentIndex <= segmentCount
          *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-         *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
-         *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(endGraphemeIndex) && endGraphemeIndex === 0 && safeInteger(fitBreakSegmentIndex)
+         *  @invariant lineEndGraphemeIndex === 0 || (lineEndSegmentIndex < segmentCount && prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
+         *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(endGraphemeIndex) && endGraphemeIndex === 0 && safeInteger(fitBreakSegmentIndex) && fitBreakSegmentIndex <= segmentCount
          *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
          *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
          *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
@@ -669,8 +676,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
           // the gap fillSpacing.
           let fillStart: number
           let fillSpacing = 0
-          const flags = segmentFlags[i]
-          if (flags === undefined) throw new RangeError('missing value')
+          const flags = segmentFlags[i]!   // PAPER: guard removed
           const kind = flags & KIND_BITS
           if (kind === HARD_BREAK) {
             consumedEndSegmentIndex = i + 1
@@ -918,12 +924,12 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
                   lineW += advance
                   endSegmentIndex = i + 1
                   if (kind === ZERO_WIDTH_BREAK) {
-                    /** @invariant safeInteger(endSegmentIndex) && 0 <= endSegmentIndex
+                    /** @invariant safeInteger(segmentCount) && safeInteger(endSegmentIndex) && 0 <= endSegmentIndex && endSegmentIndex <= segmentCount
                      *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
                      *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
-                     *  @invariant safeInteger(lineEndSegmentIndex) && 0 <= lineEndSegmentIndex
+                     *  @invariant safeInteger(lineEndSegmentIndex) && 0 <= lineEndSegmentIndex && lineEndSegmentIndex <= segmentCount
                      *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-                     *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length) */   // PAPER: annotation
+                     *  @invariant lineEndGraphemeIndex === 0 || (lineEndSegmentIndex < segmentCount && prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length) */   // PAPER: annotation
                     while (endSegmentIndex < segmentCount && ((segmentFlags[endSegmentIndex]!) & KIND_BITS) === ZERO_WIDTH_BREAK) endSegmentIndex++   // PAPER: guard removed
                   }
                   endGraphemeIndex = 0
@@ -1000,18 +1006,15 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
               if (kind === OBJECT && hardBreakItemRetreat !== 'item' && i + 1 < segmentCount && ((segmentFlags[i + 1]!) & KIND_BITS) === HARD_BREAK) {   // PAPER: guard removed
                 // PAPER: workaround (ternary element-read link): SinglePass drops element-read links across cond ? arr[i - 1] : null and separate i - 1 temps
                 const prevIdx = i - 1
-                const beforeFlags = segmentFlags[prevIdx]
-                if (beforeFlags === undefined) throw new RangeError('missing value')
+                const beforeFlags = segmentFlags[prevIdx]!   // PAPER: guard removed
                 const beforeKind = beforeFlags & KIND_BITS
                 let spaceAdvances: number[] | null = null
                 if (beforeKind === PRESERVED_SPACE) {
-                  const rawSpaceAdvances = breakableFitAdvances[prevIdx]
-                  if (rawSpaceAdvances === undefined) throw new RangeError('missing value')
+                  const rawSpaceAdvances = breakableFitAdvances[prevIdx] ?? null   // PAPER: guard removed
                   spaceAdvances = rawSpaceAdvances
                   if (rawSpaceAdvances !== null) {
                     const count = rawSpaceAdvances.length
-                    const spaceAdvance = rawSpaceAdvances[0]
-                    if (spaceAdvance === undefined) throw new RangeError('missing value')
+                    const spaceAdvance = rawSpaceAdvances[0]!   // PAPER: guard removed
                     const moved = hardBreakItemRetreat !== 'fit' || lineW <= fitLimit ? 1 : spaceAdvance > 0 ? Math.min(count, Math.ceil((lineW - fitLimit) / spaceAdvance)) : count
                     // The start edge of the spaces' own item is no content to leave on the line.
                     const contentStart = openingEdges !== null && (openingEdges[lineStartSegmentIndex]!) !== 0 ? lineStartSegmentIndex + 1 : lineStartSegmentIndex   // PAPER: guard removed
@@ -1026,8 +1029,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
                   }
                 }
                 if (beforeKind === TEXT || beforeKind === CONTROL) {
-                  const rawBeforeAdvances = breakableFitAdvances[prevIdx]
-                  if (rawBeforeAdvances === undefined) throw new RangeError('missing value')
+                  const rawBeforeAdvances = breakableFitAdvances[prevIdx] ?? null   // PAPER: guard removed
                   const spacing = (beforeFlags & SPACED) !== 0 ? letterSpacing : 0
                   if (rawBeforeAdvances !== null && (prevIdx > lineStartSegmentIndex || rawBeforeAdvances.length - 1 > lineStartGraphemeIndex)) {
                     endSegmentIndex = prevIdx
@@ -1098,25 +1100,24 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
           }
 
           // A grapheme fits with the letter spacing after it.
-          const fitAdvances = breakableFitAdvances[i]
-          if (fitAdvances === undefined || fitAdvances === null) throw new RangeError('missing value')
+          const fitAdvances = breakableFitAdvances[i]!   // PAPER: guard removed
           const fitCount = fitAdvances.length
-          /** @invariant safeInteger(g) && 0 <= g && safeInteger(i) && safeInteger(lineStartSegmentIndex) && safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex
+          /** @invariant safeInteger(g) && 0 <= g && safeInteger(i) && safeInteger(segmentCount) && safeInteger(lineStartSegmentIndex) && safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex && lineEndSegmentIndex <= segmentCount
            *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
            *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
            *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-           *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
+           *  @invariant lineEndGraphemeIndex === 0 || (lineEndSegmentIndex < segmentCount && prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
            *  @invariant safeInteger(fitCount) && breakableFitAdvances[i] !== null && fitCount <= breakableFitAdvances[i].length */   // PAPER: annotation
           for (let g = fillStart; g < fitCount; g++) {
-            const baseGw = fitAdvances[g]
-            if (baseGw === undefined) throw new RangeError('missing value')
+            const baseGw = fitAdvances[g]!   // PAPER: guard removed
             if (!hasContent) {
               hasContent = true
               const startExtras = prepared.breakableLineStartExtras?.[i] ?? null
               lineW = startExtras === null ? baseGw : baseGw + (startExtras[g]!)   // PAPER: guard removed
               // A line that starts inside a padded rich-inline item, or fills its first
               // segment, pays the item's extraWidth (ParagraphSegmentData).
-              if (g > 0 ? insideExtras !== null : fillExtras !== null) lineW += g > 0 ? ((insideExtras ?? missing())[i] ?? missing()) : ((fillExtras ?? missing())[i] ?? missing())
+              const extra = g > 0 ? insideExtras : fillExtras
+              if (extra !== null) lineW += extra[i] ?? missing()
               if (g + 1 === fitCount) {
                 lineEndSegmentIndex = i + 1
                 lineEndGraphemeIndex = 0
@@ -1231,15 +1232,17 @@ function stepPreparedSimpleLineGeometry(
   // later segment overflows, so the line ends after it and paints that much less.
   let endTrimmed = 0
   if (cursor.graphemeIndex > 0 || (startW - startTrim > fitLimit && startAdvances !== null)) {
-    if (startAdvances === undefined || startAdvances === null) throw new RangeError('missing value')   // PAPER: workaround (invariant narrowing): narrow before fitAdvances so @invariant reads fitAdvances.length on number[]
-    const fitAdvances = startAdvances
+    const fitAdvances = startAdvances!   // PAPER: guard removed
     const startExtras = prepared.breakableLineStartExtras?.[start] ?? null
     let g = cursor.graphemeIndex + 1
     lineW = startExtras === null ? (fitAdvances[g - 1]!) : (fitAdvances[g - 1]!) + (startExtras[g - 1]!)   // PAPER: guard removed
     // A line that starts inside a padded rich-inline item, or fills its first segment, pays
     // the item's extraWidth (ParagraphSegmentData).
     const items = prepared.items
-    if (items !== undefined && (g > 1 ? items.insideExtras !== null : items.fillExtras !== null)) lineW += g > 1 ? ((items.insideExtras ?? missing())[start] ?? missing()) : ((items.fillExtras ?? missing())[start] ?? missing())
+    if (items !== undefined) {
+      const extra = g > 1 ? items.insideExtras : items.fillExtras
+      if (extra !== null) lineW += extra[start] ?? missing()
+    }
     /** @invariant safeInteger(g) && 0 <= g
      *  @invariant lineEndTrims === null || widths.length <= lineEndTrims.length
      *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && prepared.breakableFitAdvances[cursor.segmentIndex] !== null && fitAdvances.length <= prepared.breakableFitAdvances[cursor.segmentIndex].length */   // PAPER: annotation
@@ -1263,8 +1266,7 @@ function stepPreparedSimpleLineGeometry(
   // other text, the line leaves out a space it ends with.
   /** @invariant lineEndTrims === null || widths.length <= lineEndTrims.length */   // PAPER: annotation
   for (let i = start + 1; i < widths.length; i++) {
-    const w = widths[i]
-    if (w === undefined) throw new RangeError('missing value')
+    const w = widths[i]!   // PAPER: guard removed
     const endTrim = lineEndTrims === null ? 0 : (lineEndTrims[i]!)   // PAPER: guard removed
     if (lineW + w - endTrim > fitLimit) {
       const kind = (segmentFlags[i]!) & KIND_BITS   // PAPER: guard removed

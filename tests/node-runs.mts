@@ -3640,4 +3640,13 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-dense-write-same-elem-type-clobbers"),
     "(() => { const xs = [1]; return String(Number.isNaN(clobberAndRead(xs, xs, [42], 0))); })()"),
     "true", "invalid-dense-write-same-elem-type-clobbers: aliased Dense<number[]> write clobbers targets[0] to 0 and reads out[-1]/NaN");
+  assert.deepEqual(runPlain(ofKind("disjunctive-element-nonnull", ["positive"]),
+    "(() => { const h = { widths: [10, 20], advances: [[3, 4], null] }; return [disjunctiveRead(h, { segmentIndex: 0, graphemeIndex: 1 }, false), disjunctiveRead(h, { segmentIndex: 0, graphemeIndex: 0 }, true), disjunctiveRead(h, { segmentIndex: 1, graphemeIndex: 0 }, true), mergedAtIndexNonNull(h, { segmentIndex: 0, graphemeIndex: 1 }, 0, false), mergedAtIndexNonNull(h, { segmentIndex: 1, graphemeIndex: 0 }, 0, true), atIndexImpliesBounds(h, 0, 1), atIndexImpliesBounds(h, 2, 0)]; })()"),
+    [2, 2, 0, 3, 2, 10, 0], "disjunctive-element-nonnull: safe disjunctive non-null read, merged atIndex non-null, and atIndex upper bound");
+  assert.throws(() => runExample(negative("invalid-disjunctive-element-nonnull"),
+    "missingDisjunctNonNull({ advances: [null] }, 0, true)"), /TypeError/,
+    "invalid-disjunctive-element-nonnull: flag=true with null element throws TypeError on startAdvances!.length");
+  assert.throws(() => runExample(negative("invalid-merged-atindex-nonnull"),
+    "missingMergeBranchNonNull({ advances: [null] }, 0, false, true)"), /TypeError/,
+    "invalid-merged-atindex-nonnull: unchecked else-if branch with null element throws TypeError on advances[i]!.length");
 }

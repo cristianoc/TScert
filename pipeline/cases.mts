@@ -3143,7 +3143,7 @@ export const cases: Case[] = [
     "unverified", "search", /source expression obligation at \[444,452\): evidence search failed: no derivation of its cast claim/),
   positive("bounds-pattern-string-element", "P11's neighbour: a code unit read below the length"),
   gap("bounds-pattern-pointwise-refused", "P12, a pointwise relation of two arrays: the quantified clause parses and lowers, and the fixture's `extras[i]!` non-null assertion on `(number[] | null)[]` claims `number[]` where `extras[i]` may be `null` (pretext line-break.ts, rich-inline.ts getPartWidth, analysis.ts; 5 sites)",
-    "unverified", "search", /source expression obligation at \[771,780\): evidence search failed: no derivation of its node-typing claim/),
+    "unverified", "search", /source expression obligation at \[771,781\): evidence search failed: no derivation of its cast claim/),
   positive("bounds-pattern-pointwise", "P12's neighbour: one array of arrays read below its element's own length"),
   gap("bounds-pattern-postfix-prefix-refused", "P13, a typed-array prefix filled with a postfix counter over a parameter, returned through a postcondition naming the count (pretext gecko-line-breaks.ts, prepare.ts getUnspacedGraphemes, rich-inline.ts; 5 sites)",
     "unverified", "search", /source incoming edge obligation at \[1343,1376\): evidence search failed: the edge from node \d+ does not establish the claims at this point/),
@@ -5261,4 +5261,9 @@ export const cases: Case[] = [
   positive("dense-write-type-disjoint-frame", "in-bounds writes on `Dense<number[]>` (and `Dense<number[]> | null` initialized via `??=`) frame quantified invariants on type-disjoint `(number[] | null)[]` and union-clause `Dense<(number[] | null)[]> | null` arrays without `!==`"),
   negative("invalid-dense-write-same-elem-type-clobbers", "without `widths !== targets`, an in-bounds write on `Dense<number[]>` can alias `number[]` and clobber `forall k in targets: 1 <= targets[k]`, reading `out[-1]` (`undefined`) and returning `NaN` (run under Node)",
     /source expression obligation at \[674,684\)/),
+  positive("disjunctive-element-nonnull", "disjunctive non-null narrowing of a bounded `(number[] | null)[]` read coerced to `number[] | null | undefined`, merged `atIndex` non-null facts across branches, and `atIndex` implying array upper bounds"),
+  negative("invalid-disjunctive-element-nonnull", "a disjunct (`flag || startAdvances !== null`) that does not exclude `null` leaves `startAdvances!` nullable and throws `TypeError` under Node",
+    /source expression obligation|evidence search failed/i),
+  negative("invalid-merged-atindex-nonnull", "a merge branch that omits `advances[i] !== null` leaves `advances[i]!` nullable after the merge and throws `TypeError` under Node",
+    /source expression obligation|evidence search failed/i),
 ];

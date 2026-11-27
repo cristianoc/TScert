@@ -3906,12 +3906,38 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       -- `e!` (or `as const`): the operand less null and undefined.
       | none => nonNullish (← need A "the operand")
     -- `f(…)!` and `xs[i]!`: the call or the read proposed at the operand
-    -- less null and undefined, which its own step proves where the facts
-    -- select a signature giving it (`SinglePass.directCall`'s order).
+    -- less null and undefined when a signature returns it, else less
+    -- `undefined` when a signature returns that (e.g. a bounded read of
+    -- `(T | null)[]`, whose outer `!` cast then strips `null` by facts),
+    -- else kept at the operand's type (`SinglePass.directCall`'s order).
     if annot.isNone then
-      match x, r with
-      | .call .., some B | .invoke .., some B | .elemAt .., some B => let _ ← record x (.ok B)
-      | _, _ => pure ()
+      match x, A, r with
+      | .call _ callee .., some A0, some B | .invoke _ callee .., some A0, some B =>
+        let w ← get
+        let G ← StateT.lift graphNow
+        let T ← StateT.lift table
+        let sigs : Option (List (CallEffects.Arrow (Ty Tree))) :=
+          ((w.exprs.get? callee.span).bind (·.2.toOption)).bind fun F =>
+            match PositiveRules.expand G F with
+            | [.arrs L _] | [.callable _ _ L _ _] => some L
+            | _ => none
+        match sigs with
+        | some L =>
+          if L.any (fun p => within T p.result B) then
+            let _ ← record x (.ok B)
+          else
+            let defined ← StateT.lift (slice A0 .isUndef false)
+            if defined != A0 && L.any (fun p => within T p.result defined) then
+              let _ ← record x (.ok defined)
+        | none => let _ ← record x (.ok B)
+      | .elemAt .., some A0, some B =>
+        let G ← StateT.lift graphNow
+        if (BranchRefinement.tagSlice G A0 .isNul true).isEmpty then
+          let _ ← record x (.ok B)
+        else
+          let defined ← StateT.lift (slice A0 .isUndef false)
+          if defined != A0 then let _ ← record x (.ok defined)
+      | _, _, _ => pure ()
     -- `[…] as const`: the readonly tuple of its elements' own types.
     let r ← match annot, x with
       | none, .arrayLit _ es [] => do
