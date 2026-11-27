@@ -6689,10 +6689,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     return b
 end
 
-/-- A unit's walk over the store `T`, from its parameters' written types
-and the module values `module` it reads: what it records, and the grown
-store. -/
-def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
+/-- The module actions a body reads, in environment order, including
+implicit prototype and uninitialized-binding reads. -/
+def readBindings (f : Fragment.Fn) (module : List (String × Compiler (Ty Tree))) :=
+  let reads := Std.HashSet.ofList (moduleReadNames f.body)
+  module.filter fun v => reads.contains v.1
+
+private def walkWithBindings (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
     (schemes : List (Span × Ty Tree) := [])
@@ -6763,6 +6766,30 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     return ({ w with contractReads := ← contractReads }, ← table)
   let ((w, T'), _) ← runCompiler T [] action
   return (w, T')
+
+/-- A unit's walk over the store `T`, from its parameters' written types
+and the module values `module` it reads: what it records, and the grown
+store. -/
+def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
+    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
+    (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
+    (schemes : List (Span × Ty Tree) := [])
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) (moduleCells : List String := []) :
+    Except String (Walk × EquationStore.State) :=
+  walkWithBindings T f (readBindings f module) generics force scope schemes initBinders moduleCells
+
+/-- The walk and its grown store depend on the module actions only through
+the ordered bindings selected for this body. -/
+theorem walkUnit_bindings_congr (T : EquationStore.State) (f : Fragment.Fn)
+    (module other : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
+    (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
+    (schemes : List (Span × Ty Tree) := [])
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) (moduleCells : List String := [])
+    (h : readBindings f module = readBindings f other) :
+    walkUnit T f module generics force scope schemes initBinders moduleCells =
+      walkUnit T f other generics force scope schemes initBinders moduleCells := by
+  unfold walkUnit
+  rw [h]
 
 /-- The lowering's reading of an expression the walk gives no type: the
 unit's refusal where a rule the lowering shares refuses it (`refusalMark`), else a type

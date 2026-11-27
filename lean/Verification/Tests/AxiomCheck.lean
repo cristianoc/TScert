@@ -305,6 +305,7 @@ import Verification.Source.FlowGraph
 import Verification.Source.FlowJson
 import Verification.Source.Fragment
 import Verification.Source.FragmentTypes
+import Verification.Source.GroupProjection
 import Verification.Source.LabelStore
 import Verification.Source.Lowering
 import Verification.Source.Lowering.Atoms

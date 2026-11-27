@@ -1369,9 +1369,11 @@ structure PlanImports where
   code : Thunk (Except String ImporterCode)
   unbound : List (String × List (String × String))
 
-def planImports (ast : Json) : Except String PlanImports := do
-  let sc ← ImportScope.of ast
-  return ⟨sc, Thunk.mk fun _ => decodeImporter ast, unboundImports sc ast⟩
+def planImportsIn (ast : Json) (sc : ImportScope) : PlanImports :=
+  ⟨sc, Thunk.mk fun _ => decodeImporter ast, unboundImports sc ast⟩
+
+def planImports (ast : Json) : Except String PlanImports :=
+  (ImportScope.of ast).map (planImportsIn ast)
 
 /-- The reads of a selected group, with their established effects and
 provider identities, and the file's unbound reads. -/

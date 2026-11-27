@@ -221,9 +221,8 @@ at the instances a unit names; and the generic units' binders. A declaration
 the lowering refuses is refused at the unit requiring it, and a claim it
 cannot read is an invalid document. A variance declaration that does not
 check (§7.5) refuses the source at its heads. -/
-def equationFront (ast claims : Json) (fileKey : String)
-    (budget : PositiveCertificates.SearchBudget := {}) :
-    Except String Prepared := do
+def lowerEquationFront (ast claims : Json)
+    (budget : PositiveCertificates.SearchBudget) : Except String SourceLowering := do
   sourceGate (ast.getObjValD "functions")
   sourceGate (ast.getObjValD "init")
   let document ← jField ast "declarations"
@@ -246,7 +245,7 @@ def equationFront (ast claims : Json) (fileKey : String)
     fun f => (f.getObjValAs? Span "namePos").toOption
   let contractSite := firstClaimed.getD (0, 0)
   let empty : EquationStore.State := { doc := #[] }
-  let L ← (EquationLowering.source ast claims budget).mapError fun failure => match failure with
+  (EquationLowering.source ast claims budget).mapError fun failure => match failure with
     | .refusal reason =>
       if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
           reason.startsWith "a label" || reason.startsWith "a producer's row" then
@@ -256,6 +255,9 @@ def equationFront (ast claims : Json) (fileKey : String)
     | .bound T pos site actual expected outcome =>
       let pos := pos.getD contractSite
       directFailure T ⟨pos, .bindingAnnotation, .subtyping pos actual expected⟩ outcome (some site)
+/-- Apply one validated equation lowering to a source. The store determines
+all annotation labels and all subsequent positive and negative intern lookups. -/
+def prepareEquationFront (ast : Json) (fileKey : String) (L : SourceLowering) : Except String Prepared := do
   let d ← decodeDocument L.store L.claims
   checkIdentity d ast fileKey
   let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
@@ -296,6 +298,10 @@ def equationFront (ast claims : Json) (fileKey : String)
     let pos ← (f.getObjValAs? Span "namePos").toOption
     return ((name, pos), bs)
   return ⟨ast, d, imported, generics, units, L.initBinders⟩
+
+def equationFront (ast claims : Json) (fileKey : String)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Prepared := do
+  prepareEquationFront ast fileKey (← lowerEquationFront ast claims budget)
 
 end
 
