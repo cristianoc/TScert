@@ -1274,7 +1274,10 @@ with the knowledge their edges carry, such as the field a failed test left
       | _ => n
     let kinds ← sourceKindLabels Γ
     let G := SourceTypes.graph (← table)
-    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original kinds
+    -- The comparisons' operands' types, which a comparison's narrowing reads.
+    let typedOperands ← (comparisonOperands left).mapM fun e => do pure (e.span, ← exprType fc e)
+    let typed := fun (e : Fragment.Expr) => typedOperands.lookup e.span
+    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original kinds (typed := typed)
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e => compileConditionAtom recursive fc scope Γ e no yes

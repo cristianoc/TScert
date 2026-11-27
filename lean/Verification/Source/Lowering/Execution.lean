@@ -1071,6 +1071,11 @@ the one the graph checker computes for the dispatch. -/
       let arrays ← if correlated && arrayTested origin then some <$> builtinArrayTy else pure none
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let kinds ← if correlated then sourceKindLabels Δ else pure []
+      -- The comparisons' operands' types, which a comparison's narrowing reads.
+      let typedOperands ← if correlated then
+          (comparisonOperands origin).mapM fun e => do pure (e.span, ← exprType fc e)
+        else pure []
+      let typed := fun (e : Fragment.Expr) => typedOperands.lookup e.span
       let G := SourceTypes.graph (← table)
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
         let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
@@ -1082,7 +1087,7 @@ the one the graph checker computes for the dispatch. -/
           | _ => (newestWitness witnesses n).getD n
         let constants ← conditionConstants
         let implied := constantImplications G scope' Δ constants arrays (singletonOf singles) kinds
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds implied else
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds implied typed else
           match alias with
           | some i => Δ.set i T
           | none => Δ

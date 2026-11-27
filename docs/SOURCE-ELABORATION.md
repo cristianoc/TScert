@@ -839,7 +839,12 @@ position keeps its value plan and its claim
 **Contexts.** The right operand of `&&` runs in the context the left
 operand's truthy answer leaves, of `||` its falsy one's: a tested variable
 is a Boolean outcome where it is a Boolean, and otherwise the labels of its
-type its truthiness admits (`conditionContext`). So `s && r !== "a" ? r : x`
+type its truthiness admits (`conditionContext`); after a strict comparison
+answered `true`, an operand that is an immutable binding, or a field of one,
+is the union of its slices at the tags of the other operand's type, as the
+comparison's yields state it (`PromiseCalls.comparisonYield`), so past
+`if (n !== d.name || v !== d.version) throw …` with `n, v : Json` and
+`d.name, d.version : string`, both `n` and `v` are strings. So `s && r !== "a" ? r : x`
 sees `r` at `"b"` in its first arm (`logical-truth-narrowing`), and
 `s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`). A
 negated guard's call as `||`'s left operand is a dispatch on the call, its

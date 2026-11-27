@@ -117,6 +117,14 @@ checker proves it from the callee's signature at the call
   let (j, A) ← slotType name
   return (j, BranchRefinement.factFilter G A T)
 
+/-- The operands of the strict comparisons a condition's answer decides,
+through negations and short-circuit operators. -/
+def comparisonOperands : Fragment.Expr → List Fragment.Expr
+  | .not _ e => comparisonOperands e
+  | .logical _ _ a b => comparisonOperands a ++ comparisonOperands b
+  | .arith _ .eq l r => [l, r]
+  | _ => []
+
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
@@ -125,19 +133,41 @@ either refined it to (`joinContexts`), and any other slot keeps its input
 type. A test of a field of an immutable binding's object refines the object
 to the arms whose field can pass it (`fieldSlice`). A passed equality with a
 singleton `single` names (`conditionSingletons`) leaves its operand that value
-alone, which `tagMember` checks on the edge. -/
+alone, which `tagMember` checks on the edge. A strict comparison that answered
+`true` leaves an operand that is an immutable binding, or a field of one, the
+union of its slices at the tags of the other operand's type (`equalityTags`,
+the other's type from `Γ` or `typed`), as the comparison's yields state it
+(`PromiseCalls.comparisonYield`). -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
     (single : Tag → Option ι := fun _ => none) (original : String → String := id)
-    (kinds : List ι := []) (implied : String → List (Nat × Ty ι) := fun _ => []) : List (Ty ι) :=
+    (kinds : List ι := []) (implied : String → List (Nat × Ty ι) := fun _ => [])
+    (typed : Fragment.Expr → Option (Ty ι) := fun _ => none) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original kinds implied
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original kinds implied typed
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer arrays single original kinds implied) right answer arrays single original kinds implied
+      conditionContext G scope (conditionContext G scope Γ left answer arrays single original kinds implied typed) right answer arrays single original kinds implied typed
     else
-      joinContexts Γ (conditionContext G scope Γ left answer arrays single original kinds implied)
-        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original kinds implied) right answer arrays single original kinds implied)
+      joinContexts Γ (conditionContext G scope Γ left answer arrays single original kinds implied typed)
+        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original kinds implied typed) right answer arrays single original kinds implied typed)
+  | .arith _ .eq l r =>
+    if !answer then Γ else
+    let typeOf : Fragment.Expr → Option (Ty ι) := fun e => match e with
+      | .var _ name => ((valueSlot scope name).bind (Γ[·]?)).orElse fun _ => typed e
+      | e => typed e
+    let narrow := fun (Δ : List (Ty ι)) (x y : Fragment.Expr) =>
+      match (typeOf y).bind (PromiseCalls.equalityTags G) with
+      | none => Δ
+      | some tags => match x with
+        | .var _ name => match valueSlot scope name with
+          | some i => Δ.set i (PromiseCalls.memberSlotSlice G (Γ[i]?.getD []) tags true)
+          | none => Δ
+        | .read _ f (.var _ name) => match valueSlot scope name with
+          | some i => Δ.set i (PromiseCalls.memberFieldSlice G (Γ[i]?.getD []) f tags true [])
+          | none => Δ
+        | _ => Δ
+    narrow (narrow Γ l r) r l
   | .tagMember _ _ field tags onUndefined (.var _ saved) =>
     -- A family guard's test leaves the name's type, or its object's arms, as
     -- its answer's yields state them (`PromiseCalls.memberYield`); a saved
