@@ -2004,7 +2004,7 @@ idempotence `bitMask(c, r) = r`, and, for every active mask `M ∈ masks`, the
 law `bitMask(M, x & c) = bitMask(M & c, x)`, stated as the constant `0` where
 `M & c = 0`. -/
 def bitAndSideAtoms (masks : List Nat) (x : Nat) (c : Int) : List IndexAtom :=
-  (if 0 ≤ c && c < 2 ^ 31 then
+  (if 0 ≤ c && c < 2 ^ 31 && masks.contains c.toNat then
     let M := c.toNat
     termEqAtoms (.value 0) (.now (.bitMask M) (x + 1) []) ++
     termEqAtoms (.now (.bitMask M) 0 []) (.value 0)
@@ -2115,7 +2115,7 @@ private theorem bitAndSideAtoms_holds {masks : List Nat} {x : Nat} {c : Int}
       have hMlt : c.toNat < 2 ^ 31 := by omega
       have hMc : (c.toNat : Int) = c := by omega
       have hby : toInt32 by_ = (c.toNat : Int) := by
-        rw [SafeIntegers.toInt32_small hc (by omega) hcr.2, hMc]
+        rw [SafeIntegers.toInt32_small hc (by omega) hcr.1.2, hMc]
       have hval0 : termValue ε (push (.num (arithBits .bitAnd bx by_)) ρ) h (.value 0) =
           some (intAnd (toInt32 bx) (c.toNat : Int)) := by
         simp only [termValue_value, push, intValue_num hsafe_u, hby]
@@ -4389,14 +4389,21 @@ def writeFootprint (a : Nat) : Footprints.Footprint :=
 /-- The heap-reading index atoms of `k` kept by an element write at slot `a`
 under the tolerant frame (`Footprints.IndexFact.keeps`). -/
 def writeFrameAtoms (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : List IndexAtom :=
+  let c : Footprints.ReadContext := .ofFirst stable
+  let Φ := writeFootprint a
+  let sepFacts := Footprints.separationFacts k.separation
+  let baseQ := Footprints.knowledgeQueryUnder k []
   k.indices.filter fun atom => !atom.fact.envOnly &&
-    atom.fact.keepsUnder k (.ofFirst stable) (writeFootprint a) []
+    atom.fact.keepsUnderWith baseQ sepFacts k c Φ []
 
 /-- The read links of `k` kept by an element write at slot `a` under the
 tolerant frame (`Footprints.FactKind.link`), shifted past the step's result. -/
 def writeFrameLinks (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : HeapLinks.Links :=
-  (k.links.filter fun g => !g.alias && Footprints.respects (Footprints.knowledgeQuery k)
-    ((Footprints.FactKind.link g).supportIn (.ofFirst stable)) (writeFootprint a)).map
+  let q := Footprints.knowledgeQuery k
+  let c : Footprints.ReadContext := .ofFirst stable
+  let Φ := writeFootprint a
+  (k.links.filter fun g => !g.alias && Footprints.respects q
+    ((Footprints.FactKind.link g).supportIn c) Φ).map
     fun g => { g with cell := g.cell + 1, value := g.value + 1 }
 
 /-- `out` with the read links `ls` added. -/
@@ -4506,7 +4513,7 @@ theorem boundedWriteFrame_sound [DecidableEq ι] {G : NormalGraph ι} {images : 
   have hctx := Footprints.ReadContext.ofFirst_holds hst
   refine ⟨fun atom hm hcd => ?_, fun g hg => ?_⟩
   · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp hm
-    simp only [Bool.and_eq_true] at hkeep
+    simp only [Bool.and_eq_true, Footprints.IndexFact.keepsUnderWith_eq] at hkeep
     exact Footprints.IndexFact.keepsUnder_sound hk hh hρ hp hctx atom.fact [] (by simp) hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
   · obtain ⟨g0, hg0, rfl⟩ := List.mem_map.mp hg
     obtain ⟨hgm, hr⟩ := List.mem_filter.mp hg0

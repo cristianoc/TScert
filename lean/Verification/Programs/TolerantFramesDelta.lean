@@ -188,7 +188,8 @@ theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Na
             | _ => none
           let masks := (s.about r).filterMap fun b => match b with
             | .index a => if a.cond.isNone then match a.fact with
-                | .linear _ => some a
+                | .linear L =>
+                  if L.vars.any (fun t => match t.kind with | .bitMask _ => true | _ => false) then some a else none
                 | _ => none
               else none
             | _ => none
@@ -252,7 +253,8 @@ theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Na
                   else none
                 | _ => none) ++ ((w.about r).filterMap fun b => match b with
                 | .index a => if a.cond.isNone then match a.fact with
-                    | .linear _ => some a
+                    | .linear L =>
+                      if L.vars.any (fun t => match t.kind with | .bitMask _ => true | _ => false) then some a else none
                     | _ => none
                   else none
                 | _ => none) ++ [x]) η h := by
@@ -284,7 +286,9 @@ theorem restateAddedAtIndex_ok {s : Store} {x : HeapKnowledge.IndexAtom} {v : Na
                   split at hby
                   · split at hby
                     · split at hby
-                      · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                      · split at hby
+                        · cases hby; exact hw _ (about_storeAll hb) y (List.mem_singleton_self _) hc
+                        · cases hby
                       · cases hby
                     · cases hby
                   · cases hby

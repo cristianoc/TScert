@@ -2759,7 +2759,7 @@ private def everyEmpty (K : Linear.Known Term) (M : Nat → List Nat) (m : Point
     let hi := stop'.pick M m a
     let len := pickTerm M m a (Term.now .length s' p')
     lo.defined a && hi.defined a && (termDefined a len || elementsKnown M m a s' p') &&
-      (entailsUnder K M m a t (hi.leFact lo) || entailsUnder K M m a t (hi.leFact .zero))
+      (entailsUnder K M m a t (hi.leFact lo) || (lo != .zero && entailsUnder K M m a t (hi.leFact .zero)))
   | _ => false
 
 private theorem everyEmpty_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : PointClaims.Mapping}
@@ -2790,7 +2790,7 @@ private theorem everyEmpty_sound {K : Linear.Known Term} {M : Nat → List Nat} 
       by rw [← IndexBound.pick_eq hM]; exact hn', fun i hlo hi => ?_⟩
     rcases hempty with h1 | h2
     · have := IndexBound.leFact_sound hn' hm' (entailsUnder_sound hM hK ha hcond h1); omega
-    · have := IndexBound.leFact_sound hn' (b := .zero) (mb := 0) rfl (entailsUnder_sound hM hK ha hcond h2); omega
+    · have := IndexBound.leFact_sound hn' (b := .zero) (mb := 0) rfl (entailsUnder_sound hM hK ha hcond h2.2); omega
   · cases hf
 
 /-- A quantified fact follows from a stronger covering interval, from guards
@@ -3552,6 +3552,62 @@ def baseFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (as : List IndexAt
     fieldReadFollows M ls F ||
     match F with | .every .. => everyEntailed (knownOf as) M none as { fact := F } | _ => false
 
+/-- `baseFollows` reusing a precomputed `Linear.Known Term` (`baseK`) for the
+first `baseLen` atoms of `as` and incrementally adding any suffix atoms. -/
+def baseFollowsIn (M : Nat → List Nat) (ls : HeapLinks.Links) (baseLen : Nat)
+    (baseK : Thunk (Linear.Known Term)) (as : List IndexAtom) (F : IndexFact) : Bool :=
+  as.any (fun s => s.cond.isNone && factFollows M none s.fact F) || spineFollows M none ls as { fact := F } ||
+    fieldReadFollows M ls F ||
+    match F with
+    | .every .. =>
+      let K := (as.drop baseLen).foldl (fun acc a =>
+        if a.cond.isNone then (factLinear a.fact).foldl Linear.Known.add acc else acc) baseK.get
+      everyEntailed K M none as { fact := F }
+    | _ => false
+
+theorem baseFollowsIn_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {baseLen : Nat}
+    {baseK : Thunk (Linear.Known Term)} {as : List IndexAtom} {F : IndexFact} {ρ h}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
+    (hK : baseK.get.Holds (termValuation ε ρ h))
+    (hf : baseFollowsIn M ls baseLen baseK as F = true) (ha : IndexHolds ε as ρ h) : F.HoldsAt ε ρ h := by
+  rcases Bool.or_eq_true_iff.mp hf with hf | hev
+  · rcases Bool.or_eq_true_iff.mp hf with hf | hf
+    · rcases Bool.or_eq_true_iff.mp hf with hf | hf
+      · obtain ⟨s, hs, hm⟩ := List.any_eq_true.mp hf
+        simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+        exact factFollows_sound (m := none) hM hm.2 (ha s hs fun b hb => by rw [hm.1] at hb; cases hb)
+      · exact spineFollows_sound (m := none) hM hl hf ha
+    · exact fieldReadFollows_sound hM hl hf
+  · cases F with
+    | every _ _ _ _ _ =>
+      have hK' : ((as.drop baseLen).foldl (fun acc a =>
+          if a.cond.isNone then (factLinear a.fact).foldl Linear.Known.add acc else acc) baseK.get).Holds
+          (termValuation ε ρ h) := by
+        have step : ∀ (xs : List IndexAtom) (acc : Linear.Known Term),
+            (∀ a ∈ xs, a ∈ as) → acc.Holds (termValuation ε ρ h) →
+            (xs.foldl (fun acc a =>
+              if a.cond.isNone then (factLinear a.fact).foldl Linear.Known.add acc else acc) acc).Holds
+              (termValuation ε ρ h) := by
+          intro xs
+          induction xs with
+          | nil => intro acc _ hacc; exact hacc
+          | cons a xs ih =>
+            intro acc hsub hacc
+            refine ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) ?_
+            dsimp only
+            split
+            · rename_i hnone
+              have hF := ha a (hsub a List.mem_cons_self) fun b hb => by
+                rw [Option.isNone_iff_eq_none.mp hnone] at hb; cases hb
+              intro G hG
+              rcases Linear.Known.mem_foldl_add hG with hG | hG
+              · exact hacc G hG
+              · exact factLinear_holds hF G hG
+            · exact hacc
+        exact step (as.drop baseLen) baseK.get (fun _ hx => List.mem_of_mem_drop hx) hK
+      exact everyEntailed_sound (m := none) hM hK' ha (fun _ hc => by cases hc) hev
+    | _ => cases hev
+
 theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : List IndexAtom} {F : IndexFact} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
     (hf : baseFollows M ls as F = true) (ha : IndexHolds ε as ρ h) : F.HoldsAt ε ρ h := by
@@ -4148,6 +4204,7 @@ structure GuardPrep where
   aug : List IndexAtom
   compPairs : Thunk (List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom))
   known : Thunk (Linear.Known Term)
+  rawKnown : Thunk (Linear.Known Term)
   unsat : Thunk Bool
   eithers : Thunk (List IndexAtom)
 
@@ -4166,12 +4223,13 @@ def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag �
   let aug := a ++ past ++ guarded
   let compPairs := Thunk.mk fun _ => compGuardPairs lg aug
   let known := Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw aug)) (bridgeFacts lt (rangesRaw aug))
+  let rawKnown := Thunk.mk fun _ => knownOf aug
   let unsat := Thunk.mk fun _ => known.get.entails (.le [] (-1)) || pastClash aug
   let eithers := Thunk.mk fun _ => aug.filter fun x => x.cond.isNone && match x.fact with
     | .either _ (.pastSafe _) => false
     | .either _ _ => true
     | _ => false
-  { lt, lg, ld, aug, compPairs, known, unsat, eithers }
+  { lt, lg, ld, aug, compPairs, known, rawKnown, unsat, eithers }
 
 /-- Complementary-guard elimination using the precomputed deduplicated pairs
 `compGuardPairs lg as`: every value read at the guard's path fails either `t`
@@ -4271,7 +4329,7 @@ def guardFollowsWith (gp : GuardPrep) (M : Nat → List Nat) (m : PointClaims.Ma
   | .guarded .. | .either .. | .linear .. | .atIndex .. | .spineApart .. =>
     match t.fact.mapM (fun y => some (pickSlot M m a y)) with
     | some F =>
-      let base := fun as F => baseFollows M ls as F || atIndexFollows M ls gp.lt gp.lg gp.ld tags as F
+      let base := fun as F => baseFollowsIn M ls gp.aug.length gp.rawKnown as F || atIndexFollows M ls gp.lt gp.lg gp.ld tags as F
       let check := guardEntails gp.lt gp.lg gp.ld tags base
       let eithers :=
         let all := gp.eithers.get
@@ -4336,9 +4394,10 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
       have hld : ∀ s p, readGuard h (ρ ((guardPrep ls tags a).ld s p).1) ((guardPrep ls tags a).ld s p).2 =
           readGuard h (ρ s) p := lowerGuard_eq hl hr _
       have haug := guardPrep_aug_holds hl htags ha
-      have hbase : ∀ as F, (baseFollows M ls as F || atIndexFollows M ls (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags as F) = true →
+      have hrawK : (guardPrep ls tags a).rawKnown.get.Holds (termValuation ε ρ h) := knownOf_holds haug
+      have hbase : ∀ as F, (baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown as F || atIndexFollows M ls (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags as F) = true →
           IndexHolds ε as ρ h → F.HoldsAt ε ρ h := fun as F hb ha' =>
-        (Bool.or_eq_true_iff.mp hb).elim (fun h1 => baseFollows_sound hM hl h1 ha')
+        (Bool.or_eq_true_iff.mp hb).elim (fun h1 => baseFollowsIn_sound hM hl hrawK h1 ha')
           (fun h2 => atIndexFollows_sound hM hl hlt hlg hld htags h2 ha')
       have hKgp : (guardPrep ls tags a).known.get.Holds (termValuation ε ρ h) :=
         Linear.Known.build_holds (bridgeFacts_holds hlt (linearRaw_holds haug)) (bridgeFacts_holds hlt (rangesRaw_holds haug))
@@ -4622,16 +4681,18 @@ def indicesFilter (k : Knowledge) (cs : List IndexAtom) (useCases : Bool := true
   let lg := liftGuard r greads greads.length
   let ld := lowerGuard greads r greads.length
   let a' := a ++ releasePast a
+  let rawK := if a'.length == a.length then K else Thunk.mk fun _ => knownOf a'
   let K' := Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw a')) (bridgeFacts lt (rangesRaw a'))
   let unsat := Thunk.mk fun _ => K'.get.entails (.le [] (-1)) || pastClash a'
   let eithersAll := Thunk.mk fun _ => a'.filter fun x => x.cond.isNone && match x.fact with
     | .either _ (.pastSafe _) => false
     | .either _ _ => true
     | _ => false
+  let base := baseFollowsIn M ls a'.length rawK
   let check := fun (as : List IndexAtom) (F : IndexFact) =>
-    guardEntailsIn lt lg ld tags (baseFollows M ls) none as F
+    guardEntailsIn lt lg ld tags base none as F
   let checkTop := fun (F : IndexFact) =>
-    guardEntailsIn lt lg ld tags (baseFollows M ls) (some K') a' F
+    guardEntailsIn lt lg ld tags base (some K') a' F
   let solveF := fun (F : IndexFact) =>
     checkTop F || unsat.get ||
       (useCases &&
@@ -4699,11 +4760,16 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
       have hK' : (Linear.Known.build (bridgeFacts (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length) (linearRaw (k.indices ++ releasePast k.indices)))
           (bridgeFacts (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length) (rangesRaw (k.indices ++ releasePast k.indices)))).Holds (termValuation ε ρ h) :=
         Linear.Known.build_holds (bridgeFacts_holds hlt (linearRaw_holds ha')) (bridgeFacts_holds hlt (rangesRaw_holds ha'))
+      have hrawK : (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices)).get.Holds (termValuation ε ρ h) := by
+        split
+        · exact knownOf_holds ha
+        · exact knownOf_holds ha'
       have solveF_sound : ∀ (F : IndexFact),
           (guardEntailsIn (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length)
             (liftGuard (HeapLinks.rep (HeapLinks.classes k.links)) (guardReads k.links) (guardReads k.links).length)
             (lowerGuard (guardReads k.links) (HeapLinks.rep (HeapLinks.classes k.links)) (guardReads k.links).length)
-            (guardTags k) (baseFollows (HeapLinks.aliases k.links) k.links)
+            (guardTags k) (baseFollowsIn (HeapLinks.aliases k.links) k.links (k.indices ++ releasePast k.indices).length
+              (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices)))
             (some (Thunk.mk fun _ => Linear.Known.build (bridgeFacts (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length) (linearRaw (k.indices ++ releasePast k.indices)))
               (bridgeFacts (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length) (rangesRaw (k.indices ++ releasePast k.indices)))))
             (k.indices ++ releasePast k.indices) F ||
@@ -4720,13 +4786,14 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
             !es.isEmpty && caseEntailsAux (fun as G => guardEntailsIn (liftTerm (HeapLinks.rep (HeapLinks.classes k.links)) (bridgeReads k.links) (bridgeReads k.links).length)
               (liftGuard (HeapLinks.rep (HeapLinks.classes k.links)) (guardReads k.links) (guardReads k.links).length)
               (lowerGuard (guardReads k.links) (HeapLinks.rep (HeapLinks.classes k.links)) (guardReads k.links).length)
-              (guardTags k) (baseFollows (HeapLinks.aliases k.links) k.links) none as G)
+              (guardTags k) (baseFollowsIn (HeapLinks.aliases k.links) k.links (k.indices ++ releasePast k.indices).length
+                (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices))) none as G)
               8 (k.indices ++ releasePast k.indices) es F)) = true →
           F.HoldsAt ε ρ h := by
         intro F hok
         rcases Bool.or_eq_true_iff.mp hok with hok | haux
         · rcases Bool.or_eq_true_iff.mp hok with htop | huns
-          · exact guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha0 => baseFollows_sound hM hl hb ha0) F _ _
+          · exact guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha0 => baseFollowsIn_sound hM hl hrawK hb ha0) F _ _
               (fun kt hkt => by cases hkt; exact hK') htop ha'
           · rcases Bool.or_eq_true_iff.mp huns with hle | hpc
             · have bad := Linear.Known.entails_sound hK' hle
@@ -4737,7 +4804,7 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
           split at haux
           · cases haux
           · exact caseEntailsAux_sound
-              (fun as G hG ha0 => guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha1 => baseFollows_sound hM hl hb ha1) G none as (fun _ h => by cases h) hG ha0)
+              (fun as G hG ha0 => guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha1 => baseFollowsIn_sound hM hl hrawK hb ha1) G none as (fun _ h => by cases h) hG ha0)
               8 _ _ F (fun _ h => by
                 split at h
                 · exact (List.mem_filter.mp h).1

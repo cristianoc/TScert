@@ -228,7 +228,7 @@ theorem mergeState_wf {G : NormalGraph ι} {context : List (Ty ι)} {preds : Lis
   · show StoreWF (mergeStore _ _ _ _)
     unfold mergeStore
     exact mergeAddGuarded_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ => trivial)
-      (mergeEntailed_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ _ _ _ => trivial)
+      (mergeEntailed_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ => trivial)
         (mergeBounds_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ => trivial)
           (mergeMet0_wf hwf)))
   · have hrl : 0 < (mergeSlots (q :: qs) context.length fresh).2.2.1.length := by rw [I.len]; simp

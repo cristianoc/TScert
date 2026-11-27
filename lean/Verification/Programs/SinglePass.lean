@@ -748,7 +748,8 @@ def restateAddedAtIndex (s : Store) (x : HeapKnowledge.IndexAtom) (v : Nat) : St
           | _ => none
         let masks := (s.about r).filterMap fun b => match b with
           | .index a => if a.cond.isNone then match a.fact with
-              | .linear _ => some a
+              | .linear L =>
+                if L.vars.any (fun t => match t.kind with | .bitMask _ => true | _ => false) then some a else none
               | _ => none
             else none
           | _ => none
@@ -2240,6 +2241,46 @@ an undefined term as 0. -/
 def entailDefinedCheck (q : State) (a : Atom) (F : Linear.Fact HeapKnowledge.Term) : Bool :=
   q.store.live.contains a.canon || F.vars.all (HeapKnowledge.termDefined (q.store.linearNear a.names) ·)
 
+/-- Whether a predecessor's view `qs` holds or entails the linear fact `F`
+(with its terms defined), first lowering any field-path terms of `F` through
+`qs.store`'s read links (`Store.lowerTerm`, matching `Store.lowerAtom`). -/
+def entailLinearView (qs : State) (F : Linear.Fact HeapKnowledge.Term) (neg : Bool) : Bool :=
+  let F' := if F.vars.any (fun t => !t.path.isEmpty) then
+      HeapKnowledge.renameFact (fun t => qs.store.lowerTerm t.path.length t) F
+    else F
+  let a' : Atom := .index ⟨.linear F', none, neg⟩
+  (qs.store.holds a' || HeapKnowledge.entailsKnown (qs.store.linearNear a'.names) F') &&
+    entailDefinedCheck qs a' F'
+
+/-- Linear candidate atoms for `mergeEntailed`: each predecessor's differing
+linear facts, plus any unconditional linear fact of a predecessor's view over
+the value of a differing read link `o.f ↦ v` (with `o` live) restated over
+`o.f` (mirroring `Store.lowerAtom`, which stores field facts over `v`). -/
+def mergeEntailedCandidates (live : Std.HashSet Nat) (diffs : List (List Atom)) (views : List State) :
+    List Atom :=
+  (diffs.zip views).flatMap fun (d, qs) =>
+    let direct := d.filter fun
+      | .index ⟨.linear _, none, _⟩ => true
+      | _ => false
+    let readLinks := d.filterMap fun
+      | .link g =>
+        if !g.alias && live.contains g.cell then
+          match g.field with
+          | .str f => some (g.value, g.cell, f)
+          | .sym _ => none
+        else none
+      | _ => none
+    let restated := readLinks.flatMap fun (v, o, f) =>
+      (qs.store.about v).filterMap fun
+        | .index ⟨.linear F, none, neg⟩ =>
+          if F.vars.any (fun t => !t.atEntry && t.slot == v) then
+            let F' := HeapKnowledge.renameFact (fun t =>
+              if !t.atEntry && t.slot == v then HeapKnowledge.Term.now t.kind o (f :: t.path) else t) F
+            some (Atom.index ⟨.linear F', none, neg⟩)
+          else none
+        | _ => none
+    direct ++ restated
+
 /-- What a merge computes: the meet state, its implications, the next
 fresh name, the facts its predecessors state that the met store lacks
 (counted), each predecessor's state at the merge's names and its renaming. -/
@@ -2444,16 +2485,12 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   met := timedKind "meet entailed" fun _ => Id.run do
     let mut acc := met
     let mut seen : Std.HashSet Atom := {}
-    for d in diffs do
-      for a in d do
-        if let .index ⟨.linear F, none, _⟩ := a then
-          if !seen.contains a && a.names.all live.contains && !acc.holds a then
-            seen := seen.insert a
-            if views.all fun (qs : State) => qs.store.holds a ||
-                HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-              -- Its terms defined in every view (`entailDefinedCheck`).
-              if views.all fun (qs : State) => entailDefinedCheck qs a F then
-                acc := acc.add a
+    for a in mergeEntailedCandidates live diffs views do
+      if let .index ⟨.linear F, none, neg⟩ := a then
+        if !seen.contains a && a.names.all live.contains && !acc.holds a then
+          seen := seen.insert a
+          if views.all fun (qs : State) => entailLinearView qs F neg then
+            acc := acc.add a
     return acc
   -- The guarded facts a join keeps, over the facts that differ: the
   -- search's join (`CertificateProducer.joinGuarded`) over each

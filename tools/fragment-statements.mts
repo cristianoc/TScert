@@ -2345,18 +2345,32 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
  * tags a guard excludes of it (`withoutTags`), an optional field read where
  * `undefined` is excluded of it or, at the path's end, where `optionalLast`
  * (ARITHMETIC.md, "Guarded clauses"). */
+function unwrapTypeAlias(gate: Gate, t: TypeTerm, depth: number = 0): TypeTerm {
+  if (depth > 16 || t.k !== "reference" || namesView(t)) return t;
+  const records = gate.namedRecords();
+  if (records === null) return t;
+  try {
+    const meaning = aliasMeaning(t, records, (): never => { throw new UnresolvedField(); });
+    return meaning === "record" ? t : unwrapTypeAlias(gate, meaning, depth + 1);
+  } catch (e) {
+    if (e instanceof UnresolvedField) return t;
+    throw e;
+  }
+}
+
 function clauseParameter(gate: Gate, name: string, position: number, type: TypeTerm | undefined): ClauseParameter {
   return {
     name,
     position,
     at: (path, excluded = () => [], optionalLast = false) => {
-      let t: TypeTerm | null = type === undefined ? null : withoutTags(type, excluded(0));
+      let t: TypeTerm | null = type === undefined ? null : withoutTags(unwrapTypeAlias(gate, type), excluded(0));
       for (const [i, f] of path.entries()) {
         if (t === null) break;
         const out = excluded(i + 1);
         const field = fieldType(gate, t, f, 0, out.includes("undefined") || (optionalLast && i === path.length - 1));
-        t = field === null ? null : withoutTags(field, out);
+        t = field === null ? null : withoutTags(unwrapTypeAlias(gate, field), out);
       }
+      if (t !== null) t = unwrapTypeAlias(gate, t);
       return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view"
         : t.k === "atom" && t.name === "string" ? "string" : integral(gate, t) ? "int" : "other";
     },
