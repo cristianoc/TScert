@@ -496,6 +496,7 @@ theorem unguardedByTypes_reassign (Γ : List (Ty ι)) (k : HeapKnowledge.Knowled
   have h : HeapKnowledge.releaseTypedGuarded (reassign G η) Γ = HeapKnowledge.releaseTypedGuarded G Γ :=
     funext (releaseTypedGuarded_reassign G η Γ)
   simp only [HeapKnowledge.unguardedByTypes, h]
+  rfl
 
 theorem requiresApp_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (p : ProgramCertificates.Evidence ι) :

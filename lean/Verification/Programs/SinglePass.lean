@@ -2150,7 +2150,7 @@ def edgeStoreOf (G : NormalGraph ι) (Γ : List (Ty ι)) (entryStore store : Sto
   | some o, _ =>
     let (k, pairs, table) := materialize { names, store } (if pushed then width + 1 else width) [0] false
       (observeElements := true)
-    let k' := HeapKnowledge.withElementsAfter k.indices.length k.links.length (HeapKnowledge.observeTyped G Γ k 0 o)
+    let k' := HeapKnowledge.withElementsAfterTyped G Γ k.indices.length k.links.length (HeapKnowledge.observeTyped G Γ k 0 o)
     let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
     applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => names[i]?
   | none, some q =>

@@ -3624,4 +3624,10 @@ for (const [file, call] of [
     [true, 2, 1, true], "invalid-object-spread-present-optional: object spread copies items from base and breaks guarded invariant");
   assert.equal(runExample(negative("invalid-nonempty-string-length"), `firstAfterNotA("")`), undefined,
     "invalid-nonempty-string-length: excluding 'a' still admits '', so codePointAt(0) returns undefined at number");
+  assert.deepEqual(runPlain(ofKind("typed-disequality-either", ["positive"]),
+    "[countClustersLiteral(0, 0, []), countClustersLiteral(0, 3, [2, 0x82, 2]), countClustersConst(0, 0), countClustersConst(0, 3), countClustersConstCross(0, 0), countClustersConstCross(0, 3), readNonContiguousUnion(2, [42], 0), readNarrowedLiteralUnion(2, [7], 0)]"),
+    [0, 2, 0, 3, 0, 3, 42, 7], "typed-disequality-either: safe cluster counts and literal-union disequality refutations");
+  assert.equal(runExample(negative("invalid-typed-disequality-either"),
+    "String(Number.isNaN(badWrongDisequality(0, 0, [])))"),
+    "true", "invalid-typed-disequality-either: testing state !== 2 fails to exclude empty range and reads undefined/NaN");
 }

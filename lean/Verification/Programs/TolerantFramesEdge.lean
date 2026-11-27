@@ -237,7 +237,7 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
     {s : IndexedHeap} {o : BranchRefinement.Observation} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.1
-      (HeapKnowledge.withElementsAfter (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
+      (HeapKnowledge.withElementsAfterTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
         (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.links.length
         (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 o)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
@@ -248,7 +248,7 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
-    (HeapKnowledge.withElementsAfter_holds (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
+    (HeapKnowledge.withElementsAfterTyped_holds he (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
 
 /-- **A promoted Boolean's store holds**: a branch's answer `q` promotes the
 facts guarded by the truthiness of slot 0 (`HeapKnowledge.promoteTruthy`). -/
