@@ -123,16 +123,12 @@ def mergeEntailed (live : Std.HashSet Nat) (diffs : List (List Atom)) (views : L
   SinglePass.timedKind "meet entailed" fun _ => Id.run do
     let mut acc := met
     let mut seen : Std.HashSet Atom := {}
-    for d in diffs do
-      for a in d do
-        if let .index ⟨.linear F, none, _⟩ := a then
-          if !seen.contains a && a.names.all live.contains && !acc.holds a then
-            seen := seen.insert a
-            if views.all fun (qs : State) => qs.store.holds a ||
-                HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-              -- Its terms defined in every view (`entailDefinedCheck`).
-              if views.all fun (qs : State) => SinglePass.entailDefinedCheck qs a F then
-                acc := acc.add a
+    for a in SinglePass.mergeEntailedCandidates live diffs views do
+      if let .index ⟨.linear F, none, neg⟩ := a then
+        if !seen.contains a && a.names.all live.contains && !acc.holds a then
+          seen := seen.insert a
+          if views.all fun (qs : State) => SinglePass.entailLinearView qs F neg then
+            acc := acc.add a
     return acc
 
 /-- The guarded facts a join keeps, at slots. -/

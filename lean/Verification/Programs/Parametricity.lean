@@ -704,7 +704,7 @@ theorem effectKept_reassign (stable : Nat → String → Bool) (arrayPath : Nat 
     (Γ : List (List ι)) (eff : CallEffects.Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     PromiseCalls.effectKept (reassign G η) Γ stable arrayPath eff t k =
       PromiseCalls.effectKept G Γ stable arrayPath eff t k := by
-  simp only [PromiseCalls.effectKept, PromiseCalls.frameKeeps, callQuery_reassign]
+  simp only [PromiseCalls.effectKept, callQuery_reassign]
 
 omit [DecidableEq ι] in
 theorem valuesAt_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i : Nat) :

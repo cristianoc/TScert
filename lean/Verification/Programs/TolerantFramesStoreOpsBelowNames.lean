@@ -295,7 +295,8 @@ theorem restateAddedAtIndex_below {s : Store} {next : Nat} (hs : FactsBelow s ne
             | _ => none
           let masks := (s.about r).filterMap fun b => match b with
             | .index a => if a.cond.isNone then match a.fact with
-                | .linear _ => some a
+                | .linear L =>
+                  if L.vars.any (fun t => match t.kind with | .bitMask _ => true | _ => false) then some a else none
                 | _ => none
               else none
             | _ => none
@@ -359,7 +360,8 @@ theorem restateAddedAtIndex_below {s : Store} {next : Nat} (hs : FactsBelow s ne
                   else none
                 | _ => none) ++ ((w.about r).filterMap fun b => match b with
                 | .index a => if a.cond.isNone then match a.fact with
-                    | .linear _ => some a
+                    | .linear L =>
+                      if L.vars.any (fun t => match t.kind with | .bitMask _ => true | _ => false) then some a else none
                     | _ => none
                   else none
                 | _ => none) ++ [x]), AtomBelow next (.index a) := by
@@ -391,7 +393,9 @@ theorem restateAddedAtIndex_below {s : Store} {next : Nat} (hs : FactsBelow s ne
                   split at hba
                   · split at hba
                     · split at hba
-                      · cases hba; exact hw _ (about_storeAll hb)
+                      · split at hba
+                        · cases hba; exact hw _ (about_storeAll hb)
+                        · cases hba
                       · cases hba
                     · cases hba
                   · cases hba

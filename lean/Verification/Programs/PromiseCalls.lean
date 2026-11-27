@@ -2938,8 +2938,11 @@ call's frame at the caller's slots respects under the entry's query
 (`respects`, the note's Definition "Respect"), renamed past the result. -/
 def frameCells (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     HeapFacts.Facts :=
-  (k.cells.filter fun f => Footprints.respects (Footprints.knowledgeQuery k)
-    ((Footprints.FactKind.cell f).supportIn (.ofFirst stable)) (callerFrame eff t)).map
+  let q := Footprints.knowledgeQuery k
+  let c := Footprints.ReadContext.ofFirst stable
+  let Φ := callerFrame eff t
+  (k.cells.filter fun f => Footprints.respects q
+    ((Footprints.FactKind.cell f).supportIn c) Φ).map
     fun f => { f with slot := f.slot + 1 }
 
 /-- **The frame keeps the cell facts it respects** (the note's Theorem
@@ -2972,8 +2975,11 @@ call's frame at the caller's slots respects under the entry's query
 (`respects`, the note's Definition "Respect"), renamed past the result. -/
 def frameLinks (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     HeapLinks.Links :=
-  (k.links.filter fun g => !g.alias && Footprints.respects (Footprints.knowledgeQuery k)
-    ((Footprints.FactKind.link g).supportIn (.ofFirst stable)) (callerFrame eff t)).map
+  let q := Footprints.knowledgeQuery k
+  let c := Footprints.ReadContext.ofFirst stable
+  let Φ := callerFrame eff t
+  (k.links.filter fun g => !g.alias && Footprints.respects q
+    ((Footprints.FactKind.link g).supportIn c) Φ).map
     fun g => { g with cell := g.cell + 1, value := g.value + 1 }
 
 /-- **The frame keeps the read links it respects** (the note's Theorem
@@ -3103,8 +3109,13 @@ keeps the heap, whose output keeps every atom (`call-keep`). -/
     (arrayPath : Nat → List String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
     List HeapKnowledge.IndexAtom :=
   if keepsHeap eff then [] else
+  let c : Footprints.ReadContext := { (Footprints.ReadContext.ofFirst stable) with arrayPath }
+  let Φ := callerFrame eff t
+  let sepFacts := Footprints.separationFacts k.separation
+  let baseQ := Footprints.knowledgeQueryUnder k []
+  let callQ := callQuery G Γ k
   HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-    !a.fact.envOnly && frameKeeps G Γ stable arrayPath eff t k a)
+    !a.fact.envOnly && (a.fact.keepsUnderWith baseQ sepFacts k c Φ [] || a.fact.keeps callQ c Φ))
 
 theorem effectKept_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {stable : Nat → String → Bool}
     {arrayPath : Nat → List String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge}
@@ -3122,9 +3133,8 @@ theorem effectKept_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {stable : Nat 
   · exact HeapKnowledge.indexHolds_nil _ _
   · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
     obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
-    simp only [Bool.and_eq_true] at hkeep
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Footprints.IndexFact.keepsUnderWith_eq] at hkeep
     have hF := hk.2.2.2.2.2 a ha hcd
-    simp only [frameKeeps, Bool.or_eq_true] at hkeep
     rcases hkeep.2 with hku | hkq
     · exact Footprints.IndexFact.keepsUnder_sound (c := { (Footprints.ReadContext.ofFirst stable) with arrayPath }) hk hok hρ
           (callerFrame_post hw) ⟨(Footprints.ReadContext.ofFirst_holds hst).1, harr⟩ a.fact [] (by simp) hku hF

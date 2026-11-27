@@ -337,6 +337,31 @@ def _root_.Verification.HeapKnowledge.IndexFact.keepsUnder (k : Knowledge) (c : 
   | .guarded s [] t B => B.keepsUnder k c Φ ((s, t) :: gs)
   | F => F.keeps (knowledgeQueryUnder k gs) c Φ
 
+/-- Guarded survival check sharing a precomputed unguarded query `baseQ` and
+separation facts `sepFacts` across every atom of a state. -/
+def _root_.Verification.HeapKnowledge.IndexFact.keepsUnderWith (baseQ : SepQuery) (sepFacts : List SepFact)
+    (k : Knowledge) (c : ReadContext) (Φ : Footprint) (gs : List (Nat × GuardTag)) : IndexFact → Bool
+  | .guarded s [] t B => B.keepsUnderWith baseQ sepFacts k c Φ ((s, t) :: gs)
+  | F =>
+    let q := if gs.isEmpty then baseQ else ({ links := k.links, facts := knowledgeSepsUnder k gs ++ sepFacts } : SepEvidence).query
+    F.keeps q c Φ
+
+theorem IndexFact.keepsUnderWith_eq (k : Knowledge) (c : ReadContext) (Φ : Footprint) :
+    ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      F.keepsUnderWith (knowledgeQueryUnder k []) (separationFacts k.separation) k c Φ gs =
+        F.keepsUnder k c Φ gs := by
+  intro F
+  induction F with
+  | guarded s p t B ih =>
+    cases p with
+    | nil => intro gs; exact ih ((s, t) :: gs)
+    | cons _ _ =>
+      intro gs
+      cases gs <;> rfl
+  | _ =>
+    intro gs
+    cases gs <;> rfl
+
 /-- **Guarded survival is sound**: a fact `keepsUnder` keeps holds after every
 transition within `Φ` meeting `c`, from a prestate where `k` holds. -/
 theorem IndexFact.keepsUnder_sound {k : Knowledge} {c : ReadContext} {Φ : Footprint} {ρ : Env} {h h' : Heap}

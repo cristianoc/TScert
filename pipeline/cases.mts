@@ -5218,5 +5218,8 @@ export const cases: Case[] = [
     /does not establish|evidence search failed/i),
   positive("modifies-views-grow", "`Modifies<{ values: \"any\"; views: \"grow\" }, void>` permits typed-array byte writes while keeping ordinary array lengths"),
   positive("same-guard-multi-fact", "multiple facts guarded by the same condition (`p === null`) combine in `guardEntails` to establish a guarded postcondition"),
+  positive("clause-type-alias", "clauses over non-record type aliases (`NumList`, nested alias, `Uint8Array`, `SafeInt`) and record aliases unwrap to their underlying field kinds in `@requires` and `@ensures`"),
+  negative("invalid-clause-type-alias", "after unwrapping array type aliases in `@requires`, an off-by-one bound `i <= p.xs.length` permits reading `p.xs[p.xs.length]` (`undefined`), returning `NaN` (run under Node)",
+    /source expression obligation|evidence search failed/i),
   positive("callables/variadic-arguments", "Collect any number of arguments into an array rest, and spread arrays among them."),
 ];

@@ -229,28 +229,24 @@ linear fact of the differences that every view holds or entails and whose
 terms every view defines (`SinglePass.entailDefinedCheck`). -/
 theorem mergeEntailed_inv (Pr : Store → Prop) (Q : Atom → Prop) (hadd : ∀ s a, Pr s → Q a → Pr (s.add a))
     {live : Std.HashSet Nat} {diffs : List (List Atom)} {views : List State}
-    (hQ : ∀ d ∈ diffs, ∀ F neg, Atom.index ⟨.linear F, none, neg⟩ ∈ d →
-      (views.all fun (qs : State) => qs.store.holds (.index ⟨.linear F, none, neg⟩) ||
-        HeapKnowledge.entailsKnown (qs.store.linearNear (Atom.index ⟨.linear F, none, neg⟩).names) F) = true →
-      (views.all fun (qs : State) => SinglePass.entailDefinedCheck qs (.index ⟨.linear F, none, neg⟩) F) = true →
+    (hQ : ∀ F neg,
+      (Atom.index ⟨.linear F, none, neg⟩).names.all live.contains = true →
+      (views.all fun (qs : State) => SinglePass.entailLinearView qs F neg) = true →
       Q (.index ⟨.linear F, none, neg⟩))
     {met : Store} (h0 : Pr met) : Pr (mergeEntailed live diffs views met) := by
   unfold mergeEntailed SinglePass.timedKind
   simp only [Id.run]
   refine id_bind_inv _ _ (fun r : Store × Std.HashSet Atom => Pr r.1) _
     (forIn_inv (P := fun r : Store × Std.HashSet Atom => Pr r.1) _ _ _ h0 ?_) (fun r hr => hr)
-  intro d hd r hr
-  refine forIn_inv (P := fun r : Store × Std.HashSet Atom => Pr r.1) _ _ _ hr ?_
-  intro a ha r' hr'
+  intro a _ r' hr'
   split
-  · rename_i F neg
+  · rename_i F neg _
     split
-    · split
+    · rename_i hcond
+      simp only [Bool.and_eq_true] at hcond
+      split
       · rename_i hall
-        split
-        · rename_i hdef
-          exact hadd _ _ hr' (hQ d hd F neg ha hall hdef)
-        · exact hr'
+        exact hadd _ _ hr' (hQ F neg hcond.1.2 hall)
       · exact hr'
     · exact hr'
   · exact hr'
