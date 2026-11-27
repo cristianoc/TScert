@@ -1,28 +1,23 @@
 \documentclass[10pt,a4paper]{article}
 \usepackage[margin=2.6cm]{geometry}
 \usepackage[T1]{fontenc}
-\usepackage{amsmath,amssymb,amsthm}
+\usepackage{amsmath,amssymb}
 \IfFileExists{newtxtext.sty}{\usepackage{newtxtext,newtxmath}}{\usepackage{txfonts}}
 \usepackage[scaled=.95]{helvet}
-\usepackage{mathpartir,microtype,booktabs,tabularx,listings,xcolor,titlesec,enumitem,needspace}
-\usepackage[most]{tcolorbox}
-% Palette shared with Tolerant frames, Read-only frames, and An Effect Language for TScert.
+\usepackage{microtype,booktabs,tabularx,listings,xcolor,titlesec,enumitem,needspace,placeins}
+% Palette shared with Tolerant frames and An Effect Language for TScert.
 \definecolor{accent}{HTML}{1F5F8B}
 \definecolor{chgc}{HTML}{0B7A68}
 \definecolor{regc}{HTML}{B45309}
 \definecolor{asrc}{HTML}{6D3FC4}
-\definecolor{boxc}{HTML}{C2185B}
 \definecolor{rulec}{HTML}{8A1C4A}
 \definecolor{codec}{HTML}{24292F}
 \definecolor{ckc}{HTML}{0550AE}
 \definecolor{csc}{HTML}{116329}
-\definecolor{cnc}{HTML}{953800}
 \definecolor{ccmc}{HTML}{6E7781}
 \definecolor{leanc}{HTML}{2F6F5E}
 \definecolor{conjc}{HTML}{9A6700}
-\definecolor{defbg}{HTML}{EEF6F1}
 \definecolor{exbg}{HTML}{F6F4EE}
-\definecolor{thmbg}{HTML}{EEF4F9}
 \usepackage[colorlinks,linkcolor=accent,citecolor=accent,urlcolor=accent]{hyperref}
 
 \titleformat*{\section}{\Large\bfseries\sffamily\color{accent}}
@@ -39,90 +34,49 @@
 \lstdefinelanguage{TypeScript}{
   morekeywords={type,export,function,const,let,for,while,if,else,throw,new,return,
     readonly,number,string,void,boolean,extends,true,false,null,undefined,
-    Modifies,AtMost},
+    Modifies,AtMost,Effects,Join,SafeInt,Dense,
+    Int32Array,Uint16Array,Uint8Array,Map},
   sensitive=true,morecomment=[l]{//},morecomment=[s]{/*}{*/},
   morestring=[b]",morestring=[b]',
 }
 
-\newtheorem{theorem}{Theorem}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\theoremstyle{remark}
-\newtheorem{remark}[theorem]{Remark}
-\newcommand{\paperbox}[2]{\tcolorboxenvironment{#1}{enhanced,breakable,
-  colback=#2,colframe=#2,boxrule=0pt,frame hidden,sharp corners,
-  borderline west={2.5pt}{0pt}{accent},left=9pt,right=6pt,top=4pt,bottom=4pt,
-  before skip=10pt,after skip=10pt}}
-\paperbox{definition}{defbg}
-\paperbox{theorem}{thmbg}
-\paperbox{proposition}{thmbg}
-\paperbox{example}{exbg}
-\paperbox{remark}{exbg}
-
 % Core logic macros (kept in plain form here for prep.py HTML/MathJax compatibility;
 % coloured for PDF typesetting via \AtBeginDocument below).
-\newcommand{\bx}[1]{\Box_{#1}}
-\newcommand{\sem}[1]{[\![#1]\!]}
 \newcommand{\sep}{\mathrel{\#}}
 \newcommand{\kw}[1]{\mathsf{#1}}
 \newcommand{\keep}{\kw{keep}}
 \newcommand{\init}{\kw{init}}
 \newcommand{\grow}{\kw{grow}}
 \newcommand{\any}{\kw{any}}
-\newcommand{\rigid}{\kw{rigid}}
-\newcommand{\fresh}{\kw{fresh}}
 \newcommand{\old}{\kw{old}}
-\newcommand{\dense}{\kw{dense}}
-\newcommand{\apart}{\kw{apart}}
 \newcommand{\val}{\kw{values}}
 \newcommand{\st}{\kw{spines}}
-\newcommand{\fld}{\kw{all\text{-}fields}}
-\newcommand{\cel}{\kw{all\text{-}cells}}
-\newcommand{\elt}{\kw{all\text{-}elements}}
-\newcommand{\rowt}{\kw{table}}
-\newcommand{\esum}{\kw{sum}}
+\newcommand{\fld}{\kw{fields}}
 \newcommand{\len}[1]{|#1|}
-\newcommand{\tr}[1]{\xrightarrow{#1}}
-\newcommand{\resp}{\mathrel{\triangleleft}}
-\newcommand{\hoare}[3]{\{#1\}\;#2\;\{#3\}}
-\newcommand{\hoarex}[4]{\{#1\}\;#2\;\{#3\mid #4\}}
 \newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\ruleName}[1]{\textcolor{rulec}{\textsc{#1}}}
 \newcommand{\chg}[1]{\textcolor{chgc}{\mathsf{#1}}}
 \newcommand{\reg}[1]{\textcolor{regc}{\mathsf{#1}}}
 \newcommand{\asr}[1]{\textcolor{asrc}{\mathsf{#1}}}
-\newcommand{\scalar}{\chg{scalar}}
-\newcommand{\extend}{\chg{extend}}
 \newcommand{\reach}[2]{#1.{\ast\ast}_{#2}}
+\newcommand{\modstate}[1]{#1.{@\kw{state}}}
 \newcommand{\status}[1]{\textcolor{leanc}{\textsf{\small[#1]}}}
 \newcommand{\statusc}[1]{\textcolor{conjc}{\textsf{\small[#1]}}}
 \newcommand{\statuso}[1]{\textcolor{accent}{\textsf{\small[#1]}}}
 \newcommand{\nI}[1]{\emph{Tolerant frames}~\cite{tf}, \emph{#1}}
-\newcommand{\nR}[1]{\emph{Read-only frames}~\cite{rof}, \emph{#1}}
 \newcommand{\entry}[1]{\paragraph{#1.}}
 
 \AtBeginDocument{%
-  \renewcommand{\bx}[1]{{\color{boxc}\Box}_{#1}}%
   \renewcommand{\sep}{\mathrel{\textcolor{asrc}{\#}}}%
   \renewcommand{\keep}{\chg{keep}}%
   \renewcommand{\init}{\chg{init}}%
   \renewcommand{\grow}{\chg{grow}}%
   \renewcommand{\any}{\chg{any}}%
-  \renewcommand{\rigid}{\asr{rigid}}%
-  \renewcommand{\fresh}{\asr{fresh}}%
   \renewcommand{\old}{\asr{old}}%
-  \renewcommand{\dense}{\asr{dense}}%
-  \renewcommand{\apart}{\asr{apart}}%
   \renewcommand{\val}{\reg{values}}%
   \renewcommand{\st}{\reg{spines}}%
-  \renewcommand{\fld}{\reg{all\text{-}fields}}%
-  \renewcommand{\cel}{\reg{all\text{-}cells}}%
-  \renewcommand{\elt}{\reg{all\text{-}elements}}%
-  \renewcommand{\rowt}{\asr{table}}%
-  \renewcommand{\esum}{\asr{sum}}%
+  \renewcommand{\fld}{\reg{fields}}%
   \renewcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}%
 }
 
@@ -132,148 +86,247 @@
 \title{\sffamily\bfseries\color{accent}Tolerant Frames in Practice: Pretext's Patterns\\[2pt]
   \large\normalfont\color{black}An Empirical Catalogue of Bound-Proof Obligations in a Text-Layout Library}
 \author{TScert Working Paper}
-\date{24 November 2026}
+\date{27 November 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}\noindent
-This paper catalogues the index-bound patterns extracted from the
-TypeScript text-layout library Pretext~\cite{pretext} to guide the
-design of TScert's framing and arithmetic rules. It accompanies
-\emph{Tolerant frames}~\cite{tf}, \emph{Read-only frames}~\cite{rof},
-and \emph{An Effect Language for TScert}~\cite{el}.
+This paper catalogues the index-bound obligations extracted from the
+TypeScript text-layout library Pretext~\cite{pretext} to guide and
+evaluate TScert's framing, effect, and arithmetic rules. It accompanies
+\emph{Tolerant frames}~\cite{tf} and \emph{An Effect Language for
+TScert}~\cite{el}.
 
-To verify under TScert's baseline pass without unproved bounds, Pretext
-at commit \code{9268edb1} carries 422 \emph{bound rewrite sites}: index
-reads \code{x[k]} rewritten as \code{x[k] ?? missing()} or guarded by a
-\code{RangeError} check because the verifier finds no proof of
-$0\le k<\len{x}$. At 215 of these sites, the proof at the site itself
-requires a rule beyond the baseline verifier (\emph{blocked} sites); at
-204 sites, only facts establishable by a builder or caller are missing;
-and 3 sites are unclassified.
+In Pretext's baseline bound-audit corpus (\code{9268edb1}), 422 index
+reads carry runtime fallbacks or \code{RangeError} guards because the
+baseline pass finds no proof of $0\le k<\len{x}$. At 215 of these sites,
+the local proof requires a rule beyond the baseline pass (\emph{blocked}
+sites); 204 sites need only caller preconditions or builder
+postconditions; and 3 sites fall outside any pattern.
 
-Each blocked site reduces to one of 21 minimal patterns P1--P21,
-together with P22, which blocks P1's walker sites once a visitor states
-its closed effect. Four patterns---P1, P2, P8 (91 sites together), and
-P21 (1 site, behind P5)---verify on TScert's single pass. The 18 entries
-below organize the remaining 124 sites and P22 by verification concern:
-framing and aliasing (P3, P4, P6, P18, P22), closure, module, and
-collection invariants (P7, P15, P16, P20), arithmetic, indexing, and
-quantified relations (P9, P10, P11, P12, P13, P17, P19), and external
-specifications (P5, P14). Each entry states its minimal program, its
-first failing obligation, its nearest verified neighbour, and its status
-relative to the companion papers and TScert's verified pass.
+The 215 blocked sites reduce to 21 minimal patterns P1--P21, together
+with P22, which arises at P1's higher-order walker sites once visitors
+state effects. Seven patterns---P1, P2, P3, P8, P12, P17 (118 sites; 48
+of P1's walker sites additionally require P22 under higher-order
+callbacks), and standalone P21 (1 site behind P5)---verify on TScert's
+proved single-pass verifier (\lean{SinglePass}), alongside the
+fresh-path separation half of P4 and fresh-view postfix fills of P13.
+Nine mechanized rules in \emph{An Effect Language for TScert}~\cite{el}
+address P22, P6's dynamic field writes, and P7's visitor closures; in
+its prototype mode on upstream Pretext (\code{0dafecb3}), all 105/105
+units across \code{line-break.ts}, \code{layout.ts},
+\code{rich-inline.ts}, and \code{prepare.ts} verify with 0 unproved
+assumptions and all 56 walker/stepper guards restored, while uncovering
+2 upstream bounds bugs and 2 public-API cursor boundary checks. Each
+catalogue entry states its minimal program, proof obligation,
+verification principle, and verifier status.
 \end{abstract}
 
 \section*{Scope and Epistemic Status}
 
-This paper serves as an empirical specification and design benchmark for
+This paper is an empirical specification and design benchmark for
 TScert's bound-verification rules. Claims fall into four epistemic
 tiers:
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
-\item \textbf{Observed on the corpus and verified pass:} Site counts
-  come from the rewritten Pretext source at commit \code{9268edb1}. Each
-  pattern's refused program and nearest verified neighbour correspond to
-  executable regression cases in \code{pipeline/cases.mts} (marked
-  \statuso{observed} where empirical runs are reported).
-\item \textbf{Proved in Lean:} Rules established in TScert's verified
-  single pass (including checked local-object confinement~\cite{loc},
-  parameter field regions~\cite{ann}, and arithmetic rules) and model
-  theorems in \emph{Tolerant frames}~\cite{tf} and the idealised heap
-  model of \emph{An Effect Language for TScert}~\cite{el} are cited by
-  rule or theorem name.
-\item \textbf{Conjectured:} Derivations relying on \emph{Read-only
-  frames}~\cite{rof} (whose connection to full calculus runs is
-  conjectured) and full-calculus soundness of bounded effect
-  polymorphism~\cite{el} carry \statusc{conj.}.
+\item \textbf{Observed on the corpus:} Site counts come from the
+  baseline Pretext bound-audit corpus (\code{9268edb1}), and end-to-end
+  walker and builder verification counts come from upstream Pretext
+  (\code{0dafecb3}); empirical measurements carry \statuso{observed}.
+\item \textbf{Proved in Lean:} Patterns discharged by TScert's proved
+  single-pass verifier carry \status{Verified in SinglePass} and cite
+  their Lean theorem names. Model theorems of \emph{Tolerant
+  frames}~\cite{tf} and the nine-rule idealised heap model of \emph{An
+  Effect Language for TScert}~\cite{el} (\lean{model\_rules}) are cited
+  by rule and theorem name.
+\item \textbf{Prototype-evaluated and conjectured:} Patterns discharged
+  in the nine-rule model and exercised through \code{paper-rules-prototype}
+  carry \statuso{Model + prototype}; full-calculus soundness of those
+  rules against TScert's operational semantics is conjectured
+  \statusc{conj.}. Open capability gaps carry \statusc{Open extension}.
 \item \textbf{Assumed at external boundaries:} Properties of unanalysed
   host libraries, offline table generators, and external API callers
-  cannot be proved from the analysed source and constitute explicit
-  trust obligations (Section~\ref{sec:trust}).
+  cannot be proved from the analysed source and form explicit trust
+  obligations (Section~\ref{sec:trust}).
 \end{itemize}
+
 \noindent
-Live verification counts and open engineering items are tracked in
-\code{WORK.md}; this paper records the stable pattern taxonomy and its
-theoretical requirements.
+Three specification mechanisms appear throughout the catalogue:
+\emph{footprint and contract annotations} (\code{Modifies<P, T>} and
+\code{Effects<P, T>} assign relational change bounds $\keep$, $\init$,
+$\grow$, $\any$ to heap regions such as $\val$, $\st$, $\fld$, or
+parameter paths \code{"out[*]"} and \code{"c.value"}, alongside
+\code{@requires}, two-state \code{@ensures} with \code{old(...)},
+\code{@invariant}, and \code{@stable} field declarations);
+\emph{checked local-object confinement} (an object allocated locally
+that never escapes into a callee's operands retains facts supported
+solely by its own locations across arbitrary-effect calls, proved by
+\lean{TolerantFramesConfined.run\_sound\_pass}); and \emph{reviewed host
+contracts} (audited length and effect postconditions for built-in
+JavaScript methods).
 
-\section{Corpus, Methodology, and Verified Patterns}\label{sec:corpus}
+\section{Corpus, Methodology, and Flagship Verified Patterns}\label{sec:corpus}
 
-\subsection{Bound Rewrite Sites and Minimal Patterns}
+\subsection{Bound Rewrite Sites, Obligations, and Corpus Pins}
 
-In the rewritten Pretext corpus (commit \code{9268edb1}), a \emph{bound
-rewrite site} is an array, typed-array, or string index read \code{x[k]}
-replaced by \code{x[k] ?? missing()} or guarded by an explicit
-\code{RangeError} test because the baseline verifier finds no proof of
-$0\le k<\len{x}$. A site is \emph{blocked} if proving its bound locally
-requires a deduction rule or specification form absent from the baseline
-verifier; otherwise it is \emph{caller/builder-establishable}. A
-\emph{pattern} is the smallest standalone TypeScript program exhibiting
-the first obligation that fails at its group of blocked sites.
+Under TypeScript's \code{noUncheckedIndexedAccess}, an index read
+\code{x[k]} has type \code{T | undefined}. TScert treats a non-null
+assertion \code{x[k]!} not as an unchecked cast, but as a checked proof
+obligation requiring $k:\mathit{SafeInt}$, $0\le k<\len{x}$, and element
+presence (density) at index $k$. Here $\mathit{SafeInt}$ denotes an
+IEEE-754 binary64 integer with $|k|\le M=2^{53}-1$ (written
+\code{safeInteger(k)} in annotations), the range in which integer
+addition and subtraction are exact whenever the result stays in
+$[-M,M]$.
+
+We pin two Pretext commits~\cite{pretext} for distinct roles: commit
+\code{9268edb1} is the baseline rewritten audit corpus from which the
+422-site taxonomy and patterns P1--P21 are extracted, whereas upstream
+commit \code{0dafecb3} is the target of the end-to-end walker and
+builder verification of \emph{An Effect Language for TScert}~\cite{el}
+(Section~\ref{sec:p22}). In the baseline corpus, a \emph{bound rewrite
+site} is an array, typed-array, or string index read \code{x[k]}
+rewritten as \code{x[k] ?? missing()} or guarded by a \code{RangeError}
+test because the baseline verifier finds no proof of $0\le k<\len{x}$.
+A site is \emph{blocked} if proving its bound locally requires a
+deduction rule or specification form beyond the baseline verifier;
+otherwise it is \emph{caller/builder-establishable}. A \emph{pattern} is
+the smallest standalone TypeScript program isolating the obligation at
+its group of blocked sites.
 
 \begin{center}\small
-\begin{tabularx}{\textwidth}{@{}l r X@{}}
+\begin{tabularx}{\textwidth}{@{} >{\raggedright\arraybackslash}p{0.35\textwidth} r >{\raggedright\arraybackslash}X@{}}
 \toprule
 Category & Sites & Role in this catalogue\\
 \midrule
-Blocked --- verified patterns (P1, P2, P8) & 91 & Verify on TScert's single pass (Section~\ref{sec:verified}); P1's walker sites then meet P22.\\
-Blocked --- open patterns (P3--P7, P9--P20) & 124 & Covered by Sections~\ref{sec:framing}--\ref{sec:external} (P21's 1 site sits behind P5 in Pretext).\\
+Blocked --- verified in \lean{SinglePass} (P1, P2, P3, P8, P12, P17) & 118 & P1, P2, P8 in Section~\ref{sec:verified} (48 of P1's walker sites also meet P22); P3, P12, P17 illustrated in Sections~\ref{sec:framing} and~\ref{sec:arith}.\\
+Blocked --- partial, model/prototype, or open (P4--P7, P9--P11, P13--P16, P18--P20) & 97 & Sections~\ref{sec:framing}--\ref{sec:external} (P21's 1 standalone-verified site sits behind P5; P4's \code{paths} and P13's fresh-view fill verify in \lean{SinglePass}).\\
 Caller/builder-establishable & 204 & Require stronger caller preconditions or builder postconditions, not new rules.\\
-Unclassified & 3 & Listed individually in Section~\ref{sec:summary} (34 non-index rewrite markers excluded).\\
+Unclassified & 3 & Characterized individually in Section~\ref{sec:summary} (34 non-index markers excluded).\\
 \midrule
-\textbf{Total bound rewrite sites} & \textbf{422} & Pretext rewritten source at commit \code{9268edb1}.\\
+\textbf{Total bound rewrite sites} & \textbf{422} & Pretext baseline bound-audit corpus (\code{9268edb1}).\\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-\subsection{Patterns Verified by TScert's Single Pass}\label{sec:verified}
+\subsection{Flagship Patterns Verified by TScert's Single Pass}\label{sec:verified}
 
-Four patterns of the 21-pattern baseline catalogue verify on TScert's
-single pass (with regression cases in \code{pipeline/cases.mts}):
-\begin{description}[leftmargin=1.5em,itemsep=2pt]
-\item[P1 --- Visitor of unknown effect between reads (50 sites).]
-  Verifies once the callback type states a closed growth effect,
-  \code{Modifies<\{ values: "any"; spines: "grow" \}, void>}: axiom
-  \ruleName{(Grow)} of \emph{Tolerant frames}~\cite{tf} preserves length
-  lower bounds across the visit. Where the enclosing walker also retains
-  a local cursor or passes a handle across the visit, the next blocker
-  is P22 (Section~\ref{sec:p22}).
-\item[P2 --- Growth by a known count across a callee (31 sites).]
-  Verifies via two-state postconditions~\cite{ann}: a callee declaring
-  \code{@ensures lists.widths.length === old(lists.widths.length) + n}
-  bounds the caller's list length after the call.
-\item[P8 --- Length after a write at the length (10 sites).]
-  Verifies via rules \ruleName{Write-End} and \ruleName{Write-In}
-  (\emph{Tolerant frames}~\cite{tf}), covering both reads at the written
-  index and builders that append by writing at \code{a[a.length]}.
-\item[P21 --- Shift-left and bitwise-OR table indexing (1 site, behind P5).]
-  Verifies at its standalone pattern program
-  \code{values[(hi <{}< 8) | (c \& 0xff)]} via rules \ruleName{Shr},
-  \ruleName{Shl}, \ruleName{Mask}, and \ruleName{Or}
-  (\nI{Arithmetic steps}; proved in Lean by
-  \lean{ArithmeticRules.rules\_sound}). In Pretext's \code{getClass},
-  its site sits behind P5 (Section~\ref{sec:p5}), which bounds the
-  decoded table entry \code{hi}.
-\end{description}
+Four foundational patterns illustrate how Tolerant Frames verifies
+idiomatic mutable TypeScript directly in TScert's proved single pass
+(\lean{SinglePass}), without ownership types.
+
+\paragraph{P1: Visitor with closed growth effect (50 sites; 48 walker sites also meet P22).}
+\status{Verified in SinglePass}
+
+\begin{lstlisting}[language=TypeScript]
+type BoundedVisitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
+
+function walkBounded(xs: number[], visit: BoundedVisitor | undefined): number {
+  let s = 0;
+  for (let i = 0; i < xs.length; i++) {
+    s += xs[i]!;
+    if (visit !== undefined) visit(s);
+  }
+  return s;
+}
+\end{lstlisting}
 
 \noindent
-Each entry in Sections~\ref{sec:framing}--\ref{sec:external} presents
-four parts: (i) a minimal TypeScript program excerpted from the
-pattern's regression case; (ii) \emph{What is refused}, naming the
-refused function and the first failing obligation; (iii) \emph{Nearest
-verified form}, showing the closest program accepted by the single pass;
-and (iv) \emph{Required extension}, stating what theory or verifier rule
-is needed and how it relates to the companion papers.
+Stating the callback's closed growth effect
+$\{\val:\any,\ \st:\grow\}$ lets axiom \ruleName{(Grow)} of
+\emph{Tolerant frames}~\cite{tf} preserve the lower bound
+$i<\len{\mathit{xs}}$ across \code{visit(s)} even when the visitor may
+append to \code{xs}. Standalone P1 verifies directly on
+\lean{SinglePass}. In Pretext, however, 48 of P1's 50 sites lie inside
+higher-order line walkers whose callers mutate their own arrays and
+whose prepared handles maintain cross-array length equalities such as
+$\len{\mathit{segmentFlags}}=\len{\mathit{widths}}$; a closed
+$\st:\grow$ effect drops such equalities and blocks caller writes, so
+those 48 walker sites additionally require P22 (Section~\ref{sec:p22})
+and verify in \code{paper-rules-prototype}.
 
+\needspace{16\baselineskip}
+\paragraph{P2: Growth by a known count across a callee (31 sites).}
+\status{Verified in SinglePass}
+
+\begin{lstlisting}[language=TypeScript]
+type Lists = { /** @stable */ readonly widths: number[] };
+
+/** @requires safeInteger(n) && 0 <= n && n <= 1000 && 0 <= lists.widths.length
+ *  @ensures lists.widths.length === old(lists.widths.length) + n */
+function measure(lists: Lists, n: number):
+  Modifies<{ values: "any"; spines: "keep"; "lists.widths[*]": "any" }, void> {
+  /** @invariant safeInteger(k) && safeInteger(n) && 0 <= k && k <= n
+   *             && lists.widths.length === old(lists.widths.length) + k */
+  for (let k = 0; k < n; k++) lists.widths.push(k);
+}
+\end{lstlisting}
+
+\noindent
+When a caller invokes \code{measure(lists, 10)} inside a loop over a
+typed array \code{flags} of length \code{cap}, the two-state
+postcondition $\len{\mathit{lists}.\mathit{widths}} =
+\old(\len{\mathit{lists}.\mathit{widths}}) + n$ instantiates at the
+call's entry state to bound \code{lists.widths.length - 1} below
+\code{flags.length}, while the regional effect
+\code{"lists.widths[*]": "any"} with $\st:\keep$ preserves
+$\len{\mathit{flags}}$.
+
+\paragraph{P8: Length and presence after a write at the length (10 sites).}
+\status{Verified in SinglePass}
+
+\begin{lstlisting}[language=TypeScript]
+/** @requires safeInteger(k) && 0 <= k && k <= xs.length && k <= 1000000 */
+export function readWritten(xs: number[], k: number): number {
+  xs[k] = 1;
+  return xs[k]!;
+}
+\end{lstlisting}
+
+\noindent
+Writing at \code{xs[k]} with $0\le k\le\len{\mathit{xs}}$ satisfies
+$\len{\mathit{xs}} = \max(\old(\len{\mathit{xs}}), k+1)$ via rules
+\ruleName{Write-In} and \ruleName{Write-End} of \emph{Tolerant
+frames}~\cite{tf} (proved by \lean{atLengthAtoms\_sound}), covering both
+direct reads at the written index and builders that append via
+\code{widths[at] = mi}. Note that in \emph{Tolerant frames}~\cite{tf},
+\ruleName{Write-End} specifies only the length increase
+$\len{x}=\old(\len{x})+1$ (listing stored-element density under future
+work); typing \code{xs[k]!} on \code{number[]} in \lean{SinglePass}
+additionally relies on its mechanized dense-write rule
+(\lean{denseAppendAtoms\_sound}).
+
+\paragraph{P21: Shift-left and bitwise-OR table indexing (1 site, behind P5).}
+\status{Verified in SinglePass}
+The two-stage table read \code{values[(hi <{}< 8) | (c \& 0xff)]!}
+verifies in \lean{SinglePass} via rules \ruleName{Shr}, \ruleName{Shl},
+\ruleName{Mask}, and \ruleName{Or} (\nI{Arithmetic steps};
+\lean{ArithmeticRules.rules\_sound}). In Pretext's \code{getClass}, this
+site sits behind P5 (Section~\ref{sec:p5}), which bounds the decoded
+table entry \code{hi}.
+
+\medskip\noindent
+Each entry in Sections~\ref{sec:framing}--\ref{sec:external} presents
+four uniform parts: a minimal TypeScript program, its \emph{Obligation}
+(the bound or invariant to discharge), its \emph{Verification principle}
+(the logical rule that discharges it), and its \emph{Verifier status}
+across \lean{SinglePass}, \emph{Tolerant frames}~\cite{tf}, and
+\emph{An Effect Language for TScert}~\cite{el}. Patterns P3, P12, and
+P17 remain illustrated in full as positive demonstrations of Tolerant
+Frames in \lean{SinglePass}, cleanly distinguished from open extensions.
+
+\needspace{28\baselineskip}
 % ======================================================================
 \section{Framing, Aliasing, and Callback Patterns}\label{sec:framing}
 % ======================================================================
 
-Five patterns (51 sites plus P22) concern fact preservation across
-writes and calls: separating heap location kinds (P3, P6), fresh
-allocations against field paths (P4), multi-field rigid guards (P18),
-and higher-order callbacks (P22).
+Five patterns (51 sites plus P22) concern preserving heap facts across
+writes and calls: separating heap location kinds (P3, P6), separating
+fresh allocations from field paths and checking index comparisons (P4),
+framing multi-field rigid guards (P18), and higher-order callbacks
+(P22).
 
+\needspace{20\baselineskip}
 \subsection{P3: Quantified Fact Across a Write Outside Its Array (19 sites)}\label{sec:p3}
 
 \begin{lstlisting}[language=TypeScript]
@@ -291,31 +344,33 @@ export function acrossWrite(items: Int32Array, widths: number[]): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{acrossWrite} at the read
-\code{widths[items[i]!]!} of line~9. The obligation
-$0\le\mathit{items}[i]<\len{\mathit{widths}}$ follows from the
-quantified precondition
+\entry{Obligation}
+Prove $0\le\mathit{items}[i]<\len{\mathit{widths}}$ at
+\code{widths[items[i]!]!} (line~9) from the quantified precondition
 $\forall j<\len{\mathit{items}}.\ 0\le\mathit{items}[j]<\len{\mathit{widths}}$,
-but the field write \code{fragment.width = s} of line~8 drops that fact.
-Although TScert's single pass frames index facts across field writes via
-the write's field frame $\{x.f:\any\}$ (\lean{writeFrame}), its
-quantified-fact support places array elements in the coarse
-class $\val$ rather than an element-cell region, so the check does not
-separate the field write from the array's elements. Repeating the
-quantified fact as a loop invariant yields the same refusal.
+preserving that quantified fact across the object field write
+\code{fragment.width = s} (line~8).
 
-\entry{Nearest verified form}
-The same loop without the field write.
+\entry{Verification principle}
+Location-kind disjointness under Theorem ``Tolerant frame'' of
+\emph{Tolerant frames}~\cite{tf}. Supporting a quantified fact over an
+array or typed array by its element cells and spine places its support
+in the element-cell and spine location kinds, which are disjoint by kind
+from object field locations regardless of aliasing. Because
+\code{fragment.width} is an object field (and \code{fragment} is locally
+allocated), its write respects the quantified fact's support and leaves
+the fact intact.
 
-\entry{Required extension}
-Support a quantified fact over an array or typed array by its element
-cells (and spine), distinct by location kind from object fields. The
-written location \code{fragment.width} is neither a spine nor an element
-cell that the fact reads; Theorem ``Tolerant frame'' of \emph{Tolerant
-frames}~\cite{tf} preserves the fact because the write respects its
-support.
+\entry{Verifier status}
+\status{Verified in SinglePass} Both \code{acrossWrite} and the variant
+repeating the quantified fact as a loop invariant verify in
+\lean{SinglePass}. Quantified support (\lean{Survival.everyCells})
+places array elements in \lean{Region.pathCells} (\lean{KindSet.elems}),
+which \lean{RegionBounds.boundQuery} separates by location kind from
+\lean{writeFrame}'s field location (\lean{KindSet.fieldsAndCells}) in
+\lean{HeapExpressionRules.frameKept}, reinforced by local confinement.
 
+\needspace{24\baselineskip}
 \subsection{P4: Upper Bound of a Length Across a Call Growing Spines (18 sites)}\label{sec:p4}
 
 \begin{lstlisting}[language=TypeScript]
@@ -362,39 +417,50 @@ export function straight(
 Here \code{noteIn(out, v)} pushes \code{v} onto \code{out} with effect
 \code{Modifies<\{ values: "any"; spines: "keep"; "out[*]": "any" \}, void>}.
 
-\entry{What is refused}
-The verifier refuses both functions. It refuses \code{paths} at the
-entry edge of its loop: the stated invariant includes
+\entry{Obligation}
+Two obligations arise when an index upper bound must survive a call
+growing another spine. In \code{paths}, the loop must establish
 $a.\mathit{flags}\sep\mathit{lists}.\mathit{widths}$ and
-$a.\mathit{starts}\sep\mathit{lists}.\mathit{widths}$, which are not
-established on that edge. The fresh literal \code{[]} is established
-apart from arrays held directly in variables in scope, whereas for an
-array reached at a field path $a.f$, separation is known only when a
-variable was read from $a.f$ before the allocation and remains equal to
-it.
+$a.\mathit{starts}\sep\mathit{lists}.\mathit{widths}$ so that
+\code{measure(i, lists)}'s regional spine effect
+\code{"p.widths[*]": "any"} preserves
+$\len{a.\mathit{flags}}=\len{a.\mathit{starts}}$. In \code{straight},
+the guard \code{i + 1 < flags.length} (line~32) must establish both
+exactness of \code{i + 1} and $i+1<\len{\mathit{flags}}$ so
+\code{starts[i + 1]!} (line~34) is in bounds after \code{noteIn(out, i)}.
 
-It refuses \code{straight} at the read \code{starts[i + 1]!} of
-line~34. The branch condition \code{i + 1 < flags.length} produces no
-arithmetic fact: the sum \code{i + 1} is exact only when
-$|i+1|\le M$ ($M=2^{53}-1$) is entailed, and outside a loop $0\le i$
-alone does not bound $i$ below $M$.
+\entry{Verification principle}
+Two rules discharge these obligations:
+\begin{enumerate}[leftmargin=1.5em,itemsep=2pt]
+\item \emph{Fresh-array separation from field paths:} By rule
+  \ruleName{Alloc} of \emph{Tolerant frames}~\cite{tf} (proved for empty
+  arrays by \lean{alloc\_post}), a freshly allocated array is apart from
+  every array reachable through fields of pre-existing variables,
+  establishing $a.\mathit{flags}\sep\mathit{lists}.\mathit{widths}$ and
+  $a.\mathit{starts}\sep\mathit{lists}.\mathit{widths}$ at allocation.
+\item \emph{Exactness from a length comparison:} For $i:\mathit{SafeInt}$
+  and any length $n\le M$ ($M=2^{53}-1$), a successful JavaScript
+  comparison \code{i + 1 < n} implies $i<M$ (since at $i=M$, binary64
+  rounding gives $\mathrm{rn}(i+1)=2^{53}>M\ge n$), hence exactness
+  $|i+1|\le M$ and $i+1<n$. The $i:\mathit{SafeInt}$ premise is
+  load-bearing (for a general binary64 float such as $i=-10^{20}$,
+  $\mathrm{rn}(i+1)=i<n$ holds without exactness); once
+  $i:\mathit{SafeInt}$ holds, monotonicity of binary64 rounding and
+  exactness of $2^{53}$ cover every array, typed-array, and string
+  length $n\le M$.
+\end{enumerate}
 
-\entry{Nearest verified form}
-For \code{paths}, a loop whose parameter separations
-\code{a.flags !== out} and \code{a.starts !== out} are stated in
-\code{@requires} with the callee naming its spine region
-(\code{"out[*]": "any"}).
+\entry{Verifier status}
+\status{Verified in SinglePass} for \code{paths}: \lean{SinglePass}
+establishes separation between fresh literal arrays and parameter field
+paths via \lean{IndexFact.apart} (\lean{PathRegionsApart}) and
+\lean{restateSpines}. \statusc{Open extension} for \code{straight}:
+\code{safeInteger(i)} entails only $|i|\le M$ (not $i<M$), so at $i=M$
+the sum \code{i + 1} evaluates to $2^{53}$ outside $\mathit{SafeInt}$,
+blocking \ruleName{Add}; neither \lean{SinglePass} nor the companion
+papers yet include the safe-integer comparison rule above.
 
-\entry{Required extension}
-Two rules. First, a freshly allocated array is apart from every array
-reachable through fields of existing variables; rule \ruleName{Alloc} of
-\emph{Tolerant frames}~\cite{tf} states this in the model (proved for
-empty arrays in Lean by \lean{alloc\_post}), while the pass applies
-statement-entry separation only to direct variables. Second, a guard
-\mbox{\code{i + 1 < n}} against a length $n\le 2^{32}-1$ implies both
-$i+1\le M$ (exactness) and $i+1<n$, since any overflow of $i+1$ exceeds
-$n$; no companion paper states this arithmetic rule.
-
+\needspace{22\baselineskip}
 \subsection{P6: Quantified Fact Across a Call Mutating Value Fields (12 sites)}\label{sec:p6}
 
 \begin{lstlisting}[language=TypeScript]
@@ -421,29 +487,40 @@ export function acrossTouch(
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{acrossTouch} at \code{offsets[starts[k]!]!}
-on line~18. The obligation relies on the quantified invariant over
-\code{starts}, which the call \code{touch(c)} drops: its stated effect
-$\{\val:\any,\ \st:\keep\}$ permits modifying any value-holding
-location, including the element cells of \code{starts}.
+\entry{Obligation}
+Preserve the quantified invariant
+$\forall i<\len{\mathit{starts}}.\ 0\le\mathit{starts}[i]<\len{\mathit{offsets}}$
+across \code{touch(c)} (line~17) so \code{offsets[starts[k]!]!}
+(line~18) is in bounds. With the coarse effect
+$\{\val:\any,\ \st:\keep\}$, \code{touch(c)} permits modifying any
+value-holding location, including the element cells of \code{starts}.
 
-\entry{Nearest verified form}
-A callee with effect \code{\{ values: "init"; spines: "keep" \}}, such
-as \code{c.value ??= 5}, which modifies no location already holding a
-number.
+\entry{Verification principle}
+Refine the callee's effect to object fields, separating field writes
+from quantified array element cells by location kind. When the callee
+mutates a field reached from a parameter path (as in \code{touch(c)}), a
+parameter-rooted field region (\code{"c.value": "any"} or
+\code{"c.*": "scalar"}) suffices. At Pretext's 12 sites (in
+\code{han-kerning.ts} and \code{prepare.ts}), however, helpers mutate
+fields of cached or dynamically selected objects not rooted at any fixed
+parameter path; framing quantified array facts across those calls
+requires the field-kind class region $\{\fld:\any\}$ (surface syntax
+\code{fields: "any"}), separated from array element cells by rule
+\ruleName{Fields-Disj} of \emph{An Effect Language for TScert}~\cite{el}.
 
-\entry{Required extension}
-Two ingredients are needed. First, the callee's effect must name its
-written field rather than the broad class $\val$: TScert's verified
-single pass supports parameter-rooted field regions in \code{Modifies}
-(such as \code{"c.value": "any"} and \code{"c.*": "scalar"}~\cite{ann},
-certified by \lean{ArgumentSpineRegionsWithin}), and \emph{An Effect
-Language for TScert}~\cite{el} models field regions $\pi.f$ directly.
-Second, as in P3 (Section~\ref{sec:p3}), the support of a quantified
-fact over \code{starts} must place its elements in the element-cell kind
-rather than in $\val$, so that the field region $c.\mathit{value}$ is
-separated from the quantified fact's support by location kind.
+\entry{Verifier status}
+\status{Verified in SinglePass} for parameter-rooted field regions:
+\lean{SinglePass} certifies parameter field regions
+(\lean{ArgumentSpineRegionsWithin}) and separates them from
+\lean{Region.pathCells} in \lean{PromiseCalls.effectKept}, so
+\code{acrossTouch} verifies once \code{touch(c)} declares
+\code{Modifies<\{ "c.value": "any" \}, void>} (or a monotone
+\code{values: "init"} effect). \statuso{Model + prototype} for
+Pretext's 12 dynamic-field sites: \ruleName{Fields-Disj} is mechanized
+in \emph{An Effect Language for TScert}~\cite{el} (\lean{model\_rules})
+and exercised in \code{paper-rules-prototype}, while \lean{SinglePass}'s
+\code{Modifies} syntax does not yet include the \code{fields} class
+region.
 
 \needspace{24\baselineskip}
 \subsection{P18: Guarded Fact Through Two \texorpdfstring{\code{@stable}}{@stable} Fields (2 sites)}\label{sec:p18}
@@ -477,38 +554,29 @@ export function acrossStep(p: Prepared, c: Cursor): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{acrossStep} at \code{extras[i]!} on line~22.
-The obligation $i<\len{\mathit{extras}}$ follows from the type invariant
-of \code{Prepared}, a guarded fact whose guard reads through two
-\code{@stable} fields (\code{items} and \code{insideExtras}). While the
-single pass proposes multi-field guarded facts at loop heads and
-preserves them across direct field writes of distinct keys
-(\lean{writeFrame}), a call whose effect states $\val:\any$ drops the
-two-field guard even though both traversed fields are \code{@stable} and
-the callee modifies no spines.
+\entry{Obligation}
+Prove $i<\len{\mathit{extras}}$ at \code{extras[i]!} (line~22) from
+\code{Prepared}'s type invariant, a guarded length equality whose guard
+traverses two \code{@stable} fields (\code{p.items} and
+\code{items.insideExtras}), preserved across \code{step(c)} (line~18)
+under effect $\{\val:\any\}$.
 
-\entry{Nearest verified form}
-A type invariant whose guard traverses a single field:
-\code{this.extras === null || this.extras.length === this.widths.length}.
+\entry{Verification principle}
+Axiom \ruleName{(Rigid)} of \emph{Tolerant frames}~\cite{tf}: a fact
+preserved of a variable holds along any path of rigid (\code{@stable})
+fields whenever the step leaves the relevant spines unchanged (or
+touches only unrelated field keys). Because both \code{items} and
+\code{insideExtras} are \code{@stable} and \code{step} mutates no
+spines, the two-field guarded invariant survives the call.
 
-\entry{Required extension}
-Preserve a guarded fact whose guard traverses multiple \code{@stable}
-fields across any call that leaves the relevant spines unchanged (or
-touches only unrelated field keys). Axiom \ruleName{(Rigid)} of
-\emph{Tolerant frames}~\cite{tf} states this principle in the model: a
-fact preserved of a variable holds along any rigid path.
+\entry{Verifier status}
+\statusc{Model only / open in SinglePass} \lean{SinglePass} verifies
+single-field guarded invariants across calls and preserves multi-field
+guarded facts across direct sibling field writes (\lean{writeFrame}),
+but a call carrying $\val:\any$ still drops a two-field guard.
 
-\entry{Relation to Read-only frames}
-At Pretext's sites, the record is an opaque handle at a read-only type:
-its invariant holds at entry, and the guarantee route of \emph{Read-only
-frames}~\cite{rof} preserves both the invariant and its support across
-outside calls. In the snippet above, \code{Prepared} is exported as a
-structural type with a writable array that outside code may build or
-mutate, so its storage lies outside the read-only protected region and
-that rule does not apply \statusc{conj.}.
-
-\subsection{P22: Fact About a Location a Callback Cannot Reach (1 site, second blocker)}\label{sec:p22}
+\needspace{22\baselineskip}
+\subsection{P22: Local State and Shared Handles Across a Higher-Order Callback (1 call-site pattern; 48 walker sites)}\label{sec:p22}
 
 \begin{lstlisting}[language=TypeScript]
 type Visitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
@@ -527,141 +595,99 @@ export function walk(xs: number[], visit: Visitor): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-Under a closed monomorphic callback effect, the verifier refuses
-\code{walk} at \code{xs[c.i]!} on line~10. The loop guard establishes
-$c.i<\len{\mathit{xs}}$, which \code{visit(c.i)} drops because
-\code{Visitor}'s effect includes $\val:\any$. That class covers the
-field location $c.i$ even though \code{visit} receives only a number and
-cannot reach \code{c}.
-
-P22 encompasses two distinct forms in Pretext's line walkers
-(\code{line-break.ts}):
+\entry{Obligation}
+Preserve both walker-local state and shared handle invariants across a
+higher-order callback invocation (\code{visit(c.i)} on line~9, or
+\code{onLine} in Pretext's line walkers) while allowing each caller's
+callback to mutate its own state. P22 separates two distinct obligations
+in Pretext's line walkers (\code{line-break.ts}):
 \begin{enumerate}[leftmargin=1.5em,itemsep=2pt]
-\item \emph{Form (a) --- Local cursor:} A cursor allocated by the walker
-  and never exposed to the callback (exemplified by \code{c} in
-  \code{walk} above).
-\item \emph{Form (b) --- Handle invariant across a callback:} A prepared
-  handle passed to helpers after \code{onLine}. In Pretext
-  (\code{tscert-bounds}, commit \code{aa8f7cc2}),
-  \code{walkPreparedLinesRaw} invokes
-  \code{stepPrepared\allowbreak SimpleLineGeometry(\allowbreak prepared, cursor, maxWidth)}
-  (\code{line-break.ts}, line~316) on every iteration after
-  \code{onLine} (line~319). With \code{Visitor}'s closed effect, the
-  handle's length relation is lost across \code{onLine} and the call is
-  refused; with the empty effect, the call verifies \statuso{observed}.
-  This pattern therefore blocks P1's walker sites once the visitor's
-  closed effect is stated.
+\item \emph{Form (a) --- Local cursor (unreachability):} A cursor
+  allocated inside the walker and never exposed to the callback (such as
+  \code{c} in \code{walk}). A closed callback effect naming
+  $\val:\any$ covers $c.i$ and drops $c.i<\len{\mathit{xs}}$ even though
+  the callback cannot reach \code{c}.
+\item \emph{Form (b) --- Shared handle (bounded read-only reach):} A
+  prepared handle passed to helpers after \code{onLine}. Unlike the
+  local cursor, the handle is \emph{not} unreachable: callers hold
+  \code{prepared} in scope and pass it into \code{onLine} closures (for
+  instance, \code{layoutWithLines} calls
+  \code{createLayoutLine(prepared, ...)} inside \code{onLine}). In
+  \code{walkPreparedLinesRaw}, every iteration invokes
+  \code{stepPreparedSimpleLineGeometry} on \code{prepared} and
+  \code{cursor} after \code{onLine}; a closed $\st:\grow$ callback
+  effect drops handle length equalities such as
+  $\len{\mathit{segmentFlags}}=\len{\mathit{widths}}$ and rejects
+  callers that append to their own arrays.
 \end{enumerate}
 
-\entry{Nearest verified form}
-Keeping the loop index in a plain local variable (whose bound survives
-$\val:\any,\ \st:\grow$) and reading handle arrays through locals taken
-before the visit without passing the handle on. For form~(a) alone,
-TScert's verified single pass preserves facts whose support lies
-entirely in confined local locations (such as \code{safeInteger(c.i)}
-and \code{0 <= c.i} when the loop re-tests \code{c.i < xs.length} after
-the visit) across arbitrary-effect callbacks via checked local-object
-confinement~\cite{loc} (\lean{TolerantFramesConfined.run\_sound\_pass}),
-whenever the cursor is allocated locally and never escapes into any
-operand of the callback; keeping the mixed relation $c.i<\len{\mathit{xs}}$
-directly across \code{visit(c.i)} combines a confined local field with
-an unconfined parameter spine.
+\entry{Verification principle}
+Bounded effect polymorphism in \emph{An Effect Language for
+TScert}~\cite{el}. Define the named effect preserving a line-break
+handle's declared reach (\cite{el}, Section~6):
+\[
+  \mathit{Geom}(p)\;\triangleq\;\{\reach{p}{\mathit{PreparedLineData}}:\keep;\ \kw{else}:\any\}.
+\]
+The walker quantifies over the callback's effect variable $\varepsilon$
+bounded by $\varepsilon\sqsubseteq\mathit{Geom}(\mathit{prepared})$ (or
+$\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}$ for
+\code{walk}). Across the callback, the two forms are discharged by
+complementary rules:
+\begin{itemize}[leftmargin=1.5em,itemsep=2pt]
+\item \emph{Form (a)} uses \ruleName{Anch}, bounding $\varepsilon$ by
+  $\{\old:\any\}$ so that locations allocated after walker entry (such
+  as \code{c.i} or \code{cursor}) survive by unreachability.
+\item \emph{Form (b)} uses \ruleName{Bound}, preserving everything in
+  $\mathit{Geom}(\mathit{prepared})$ because the callback's effect bound
+  forbids mutating the handle's declared reach even when the callback
+  reads \code{prepared}.
+\end{itemize}
+Rule \ruleName{Meet} combines both bounds to preserve mixed relations
+such as $c.i<\len{\mathit{xs}}$ across the callback, and rule
+\ruleName{Inst} discharges each caller's concrete effect instantiation
+(paired with \ruleName{Confined} for callbacks that populate
+module-private caches).
 
-\entry{Required extension: two companion approaches}
-Two companion papers address both forms of P22 from complementary
-perspectives:
-
-\begin{description}[leftmargin=1.5em,itemsep=3pt]
-\item[1. Bounded effect polymorphism (\emph{An Effect Language for TScert}~\cite{el}).]
-  The walker quantifies over the visitor's effect $\varepsilon$ subject
-  to a bound preserving the handle's declared reach,
-  $\varepsilon\sqsubseteq\{\reach{\mathit{prepared}}{\mathit{PreparedLineData}}:\keep;\ \kw{else}:\any\}$
-  (or $\varepsilon\sqsubseteq\{xs.\kw{spine}:\keep;\ \kw{else}:\any\}$
-  for \code{walk}). Across the callback, rule \ruleName{Anch} bounds
-  $\varepsilon$ by $\{\old:\any\}$, preserving the locally allocated
-  cursor (form~a), while rule \ruleName{Bound} preserves the handle's
-  declared reach (form~b); rule \ruleName{Meet} combines both, and
-  callers discharge the bound by rule \ruleName{Inst}. The four
-  polymorphism rules are mechanized in Lean over an idealised heap model
-  (\lean{Verification.Paper.EffectLanguage.Model.model\_rules}) and
-  exercised on Pretext's walkers through an experimental prototype mode
-  (\code{paper-rules-prototype}); soundness against TScert's full
-  operational semantics is conjectured \statusc{conj.}.
-\item[2. Component encapsulation (\emph{Read-only frames}~\cite{rof}).]
-  Rule \ruleName{Read-only frame} (\nR{The rule}) gives an outside
-  callback the effect
-  $\Phi\oplus_{\mathcal{C}}(\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}})$,
-  where $\Phi$ is the visitor's stated effect, $\mathcal{C}$ is the
-  enclosing component, $\Psi_{\mathcal{C}}$ is the component members'
-  protocol, and $\Theta_{\mathcal{C}}$ is the client obligation. For
-  \code{walk}, $\Psi_{\mathcal{C}}=\keep$ and $\Theta_{\mathcal{C}}=\keep$;
-  Proposition ``Read-only reliance'' checks the support
-  $\{c.i:\keep,\ \mathit{xs}.\kw{spine}:\grow\}$ location by location
-  (the support table of \emph{Tolerant frames} gives $c.i<\len{xs}$ the
-  field at $\init$ and $\mathit{safeInteger}(c.i)$ at $\keep$). The
-  local field $c.i$ lies in $R_{\mathcal{C}}$ bounded by $\keep$;
-  $xs$'s spine crossed in at the writable type \code{number[]} and is
-  bounded outside $R_{\mathcal{C}}$ by $\st:\grow\sqsubseteq\grow$.
-  Hence $0\le c.i<\len{xs}$ survives the visit. In \emph{Read-only
-  frames}~\cite{rof}, the abstract component-level reliance lemmas are
-  established separately from TScert's operational semantics, while the
-  connection to runs of TScert's calculus is conjectured \statusc{conj.};
-  TScert's verified pass does not include this rule.
-\end{description}
-
-\entry{Premises of Read-only frames at Pretext's walker sites}
-At \code{stepPreparedSimpleLineGeometry} after \code{onLine} in
-\code{walkPreparedLinesRaw} and after \code{onLine} in
-\code{walkPreparedComplexLines}, the six premises of rule
-\ruleName{Read-only frame} are instantiated as follows \statusc{conj.}:
-\begin{description}[leftmargin=1.5em,itemsep=2pt]
-\item[Component.] $\mathcal{C}$ is the Pretext package: its interface
-  comprises the 17 exported functions of \code{layout.ts} and
-  \code{rich-inline.ts} (\code{package.json} entries \code{.} and
-  \code{./rich-inline}). The walkers are invoked by name, \code{onLine}
-  runs outside $\mathcal{C}$, and the source uses no \code{await},
-  \code{yield}, async function, or generator.
-\item[Client obligation.] Each of the three handle types
-  (\code{PreparedText}, \code{PreparedTextWithSegments}, and
-  \code{PreparedRichInline}) is opaque: unmentioned fields have type
-  \code{unknown} (read-only), so everything reachable from a handle is
-  reached read-only and $\Theta_{\mathcal{C}}=\keep$. The README states
-  this obligation to callers (Appendix~\ref{app:pretext}).
-\item[Protocol.] After a handle leaves $\mathcal{C}$, only
-  \code{materializeRichInlineLineRange} mutates it, setting
-  \code{sourceStarts}, \code{sourceEnds}, and \code{sourceUnits} from
-  \code{null} to a list. Thus $\Psi_{\mathcal{C}}$ is $\scalar$ at those
-  three keys (on paragraph, released, and outside storage) and $\keep$
-  everywhere else.
-\item[Support.] The handle relation
-  \code{segmentFlags.length === widths.length} reads four locations: the
-  fields \code{widths} and \code{segmentFlags} (at $\grow$, preserving
-  the array references) and their two spines (at $\keep$). All four lie
-  in $R_{\mathcal{C}}$, where $\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}}$
-  is $\keep$, so the bound route applies. The walker's cursor
-  (\code{line-break.ts}, line~293 at upstream \code{0d102a5c}) is a
-  local site with its fields in $R_{\mathcal{C}}$ at $\keep$.
-\item[Ownership.] Every store into a handle writes storage of exposed
-  sites (the lazy initializer stores freshly allocated lists;
-  preparation stores fresh records, its own arrays, and shared cached
-  measurement lists), satisfying condition (O).
-\item[Entry invariant.] The walker obtains the relation at entry from an
-  analysed caller via the handle type's \code{@invariant}, and from an
-  external client via the exported-entry assumption
-  (Section~\ref{sec:trust}).
-\end{description}
+\entry{Verifier status}
+For Form (a) alone, \lean{SinglePass} preserves facts supported
+exclusively by confined local objects (such as \code{safeInteger(c.i)}
+and \code{0 <= c.i}) across arbitrary-effect callbacks via checked
+local-object confinement (\lean{TolerantFramesConfined.run\_sound\_pass}),
+whereas mixed cursor/spine relations and Form (b) require effect
+polymorphism. \statuso{Model + prototype} All nine rules of \emph{An
+Effect Language for TScert}~\cite{el} (\ruleName{Bound},
+\ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst}, \ruleName{Confined},
+\ruleName{Callback-Inv}, \ruleName{Fields-Disj},
+\ruleName{Plain-Cells-Disj}, and \ruleName{Elem-Len-Extend}) are
+mechanized in Lean over an idealised heap model
+(\lean{Verification.Paper.EffectLanguage.Model.model\_rules});
+full-calculus soundness against TScert's operational semantics is
+conjectured \statusc{conj.}. Exercised through
+\code{paper-rules-prototype} on upstream Pretext (\code{0dafecb3}), all
+105/105 units across \code{line-break.ts} (17), \code{layout.ts} (18),
+\code{rich-inline.ts} (38), and \code{prepare.ts} (32) verify with 0
+\code{paperAssume}s and all 56 walker and stepper bound guards restored
+\statuso{observed}. That verification also uncovered 2 genuine upstream
+Pretext bounds bugs (\code{getGraphemeStart} in \code{line-text.ts},
+where an out-of-range grapheme index read \code{undefined} typed as
+\code{number} via \code{!}, yielding full-segment slices and \code{NaN}
+source offsets; and \code{getCanvasFont} in \code{measurement.ts}, where
+indexing past a short generic-family list inserted \code{"undefined"}
+into CSS font strings) and prompted 2 public-API cursor boundary checks
+at streaming entry points (\code{stepNextLine} in \code{layout.ts} and
+\code{layoutNextRichInlineLineRange} in \code{rich-inline.ts})
+validating caller-supplied cursors.
 
 % ======================================================================
 \section{Closure, Module, and Collection Invariants}\label{sec:state}
 % ======================================================================
 
-Four patterns (19 sites) need heap invariants established outside the
-immediate function body: facts captured by a local closure (P7),
-module-scoped constants and caches (P15, P16), and values retrieved from
-a \code{Map} (P20).
+Four patterns (19 sites) rely on invariants established outside the
+immediate function body: facts over a local closure's captures (P7),
+module-scoped constant arrays and lazy caches (P15, P16), and values
+retrieved from a \code{Map} (P20).
 
-\needspace{16\baselineskip}
+\needspace{22\baselineskip}
 \subsection{P7: Fact Over a Local Closure's Captures (10 sites)}\label{sec:p7}
 
 \begin{lstlisting}[language=TypeScript]
@@ -671,6 +697,8 @@ export function groups(): number {
   const glyphs: Glyph[] = [
     { advance: 1 }, { advance: 2 }, { advance: 3 }, { advance: 4 },
   ];
+  /** @requires safeInteger(from) && safeInteger(to)
+   *            && 0 <= from && to <= glyphs.length */
   const group = (from: number, to: number): number => {
     let s = 0;
     /** @invariant safeInteger(i) && safeInteger(to)
@@ -682,25 +710,38 @@ export function groups(): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{groups} inside the function literal
-\code{group}: the loop invariant of lines~9--10 does not hold on the
-loop's entry edge. A function literal's body is verified solely from its
-parameter types and its own \code{@requires}; facts established by the
-enclosing function about \code{glyphs} do not enter the closure, and a
-\code{@requires} clause referencing a captured variable is refused at
-the source boundary.
+\entry{Obligation}
+Establish the loop invariant $0\le i$ and
+$\mathit{to}\le\len{\mathit{glyphs}}$ inside the local closure
+\code{group} (lines~11--12), and discharge its precondition
+\code{to <= glyphs.length} at the calls \code{group(0, 2)} and
+\code{group(2, 4)} using the enclosing fact $\len{\mathit{glyphs}}=4$.
 
-\entry{Nearest verified form}
-The same indexed reads placed directly in the enclosing function body.
+\entry{Verification principle}
+Two related mechanisms govern closures over immutable captures. For
+non-escaping visitor closures that read enclosing invariants without
+parameter-to-capture preconditions (such as Pretext's visitor closures
+in \code{rich-inline.ts}), rule \ruleName{Callback-Inv} of \emph{An
+Effect Language for TScert}~\cite{el} carries facts over immutable
+captures into the callback body whenever the host walker preserves their
+support. For local helper closures whose parameters are bounded against
+a captured array (such as \code{group} or Pretext's
+\code{getHanKerningTrims}), \code{@requires} must also permit clauses
+naming immutable captures, discharged against the enclosing state at
+each call site.
 
-\entry{Required extension}
-Carry facts over captured bindings into a function literal's entry
-(or permit \code{@requires} to name immutable captures), together with
-call-site discharge of $0\le\mathit{from}$ and
-$\mathit{to}\le\len{\mathit{glyphs}}=4$. No companion paper provides
-this rule.
+\entry{Verifier status}
+\statuso{Model + prototype (visitors); open (local helpers)}
+\lean{SinglePass} verifies \code{@requires} on local arrow helpers when
+clauses name parameters alone (and verifies the same loop directly in
+the enclosing body), but rejects capture-referencing \code{@requires}.
+\ruleName{Callback-Inv} is mechanized in \emph{An Effect Language for
+TScert}~\cite{el} (\lean{model\_rules}) and exercised in
+\code{paper-rules-prototype} on Pretext's visitor closures;
+capture-referencing \code{@requires} on general local helpers remains an
+open extension.
 
+\needspace{18\baselineskip}
 \subsection{P15: Module Constant Array Length at Entry (4 sites)}\label{sec:p15}
 
 \begin{lstlisting}[language=TypeScript]
@@ -712,31 +753,29 @@ export function kindName(f: number): string {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{kindName} at \code{KINDS[f \& 3]!} on line~5.
-Rule \ruleName{Mask} (\nI{Arithmetic steps}) gives
-$0\le f\mathbin{\&}3\le 3$, leaving the obligation
-$f\mathbin{\&}3<\len{\mathit{KINDS}}$ unproved because a module
-\code{const} holding an array contributes no length fact at a function's
+\entry{Obligation}
+Prove $f\mathbin{\&}3<\len{\mathit{KINDS}}$ at \code{KINDS[f \& 3]!}
+(line~5). Rule \ruleName{Mask} (\nI{Arithmetic steps}) gives
+$0\le f\mathbin{\&}3\le 3$, leaving $\len{\mathit{KINDS}}=4$ to be
+established at \code{kindName}'s entry.
+
+\entry{Verification principle}
+A module-level representation invariant establishing
+$\len{\mathit{KINDS}}=4$ at the entry of every function in the module,
+checked to be preserved by every function in the module. Contrast this
+with rule \ruleName{Confined} ($\modstate{M}$) in \emph{An Effect
+Language for TScert}~\cite{el}: $\modstate{M}$ frames \emph{external}
+invariants across mutations of module-private state, whereas P15
+requires the dual \emph{internal} invariant stating the length of the
+module binding itself at entry.
+
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies the same array
+literal when declared locally inside \code{kindName}, but contributes no
+length invariant for a module-level \code{const} array at function
 entry.
 
-\entry{Nearest verified form}
-The same array literal declared inside \code{kindName}.
-
-\entry{Required extension}
-A module-level invariant establishing $\len{\mathit{KINDS}}=4$ at the
-entry of every function in the module, checked to be preserved by every
-function in the module. No companion paper states this rule.
-
-\entry{Relation to Read-only frames}
-Rule \ruleName{Read-only frame} (\nR{The rule}) could preserve
-$\len{\mathit{KINDS}}=4$ across calls of outside code if the array were
-protected storage reached through an exposed read-only handle. Because
-no crossing value reaches \code{KINDS}, it is internal storage outside
-the protected region, and the rule preserves facts across calls inside
-an invocation rather than establishing them at every function entry
-\statusc{conj.}.
-
+\needspace{18\baselineskip}
 \subsection{P16: Cache Location Initialised at First Use (4 sites)}\label{sec:p16}
 
 \begin{lstlisting}[language=TypeScript]
@@ -749,31 +788,28 @@ export function bitsAt(cp: number): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{bitsAt} at \code{table[cp]!} on line~6 with
-obligation $\mathit{cp}<\len{\mathit{table}}$. A module \code{let}
-lowers to a private cell; on the branch where \code{bmp} already holds a
-\code{Uint16Array}, its length is unknown, so the merge after
-\code{??=} loses $\len{\mathit{table}}=65536$.
+\entry{Obligation}
+Prove $\mathit{cp}<\len{\mathit{table}}$ at \code{table[cp]!} (line~6).
+On the branch where the module \code{let}-cell \code{bmp} already holds
+a \code{Uint16Array}, its length must satisfy $\len{\mathit{bmp}}=65536$
+so the merge after \code{??=} preserves $\len{\mathit{table}}=65536$.
 
-\entry{Nearest verified form}
-Allocating the \code{Uint16Array} directly inside \code{bitsAt}.
-
-\entry{Required extension}
-A module-cell invariant establishing
+\entry{Verification principle}
+A module-cell representation invariant establishing
 $\mathit{bmp}\doteq\code{null}\vee\len{\mathit{bmp}}=65536$ at every
-function entry, discharged against every write to the cell. No companion
-paper states this rule.
+function entry, discharged at initialization and at every write to the
+cell. As in P15, rule \ruleName{Confined} ($\modstate{M}$) in \emph{An
+Effect Language for TScert}~\cite{el} frames \emph{external} invariants
+across mutations of private module \code{let}-cells, whereas P16
+requires an \emph{internal} representation invariant constraining the
+values stored in the cell itself.
 
-\entry{Relation to Read-only frames}
-The cell's single write could be checked to maintain
-$\mathit{bmp}\doteq\code{null}\vee\len{\mathit{bmp}}=65536$ as an
-invariant of the component guarantee $G_{\mathcal{C}}$, analogous to
-Pretext's lazy paragraph lists, allowing the guarantee route to preserve
-it across outside calls. As in P15, however, the cell is internal
-storage unreachable by crossing values, and the fact is required at
-every function entry \statusc{conj.}.
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies allocating the
+\code{Uint16Array} directly inside \code{bitsAt}, but carries no
+cross-call invariant on module-level \code{let}-cells.
 
+\needspace{26\baselineskip}
 \subsection{P20: Type Invariant of a Value Read Back from a \texorpdfstring{\code{Map}}{Map} (1 site)}\label{sec:p20}
 
 \begin{lstlisting}[language=TypeScript]
@@ -802,43 +838,42 @@ export function classOf(name: string, c: number): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{tableOf} at its return on line~17. The type
-invariant of \code{ClassTable} is a return obligation for any function
-returning \code{ClassTable}, and a native call result carries no type
-invariant. On the cache-hit branch where \code{cache.get} returns an
-existing table, the invariant $\len{t.\mathit{index}}=4352$ is therefore
-unknown.
+\entry{Obligation}
+Establish \code{ClassTable}'s type invariant
+$\len{t.\mathit{index}}=4352$ at \code{tableOf}'s return (line~17) on
+the cache-hit branch where \code{cache.get(name)} returns an existing
+entry, enabling \code{index[c >{}> 8]!} in \code{classOf}.
 
-\entry{Nearest verified form}
-Returning a table directly from its builder,
-\code{build().index[c >{}> 8]!}.
+\entry{Verification principle}
+A collection-invariant rule paired with a reviewed \code{Map} contract:
+reading from a \code{Map} yields a value satisfying a type invariant
+whenever every \code{set} into that map stores a value satisfying the
+invariant. In \emph{An Effect Language for TScert}~\cite{el}
+(Section~6.4), rule \ruleName{Confined} ($\modstate{M}$) solves caching
+pattern W5 by framing \emph{external} caller and walker invariants
+across private \code{Map}/\code{WeakMap} caches; P20 is the dual
+obligation, establishing an \emph{internal} representation invariant on
+the cached entries returned by lookup.
 
-\entry{Required extension}
-A reviewed contract for \code{Map} paired with a collection-invariant
-rule: reading from a \code{Map} yields a value satisfying a type
-invariant whenever every \code{set} into that map stores a value
-satisfying the invariant. (A related gap for map-entry regions in
-caching helpers arises in pattern W5 of \emph{An Effect Language for
-TScert}~\cite{el}.) No companion paper provides this rule.
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies returning a table
+directly from its builder (\code{build().index[c >{}> 8]!}), whereas
+native \code{Map.prototype.get} carries no type invariant on retrieved
+values.
 
-\entry{Relation to Read-only frames}
-The protected region of \emph{Read-only frames}~\cite{rof} does not
-traverse collection entries, so it provides no invariant on values read
-from a \code{Map}. A retrieved table regains its invariant only at a
-boundary where a caller establishes it or via a runtime check of
-\code{index.length} before returning \statusc{conj.}.
-
+\needspace{30\baselineskip}
 % ======================================================================
 \section{Arithmetic, Indexing, and Quantified Relations}\label{sec:arith}
 % ======================================================================
 
-Seven patterns (34 sites) require richer term, assertion, or step rules:
+Seven patterns (34 sites) concern richer term, assertion, or step rules:
 non-linear products (P9), shared abstract counts (P10), string indexing
-(P11), two-array pointwise quantification (P12), postfix-counter prefix
-fills (P13), indexed paths (P17), and running sums of element lengths
-(P19).
+(P11), guarded parallel-array quantification (P12), postfix-counter
+prefix fills (P13), term-indexed paths (P17), and running sums of
+element lengths (P19). Two of these (P12 and P17) verify in
+\lean{SinglePass}.
 
+\needspace{18\baselineskip}
 \subsection{P9: Product of Two Variables in an Index (7 sites)}\label{sec:p9}
 
 \begin{lstlisting}[language=TypeScript]
@@ -853,27 +888,29 @@ export function badProduct(
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{badProduct} at its precondition (line~3):
-clauses are restricted to linear arithmetic and reject a product of two
-variables. Likewise, multiplying two variables in the function body
-produces no arithmetic fact.
+\entry{Obligation}
+State $\len{\mathit{rows}}=\mathit{states}\cdot\mathit{width}$ in the
+precondition (line~3) and deduce
+$0\le\mathit{state}\cdot\mathit{width}<\len{\mathit{rows}}$ at
+\code{rows[state * width]!} (line~8).
 
-\entry{Nearest verified form}
-A constant stride: \code{rows[last * 28 + 27]!} under
-\code{rows.length === 6244} and $0\le\mathit{last}<223$.
-
-\entry{Required extension}
-Clauses and non-linear arithmetic admitting variable products together
-with the entailment
+\entry{Verification principle}
+Non-linear arithmetic clauses admitting variable products together with
+the entailment
 \[
   \len{\mathit{rows}} = \mathit{states}\cdot\mathit{width}
   \;\wedge\; 0\le\mathit{state}<\mathit{states}
   \;\wedge\; 0\le c<\mathit{width}
   \;\vdash\; \mathit{state}\cdot\mathit{width} + c < \len{\mathit{rows}}.
 \]
-No companion paper states this rule.
 
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies constant-stride
+indexing (such as \code{rows[last * 28 + 27]!} under
+\code{rows.length === 6244} and $0\le\mathit{last}<223$), while clause
+syntax and arithmetic rules remain linear in variables.
+
+\needspace{22\baselineskip}
 \subsection{P10: Equal Counts Computed by Two Functions of One Input (7 sites)}\label{sec:p10}
 
 \begin{lstlisting}[language=TypeScript]
@@ -896,23 +933,23 @@ export function paired(text: string): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{paired} at \code{w[k]!} on line~15. At the
-loop head, $k<\len{e}$, but nothing relates $\len{e}$ to $\len{w}$:
-neither builder's output length is a linear term in $\len{\mathit{text}}$,
-and the clause language cannot name a shared count computed from
-\code{text}.
+\entry{Obligation}
+Prove $k<\len{w}$ at \code{w[k]!} (line~15) from $k<\len{e}$ by
+establishing $\len{e}=\len{w}$, even though neither builder's output
+length is a linear term in $\len{\mathit{text}}$.
 
-\entry{Nearest verified form}
-Reading a single builder's result below its own length.
-
-\entry{Required extension}
+\entry{Verification principle}
 A specification term (such as a pure recursive or uninterpreted count
-function over strings) naming the number of non-space code units in
-\code{text}, so both builders' postconditions equate their result length
-to that term and the caller derives $\len{e}=\len{w}$. No companion
-paper introduces such terms.
+function over strings) naming the count of non-space code units in
+\code{text}, so both builders' postconditions equate their result
+lengths to that term and the caller derives $\len{e}=\len{w}$.
 
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies reading a single
+builder's result below its own length, while the clause language has no
+shared abstract count terms.
+
+\needspace{16\baselineskip}
 \subsection{P11: String Element Read Below Its Length (5 sites)}\label{sec:p11}
 
 \begin{lstlisting}[language=TypeScript]
@@ -923,23 +960,23 @@ export function badElement(text: string): string {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{badElement} at \code{text[i]!} on line~3,
-where the element is used at type \code{string}: TScert's single pass
-has no producer rule typing a string's indexed element below its length.
+\entry{Obligation}
+Type the indexed string read \code{text[i]!} (line~3) as \code{string}
+under $0\le i<\len{\mathit{text}}$.
 
-\entry{Nearest verified form}
-Reading the UTF-16 code unit below the length via
-\code{text.charCodeAt(i)}.
+\entry{Verification principle}
+Rule \ruleName{Str-Read} of \emph{Tolerant frames}~\cite{tf}: under
+$0\le i<\len{s}$ (with $i<2^{32}-1$), \code{y = s[i]} yields a string of
+length~$1$.
 
-\entry{Required extension}
-Apply rule \ruleName{Str-Read} of \emph{Tolerant frames}~\cite{tf}:
-under $0\le i<\len{s}$ (with $i<2^{32}-1$), \code{y = s[i]} yields a
-string of length $1$. The rule is proved in Lean
-(\lean{ArithmeticRules.strRead\_sound} and \lean{Derivation.stringRead}
-in the paper formalisation), while TScert's single pass does not emit
-it.
+\entry{Verifier status}
+\statusc{Model only / open in SinglePass} Rule \ruleName{Str-Read} is
+proved in Lean (\lean{Derivation.stringRead} and
+\lean{ArithmeticRules.strRead\_sound}), while \lean{SinglePass} does not
+yet emit it (reads of UTF-16 code units via \code{text.charCodeAt(i)}
+verify directly).
 
+\needspace{20\baselineskip}
 \subsection{P12: Pointwise Relation of Two Arrays (5 sites)}\label{sec:p12}
 
 \begin{lstlisting}[language=TypeScript]
@@ -947,11 +984,11 @@ it.
  *            && fits.length === extras.length
  *  @requires forall k in fits: extras[k] === null
  *            || extras[k].length === fits[k].length */
-export function bad(
+export function sumWithExtras(
   fits: number[][], extras: (number[] | null)[], i: number,
 ): number {
   const advances = fits[i]!;
-  const e = extras[i]!;
+  const e = extras[i] ?? null;
   let s = 0;
   for (let g = 0; g < advances.length; g++) {
     s += advances[g]! + (e === null ? 0 : e[g]!);
@@ -960,25 +997,31 @@ export function bad(
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{bad} at its precondition (lines~3--4): a
-quantified clause may index only its quantified array \code{fits}, so
-relating elements of two arrays at the same index is rejected at the
-source boundary.
-
-\entry{Nearest verified form}
-A single array of arrays read below the length of its selected element.
-
-\entry{Required extension}
-Quantified assertions relating elements of two arrays at a shared index,
+\entry{Obligation}
+Instantiate the guarded parallel-array relation
 \[
   \forall k<\len{\mathit{fits}}.\;
     \mathit{extras}[k]\doteq\code{null}
-    \;\vee\; \len{\mathit{extras}[k]}=\len{\mathit{fits}[k]},
+    \;\vee\; \len{\mathit{extras}[k]}=\len{\mathit{fits}[k]}
 \]
-together with instantiation at indexed reads of both arrays. No
-companion paper states this assertion form.
+at index \code{i} so that narrowing \code{e !== null} yields
+$\len{e}=\len{\mathit{advances}}$ and proves \code{e[g]!} (line~12) in
+bounds. Because \code{extras} has type \code{(number[] | null)[]}, line~9
+binds \code{const e = extras[i] ?? null} rather than \code{extras[i]!},
+which would falsely assert non-nullness before testing \code{e === null}.
 
+\entry{Verification principle}
+Guarded quantified clauses relating two arrays at a shared index,
+instantiated at indexed reads of both arrays and released by null
+narrowing on the selected element.
+
+\entry{Verifier status}
+\status{Verified in SinglePass} Guarded parallel-array quantification
+parses, lowers, frames, and instantiates in \lean{SinglePass}
+(\lean{IndexShift}, \lean{instantiateEvery\_holds}), verifying
+\code{sumWithExtras} directly.
+
+\needspace{22\baselineskip}
 \subsection{P13: Typed-Array Prefix Filled with a Postfix Counter (5 sites)}\label{sec:p13}
 
 \begin{lstlisting}[language=TypeScript]
@@ -1004,24 +1047,32 @@ The caller allocates \code{ends = new Int32Array(text.length)}, calls
 \code{fill(text, ends, text.length)}, and reads
 \code{text.codePointAt(ends[0]! - 1)!}.
 
-\entry{What is refused}
-The verifier refuses \code{fill} on the back edge of its loop: the
-quantified prefix invariant of lines~11--12 is not re-established across
-\code{ends[count++] = i} (line~13). The write occurs at \code{count},
-which trails the loop counter \code{i} by a constant ($1$), whereas the
-verifier extends a quantified prefix inside a loop only at the loop's
-own counter or on a fresh typed array in the allocating function.
+\entry{Obligation}
+Maintain the quantified typed-array prefix invariant
+$\forall k<\mathit{count}.\ 0<\mathit{ends}[k]\le\len{\mathit{text}}$
+across the postfix write \code{ends[count++] = i} and loop increment
+\code{i++} (line~13), and export it through \code{fill}'s postcondition.
 
-\entry{Nearest verified form}
-Filling a freshly allocated typed array directly in the allocating
-function using the loop's own counter as the written index.
+\entry{Verification principle}
+Two ingredients are needed: extending a typed-array prefix across a
+write at the prefix bound followed by a postfix counter increment (rule
+\ruleName{View-Every} of \emph{Tolerant frames}~\cite{tf}), and
+separating distinct mutable local \code{let}-cells so that updating the
+loop counter cell \code{i.value} (which reaches $n+1$, past
+$\len{\mathit{text}}$) does not clobber facts supported by the prefix
+bound cell \code{count.value}.
 
-\entry{Required extension}
-Extend a quantified typed-array prefix across a write \code{ends[k] = v}
-at any index $k$ known to equal the prefix bound (here
-$\mathit{count}=i-1$), followed by incrementing the prefix bound. No
-companion paper states this rule.
+\entry{Verifier status}
+\statuso{Partially verified} \lean{SinglePass} verifies postfix-counter
+prefix fills \code{ends[count++] = v} over freshly allocated typed-array
+views (\lean{PromiseCalls.writtenPrefix}). What remains open in
+\code{fill} is preserving a prefix bound held in one mutable
+\code{let}-cell (\code{count.value}) over a parameter view across an
+update to a second mutable \code{let}-cell (\code{i.value}, which shares
+the cell key \code{"value"} and exceeds \code{text.length} on loop exit)
+without cell-to-cell separation.
 
+\needspace{18\baselineskip}
 \subsection{P17: Index into an Element Selected by Another Index (3 sites)}\label{sec:p17}
 
 \begin{lstlisting}[language=TypeScript]
@@ -1036,22 +1087,25 @@ export function at(fits: number[][], c: Cursor): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{at} at its precondition (line~5). The upper
-bound \code{c.grapheme < fits[c.segment].length} relies on a path
-indexed by a term (\code{c.segment}), whereas clause paths traverse
-record fields only.
+\entry{Obligation}
+Prove $c.\mathit{grapheme}<\len{\mathit{advances}}$ at
+\code{advances[c.grapheme]!} (line~8) from the precondition
+\code{c.grapheme < fits[c.segment].length} after reading
+\code{const advances = fits[c.segment]!}.
 
-\entry{Nearest verified form}
-Guarding the read against the selected element's length directly:
-\code{c.grapheme < advances.length ?\ advances[c.grapheme]! : 0}.
+\entry{Verification principle}
+Term-indexed paths $\pi[t]$ in clauses and heap facts, paired with a
+read link connecting the local \code{advances} to the element selected
+at \code{fits[c.segment]} so that the length bound transfers directly to
+\code{advances}.
 
-\entry{Required extension}
-Indexed paths $\pi[t]$ in clauses and heap facts, together with a read
-rule linking the local \code{advances = fits[c.segment]!} to the path
-\code{fits[c.segment]}. No companion paper includes indexed paths.
+\entry{Verifier status}
+\status{Verified in SinglePass} \lean{SinglePass} parses, lowers, frames
+(\lean{atIndexFollows\_sound}), and instantiates
+(\lean{instantiateAtIndex\_holds}) indexed-element facts via
+\lean{IndexFact.atIndex}, verifying \code{at} directly.
 
-\needspace{18\baselineskip}
+\needspace{20\baselineskip}
 \subsection{P19: Running Sum of Element Lengths (2 sites)}\label{sec:p19}
 
 \begin{lstlisting}[language=TypeScript]
@@ -1071,25 +1125,26 @@ export function sources(segments: string[]): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{sources} at \code{offsets[at]!} on line~11.
-The obligation is $0\le\mathit{at}<\len{\mathit{offsets}}$. Because each
-iteration increments \code{at} by a non-constant element length
-$\len{\mathit{segments}[i]}$, \code{at} is not a linear counter and
-carries no upper bound at the loop head.
+\entry{Obligation}
+Prove $0\le\mathit{at}<\len{\mathit{offsets}}$ at \code{offsets[at]!}
+(line~11), where \code{at} accumulates non-constant element lengths
+$\len{\mathit{segments}[i]}$ across the second loop.
 
-\entry{Nearest verified form}
-Indexing \code{offsets} at \code{total} itself (\code{offsets[total]!}).
-
-\entry{Required extension}
-A summation term over a slice of element lengths so that
+\entry{Verification principle}
+An aggregate summation term over a slice of element lengths so that the
+loop invariant
 \[
   \mathit{at} + \sum_{i\le k<\len{\mathit{segments}}} \len{\mathit{segments}[k]}
   \;=\; \mathit{total}
 \]
-can be stated and maintained as a loop invariant. No companion paper
-provides such aggregate terms.
+can be stated and maintained on each iteration.
 
+\entry{Verifier status}
+\statusc{Open extension} \lean{SinglePass} verifies indexing
+\code{offsets} directly at \code{total}, while neither \lean{SinglePass}
+nor the companion papers provide aggregate element-length sum terms.
+
+\needspace{26\baselineskip}
 % ======================================================================
 \section{External Specifications}\label{sec:external}
 % ======================================================================
@@ -1099,6 +1154,7 @@ properties of code or data outside the analysed TypeScript source:
 offline-generated lookup tables (P5) and string-library postconditions
 (P14).
 
+\needspace{22\baselineskip}
 \subsection{P5: Bounds Held by the Contents of Generated Tables (16 sites)}\label{sec:p5}
 
 \begin{lstlisting}[language=TypeScript]
@@ -1117,26 +1173,25 @@ export function next(state: number): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{next} at the outer read of line~12. The
-index \code{t[state]} must be a known $\mathit{SafeInt}$ satisfying
-$0\le t[\mathit{state}]<\len{t}$. Because \code{decode}'s postcondition
+\entry{Obligation}
+Prove $0\le t[\mathit{state}]<\len{t}$ at the outer read
+\code{t[t[state]!]!} (line~12). Because \code{decode}'s postcondition
 states only $\len{\mathit{result}}=4$ and its loop copies bytes from the
-packed literal without testing their values, no fact bounds the table's
-contents.
+packed string literal without checking their values, no fact bounds the
+table's contents.
 
-\entry{Nearest verified form}
-A single read of the decoded table at an index bounded by its stated
-length, \code{t[state]!}.
-
-\entry{Required extension}
+\entry{Verification principle}
 Establish $\forall i<\len{t}.\ 0\le t[i]<\len{t}$ at \code{decode}'s
 return, either by statically evaluating the constant string literal
 during verification, by a runtime validation loop inside \code{decode},
-or as an explicit external assumption on the offline table generator. No
-companion paper provides constant-table evaluation.
+or as an explicit external assumption on the offline table generator.
 
-\needspace{15\baselineskip}
+\entry{Verifier status}
+\statusc{Open extension / trust boundary} \lean{SinglePass} verifies the
+inner read \code{t[state]!} against \code{decode}'s stated length, while
+constant-table evaluation is not part of the verifier.
+
+\needspace{18\baselineskip}
 \subsection{P14: Length Contracts of String and Array Natives (4 sites, 33 dependent)}\label{sec:p14}
 
 \begin{lstlisting}[language=TypeScript]
@@ -1151,130 +1206,111 @@ export function bad(text: string): number {
 }
 \end{lstlisting}
 
-\entry{What is refused}
-The verifier refuses \code{bad} at the entry edge of its loop (line~7):
-the invariant asserts $\len{\mathit{normalized}}\le\len{\mathit{text}}$,
-which the reviewed contract of \code{String.prototype.replace} does not
-state.
+\entry{Obligation}
+Establish $\len{\mathit{normalized}}\le\len{\mathit{text}}$ at loop
+entry (line~5) from \code{text.replace(/ +/g, " ")} so \code{breaks[i]!}
+(line~7) is in bounds.
 
-\entry{Nearest verified form}
-A call to \code{slice}, whose reviewed contract states the exact length:
-\code{text.slice(0, k)} has length $k$ (for $0\le k\le\len{\mathit{text}}$).
+\entry{Verification principle}
+Reviewed host length postconditions for the string and array natives
+used at these sites---for example, $\len{r}\le\len{s}$ for
+\code{r = s.replace(e, t)} whenever every match of regex \code{e} has
+length at least $\len{t}$.
 
-\entry{Required extension}
-Reviewed length postconditions for the string and array natives used at
-these sites---for example, $\len{r}\le\len{s}$ for
-\code{r = s.replace(e, t)} when every regex match has length at least
-$\len{t}$. No companion paper specifies regex-dependent length
-contracts.
+\entry{Verifier status}
+\statusc{Open extension / host contract} \lean{SinglePass} verifies
+methods with exact reviewed length contracts such as
+\code{text.slice(0, k)} (length $k$ for $0\le k\le\len{\mathit{text}}$),
+while regex-dependent \code{replace} length contracts are not specified.
 
+\clearpage
 % ======================================================================
 \section{Summary and Trust Boundary}\label{sec:summary}
 % ======================================================================
 
-\subsection{Master Summary of Open Patterns}
+\subsection{Master Summary of Catalogued Patterns}
 
-Table~\ref{tab:summary} lists the 18 catalogue entries in decreasing
-order of blocked Pretext sites (followed by P22, the second blocker
-behind P1), with section references, missing capabilities, and status
-across the companion papers and TScert's verified pass.
+Table~\ref{tab:summary} summarizes all 22 patterns across the baseline
+215-site blocked corpus: the four flagship patterns of
+Section~\ref{sec:verified} followed by the 18 entries of
+Sections~\ref{sec:framing}--\ref{sec:external} in decreasing order of
+Pretext site count, together with P22.
 
-\begin{table}[tp]
+\begin{table}[!htbp]
 \centering\footnotesize
 \renewcommand{\arraystretch}{1.04}
-\begin{tabularx}{\textwidth}{@{}l r >{\raggedright\arraybackslash}p{0.31\textwidth} >{\raggedright\arraybackslash}X@{}}
+\begin{tabularx}{\textwidth}{@{}l r >{\raggedright\arraybackslash}p{0.29\textwidth} >{\raggedright\arraybackslash}X@{}}
 \toprule
-Pattern & Sites & Missing capability & Theory and verifier status\\
+Pattern & Sites & Proof obligation & Theory and verifier status\\
 \midrule
-P3 (\S\ref{sec:p3}) & 19 & Quantified fact across field write & \emph{Tolerant frames}~\cite{tf} (Thm.\ ``Tolerant frame''); pass puts quantified elements in $\val$.\\
-P4 (\S\ref{sec:p4}) & 18 & Fresh separation at field paths; inexact \mbox{\code{i + 1 < n}} & First: \ruleName{Alloc} in \emph{Tolerant frames}~\cite{tf} (pass covers variables only). Second: open.\\
-P5 (\S\ref{sec:p5}) & 16 & Value bounds of generated table & Open (requires literal evaluation, runtime check, or generator assumption).\\
-P6 (\S\ref{sec:p6}) & 12 & Quantified fact across field-writing call & Field regions verified in pass~\cite{ann} and~\cite{el}; quantified support places elements in $\val$ (as P3).\\
-P7 (\S\ref{sec:p7}) & 10 & Captured facts in local closures & Open.\\
-P9 (\S\ref{sec:p9}) & 7 & Product of two variables in index & Open.\\
-P10 (\S\ref{sec:p10}) & 7 & Shared count across two builders & Open.\\
-P11 (\S\ref{sec:p11}) & 5 & String element read below length & \ruleName{Str-Read} in \emph{Tolerant frames}~\cite{tf} (proved in Lean; not emitted by pass).\\
-P12 (\S\ref{sec:p12}) & 5 & Pointwise relation of two arrays & Open.\\
-P13 (\S\ref{sec:p13}) & 5 & Prefix fill at postfix counter & Open.\\
-P14 (\S\ref{sec:p14}) & 4 & Length contract of \code{replace} & Open (reviewed native postcondition; 33 dependent sites).\\
-P15 (\S\ref{sec:p15}) & 4 & Module constant array length & Open (internal storage outside \emph{Read-only frames}~\cite{rof}).\\
-P16 (\S\ref{sec:p16}) & 4 & Module lazy cache cell invariant & Open (internal storage outside \emph{Read-only frames}~\cite{rof}).\\
-P17 (\S\ref{sec:p17}) & 3 & Term-indexed path in clauses & Open.\\
-P18 (\S\ref{sec:p18}) & 2 & Two-field \code{@stable} guard across call & \ruleName{(Rigid)} in \emph{Tolerant frames}~\cite{tf}; pass covers direct sibling field writes only.\\
-P19 (\S\ref{sec:p19}) & 2 & Running sum of element lengths & Open.\\
-P20 (\S\ref{sec:p20}) & 1 & Type invariant of \code{Map} entry & Open (related to map regions in~\cite{el}).\\
-P22 (\S\ref{sec:p22}) & 1\rlap{\textsuperscript{\dag}} & Local cursor and handle across callback & Local cursor facts via confinement~\cite{loc}; mixed cursor/spine and handle invariants in \emph{Effect Language}~\cite{el} (model + prototype) and \emph{Read-only frames}~\cite{rof} \statusc{conj.}.\\
+P1 (\S\ref{sec:verified}) & 50 & Lower bound across visitor & \status{Verified in SinglePass} (\ruleName{(Grow)}~\cite{tf}); 48 walker sites also require P22.\\
+P2 (\S\ref{sec:verified}) & 31 & Growth by known count & \status{Verified in SinglePass} (two-state \code{@ensures} + regional spine frame).\\
+P8 (\S\ref{sec:verified}) & 10 & Write at array length & \status{Verified in SinglePass} (\ruleName{Write-End}~\cite{tf} + \lean{denseAppendAtoms\_sound}).\\
+P21 (\S\ref{sec:verified}) & 1\rlap{\textsuperscript{\ddag}} & Shift-left / bitwise-OR index & \status{Verified in SinglePass} (\ruleName{Shr}, \ruleName{Shl}, \ruleName{Mask}, \ruleName{Or}~\cite{tf}); sits behind P5.\\
+\midrule
+P3 (\S\ref{sec:p3}) & 19 & Quantified fact across field write & \status{Verified in SinglePass} (\lean{Region.pathCells} $\cap$ fields $=\emptyset$, \lean{Survival.everyCells}).\\
+P4 (\S\ref{sec:p4}) & 18 & Fresh path separation; \code{i + 1 < n} & \statuso{Partial}: \code{paths} verified (\lean{PathRegionsApart}, \lean{restateSpines}); \code{straight} open.\\
+P5 (\S\ref{sec:p5}) & 16 & Value bounds of generated table & \statusc{Open}: literal evaluation, runtime check, or generator assumption.\\
+P6 (\S\ref{sec:p6}) & 12 & Quantified fact across field call & \statuso{Model + prototype}: parameter fields verified in \lean{SinglePass}; dynamic fields via \ruleName{Fields-Disj}~\cite{el}.\\
+P7 (\S\ref{sec:p7}) & 10 & Captured facts in local closures & \statuso{Model + prototype} for visitors (\ruleName{Callback-Inv}~\cite{el}); capture \code{@requires} open.\\
+P9 (\S\ref{sec:p9}) & 7 & Product of two variables & \statusc{Open} (constant strides verified in \lean{SinglePass}).\\
+P10 (\S\ref{sec:p10}) & 7 & Shared count across two builders & \statusc{Open} (needs pure/uninterpreted count terms).\\
+P11 (\S\ref{sec:p11}) & 5 & String element read below length & \statusc{Model only}: \ruleName{Str-Read}~\cite{tf} proved in Lean; not emitted by \lean{SinglePass}.\\
+P12 (\S\ref{sec:p12}) & 5 & Guarded two-array quantification & \status{Verified in SinglePass} (\lean{IndexShift}, \lean{instantiateEvery\_holds}; with \code{extras[i] ?? null}).\\
+P13 (\S\ref{sec:p13}) & 5 & Postfix-counter prefix fill & \statuso{Partial}: fresh-view fill verified (\lean{writtenPrefix}); two-cell \code{fill} open.\\
+P14 (\S\ref{sec:p14}) & 4 & Length contract of \code{replace} & \statusc{Open}: reviewed host postcondition (33 dependent sites).\\
+P15 (\S\ref{sec:p15}) & 4 & Module constant array length & \statusc{Open}: internal module invariant (dual to \ruleName{Confined}~\cite{el}).\\
+P16 (\S\ref{sec:p16}) & 4 & Module lazy cache cell invariant & \statusc{Open}: internal cell invariant (dual to \ruleName{Confined}~\cite{el}).\\
+P17 (\S\ref{sec:p17}) & 3 & Term-indexed path in clauses & \status{Verified in SinglePass} (\lean{IndexFact.atIndex}, \lean{instantiateAtIndex\_holds}).\\
+P18 (\S\ref{sec:p18}) & 2 & Two-field \code{@stable} guard & \statusc{Model only}: \ruleName{(Rigid)}~\cite{tf}; \lean{SinglePass} keeps direct sibling writes only.\\
+P19 (\S\ref{sec:p19}) & 2 & Running sum of element lengths & \statusc{Open} (needs aggregate length-sum terms).\\
+P20 (\S\ref{sec:p20}) & 1 & Type invariant of \code{Map} entry & \statusc{Open}: internal map-entry invariant (dual to \ruleName{Confined} / W5~\cite{el}).\\
+P22 (\S\ref{sec:p22}) & 1\rlap{\textsuperscript{\dag}} & Local cursor \& handle in callback & \statuso{Model + prototype}: 9 rules in~\cite{el} (\lean{model\_rules}) \statusc{conj.}; 105/105 Pretext units pass with 0 \code{paperAssume}s.\\
 \bottomrule
 \end{tabularx}
-\caption{Summary of the 18 catalogued patterns. \textsuperscript{\dag}P22 is recorded as 1 call site in \code{tscert-bounds} (\code{aa8f7cc2}) and acts as the second blocker behind P1's 50 walker sites once the visitor states its closed effect.}\label{tab:summary}
+\caption{Master summary of Pretext's 22 bound patterns (baseline audit corpus \code{9268edb1}: 118 sites verified in \lean{SinglePass} + 97 partial/model/open = 215 blocked sites). \textsuperscript{\ddag}P21's 1 site sits behind P5 and is counted in P5's 16 sites. \textsuperscript{\dag}P22 is 1 call-site pattern acting as the second blocker on 48 of P1's walker sites.}\label{tab:summary}
 \end{table}
 
 \paragraph{Sites in no pattern.}
-Three bound rewrite sites of commit \code{9268edb1} fall outside the
-patterns above: \code{scanStarts[k]} and \code{sourceBreaks[after]} in
-\code{analyzeText} (lines~522 and~524), and
-\code{openBrackets[opened + 1]} in \code{readScriptRuns} (line~193). The
-422-site corpus also excludes 34 rewrite markers whose operand is not an
-index read.
+Three bound rewrite sites of the baseline corpus (\code{9268edb1}) fall
+outside P1--P21:
+(i)~indexing a parallel normalized start-offset list
+(\code{scanStarts[k]} in \code{analyzeText}),
+(ii)~updating a sentinel-bounded break array at a shifted offset
+(\code{sourceBreaks[after]} in \code{analyzeText}), and
+(iii)~indexing a pair-strided bracket stack at $2k$ and $2k+1$
+(\code{openBrackets[opened + 1]} in \code{readScriptRuns}).
+The 422-site corpus also excludes 34 rewrite markers whose operand is
+not an index read.
 
+\FloatBarrier
 \subsection{Trust Boundary: Facts About Unanalysed Code}\label{sec:trust}
 
-Five obligations across the catalogue depend on code or data outside the
+Four obligations across the catalogue depend on code or data outside the
 analysed TypeScript files and therefore constitute explicit trust
 assumptions rather than internal proofs:
 \begin{enumerate}[leftmargin=1.5em,itemsep=2pt]
-\item \textbf{Library length contracts (P14):} Postconditions on built-in
-  methods such as \code{String.prototype.replace} are reviewed
-  specifications of host code~\cite{fp}.
+\item \textbf{Library length contracts (P14):} Postconditions on
+  built-in methods such as \code{String.prototype.replace} are reviewed
+  specifications of host code.
 \item \textbf{Generated tables (P5):} Value bounds on packed lookup
-  tables trust the offline generator unless verified by constant
+  tables trust the offline generator unless established by constant
   evaluation or a runtime check at decode time.
 \item \textbf{Unanalysed callbacks (P1, P22):} An effect bound stated on
   a callback parameter of an exported API function (whether closed as in
   P1 or polymorphic as in~\cite{el}) is discharged for analysed callers
   and assumed of external callers.
-\item \textbf{Read-only client discipline (P22, \emph{Read-only frames}):}
-  Under \emph{Read-only frames}~\cite{rof} (Assumption ``Clients''),
-  unanalysed external clients are assumed not to mutate storage reached
-  through a handle's read-only type.
 \item \textbf{Exported preconditions and handle invariants (P22):}
   Handles passed into exported functions from unanalysed clients are
   assumed to satisfy their declared \code{@invariant}, as with any
-  precondition on an exported entry point.
+  precondition on an exported entry point (whereas caller-supplied
+  streaming cursors may be validated by explicit boundary checks).
 \end{enumerate}
 
-\needspace{14\baselineskip}
-\appendix
-\section{Pretext Source Edits for Read-Only Frame Evaluation (P22)}\label{app:pretext}
-
-Evaluating the premises of \emph{Read-only frames}~\cite{rof} at
-Pretext's walker sites (Section~\ref{sec:p22}) requires source edits to
-a copy of upstream Pretext at commit \code{0d102a5c}:
-\begin{itemize}[leftmargin=1.5em,itemsep=1pt,topsep=4pt]
-\item unbranded representation records paired with casts through
-  \code{unknown} between each opaque handle and its representation,
-  checked at the four handle-introduction sites;
-\item the \code{@invariant} clause on each representation record;
-\item three overloads of \code{measureAnalysis} discriminated by its
-  literal arguments;
-\item the three null guards of the lazy paragraph-list write; and
-\item the client read-only obligation stated in three annotation
-  comments and in a README section titled ``Callers' obligation''.
-\end{itemize}
-\noindent
-In \code{src/}, these edits add 97 lines and remove 24; including the
-README section brings the total additions to 113 lines. The edited copy
-type-checks under TypeScript~7.0.2 and passes Pretext's own test suite
-(191 of 191 tests under Bun~1.4.2) \statuso{observed}.
-
-\begin{thebibliography}{8}\small\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
+\begin{thebibliography}{4}\small\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
 \bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 11 November 2026 (revised 24 November 2026).
-\bibitem{rof} TScert Working Note. \emph{Read-only frames: facts of a component across calls of code outside it}. 18 November 2026.
 \bibitem{el} TScert Working Paper. \emph{An Effect Language for TScert: Relational Effects, Bounded Effect Polymorphism, and Tolerant Framing}. 24 November 2026.
-\bibitem{fp} TScert. \emph{Footprints: stable operations for the facts constructs rely on}. \texttt{docs/FOOTPRINTS.md}.
-\bibitem{ann} TScert. \emph{Annotations}. \texttt{docs/ANNOTATIONS.md}.
-\bibitem{loc} TScert Design Draft. \emph{Checked local-object confinement across arbitrary-effect calls}. \texttt{docs/drafts/local-object-\allowbreak confinement.md}.
-\bibitem{pretext} Pretext. TypeScript text-layout library (\texttt{chenglou/pretext}), analysed at commits \code{9268edb1} (rewritten bounds corpus), \code{aa8f7cc2} (\code{tscert-bounds}), and \code{0d102a5c} (upstream).
+\bibitem{pretext} Pretext. TypeScript text-layout library (\texttt{chenglou/pretext}), baseline bound-rewrite audit corpus at commit \code{9268edb1} and walker/builder verification against upstream commit \code{0dafecb3}.
 \end{thebibliography}
 
 \end{document}
