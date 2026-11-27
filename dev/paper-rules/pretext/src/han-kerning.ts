@@ -199,9 +199,9 @@ export type HanKerningTrims = {
 // paragraph's text, whatever items they are in, and types both by the font of the run it shapes
 // (HanKerning::AppendFontFeatures, han_kerning.cc:242-243, 266-273, 288-294, 314-319), so a pair
 // of marks an item start splits halts as in one text, each mark by its own item's font.
-function addWidthTrim(trims: Dense<number[]>, idx: number, trim: number): Modifies<{ values: "any" }, Effects<{ "trims[*]": "grow"; "trims[#]": "any" }, void>> {   // PAPER: top-level helper so getHanKerningTrims preserves other trim arrays' lengths
+function addWidthTrim(trims: Dense<number[]>, idx: number, trim: number): Modifies<{ values: "any"; spines: "grow" }, Effects<{ "trims[*]": "grow"; "trims[#]": "any" }, void>> {   // PAPER: workaround (nested-closure-effect): top-level helper because nested closure capturing trim array fails stated Effects check and loses length invariants on other trim arrays
   const value = (trims[idx] ?? missing()) + trim
-  if ((idx & 0x7fffffff) !== idx || idx >= trims.length) throw new RangeError('index')
+  if ((idx & 0x7fffffff) !== idx || idx > trims.length) throw new RangeError('index')
   trims[idx] = value
 }
 
@@ -210,6 +210,7 @@ function addWidthTrim(trims: Dense<number[]>, idx: number, trim: number): Modifi
  *  @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
  *  @ensures result.overflowLineEndTrims === null || to - from <= result.overflowLineEndTrims.length */
 export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextAnalysis, from: number, to: number): Effects<{ fields: "any"; "@state": "any" }, HanKerningTrims> {   // PAPER: annotation
+  // PAPER: workaround (fresh-object-field-framing): four locals instead of `out` object because `fields: "any"` calls clobber `out.*` length invariants and `out.widthTrims` loses fresh-local provenance for stated Effects check
   let widthTrims: Dense<number[]> | null = null
   let lineStartExtras: Dense<number[]> | null = null
   let lineEndTrims: Dense<number[]> | null = null
@@ -218,11 +219,10 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
   if (data === null) return { widthTrims, lineStartExtras, lineEndTrims, overflowLineEndTrims }
   const { flags, starts, normalized } = analysis
   const count = flags.length
-  const len = to - from
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(len) && 0 <= from && from <= to && len === to - from
-   *  @invariant lineStartExtras === null || len <= lineStartExtras.length
-   *  @invariant lineEndTrims === null || len <= lineEndTrims.length
-   *  @invariant overflowLineEndTrims === null || len <= overflowLineEndTrims.length
+  /** @invariant safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+   *  @invariant lineStartExtras === null || to - from <= lineStartExtras.length
+   *  @invariant lineEndTrims === null || to - from <= lineEndTrims.length
+   *  @invariant overflowLineEndTrims === null || to - from <= overflowLineEndTrims.length
    *  @invariant widthTrims === null || lineStartExtras === null || widthTrims !== lineStartExtras
    *  @invariant widthTrims === null || lineEndTrims === null || widthTrims !== lineEndTrims
    *  @invariant widthTrims === null || overflowLineEndTrims === null || widthTrims !== overflowLineEndTrims */
@@ -234,18 +234,18 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     const first = normalized.charCodeAt(start)
     if (i > 0 && maybeHanKerns(first) && haltedSide(getCharType(data, normalized, start - 1), getCharType(data, normalized, start)) === 1) {
       const trim = getTrim(data, first, measurement)
-      lineStartExtras ??= zeros(len)
+      lineStartExtras ??= zeros(to - from)
       const idx = i - from
       const lineStartExtrasStore = lineStartExtras
-      if ((idx & 0x7fffffff) !== idx || idx >= lineStartExtrasStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx > lineStartExtrasStore.length) throw new RangeError('index')
       lineStartExtrasStore[idx] = trim
-      widthTrims ??= zeros(len)
+      widthTrims ??= zeros(to - from)
       addWidthTrim(widthTrims, idx, trim)
     }
-    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(len) && 0 <= from && from <= to && len === to - from
-     *  @invariant lineStartExtras === null || len <= lineStartExtras.length
-     *  @invariant lineEndTrims === null || len <= lineEndTrims.length
-     *  @invariant overflowLineEndTrims === null || len <= overflowLineEndTrims.length
+    /** @invariant safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+     *  @invariant lineStartExtras === null || to - from <= lineStartExtras.length
+     *  @invariant lineEndTrims === null || to - from <= lineEndTrims.length
+     *  @invariant overflowLineEndTrims === null || to - from <= overflowLineEndTrims.length
      *  @invariant widthTrims === null || lineStartExtras === null || widthTrims !== lineStartExtras
      *  @invariant widthTrims === null || lineEndTrims === null || widthTrims !== lineEndTrims
      *  @invariant widthTrims === null || overflowLineEndTrims === null || widthTrims !== overflowLineEndTrims */
@@ -255,7 +255,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
       if (!(maybeHanKerns(earlier) || maybeHanKerns(later)) || isCanvasCjkSymbol(earlier) === isCanvasCjkSymbol(later)) continue
       const side = haltedSide(getCharType(data, normalized, k - 1), getCharType(data, normalized, k))
       if (side !== 0) {
-        widthTrims ??= zeros(len)
+        widthTrims ??= zeros(to - from)
         addWidthTrim(widthTrims, i - from, getTrim(data, side === 1 ? later : earlier, measurement))
       }
     }
@@ -264,7 +264,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     // The text after it halts a closing mark wherever the line ends.
     const atEnd = i + 1 === count
     if (!atEnd && haltedSide(getCharType(data, normalized, end - 1), getCharType(data, normalized, end)) === -1) {
-      widthTrims ??= zeros(len)
+      widthTrims ??= zeros(to - from)
       addWidthTrim(widthTrims, i - from, getTrim(data, last, measurement))
       continue
     }
@@ -275,18 +275,18 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     if ((lastType !== CLOSE && lastType !== CLOSE_QUOTE) || getCharType(data, normalized, end - 1) !== CLOSE) continue
     // A break directly after the segment: text after a break, or the end of the text.
     if (atEnd || (((flags[i + 1] ?? missing()) & KIND_BITS) === TEXT && ((flags[i + 1] ?? missing()) & UNBROKEN) === 0)) {
-      lineEndTrims ??= zeros(len)
+      lineEndTrims ??= zeros(to - from)
       const idx = i - from
       const lineEndTrimsStore = lineEndTrims
       const lineEndTrimsValue = getTrim(data, last, measurement)
-      if ((idx & 0x7fffffff) !== idx || idx >= lineEndTrimsStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx > lineEndTrimsStore.length) throw new RangeError('index')
       lineEndTrimsStore[idx] = lineEndTrimsValue
     } else {
-      overflowLineEndTrims ??= zeros(len)
+      overflowLineEndTrims ??= zeros(to - from)
       const idx = i - from
       const overflowLineEndTrimsStore = overflowLineEndTrims
       const overflowLineEndTrimsValue = getTrim(data, last, measurement)
-      if ((idx & 0x7fffffff) !== idx || idx >= overflowLineEndTrimsStore.length) throw new RangeError('index')
+      if ((idx & 0x7fffffff) !== idx || idx > overflowLineEndTrimsStore.length) throw new RangeError('index')
       overflowLineEndTrimsStore[idx] = overflowLineEndTrimsValue
     }
   }
