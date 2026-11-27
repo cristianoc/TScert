@@ -3630,4 +3630,7 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-typed-disequality-either"),
     "String(Number.isNaN(badWrongDisequality(0, 0, [])))"),
     "true", "invalid-typed-disequality-either: testing state !== 2 fails to exclude empty range and reads undefined/NaN");
+  assert.deepEqual(runPlain(negative("invalid-object-literal-inherited-key"),
+    "(() => { const r = makePlainWithEmptyWidths(); return [typeof r.toString, r.toString === undefined, r.widths.length]; })()"),
+    ["function", false, 0], "invalid-object-literal-inherited-key: plain object literal inherits Object.prototype.toString, violating this.toString === undefined || this.widths.length >= 1");
 }

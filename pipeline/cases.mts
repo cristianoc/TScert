@@ -5230,6 +5230,8 @@ export const cases: Case[] = [
   positive("typed-disequality-either", "disequality and refined literal types refute `.either` disjuncts across literal `1`, `const START_STATE = 1`, finite literal unions `0 | 2` / `1 | 2`, and loop-counter elimination"),
   negative("invalid-typed-disequality-either", "testing `state !== 2` instead of `state !== 1` fails to refute `state === 1 || count < i - start`, reading `xs[0]` (`undefined`) when `start === end` and returning `NaN` (run under Node)",
     /source expression obligation|evidence search failed/i),
+  negative("invalid-object-literal-inherited-key", "an omitted `Object.prototype` key (`toString`) is inherited as a function on plain object literals in JavaScript, not `undefined`, so `this.toString === undefined || this.widths.length >= 1` is false under Node",
+    /source expression obligation|evidence search failed|does not establish/i),
   positive("callables/variadic-arguments", "Collect any number of arguments into an array rest, and spread arrays among them."),
   positive("class-method-fewer-params", "Concrete non-ambient class methods and constructors without rest parameters meet wider fixed and variadic signatures, including generic classes, sound subclass overrides, and ResourceClass constructor passing."),
   { ...negative("invalid-class-method-fewer-params-rest", "A concrete class method with a rest parameter does not gain a `...unknown[]` extension (throws TypeError under Node when passed a number at position 2).", /no derivation of its binding-annotation claim/), typescriptErrors: true },

@@ -10115,6 +10115,19 @@ structure TypeOracleOk (O : TypeOracle) (ρ : Env) : Prop where
   guard : ∀ s tag, O.excludesGuard s tag = true → ¬ tag.holds (ρ s)
   finite : ∀ s S, O.finiteInts s = some S → ∃ i ∈ S, intValue (ρ s) = some i
 
+/-- The empty type oracle, answering no exclusion or finite-integer queries. -/
+def TypeOracle.empty : TypeOracle where
+  excludesInt _ := false
+  excludesPastSafe _ := false
+  excludesGuard _ _ := false
+  finiteInts _ := none
+
+theorem TypeOracle.empty_ok (ρ : Env) : TypeOracleOk TypeOracle.empty ρ where
+  int _ h := by cases h
+  pastSafe _ h := by cases h
+  guard _ _ h := by cases h
+  finite _ _ h := by cases h
+
 @[nospecialize] def typeOracleOf (G : NormalGraph ι) (Γ : List (Ty ι)) : TypeOracle where
   excludesInt s := (Γ[s]?).any (typeExcludesInt G)
   excludesPastSafe s := (Γ[s]?).any (typeExcludesPastSafe G)
@@ -10472,32 +10485,6 @@ private theorem releaseGrouped_holds {skip : List IndexAtom} {refutes : List (Li
           · cases hfm
     · cases hm
 
-/-- Release every unconditional `.either` in `eithers` whose opposite linear arm
-(or conjunction of linear opposite arms sharing the same surviving arm) is
-contradicted by `K`. -/
-def releaseEithersIn (K : Linear.Known Term) (eithers : List IndexAtom) : List IndexAtom :=
-  let linearArms := (eithers.flatMap fun a => match a.fact with
-    | .either A B =>
-      (match A with | .linear _ => [A] | _ => []) ++
-      (match B with | .linear _ => [B] | _ => [])
-    | _ => []).eraseDups
-  let contra := if linearArms.isEmpty then [] else linearArms.filter (contradictsIn K)
-  let single := releaseByContra contra eithers
-  single ++ releaseGrouped single (armsContradict K) eithers
-
-theorem releaseEithersIn_holds {K : Linear.Known Term} {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
-    (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
-    IndexHolds ε (releaseEithersIn K eithers) ρ h := by
-  intro a hm hc
-  unfold releaseEithersIn at hm
-  dsimp only at hm
-  rcases List.mem_append.mp hm with hm | hm
-  · refine releaseByContra_holds (fun F hF => ?_) ha hsub a hm hc
-    split at hF
-    · cases hF
-    · exact fun hhold => contradictsIn_sound hK (List.mem_filter.mp hF).2 hhold
-  · exact releaseGrouped_holds (fun _ hct harms => armsContradict_sound hK hct harms) ha hsub a hm hc
-
 /-- Linear knowledge augmented with finite literal-type bounds and disequalities
 from `O` over the slots relevant to `eithers` and `K`. -/
 def withTypeLinear (O : TypeOracle) (K : Linear.Known Term) (eithers : List IndexAtom) : Linear.Known Term :=
@@ -10557,53 +10544,16 @@ theorem releaseEithersInOracle_holds {O : TypeOracle} {K : Linear.Known Term}
     · exact armsContradict_sound hKt hct harms
     · exact finiteIntsContradict_sound hO hct harms
 
-def releaseEithersStep (k : Knowledge) : Knowledge :=
-  let kSet := Std.HashSet.ofList k.indices
-  let eithers := k.indices.filter fun a => a.cond.isNone && match a.fact with
-    | .either A B => !kSet.contains { fact := A } && !kSet.contains { fact := B }
-    | _ => false
-  if eithers.isEmpty then k else
-  let K := Linear.Known.build (linearRaw k.indices) []
-  let released := releaseEithersIn K eithers
-  if released.isEmpty then k else
-  let lowered := dedupNew kSet (released ++ lowerAtoms k.links released)
-  if lowered.isEmpty then k else
-  let k1 := { k with indices := k.indices ++ lowered }
-  if lowered.any (fun a => a.cond.isNone && match a.fact with | .atIndex .. | .every .. => true | _ => false) then
-    elementInstances k1
-  else k1
+/-- Release every unconditional `.either` in `eithers` whose opposite arm
+(or conjunction of linear opposite arms sharing the same surviving arm) is
+contradicted by `K`. -/
+def releaseEithersIn (K : Linear.Known Term) (eithers : List IndexAtom) : List IndexAtom :=
+  releaseEithersInOracle TypeOracle.empty K eithers
 
-theorem releaseEithersStep_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
-    Holds (releaseEithersStep k) ε ρ h := by
-  unfold releaseEithersStep
-  dsimp only
-  split
-  · exact hk
-  · have hrel : IndexHolds ε (releaseEithersIn (Linear.Known.build (linearRaw k.indices) [])
-        (k.indices.filter fun a => a.cond.isNone && match a.fact with
-          | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
-          | _ => false)) ρ h :=
-      releaseEithersIn_holds (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp))
-        hk.2.2.2.2.2 fun _ hb => (List.mem_filter.mp hb).1
-    generalize releaseEithersIn (Linear.Known.build (linearRaw k.indices) [])
-        (k.indices.filter fun a => a.cond.isNone && match a.fact with
-          | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
-          | _ => false) = released at hrel ⊢
-    split
-    · exact hk
-    · split
-      · exact hk
-      · have hk1 : Holds { k with indices := k.indices ++ dedupNew (Std.HashSet.ofList k.indices) (released ++ lowerAtoms k.links released) } ε ρ h := by
-          refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
-          rcases List.mem_append.mp ha with ha | ha
-          · exact hk.2.2.2.2.2 a ha hc
-          · have ha' := dedupNew_sub ha
-            rcases List.mem_append.mp ha' with ha' | ha'
-            · exact hrel a ha' hc
-            · exact lowerAtoms_holds hk.2.2.1 hrel a ha' hc
-        split
-        · exact elementInstances_holds hk1
-        · exact hk1
+theorem releaseEithersIn_holds {K : Linear.Known Term} {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
+    IndexHolds ε (releaseEithersIn K eithers) ρ h :=
+  releaseEithersInOracle_holds (TypeOracle.empty_ok ρ) hK ha hsub
 
 /-- Release every unconditional `.either` in `k` whose opposite arm (or
 conjunction of linear opposite arms sharing the same surviving arm) is
@@ -10660,6 +10610,13 @@ theorem releaseEithersStepOracle_holds {O : TypeOracle} {k : Knowledge}
           · exact elementInstances_holds hk1
           · exact hk1
 
+def releaseEithersStep (k : Knowledge) : Knowledge :=
+  releaseEithersStepOracle TypeOracle.empty k
+
+theorem releaseEithersStep_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
+    Holds (releaseEithersStep k) ε ρ h :=
+  releaseEithersStepOracle_holds (TypeOracle.empty_ok ρ) hk
+
 @[nospecialize] def releaseEithersStepTyped (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Knowledge :=
   releaseEithersStepOracle (typeOracleOf G Γ) k
 
@@ -10696,13 +10653,6 @@ theorem unguardedByTypes_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Kno
         | none => exact releaseTypedGuarded_holds he b hbc (hk.2.2.2.2.2 b hb (by rw [hbc]; intro _ hc'; cases hc')) a hm hc
         | some _ => cases b with | mk bf bc bn => simp only at hbc; subst hbc; cases bf <;> simp [releaseTypedGuarded] at hm
 
-def withElements (k : Knowledge) : Knowledge :=
-  releaseEithersStep (unguardedInstances (elementInstances k))
-
-theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
-    Holds (withElements k) ε ρ h :=
-  releaseEithersStep_holds (unguardedInstances_holds (elementInstances_holds hk))
-
 def withElementsOracle (O : TypeOracle) (k : Knowledge) : Knowledge :=
   releaseEithersStepOracle O (unguardedInstances (elementInstances k))
 
@@ -10711,13 +10661,23 @@ theorem withElementsOracle_holds {O : TypeOracle} {k : Knowledge}
     Holds (withElementsOracle O k) ε ρ h :=
   releaseEithersStepOracle_holds hO (unguardedInstances_holds (elementInstances_holds hk))
 
+def withElements (k : Knowledge) : Knowledge :=
+  withElementsOracle TypeOracle.empty k
+
+theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
+    Holds (withElements k) ε ρ h :=
+  withElementsOracle_holds (TypeOracle.empty_ok ρ) hk
+
 /-- Incremental element instantiation and either-release when `k` extends a
-knowledge whose index/link counts were `baseIndices` and `baseLinks`. -/
-def withElementsAfter (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
-  if k.links.length > baseLinks then withElements k
+knowledge whose index/link counts were `baseIndices` and `baseLinks`. When
+`recheck` is true (a refined type oracle is active), existing `.either` facts
+are also rechecked even when no new index atoms were added. -/
+def withElementsAfterOracle (O : TypeOracle) (recheck : Bool) (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
+  if k.links.length > baseLinks then withElementsOracle O k
   else
     let k := unguardedInstances k
-    if k.indices.length ≤ baseIndices then k
+    if k.indices.length ≤ baseIndices then
+      if recheck then releaseEithersStepOracle O k else k
     else
       let added := k.indices.drop baseIndices
       let hasLin := added.any fun a => a.cond.isNone && match a.fact with
@@ -10727,18 +10687,24 @@ def withElementsAfter (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge 
       let hasEither := added.any fun a => a.cond.isNone && match a.fact with
         | .either .. => true | _ => false
       let k1 := if hasLin || hasElem then unguardedInstances (elementInstances k) else k
-      if hasLin || hasEither || k1.indices.length > k.indices.length then releaseEithersStep k1 else k1
+      if recheck || hasLin || hasEither || k1.indices.length > k.indices.length then
+        releaseEithersStepOracle O k1
+      else k1
 
-theorem withElementsAfter_holds {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {h : Heap}
-    (hk : Holds k ε ρ h) : Holds (withElementsAfter baseIndices baseLinks k) ε ρ h := by
-  unfold withElementsAfter
+theorem withElementsAfterOracle_holds {O : TypeOracle} {recheck : Bool}
+    {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
+    Holds (withElementsAfterOracle O recheck baseIndices baseLinks k) ε ρ h := by
+  unfold withElementsAfterOracle
   split
-  · exact withElements_holds hk
+  · exact withElementsOracle_holds hO hk
   · have hku := unguardedInstances_holds hk
     generalize unguardedInstances k = ku at hku ⊢
     dsimp only
     split
-    · exact hku
+    · split
+      · exact releaseEithersStepOracle_holds hO hku
+      · exact hku
     · have hk1 : Holds (if ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
             | .linear .. | .length .. | .bound .. | .int .. => true | _ => false) ||
           ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
@@ -10753,50 +10719,19 @@ theorem withElementsAfter_holds {baseIndices baseLinks : Nat} {k : Knowledge} {�
             | .element .. | .every .. | .atIndex .. => true | _ => false)
         then unguardedInstances (elementInstances ku) else ku) = k1 at hk1 ⊢
       split
-      · exact releaseEithersStep_holds hk1
+      · exact releaseEithersStepOracle_holds hO hk1
       · exact hk1
 
-/-- Incremental element instantiation and typed either-release when `k` extends
-a knowledge whose index/link counts were `baseIndices` and `baseLinks`. -/
-def withElementsAfterOracle (O : TypeOracle) (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
-  if k.links.length > baseLinks then withElementsOracle O k
-  else
-    let k := unguardedInstances k
-    if k.indices.length ≤ baseIndices then releaseEithersStepOracle O k
-    else
-      let added := k.indices.drop baseIndices
-      let hasLin := added.any fun a => a.cond.isNone && match a.fact with
-        | .linear .. | .length .. | .bound .. | .int .. => true | _ => false
-      let hasElem := added.any fun a => a.cond.isNone && match a.fact with
-        | .element .. | .every .. | .atIndex .. => true | _ => false
-      let k1 := if hasLin || hasElem then unguardedInstances (elementInstances k) else k
-      releaseEithersStepOracle O k1
+def withElementsAfter (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
+  withElementsAfterOracle TypeOracle.empty false baseIndices baseLinks k
 
-theorem withElementsAfterOracle_holds {O : TypeOracle}
-    {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {h : Heap}
-    (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
-    Holds (withElementsAfterOracle O baseIndices baseLinks k) ε ρ h := by
-  unfold withElementsAfterOracle
-  split
-  · exact withElementsOracle_holds hO hk
-  · have hku := unguardedInstances_holds hk
-    generalize unguardedInstances k = ku at hku ⊢
-    dsimp only
-    split
-    · exact releaseEithersStepOracle_holds hO hku
-    · have hk1 : Holds (if ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
-            | .linear .. | .length .. | .bound .. | .int .. => true | _ => false) ||
-          ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
-            | .element .. | .every .. | .atIndex .. => true | _ => false)
-        then unguardedInstances (elementInstances ku) else ku) ε ρ h := by
-        split
-        · exact unguardedInstances_holds (elementInstances_holds hku)
-        · exact hku
-      exact releaseEithersStepOracle_holds hO hk1
+theorem withElementsAfter_holds {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {h : Heap}
+    (hk : Holds k ε ρ h) : Holds (withElementsAfter baseIndices baseLinks k) ε ρ h :=
+  withElementsAfterOracle_holds (TypeOracle.empty_ok ρ) hk
 
 @[nospecialize] def withElementsAfterTyped (G : NormalGraph ι) (Γ : List (Ty ι))
     (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
-  withElementsAfterOracle (typeOracleOf G Γ) baseIndices baseLinks k
+  withElementsAfterOracle (typeOracleOf G Γ) true baseIndices baseLinks k
 
 theorem withElementsAfterTyped_holds {G : NormalGraph ι} {Γ : List (Ty ι)}
     {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
