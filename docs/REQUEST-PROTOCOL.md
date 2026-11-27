@@ -145,6 +145,32 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   declaration and binding, for a name the walk types or the lowering reads a
   prototype through (`SourceElaboration.recordName`).
 
+For stage-store lookup the driver sets `TSCERT_SLICE_DRIVER=1`. Preparation
+and the units request retain their formats. The worker prints
+`slice-order <JSON array of unit IDs>`, a callee-first permutation of the
+request. Each unit ends with `slice-verdict <materialized verdict line>`.
+Between these lines the worker and driver exchange one lookup at a time
+in the worker's private execution directory.
+
+- The worker writes the complete relative input to `slice-input` and flushes
+  `slice-lookup check-slice` or `slice-lookup propose-slice`.
+- The driver hashes those bytes and atomically renames a complete reply to
+  `slice-reply`. JSON null requests execution. A hit supplies the stored
+  object with fields `operation`, `members`, `answers` and `line`.
+  The worker consumes and removes the reply before proceeding.
+- A miss produces `slice-result <JSON object>` after the proposals and
+  verdict are available. A validated hit produces `slice-hit`. The
+  worker materializes source coordinates locally in both cases.
+- `slice-physical` releases the lookup claim. The worker computes this group
+  at its physical positions when the occurrence map cannot render its result.
+  Its line and proposals belong to the current file.
+- An unrequested dependency first probes with `slice-lookup probe-check-slice`.
+  A miss receives null and ends with `slice-skip` before the proposal-only
+  lookup. A complete check can supply its named answers on a hit.
+
+The operation key and publication rules are those of
+[worker stages](STAGE-STORE.md#worker-stages).
+
 A line of another shape, or a unit the selection does not check, is an
 operational failure (exit 3). A unit's verdict line is a function of the
 command's arguments, its input files and environment, and the unit: the

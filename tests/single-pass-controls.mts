@@ -39,7 +39,7 @@ import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
 import type { Ast, Expr, FunctionAst } from "../tools/fragment.mts";
-import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
+import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { StatedFrame, SpineRegion } from "../tools/type-graph.mts";
 import { emptyEffect, ordinaryEffect, statedExits } from "../tools/type-graph.mts";
 import { entryRowControl, forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
@@ -301,7 +301,7 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.equal(row.graphs, variant === "failed plan" ? "both plans unavailable" : "equal", row.unit);
         assert.equal(row.bindings, variant === "failed plan" ? null : true, row.unit);
         assert.equal(row.proposalsEqual, true, row.unit);
-        assert.equal(row.relative, true, row.unit);
+        assert.equal(row.relative, variant !== "failed plan", row.unit);
         assert.ok(!checked.has(row.unit));
         checked.set(row.unit, row.verdict);
       }
@@ -309,16 +309,133 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
       if (variant === "ordinary") assert.match(must(all.answers[units.indexOf("outer@80")], "outer’s returned closure"), /"resultFootprint":\{"array":"keep","value":"keep","view":"keep"\}/);
     }
 
-    const call = verifierCall(verifierBuild, args);
-    const options = { limitMs: 60_000, force: false, recorder: null };
-    const first = invokeWorker(call, { ...fileWorkerProtocol, parts: () => half,
-      request: () => JSON.stringify({ units: half }) }, options);
-    assert.deepEqual(first.parts.map(p => p.execution), ["executed"]);
-    const resumed = invokeWorker(call, fileWorkerProtocol, options);
-    assert.equal(resumed.starts, 1);
-    assert.equal(resumed.preparation.execution, "replayed");
-    assert.deepEqual(resumed.parts.map(p => p.execution), units.map(u => half.includes(u) ? "replayed" : "executed"));
-    assert.deepEqual(resumed.parts.map(p => p.stdout.trimEnd()), all.lines);
+    if (variant === "ordinary") {
+      const moveSites = (source: Ast): string => must(JSON.stringify(source, (k, v: unknown) => {
+        if (["pos", "span", "namePos"].includes(k) && Array.isArray(v))
+          return v.map((n: unknown) => typeof n === "number" ? n + 100 : n);
+        return v;
+      }), "moved Fragment");
+      const beforeStore = process.env.TSCERT_STAGE_STORE;
+      const store = new Store(join(work, "slice-store"));
+      try {
+        process.env.TSCERT_STAGE_STORE = store.root;
+        const check = () => invokeWorker(verifierCall(verifierBuild, args, { TSCERT_SLICE_DRIVER: "1" }),
+          fileWorkerProtocol, { limitMs: 60_000, force: false, recorder: null });
+        const cold = check();
+        assert.deepEqual(cold.parts.map(p => p.stdout.trimEnd()), all.lines);
+        assert.equal(cold.slices.executed, units.length);
+        assert.equal(check().starts, 0, "the exact file hits before starting a worker");
+        writeFileSync(fragment, moveSites(ast));
+        const warm = check();
+        assert.equal(warm.slices.executed, 0);
+        assert.equal(warm.slices.replayed, units.length);
+        assert.deepEqual(warm.parts.map(p => p.stdout.trimEnd()), worker(null).lines, "current member and dependency sites");
+
+        const entries = readdirSync(join(store.root, "entries", "pass")).flatMap(k => {
+          const r = store.finished("pass", k, null)?.result;
+          return r && r.input.includes('"operation":"check-slice"') ? [{ key: k, result: r }] : [];
+        });
+        assert.equal(entries.length, units.length);
+        const entry = must(entries[0], "stored slice");
+        const payload: unknown = JSON.parse(entry.result.stdout.toString("utf8"));
+        assert.ok(isObject(payload));
+        for (const [name, change] of Object.entries({
+          operation: { operation: "propose-slice" }, member: { members: ["other@1"] },
+          occurrence: { sites: { offsets: [[1, 10]], ranks: [[10, 1]] } },
+        })) {
+          const forged = new Store(join(work, name));
+          process.env.TSCERT_STAGE_STORE = forged.root;
+          forged.publishFinished("pass", entry.key, { ...entry.result, stdout: Buffer.from(JSON.stringify({ ...payload, ...change })) });
+          const run = check();
+          const failure = run.parts.find(p => p.execution === "failed");
+          assert.ok(failure, name);
+          assert.match(failure.stderr, name === "occurrence" ? /unexpected fields/ : /wrong slice result/);
+        }
+        const damaged = new Store(join(work, "corrupt-slice"));
+        process.env.TSCERT_STAGE_STORE = damaged.root;
+        damaged.publishFinished("pass", entry.key, entry.result);
+        const path = join(damaged.root, "entries", "pass", entry.key, "stdout");
+        chmodSync(path, 0o644);
+        writeFileSync(path, "wrong bytes");
+        const repaired = check();
+        assert.equal(repaired.slices.executed, units.length, "a bad payload digest misses");
+        assert.deepEqual(repaired.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+
+        process.env.TSCERT_STAGE_STORE = store.root;
+        const bad: Ast = { ...ast, functions: [fn("bad", 10, number,
+          { k: "lit", pos: [15, 16], lit: { a: "stringlit", v: "wrong" } })], init: [] };
+        writeFileSync(fragment, JSON.stringify(bad));
+        const located = check();
+        assert.equal(located.slices.executed, 1);
+        assert.match(located.parts[0]?.stdout ?? "", /"refusal"/);
+        writeFileSync(fragment, moveSites(bad));
+        const relocated = check();
+        assert.equal(relocated.slices.executed, 1, "opaque diagnostics execute at current sites");
+        assert.deepEqual(relocated.parts.map(p => p.stdout.trimEnd()), worker(null).lines, "the moved refusal's current diagnostic");
+
+        const opaque: Ast = { ...bad, functions: [fn("bad", 10, number,
+          { k: "id", pos: [15, 16], name: "missing[3,4)" })] };
+        writeFileSync(fragment, moveSites(opaque));
+        const quoted = check();
+        assert.match(quoted.parts[0]?.stdout ?? "", /missing\[3,4\)/);
+        assert.deepEqual(quoted.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+
+        // A comment moves Box, its member annotation, and the lexical
+        // location in a shadowing declarator's generated name.
+        const declaration: DeclarationIdentity = { module: key, name: "Box", span: [3, 20] };
+        const box: TypeTerm = { k: "reference", span: [32, 35], args: [],
+          reference: { name: "Box", target: declaration, arguments: [], span: [32, 35] } };
+        const definition: TypeDefinition = { declaration, parameters: [], bases: [], expression: {
+          k: "object", fields: [{ name: "size", optional: false, readonly: true, type: number, span: [5, 15] }],
+          calls: [], stringIndex: null, span: [4, 19],
+        } };
+        const local = "item@4:7";
+        const read: FunctionAst = { ...fn("read", 24, number, { k: "id", name: local, pos: [67, 71] }),
+          params: [{ name: "box", type: box, pos: [28, 31] }],
+          body: [{ k: "const", pos: [42, 60], bindings: [{ name: local, namePos: [46, 50], annot: null,
+            early: false, init: { k: "read", field: "size", pos: [51, 59], e: { k: "id", name: "box", pos: [51, 54] } } }] },
+            { k: "return", pos: [60, 72], e: { k: "id", name: local, pos: [67, 71] } }] };
+        const original: Ast = { ...ast, init: [], functions: [read], declarations: { ...ast.declarations,
+          roots: [{ declaration, binding: { kind: "local", local: "Box", span: declaration.span } }], definitions: [definition] } };
+        writeFileSync(fragment, JSON.stringify(original));
+        const firstRead = check();
+        assert.equal(firstRead.slices.executed, 1);
+        assert.match(firstRead.parts[0]?.stdout ?? "", /"key":"size"/);
+        writeFileSync(fragment, moveSites(original).replaceAll(local, "item@5:7"));
+        const movedRead = check();
+        assert.equal(movedRead.slices.replayed, 1);
+        assert.deepEqual(movedRead.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+      } finally {
+        writeFileSync(fragment, JSON.stringify(ast));
+        if (beforeStore === undefined) delete process.env.TSCERT_STAGE_STORE;
+        else process.env.TSCERT_STAGE_STORE = beforeStore;
+      }
+    }
+    const priorStore = process.env.TSCERT_STAGE_STORE;
+    try {
+      process.env.TSCERT_STAGE_STORE = join(work, "resume-" + variant);
+      const options = { limitMs: 60_000, force: false, recorder: null };
+      for (const storeDriver of [false, true]) {
+        const call = verifierCall(verifierBuild, args, storeDriver ? { TSCERT_SLICE_DRIVER: "1" } : {});
+        const first = invokeWorker(call, { ...fileWorkerProtocol, parts: () => half,
+          request: () => JSON.stringify({ units: half }) }, options);
+        assert.deepEqual(first.parts.map(p => p.execution), ["executed"]);
+        const resumed = invokeWorker(call, fileWorkerProtocol, options);
+        assert.equal(resumed.starts, 1);
+        assert.equal(resumed.preparation.execution, "replayed");
+        assert.deepEqual(resumed.parts.map(p => p.execution), units.map(u => half.includes(u) ? "replayed" : "executed"));
+        assert.deepEqual(resumed.parts.map(p => p.stdout.trimEnd()), all.lines);
+        if (storeDriver && variant === "failed plan") {
+          assert.ok(resumed.slices.proposalsExecuted > 0, "a physical refusal supplies no relative check entry");
+        } else if (storeDriver) {
+          assert.equal(resumed.slices.proposalsExecuted, 0);
+          assert.ok(resumed.slices.proposalsReplayed > 0, "the restarted worker reads the checked callee's proposals");
+        }
+      }
+    } finally {
+      if (priorStore === undefined) delete process.env.TSCERT_STAGE_STORE;
+      else process.env.TSCERT_STAGE_STORE = priorStore;
+    }
   }
 });
 

@@ -164,6 +164,8 @@ export function verifyByUnits(fragment: string, key: string, names: string, opti
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
+  if (!process.env.TSCERT_GROUP_SHADOW && !environment.TSCERT_PASS_REFUSALS &&
+      process.env.TSCERT_GROUP_REPLAY !== "0") environment.TSCERT_SLICE_DRIVER = "1";
   let interfaces: PreparedInterfaces;
   try {
     interfaces = interfacesFor(fragment, names, options, hasModules);

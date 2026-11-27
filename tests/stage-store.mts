@@ -618,6 +618,45 @@ if (eligible) {
   process.stdout.write("manifest integrity: changed exit status or measurement is a miss and is not replaced\n");
 }
 
+if (eligible) {
+  const store = freshStore("incomplete-slice");
+  // A worker dies after writing the proposals in its result, before its verdict.
+  const program = script("partial-group.sh", [
+    'echo u', `echo 'slice-order ["u"]'`, 'echo slice > slice-input', 'echo "slice-lookup check-slice"',
+    'while [ ! -f slice-reply ]; do /bin/sleep 0.01; done',
+    `printf 'slice-result {"answers":[]'`, 'kill -KILL $$',
+  ].join("\n"), ["/bin/sleep"]);
+  const call = { ...lower(program, file("partial-fragment", "ast")), environment: { TSCERT_SLICE_DRIVER: "1" } };
+  const run = invokeWorker(call, { parts: () => ["u"], request: () => "all", partOf: line => line },
+    { limitMs: 5_000, force: false, recorder: null });
+  assert.equal(run.parts[0]?.execution, "failed");
+  const entries = readdirSync(join(store.root, "entries", "lower"));
+  assert.deepEqual(entries, [run.preparation.record.key], "only the preparation is complete");
+  for (const key of readdirSync(join(store.root, "running", "lower"))) {
+    const release = store.claim("lower", key);
+    assert.notEqual(release, "held", "the killed operation released its claim");
+    if (release !== "held") release();
+  }
+}
+
+if (eligible) {
+  freshStore("physical-fallback");
+  const fallback = (physicalSeconds: number) => {
+    const program = script(`fallback-${physicalSeconds}.sh`, [
+      'echo u', `echo 'slice-order ["u"]'`, 'echo slice > slice-input', 'echo "slice-lookup check-slice"',
+      'while [ ! -f slice-reply ]; do /bin/sleep 0.01; done',
+      '/bin/sleep 0.65', 'echo slice-physical', `/bin/sleep ${physicalSeconds}`, 'echo "slice-verdict u"',
+    ].join("\n"), ["/bin/sleep"]);
+    const call = { ...lower(program, file("physical-fragment", "ast")), environment: { TSCERT_SLICE_DRIVER: "1" } };
+    return invokeWorker(call, { parts: () => ["u"], request: () => "all", partOf: line => line },
+      { limitMs: 1_000, force: false, recorder: null });
+  };
+  const ok = fallback(0.65);
+  assert.equal(ok.parts[0]?.stdout, "u\n");
+  assert.equal(ok.slices.executed, 1);
+  assert.equal(fallback(2).parts[0]?.execution, "timed-out", "the physical check has the same stage limit");
+}
+
 /** A child process of this test, its status and output: for a section
  * running beside others. */
 const childRun = (args: readonly string[], env: NodeJS.ProcessEnv, options: readonly string[] = []):
