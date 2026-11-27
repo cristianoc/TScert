@@ -240,16 +240,19 @@ def Store.size (s : Store) : Nat := s.live.size
 
 def Store.toList (s : Store) : List Atom := s.live.toList
 
-/-- Whether an unconditional fact of the store makes the name's value an
-integer: a linear fact over its value, or an `int`, `index`, length or
-bound fact giving it (`IndexFact.HoldsAt`). -/
-def Store.integral (s : Store) (x : Nat) : Bool :=
-  (s.about x).any fun a => match a with
+/-- The term kinds an unconditional fact of the store witnesses as defined on
+the name's value (`HeapKnowledge.kindValue`): `.value` from an `int`, `index`,
+`length` or `bound` fact, `.length` from a `length` fact, and the kind of any
+current root term on `x` occurring in a linear fact (`IndexFact.HoldsAt`). -/
+def Store.definedKinds (s : Store) (x : Nat) : List HeapKnowledge.Term.Kind :=
+  ((s.about x).flatMap fun a => match a with
     | .index ⟨f, none, _⟩ => match f with
-      | .int k | .index k | .length _ k | .bound _ k _ => k == x
-      | .linear F => F.vars.contains (HeapKnowledge.Term.value x)
-      | _ => false
-    | _ => false
+      | .int k | .index k | .bound _ k _ => if k == x then [.value] else []
+      | .length y k => (if y == x then [.length] else []) ++ (if k == x then [.value] else [])
+      | .linear F => F.vars.filterMap fun t =>
+          if !t.atEntry && t.slot == x && t.path.isEmpty then some t.kind else none
+      | _ => []
+    | _ => []).eraseDups
 
 /-- A program point's state: the name at each slot, the facts. -/
 structure State where
@@ -2417,18 +2420,20 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   -- Each predecessor's facts about the names it renames, restated at
   -- the fresh names (a name a slot keeps that another slot's fresh name
   -- renames is stated equal to it, as are one name's fresh names).
-  -- The alias link always; the equality of their numbers only where
-  -- the predecessor's facts make `x` an integer (`Store.integral`): a
-  -- linear fact holds only where its terms denote integers.
-  let eqAtoms := fun (int : Bool) (φ x : Nat) => Atom.link { cell := φ, value := x, alias := true } ::
-    (if !int then [] else
-    [.index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
-    .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩])
+  -- The alias link always; linear equalities for each root term kind the
+  -- predecessor's unconditional facts witness as defined on `x`
+  -- (`Store.definedKinds`): a linear fact holds only where its terms denote
+  -- integers.
+  let eqAtoms := fun (kinds : List HeapKnowledge.Term.Kind) (φ x : Nat) =>
+    Atom.link { cell := φ, value := x, alias := true } ::
+      kinds.flatMap fun k =>
+        [.index ⟨.linear (.le [(HeapKnowledge.Term.now k φ [], 1), (HeapKnowledge.Term.now k x [], -1)] 0), none, false⟩,
+         .index ⟨.linear (.le [(HeapKnowledge.Term.now k φ [], -1), (HeapKnowledge.Term.now k x [], 1)] 0), none, false⟩]
   let variants : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
     let equal := m.fold (fun (acc : List Atom) x φs =>
-      let int := st.store.integral x
-      (if names.contains x then φs.flatMap (eqAtoms int · x) else []) ++
-      (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms int ψ φ) ++ acc) []
+      let kinds := st.store.definedKinds x
+      (if names.contains x then φs.flatMap (eqAtoms kinds · x) else []) ++
+      (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms kinds ψ φ) ++ acc) []
     let about := m.fold (fun (acc : List Atom) x _ => st.store.about x ++ acc) []
     (about.foldl (fun (acc : Std.HashSet Atom) a => acc.insertMany (Atom.renameEach m a)) {}).insertMany equal
   -- The facts every predecessor holds: the first's store less each fact

@@ -49,22 +49,19 @@ theorem renameEach_names {m : Std.HashMap Nat (List Nat)} {a b : Atom} (hb : b �
     rw [hl] at hxy; cases hxy
     exact .inr (inv c hc x φ (lookup_mem c x φ hl))
 
-theorem mergeEqAtoms_names {int : Bool} {φ x : Nat} {a : Atom} (ha : a ∈ mergeEqAtoms int φ x) :
-    ∀ y ∈ a.names, y = φ ∨ y = x := by
+theorem mergeEqAtoms_names {kinds : List HeapKnowledge.Term.Kind} {φ x : Nat} {a : Atom}
+    (ha : a ∈ mergeEqAtoms kinds φ x) : ∀ y ∈ a.names, y = φ ∨ y = x := by
   simp only [mergeEqAtoms, List.mem_cons] at ha
   rcases ha with rfl | ha
   · intro y hy; simp only [Atom.names, List.mem_cons, List.mem_nil_iff, or_false] at hy; exact hy
-  · cases int with
-    | false => simp at ha
-    | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, ite_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
-      rcases ha with rfl | rfl <;>
-      · intro y hy
-        simp [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, HeapKnowledge.Term.slots,
-          HeapKnowledge.Term.value] at hy
-        rcases hy with h | h
-        · exact .inl h
-        · exact .inr h
+  · obtain ⟨k, _, ha⟩ := List.mem_flatMap.mp ha
+    simp only [List.mem_cons, List.mem_nil_iff, or_false] at ha
+    rcases ha with rfl | rfl <;>
+    · intro y hy
+      simp [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, HeapKnowledge.Term.slots] at hy
+      rcases hy with h | h
+      · exact .inl h
+      · exact .inr h
 
 /-- **A predecessor's equalities** (`mergeEqual`) name only names its
 renaming renames and their fresh names. -/

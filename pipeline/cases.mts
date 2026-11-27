@@ -5266,4 +5266,7 @@ export const cases: Case[] = [
     /source expression obligation|evidence search failed/i),
   negative("invalid-merged-atindex-nonnull", "a merge branch that omits `advances[i] !== null` leaves `advances[i]!` nullable after the merge and throws `TypeError` under Node",
     /source expression obligation|evidence search failed/i),
+  positive("merge-array-length-alias", "branch merges emit linear equalities for all defined root term kinds (`Store.definedKinds`: array length, typed-array view length, string length), preserving `ys.length === xs.length` across conditional alias reassignments"),
+  negative("invalid-merge-array-length-alias", "replacing an array alias with `[]` on one branch breaks `ys.length === xs.length` after the merge, reading `ys[i]` (`undefined`) and returning `NaN` (run under Node)",
+    /source expression obligation|evidence search failed/i),
 ];

@@ -3649,4 +3649,10 @@ for (const [file, call] of [
   assert.throws(() => runExample(negative("invalid-merged-atindex-nonnull"),
     "missingMergeBranchNonNull({ advances: [null] }, 0, false, true)"), /TypeError/,
     "invalid-merged-atindex-nonnull: unchecked else-if branch with null element throws TypeError on advances[i]!.length");
+  assert.deepEqual(runPlain(ofKind("merge-array-length-alias", ["positive"]),
+    "[copyOnCond([10, 20], true, 1)[1], copyOnCond([10, 20], false, 1)[1], chainedCopies([1, 2], true, true), copyViewOnCond(new Uint8Array([3, 4]), true, 0)[0], pickSameLengthString('ab', 'xy', true, 1)]"),
+    [21, 20, [3, 3], 3, 121], "merge-array-length-alias: preserved array/view/string lengths across conditional reassignments");
+  assert.equal(runExample(negative("invalid-merge-array-length-alias"),
+    "String(Number.isNaN(badShrinkingMerge([10, 20], true, 0)))"),
+    "true", "invalid-merge-array-length-alias: shrinking branch breaks length equality after merge and reads undefined/NaN");
 }

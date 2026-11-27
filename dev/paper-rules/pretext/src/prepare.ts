@@ -86,7 +86,7 @@ function needsComplexTextPath(text: string): Effects<{}, boolean> {   // PAPER: 
     i += codePoint > 0xFFFF ? 2 : 1
     if (codePoint === 0x200D && previousIsEmoji) return true
     previousIsEmoji = codePoint > 0xFFFF && extendedPictographicRe.test(String.fromCodePoint(codePoint))
-    for (let range = 0; range < complexTextPathRanges.length && codePoint >= (complexTextPathRanges[range] ?? missing()); range += 2) {
+    for (let range = 0; range < complexTextPathRanges.length && codePoint >= complexTextPathRanges[range]!; range += 2) {
       if (codePoint <= (complexTextPathRanges[range + 1] ?? missing())) return true
     }
   }
@@ -206,8 +206,8 @@ function readScriptRuns(text: string, to: number): Effects<{ "@state": "any" }, 
     } else {
       // The run that ends resolves to its first script (ResolveCurrentScript, :639-642), which
       // the brackets opened in it take.
+      /** @invariant safeInteger(k) && k < scriptOpenBrackets.length */
       for (let k = scriptOpenBrackets.length - 1; k > 0 && scriptOpenBrackets[k] === 0; k -= 2) {
-        if ((k & 0x7fffffff) !== k || k > scriptOpenBrackets.length) throw new RangeError('index')
         scriptOpenBrackets[k] = scriptMask & -scriptMask
       }
       scriptMask = scripts
@@ -268,7 +268,7 @@ function getUnspacedGraphemes(text: string, start: number, end: number, grapheme
   const ends = new Int32Array(end - start)
   const count = findGraphemeEnds(graphemeTable, text, start, end, ends)
   let unspaced: number[] | null = null
-  for (let g = 0, at = start; g < count; at = ends[g++] ?? missing()) {
+  for (let g = 0, at = start; g < count; at = ends[g++]!) {
     const joins = !useRuns ? (getScriptFacts(text.codePointAt(at) ?? missing()) & CURSIVE_LETTER) !== 0
       : readScriptRuns(text, at + 1) === CURSIVE_SCRIPT && text.charCodeAt(at) !== 0xA0
     if (joins) (unspaced ??= []).push(g)
@@ -316,15 +316,16 @@ export type MeasuredSegments = PreparedLineBreakData
 // direction, where Safari measures the word alone (ENGINE_FOLLOWUPS.md, Bidi
 // levels, direction and script runs). Returns the zero-width breaks between the
 // text and the space, or null when the text takes no kerning.
+/** @requires safeInteger(analysisIndex) && safeInteger(to) && 0 <= analysisIndex && analysisIndex < to && to <= analysis.flags.length && to <= analysis.starts.length */
 function getFollowingSpaceTail(analysis: TextAnalysis, analysisIndex: number, to: number): Effects<{}, string | null> {   // PAPER: annotation
   const { normalized, spaceSources, starts, flags } = analysis
   let next = analysisIndex + 1
-  while (next < to && ((flags[next] ?? missing()) & KIND_BITS) === ZERO_WIDTH_BREAK) next++
+  /** @invariant safeInteger(next) && safeInteger(to) && 0 <= next && next <= to && to <= flags.length && to <= starts.length */
+  while (next < to && (flags[next]! & KIND_BITS) === ZERO_WIDTH_BREAK) next++
   if (next >= to) return null
-  const nextKind = (flags[next] ?? missing()) & KIND_BITS
+  const nextKind = flags[next]! & KIND_BITS
   // A collapsed space's first source character: WebKit looks at the source after a text item.
-  const spaceStart = starts[next]
-  if (spaceStart === undefined) throw new RangeError('missing value')
+  const spaceStart = starts[next]!
   if ((nextKind !== SPACE && nextKind !== PRESERVED_SPACE) || (spaceSources === null ? normalized.charCodeAt(spaceStart) : (spaceSources[spaceStart] ?? missing())) !== 0x20) return null
   return normalized.slice(starts[analysisIndex + 1], spaceStart)
 }
@@ -342,14 +343,15 @@ function getTailKerning(item: string, measurement: FontMeasurement, spaceWidth: 
 // A line counts it for the soft hyphens it passes, and in Gecko for the one it
 // ends at (returnsFromUnfitHyphen in src/line-break.ts). WebKit's return fits each
 // side as measured alone and takes none (unfitHyphenRetreat).
+/** @requires safeInteger(analysisIndex) && safeInteger(to) && 0 <= analysisIndex && analysisIndex < to && to <= analysis.flags.length && to <= analysis.texts.length */
 function getJoinedNarrowing(analysis: TextAnalysis, analysisIndex: number, to: number, before: string | null, beforeMetrics: SegmentMetrics | null, measurement: FontMeasurement, emojiCorrection: number, lineFitEpsilon: number): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   if (before === null) return 0
   const { texts, flags } = analysis
   let next = analysisIndex + 1
-  while (next < to && ((flags[next] ?? missing()) & KIND_BITS) === SOFT_HYPHEN) next++
-  if (next >= to || ((flags[next] ?? missing()) & KIND_BITS) !== TEXT) return 0
-  const after = texts[next]
-  if (after === undefined) throw new RangeError('missing value')
+  /** @invariant safeInteger(next) && safeInteger(to) && 0 <= next && next <= to && to <= flags.length && to <= texts.length */
+  while (next < to && (flags[next]! & KIND_BITS) === SOFT_HYPHEN) next++
+  if (next >= to || (flags[next]! & KIND_BITS) !== TEXT) return 0
+  const after = texts[next]!
   const apart = getCorrectedSegmentWidth(before, beforeMetrics ?? missing(), measurement, emojiCorrection) + getTextWidth(after, measurement, emojiCorrection)
   const together = getTextWidth(before + after, measurement, emojiCorrection)
   return apart - together > lineFitEpsilon ? apart - together : 0
@@ -411,7 +413,8 @@ function sumExtraSpacings(extraSpacings: readonly number[], letterSpacing: numbe
 }
 
 // PAPER: workaround (SinglePass CFG scaling): extracted from measureAnalysisInto's loop to avoid nested loops and branch merges blowing past 60s
-/** @ensures result.length === advances.length */
+/** @requires 1 <= advances.length
+ *  @ensures result.length === advances.length */
 function adjustFitAdvances(
   advances: Dense<number[]>,
   followingSpaceKerning: number,
@@ -419,15 +422,11 @@ function adjustFitAdvances(
   unspaced: number[] | null,
   letterSpacing: number,
 ): Effects<{}, Dense<number[]>> {   // PAPER: annotation
-  // PAPER: workaround (branch-merge length equality): SinglePass loses fitAdvances.length === advances.length across conditional reassignment `fitAdvances = copy`
-  const len = advances.length
   let fitAdvances: Dense<number[]> = advances
   if (followingSpaceKerning !== 0) {
     const copy = fitAdvances.slice()
     const idx = copy.length - 1
-    const value = (copy[idx] ?? missing()) + followingSpaceKerning
-    if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
-    copy[idx] = value
+    copy[idx] = copy[idx]! + followingSpaceKerning
     fitAdvances = copy
   }
   if (extraSpacings.length !== 0) {
@@ -451,7 +450,6 @@ function adjustFitAdvances(
     }
     fitAdvances = copy
   }
-  if (fitAdvances.length !== len) throw new RangeError('length')
   return fitAdvances
 }
 
@@ -729,9 +727,9 @@ function measureAnalysisInto(
             // a forced break are a Blink item of their own (inline_items_builder.cc:988-1034),
             // which kerns with nothing.
             if (spaceBefore && kerning.before !== 0 &&
-              !(((flags[mi - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && (mi === from + 1 || ((flags[mi - 2] ?? missing()) & KIND_BITS) === HARD_BREAK)) &&
+              !((flags[mi - 1]! & KIND_BITS) === PRESERVED_SPACE && (mi === from + 1 || (flags[mi - 2]! & KIND_BITS) === HARD_BREAK)) &&
               spaceSharesScriptRun(own, starts[mi]! - ownStart, starts[mi]! - ownStart + text.length)) {
-              widths[at - 1] = (widths[at - 1] ?? missing()) + kerning.before
+              widths[at - 1] = widths[at - 1]! + kerning.before
             }
           }
         }
@@ -898,7 +896,7 @@ function measureAnalysisInto(
        *  @invariant forall j in breakableFitAdvances: breakableFitAdvances[j] === null || 1 <= breakableFitAdvances[j].length
        *  @invariant breakableLineStartExtras === null || forall k in breakableLineStartExtras: breakableFitAdvances[base + k] === null || breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= breakableLineStartExtras[k].length */
       for (let i = 0; i < trims.length; i++) {
-        widths[base + i] = (widths[base + i] ?? missing()) - trims[i]!
+        widths[base + i] = widths[base + i]! - trims[i]!
       }
     }
   }
@@ -948,32 +946,31 @@ function measureAnalysisInto(
 // its kana takes the same in its advances (getSegmentFit). `widths` holds segments [from, to)
 // of the analysis from `base`, a rich-inline item's in its paragraph's, and `extras` holds
 // them from index 0; a kana that starts an item takes no kerning with the item before it.
-/** @requires safeInteger(from) && safeInteger(to) && safeInteger(base) && 0 <= from && from <= to && 0 <= base && base + (to - from) <= widths.length
+/** @requires safeInteger(from) && safeInteger(to) && safeInteger(base) && 0 <= from && from <= to && to <= analysis.flags.length && to <= analysis.starts.length && 0 <= base && base + (to - from) <= widths.length
  *  @requires extras === null || to - from <= extras.length
  *  @ensures result === null || to - from <= result.length */
 function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>, base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ "extras[#]": "any"; "widths[#]": "any"; fields: "any"; views: "grow" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= i && i <= to && 0 <= base && base + (to - from) <= widths.length
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && to <= starts.length && 0 <= base && base + (to - from) <= widths.length
    *  @invariant extras === null || to - from <= extras.length */
   for (let i = from; i < to; i++) {
-    if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT) continue
-    const start = starts[i]
-    if (start === undefined) throw new RangeError('missing value')
+    if ((flags[i]! & KIND_BITS) !== TEXT) continue
+    const start = starts[i]!
     const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
     const at = base + (i - from)
-    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && safeInteger(at) && 0 <= from && from <= i && i < to && 0 <= base && base + (to - from) <= widths.length && at === base + (i - from)
+    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && safeInteger(at) && 0 <= from && from <= i && i < to && to <= flags.length && to <= starts.length && 0 <= base && base + (to - from) <= widths.length && at === base + (i - from)
      *  @invariant extras === null || to - from <= extras.length */
     for (let k = i > from ? start : start + 1; k < end; k++) {
       const kerning = getKanaKerning(normalized, start, k, measurement, kernings)
       if (kerning === 0) continue
       if (k > start) {
-        widths[at] = (widths[at] ?? missing()) + kerning
+        widths[at] = widths[at]! + kerning
       } else if (kerning > 0 && i > from) {
-        widths[at - 1] = (widths[at - 1] ?? missing()) + kerning
+        widths[at - 1] = widths[at - 1]! + kerning
       } else if (kerning < 0) {
-        widths[at] = (widths[at] ?? missing()) + kerning
+        widths[at] = widths[at]! + kerning
         extras ??= zeros(to - from)
-        extras[i - from] = (extras[i - from] ?? missing()) - kerning
+        extras[i - from] = extras[i - from]! - kerning
       }
     }
   }
@@ -997,7 +994,7 @@ function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>,
 // the next item starts with, as the engines hang it wherever a line ends; a text's run before
 // a ZWSP, a soft hyphen or a character no line starts with doesn't yet (ENGINE_FOLLOWUPS.md,
 // Line edges).
-/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= analysis.flags.length && to <= analysis.starts.length
  *  @requires trims === null || to - from <= trims.length
  *  @ensures result === null || to - from <= result.length */
 function addIdeographicSpaceHangs(
@@ -1010,23 +1007,23 @@ function addIdeographicSpaceHangs(
   to: number,
 ): Effects<{ "trims[#]": "any"; fields: "any" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && to <= starts.length
    *  @invariant trims === null || to - from <= trims.length */
   for (let i = from; i < to; i++) {
     const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
-    if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT || normalized.charCodeAt(end - 1) !== 0x3000) continue
+    if ((flags[i]! & KIND_BITS) !== TEXT || normalized.charCodeAt(end - 1) !== 0x3000) continue
     if (i + 1 < to) {
-      const next = (flags[i + 1] ?? missing()) & KIND_BITS
-      if (next !== HARD_BREAK && next !== SPACE && !(next === TEXT && ((flags[i + 1] ?? missing()) & UNBROKEN) === 0)) continue
+      const next = flags[i + 1]! & KIND_BITS
+      if (next !== HARD_BREAK && next !== SPACE && !(next === TEXT && (flags[i + 1]! & UNBROKEN) === 0)) continue
     }
     let start = end - 1
-    while (start > (starts[i] ?? missing()) && normalized.charCodeAt(start - 1) === 0x3000) start--
+    while (start > starts[i]! && normalized.charCodeAt(start - 1) === 0x3000) start--
     const run = normalized.slice(start, end)
     const afterSoftHyphen = i > 0 && start === starts[i] && normalized.charCodeAt(start - 1) === 0xAD
     const hang = getSegmentMetrics(run, measurement).width + run.length * letterSpacing - (afterSoftHyphen ? hyphenWidth : 0)
     if (hang <= 0) continue
     trims ??= zeros(to - from)
-    trims[i - from] = (trims[i - from] ?? missing()) + hang
+    trims[i - from] = trims[i - from]! + hang
   }
   return trims
 }
