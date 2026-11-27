@@ -92,9 +92,1307 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-434"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-434</code></a><ul><li>3 commits, units 1 verified</li><li>changes: 1 Definition, 5 Rule, 2 Example, 1 Counterexample</li><li>parts: <span class="chip">lean,</span> <span class="chip">tools,</span> <span class="chip">tests</span> <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></li></ul></li></ul></section>
-<h2 id="g-pr-434"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-434</code></h2><article class="card" id="c-50f157ae7"><header><div><div class="sha">50f157ae7 · Cristiano Calcagno · Nov 27, 09:09</div><h3>Record omitted-key undefined facts on plain object literals</h3></div><span class="pill ok">verified</span></header>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">8 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-434"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-434</code></a><ul><li>8 commits, units 11 verified</li><li>changes: 1 Typing, 4 Lowering, 5 Proposal, 1 Definition, 5 Rule, 2 Example, 1 Counterexample</li><li>parts: <span class="chip">lean</span> <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">lean,</span> <span class="chip">tools,</span> <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></li><li>new trust: <span class="trust">No new trust assumptions; untyped ambient .d.ts instance fields reuse classInstance's existing readonly unknown reading.</span></li></ul></li></ul></section>
+<h2 id="g-pr-434"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-434</code></h2><article class="card" id="c-2cf80fe26"><header><div><div class="sha">2cf80fe26 · Cristiano Calcagno · Nov 27, 09:08</div><h3>Extend concrete class methods and constructors to variadic arity; admit untyped ambient fields</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>class-method-fewer-params.ts#passInstance</span><span>class-method-fewer-params.ts#passVariadic</span><span>class-method-fewer-params.ts#callDirect</span><span>class-method-fewer-params.ts#getNames</span><span>class-method-fewer-params.ts#getAdd</span><span>class-method-fewer-params.ts#registerResources</span><span>class-method-fewer-params.ts#passGeneric</span><span>class-method-fewer-params.ts#useSubs</span><span>ambient-dts-private-field-value-import.ts#serviceName</span><span>ambient-dts-private-field-value-import.ts#readUntyped</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Concrete non-ambient class methods and constructors without rest parameters discard extra arguments in JavaScript, just like module functions and unannotated constant closures, yet their contracts carried only their fixed signatures. Passing a class instance or constructor where an interface or constructor type binds more parameters (such as Skip's Resource.instantiate omitting context or a zero-arg Resource class passed as ResourceClass) was refused. Separately, tsc --declaration strips type annotations from private class fields in .d.ts files, causing the unannotated-declaration sweep to refuse any file importing such a class even though classInstance reads untyped ambient fields as readonly unknown.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">variadic method and constructor coverage, bagless ctor meet</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">CoversSig, CoversArrows and CoversWith on</span> .<span class="m-text">ctors matched fixed target</span></span></div><div class="row"><span><span class="m-text">signatures only against fixed source signatures</span>. <span class="m-text">Intersecting a static-</span></span></div><div class="row"><span><span class="m-text">bearing</span> .<span class="m-text">ctors clause with a bagless</span> .<span class="m-text">ctors clause appended an empty bag</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">CoversSig, CoversArrows and CoversWith on</span> .<span class="m-text">ctors also cover fixed target</span></span></div><div class="row"><span><span class="m-text">signatures from variadic source signatures via ElemRest (and variadic</span></span></div><div class="row"><span><span class="m-text">target constructors from shorter variadic source constructors via</span></span></div><div class="row"><span><span class="m-text">IntoRest), proved</span> <span class="m-text">in</span> <span class="m-op">covers</span><sub><span class="m-text">sig</span></sub><sub><span class="m-text">sound</span></sub>, <span class="m-op">covers</span><sub><span class="m-text">arrows</span></sub><sub><span class="m-text">sound</span></sub> <span class="m-text">and</span></span></div><div class="row"><span><span class="m-op">covers</span><sub><span class="m-text">ctors</span></sub><sub><span class="m-text">sound</span></sub>, <span class="m-text">with matching pair discovery in PositiveCertificates</span>.</span></div><div class="row"><span><span class="m-op">meet</span><sub><span class="m-text">ctors</span></sub> <span class="m-text">preserves a single static bag when intersecting with a bagless</span></span></div><div class="row"><span><span class="m-text">constructor clause</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">class instance methods, class constructors, closed calls, ambient untyped fields</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">classInstance and fragment-classes gave concrete class methods and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">constructors only their fixed signatures; Scheme</span>.<span class="m-text">closureRows gave generic</span></span></div><div class="cond"><span class="tgt"><span class="m-text">closures without rest only a fixed signature; Synthesis dropped the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">variadic extension when offers added a second fixed signature; closed-</span></span></div><div class="cond"><span class="tgt"><span class="m-text">expression calls </span><span class="refused">refused</span><span class="m-text"> callees with both fixed and variadic signatures</span>;</span></div><div class="cond"><span class="tgt"><span class="m-text">written-applications </span><span class="refused">refused</span><span class="m-text"> untyped fields of imported ambient classes</span></span></div><div class="cond"><span class="tgt"><span class="m-text">and untypedAmbientField checked only top-level declare classes</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">Concrete top-level non-ambient class methods of the checked module (with a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">body, no rest, no defaults, no method type parameters, no guard; non-async</span></span></div><div class="cond"><span class="tgt"><span class="m-text">on generic classes) state both their fixed signature and its</span> ...<span class="m-text">unknown</span>[]</span></div><div class="cond"><span class="tgt"><span class="m-text">extension; non-generic concrete class constructors likewise state both</span></span></div><div class="cond"><span class="tgt"><span class="m-text">fixed and</span> ...<span class="m-text">unknown</span>[]; <span class="m-text">generic closures without rest include their</span></span></div><div class="cond"><span class="tgt">...<span class="m-text">unknown</span>[] <span class="m-text">variadic row; closed-expression calls select a matching fixed</span></span></div><div class="cond"><span class="tgt"><span class="m-text">signature before falling back to rest signatures</span>. <span class="m-text">Ambient class detection</span></span></div><div class="cond"><span class="tgt"><span class="m-text">(isAmbientClass) is shared across classInstance, written-applications and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">untypedAmbientField so untyped non-static fields of</span> .<var>d</var>.<span class="m-op">ts</span> / <span class="m-text">declare classes</span></span></div><div class="cond"><span class="tgt"><span class="m-text">are read as readonly unknown without failing the unannotated gate</span>.</span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>class-method-fewer-params</code> <span class="kind positive">positive</span> <span class="why">refused -&gt; verified instance, variadic, generic class, sound override, and ResourceClass constructor passing</span></summary><pre class="code"><span class="tk-c">// Concrete non-ambient class methods (and constructors) without rest</span>
+<span class="tk-c">// parameters discard actuals past their declared parameters, so they meet</span>
+<span class="tk-c">// signatures binding more parameters and variadic signatures.</span>
+<span class="tk-k">class</span> <span class="tk-t">DeclaresOne</span> {
+  m(a: number): number {
+    <span class="tk-k">return</span> a;
+  }
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">TwoParams</span> {
+  m(a: number, b: string): number;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">VariadicMethod</span> {
+  m(a: number, ...rest: string[]): number;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> passInstance(): <span class="tk-t">TwoParams</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">DeclaresOne</span>();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> passVariadic(): <span class="tk-t">VariadicMethod</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">DeclaresOne</span>();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> callDirect(flag: boolean): number {
+  <span class="tk-k">const</span> d = <span class="tk-k">new</span> <span class="tk-t">DeclaresOne</span>();
+  <span class="tk-k">if</span> (flag &amp;&amp; d.m(<span class="tk-n">1</span>) &gt; <span class="tk-n">0</span>) <span class="tk-k">return</span> d.m(<span class="tk-n">2</span>);
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">Inputs</span> {
+  <span class="tk-k">readonly</span> names: string;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">C</span>&gt; {
+  instantiate(collections: <span class="tk-t">C</span>, context: number): string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">C</span>&gt; = <span class="tk-k">new</span> (params: string) =&gt; <span class="tk-t">Resource</span>&lt;<span class="tk-t">C</span>&gt;;
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span> <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Inputs</span>&gt; {
+  <span class="tk-k">constructor</span>(<span class="tk-k">private</span> <span class="tk-k">readonly</span> p: string) {}
+  instantiate(collections: <span class="tk-t">Inputs</span>): string {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">Add</span> <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Inputs</span>&gt; {
+  instantiate(collections: <span class="tk-t">Inputs</span>): string {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> takeService&lt;<span class="tk-t">R</span>&gt;(s: {
+  <span class="tk-k">readonly</span> resources: { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">R</span>&gt; };
+}): <span class="tk-k">void</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> singleNames: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">Inputs</span>&gt; = <span class="tk-t">Names</span>;
+<span class="tk-k">export</span> <span class="tk-k">const</span> singleAdd: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">Inputs</span>&gt; = <span class="tk-t">Add</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> getNames(): <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">Inputs</span>&gt; {
+  <span class="tk-k">return</span> <span class="tk-t">Names</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> getAdd(): <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">Inputs</span>&gt; {
+  <span class="tk-k">return</span> <span class="tk-t">Add</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> registerResources(): <span class="tk-k">void</span> {
+  takeService&lt;<span class="tk-t">Inputs</span>&gt;({ resources: { names: <span class="tk-t">Names</span>, add: <span class="tk-t">Add</span> } });
+}
+
+<span class="tk-c">// Generic class methods without their own type parameters also offer</span>
+<span class="tk-c">// variadic arity across instantiations.</span>
+<span class="tk-k">class</span> <span class="tk-t">Box</span>&lt;<span class="tk-t">T</span>&gt; {
+  <span class="tk-k">constructor</span>(<span class="tk-k">private</span> <span class="tk-k">readonly</span> v: <span class="tk-t">T</span>) {}
+  <span class="tk-k">get</span>(x: <span class="tk-t">T</span>): <span class="tk-t">T</span> {
+    <span class="tk-k">return</span> x;
+  }
+  read(): <span class="tk-t">T</span> {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>.v;
+  }
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">TwoBox</span>&lt;<span class="tk-t">T</span>&gt; {
+  <span class="tk-k">get</span>(x: <span class="tk-t">T</span>, extra: string): <span class="tk-t">T</span>;
+  read(extra: boolean): <span class="tk-t">T</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> passGeneric(): <span class="tk-t">TwoBox</span>&lt;number&gt; {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Box</span>&lt;number&gt;(<span class="tk-n">1</span>);
+}
+
+<span class="tk-c">// Sound subclass overrides: same parameter list or fewer parameters.</span>
+<span class="tk-k">class</span> <span class="tk-t">Base</span> {
+  m(a: number): number {
+    <span class="tk-k">return</span> a;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">SubSame</span> <span class="tk-k">extends</span> <span class="tk-t">Base</span> {
+  m(a: number): number {
+    <span class="tk-k">return</span> a + <span class="tk-n">1</span>;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">SubFewer</span> <span class="tk-k">extends</span> <span class="tk-t">Base</span> {
+  m(): number {
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> useSubs(): number {
+  <span class="tk-k">const</span> a: <span class="tk-t">TwoParams</span> = <span class="tk-k">new</span> <span class="tk-t">SubSame</span>();
+  <span class="tk-k">const</span> b: <span class="tk-t">TwoParams</span> = <span class="tk-k">new</span> <span class="tk-t">SubFewer</span>();
+  <span class="tk-k">return</span> a.m(<span class="tk-n">1</span>, <span class="tk-s">&quot;x&quot;</span>) + b.m(<span class="tk-n">2</span>, <span class="tk-s">&quot;y&quot;</span>);
+}</pre></details></li><li><details><summary><code>invalid-class-method-fewer-params-rest</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused rest parameter method keeps its rest contract (throws TypeError under Node)</span></summary><pre class="code"><span class="tk-c">// A concrete class method declaring a rest parameter collects further actuals</span>
+<span class="tk-c">// into the rest array, so it does not gain a `...unknown[]` extension:</span>
+<span class="tk-c">// passing a number at position 2 throws `TypeError` on `toUpperCase` under Node.</span>
+<span class="tk-k">class</span> <span class="tk-t">WithRest</span> {
+  m(a: number, ...rest: string[]): string {
+    <span class="tk-k">const</span> first = rest[<span class="tk-n">0</span>];
+    <span class="tk-k">return</span> first !== <span class="tk-k">undefined</span> ? first.toUpperCase() : <span class="tk-s">&quot;none&quot;</span>;
+  }
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">TwoNum</span> {
+  m(a: number, b: number): string;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): string {
+  <span class="tk-k">const</span> t: <span class="tk-t">TwoNum</span> = <span class="tk-k">new</span> <span class="tk-t">WithRest</span>();
+  <span class="tk-k">return</span> t.m(<span class="tk-n">1</span>, <span class="tk-n">42</span>);
+}</pre></details></li><li><details><summary><code>invalid-class-method-fewer-params-ambient</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused ambient declare class method keeps only its declared signature</span></summary><pre class="code"><span class="tk-c">// An ambient class's method has no checked body: an external implementation or</span>
+<span class="tk-c">// subclass may declare an optional second parameter reading `b.toUpperCase()`,</span>
+<span class="tk-c">// so it does not gain a `...unknown[]` extension (TypeScript accepts this).</span>
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AmbientOne</span> {
+  m(a: number): string;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">TwoNum</span> {
+  m(a: number, b: number): string;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(x: <span class="tk-t">AmbientOne</span>): string {
+  <span class="tk-k">const</span> t: <span class="tk-t">TwoNum</span> = x;
+  <span class="tk-k">return</span> t.m(<span class="tk-n">1</span>, <span class="tk-n">42</span>);
+}</pre></details></li><li><details><summary><code>invalid-class-method-fewer-params-subclass</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused subclass narrowing an optional second parameter fails base variadic contract (throws TypeError under Node)</span></summary><pre class="code"><span class="tk-c">// A subclass overriding `m(a: number)` with an optional second parameter</span>
+<span class="tk-c">// `m(a: number, b?: string)` cannot meet `Base.m`'s `(a: number, ...unknown[])`</span>
+<span class="tk-c">// contract: TypeScript accepts `bad()`, which throws `TypeError` under Node</span>
+<span class="tk-c">// when `42` reaches `b.toUpperCase()`.</span>
+<span class="tk-k">class</span> <span class="tk-t">Base</span> {
+  m(a: number): string {
+    <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span> + a;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">Sub</span> <span class="tk-k">extends</span> <span class="tk-t">Base</span> {
+  m(a: number, b?: string): string {
+    <span class="tk-k">return</span> b !== <span class="tk-k">undefined</span> ? b.toUpperCase() : <span class="tk-s">&quot;&quot;</span> + a;
+  }
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">TwoNum</span> {
+  m(a: number, b: number): string;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): string {
+  <span class="tk-k">const</span> b: <span class="tk-t">Base</span> = <span class="tk-k">new</span> <span class="tk-t">Sub</span>();
+  <span class="tk-k">const</span> t: <span class="tk-t">TwoNum</span> = b;
+  <span class="tk-k">return</span> t.m(<span class="tk-n">1</span>, <span class="tk-n">42</span>);
+}</pre></details></li><li><details><summary><code>ambient-dts-private-field-value-import</code> <span class="kind positive">positive</span> <span class="why">refused -&gt; verified imported .d.ts class with unannotated private and untyped public fields</span></summary><pre class="code"><span class="tk-c">// An external `.d.ts` class with an unannotated `private` field (as `tsc`</span>
+<span class="tk-c">// emits for private parameter properties) and an untyped field is admitted:</span>
+<span class="tk-c">// its untyped instance fields are readonly `unknown`, never inferred from code.</span>
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">ServiceInstance</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/ambient-private&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> serviceName(s: <span class="tk-t">ServiceInstance</span>): string {
+  <span class="tk-k">return</span> s.getName();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readUntyped(s: <span class="tk-t">ServiceInstance</span>): unknown {
+  <span class="tk-k">return</span> s.pub;
+}</pre></details></li><li><details><summary><code>invalid-ambient-dts-private-field-value-import</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused untyped .d.ts field is readonly unknown, refused as string</span></summary><pre class="code"><span class="tk-c">// An untyped field of an imported `.d.ts` class is readonly `unknown`, not</span>
+<span class="tk-c">// the `any` TypeScript reads it at: assigning it to `string` is refused.</span>
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">ServiceInstance</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/ambient-private&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> badRead(s: <span class="tk-t">ServiceInstance</span>): string {
+  <span class="tk-k">const</span> x: string = s.pub;
+  <span class="tk-k">return</span> x;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Variadic method and constructor coverage and bagless constructor meets are proved in PositiveRules.lean and PositiveNormalization.lean with AxiomCheck passing. Only concrete non-ambient top-level classes of the checked module receive the variadic extension; ambient classes, imported classes, interfaces and methods with rest parameters never do. A subclass's instance type meets its base's members, so overriding a base method with a narrower optional extra parameter is refused. Untyped non-static fields of ambient classes have no initializer and are read as readonly unknown, never any.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">No new trust assumptions; untyped ambient .d.ts instance fields reuse classInstance's existing readonly unknown reading.</span></dd><dt>Tests</dt><dd><span class="test pos">class-method-fewer-params</span> <span class="test neg">invalid-class-method-fewer-params-rest</span> <span class="test neg">invalid-class-method-fewer-params-ambient</span> <span class="test neg">invalid-class-method-fewer-params-subclass</span> <span class="test pos">ambient-dts-private-field-value-import</span> <span class="test neg">invalid-ambient-dts-private-field-value-import, 239 class/constructor/variadic/ambient/override cases, lake build verifier &amp; AxiomCheck, tsc, unchecked.mts, json-field-names.mts, docs.mts, axiom-check-imports.mts, prettier, Node runtime counterexamples</span></dd></dl>
+<details><summary>20 files changed, 531 insertions(+), 142 deletions(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md                           |  18 ++-
+ lean/Verification/Source/Claims/Schemes.lean       |   5 +-
+ lean/Verification/Source/Lowering/Expression.lean  | 129 ++++++++++---------
+ lean/Verification/Source/Synthesis.lean            |  13 +-
+ lean/Verification/Types/PositiveCertificates.lean  |  17 ++-
+ lean/Verification/Types/PositiveNormalization.lean |  58 ++++++---
+ lean/Verification/Types/PositiveRules.lean         | 139 +++++++++++++++------
+ pipeline/cases.mts                                 |   6 +
+ .../ambient-dts-private-field-value-import.ts      |  12 ++
+ pipeline/examples/class-method-fewer-params.ts     | 118 +++++++++++++++++
+ ...valid-ambient-dts-private-field-value-import.ts |   8 ++
+ .../invalid-class-method-fewer-params-ambient.ts   |  15 +++
+ .../invalid-class-method-fewer-params-rest.ts      |  18 +++
+ .../invalid-class-method-fewer-params-subclass.ts  |  25 ++++
+ pipeline/imports-project/ambient-private.d.ts      |  10 ++
+ pipeline/imports-project/tsconfig.json             |   1 +
+ tools/declaration-graph.mts                        |  19 ++-
+ tools/fragment-classes.mts                         |  10 +-
+ tools/type-term.mts                                |  36 +++++-
+ tools/written-applications.mts                     |  16 ++-</pre></details>
+</article>
+<article class="card" id="c-298278c39"><header><div><div class="sha">298278c39 · Cristiano Calcagno · Nov 27, 09:08</div><h3>Mapped transforms, reference-infer conditionals, and call-site instantiation</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Service APIs built around generic resource graphs (such as Skip's SkipService, Resource, asLeader, asFollower, runService, initService and ServiceInstance.reload) use homomorphic mapped-type transforms ({ [K in keyof X]: V(X[K]) }), constant homomorphic maps ({ [K in keyof X]: C }), conditional infer over generic references (T extends Ref&lt;infer A, ...&gt; ? True : False), and generic functions or external interface methods whose parameter types or bounds contain those computed forms. The front end refused value-transforming mapped types, conditional infer on generic references, and computed-type-bearing generic call targets.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">homomorphic mapped transforms and literal key intersections</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">Mapped-type expansion admitted only identity property projections and</span></span></div><div class="cond"><span class="tgt"><span class="refused">refused</span><span class="m-text"> value-transforming or constant homomorphic maps as well as</span></span></div><div class="cond"><span class="tgt"><span class="m-text">keyof</span> <var>X</var> &amp; <span class="m-text">string intersections</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">tools</span>/<span class="m-op">type-term</span>.<span class="m-text">mts, tools</span>/<span class="m-op">named-record</span>.<span class="m-text">mts and tools</span>/<span class="m-op">fragment-parse</span>.<span class="m-text">mts</span></span></div><div class="cond"><span class="tgt"><span class="m-text">expand</span> { [<var>K</var> <span class="m-kw">in</span> <span class="m-text">keyof</span> <var>X</var>]<span class="m-rel">:</span> <var>V</var>(<var>X</var>[<var>K</var>]) } <span class="m-text">and</span> { [<var>K</var> <span class="m-kw">in</span> <span class="m-text">keyof</span> <var>X</var>]<span class="m-rel">:</span> <var>C</var> } <span class="m-text">over record</span></span></div><div class="cond"><span class="tgt"><span class="m-text">shapes (inline records, named interfaces and aliases, indexed records and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">empty records), preserving or overriding field and index modifiers, and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">reduce literal key intersections for keyof</span> <var>X</var> &amp; <span class="m-text">string at the TypeTerm level</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">TypeTerm-level conditional infer on generic references</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">Conditional types with infer over generic reference targets were </span><span class="refused">refused</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">tools</span>/<span class="m-op">computed-types</span>.<span class="m-text">mts evaluates</span> <var>T</var> <span class="m-text">extends Ref</span>&lt;<span class="m-text">infer A</span>, ...&gt; ? <var>T1</var> <span class="m-rel">:</span> <var>T2</var></span></div><div class="cond"><span class="tgt"><span class="m-text">on settled TypeTerms by declaration identity (following aliases and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">declared bases), takes the</span> <span class="m-lit">false</span> <span class="m-text">branch only for provably disjoint</span></span></div><div class="cond"><span class="tgt"><span class="m-text">members, and refuses ambiguous structural lookalikes</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">call-site instantiation for computed-type-bearing generics</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Calls to generic functions and external interface methods whose signatures or bounds carry computed or mapped types were refused, and generic interfaces or aliases with computed bodies could not be instantiated at call sites.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>tools/declaration-graph.mts and tools/written-applications.mts instantiate generic interfaces, aliases, ambient or imported generic functions, and unimplemented external interface generic methods at each call site's ground type arguments (explicit or taken from TypeScript's resolved signature as an untrusted proposal), emitting concrete bound obligations and settled signatures so Lean checks both each instantiated bound and every call actual. First-class uses of computed-type-bearing generic functions are refused at source.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>mapped-transform-conditional</code> <span class="kind positive">positive</span> <span class="why">new -&gt; verified homomorphic mapped transforms, constant maps, and conditional infer</span></summary><pre class="code"><span class="tk-c">// Per-key value-transforming mapped types with sound TypeTerm-level conditional</span>
+<span class="tk-c">// `infer` on generic class/interface references, constant-value homomorphic</span>
+<span class="tk-c">// mapped types over named interfaces and indexed records, and standalone</span>
+<span class="tk-c">// distributive conditional `infer`.</span>
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInput</span> {
+  <span class="tk-k">readonly</span> __brand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDef</span>&lt;<span class="tk-t">K</span>, <span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInput</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCol</span>&lt;<span class="tk-t">K</span>, <span class="tk-t">V</span>&gt; {
+  <span class="tk-k">readonly</span> key: <span class="tk-t">K</span>;
+  <span class="tk-k">readonly</span> val: <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">InputCols</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDef</span>&lt;infer <span class="tk-t">Key</span>, infer <span class="tk-t">Val</span>&gt;
+    ? <span class="tk-t">EagerCol</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInput</span> };
+<span class="tk-k">type</span> <span class="tk-t">UnwrapInputVal</span>&lt;<span class="tk-t">T</span>&gt; = <span class="tk-t">T</span> <span class="tk-k">extends</span> <span class="tk-t">InputDef</span>&lt;infer _K, infer <span class="tk-t">V</span>&gt; ? <span class="tk-t">V</span> : never;
+
+<span class="tk-k">interface</span> <span class="tk-t">NamedDefs</span> {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">InputDef</span>&lt;string, number&gt;;
+  <span class="tk-k">readonly</span> count: number;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readNamed(
+  cols: <span class="tk-t">InputCols</span>&lt;<span class="tk-t">NamedDefs</span>&gt;,
+  defs: <span class="tk-t">AllInputs</span>&lt;{ <span class="tk-k">readonly</span> a: <span class="tk-t">InputDef</span>&lt;string, string&gt; }&gt;,
+  emptyDefs: <span class="tk-t">AllInputs</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;&gt;,
+  unwrapped: <span class="tk-t">UnwrapInputVal</span>&lt;<span class="tk-t">InputDef</span>&lt;string, boolean&gt; | number&gt;,
+): number {
+  <span class="tk-k">const</span> _a: <span class="tk-t">AbstractInput</span> = defs.a;
+  <span class="tk-k">const</span> _e: <span class="tk-t">AbstractInput</span> | <span class="tk-k">undefined</span> = emptyDefs[<span class="tk-s">&quot;k&quot;</span>];
+  <span class="tk-k">const</span> _u: boolean = unwrapped;
+  <span class="tk-k">return</span> (
+    cols.names.val +
+    cols.names.key.length +
+    (_u ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) +
+    (_a.__brand === <span class="tk-k">undefined</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>) +
+    (_e === <span class="tk-k">undefined</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>)
+  );
+}</pre></details></li><li><details><summary><code>callsite-instantiation-value-import</code> <span class="kind positive">positive</span> <span class="why">new -&gt; verified cross-module .d.ts imports of computed-type generics and reload</span></summary><pre class="code"><span class="tk-c">// Cross-module `.d.ts` imports of computed-type-bearing generic functions</span>
+<span class="tk-c">// (`runService`, `initService`, `asLeader`, `asFollower`), abstract base</span>
+<span class="tk-c">// classes, mapped-type bounds, and generic `ServiceInstance.reload`.</span>
+<span class="tk-k">import</span> {
+  <span class="tk-t">InputDefinition</span>,
+  asFollower,
+  asLeader,
+  initService,
+  runService,
+  <span class="tk-k">type</span> <span class="tk-t">AbstractEagerCollection</span>,
+  <span class="tk-k">type</span> <span class="tk-t">Context</span>,
+  <span class="tk-k">type</span> <span class="tk-t">EagerCollection</span>,
+  <span class="tk-k">type</span> <span class="tk-t">Json</span>,
+  <span class="tk-k">type</span> <span class="tk-t">Resource</span>,
+  <span class="tk-k">type</span> <span class="tk-t">SkipService</span>,
+} <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/mapped-service-api&quot;</span>;
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span>
+  <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;{ <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }&gt;
+{
+  <span class="tk-k">constructor</span>(_params: <span class="tk-t">Json</span>) {}
+  instantiate(
+    collections: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; },
+    _context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span> {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">async</span> <span class="tk-k">function</span> start(): <span class="tk-t">Promise</span>&lt;boolean&gt; {
+  <span class="tk-k">const</span> s1 = <span class="tk-k">await</span> runService({
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;([[<span class="tk-s">&quot;a&quot;</span>, [<span class="tk-s">&quot;x&quot;</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic) =&gt; ic,
+  });
+  <span class="tk-k">const</span> service: <span class="tk-t">SkipService</span>&lt;
+    { <span class="tk-k">readonly</span> names: <span class="tk-t">InputDefinition</span>&lt;string, string&gt; },
+    { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }
+  &gt; = {
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;([[<span class="tk-s">&quot;b&quot;</span>, [<span class="tk-s">&quot;y&quot;</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic) =&gt; ({ names: ic.names }),
+  };
+  <span class="tk-k">const</span> leader = asLeader(service);
+  <span class="tk-k">const</span> follower = asFollower(service, {
+    leader: { host: <span class="tk-s">&quot;localhost&quot;</span>, streaming_port: <span class="tk-n">8080</span>, control_port: <span class="tk-n">8081</span> },
+    collections: [<span class="tk-s">&quot;names&quot;</span>],
+  });
+  <span class="tk-k">const</span> s2 = <span class="tk-k">await</span> runService(leader);
+  <span class="tk-k">const</span> s3 = <span class="tk-k">await</span> runService(follower);
+  <span class="tk-k">const</span> inst = <span class="tk-k">await</span> initService(service);
+  <span class="tk-k">await</span> s1.close();
+  <span class="tk-k">await</span> s2.close();
+  <span class="tk-k">await</span> s3.close();
+  <span class="tk-k">return</span> inst.running;
+}</pre></details></li><li><details><summary><code>callsite-instantiation-service</code> <span class="kind positive">positive</span> <span class="why">new -&gt; verified explicit and inferred call-site instantiation for service APIs</span></summary><pre class="code"><span class="tk-c">// Front-end call-site instantiation of computed-type-bearing generic functions</span>
+<span class="tk-c">// (`runService`, `initService`, `asLeader`, `asFollower`) and generic interfaces</span>
+<span class="tk-c">// (`SkipService`, `Resource`, `ResourceClass`) with both explicit and inferred</span>
+<span class="tk-c">// type arguments, plus a generic method with computed types on an external interface.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ServiceInstance</span> {
+  <span class="tk-k">readonly</span> running: boolean;
+  reload&lt;
+    <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  &gt;(
+    service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  ): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> initService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">ServiceInstance</span>&gt;;
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asLeader&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+    <span class="tk-k">readonly</span> lazies?: <span class="tk-t">Partial</span>&lt;
+      <span class="tk-t">Record</span>&lt;
+        <span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string,
+        (context: <span class="tk-t">Context</span>) =&gt; <span class="tk-t">AbstractLazyCollection</span>
+      &gt;
+    &gt;;
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span>
+  <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;{ <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }&gt;
+{
+  <span class="tk-k">constructor</span>(_params: <span class="tk-t">Json</span>) {}
+  instantiate(
+    collections: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; },
+    _context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span> {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">ExplicitDefs</span> {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">InputDefinition</span>&lt;string, string&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ExplicitRI</span> {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt;;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">async</span> <span class="tk-k">function</span> runAll(): <span class="tk-t">Promise</span>&lt;boolean&gt; {
+  <span class="tk-c">// 1. Inferred type arguments, pass-through `(ic) =&gt; ic`.</span>
+  <span class="tk-k">const</span> s1 = <span class="tk-k">await</span> runService({
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;([[<span class="tk-s">&quot;a&quot;</span>, [<span class="tk-s">&quot;x&quot;</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic) =&gt; ic,
+  });
+  <span class="tk-c">// 2. Explicit type arguments.</span>
+  <span class="tk-k">const</span> explicitService: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">ExplicitDefs</span>, <span class="tk-t">ExplicitRI</span>&gt; = {
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;([[<span class="tk-s">&quot;b&quot;</span>, [<span class="tk-s">&quot;y&quot;</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic) =&gt; ({ names: ic.names }),
+  };
+  <span class="tk-k">const</span> s2 = <span class="tk-k">await</span> runService&lt;<span class="tk-t">ExplicitDefs</span>, <span class="tk-t">ExplicitRI</span>&gt;(explicitService);
+  <span class="tk-c">// 3. asLeader &amp; asFollower chained into runService.</span>
+  <span class="tk-k">const</span> leader = asLeader(explicitService);
+  <span class="tk-k">const</span> follower = asFollower(explicitService, {
+    leader: { host: <span class="tk-s">&quot;localhost&quot;</span>, streaming_port: <span class="tk-n">8080</span>, control_port: <span class="tk-n">8081</span> },
+    collections: [<span class="tk-s">&quot;names&quot;</span>],
+  });
+  <span class="tk-k">const</span> s3 = <span class="tk-k">await</span> runService(leader);
+  <span class="tk-k">const</span> s4 = <span class="tk-k">await</span> runService(follower);
+  <span class="tk-c">// 4. initService returning ServiceInstance (with generic reload method).</span>
+  <span class="tk-k">const</span> inst = <span class="tk-k">await</span> initService(explicitService);
+  <span class="tk-k">await</span> s1.close();
+  <span class="tk-k">await</span> s2.close();
+  <span class="tk-k">await</span> s3.close();
+  <span class="tk-k">await</span> s4.close();
+  <span class="tk-k">return</span> inst.running;
+}</pre></details></li><li><details><summary><code>invalid-callsite-instantiation-bad-input-bound</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused input bound violation refused by Lean</span></summary><pre class="code"><span class="tk-c">// Passing `inputs: { names: 42 }` violates the `AllInputDefs` bound (`number &lt;= AbstractInputDefinition`).</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt; {
+  <span class="tk-k">return</span> runService({
+    inputs: { names: <span class="tk-n">42</span> },
+    resources: {},
+    createGraph: () =&gt; ({}),
+  });
+}</pre></details></li><li><code>invalid-callsite-instantiation-explicit-bad-bound  negative</code> <span class="why">new -&gt; refused explicit bad type argument violates direct bound obligation in Lean</span></li><li><details><summary><code>invalid-callsite-instantiation-bad-output-bound</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused output bound violation refused by Lean</span></summary><pre class="code"><span class="tk-c">// Returning `{ count: 42 }` from `createGraph` violates `AllSharedCollections` bound.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt; {
+  <span class="tk-k">return</span> runService({
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;() },
+    resources: {},
+    createGraph: () =&gt; ({ count: <span class="tk-n">42</span> }),
+  });
+}</pre></details></li><li><details><summary><code>invalid-callsite-instantiation-input-mismatch</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused collection element type mismatch refused by Lean</span></summary><pre class="code"><span class="tk-c">// `InputDefinition&lt;string, number&gt;` cannot satisfy `createGraph` expecting `EagerCollection&lt;string, string&gt;`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span>
+  <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;{ <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }&gt;
+{
+  <span class="tk-k">constructor</span>(_params: <span class="tk-t">Json</span>) {}
+  instantiate(
+    collections: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; },
+    _context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span> {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt; {
+  <span class="tk-k">return</span> runService({
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, number&gt;([[<span class="tk-s">&quot;a&quot;</span>, [<span class="tk-n">1</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }) =&gt;
+      ic,
+  });
+}</pre></details></li><li><details><summary><code>invalid-callsite-instantiation-follower-typo</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused key typo violates keyof &amp; string bound, refused by Lean</span></summary><pre class="code"><span class="tk-c">// Typo `&quot;typo&quot;` in `asFollower`'s `collections` violates `keyof ResourceInputs &amp; string`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span>
+  <span class="tk-k">implements</span> <span class="tk-t">Resource</span>&lt;{ <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }&gt;
+{
+  <span class="tk-k">constructor</span>(_params: <span class="tk-t">Json</span>) {}
+  instantiate(
+    collections: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; },
+    _context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span> {
+    <span class="tk-k">return</span> collections.names;
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt; {
+  <span class="tk-k">const</span> svc = {
+    inputs: { names: <span class="tk-k">new</span> <span class="tk-t">InputDefinition</span>&lt;string, string&gt;([[<span class="tk-s">&quot;a&quot;</span>, [<span class="tk-s">&quot;x&quot;</span>]]]) },
+    resources: { names: <span class="tk-t">Names</span> },
+    createGraph: (ic: { <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCollection</span>&lt;string, string&gt; }) =&gt;
+      ic,
+  };
+  <span class="tk-k">return</span> runService(
+    asFollower(svc, {
+      leader: { host: <span class="tk-s">&quot;localhost&quot;</span>, streaming_port: <span class="tk-n">8080</span>, control_port: <span class="tk-n">8081</span> },
+      collections: [<span class="tk-s">&quot;typo&quot;</span>],
+    }),
+  );
+}</pre></details></li><li><details><summary><code>invalid-conditional-infer-ambiguous</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused ambiguous structural lookalike in conditional infer refused at source</span></summary><pre class="code"><span class="tk-c">// Structural lookalike `{ x: number }` against `interface Box&lt;T&gt; { x: T }` is</span>
+<span class="tk-c">// refused as ambiguous: TScert does not blindly trust TS's structural `extends` check.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Box</span>&lt;<span class="tk-t">T</span>&gt; {
+  <span class="tk-k">readonly</span> x: <span class="tk-t">T</span>;
+}
+<span class="tk-k">type</span> <span class="tk-t">Unwrap</span>&lt;<span class="tk-t">U</span>&gt; = <span class="tk-t">U</span> <span class="tk-k">extends</span> <span class="tk-t">Box</span>&lt;infer <span class="tk-t">T</span>&gt; ? <span class="tk-t">T</span> : never;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(v: <span class="tk-t">Unwrap</span>&lt;{ <span class="tk-k">readonly</span> x: number }&gt;): number {
+  <span class="tk-k">return</span> v;
+}</pre></details></li><li><details><summary><code>invalid-callsite-instantiation-first-class-value</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused first-class value use of computed-type generic function refused at source</span></summary><pre class="code"><span class="tk-c">// Passing a computed-type generic function as a first-class value is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> =
+  | number
+  | string
+  | boolean
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">readonly</span> <span class="tk-t">Json</span>[]
+  | { <span class="tk-k">readonly</span> [k: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> __sk_inputDefBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">InputDefinition</span>&lt;
+  <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+  <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>,
+&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractInputDefinition</span> {
+  <span class="tk-k">readonly</span> initial: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][];
+  <span class="tk-k">constructor</span>(initial?: <span class="tk-k">readonly</span> [<span class="tk-t">K</span>, <span class="tk-k">readonly</span> <span class="tk-t">V</span>[]][]);
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEagerCollection</span> {
+  <span class="tk-k">readonly</span> __sk_eagerBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazyCollection</span> {
+  <span class="tk-k">readonly</span> __sk_lazyBrand: <span class="tk-k">undefined</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>, <span class="tk-t">V</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span>&gt;
+  <span class="tk-k">extends</span> <span class="tk-t">AbstractEagerCollection</span> {
+  getUnique(key: <span class="tk-t">K</span>): <span class="tk-t">V</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Context</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipServer</span> {
+  close(): <span class="tk-t">Promise</span>&lt;<span class="tk-k">void</span>&gt;;
+}
+<span class="tk-k">type</span> <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">Defs</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">Defs</span>]: <span class="tk-t">Defs</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">InputDefinition</span>&lt;
+    infer <span class="tk-t">Key</span>,
+    infer <span class="tk-t">Val</span>
+  &gt;
+    ? <span class="tk-t">EagerCollection</span>&lt;<span class="tk-t">Key</span>, <span class="tk-t">Val</span>&gt;
+    : never;
+};
+<span class="tk-k">type</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">T</span>&gt; = { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractInputDefinition</span> };
+<span class="tk-k">type</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEagerCollection</span> | <span class="tk-t">AbstractLazyCollection</span>;
+};
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;&gt; {
+  instantiate(
+    collections: <span class="tk-t">Collections</span>,
+    context: <span class="tk-t">Context</span>,
+  ): <span class="tk-t">AbstractEagerCollection</span>;
+}
+<span class="tk-k">interface</span> <span class="tk-t">ResourceClass</span>&lt;
+  <span class="tk-t">Collections</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">Collections</span>&gt;,
+  <span class="tk-t">Params</span> <span class="tk-k">extends</span> <span class="tk-t">Json</span> = <span class="tk-t">Json</span>,
+&gt; {
+  <span class="tk-k">new</span> (params: <span class="tk-t">Params</span>): <span class="tk-t">Resource</span>&lt;<span class="tk-t">Collections</span>&gt;;
+}
+<span class="tk-k">interface</span> <span class="tk-t">SkipService</span>&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt; {
+  <span class="tk-k">readonly</span> inputs: <span class="tk-t">InputDefs</span>;
+  <span class="tk-k">readonly</span> resources: {
+    <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Json</span>&gt;;
+  };
+  <span class="tk-k">readonly</span> createGraph: (
+    inputs: <span class="tk-t">InputCollections</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+    context: <span class="tk-t">Context</span>,
+  ) =&gt; <span class="tk-t">ResourceInputs</span>;
+}
+<span class="tk-k">declare</span> <span class="tk-k">function</span> runService&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;): <span class="tk-t">Promise</span>&lt;<span class="tk-t">SkipServer</span>&gt;;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">InputDefs</span> <span class="tk-k">extends</span> <span class="tk-t">AllInputDefs</span>&lt;<span class="tk-t">InputDefs</span>&gt;,
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllSharedCollections</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+&gt;(
+  service: <span class="tk-t">SkipService</span>&lt;<span class="tk-t">InputDefs</span>, <span class="tk-t">ResourceInputs</span>&gt;,
+  leader: {
+    <span class="tk-k">readonly</span> leader: {
+      <span class="tk-k">readonly</span> host: string;
+      <span class="tk-k">readonly</span> streaming_port: number;
+      <span class="tk-k">readonly</span> control_port: number;
+    };
+    <span class="tk-k">readonly</span> collections: <span class="tk-k">readonly</span> (<span class="tk-k">keyof</span> <span class="tk-t">ResourceInputs</span> &amp; string)[];
+  },
+): <span class="tk-t">SkipService</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;, <span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): unknown {
+  <span class="tk-k">const</span> f = runService;
+  <span class="tk-k">return</span> f;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Conditional infer matches nominal declaration identity and refuses ambiguous structural lookalikes rather than trusting TypeScript's structural extends check. Call-site instantiation treats inferred type arguments from TypeScript strictly as untrusted proposals: the emitted ground signatures and direct bound obligations U_i &lt;= B_i[p := U] are independently checked by Lean's verified checker.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">mapped-transform-conditional</span> <span class="test pos">callsite-instantiation-value-import</span> <span class="test pos">callsite-instantiation-service</span> <span class="test neg">invalid-callsite-instantiation-bad-input-bound</span> <span class="test neg">invalid-callsite-instantiation-explicit-bad-bound</span> <span class="test neg">invalid-callsite-instantiation-bad-output-bound</span> <span class="test neg">invalid-callsite-instantiation-input-mismatch</span> <span class="test neg">invalid-callsite-instantiation-follower-typo</span> <span class="test neg">invalid-conditional-infer-ambiguous</span> <span class="test neg">invalid-callsite-instantiation-first-class-value, tsc, unchecked.mts, json-field-names.mts, docs.mts, prettier</span></dd></dl>
+<details><summary>21 files changed, 2837 insertions(+), 122 deletions(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md                           |   59 +-
+ docs/SOURCE-FRAGMENT.md                            |    2 +
+ pipeline/cases.mts                                 |   10 +
+ .../examples/callsite-instantiation-service.ts     |  174 ++++
+ .../callsite-instantiation-value-import.ts         |   56 +
+ ...valid-callsite-instantiation-bad-input-bound.ts |   97 ++
+ ...alid-callsite-instantiation-bad-output-bound.ts |   97 ++
+ ...id-callsite-instantiation-explicit-bad-bound.ts |   97 ++
+ ...lid-callsite-instantiation-first-class-value.ts |   94 ++
+ ...invalid-callsite-instantiation-follower-typo.ts |  115 +++
+ ...nvalid-callsite-instantiation-input-mismatch.ts |  109 ++
+ .../invalid-conditional-infer-ambiguous.ts         |   10 +
+ pipeline/examples/mapped-transform-conditional.ts  |   46 +
+ pipeline/imports-project/mapped-service-api.d.ts   |  124 +++
+ pipeline/imports-project/tsconfig.json             |    4 +-
+ tools/computed-types.mts                           |  458 ++++++++-
+ tools/declaration-graph.mts                        | 1084 ++++++++++++++++++--
+ tools/fragment-parse.mts                           |    3 +-
+ tools/named-record.mts                             |   26 +-
+ tools/type-term.mts                                |  242 ++++-
+ tools/written-applications.mts                     |   52 +-</pre></details>
+</article>
+<article class="card" id="c-a06397862"><header><div><div class="sha">a06397862 · Cristiano Calcagno · Nov 27, 09:11</div><h3>Preserve closed own-key bounds on unmutated nested object literal allocations</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Unannotated object literals nested inside an outer object literal (such as local or module-level service descriptors with inputs and resources maps) had their exact own-key bound (KeyBound := &lt;true, names&gt;) stripped unconditionally whenever the enclosing field lacked a contextual type, preventing nested literals from meeting readonly index signatures such as { readonly [name: string]: ResourceClass&lt;...&gt; }. In addition, memberFor's single-signature union-host merger required empty rests, rejecting unions of concrete class hosts whose methods carry the variadic ...unknown rest extension.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">nested allocation own-key bounds, generic-call retry, union-host rests</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Synthesis stripped the own-key bound on every uncontextualized nested object literal, did not collect tail allocations inside conditional branches, did not retry result- or resolution-binder actuals when a generic call's inferred result missed its expected type, and required empty rests in memberFor's union-host merger.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>lean/Verification/Source/Synthesis.lean preserves exact own-key bounds on uncontextualized nested object literal allocations, stripping them only along openPaths collected by bindingOpenPaths (field writes through the binding or local aliases via writtenPathsStmts, or whole-value uses expecting a mutable open record via mutableOpenPaths). tailAllocs descends into ifBody; applyCall and exprCall retry result- or resolution-binder actuals at the expected type's contract while keeping outer resolution literals exact; memberFor's single-signature union-host merger tolerates variadic rest extensions matching the fixed arrow, yielding empty rests on the merged union-host signature. docs/SINGLE-PASS-FRONT.md documents the nested literal own-key bound and generic-call retry rules.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>nested-closed-allocation</code> <span class="kind positive">positive</span> <span class="why">new -&gt; verified unmutated nested object literals keep closed own-key bounds for readonly index signatures</span></summary><pre class="code"><span class="tk-c">// Nested object literals inside unannotated local and module-level `const`</span>
+<span class="tk-c">// bindings preserve their exact own-key bounds when their enclosing fields are</span>
+<span class="tk-c">// not reassigned to open records or passed to mutable open-field contracts.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Resource</span> {
+  instantiate(input: number, extra: string): number;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">ResourceClass</span> = <span class="tk-k">new</span> () =&gt; <span class="tk-t">Resource</span>;
+
+<span class="tk-k">interface</span> <span class="tk-t">Service</span> {
+  <span class="tk-k">readonly</span> inputs: { <span class="tk-k">readonly</span> [name: string]: number };
+  <span class="tk-k">readonly</span> resources: { <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span> };
+  <span class="tk-k">readonly</span> run: (n: number) =&gt; number;
+}
+
+<span class="tk-k">class</span> <span class="tk-t">Names</span> <span class="tk-k">implements</span> <span class="tk-t">Resource</span> {
+  instantiate(input: number): number {
+    <span class="tk-k">return</span> input + <span class="tk-n">1</span>;
+  }
+}
+
+<span class="tk-k">function</span> acceptService(s: <span class="tk-t">Service</span>): number {
+  <span class="tk-k">const</span> ctor = s.resources[<span class="tk-s">&quot;names&quot;</span>];
+  <span class="tk-k">const</span> init = s.inputs[<span class="tk-s">&quot;count&quot;</span>];
+  <span class="tk-k">if</span> (ctor !== <span class="tk-k">undefined</span> &amp;&amp; init !== <span class="tk-k">undefined</span>) {
+    <span class="tk-k">return</span> s.run(<span class="tk-k">new</span> ctor().instantiate(init, <span class="tk-s">&quot;ctx&quot;</span>));
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">function</span> acceptGeneric&lt;<span class="tk-t">T</span> <span class="tk-k">extends</span> { <span class="tk-k">readonly</span> [k: string]: number }&gt;(box: {
+  <span class="tk-k">readonly</span> inner: <span class="tk-t">T</span>;
+  <span class="tk-k">readonly</span> resources: { <span class="tk-k">readonly</span> [name: string]: <span class="tk-t">ResourceClass</span> };
+}): number {
+  <span class="tk-k">const</span> v = box.inner[<span class="tk-s">&quot;a&quot;</span>];
+  <span class="tk-k">return</span> v !== <span class="tk-k">undefined</span> ? v : <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">const</span> moduleService = {
+  inputs: { count: <span class="tk-n">10</span> },
+  resources: { names: <span class="tk-t">Names</span> },
+  run: (n: number): number =&gt; n * <span class="tk-n">2</span>,
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> useModuleConst(): number {
+  <span class="tk-k">return</span> acceptService(moduleService);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> useLocalConst(): number {
+  <span class="tk-k">const</span> localService = {
+    inputs: { count: <span class="tk-n">20</span> },
+    resources: { names: <span class="tk-t">Names</span> },
+    run: (n: number): number =&gt; n + <span class="tk-n">3</span>,
+  };
+  <span class="tk-k">return</span> acceptService(localService);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> useGenericAndInnerFieldMutation(): number {
+  <span class="tk-k">const</span> box = {
+    inner: { a: <span class="tk-n">1</span>, b: <span class="tk-n">2</span> },
+    resources: { names: <span class="tk-t">Names</span> },
+  };
+  <span class="tk-c">// Mutating an existing property of `box.inner` keeps its exact own keys.</span>
+  box.inner.a = <span class="tk-n">42</span>;
+  <span class="tk-k">return</span> acceptGeneric(box);
+}</pre></details></li><li><details><summary><code>nested-allocation-mutable-open</code> <span class="kind positive">positive</span> <span class="why">new -&gt; verified mutated and open-expected nested allocations widen as required</span></summary><pre class="code"><span class="tk-c">// Nested object literals whose enclosing field is reassigned or passed to a</span>
+<span class="tk-c">// mutable open-field contract are allocated open so invariance holds.</span>
+<span class="tk-k">function</span> takeMutable(b: { inner: { a: number } }): number {
+  <span class="tk-k">return</span> b.inner.a;
+}
+
+<span class="tk-k">function</span> id&lt;<span class="tk-t">T</span>&gt;(x: <span class="tk-t">T</span>): <span class="tk-t">T</span> {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reassignNestedField(openRec: { a: number }): number {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> } };
+  box.inner = openRec;
+  <span class="tk-k">return</span> box.inner.a;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> passToMutableParam(): number {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> }, tag: <span class="tk-s">&quot;ok&quot;</span> };
+  <span class="tk-k">const</span> n = takeMutable(box);
+  <span class="tk-k">return</span> n + box.tag.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> returnMutableBox(): { inner: { a: number } } {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> } };
+  <span class="tk-k">return</span> box;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reassignDeepAndAlias(openRec: { a: number }): number {
+  <span class="tk-k">const</span> deep = { outer: { inner: { a: <span class="tk-n">1</span> } } };
+  deep.outer.inner = openRec;
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">2</span> } };
+  <span class="tk-k">const</span> alias = box;
+  alias.inner = openRec;
+  <span class="tk-k">return</span> deep.outer.inner.a + box.inner.a;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> genericIdReturn(): { inner: { a: number } } {
+  <span class="tk-k">return</span> id({ inner: { a: <span class="tk-n">1</span> } });
+}</pre></details></li><li><details><summary><code>invalid-open-record-index-signature</code> <span class="kind negative">negative</span> <span class="why">new -&gt; refused open record parameter refused as readonly string index signature</span></summary><pre class="code"><span class="tk-c">// An explicitly open object parameter may carry extra properties of arbitrary</span>
+<span class="tk-c">// types at runtime (for example `{ a: 1, extra: &quot;boom&quot; }`), so it cannot</span>
+<span class="tk-c">// satisfy a readonly string index signature `{ readonly [k: string]: number }`.</span>
+<span class="tk-k">function</span> readExtra(d: { <span class="tk-k">readonly</span> [k: string]: number }): number {
+  <span class="tk-k">const</span> v = d[<span class="tk-s">&quot;extra&quot;</span>];
+  <span class="tk-k">return</span> v !== <span class="tk-k">undefined</span> ? v : <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> unsoundOpenToDict(p: {
+  <span class="tk-k">readonly</span> inner: { a: number };
+}): number {
+  <span class="tk-k">const</span> ro: { <span class="tk-k">readonly</span> inner: { <span class="tk-k">readonly</span> [k: string]: number } } = p;
+  <span class="tk-k">return</span> readExtra(ro.inner);
+}</pre></details></li><li><code>invalid-nested-allocation-alias-write  negative</code> <span class="why">new -&gt; refused aliased field write invalidates closed own-key bound for readonly index signature</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Synthesis proposes expression and storage types only; Lean's verified checker independently verifies every allocation, field-invariance, subtyping, and resolution obligation. Open record parameters and aliased mutable-write uses remain refused.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">nested-closed-allocation</span> <span class="test pos">nested-allocation-mutable-open</span> <span class="test neg">invalid-open-record-index-signature</span> <span class="test neg">invalid-nested-allocation-alias-write, lake build verifier &amp; AxiomCheck, tsc, unchecked.mts, json-field-names.mts, docs.mts, axiom-check-imports.mts, prettier</span></dd></dl>
+<details><summary>8 files changed, 363 insertions(+), 22 deletions(-)</summary><pre class="code"> docs/SINGLE-PASS-FRONT.md                          |  10 +-
+ lean/Verification/Source/Synthesis.lean            | 230 +++++++++++++++++++--
+ pipeline/cases.mts                                 |   4 +
+ .../invalid-nested-allocation-alias-write.ts       |  12 ++
+ .../invalid-open-record-index-signature.ts         |  14 ++
+ .../examples/nested-allocation-mutable-open.ts     |  39 ++++
+ pipeline/examples/nested-closed-allocation.ts      |  66 ++++++
+ tests/single-pass-controls.mts                     |  10 +-</pre></details>
+</article>
+<article class="card" id="c-000a61669"><header><div><div class="sha">000a61669 · Cristiano Calcagno · Nov 27, 09:11</div><h3>Retry alternative overload parameter lists in exprCall when primary misfit retry fails</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>When a non-generic overloaded call (such as call-site-instantiated asFollower with two signatures) receives an object literal containing an unannotated callback parameter alongside a second object literal whose closed nested literal vacuously satisfies an earlier overload's optional-only field by width subtyping, pass 1 selects the earlier overload and fails the primary misfits retry without trying the remaining overload signatures.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">overloaded call candidate fallback in exprCall</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>exprCall retried only the primary misfits parameter list and failed without testing alternative non-generic overload signatures.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>lean/Verification/Source/Synthesis.lean records remaining candidate parameter lists in Walk.altMisfits when a non-generic overloaded call produces non-empty misfits. When the primary misfits retry fails, exprCall tries each entry of altMisfits from w0 with retrying := true (skipping speculative per-argument overload fitting in applyCall so contextualized actuals are preserved) and accepts the first candidate whose arguments all fit. pipeline/examples/nested-allocation-mutable-open.ts adds the overloadedNestedLiteralFallback case.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>nested-allocation-mutable-open</code> <span class="kind positive">positive</span> <span class="why">refused -&gt; verified overloadedNestedLiteralFallback selects the matching overload signature</span></summary><pre class="code"><span class="tk-c">// Nested object literals whose enclosing field is reassigned or passed to a</span>
+<span class="tk-c">// mutable open-field contract are allocated open so invariance holds.</span>
+<span class="tk-k">function</span> takeMutable(b: { inner: { a: number } }): number {
+  <span class="tk-k">return</span> b.inner.a;
+}
+
+<span class="tk-k">function</span> id&lt;<span class="tk-t">T</span>&gt;(x: <span class="tk-t">T</span>): <span class="tk-t">T</span> {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reassignNestedField(openRec: { a: number }): number {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> } };
+  box.inner = openRec;
+  <span class="tk-k">return</span> box.inner.a;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> passToMutableParam(): number {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> }, tag: <span class="tk-s">&quot;ok&quot;</span> };
+  <span class="tk-k">const</span> n = takeMutable(box);
+  <span class="tk-k">return</span> n + box.tag.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> returnMutableBox(): { inner: { a: number } } {
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">1</span> } };
+  <span class="tk-k">return</span> box;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reassignDeepAndAlias(openRec: { a: number }): number {
+  <span class="tk-k">const</span> deep = { outer: { inner: { a: <span class="tk-n">1</span> } } };
+  deep.outer.inner = openRec;
+  <span class="tk-k">const</span> box = { inner: { a: <span class="tk-n">2</span> } };
+  <span class="tk-k">const</span> alias = box;
+  alias.inner = openRec;
+  <span class="tk-k">return</span> deep.outer.inner.a + box.inner.a;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> genericIdReturn(): { inner: { a: number } } {
+  <span class="tk-k">return</span> id({ inner: { a: <span class="tk-n">1</span> } });
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Overloaded</span> = ((
+  service: { <span class="tk-k">readonly</span> build: (x: number) =&gt; { <span class="tk-k">readonly</span> a: number } },
+  opts: { leader: { host: string }; lazies?: { a?: () =&gt; number } },
+) =&gt; number) &amp;
+  ((
+    service: {
+      <span class="tk-k">readonly</span> build: (x: number) =&gt; { <span class="tk-k">readonly</span> a: number; <span class="tk-k">readonly</span> b: string };
+    },
+    opts: {
+      leader: { host: string };
+      lazies?: { a?: () =&gt; number; b?: () =&gt; string };
+    },
+  ) =&gt; number);
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> overloadedNestedLiteralFallback(f: <span class="tk-t">Overloaded</span>): number {
+  <span class="tk-k">return</span> f(
+    { build: (x) =&gt; ({ a: x, b: <span class="tk-s">&quot;ok&quot;</span> }) },
+    { leader: { host: <span class="tk-s">&quot;localhost&quot;</span> }, lazies: { b: () =&gt; <span class="tk-s">&quot;hi&quot;</span> } },
+  );
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Synthesis selects only which overload parameter types guide argument synthesis; Lean's verified checker independently verifies every call and argument obligation.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>nested-allocation-mutable-open, lake build verifier &amp; AxiomCheck, tsc, unchecked.mts, json-field-names.mts, docs.mts, axiom-check-imports.mts</dd></dl>
+<details><summary>2 files changed, 51 insertions(+), 12 deletions(-)</summary><pre class="code"> lean/Verification/Source/Synthesis.lean            | 42 +++++++++++++++-------
+ .../examples/nested-allocation-mutable-open.ts     | 21 +++++++++++</pre></details>
+</article>
+<article class="card" id="c-264701fae"><header><div><div class="sha">264701fae · Cristiano Calcagno · Nov 27, 10:09</div><h3>Fix block-type capture forwarding, variadic union-callable arms, and open-path scan</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Three CI regressions appeared on the service-api-extensions branch: 1. <code>block-type-default-chain</code> failed at source because <code>instantiateAtScope</code> called <code>completeArguments</code> for instantiated application recording without passing the enclosing declaration's <code>captured</code> callback, causing block- scoped aliases that close over outer type parameters to throw. 2. <code>invalid-bind-union-host-arity</code> failed with an untyped fallback error instead of the union-callable arity refusal because <code>calleeOf</code> required <code>rests</code> to be empty on every arm, rejecting concrete class methods that now carry matching <code>...unknown[]</code> variadic extensions. 3. <code>blocker-compiler-api-token-subtype</code> timed out (60s) in synthesis because <code>stmt</code> ran <code>bindingOpenPaths</code> on every unannotated ternary binding (even with no nested object literal) and <code>mutableOpenPaths</code> recursively expanded all fields of wide recursive union contracts such as <code>Expr</code> up to depth 6.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">block-type capture forwarding in instantiateAtScope and recordInstantiatedApplication</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">instantiateAtScope</code> (<code class="m-code">scope.named</code> <span class="m-text">and <code class="m-code">evaluate</code>) and</span></span></div><div class="cond"><span class="tgt"><code class="m-code">recordInstantiatedApplication</code> (<code class="m-code">walkBody</code>) <span class="m-text">invoked</span> <code class="m-code">completeArguments</code></span></div><div class="cond"><span class="tgt"><span class="m-text">without passing a <code class="m-code">captured</code> lookup, and <code class="m-code">scope.named</code> recompleted</span></span></div><div class="cond"><span class="tgt"><span class="m-text">arguments even for declarations with no constraints or computed bounds</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">instantiateAtScope</code> <span class="m-text">shares its <code class="m-code">captured</code> callback with</span> <code class="m-code">outer</code>,</span></div><div class="cond"><span class="tgt"><code class="m-code">evaluate</code>, <span class="m-text">and <code class="m-code">scope.named</code>, guards <code class="m-code">scope.named</code> recording on</span></span></div><div class="cond"><span class="tgt"><span class="m-text">declarations with constraints or computed bounds, and <code class="m-code">walkBody</code> forwards</span></span></div><div class="cond"><span class="tgt"><code class="m-code">targetCaptured</code> <span class="m-op">to</span> <code class="m-code">completeArguments</code>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">variadic union-callable arms in calleeOf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>calleeOf</code> recognized a union of callables only when every arm had one fixed signature and zero rest signatures (<code>S.isEmpty</code>), falling through to an empty <code>Callee</code> when arms carried concrete-method <code>...unknown[]</code> rest extensions.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>calleeOf</code> accepts union-callable arms whose rest signatures all match the arm's single fixed signature (matching <code>memberFor</code>), restoring union- callable synthesis and its arity refusal diagnostic.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">path-guided open-record scan in Synthesis</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>stmt</code> invoked <code>bindingOpenPaths</code> on any unannotated <code>.alloc</code> or <code>.ifBody</code> binding, and <code>mutableOpenPaths</code> blindly traversed every field of every use type up to fuel 6.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>nestedAllocPaths</code> extracts only the field paths of nested <code>.alloc</code> expressions in the initializer (skipping bindings with none), and <code>isMutableOpenAt</code> follows only those candidate paths when inspecting use types in <code>bindingOpenPaths</code>.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>block-type-default-chain</code> <span class="kind positive">positive</span> <span class="why">unsupported -&gt; verified block-scoped default chain forwards captured type parameter</span></summary><pre class="code"><span class="tk-k">function</span> f&lt;<span class="tk-t">T</span>&gt;(x: <span class="tk-t">T</span>): <span class="tk-t">T</span>[] {
+  <span class="tk-k">type</span> <span class="tk-t">A</span> = <span class="tk-t">T</span>[];
+  <span class="tk-k">type</span> <span class="tk-t">B</span>&lt;<span class="tk-t">U</span> = <span class="tk-t">A</span>&gt; = <span class="tk-t">U</span>;
+  <span class="tk-k">const</span> b: <span class="tk-t">B</span> = [x];
+  <span class="tk-k">return</span> b;
+}</pre></details></li><li><details><summary><code>invalid-bind-union-host-arity</code> <span class="kind negative">negative</span> <span class="why">wrong failure -&gt; refused  union-callable arity refusal restored for concrete class methods</span></summary><pre class="code"><span class="tk-c">// One host of the union declares `next` with a required parameter: the</span>
+<span class="tk-c">// protocol calls it with none, so `start` is `undefined` and the loop's</span>
+<span class="tk-c">// first value is `undefined`, which TypeScript types as a number</span>
+<span class="tk-c">// (tests/node-runs.mts runs `first`, which returns `undefined`). The hosts'</span>
+<span class="tk-c">// members take different parameters: no one bound signature is either's.</span>
+<span class="tk-k">class</span> <span class="tk-t">Countdown</span> {
+  left: number;
+  <span class="tk-k">constructor</span>(left: number) {
+    <span class="tk-k">this</span>.left = left;
+  }
+  next(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">const</span> n = <span class="tk-k">this</span>.left;
+    <span class="tk-k">if</span> (n &lt;= <span class="tk-n">0</span>) <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+    <span class="tk-k">this</span>.left = n - <span class="tk-n">1</span>;
+    <span class="tk-k">return</span> { done: <span class="tk-k">false</span>, value: n };
+  }
+  <span class="tk-k">return</span>(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+  }
+  [<span class="tk-t">Symbol</span>.iterator](): <span class="tk-t">Countdown</span> {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">From</span> {
+  started: boolean;
+  <span class="tk-k">constructor</span>() {
+    <span class="tk-k">this</span>.started = <span class="tk-k">false</span>;
+  }
+  next(start: number): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">if</span> (<span class="tk-k">this</span>.started) <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+    <span class="tk-k">this</span>.started = <span class="tk-k">true</span>;
+    <span class="tk-k">return</span> { done: <span class="tk-k">false</span>, value: start };
+  }
+  <span class="tk-k">return</span>(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+  }
+  [<span class="tk-t">Symbol</span>.iterator](): <span class="tk-t">From</span> {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(it: <span class="tk-t">Countdown</span> | <span class="tk-t">From</span>): number {
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> it) <span class="tk-k">return</span> v;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><code>blocker-compiler-api-token-subtype  gap</code> <span class="why">timeout -&gt; expected gap synthesis finishes immediately without exponential union traversal</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>tools/declaration-graph.mts</code> forwards the same <code>captured</code> mapping already used by <code>outer.named</code> when recording instantiated bound obligations. The <code>Synthesis.lean</code> changes affect only proposal synthesis (<code>calleeOf</code> and open-record path detection); Lean's verified checker independently checks all lowered obligations.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>block-type-default-chain, invalid-bind-union-host-arity, blocker-compiler-api-token-subtype, 315 targeted cases, lake build verifier &amp; AxiomCheck, ./test-all.sh (27/27), prettier</dd></dl>
+<details><summary>2 files changed, 74 insertions(+), 48 deletions(-)</summary><pre class="code"> lean/Verification/Source/Synthesis.lean | 99 +++++++++++++++++++--------------
+ tools/declaration-graph.mts             | 23 +++++---</pre></details>
+</article>
+<article class="card" id="c-e4dff78d6"><header><div><div class="sha">e4dff78d6 · Cristiano Calcagno · Nov 27, 09:09</div><h3>Record omitted-key undefined facts on plain object literals</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p><code>HeapExpressionRules.alloc_sound</code> allocates a fresh object literal with its exact own-key list and no prototype, so reading any omitted key yields <code>undefined</code>. Because <code>ValueSets.ValueSet</code> did not record an object's own-key upper bound, widening a fresh object literal to a record type with an optional property (such as <code>PreparedLineData</code>'s <code>items?</code>) lost the fact that <code>result.items === undefined</code>, forcing 3 runtime throws in Pretext's <code>layout.ts</code> and <code>rich-inline.ts</code>.</p></div>
 <h4 class="change"><span class="act added">added</span>Definition <span class="target">ValueSets.OwnKeys and ValueSet.ownKeys</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <code class="m-code">lean/<span class="tk-t">Verification</span>/<span class="tk-t">Semantics</span>/<span class="tk-t">ValueSets</span>.lean</code><span class="m-rel">:</span> <span class="m-con">add</span> <code class="m-code"><span class="tk-t">OwnKeys</span></code> (<code class="m-code">mem</code>,</span></div><div class="row cont"><span><code class="m-code">join</code>, <code class="m-code">meet</code>, <code class="m-code">le</code>, <code class="m-code">lookup_none_of_mem</code>), <span class="m-text">the</span> <code class="m-code">ownKeys : <span class="tk-t">Option</span> (<span class="tk-t">List</span> <span class="tk-t">PropKey</span>)</code></span></div><div class="row cont"><span><span class="m-text">component of</span> <code class="m-code"><span class="tk-t">ValueSet</span></code>, <code class="m-code"><span class="tk-t">ValueSet</span>.ofOwnKeys</code>, <code class="m-code"><span class="tk-t">ValueSet</span>.onlyObj</code>,</span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">ValueSet</span>.omitsKey</code>, <span class="m-text">and <code class="m-code"><span class="tk-t">ValueSet</span>.omitsKey_sound</code> proving that any</span></span></div><div class="row cont"><span><span class="m-text">member of a set omitting <code class="m-code">k</code> is a prototype-free object whose lookup of</span></span></div><div class="row cont"><span><code class="m-code">k</code> <span class="m-text">and <code class="m-code">protoField</code> are both</span> <code class="m-code">none</code>. <span class="m-con">Update</span> <code class="m-code">join</code>, <code class="m-code">meet</code>, <code class="m-code">le</code>,</span></div><div class="row cont"><span><code class="m-code">append</code>, <code class="m-code">normIn</code>, <span class="m-text">and their soundness lemmas</span>.</span></div><div class="row"><span>- <code class="m-code">lean/<span class="tk-t">Verification</span>/<span class="tk-t">Semantics</span>/<span class="tk-t">IndexFacts</span>.lean</code><span class="m-rel">:</span> <span class="m-con">add</span> <code class="m-code"><span class="tk-t">GuardTag</span>.holds_undef</code>.</span></div><div class="row"><span>- <code class="m-code">tools/diagnostic.mts</code>, <code class="m-code">tools/fact-text.mts</code>, <code class="m-code">tests/diagnostic.mts</code><span class="m-rel">:</span></span></div><div class="row cont"><span><span class="m-text">decode and format the new <code class="m-code">ownKeys</code> field of diagnostic</span> <code class="m-code"><span class="tk-t">ValueSet</span></code><var>s</var>.</span></div></div></div>
 <h4 class="change"><span class="act modified">modified</span>Rule <span class="target">allocLinked, guardTags, GuardTagTable.check, cellBy, valueBy</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <code class="m-code">lean/<span class="tk-t">Verification</span>/<span class="tk-t">Programs</span>/<span class="tk-t">HeapExpressionRules</span>.lean</code><span class="m-rel">:</span> <span class="m-con">emit</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">ValueSet</span>.ofOwnKeys (parts.map <span class="tk-t">Prod</span>.fst)</code> <span class="m-kw">in</span> <code class="m-code">allocLinked</code> <span class="m-text">when the</span></span></div><div class="row cont"><span><span class="m-text">literal allocates no <code class="m-code">protoField</code> (excluding objects with prototypes and</span></span></div><div class="row cont"><span><span class="m-text">leaving object spreads <code class="m-code">.merge</code> untouched), proved in <code class="m-code">alloc_sound</code> via</span></span></div><div class="row cont"><span><code class="m-code">lookup_slots_none</code> <span class="m-text">and</span> <code class="m-code">slots_fst_mem</code>.</span></div><div class="row"><span>- <code class="m-code">lean/<span class="tk-t">Verification</span>/<span class="tk-t">Semantics</span>/<span class="tk-t">HeapKnowledge</span>.lean</code><span class="m-rel">:</span> <span class="m-con">extend</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">GuardTagTable</span>.check</code>, <code class="m-code">guardTags</code>, <code class="m-code">cellBy</code>, <span class="m-text">and <code class="m-code">valueBy</code> (and their</span></span></div><div class="row cont"><span><span class="m-text">soundness proofs</span> <code class="m-code"><span class="tk-t">GuardTagTable</span>.check_sound</code>, <code class="m-code">guardTags_sound</code>,</span></div><div class="row cont"><span><code class="m-code">cellBy_holds</code>, <code class="m-code">valueBy_mem</code>) <span class="m-text">so <code class="m-code">omitsKey</code> discharges</span> <code class="m-code"><span class="tk-k">undefined</span></code>-<span class="m-text">holding</span></span></div><div class="row cont"><span><span class="m-text">single-field guard tags and yields <code class="m-code">{ undef := <span class="tk-k">true</span> }</code> for omitted field</span></span></div><div class="row cont"><span><span class="m-text">reads</span>.</span></div><div class="row"><span>- <code class="m-code">lean/<span class="tk-t">Verification</span>/<span class="tk-t">Programs</span>/<span class="tk-t">TolerantFramesState</span>.lean</code><span class="m-rel">:</span> <span class="m-text">refactor the</span></span></div><div class="row cont"><span><span class="m-text">nested <code class="m-code">match</code> in <code class="m-code">contradiction_false</code> into direct <code class="m-code">cases</code> splits to</span></span></div><div class="row cont"><span><span class="m-text">stay well within the default heartbeat limit</span>.</span></div></div></div>
@@ -119,7 +1417,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tools/fact-text.mts                                |  11 +-</pre></details>
 <div class="sha">with Antigravity</div>
 </article>
-<article class="card" id="c-cfbd9ed79"><header><div><div class="sha">cfbd9ed79 · Cristiano Calcagno · Nov 27, 09:13</div><h3>Derive UTF-16 length bounds from non-empty and literal string facts</h3></div><span class="pill ok">verified</span></header>
+<article class="card" id="c-40b887aef"><header><div><div class="sha">40b887aef · Cristiano Calcagno · Nov 27, 09:13</div><h3>Derive UTF-16 length bounds from non-empty and literal string facts</h3></div><span class="pill ok">verified</span></header>
 <div class="units"><span>dev/paper-rules/pretext/src/rich-inline.ts#prepareRichInline</span></div>
 <h4 class="change">Why</h4><div class="prose"><p>Excluding <code>&quot;&quot;</code> on a string (<code>s !== &quot;&quot;</code>, <code>if (s)</code>, or a non-empty string literal type) narrowed its value set in <code>SinglePass</code> without emitting <code>1 &lt;= s.length</code>, and <code>HeapKnowledge.observeTyped</code> dropped tag exclusions such as <code>Lit.allBut [&quot;&quot;]</code> when no prior value fact existed on the slot. <code>dev/paper-rules/pretext/src/rich-inline.ts</code> carried a temporary <code>if (spaces &gt;= 1)</code> guard to discharge <code>equalAdvances</code>'s <code>1 &lt;= spaces</code> precondition.</p></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">non-empty and singleton string length</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <code class="m-code"><span class="tk-t">IndexFacts</span>.utf16Units_eq_nil_iff</code>, <code class="m-code">utf16Units_length_pos</code>,</span></div><div class="row cont"><span><code class="m-code">strLengthOf_pos</code><span class="m-rel">:</span> <span class="m-text">a string has zero</span> <span class="m-con">UTF-16</span> <span class="m-text">code units if and only if it</span></span></div><div class="row cont"><span><span class="m-text">is <code class="m-code"><span class="tk-s">&quot;&quot;</span></code>, so every non-empty string has length at least</span> <code class="m-code"><span class="tk-n">1</span></code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">ValueSets</span>.<span class="tk-t">ValueSet</span>.str_ne_empty_of_not_mem</code>, <code class="m-code">singleStr</code>, <code class="m-code">singleStr_eq</code><span class="m-rel">:</span></span></div><div class="row cont"><span><span class="m-text">any string admitted by a value set excluding <code class="m-code"><span class="tk-s">&quot;&quot;</span></code> is non-empty, and any</span></span></div><div class="row cont"><span><span class="m-text">string admitted by a singleton <code class="m-code">.these [t]</code> equals</span> <code class="m-code">t</code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">HeapKnowledge</span>.observeTyped</code><span class="m-rel">:</span> <span class="m-text">meet <code class="m-code"><span class="tk-t">ValueSets</span>.ofAtoms <span class="tk-t">R</span></code> with</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">ValueSets</span>.ofTag tag q</code> <span class="m-text">on primitive observations and record</span></span></div><div class="row cont"><span><code class="m-code"><span class="tk-t">ValueSets</span>.ofTag tag q</code> <span class="m-text">on non-primitive ones, preserving string</span></span></div><div class="row cont"><span><span class="m-text">exclusions such as <code class="m-code">s !== <span class="tk-s">&quot;&quot;</span></code> and</span> <code class="m-code"><span class="tk-k">if</span> (s)</code>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">HeapKnowledge</span>.strEqIndices</code><span class="m-rel">:</span> <span class="m-text">on <code class="m-code">.tag (.strEq s) q</code> and</span> <code class="m-code">.tag .truthy q</code>,</span></div><div class="row cont"><span><span class="m-text">for every aliased slot whose <code class="m-code">strLength</code> term is already defined</span> <span class="m-text">in</span> <code class="m-code"><span class="tk-k">as</span></code>,</span></div><div class="row cont"><span><span class="m-text">emit exact length on equality</span>/<span class="m-text">falsy (<code class="m-code"><span class="tk-n">0</span></code> for <code class="m-code"><span class="tk-s">&quot;&quot;</span></code>) and</span> <code class="m-code"><span class="tk-n">1</span> &lt;= strLength</code></span></div><div class="row cont"><span><span class="m-text">on <code class="m-code">!== <span class="tk-s">&quot;&quot;</span></code> or truthy</span>.</span></div><div class="row"><span>- <code class="m-code"><span class="tk-t">IndexWrites</span>.typeStrLen</code>, <code class="m-code">typeAtoms</code>, <code class="m-code">strEqAtoms</code>, <code class="m-code">linearAtoms</code><span class="m-rel">:</span></span></div><div class="row cont"><span><span class="m-text">emit exact length or <code class="m-code"><span class="tk-n">1</span> &lt;= strLength</code> for bounded string-literal types</span>,</span></div><div class="row cont"><span><span class="m-text">emit</span> <code class="m-code"><span class="tk-n">1</span> &lt;= value <span class="tk-n">0</span></code> / <code class="m-code"><span class="tk-n">1</span> &lt;= strLength</code> <span class="m-text">(or exact singleton length) on</span></span></div><div class="row cont"><span><code class="m-code">.lenOf (.<span class="tk-k">var</span> s)</code> <span class="m-text">whenever <code class="m-code">valuesAt</code> excludes <code class="m-code"><span class="tk-s">&quot;&quot;</span></code> or pins a single</span></span></div><div class="row cont"><span><span class="m-text">literal, and emit conditional <code class="m-code">strLength</code> facts on <code class="m-code">.strEq</code> tests when</span></span></div><div class="row cont"><span><code class="m-code">strLength</code> <span class="m-text">is defined</span>.</span></div></div></div>
@@ -137,7 +1435,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tests/node-runs.mts                                |   2 +</pre></details>
 <div class="sha">with Antigravity</div>
 </article>
-<article class="card" id="c-f6d258674"><header><div><div class="sha">f6d258674 · Cristiano Calcagno · Nov 27, 09:27</div><h3>Refute disjunctive facts from disequalities and refined slot types</h3></div><span class="pill ok">verified</span></header>
+<article class="card" id="c-d2c6586dc"><header><div><div class="sha">d2c6586dc · Cristiano Calcagno · Nov 27, 09:27</div><h3>Refute disjunctive facts from disequalities and refined slot types</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>In <code>dev/paper-rules/pretext/src/graphemes.ts</code> (<code>findGraphemeEnds</code>), the loop tracks <code>@invariant state === 1 || count &lt; i - start</code> and after the loop tests <code>if (state !== START_STATE)</code> before writing <code>ends[count] = end</code> and incrementing <code>count</code>. Without an early <code>if (start &gt;= end) return 0</code> workaround, the verifier refused <code>findGraphemeEnds</code> because: 1. A loop exit drops <code>i</code>, and variable elimination only projected bare linear facts, dropping the disjunction <code>state === 1 || count &lt; i - start</code> instead of eliminating <code>i</code> via <code>i &lt;= end</code> to <code>state === 1 || count &lt; end - start</code>. 2. Equality <code>state === 1</code> distributes across <code>||</code> into two disjunctions <code>(state &lt;= 1) || P</code> and <code>(-state &lt;= -1) || P</code>. Disjunction release checked each disjunction alone against linear facts, so <code>state !== 1</code> refuted neither arm individually, and it never consulted refined slot types (such as <code>const START_STATE = 1</code>, narrowed literal unions <code>1 | 2</code>, or non-contiguous literal unions <code>0 | 2</code>). 3. <code>state = transition &amp; ~CLUSTER_END</code> uses a negative mask (<code>-129</code>), so bitwise <code>&amp;</code> did not emit <code>safeInteger(result)</code> even though every 32-bit bitwise AND/OR yields a signed 32-bit safe integer.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Rule <span class="target">disjunctive fact release</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A disjunction <code class="m-code"><span class="tk-t">A</span> || <span class="tk-t">B</span></code> is released only when a single linear arm <code class="m-code"><span class="tk-t">A</span></code> (or</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">B</span></code>) <span class="m-text">is individually contradicted by linear inequalities</span> <code class="m-code"><span class="tk-t">K</span></code>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A disjunction <code class="m-code"><span class="tk-t">A</span> || <span class="tk-t">B</span></code> is released when</span><span class="m-rel">:</span></span></div><div class="row"><span>- <span class="m-text">an arm is contradicted by <code class="m-code"><span class="tk-t">K</span></code> augmented with linear bounds and targeted</span></span></div><div class="row cont"><span><span class="m-text">disequalities from finite safe-integer literal types in <code class="m-code">Γ</code>, or by</span></span></div><div class="row cont"><span><code class="m-code">Γ</code>'<var>s</var> <span class="m-text">per-slot exclusions (non-numeric type for linear</span>/<code class="m-code">safeInteger</code></span></div><div class="row cont"><span><span class="m-text">arms</span>, <code class="m-code"><span class="tk-t">SafeInt</span></code>/<span class="m-text">non-<code class="m-code"><span class="tk-n">2</span>^<span class="tk-n">53</span></code> type for <code class="m-code">pastSafe</code>, excluded guard tags</span>,</span></div><div class="row cont"><span><span class="m-text">and recursively over nested disjunctions), or</span></span></div><div class="row"><span>- <span class="m-text">a set of disjunctions <code class="m-code"><span class="tk-t">L_1</span> || <span class="tk-t">P</span>, ..., <span class="tk-t">L_k</span> || <span class="tk-t">P</span></code> sharing the surviving</span></span></div><div class="row cont"><span><span class="m-text">arm <code class="m-code"><span class="tk-t">P</span></code> has linear opposite arms <code class="m-code">{<span class="tk-t">L_1</span>, ..., <span class="tk-t">L_k</span>}</code> jointly contradicted</span></span></div><div class="row cont"><span><span class="m-text">by <code class="m-code"><span class="tk-t">K</span></code> and <code class="m-code">Γ</code> (including <code class="m-code">(t &lt;= c) &amp;&amp; (-t &lt;= -c)</code> against</span> <code class="m-code">t != c</code>,</span></div><div class="row cont"><span><span class="m-text">or no member of a finite safe-integer type in <code class="m-code">Γ</code> satisfying all</span></span></div><div class="row cont"><span><span class="m-text">single-slot arms</span>).</span></div><div class="row"><span><span class="m-text">Applied on observed branch edges and in typed precondition checks</span>.</span></div></div></div></figure></div>
 <h4 class="change"><span class="act added">added</span>Rule <span class="target">disjunctive variable elimination</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">When dropping slots <code class="m-code"><span class="tk-t">D</span></code>, for each unconditional disjunction</span> <code class="m-code"><span class="tk-t">A</span> || <span class="tk-t">B</span></code></span></div><div class="row"><span><span class="m-text">whose one arm is a linear fact naming a slot in <code class="m-code"><span class="tk-t">D</span></code> and whose other arm</span></span></div><div class="row"><span><span class="m-text">names no slot in <code class="m-code"><span class="tk-t">D</span></code>, Fourier-Motzkin elimination over the unconditional</span></span></div><div class="row"><span><span class="m-text">linear facts connected to the dropped terms projects the linear arm off</span></span></div><div class="row"><span><code class="m-code"><span class="tk-t">D</span></code>, <span class="m-text">preserving the disjunction past loop-counter exit</span>.</span></div></div></div>
