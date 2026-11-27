@@ -83,9 +83,18 @@ private partial def leadingTagTest : Expr → Option (String × Option PropKey �
   | .tagMember _ _ field tags _ (.var _ name) => some (name, field, tags)
   | _ => none
 
-/-- Three alternatives guarded by disjoint cases of one discriminant.
-The right-hand alternative establishes its own discriminator fact. -/
+/-- Whether an expression is a conjunction, whose `false` answer is reached
+both where its left operand fails and where its right one does. -/
+private def conjunction : Expr → Bool
+  | .logical _ true _ _ => true
+  | _ => false
+
+/-- Three alternatives guarded by disjoint cases of one discriminant, the
+first two reaching their `false` answer along more than one path (one of
+them a conjunction), so that the third is reached along several. The
+right-hand alternative establishes its own discriminator fact. -/
 private def separateTagAlternatives (first second third : Expr) : Bool :=
+  (conjunction first || conjunction second) &&
   match leadingTagTest first, leadingTagTest second, leadingTagTest third with
   | some (a, af, atags), some (b, bf, btags), some (c, cf, ctags) =>
     a == b && b == c && af == bf && bf == cf &&
