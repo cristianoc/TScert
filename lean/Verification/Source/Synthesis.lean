@@ -1335,7 +1335,10 @@ def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := d
   if F.length > 1 && typeArgs.isEmpty && (ProgramTyping.callSigs G F).isEmpty &&
       (ProgramTyping.restSigs G F).isEmpty then
     let arms := F.map fun l => (ProgramTyping.callSigs G [l], ProgramTyping.restSigs G [l], (G.schemes l).isSome)
-    if arms.all fun (L, S, s) => L.length == 1 && S.isEmpty && !s then
+    if arms.all fun (L, S, s) => match L with
+        | [a] => !s && S.all fun r => r.receiver == a.receiver && r.arguments.1 == a.arguments &&
+            r.result == a.result && r.effect == a.effect
+        | _ => false then
       return { arms := arms.flatMap (·.1), receiver := O, own := some F }
     -- An arm that is no callable (a value of no call signature, as `null`):
     -- the lowering's split refuses the call (every alternative names an
@@ -3203,40 +3206,58 @@ partial def writtenPathsStmts (roots : List String) (ss : List Stmt) : List (Lis
 
 end
 
-/-- Field paths of `H` where a mutable property expects an open record (no
-own-key bound), so a nested literal allocated there must stay open to meet
-invariance. Readonly views are covariant and need not open their immediate
-record, though their own nested mutable fields are inspected. -/
-partial def mutableOpenPaths (G : PositiveGraphs.NormalGraph Tree) (H : Ty Tree) (fuel : Nat := 6) :
-    List (List PropKey) :=
-  if fuel == 0 then [] else
-  let isOpenRecord (F : Ty Tree) : Bool := F.any fun fl =>
-    match PositiveRules.expand G [fl] with
-    | [.refs _ [] _ _ _ [] _] => true
-    | _ => false
-  H.flatMap fun l =>
-    match PositiveRules.expand G [l] with
-    | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
-      let fromFs := fs.flatMap fun (k, role, F) =>
-        (if role == .field && isOpenRecord F then [[k]] else []) ++
-        (mutableOpenPaths G F (fuel - 1)).map (k :: ·)
-      let fromVs := vs.flatMap fun (k, V) =>
-        (mutableOpenPaths G V (fuel - 1)).map (k :: ·)
-      let fromOs := os.flatMap fun o =>
-        (if !o.readonly && o.role == .field && isOpenRecord o.type then [[o.key]] else []) ++
-        (mutableOpenPaths G o.type (fuel - 1)).map (o.key :: ·)
-      fromFs ++ fromVs ++ fromOs
-    | _ => []
+/-- Field paths within `e` leading to a nested object literal (`.alloc` inside
+an outer `.alloc`), descending through conditional branches. -/
+partial def nestedAllocPaths (e : Expr) : List (List PropKey) :=
+  match e with
+  | .alloc _ names es =>
+    (names.zip es).flatMap fun (k, y) =>
+      let here := match y with | .alloc .. => [[k]] | _ => []
+      here ++ (nestedAllocPaths y).map (k :: ·)
+  | .ifBody _ _ a b => nestedAllocPaths a ++ nestedAllocPaths b
+  | _ => []
+
+/-- Whether `H` expects a mutable open record (no own-key bound) at `path`,
+following only the keys in `path` so recursive or wide union contracts are not
+traversed beyond the literal's nested object keys. Readonly views are covariant
+and need not open their immediate record, though nested mutable fields inside
+them are still inspected along `path`. -/
+partial def isMutableOpenAt (G : PositiveGraphs.NormalGraph Tree) (H : Ty Tree) : List PropKey → Bool
+  | [] => false
+  | [k] =>
+    let isOpenRecord (F : Ty Tree) : Bool := F.any fun fl =>
+      match PositiveRules.expand G [fl] with
+      | [.refs _ [] _ _ _ [] _] => true
+      | _ => false
+    H.any fun l =>
+      match PositiveRules.expand G [l] with
+      | [.refs fs [] _ os _ _ _] | [.dict fs [] _ _ os _ _ _ _] =>
+        fs.any (fun (k', role, F) => k' == k && role == .field && isOpenRecord F) ||
+        os.any (fun o => o.key == k && !o.readonly && o.role == .field && isOpenRecord o.type)
+      | _ => false
+  | k :: rest =>
+    H.any fun l =>
+      match PositiveRules.expand G [l] with
+      | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
+        fs.any (fun (k', _, F) => k' == k && isMutableOpenAt G F rest) ||
+        vs.any (fun (k', V) => k' == k && isMutableOpenAt G V rest) ||
+        os.any (fun o => o.key == k && isMutableOpenAt G o.type rest)
+      | _ => false
 
 /-- Nested field paths of an unannotated binding's object literal that must be
 allocated open because later statements write them or pass the binding where a
 mutable open record is expected. -/
-def bindingOpenPaths (env : Env) (name : String) (ss : List Stmt) : W (List (List PropKey)) := do
-  let fromWrites := writtenPathsStmts [name] ss
+def bindingOpenPaths (env : Env) (name : String) (targets : List (List PropKey))
+    (ss : List Stmt) : W (List (List PropKey)) := do
+  let targets := targets.eraseDups
+  if targets.isEmpty then return []
+  let fromWrites := (writtenPathsStmts [name] ss).filter targets.contains
+  let remaining := targets.filter (!fromWrites.contains ·)
+  if remaining.isEmpty then return fromWrites
   let G ← StateT.lift graphNow
   let uses ← useHints env name ss (nested := true)
-  let fromUses := uses.flatMap (mutableOpenPaths G ·)
-  return (fromWrites ++ fromUses).eraseDups
+  let fromUses := remaining.filter fun path => uses.any (isMutableOpenAt G · path)
+  return fromWrites ++ fromUses
 
 /-- A declaration's construction hint and evolving contract registration. -/
 partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
@@ -6240,20 +6261,18 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       -- The initializer made at the annotation's type.
       modify fun w => { w with lastFresh := false }
       let savedOpen := (← get).openPaths
-      let needsOpen := b.annot.isNone && written.isNone && match b.init with
-        | .alloc .. | .ifBody .. => true
-        | _ => false
-      if needsOpen then
+      let openTargets := if b.annot.isNone && written.isNone then nestedAllocPaths b.init else []
+      if !openTargets.isEmpty then
         let rest := bs.drop (idx + 1)
         let after := (if rest.isEmpty then [] else [.constants p rest]) ++ (← get).following
-        let paths ← bindingOpenPaths env b.name after
+        let paths ← bindingOpenPaths env b.name openTargets after
         modify fun w => { w with openPaths := paths }
       let (A, e1) ← match b.init with
         | .lambda _ _ _ _ _ _ _ _ stated _ _ _ =>
           if b.init.freeNames.contains b.name then recursiveConstant env b (b.annot.isSome || stated.isSome)
           else expr env b.init written
         | _ => expr env b.init written
-      if needsOpen then modify fun w => { w with openPaths := savedOpen }
+      if !openTargets.isEmpty then modify fun w => { w with openPaths := savedOpen }
       -- A module constant, unannotated, holding a literal of no type
       -- parameters, rest, defaults or guard whose result is written: also
       -- at its signature extended by a rest of `unknown`, its code
@@ -6328,16 +6347,14 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       -- The initializer made at the annotation's type.
       let savedOpen := (← get).openPaths
-      let needsOpen := b.annot.isNone && written.isNone && match b.init with
-        | .alloc .. | .ifBody .. => true
-        | _ => false
-      if needsOpen then
+      let openTargets := if b.annot.isNone && written.isNone then nestedAllocPaths b.init else []
+      if !openTargets.isEmpty then
         let rest := bs.drop (idx + 1)
         let after := (if rest.isEmpty then [] else [.mutables p rest]) ++ (← get).following
-        let paths ← bindingOpenPaths env b.name after
+        let paths ← bindingOpenPaths env b.name openTargets after
         modify fun w => { w with openPaths := paths }
       let (A, e1) ← expr env b.init written
-      if needsOpen then modify fun w => { w with openPaths := savedOpen }
+      if !openTargets.isEmpty then modify fun w => { w with openPaths := savedOpen }
       env := e1
       let D ← match written, A with
         | some _, _ => pure written
