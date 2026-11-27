@@ -2587,6 +2587,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       }
       if (computedBounds(targetNode) && !computedMembers(targetNode)) {
         const bodyInst = instantiateAt(reading, targetNode, completed, use);
+        const targetCaptured = (parameter: ts.TypeParameterDeclaration): TypeTerm => {
+          const index = params.findIndex(p => p.name.parent && nodeKey(p.name.parent) === nodeKey(parameter));
+          const argument = completed[index];
+          if (!argument) throw Error(`${siteName} has no argument for the captured type parameter ${parameter.name.text}`);
+          return argument;
+        };
         const walkBody = (n: Node): void => {
           if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) {
             const decls = typeDeclarationsOf(n.typeName).filter(isTypeDeclaration);
@@ -2595,7 +2601,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
               const target = declarationOf(decls, n.typeName.text);
               if (parametersOf(target).some(p => p.constraint) || computedBounds(target)) {
                 const argTerms = (n.typeArguments ?? []).map(a => bodyInst(a));
-                const full = completeArguments(reading, target, argTerms, use, target.name?.text ?? n.typeName.text);
+                const full = completeArguments(reading, target, argTerms, use, target.name?.text ?? n.typeName.text, targetCaptured);
                 recordInstantiatedApplication(reading, target, full, use, span, siteName);
               }
             }
@@ -2979,12 +2985,13 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const namesParameter = (n: Node): boolean =>
         (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
         (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
-      const outer = valueScope(reading, declaration, what, [], parameter => {
+      const captured = (parameter: ts.TypeParameterDeclaration): TypeTerm => {
         const index = merged.findIndex(p => p.name.parent && nodeKey(p.name.parent) === nodeKey(parameter));
         const argument = args[index];
         if (!argument) throw Error(`${what} has no argument for the captured type parameter ${parameter.name.text}`);
         return argument;
-      });
+      };
+      const outer = valueScope(reading, declaration, what, [], captured);
       const evaluate: ComputedHook = (part, pos, read) => {
         if (!namesParameter(part)) return computedType(computedContext(reading), part, pos, read);
         const canProbe = !!use && !ts.isCallExpression(use) && isTypeDeclaration(declaration) && !merged.some(p => p.captured);
@@ -3034,7 +3041,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
               (ts.isConditionalTypeNode(body) && isReferenceInferConditional(body));
             if (termComputed || !canProbe) {
               const argTerms = (part.typeArguments ?? []).map(read);
-              const completed = completeArguments(reading, alias, argTerms, use, alias.name.text);
+              const completed = completeArguments(reading, alias, argTerms, use, alias.name.text, captured);
               if (!completed.some(hasOpenTypeParam)) {
                 recordInstantiatedApplication(reading, alias, completed, use, pos, what);
                 return instantiateAt(reading, alias, completed, null)(alias.type);
@@ -3071,9 +3078,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             const [firstDecl] = decls;
             if (firstDecl && !isLibraryDeclaration(firstDecl) && !isComputedAlias(firstDecl)) {
               const targetNode = declarationOf(decls, name.text);
-              const argTerms = (part.typeArguments ?? []).map(read);
-              const completed = completeArguments(reading, targetNode, argTerms, use, targetNode.name?.text ?? name.text);
-              recordInstantiatedApplication(reading, targetNode, completed, use, pos, what);
+              if (parametersOf(targetNode).some(p => p.constraint) || computedBounds(targetNode)) {
+                const argTerms = (part.typeArguments ?? []).map(read);
+                const completed = completeArguments(reading, targetNode, argTerms, use, targetNode.name?.text ?? name.text, captured);
+                recordInstantiatedApplication(reading, targetNode, completed, use, pos, what);
+              }
             }
           }
           return result;
