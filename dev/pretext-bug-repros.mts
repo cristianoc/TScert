@@ -640,6 +640,33 @@ function runBoundaryCheckRichInline(richInline: RichInlineModule, lineBreak: Lin
   assert.throws(
     () =>
       richInline.layoutNextRichInlineLineRange(twoGraphemeRich, 50, {
+        itemIndex: -1,
+        segmentIndex: 0,
+        graphemeIndex: 0,
+      }),
+    /RangeError: cursor item index out of range/,
+  );
+  assert.throws(
+    () =>
+      richInline.layoutNextRichInlineLineRange(twoGraphemeRich, 50, {
+        itemIndex: 0.5,
+        segmentIndex: 0,
+        graphemeIndex: 0,
+      }),
+    /RangeError: cursor item index out of range/,
+  );
+  assert.throws(
+    () =>
+      richInline.layoutNextRichInlineLineRange(twoGraphemeRich, 50, {
+        itemIndex: 1,
+        segmentIndex: -1,
+        graphemeIndex: 0,
+      }),
+    /RangeError: cursor segment index out of range/,
+  );
+  assert.throws(
+    () =>
+      richInline.layoutNextRichInlineLineRange(twoGraphemeRich, 50, {
         itemIndex: 0,
         segmentIndex: -1,
         graphemeIndex: 0,
