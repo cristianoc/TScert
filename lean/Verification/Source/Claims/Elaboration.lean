@@ -353,8 +353,7 @@ def readValues (values : List SourceElaboration.ContractRead) (names : List Stri
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
 other at its declared type. With `lenient` (mode 8), a qualified import
 whose declared type `importedArrow` does not read is at its declared type. -/
-def fileFront (ast claims : Json) (fileKey : String)
-    (budget : PositiveCertificates.SearchBudget := {})
+def fileFrontFrom (ast : Json) (prepared : Thunk (Except String Prepared))
     (qualified : List (String × QualifiedEffect) := []) (lenient : Bool := false) :
     Except String Front := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
@@ -385,7 +384,7 @@ def fileFront (ast claims : Json) (fileKey : String)
     some (← (binding.getObjValAs? String "local").toOption,
       ← (fromJson? (binding.getObjValD "span") : Except String Span).toOption)
   let values := documentValueReads ast
-  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
+  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← prepared.get
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
@@ -480,6 +479,11 @@ def fileFront (ast claims : Json) (fileKey : String)
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceElaboration.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
     #[], #[], imported, values, fun _ => none⟩
+
+def fileFront (ast claims : Json) (fileKey : String)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × QualifiedEffect) := []) (lenient : Bool := false) : Except String Front :=
+  fileFrontFrom ast (Thunk.mk fun _ => equationFront ast claims fileKey budget) qualified lenient
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
 front it gave with none (`lenient`, mode 8): each imported value the reads

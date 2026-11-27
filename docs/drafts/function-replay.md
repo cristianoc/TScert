@@ -109,6 +109,56 @@ identity and the runner's association of a response with its request belong
 to the stage store's trust boundary. Projection, serialization and site transport
 require checking before cross-file-version replay can use this argument.
 
+## The worker's shadow check
+
+For a request for `use`, the worker obtains the current answers for its
+callees. `GroupProjection.Input.ofFile` assigns local numbers to members,
+possible proposal callees and the other function signatures. An ordered
+list of references reconstructs declaration order. The input includes the
+initializer, the file-wide ownership and initialization-order answers, and
+the complete validated equation store. Keeping the intern index determines
+absent keys as well as present ones. A second proposal round can elaborate
+a callee at a different prior using its program and this same store.
+
+A type term can occur verbatim inside an intern key. For example, moving
+the return annotation of a function returning a closure changes both its
+literal head's display name and its key. `GroupProjection.fileProgram`
+assigns source sites within each declaration interval and runs equation
+lowering at those coordinates. Declaration identities retain their module,
+name and declaration span. The group occurrence map also transports located
+refusal text, diagnostic source maps and generated temporary names.
+
+`GroupContext.groupOperation_eq` identifies the ordinary group operation's
+plan, proposals and verdict with the current file's interface planner and
+group check at its supplied planning front. This equality includes planning
+refusals. The ordinary CLI consumes the verdict of that operation directly.
+`Synthesis.walkUnit_bindings_congr` identifies the module inputs of one
+synthesis walk as the ordered actions for its explicit and implicit reads.
+The equality covers the walk's resulting equation store as well as its
+typing result.
+
+With `TSCERT_GROUP_SHADOW=1`, `RequestCli.checkProjection` independently
+plans from the relative input. `CurrentGroupLine` witnesses agreement of
+its named proposals and materialized verdict with the ordinary operation.
+A discrepancy selects a second input retaining all bodies at physical
+sites. The worker writes the lexical group, ordered field digests, input
+and result digests, projection time and coordinate mode to stderr. An
+unselected dependency reports its proposal result alone.
+
+Cross-snapshot replay requires a proof relating the relative input and
+site transport to the current file before either check executes. The
+ordinary planner equation concerns one supplied front. Proposal settlement
+builds stand-ins from the file's declarations, initialization typing can
+grow the equation store, and freezing validates all heads. The shadow input
+retains signatures, the initializer and the full store at this boundary.
+`GroupProjection.lookup_filter_keys` proves that restricting the index to
+demanded keys preserves each positive and negative lookup in that set.
+`GroupProjection.rowOf_eq_of_heads` gives the corresponding equality for
+one row query, including the parts of a meet.
+`GroupProjection.withInitTypes_eq` proves that the grown store and the
+module binding answers reconstruct the typed front from its input at each
+prior.
+
 ## Commit sequence and gates
 
 1. Give the generated Pretext project a stable directory keyed by its exact

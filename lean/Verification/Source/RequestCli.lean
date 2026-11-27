@@ -1,3 +1,4 @@
+import Verification.Source.GroupProjection
 import Verification.Source.FlowJson
 -- FlowJson.lean supplies the execution graphs `--lower-control-flow` prints.
 import Verification.Source.Claims.Json
@@ -394,8 +395,119 @@ structure GroupContext where
   givenLines : Std.HashMap String Json
   fuel : Nat
 
+/-- The prepared file's front: its units, their identities and groups. -/
+def GroupContext.fr (p : GroupContext) : SourceClaimJson.Front := p.front.2
+
+/-- Named empty answers suppress inference for these members. -/
+def GroupContext.emptyAnswers (p : GroupContext) (i : Nat) : GroupAnswers :=
+  (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
+    | some (f, _, none) => some (f.name, none)
+    | _ => none
+
+/-- The group's ordinary verdict and reporting lines, including a planning
+refusal. Counting controls the pass diagnostics printed alongside the verdict. -/
+def GroupContext.groupVerdict (p : GroupContext) (i : Nat) (planned : Except String SourceClaimJson.FilePlans)
+    (counting : Bool) : GroupVerdict :=
+  let unit := p.fr.unitId i
+  let members := (p.fr.group i).map p.fr.unitId
+  match planned with
+  | .error reason => ⟨WorkerWire.verdictLine unit members (.error reason) (some reason) [], some reason, []⟩
+  | .ok f =>
+    let (lines, verdict, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
+      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i) (counting := counting) (located := true)
+    let diagnostics := lines ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else [])
+    let line := WorkerWire.verdictLine unit members verdict (f.elaborationRefusal (some [SourceClaimJson.memberName unit]))
+      (f.contractReads (p.fr.group i))
+    ⟨line, match verdict with | .ok _ => none | .error reason => some reason, diagnostics⟩
+
+/-- One group operation. The verdict uses the very plan that produced its
+answers, and is evaluated only if the group is requested for checking. -/
+def GroupContext.groupOperation (p : GroupContext) (i : Nat) (demand : Bool) (below : GroupAnswers)
+    (inputs : Except String (SourceClaimJson.GroupImports × SourceClaimJson.PlanningFront p.force)) :
+    PlannedGroup × Option (SourceClaimJson.PlanningFront p.force) :=
+  let result := do
+    let (imports, front) ← inputs
+    let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
+    let known := if demand then below else below ++ p.emptyAnswers i
+    let (f, updated) ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
+      imports.plan p.ast p.fileKey p.budget names {} p.force p.est p.tables (some front) known
+    let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
+      f.withHeadFacts p.givenLines false (inferred := true)
+    return (if p.force.contains "start-facts" then f.withFalseStartFact else f, updated)
+  let planned := result.map Prod.fst
+  let answers := match planned with
+    | .ok f => f.groupProposals i
+    | .error _ => p.emptyAnswers i
+  (⟨planned, answers, p.groupVerdict i planned⟩, result.toOption.bind Prod.snd)
+
+/-- At the file's import answers and supplied planning front, the ordinary
+plan, named answers and verdict agree with the interface planner and group check.
+The front may contain answers from earlier groups of this worker. -/
+theorem GroupContext.groupOperation_eq (p : GroupContext) (i : Nat)
+    (demand : Bool) (below : GroupAnswers) (front : SourceClaimJson.PlanningFront p.force) :
+    let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
+    let reads := SourceClaimJson.groupImports (SourceClaimJson.planImports p.ast) p.ast names {} p.est
+    let known := if demand then below else below ++ p.emptyAnswers i
+    let planned := (SourceClaimJson.fragmentPlansFromInterfaces p.ast p.fileKey p.budget names {} p.force p.est
+        p.tables (some front) known).map fun f =>
+          let f := f.withHeadFacts p.givenLines false (inferred := true)
+          if p.force.contains "start-facts" then f.withFalseStartFact else f
+    let answers := match planned with
+      | .ok f => f.groupProposals i
+      | .error _ => p.emptyAnswers i
+    (p.groupOperation i demand below (reads.map (·, front))).1 =
+      ⟨planned, answers, p.groupVerdict i planned⟩ := by
+  dsimp only
+  unfold groupOperation SourceClaimJson.fragmentPlansFromInterfaces
+  cases h : SourceClaimJson.groupImports (SourceClaimJson.planImports p.ast) p.ast
+    (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.est with
+  | error => rfl
+  | ok imports =>
+    dsimp [SinglePass.work, Except.map, Functor.map, Except.bind, Bind.bind]
+    cases imports.plan p.ast p.fileKey p.budget (some [SourceClaimJson.memberName (p.fr.unitId i)]) {}
+      p.force p.est p.tables (some front) (if demand then below else below ++ p.emptyAnswers i) <;> rfl
+
+/-- No worker state enters the fresh execution. All store lookups (including
+absences), the second proposal fold and its initialization walk run again
+over the input's source and interface data. -/
+def checkProjection (g : GroupProjection.Input) : Except String PlannedGroup := do
+  let key ← g.program.getObjValAs? String "file"
+  let claims := g.claims
+  let raw ← SourceClaimJson.fileFrontFrom g.program
+    (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront g.program key g.equations.lowering) [] (lenient := true)
+  let raw := { raw with moduleOwned := g.owned, initOrder := g.initOrder }
+  let some i := (List.range raw.units.length).find? (raw.unitId · == g.leader)
+    | throw "group leader missing from projection"
+  let context : GroupContext := {
+    ast := g.program, fileKey := key, budget := g.budget,
+    est := g.established, tables := g.tables, force := g.force, front := (claims, raw),
+    givenLines := {}, fuel := g.fuel }
+  let inputs := g.imports.map fun imports => (imports,
+    { claims, raw, qualified := imports.qualified : SourceClaimJson.PlanningFront g.force })
+  let (group, _) := context.groupOperation i g.demand g.below inputs
+  return group
+
+/-- The group in its local coordinates, with the occurrence map used only
+to render its result. The ordinary worker and the shadow share no memo. -/
+structure ShadowGroup where
+  input : GroupProjection.Input
+  plan : PlannedGroup
+  computed : checkProjection input = .ok plan
+  sites : GroupProjection.Sites
+  fields : Thunk (List (String × String))
+  id : List String
+  projectionNs : Nat
+
+/-- Shadow mode also retains the independent projection and its physical fallback. -/
+structure WorkerGroup extends PlannedGroup where
+  shadow : Option (ShadowGroup × Thunk (Except String ShadowGroup)) := none
+
 /-- File selection, shared preparation and the results retained by this worker. -/
 structure PreparedFile extends GroupContext where
+  relativeFront : Thunk (Except String (Json × Json × EquationLowering.SourceLowering × SourceClaimJson.Front × GroupProjection.Sites))
+  sourceLowering : EquationLowering.SourceLowering
+  reportGroups : Bool
+  counting : Bool
   imports : Thunk (Except String SourceClaimJson.PlanImports)
   fronts : IO.Ref (List (SourceClaimJson.PlanningFront force))
   modules : List String
@@ -405,10 +517,7 @@ structure PreparedFile extends GroupContext where
   quiet : Bool
   t0 : Nat
   proposals : IO.Ref (Std.HashMap Nat GroupAnswers)
-  plans : IO.Ref (Std.HashMap Nat PlannedGroup)
-
-/-- The prepared file's front: its units, their identities and groups. -/
-def GroupContext.fr (p : GroupContext) : SourceClaimJson.Front := p.front.2
+  plans : IO.Ref (Std.HashMap Nat WorkerGroup)
 
 /-- Interface demand of one prepared selection, using the existing group
 dependency graph. Every reachable group is queued once. An incomplete walk
@@ -458,23 +567,29 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let selected : Option (List String) := match ast, selection names with
     | .ok a, some roots => some (selectionClosure a roots)
     | _, s => s
+  let scope := Thunk.mk fun _ => ast >>= SourceClaimJson.ImportScope.of
   let tj ← IO.monoNanosNow
   -- The interfaces decoded, and the file's claims and front.
+  let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+  let shadow := (← IO.getEnv "TSCERT_GROUP_SHADOW").isSome
   let prepared : Except String (SourceClaimJson.Established × List (String × SourceClaimJson.RowTable) ×
-      (Json × SourceClaimJson.Front) × Json) ← IO.lazyPure fun _ => do
+      (Json × SourceClaimJson.Front) × Json × EquationLowering.SourceLowering) ← IO.lazyPure fun _ => do
     let cached ← interfaces
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
-      else SourceClaimJson.ImportScope.of (← ast)
+      else scope.get
     let a ← ast
     let item := SourceClaimJson.fileItem a
     let (est, tables) ← SinglePass.work "rows: decode interfaces" item fun _ => SourceClaimJson.decodeInterfaces sc cached
     -- (as `fragmentPlansCore` lowers a file: its module documents apart)
     let a' := a.setObjVal! "modules" (Json.arr #[])
     let claims ← SinglePass.work "prepare: claims" item fun _ => SourceClaimJson.fragmentClaims a' fileKey {} force
-    let fr ← SinglePass.work "prepare: file lowering" item fun _ =>
-      SourceClaimJson.fileFront a' claims fileKey budget [] (lenient := true)
-    return (est, tables, (claims, fr), a)
+    let (fr, source) ← SinglePass.work "prepare: file lowering" item fun _ => do
+      let source ← SourceClaimJson.lowerEquationFront a' claims budget
+      let fr ← SourceClaimJson.fileFrontFrom a'
+        (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront a' fileKey source) [] (lenient := true)
+      return (fr, source)
+    return (est, tables, (claims, fr), a, source)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms"
@@ -487,20 +602,22 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
   let fronts ← IO.mkRef []
-  return prepared.map fun (est, tables, front, a) =>
-    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, fronts, modules := (est.map (·.2.2)).eraseDups, selected,
+  return prepared.map fun (est, tables, front, a, sourceLowering) =>
+    { ast := a, sourceLowering, reportGroups := shadow, counting,
+      relativeFront := Thunk.mk fun _ => do
+        let (ast, sites) := GroupProjection.fileProgram (a.setObjVal! "modules" (.arr #[]))
+        let claims ← SourceClaimJson.fragmentClaims ast fileKey {} force
+        let source ← SourceClaimJson.lowerEquationFront ast claims budget
+        let fr ← SourceClaimJson.fileFrontFrom ast
+          (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront ast fileKey source) [] (lenient := true)
+        return (ast, claims, source, fr, sites)
+      imports := Thunk.mk fun _ => scope.get.map (SourceClaimJson.planImportsIn a), fileKey, budget, est, tables, front, fronts, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
       givenLines, fuel, quiet, t0, proposals, plans }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
 def PreparedFile.units (p : PreparedFile) : List Nat := p.fr.selected p.selected
-
-/-- Named empty answers suppress inference for these members. -/
-def GroupContext.emptyAnswers (p : GroupContext) (i : Nat) : GroupAnswers :=
-  (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
-    | some (f, _, none) => some (f.name, none)
-    | _ => none
 
 /-- The worker shares initialization typing across groups reading the same
 ordered qualified effects. The file, lowered front and force are fixed. -/
@@ -511,44 +628,58 @@ def PreparedFile.frontAt (p : PreparedFile) (imports : SourceClaimJson.GroupImpo
     { claims := p.front.1, raw := p.fr, qualified := imports.qualified }
   return f
 
-/-- The group's ordinary verdict and reporting lines, including a planning
-refusal. Counting controls the pass diagnostics printed alongside the verdict. -/
-def GroupContext.groupVerdict (p : GroupContext) (i : Nat) (planned : Except String SourceClaimJson.FilePlans)
-    (counting : Bool) : GroupVerdict :=
-  let unit := p.fr.unitId i
-  let members := (p.fr.group i).map p.fr.unitId
-  match planned with
-  | .error reason => ⟨WorkerWire.verdictLine unit members (.error reason) (some reason) [], some reason, []⟩
-  | .ok f =>
-    let (lines, verdict, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
-      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i) (counting := counting) (located := true)
-    let diagnostics := lines ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else [])
-    let line := WorkerWire.verdictLine unit members verdict (f.elaborationRefusal (some [SourceClaimJson.memberName unit]))
-      (f.contractReads (p.fr.group i))
-    ⟨line, match verdict with | .ok _ => none | .error reason => some reason, diagnostics⟩
+/-- Compare the projected proposal vector to the answers the worker supplies to callers. -/
+private def corresponding {α : Type} [DecidableEq α] (current projected : α) (what : String) :
+    Except String {value : α // value = current} :=
+  if h : projected = current then .ok ⟨projected, h⟩ else .error s!"group shadow: different {what}"
 
-/-- One group operation. The verdict uses the very plan that produced its
-answers, and is evaluated only if the group is requested for checking. -/
-def GroupContext.groupOperation (p : GroupContext) (i : Nat) (demand : Bool) (below : GroupAnswers)
-    (inputs : Except String (SourceClaimJson.GroupImports × SourceClaimJson.PlanningFront p.force)) :
-    PlannedGroup × Option (SourceClaimJson.PlanningFront p.force) :=
-  let result := do
-    let (imports, front) ← inputs
-    let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
-    let known := if demand then below else below ++ p.emptyAnswers i
-    let (f, updated) ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
-      imports.plan p.ast p.fileKey p.budget names {} p.force p.est p.tables (some front) known
-    let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
-      f.withHeadFacts p.givenLines false (inferred := true)
-    return (if p.force.contains "start-facts" then f.withFalseStartFact else f, updated)
-  let planned := result.map Prod.fst
-  let answers := match planned with
-    | .ok f => f.groupProposals i
-    | .error _ => p.emptyAnswers i
-  (⟨planned, answers, p.groupVerdict i planned⟩, result.toOption.bind Prod.snd)
+private def ShadowGroup.report (s : ShadowGroup) (unit : String) (answers : GroupAnswers)
+    (verdict : Option String) : IO Unit := do
+  let result := toString (hash (toJson (verdict, GroupProjection.answersWire answers)).compress)
+  let fields := s.fields.get
+  let row := Json.mkObj [("unit", toJson unit), ("group", toJson s.id),
+    ("input", toJson (toString (hash (toJson fields).compress))), ("fields", toJson fields), ("physical", toJson s.sites.physical),
+    ("result", toJson result), ("proposalOnly", toJson verdict.isNone), ("projectionNs", toJson s.projectionNs)]
+  IO.eprintln ("group-shadow " ++ row.compress)
+
+/-- The witness used when comparing a shadow line. Its line is the ordinary
+current-file line, and the same line is the materialization of a plan
+computed solely from this group's input. Its named proposals are the
+values the worker passed to callers. -/
+structure CurrentGroupLine (g : GroupProjection.Input) (sites : GroupProjection.Sites)
+    (answers : GroupAnswers) (current : String) where
+  line : String
+  currentFile : line = current
+  fromGroup : ∃ plan, checkProjection g = .ok plan ∧ plan.answers = answers ∧
+    sites.materialize (plan.verdict g.counting).line = .ok line
+
+def ShadowGroup.line (s : ShadowGroup) (unit : String) (answers : GroupAnswers) (current : String) :
+    Except String (CurrentGroupLine s.input s.sites answers current × String) := do
+  let relative := (s.plan.verdict s.input.counting).line
+  match ht : s.sites.materialize relative with
+  | .error reason => throw reason
+  | .ok rendered =>
+    if h : rendered = current ∧ s.plan.answers = answers then
+      return (⟨rendered, h.1, ⟨s.plan, s.computed, h.2, ht⟩⟩, relative)
+    else throw s!"group shadow: different result for {unit}"
+
+/-- Both representations run the closed operation. The physical representation
+retains all bodies and their sites when relative transport cannot reproduce a
+current-file result. Its thunk is forced only on a discrepancy. -/
+private def projectedPlan (g : GroupProjection.Input) (sites : GroupProjection.Sites)
+    (fields : Thunk (List (String × String))) (id : List String) (ns : Nat) (expected : GroupAnswers) :
+    Except String (ShadowGroup × {as : GroupAnswers // as = expected}) := do
+  match h : checkProjection g with
+  | .error reason => throw reason
+  | .ok localPlan =>
+    let answers ← corresponding expected localPlan.answers s!"proposals for {g.leader}"
+    return (⟨g, localPlan, h, sites, fields, id, ns⟩, answers)
+
+private def groupFields (g : GroupProjection.Input) : Thunk (List (String × String)) :=
+  Thunk.mk fun _ => g.fields.map fun (key,value) => (key, toString (hash value.compress))
 
 /-- Supply this group's current import reads and their shared front. -/
-def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : GroupAnswers) : IO PlannedGroup := do
+def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : GroupAnswers) : IO WorkerGroup := do
   let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
   let reads ← IO.lazyPure fun _ => SourceClaimJson.groupImports p.imports.get p.ast names {} p.est
   let inputs ← match reads with
@@ -557,7 +688,33 @@ def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : Grou
   let (group, updated) ← IO.lazyPure fun _ => p.groupOperation i demand below inputs
   if let some f := updated then
     p.fronts.modify fun fs => f :: fs.filter (·.qualified != f.qualified)
-  return group
+  if !p.reportGroups then return { group with }
+  let input := fun physical => do
+    if physical then
+      return GroupProjection.Input.ofFile p.ast p.front.1 p.sourceLowering p.fr i demand below reads
+        p.est p.tables p.force p.fuel p.budget p.counting true
+    let (ast, claims, store, fr, fileSites) ← p.relativeFront.get
+    let (g, sites) := GroupProjection.Input.ofFile ast claims store fr i demand below reads
+      p.est p.tables p.force p.fuel p.budget p.counting
+    return (g, sites.inFile fileSites)
+  let id := (p.fr.group i).filterMap fun j => (p.fr.units[j]?).map fun (f, _, _) => p.fr.lexicalId f
+  let exact := Thunk.mk fun _ => do
+    let (g, sites) ← input true
+    projectedPlan g sites (groupFields g) id 0 group.answers
+  let start ← IO.monoNanosNow
+  let projected ← IO.lazyPure fun _ => input false
+  let (localGroup, answers) ← match projected with
+    | .error _ => IO.ofExcept exact.get
+    | .ok (g, sites) => do
+      let fields := groupFields g
+      let _ ← IO.lazyPure fun _ => fields.get.length
+      let elapsed := (← IO.monoNanosNow) - start
+      IO.ofExcept (← IO.lazyPure fun _ =>
+        match projectedPlan g sites fields id elapsed group.answers with
+        | .ok result => .ok result
+        | .error _ => exact.get)
+  if !p.units.contains i then localGroup.report (p.fr.unitId i) answers.val none
+  return { group with answers := answers.val, shadow := some (localGroup, Thunk.mk fun _ => exact.get.map Prod.fst) }
 
 /-- The groups a group reaches outside itself, by their first members,
 each after those it reaches (`Front.edges` over the groups). -/
@@ -636,7 +793,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
-  let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+  let counting := p.counting
   let group ← match (← p.plans.get).get? i with
     | some group => do p.plans.modify (·.erase i); pure group
     | none => do
@@ -668,7 +825,16 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (result.line, result.refusal)
+  let some (projection, physical) := group.shadow | return (result.line, result.refusal)
+  let (chosen, line, relative) ← IO.ofExcept (← IO.lazyPure fun _ => do
+    match projection.line unit group.answers result.line with
+    | .ok (ok, line) => return (projection, ok.line, line)
+    | .error _ =>
+      let full ← physical.get
+      let (ok, line) ← full.line unit group.answers result.line
+      return (full, ok.line, line))
+  chosen.report unit group.answers (some relative)
+  return (line, result.refusal)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/
