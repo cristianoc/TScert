@@ -4391,10 +4391,9 @@ under the tolerant frame (`Footprints.IndexFact.keeps`). -/
 def writeFrameAtoms (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : List IndexAtom :=
   let c : Footprints.ReadContext := .ofFirst stable
   let Φ := writeFootprint a
-  let sepFacts := Footprints.separationFacts k.separation
-  let baseQ := Footprints.knowledgeQueryUnder k []
+  let ctx := Footprints.KeepsUnderCtx.ofKnowledge k
   k.indices.filter fun atom => !atom.fact.envOnly &&
-    atom.fact.keepsUnderWith baseQ sepFacts k c Φ []
+    atom.fact.keepsUnderCtx ctx k c Φ []
 
 /-- The read links of `k` kept by an element write at slot `a` under the
 tolerant frame (`Footprints.FactKind.link`), shifted past the step's result. -/
@@ -4513,8 +4512,8 @@ theorem boundedWriteFrame_sound [DecidableEq ι] {G : NormalGraph ι} {images : 
   have hctx := Footprints.ReadContext.ofFirst_holds hst
   refine ⟨fun atom hm hcd => ?_, fun g hg => ?_⟩
   · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp hm
-    simp only [Bool.and_eq_true, Footprints.IndexFact.keepsUnderWith_eq] at hkeep
-    exact Footprints.IndexFact.keepsUnder_sound hk hh hρ hp hctx atom.fact [] (by simp) hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
+    simp only [Bool.and_eq_true] at hkeep
+    exact Footprints.IndexFact.keepsUnderCtx_sound hk hh hρ hp hctx atom.fact [] (by simp) hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
   · obtain ⟨g0, hg0, rfl⟩ := List.mem_map.mp hg
     obtain ⟨hgm, hr⟩ := List.mem_filter.mp hg0
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at hr

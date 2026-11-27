@@ -237,7 +237,9 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
     {s : IndexedHeap} {o : BranchRefinement.Observation} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.1
-      (HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 o)) false
+      (HeapKnowledge.withElementsAfter (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
+        (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.links.length
+        (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 o)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
         (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
   have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true (observeElements := true)
@@ -246,7 +248,7 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
-    (HeapKnowledge.withElements_holds (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
+    (HeapKnowledge.withElementsAfter_holds (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
 
 /-- **A promoted Boolean's store holds**: a branch's answer `q` promotes the
 facts guarded by the truthiness of slot 0 (`HeapKnowledge.promoteTruthy`). -/
@@ -255,7 +257,9 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
     {q : Bool} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (hq : tagHolds .truthy (ρ 0) = q) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.1
-      (HeapKnowledge.withElements (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 q)) false
+      (HeapKnowledge.withElementsAfter (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
+        (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.links.length
+        (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 q)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
         (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
   have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true (observeElements := true)
@@ -264,7 +268,7 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
-    (HeapKnowledge.withElements_holds (HeapKnowledge.promoteTruthy_holds hk hq)) (edgeBack_ok hn)
+    (HeapKnowledge.withElementsAfter_holds (HeapKnowledge.promoteTruthy_holds hk hq)) (edgeBack_ok hn)
 
 /-- A state at the pushed environment holds, without its first slot, at the
 node's environment. -/

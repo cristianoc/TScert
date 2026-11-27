@@ -813,4 +813,499 @@ theorem SepEvidence.query_pathCells_cls (E : SepEvidence) (x : Nat) (p : List St
   cases kd <;> simp [Region.bound, KindSet.contains, KindSet.inter, KindSet.elems, Selector.kinds,
     KindSet.ofCategories, Selector.has]
 
+/-! ## Pre-indexed separation query (`@[csimp]` replacement for `SepEvidence.query`) -/
+
+/-- Hash map indexing non-alias, non-optional string read links by `(cell, field)`. -/
+def pathViewsReads (ls : HeapLinks.Links) : Std.HashMap (Nat × String) (List Nat) :=
+  ls.reverse.foldl (fun m g =>
+    if !g.alias && !g.optional then match g.field with
+    | .str f => m.insert (g.cell, f) (g.value :: m.getD (g.cell, f) [])
+    | .sym _ => m
+    else m) {}
+
+private theorem pathViewsReads_mem (ls : HeapLinks.Links) (c : Nat) (f : String) (v : Nat) :
+    v ∈ (pathViewsReads ls).getD (c, f) [] ↔
+      ∃ g ∈ ls, g.alias = false ∧ g.optional = false ∧ g.field = .str f ∧ g.cell = c ∧ g.value = v := by
+  unfold pathViewsReads
+  have hgo : ∀ (xs : HeapLinks.Links) (m : Std.HashMap (Nat × String) (List Nat)),
+      v ∈ (xs.foldl (fun m g =>
+        if !g.alias && !g.optional then match g.field with
+        | .str f' => m.insert (g.cell, f') (g.value :: m.getD (g.cell, f') [])
+        | .sym _ => m
+        else m) m).getD (c, f) [] ↔
+      (∃ g ∈ xs, g.alias = false ∧ g.optional = false ∧ g.field = .str f ∧ g.cell = c ∧ g.value = v) ∨
+        v ∈ m.getD (c, f) [] := by
+    intro xs
+    induction xs with
+    | nil => intro m; simp
+    | cons g xs ih =>
+      intro m
+      simp only [List.foldl_cons, List.mem_cons]
+      rw [ih]
+      constructor
+      · intro h
+        rcases h with ⟨g', hg', hrest⟩ | hm
+        · exact .inl ⟨g', .inr hg', hrest⟩
+        · by_cases hao : (!g.alias && !g.optional) = true
+          · simp only [hao, ↓reduceIte] at hm
+            cases hgf : g.field with
+            | sym _ => rw [hgf] at hm; exact .inr hm
+            | str f' =>
+              rw [hgf] at hm; dsimp only at hm
+              rw [Std.HashMap.getD_insert] at hm
+              split at hm
+              · rename_i heq
+                simp only [beq_iff_eq, Prod.mk.injEq] at heq
+                obtain ⟨rfl, rfl⟩ := heq
+                rcases List.mem_cons.mp hm with rfl | hm'
+                · simp only [Bool.and_eq_true, Bool.not_eq_true'] at hao
+                  exact .inl ⟨g, .inl rfl, hao.1, hao.2, hgf, rfl, rfl⟩
+                · exact .inr hm'
+              · exact .inr hm
+          · simp only [hao, Bool.false_eq_true, ↓reduceIte] at hm; exact .inr hm
+      · intro h
+        rcases h with ⟨g', rfl | hg', ha, ho, hgf, rfl, rfl⟩ | hm
+        · right
+          have hao : (!g'.alias && !g'.optional) = true := by simp [ha, ho]
+          simp only [hao, ↓reduceIte, hgf]
+          rw [Std.HashMap.getD_insert]
+          simp
+        · exact .inl ⟨g', hg', ha, ho, hgf, rfl, rfl⟩
+        · right
+          by_cases hao : (!g.alias && !g.optional) = true
+          · simp only [hao, ↓reduceIte]
+            cases hgf : g.field with
+            | sym _ => exact hm
+            | str f' =>
+              dsimp only
+              rw [Std.HashMap.getD_insert]
+              split
+              · rename_i heq
+                simp only [beq_iff_eq, Prod.mk.injEq] at heq
+                obtain ⟨rfl, rfl⟩ := heq
+                exact List.mem_cons_of_mem _ hm
+              · exact hm
+          · simp only [hao, Bool.false_eq_true, ↓reduceIte]; exact hm
+  have h := hgo ls.reverse {}
+  simp only [Std.HashMap.getD_empty, List.not_mem_nil, or_false] at h
+  rw [h]
+  constructor <;> (rintro ⟨g, hg, hr⟩; exact ⟨g, by simpa using hg, hr⟩)
+
+/-- Indexed `pathViews` using precomputed `aliasesMap` and `pathViewsReads`. -/
+def pathViewsIdx (am : Std.HashMap Nat (List Nat)) (reads : Std.HashMap (Nat × String) (List Nat)) :
+    Nat → List String → List (Nat × List String)
+  | x, [] => [(x, [])]
+  | x, f :: q => (x, f :: q) :: (HeapLinks.aliasesOf am x).flatMap fun c =>
+      (reads.getD (c, f) []).flatMap fun v => pathViewsIdx am reads v q
+
+private theorem pathViewsIdx_mem_iff (ls : HeapLinks.Links) :
+    ∀ (p : List String) (x : Nat) (z : Nat × List String),
+      z ∈ pathViewsIdx (HeapLinks.aliasesMap ls) (pathViewsReads ls) x p ↔ z ∈ pathViews ls x p := by
+  intro p
+  induction p with
+  | nil => intro x z; simp [pathViewsIdx, pathViews]
+  | cons f q ih =>
+    intro x z
+    simp only [pathViewsIdx, pathViews, List.mem_cons, List.mem_flatMap]
+    constructor
+    · rintro (rfl | ⟨c, hc, v, hv, hz⟩)
+      · exact .inl rfl
+      · rw [HeapLinks.aliasesOf_eq_aliases] at hc
+        obtain ⟨g, hg, ha, ho, hgf, rfl, rfl⟩ := (pathViewsReads_mem ls c f v).mp hv
+        right
+        refine ⟨g, hg, ?_⟩
+        have hcond : ((!g.alias && !g.optional) && (g.field == .str f) && (HeapLinks.aliases ls x).contains g.cell) = true := by
+          simp [ha, ho, hgf, hc]
+        simp only [hcond, ↓reduceIte]
+        exact (ih g.value z).mp hz
+    · rintro (rfl | ⟨g, hg, hz⟩)
+      · exact .inl rfl
+      · split at hz
+        · rename_i hcond
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hcond
+          obtain ⟨⟨⟨ha, ho⟩, hgf⟩, hc⟩ := hcond
+          right
+          refine ⟨g.cell, by rw [HeapLinks.aliasesOf_eq_aliases]; exact hc, g.value, ?_, (ih g.value z).mpr hz⟩
+          exact (pathViewsReads_mem ls g.cell f g.value).mpr ⟨g, hg, ha, ho, hgf, rfl, rfl⟩
+        · cases hz
+
+def sameSiteIdx (am : Std.HashMap Nat (List Nat)) (X A : List (Nat × List String)) : Bool :=
+  X.any fun x => A.any fun a => x.2 == a.2 && (HeapLinks.aliasesOf am x.1).contains a.1
+
+private theorem sameSiteIdx_eq (ls : HeapLinks.Links) {X X' A A' : List (Nat × List String)}
+    (hX : ∀ z, z ∈ X' ↔ z ∈ X) (hA : ∀ z, z ∈ A' ↔ z ∈ A) :
+    sameSiteIdx (HeapLinks.aliasesMap ls) X' A' = sameSite ls X A := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [sameSiteIdx, sameSite, List.any_eq_true, Bool.and_eq_true, HeapLinks.aliasesOf_eq_aliases]
+  constructor
+  · rintro ⟨x, hx, a, ha, h⟩; exact ⟨x, (hX x).mp hx, a, (hA a).mp ha, h⟩
+  · rintro ⟨x, hx, a, ha, h⟩; exact ⟨x, (hX x).mpr hx, a, (hA a).mpr ha, h⟩
+
+def slotsOfIdx (am : Std.HashMap Nat (List Nat)) (reads : Std.HashMap (Nat × String) (List Nat))
+    (z : Nat) (p : List String) : List Nat :=
+  (pathViewsIdx am reads z p).flatMap fun v => if v.2.isEmpty then HeapLinks.aliasesOf am v.1 else []
+
+private theorem slotsOfIdx_mem_iff (ls : HeapLinks.Links) (z : Nat) (p : List String) (y : Nat) :
+    y ∈ slotsOfIdx (HeapLinks.aliasesMap ls) (pathViewsReads ls) z p ↔ y ∈ slotsOf ls z p := by
+  simp only [slotsOfIdx, slotsOf, List.mem_flatMap, HeapLinks.aliasesOf_eq_aliases]
+  constructor
+  · rintro ⟨v, hv, hy⟩; exact ⟨v, (pathViewsIdx_mem_iff ls p z v).mp hv, hy⟩
+  · rintro ⟨v, hv, hy⟩; exact ⟨v, (pathViewsIdx_mem_iff ls p z v).mpr hv, hy⟩
+
+/-- Multi-field pre-indexed separation evidence built once per `SepEvidence.query`. -/
+structure SepIndex where
+  aliases : Std.HashMap Nat (List Nat)
+  reads : Std.HashMap (Nat × String) (List Nat)
+  spines : List (List (Nat × List String) × List (Nat × List String))
+  arrays : List (List (Nat × List String) × List (Nat × List String))
+  elemSpines : List (List (Nat × List String) × List (Nat × List String))
+  locs : Std.HashMap PropKey (List (Nat × Option (List PropKey) × Nat))
+
+def SepIndex.ofEvidence (E : SepEvidence) : SepIndex :=
+  let aliases := HeapLinks.aliasesMap E.links
+  let reads := pathViewsReads E.links
+  let spines := E.facts.filterMap fun
+    | .spines a b => some (pathViewsIdx aliases reads a.1 a.2, pathViewsIdx aliases reads b.1 b.2)
+    | _ => none
+  let arrays := E.facts.filterMap fun
+    | .arrays a b => some (pathViewsIdx aliases reads a.1 a.2, pathViewsIdx aliases reads b.1 b.2)
+    | _ => none
+  let elemSpines := E.facts.filterMap fun
+    | .elemSpines a b => some (pathViewsIdx aliases reads a.1 a.2, pathViewsIdx aliases reads b.1 b.2)
+    | _ => none
+  let locs : Std.HashMap PropKey (List (Nat × Option (List PropKey) × Nat)) :=
+    E.facts.foldl (fun m f => match f with
+      | .locs x F y g => m.insert g ((x, F, y) :: m.getD g [])
+      | _ => m) {}
+  { aliases, reads, spines, arrays, elemSpines, locs }
+
+private theorem SepIndex_locs_mem (facts : List SepFact) (g : PropKey) (e : Nat × Option (List PropKey) × Nat) :
+    e ∈ (facts.foldl (fun (m : Std.HashMap PropKey (List (Nat × Option (List PropKey) × Nat))) f => match f with
+      | .locs x F y g' => m.insert g' ((x, F, y) :: m.getD g' [])
+      | _ => m) {}).getD g [] ↔
+      SepFact.locs e.1 e.2.1 e.2.2 g ∈ facts := by
+  have hgo : ∀ (xs : List SepFact) (m : Std.HashMap PropKey (List (Nat × Option (List PropKey) × Nat))),
+      e ∈ (xs.foldl (fun m f => match f with
+        | .locs x F y g' => m.insert g' ((x, F, y) :: m.getD g' [])
+        | _ => m) m).getD g [] ↔
+      SepFact.locs e.1 e.2.1 e.2.2 g ∈ xs ∨ e ∈ m.getD g [] := by
+    intro xs
+    induction xs with
+    | nil => intro m; simp
+    | cons f xs ih =>
+      intro m
+      simp only [List.foldl_cons, List.mem_cons]
+      rw [ih]
+      cases f with
+      | spines _ _ | arrays _ _ | elemSpines _ _ =>
+        simp
+      | locs x F y g' =>
+        dsimp only
+        rw [Std.HashMap.getD_insert]
+        by_cases hg : g' == g
+        · simp only [hg, ↓reduceIte, List.mem_cons]
+          have hge : g' = g := beq_iff_eq.mp hg
+          subst hge
+          rcases e with ⟨e1, e2, e3⟩
+          simp only [Prod.mk.injEq, SepFact.locs.injEq, and_true]
+          constructor
+          · rintro (h | (h | h))
+            · exact .inl (.inr h)
+            · exact .inl (.inl h)
+            · exact .inr h
+          · rintro ((h | h) | h)
+            · exact .inr (.inl h)
+            · exact .inl h
+            · exact .inr (.inr h)
+        · simp only [hg, Bool.false_eq_true, ↓reduceIte]
+          have hne : g ≠ g' := fun h => hg (beq_iff_eq.mpr h.symm)
+          constructor
+          · rintro (h | h)
+            · exact .inl (.inr h)
+            · exact .inr h
+          · rintro ((h | h) | h)
+            · cases h; exact (hne rfl).elim
+            · exact .inl h
+            · exact .inr h
+  simpa using hgo facts {}
+
+def SepIndex.fresh (idx : SepIndex) (E : SepEvidence) (r s : Region) : Bool :=
+  match fieldSite r, fieldSite s with
+  | some (sx, _), some (sy, some k) =>
+    let xs := slotsOfIdx idx.aliases idx.reads sx.1 sx.2
+    let ys := slotsOfIdx idx.aliases idx.reads sy.1 sy.2
+    xs.any fun x => ys.any fun y =>
+      (E.typed y).contains k && match E.stamps.after x, E.stamps.before y with
+        | some m, some m' => decide (m' ≤ m)
+        | _, _ => false
+  | _, _ => false
+
+private theorem SepIndex.fresh_eq (E : SepEvidence) (r s : Region) :
+    (SepIndex.ofEvidence E).fresh E r s = E.fresh r s := by
+  unfold SepIndex.fresh SepEvidence.fresh
+  cases fieldSite r with
+  | none => rfl
+  | some p =>
+    rcases p with ⟨sx, ox⟩
+    cases fieldSite s with
+    | none => rfl
+    | some q =>
+      rcases q with ⟨sy, oy⟩
+      cases oy with
+      | none => rfl
+      | some k =>
+        apply Bool.eq_iff_iff.mpr
+        simp only [List.any_eq_true, SepIndex.ofEvidence]
+        constructor
+        · rintro ⟨x, hx, y, hy, h⟩
+          exact ⟨x, (slotsOfIdx_mem_iff E.links sx.1 sx.2 x).mp hx, y, (slotsOfIdx_mem_iff E.links sy.1 sy.2 y).mp hy, h⟩
+        · rintro ⟨x, hx, y, hy, h⟩
+          exact ⟨x, (slotsOfIdx_mem_iff E.links sx.1 sx.2 x).mpr hx, y, (slotsOfIdx_mem_iff E.links sy.1 sy.2 y).mpr hy, h⟩
+
+def SepIndex.byFacts (idx : SepIndex) (r s : Region) : Bool :=
+  (if idx.spines.isEmpty then false else
+    let pair? : Option ((Nat × List String) × (Nat × List String)) :=
+      match spineSite r, spineSite s with
+      | some x, some y => some (x, y)
+      | some x, none => (selectedSpineSite s).map (x, ·)
+      | none, some y => (selectedSpineSite r).map (·, y)
+      | none, none => none
+    match pair? with
+    | some (x, y) =>
+      let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+      let vy := pathViewsIdx idx.aliases idx.reads y.1 y.2
+      idx.spines.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+    | none => false) ||
+  (if idx.arrays.isEmpty then false else
+    match arraySite r, arraySite s with
+    | some x, some y =>
+      let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+      let vy := pathViewsIdx idx.aliases idx.reads y.1 y.2
+      idx.arrays.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+    | _, _ => false) ||
+  (if idx.elemSpines.isEmpty then false else
+    match spineSite r, s with
+    | some x, .elemSpines y q =>
+      let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+      let vy := pathViewsIdx idx.aliases idx.reads y q
+      idx.elemSpines.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+    | _, _ => false) ||
+  (match fieldSite r, fieldSite s with
+    | some (sx, o), some (sy, some g') =>
+      let entries := idx.locs.getD g' []
+      if entries.isEmpty then false else
+      let xs := slotsOfIdx idx.aliases idx.reads sx.1 sx.2
+      let ys := slotsOfIdx idx.aliases idx.reads sy.1 sy.2
+      entries.any fun (x, F, y) =>
+        xs.contains x && (match o with | some k => HeapSeparation.covers F k | none => F.isNone) && ys.contains y
+    | _, _ => false)
+
+private theorem SepIndex.byFacts_eq (E : SepEvidence) (r s : Region) :
+    (SepIndex.ofEvidence E).byFacts r s = E.facts.any (E.byFact r s ·) := by
+  apply Bool.eq_iff_iff.mpr
+  let idx := SepIndex.ofEvidence E
+  have hes : (if idx.elemSpines.isEmpty then false else
+      match spineSite r, s with
+      | some x, .elemSpines y q =>
+        let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+        let vy := pathViewsIdx idx.aliases idx.reads y q
+        idx.elemSpines.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+      | _, _ => false) = true ↔ ∃ a b, SepFact.elemSpines a b ∈ E.facts ∧ E.byFact r s (.elemSpines a b) = true := by
+    constructor
+    · intro h
+      split at h
+      · cases h
+      · split at h
+        · rename_i x y q hx
+          obtain ⟨⟨va, vb⟩, hmem, hss⟩ := List.any_eq_true.mp h
+          obtain ⟨f, hf, hfm⟩ := List.mem_filterMap.mp hmem
+          cases f with
+          | elemSpines a b =>
+            simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+            obtain ⟨rfl, rfl⟩ := hfm
+            refine ⟨a, b, hf, ?_⟩
+            simp only [SepEvidence.byFact, hx]
+            simpa [idx, SepIndex.ofEvidence, sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)] using hss
+          | spines _ _ | arrays _ _ | locs _ _ _ _ => simp at hfm
+        · cases h
+    · rintro ⟨a, b, hf, hb⟩
+      have hmem : (pathViewsIdx idx.aliases idx.reads a.1 a.2, pathViewsIdx idx.aliases idx.reads b.1 b.2) ∈ idx.elemSpines :=
+        List.mem_filterMap.mpr ⟨.elemSpines a b, hf, rfl⟩
+      have hne : idx.elemSpines.isEmpty = false := by cases h : idx.elemSpines with | nil => rw [h] at hmem; cases hmem | cons _ _ => rfl
+      simp only [hne, Bool.false_eq_true, ↓reduceIte]
+      simp only [SepEvidence.byFact] at hb
+      split at hb
+      · refine List.any_eq_true.mpr ⟨_, hmem, ?_⟩
+        simpa [idx, SepIndex.ofEvidence, sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)] using hb
+      · cases hb
+  have hsp : (if idx.spines.isEmpty then false else
+      match (match spineSite r, spineSite s with
+        | some x, some y => some (x, y)
+        | some x, none => (selectedSpineSite s).map (x, ·)
+        | none, some y => (selectedSpineSite r).map (·, y)
+        | none, none => none) with
+      | some (x, y) =>
+        let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+        let vy := pathViewsIdx idx.aliases idx.reads y.1 y.2
+        idx.spines.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+      | none => false) = true ↔ ∃ a b, SepFact.spines a b ∈ E.facts ∧ E.byFact r s (.spines a b) = true := by
+    have hmatch : ∀ a b,
+        (match (match spineSite r, spineSite s with
+          | some x, some y => some (x, y)
+          | some x, none => (selectedSpineSite s).map (x, ·)
+          | none, some y => (selectedSpineSite r).map (·, y)
+          | none, none => none) with
+        | some (x, y) =>
+          sameSiteIdx idx.aliases (pathViewsIdx idx.aliases idx.reads x.1 x.2) (pathViewsIdx idx.aliases idx.reads a.1 a.2) &&
+          sameSiteIdx idx.aliases (pathViewsIdx idx.aliases idx.reads y.1 y.2) (pathViewsIdx idx.aliases idx.reads b.1 b.2)
+        | none => false) = E.byFact r s (.spines a b) := by
+      intro a b
+      simp only [SepEvidence.byFact, idx, SepIndex.ofEvidence]
+      cases spineSite r <;> cases spineSite s
+      · rfl
+      · cases selectedSpineSite r <;> simp [sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)]
+      · cases selectedSpineSite s <;> simp [sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)]
+      · simp [sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)]
+    constructor
+    · intro h
+      split at h
+      · cases h
+      · split at h
+        · rename_i x y hpair
+          obtain ⟨⟨va, vb⟩, hmem, hss⟩ := List.any_eq_true.mp h
+          obtain ⟨f, hf, hfm⟩ := List.mem_filterMap.mp hmem
+          cases f with
+          | spines a b =>
+            simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+            obtain ⟨rfl, rfl⟩ := hfm
+            refine ⟨a, b, hf, ?_⟩
+            rw [← hmatch a b, hpair]
+            exact hss
+          | arrays _ _ | elemSpines _ _ | locs _ _ _ _ => simp at hfm
+        · cases h
+    · rintro ⟨a, b, hf, hb⟩
+      have hmem : (pathViewsIdx idx.aliases idx.reads a.1 a.2, pathViewsIdx idx.aliases idx.reads b.1 b.2) ∈ idx.spines :=
+        List.mem_filterMap.mpr ⟨.spines a b, hf, rfl⟩
+      have hne : idx.spines.isEmpty = false := by cases h : idx.spines with | nil => rw [h] at hmem; cases hmem | cons _ _ => rfl
+      simp only [hne, Bool.false_eq_true, ↓reduceIte]
+      rw [← hmatch a b] at hb
+      split at hb
+      · exact List.any_eq_true.mpr ⟨_, hmem, hb⟩
+      · cases hb
+  have harr : (if idx.arrays.isEmpty then false else
+      match arraySite r, arraySite s with
+      | some x, some y =>
+        let vx := pathViewsIdx idx.aliases idx.reads x.1 x.2
+        let vy := pathViewsIdx idx.aliases idx.reads y.1 y.2
+        idx.arrays.any fun (va, vb) => sameSiteIdx idx.aliases vx va && sameSiteIdx idx.aliases vy vb
+      | _, _ => false) = true ↔ ∃ a b, SepFact.arrays a b ∈ E.facts ∧ E.byFact r s (.arrays a b) = true := by
+    constructor
+    · intro h
+      split at h
+      · cases h
+      · split at h
+        · rename_i x y hx hy
+          obtain ⟨⟨va, vb⟩, hmem, hss⟩ := List.any_eq_true.mp h
+          obtain ⟨f, hf, hfm⟩ := List.mem_filterMap.mp hmem
+          cases f with
+          | arrays a b =>
+            simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+            obtain ⟨rfl, rfl⟩ := hfm
+            refine ⟨a, b, hf, ?_⟩
+            simp only [SepEvidence.byFact, hx, hy]
+            simpa [idx, SepIndex.ofEvidence, sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)] using hss
+          | spines _ _ | elemSpines _ _ | locs _ _ _ _ => simp at hfm
+        · cases h
+    · rintro ⟨a, b, hf, hb⟩
+      have hmem : (pathViewsIdx idx.aliases idx.reads a.1 a.2, pathViewsIdx idx.aliases idx.reads b.1 b.2) ∈ idx.arrays :=
+        List.mem_filterMap.mpr ⟨.arrays a b, hf, rfl⟩
+      have hne : idx.arrays.isEmpty = false := by cases h : idx.arrays with | nil => rw [h] at hmem; cases hmem | cons _ _ => rfl
+      simp only [hne, Bool.false_eq_true, ↓reduceIte]
+      simp only [SepEvidence.byFact] at hb
+      split at hb
+      · refine List.any_eq_true.mpr ⟨_, hmem, ?_⟩
+        simpa [idx, SepIndex.ofEvidence, sameSiteIdx_eq E.links (pathViewsIdx_mem_iff E.links _ _) (pathViewsIdx_mem_iff E.links _ _)] using hb
+      · cases hb
+  have hloc : (match fieldSite r, fieldSite s with
+      | some (sx, o), some (sy, some g') =>
+        let entries := idx.locs.getD g' []
+        if entries.isEmpty then false else
+        let xs := slotsOfIdx idx.aliases idx.reads sx.1 sx.2
+        let ys := slotsOfIdx idx.aliases idx.reads sy.1 sy.2
+        entries.any fun (x, F, y) =>
+          xs.contains x && (match o with | some k => HeapSeparation.covers F k | none => F.isNone) && ys.contains y
+      | _, _ => false) = true ↔ ∃ x F y g, SepFact.locs x F y g ∈ E.facts ∧ E.byFact r s (.locs x F y g) = true := by
+    constructor
+    · intro h
+      split at h
+      · rename_i sx o sy g' hx hy
+        dsimp only at h
+        split at h
+        · cases h
+        · obtain ⟨⟨x, F, y⟩, hmem, hb⟩ := List.any_eq_true.mp h
+          have hf : SepFact.locs x F y g' ∈ E.facts := (SepIndex_locs_mem E.facts g' (x, F, y)).mp hmem
+          refine ⟨x, F, y, g', hf, ?_⟩
+          simp only [SepEvidence.byFact, hx, hy, beq_self_eq_true, Bool.and_true]
+          simp only [Bool.and_eq_true, List.contains_iff_mem] at hb ⊢
+          exact ⟨⟨(slotsOfIdx_mem_iff E.links sx.1 sx.2 x).mp hb.1.1, hb.1.2⟩,
+            (slotsOfIdx_mem_iff E.links sy.1 sy.2 y).mp hb.2⟩
+      · cases h
+    · rintro ⟨x, F, y, g, hf, hb⟩
+      simp only [SepEvidence.byFact] at hb
+      split at hb
+      · rename_i sx o sy g' hx hy
+        simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hb
+        obtain ⟨⟨⟨hxs, hcov⟩, hys⟩, rfl⟩ := hb
+        have hmem : (x, F, y) ∈ idx.locs.getD g' [] := (SepIndex_locs_mem E.facts g' (x, F, y)).mpr hf
+        have hne2 : (idx.locs.getD g' []).isEmpty = false := by
+          cases h : idx.locs.getD g' [] with | nil => rw [h] at hmem; cases hmem | cons _ _ => rfl
+        simp only [hne2, Bool.false_eq_true, ↓reduceIte]
+        refine List.any_eq_true.mpr ⟨(x, F, y), hmem, ?_⟩
+        simp only [Bool.and_eq_true, List.contains_iff_mem]
+        exact ⟨⟨(slotsOfIdx_mem_iff E.links sx.1 sx.2 x).mpr hxs, hcov⟩,
+          (slotsOfIdx_mem_iff E.links sy.1 sy.2 y).mpr hys⟩
+      · cases hb
+  change idx.byFacts r s = true ↔ E.facts.any (E.byFact r s ·) = true
+  unfold SepIndex.byFacts
+  simp only [Bool.or_eq_true]
+  constructor
+  · rintro (((h1 | h2) | h3) | h4)
+    · obtain ⟨a, b, hf, hb⟩ := hsp.mp h1; exact List.any_eq_true.mpr ⟨_, hf, hb⟩
+    · obtain ⟨a, b, hf, hb⟩ := harr.mp h2; exact List.any_eq_true.mpr ⟨_, hf, hb⟩
+    · obtain ⟨a, b, hf, hb⟩ := hes.mp h3; exact List.any_eq_true.mpr ⟨_, hf, hb⟩
+    · obtain ⟨x, F, y, g, hf, hb⟩ := hloc.mp h4; exact List.any_eq_true.mpr ⟨_, hf, hb⟩
+  · intro h
+    obtain ⟨f, hf, hb⟩ := List.any_eq_true.mp h
+    cases f with
+    | spines a b => exact .inl (.inl (.inl (hsp.mpr ⟨a, b, hf, hb⟩)))
+    | arrays a b => exact .inl (.inl (.inr (harr.mpr ⟨a, b, hf, hb⟩)))
+    | elemSpines a b => exact .inl (.inr (hes.mpr ⟨a, b, hf, hb⟩))
+    | locs x F y g => exact .inr (hloc.mpr ⟨x, F, y, g, hf, hb⟩)
+
+def SepEvidence.queryFast (E : SepEvidence) : SepQuery :=
+  let idx := SepIndex.ofEvidence E
+  ⟨fun r s =>
+    (((E.bound r).inter (E.bound s)).isEmpty || r.keysApart s) ||
+    idx.fresh E r s || idx.fresh E s r ||
+    idx.byFacts r s || idx.byFacts s r⟩
+
+@[csimp] theorem SepEvidence.query_eq_fast : @SepEvidence.query = @SepEvidence.queryFast := by
+  funext E
+  simp only [SepEvidence.query, SepEvidence.queryFast]
+  congr 1
+  funext r s
+  simp only [SepIndex.fresh_eq, SepIndex.byFacts_eq]
+  have hany : (E.facts.any fun f => E.byFact r s f || E.byFact s r f) =
+      (E.facts.any (E.byFact r s ·) || E.facts.any (E.byFact s r ·)) := by
+    induction E.facts with
+    | nil => rfl
+    | cons f fs ih =>
+      simp only [List.any_cons, ih]
+      cases E.byFact r s f <;> cases E.byFact s r f <;> cases fs.any (E.byFact r s ·) <;>
+        cases fs.any (E.byFact s r ·) <;> rfl
+  rw [hany]
+  cases (((E.bound r).inter (E.bound s)).isEmpty || r.keysApart s) <;>
+    cases E.fresh r s <;> cases E.fresh s r <;> cases E.facts.any (E.byFact r s ·) <;>
+    cases E.facts.any (E.byFact s r ·) <;> rfl
+
 end Verification.Footprints
