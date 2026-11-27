@@ -728,24 +728,57 @@ the file key, the depth, the selection and the environment, all in `W`.
   parts;
 - the selection's units, which the preparation line names in order.
 
-Its preparation line is a function of `P`. A unit's line is
-`check(P, i)` (`PreparedFile.check`): unit `i`'s group planned in its own
-check (`PreparedFile.plan`: the plans of that group alone, its import reads,
-proposals and elaboration, over `P`'s front), then the group checked. The
-planning takes the effective interface demand of this selection and the
-ordered proposal values below the group (`PreparedFile.known`). A planning
-failure supplies the named empty proposals of the group's function members.
-`GroupContext.groupOperation` produces the answers and the verdict from the
-same plan. A worker keeps the answers and can retain the plan until its
-verdict is requested. Initialization typings are shared at the same ordered
-qualified effects and stand-in inputs. At each qualified front, the worker keeps proposal answers by member index
-and complete ordered stand-ins across group requests and both proposal rounds. A restarted
-worker reconstructs these values from W. The `worker order` control compares
-the answers and complete lines in fresh processes, in reverse order and
-across a partial worker run followed by resumption. The
-key is coarser than one naming only what a unit reads: any change of the
-file or of its inputs misses every piece. A unit whose planning or check is
-slow costs its own limit: the work of one unit lies in its own piece.
+An exact-W hit for every selected part returns the saved lines without
+starting a worker. On a changed Fragment the file worker computes the
+[closed input of each group](drafts/function-replay.md#group-local-lowering)
+in callee order. For example, when only the body of an independent
+`square` changes, an equal input for `touch` supplies both its verdict and
+its named proposals. A caller of `touch` reads those proposals when building
+its own input. The driver returns the materialized verdicts in selection order.
+
+The second key is SHA-256 of the canonical JSON object
+`{operation, implementation, slice}`. The operation is `check-slice` or
+`propose-slice`. The implementation contains W's adapter code identity,
+Node runtime identity, executable and library identity, runner identity
+and stage environment. The slice is SHA-256 of the exact UTF-8 bytes of
+`GroupProjection.Slice.wire.compress`. These bytes encode the entire
+relative Fragment, the ordered members, proposal order, initializer
+consumers, ownership, initialization order, interface demand, named
+lower-group answers, import reads or their error, established interfaces
+and row tables, forced proposals, fuel, search budget and counting flag.
+
+`RequestCli.planSlice` consumes this input. Its declaration cache substitutes
+a previously decoded definition only at equal declaration JSON. A completed
+check entry holds the operation, relative members, named proposals and
+relative verdict together. A proposal-only entry has a null verdict.
+The worker takes proposals from a completed check when an unrequested
+dependency has one, and otherwise requests the proposal operation.
+The preparation numbers annotation sites within each carried declaration and
+keeps the inverse map for member contract identities. It renders those reads
+at their current declarations and sorts them in the wire order. The worker
+checks a group at physical sites when projection or materialization fails.
+Refusal and elaboration strings contain opaque diagnostic text, including
+generated names, so these lines use the physical check and the exact W entry.
+The relative operation releases its claim before the physical check starts.
+Each check has the stage time limit. The W measurement covers both checks,
+and the only response after a requested physical check is its verdict.
+
+Under the store's integrity assumptions, equal keys identify the result of
+the same operation on the same input. A hit therefore has the same premise
+of `PassUnit.sliceVerdict_sound` as a fresh accepting check on that slice.
+The theorem gives `PassUnitSafe` for its prepared requests. Interpretation
+in TypeScript uses the [source-lowering correspondence](DESIGN.md#what-verified-means).
+The worker checks the operation and members, decodes the proposals, and renders
+the relative line with the current preparation's occurrence map. The current
+file's dependency closure establishes the providers. A store hit executes
+neither proposal inference nor the group check.
+
+The worker's work table charges construction and serialization of the input
+to `slice: project`. `slice: execute` includes planning and, for a check,
+the verdict. `slice: replay` charges decoding and materialization on a hit.
+The enclosing W part accounts for the process time, including projection on
+a slice hit. `TSCERT_GROUP_REPLAY=0`, shadow comparisons and raw refusal
+diagnostics select the physical worker protocol.
 
 *Limits.* The driver reads the worker's output as it is written and
 publishes each piece as its line arrives. Each piece has the stage's limit,
@@ -770,6 +803,13 @@ piece is its own attempt record.
 *Claims.* One process at a time executes a worker for `W`: it claims
 `{worker: W}`. A waiter replays the pieces as they are published and
 reports a tool failure when none is published within `claimWaitMs`.
+
+Each check or proposal miss also claims its slice key. It rechecks for a
+finished entry after acquiring the claim and publishes the complete result
+by the store's atomic rename. The driver releases this claim on the result
+or on worker failure. Waiting on another slice owner has the worker
+claim deadline. A timed-out part keeps its W observation, since its time
+also includes projection and the work of its unrequested dependencies.
 
 ## Publication
 

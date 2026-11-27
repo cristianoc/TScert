@@ -507,6 +507,7 @@ structure PreparedFile extends GroupContext where
   relativeFront : Thunk (Except String (Json × Json × EquationLowering.SourceLowering × SourceClaimJson.Front × GroupProjection.Sites))
   sourceLowering : EquationLowering.SourceLowering
   definitions : EquationLowering.DefinitionCache
+  declarationSites : Thunk GroupProjection.DeclarationSites
   replayDetails : Bool
   sliceShadow : Bool
   fileAnswers : IO.Ref (Std.HashMap Nat GroupAnswers)
@@ -611,6 +612,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   return prepared.map fun (est, tables, front, a, sourceLowering, definitions) =>
     { ast := a, sourceLowering, definitions, reportGroups := ["1", "projection", "replay"].contains (shadow.getD ""),
       sliceShadow := shadow != some "projection", replayDetails := shadow == some "replay", fileAnswers, counting,
+      declarationSites := Thunk.mk fun _ => GroupProjection.DeclarationSites.of a
       relativeFront := Thunk.mk fun _ => do
         let (ast, sites) := GroupProjection.fileProgram (a.setObjVal! "modules" (.arr #[]))
         let claims ← SourceClaimJson.fragmentClaims ast fileKey {} force
@@ -685,24 +687,34 @@ private def projectedPlan (g : GroupProjection.Input) (sites : GroupProjection.S
 private def groupFields (g : GroupProjection.Input) : Thunk (List (String × String)) :=
   Thunk.mk fun _ => g.fields.map fun (key,value) => (key, toString (hash value.compress))
 
-/-- The groups a group reaches outside itself, by their first members,
-each after those it reaches (`Front.edges` over the groups). -/
-def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat := Id.run do
-  let leader := fun (j : Nat) => ((fr.group j).head?).getD j
-  let mut order : List Nat := []
-  let mut seen : Std.HashSet Nat := ({} : Std.HashSet Nat).insert (leader i)
-  let mut stack : List (Nat × Bool) := ((fr.group i).flatMap fr.edges).map (leader ·, false)
-  for _ in List.range (4 * fr.units.length * (fr.units.length + 1) + 4) do
+/-- Postorder on the graph of groups. Each edge names its target's leader. -/
+private def orderedGroups (fr : SourceClaimJson.Front) (roots : List Nat)
+    (visited : Std.HashSet Nat) : List Nat := Id.run do
+  let mut reverseOrder : List Nat := []
+  let mut seen := visited
+  let mut stack := roots.map (·, false)
+  for _ in [:(4 * fr.units.length * (fr.units.length + 1) + 4)] do
     match stack with
     | [] => break
-    | (g, true) :: rest => stack := rest; order := order ++ [g]
+    | (g, true) :: rest => stack := rest; reverseOrder := g :: reverseOrder
     | (g, false) :: rest =>
       if seen.contains g then stack := rest
       else
         seen := seen.insert g
-        stack := ((fr.group g).flatMap fr.edges).map (leader ·, false) |>.filter (!seen.contains ·.1)
+        let edges := (fr.group g).flatMap fr.edges
+        stack := (edges.map (fun j => ((fr.group j).head?.getD j, false))).filter (!seen.contains ·.1)
           |>.append ((g, true) :: rest)
-  return order
+  return reverseOrder.reverse
+
+/-- The lower groups in the order their proposals enter this group's input. -/
+def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat :=
+  let leader := fun j => (fr.group j).head?.getD j
+  orderedGroups fr (((fr.group i).flatMap fr.edges).map leader) (({} : Std.HashSet Nat).insert (leader i))
+
+/-- One traversal schedules a request, including repeated requested IDs. -/
+private def requestedOrder (fr : SourceClaimJson.Front) (chosen : List Nat) : List Nat :=
+  let counts := chosen.foldl (fun (m : Std.HashMap Nat Nat) g => m.insert g (m.getD g 0 + 1)) {}
+  (orderedGroups fr chosen {}).flatMap fun g => List.replicate (counts.getD g 0) g
 
 private def memberRequest (f : SourceClaimJson.FilePlans) (id : String) :
     Except String (SourceElaboration.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
@@ -841,9 +853,9 @@ def planSlice (s : GroupProjection.Slice) (definitions : EquationLowering.Defini
 /-- Measure reuse of the relative input by executing it and materializing its verdict. -/
 private def replayFields (p : PreparedFile) (physical : GroupProjection.Slice)
     (group : PlannedGroup) (verdict : String) : List (String × Json) := Id.run do
-  let (relative, sites) := physical.relative
+  let (relative, sites) := physical.relative p.declarationSites.get
   let agreement : Except String (Option String) := do
-    let localPlan ← planSlice relative p.definitions
+    let localPlan ← planSlice relative p.declarationSites.get.definitions
     let line := (localPlan.verdict p.counting).line
     if (← sites.materialize line) == verdict && localPlan.answers == group.answers then return some line
     return none
@@ -1050,6 +1062,113 @@ def printFlushed (line : String) : IO Unit := do
   out.putStrLn line
   out.flush
 
+/-- The worker waits only after flushing its lookup. The driver renames
+the complete reply into this worker's private execution directory. -/
+private def sliceLookup (operation : String) : IO Json := do
+  printFlushed ("slice-lookup " ++ operation)
+  let reply : System.FilePath := "slice-reply"
+  while !(← reply.pathExists) do IO.sleep 1
+  let stored ← IO.ofExcept (Json.parse (← IO.FS.readFile reply))
+  IO.FS.removeFile reply
+  return stored
+
+/-- The stored value is a function of the operation and the slice.
+The definition cache reads each entry by its complete declaration JSON. -/
+private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
+    (definitions : EquationLowering.DefinitionCache) : Json := Id.run do
+  let (answers, line) := match planSlice slice definitions with
+    | .ok g => (g.answers, if check then some (g.verdict slice.counting).line else none)
+    | .error reason =>
+      let empty := (slice.members.filter (· != "init")).map fun (id : String) =>
+        (String.intercalate "@" (id.splitOn "@").dropLast, none)
+      (empty, if check then some (WorkerWire.verdictLine (slice.members.headD "")
+        slice.members (.error reason) (some reason) []) else none)
+  return Json.mkObj [("operation", toJson (if check then "check-slice" else "propose-slice")),
+    ("members", toJson slice.members), ("answers", GroupProjection.answersWire answers), ("line", toJson line)]
+
+private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjection.Slice)
+    (sites : GroupProjection.Sites) (operation : String) (payload : Json) :
+    Except String (Option (Option String × GroupAnswers)) := do
+  let unit := p.fr.unitId i
+  let members := (p.fr.group i).map p.fr.unitId
+  fieldsExactly payload ["operation", "members", "answers", "line"]
+  unless (← payload.getObjValAs? String "operation") == operation &&
+      (← payload.getObjValAs? (List String) "members") == slice.members do throw "wrong slice result"
+  let answers ← GroupProjection.decodeAnswers (← payload.getObjVal? "answers")
+  let names := answers.map Prod.fst
+  let synchronous := (p.fr.group i).filterMap fun j => do
+    let (f, _, none) ← p.fr.units[j]? | none
+    if f.async then none else some f.name
+  unless (names == synchronous || names == (p.emptyAnswers i).map Prod.fst) &&
+      answers.all (fun (n,v) => v.all (·.name == n)) do throw "wrong slice proposal members"
+  let relative ← payload.getObjValAs? (Option String) "line"
+  unless relative.isSome == (operation == "check-slice") do throw "missing or unexpected slice verdict"
+  let some l := relative | return some (none, answers)
+  let raw ← Json.parse l
+  unless (← raw.getObjValAs? String "unit") == slice.members.headD "" &&
+      (← raw.getObjValAs? (List String) "members") == slice.members do throw "wrong relative slice members"
+  let .ok current := sites.materialize l | return none
+  let j ← Json.parse current
+  unless (← j.getObjValAs? String "unit") == unit &&
+    (← j.getObjValAs? (List String) "members") == members do return none
+  if (← raw.getObj?).contains "accepted" then
+    for dep in ← raw.getObjValAs? (List String) "depends" do
+      if dep.startsWith "module:" || dep == "init" then continue
+      let id := sites.unit dep true
+      unless (p.fr.units.zipIdx.any fun (_,j) => p.fr.unitId j == id) && sites.unit id false == dep do
+        return none
+  return some (some current, answers)
+
+/-- Resolve a group against the driver's store. Only the result uses the
+reply channel. The occurrence map belongs to this worker's preparation. -/
+private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
+    (check : Bool) : IO (Option String × GroupAnswers) := do
+  let unit := p.fr.unitId i
+  let projected ← IO.lazyPure fun _ => SinglePass.work "slice: project" unit fun _ => do
+    let reads := SourceClaimJson.groupImports p.imports.get p.ast (some [SourceClaimJson.memberName unit]) {} p.est
+    let physical ← p.sliceInput i (p.needsInterface i) below reads
+    let (slice, sites) := physical.relative p.declarationSites.get
+    return (slice, sites, slice.wire.compress)
+  let .ok (slice, sites, input) := projected | do
+    let group ← p.plan i (p.needsInterface i) below
+    return (if check then some (group.verdict p.counting).line else none, group.answers)
+  IO.FS.writeFile "slice-input" input
+  -- A dependency outside this request can consume a completed check's
+  -- answers. On a miss it needs only the proposal operation.
+  let full ← sliceLookup (if check then "check-slice" else "probe-check-slice")
+  let (operation, stored) ← if !check && full.isNull then do
+      printFlushed "slice-skip"
+      pure ("propose-slice", ← sliceLookup "propose-slice")
+    else pure ("check-slice", full)
+  let payload ← if !stored.isNull then pure stored else
+    IO.lazyPure fun _ => SinglePass.work "slice: execute" unit fun _ =>
+      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions
+  let result ← IO.ofExcept (← IO.lazyPure fun _ =>
+    SinglePass.work (if stored.isNull then "slice: render" else "slice: replay") unit fun _ =>
+      readSliceResult p i slice sites operation payload)
+  if let some rendered := result then
+    printFlushed (if stored.isNull then "slice-result " ++ payload.compress else "slice-hit")
+    return rendered
+  -- The diagnostic producer owns its text and any positions embedded in it.
+  -- Run it in physical coordinates, with the same resolved callees.
+  printFlushed "slice-physical"
+  let group ← p.plan i (p.needsInterface i) below
+  let line ← IO.lazyPure fun _ => SinglePass.work "slice: physical" unit fun _ =>
+    if check then some (group.verdict p.counting).line else none
+  return (line, group.answers)
+
+private def checkWithStore (p : PreparedFile) (i : Nat)
+    (lines : IO.Ref (Std.HashMap Nat String)) : IO String := do
+  for g in groupsBelow p.fr i ++ [i] do
+    if g == i then
+      if (← lines.get).contains g then continue
+    else if (← p.proposals.get).contains g then continue
+    let (line, answers) ← resolveSlice p g (← p.lowerAnswers (groupsBelow p.fr g)) (g == i)
+    p.proposals.modify (·.insert g answers)
+    if let some line := line then lines.modify (·.insert g line)
+  let some line := (← lines.get).get? i | throw (IO.userError "missing requested slice verdict")
+  return line
+
 /-- Mode 8, the single pass, over a file's fragment and the module
 interfaces its imports read (`--verify-interface-stage 8`): the file prepared
 once (`prepareUnitsFile`), then each selected unit's group checked in turn
@@ -1108,6 +1227,8 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
     writeWorkNow start
     printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules)
     let stdin ← IO.getStdin
+    let store := (← IO.getEnv "TSCERT_SLICE_DRIVER") == some "1"
+    let lines ← IO.mkRef {}
     repeat
       let text ← stdin.getLine
       if text.isEmpty then break
@@ -1119,10 +1240,13 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
           | some ids => ids.mapM fun id => match units.find? (fr.unitId · == id) with
             | some i => pure i
             | none => throw (IO.userError s!"file worker: {id} is no unit the selection checks")
-        for i in chosen do
-          let (line, _) ← p.check i
+        let order := if store then SinglePass.work "slice: schedule" (SourceClaimJson.fileItem p.ast)
+          (fun _ => requestedOrder fr chosen) else chosen
+        if store then printFlushed ("slice-order " ++ (toJson (order.map fr.unitId)).compress)
+        for i in order do
+          let line ← if store then checkWithStore p i lines else Prod.fst <$> p.check i
           writeWorkNow start
-          printFlushed line
+          printFlushed (if store then "slice-verdict " ++ line else line)
     return 0
 
 end Verification.RequestCli

@@ -16,13 +16,14 @@
 //   node pipeline/stages.mts evict    one eviction pass within TSCERT_STORE_BUDGET, its summary printed
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
-import { bindProcess, canonical, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, startProcess, text, workRole,
+import { bindProcess, canonical, codeFailure, deliver, digestFile, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, startProcess, text, workRole,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -319,7 +320,8 @@ export type WorkerPart = {
 /** A worker stage's result: its preparation, then each part its
  * preparation names that has a result, in order; and how many worker
  * processes it started. */
-export type WorkerRun = { preparation: WorkerPart; parts: WorkerPart[]; starts: number };
+export type WorkerRun = { preparation: WorkerPart; parts: WorkerPart[]; starts: number;
+  slices: { executed: number; replayed: number; proposalsExecuted: number; proposalsReplayed: number } };
 
 /** What decides whether a worker stage's part times out, beside its limit:
  * the process stage's policy, the worker started with `spawn` and each part
@@ -381,6 +383,8 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
   const bound = bindProcess(call);
   let ineligible = bound.ineligible;
   const replaying = ineligible === null && store !== null && replayedStages.has(call.stage) ? store : null;
+  const fineClock = bound.environment.TSCERT_SLICE_DRIVER === "1";
+  const policy = fineClock ? canonical({ worker: workerPolicy, sliceClaim: "outside the part clock", physicalFallback: "separate bounded check" }) : workerPolicy;
   const keyOf = (part: string | null): string => sha256(partInput(bound.manifest, part));
   const record = (part: string | null, attempt: string, directory: string | null, execution: Execution,
       exitStatus: number | null, elapsedMs: number, cpu: Cpu, replay: Replay | null): AttemptRecord => ({
@@ -414,7 +418,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         stderr: text(found.result.stderr), error: undefined, record: r };
     }
     const observed = retryingTimeouts() ? null
-      : replaying.timeout(call.stage, keyOf(part), input, options.limitMs, workerPolicy);
+      : replaying.timeout(call.stage, keyOf(part), input, options.limitMs, policy);
     if (!observed) return null;
     const { observation } = observed;
     const r = record(part, randomUUID(), null, "timeout-replayed", null, performance.now() - started, observation.cpu,
@@ -437,9 +441,10 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
   };
   const done = (): boolean => state.preparation !== null &&
     (state.preparation.status !== 0 || (state.parts ?? []).every((p) => state.results.has(p)) && state.parts !== null);
+  const slices = { executed: 0, replayed: 0, proposalsExecuted: 0, proposalsReplayed: 0 };
   const result = (starts: number): WorkerRun => {
     if (state.preparation === null) throw Error("a worker stage ended without its preparation");
-    return { preparation: state.preparation, parts: (state.parts ?? []).flatMap((p) => state.results.get(p) ?? []), starts };
+    return { preparation: state.preparation, parts: (state.parts ?? []).flatMap((p) => state.results.get(p) ?? []), starts, slices };
   };
   const progress = (): number => (state.preparation === null ? 0 : 1) + state.results.size;
   lookUpAll();
@@ -455,7 +460,10 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         const claimed = replaying.claim(call.stage, workerKey);
         // Recheck after acquiring: the preceding owner may have published.
         lookUpAll();
-        if (done()) return result(0);
+        if (done()) {
+          if (claimed !== "held") claimed();
+          return result(0);
+        }
         if (claimed !== "held") {
           release = claimed;
           break;
@@ -490,13 +498,21 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
     const started = performance.now();
     // The runner's own limit, a bound the driver's clock stays within: the
     // preparation and every part requested at the limit each.
-    const backstop = Math.min(options.limitMs * ((pending?.length ?? 1000) + 2), 2 ** 31 - 1);
+    const backstop = Math.min((options.limitMs + (fineClock ? options.limitMs + claimWaitMs(options.limitMs) : 0)) *
+      ((pending?.length ?? 1000) + 2), 2 ** 31 - 1);
     const running = startProcess(bound, directory, backstop, Buffer.from(protocol.request(pending) + "\n"));
+    let fine = fineClock;
+    let slice: { input: string; key: string; hit: boolean; proposal: boolean; probe: boolean; started: number } | null = null;
+    const claim: { release: (() => void) | null } = { release: null };
+    const decoder = new StringDecoder("utf8");
+    let scheduled = false;
     options.recorder?.starting(call.stage);
     let ended = false;
     try {
       let asked = pending;
       let prepared = false, index = 0, pieceStart = started, buffered = "", stopped = false, killAt = Infinity;
+      let claimMs = 0;
+      let physicalStart: number | null = null;
       let lastCpu = { userMs: 0, systemMs: 0 };
       let lastWork: Buffer | null = null;
       // A piece whose program was not read as its line arrived (the program
@@ -558,9 +574,94 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
           publishAt(cpu);
           finishRecord(r, work);
         }
+        claimMs = 0;
+        physicalStart = null;
         pieceStart = now;
         const next = current();
         if (next !== undefined) options.recorder?.starting(call.stage, next);
+      };
+      const workerLine = (line: string): void => {
+        if (!fine || !prepared) return answer(line);
+        if (!scheduled) {
+          if (!line.startsWith("slice-order ")) {
+            // Workers implementing the single-line protocol answer in request order.
+            fine = false;
+            return answer(line);
+          }
+          const order: unknown = JSON.parse(line.slice("slice-order ".length));
+          if (!Array.isArray(order) || !order.every((v: unknown): v is string => typeof v === "string") ||
+              canonical([...order].sort()) !== canonical([...(asked ?? [])].sort())) throw Error("wrong slice schedule");
+          asked = order;
+          scheduled = true;
+          return;
+        }
+        if (typeof current() !== "string") throw Error("unexpected slice after the requested units");
+        if (line.startsWith("slice-verdict ") && slice === null)
+          return answer(line.slice("slice-verdict ".length));
+        if (physicalStart !== null) throw Error("expected the physical verdict");
+        if (["slice-lookup check-slice", "slice-lookup propose-slice", "slice-lookup probe-check-slice"].includes(line)) {
+          if (slice !== null) throw Error("overlapping slice operations");
+          const probe = line === "slice-lookup probe-check-slice";
+          const input = canonical({ operation: probe ? "check-slice" : line.slice("slice-lookup ".length), implementation: bound.sliceImplementation,
+            slice: digestFile(join(directory, "slice-input")) });
+          const key = sha256(input);
+          const started = performance.now();
+          const active = ineligible === null ? replaying : null;
+          let found = forced ? null : active?.finished(call.stage, key, input);
+          if (active && !forced && !found && !probe) {
+            for (;;) {
+              const owner = active.claim(call.stage, key);
+              if (owner !== "held") claim.release = owner;
+              found = active.finished(call.stage, key, input);
+              if (found || claim.release) break;
+              if (claimMs >= claimWaitMs(options.limitMs)) throw Error("slice claim deadline exceeded");
+              const waiting = performance.now();
+              Atomics.wait(pause, 0, 0, claimPollMs);
+              claimMs += performance.now() - waiting;
+            }
+          }
+          if (found && found.result.exitStatus !== 0) throw Error("invalid stored slice exit status");
+          slice = { input, key, hit: !!found, probe, proposal: line !== "slice-lookup check-slice", started };
+          const tmp = join(directory, "slice-reply.tmp");
+          writeFileSync(tmp, found ? found.result.stdout : "null");
+          renameSync(tmp, join(directory, "slice-reply"));
+          return;
+        }
+        if (slice?.probe && !slice.hit) {
+          if (line !== "slice-skip") throw Error("a probe miss must end before proposal planning");
+          slice = null;
+          return;
+        }
+        if (slice && line === "slice-physical") {
+          if (slice.proposal) slices.proposalsExecuted++;
+          else {
+            // The relative operation is complete. Its physical fallback is
+            // one further check with the same limit. The enclosing W record
+            // measures both, and only the final verdict may follow.
+            slices.executed++;
+            physicalStart = performance.now();
+          }
+          claim.release?.();
+          claim.release = null;
+          slice = null;
+          return;
+        }
+        if (!slice || (slice.hit ? line !== "slice-hit" : !line.startsWith("slice-result ")))
+          throw Error("unexpected slice response");
+        if (!slice.hit && replaying && ineligible === null) {
+          replaying.publishFinished(call.stage, slice.key, { input: slice.input, exitStatus: 0,
+            stdout: Buffer.from(line.slice("slice-result ".length)), stderr: Buffer.alloc(0), outputs: [],
+            measurement: { attempt: randomUUID(), elapsedMs: performance.now() - slice.started,
+              limitMs: options.limitMs, cpu: { unavailable: "included in the worker part" } } });
+        }
+        if (slice.proposal) {
+          if (slice.hit) slices.proposalsReplayed++;
+          else slices.proposalsExecuted++;
+        } else if (slice.hit) slices.replayed++;
+        else slices.executed++;
+        claim.release?.();
+        claim.release = null;
+        slice = null;
       };
       // Read lines as they arrive; stop the worker where a piece, or its end
       // after the last line, outlasts its limit, timed from the line before.
@@ -570,15 +671,15 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
       let lostAt = Infinity, lost = false;
       for (;;) {
         ended = running.ended();
-        buffered += running.readOutput().toString("utf8");
+        buffered += decoder.write(running.readOutput());
         for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
           const line = buffered.slice(0, nl);
           buffered = buffered.slice(nl + 1);
-          if (!stopped) answer(line);
+          if (!stopped) workerLine(line);
         }
         if (ended) break;
         const now = performance.now();
-        if (!stopped && now - pieceStart > options.limitMs) {
+        if (!stopped && now - (physicalStart ?? (pieceStart + claimMs)) > options.limitMs) {
           stopped = true;
           running.signal("SIGTERM");
           killAt = now + 2_000;
@@ -622,7 +723,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         const r = record(part ?? null, attempt, directory, execution, null, now - pieceStart, cpu, null);
         if (stopped && replaying !== null && ineligible === null)
           replaying.publishTimeout(call.stage, keyOf(part ?? null), { input: partInput(bound.manifest, part ?? null), attempt,
-            elapsedMs: now - pieceStart, limitMs: options.limitMs, policy: workerPolicy, cpu });
+            elapsedMs: now - pieceStart, limitMs: options.limitMs, policy, cpu });
         finishRecord(r, work);
         const over: WorkerPart = { part: part ?? null, execution, status: null, stdout: "", stderr,
           error: stopped ? undefined : end.error, record: r };
@@ -659,6 +760,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         for (let waited = 0; !running.ended() && waited < 400; waited++) Atomics.wait(pause, 0, 0, workerPollMs);
         running.finish();
       }
+      claim.release?.();
       rmSync(directory, { recursive: true, force: true });
     }
   }

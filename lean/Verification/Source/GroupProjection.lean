@@ -14,17 +14,37 @@ def answersWire (answers : List (String × Option StandIn)) : Json :=
     ("exceptional", toJson (v.summary.exceptional.map footprint)),
     ("result", footprint v.resultFootprint), ("alias", toJson v.returnAlias)]))
 
+private def decodeFootprint (j : Json) : Except String Footprints.Closed := do
+  let [v,a,w] := (← j.getArr?).toList | throw "expected three footprint changes"
+  return ⟨← EffectCodec.changeOf v, ← EffectCodec.changeOf a, ← EffectCodec.changeOf w⟩
+
+def decodeAnswers (wire : Json) : Except String (List (String × Option StandIn)) := do
+  let entries ← fromJson? (α := List (String × Option Json)) wire
+  let answers ← entries.mapM fun (name, proposal) => do
+    let value ← proposal.mapM fun j => do
+      let exit := fun k => do
+        let f ← j.getObjVal? k
+        if f.isNull then return none
+        return some (← decodeFootprint f)
+      return (⟨← j.getObjValAs? String "name", ⟨← exit "normal", ← exit "exceptional"⟩,
+        ← decodeFootprint (← j.getObjVal? "result"), ← j.getObjValAs? (Option Nat) "alias"⟩ : StandIn)
+    return (name, value)
+  unless answersWire answers == wire do throw "invalid group proposal encoding"
+  return answers
+
 /-- Canonical source offsets and their inverse, including the zero sentinel. -/
 structure Sites where
   offsets : Std.HashMap Nat Nat
   ranks : Std.HashMap Nat Nat
   /-- Physical coordinates for a correspondence that requires the original sites. -/
   physical : Bool := false
+  declarations : Std.HashMap Json Json := {}
 
 private def spanField (k : String) := k == "pos" || k == "namePos" || k == "span"
 
 /-- A declaration identity has its own source coordinate system. -/
-private def external (j : Json) := (j.getObjVal? "module").isOk
+private def external (j : Json) := (j.getObjVal? "module").isOk &&
+  (j.getObjVal? "span").isOk && (j.getObjVal? "name").isOk
 
 private partial def collect (j : Json) (s : Std.HashSet Nat) : Std.HashSet Nat := Id.run do
   match j with
@@ -39,7 +59,7 @@ private partial def collect (j : Json) (s : Std.HashSet Nat) : Std.HashSet Nat :
   | _ => return s
 
 private def Sites.ofPairs (pairs : Array (Nat × Nat)) : Sites :=
-  ⟨pairs.foldl (fun m (n,i) => m.insert i n) {}, pairs.foldl (fun m (n,i) => m.insert n i) {}, false⟩
+  ⟨pairs.foldl (fun m (n,i) => m.insert i n) {}, pairs.foldl (fun m (n,i) => m.insert n i) {}, false, {}⟩
 
 def Sites.of (j : Json) : Sites :=
   Sites.ofPairs (((collect j (({} : Std.HashSet Nat).insert 0)).toArray.qsort (· < ·)).zipIdx)
@@ -47,7 +67,7 @@ def Sites.of (j : Json) : Sites :=
 /-- Each declaration starts a new interval. A change in its number of sites
 leaves the coordinates of other declarations alone. The stride bounds every
 interval even on a file larger than the ordinary one-million-site stride. -/
-private def fileSites (code bindings : Json) (anchors : Std.HashSet Nat) : Sites := Id.run do
+private def fileSites (code bindings : Json) (anchors : Std.HashSet Nat) (scale : Nat := 1) : Sites := Id.run do
   let offsets := (collect (.arr #[code, bindings]) (({} : Std.HashSet Nat).insert 0)).toArray.qsort (· < ·)
   let stride := max 1048576 (offsets.size + 1)
   let mut pairs := #[]
@@ -57,7 +77,7 @@ private def fileSites (code bindings : Json) (anchors : Std.HashSet Nat) : Sites
     if n != 0 && anchors.contains n then
       block := block + 1
       index := 0
-    pairs := pairs.push (n, block * stride + index)
+    pairs := pairs.push (n, scale * (block * stride + index))
     index := index + 1
   return Sites.ofPairs pairs
 
@@ -81,7 +101,7 @@ partial def Sites.relative (s : Sites) (j : Json) : Json := Id.run do
 inside intern keys and head names. Reusing the lowering gives negative
 lookups the same spelling as positive ones. Imported declaration identities
 retain their full module, name and declaration span. -/
-def fileProgram (ast : Json) : Json × Sites := Id.run do
+def fileProgram (ast : Json) (scale : Nat := 1) : Json × Sites := Id.run do
   let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
   let init := (ast.getObjValAs? (Array Json) "init").toOption.getD #[]
   let code := Json.mkObj [("functions", .arr functions), ("init", .arr init)]
@@ -90,7 +110,7 @@ def fileProgram (ast : Json) : Json × Sites := Id.run do
   let doc := ast.getObjValD "declarations"
   let rows := fun k => (doc.getObjValAs? (Array Json) k).toOption.getD #[]
   let bindings := (rows "roots" ++ rows "values").map (·.getObjValD "binding")
-  let sites := fileSites code (.arr bindings) anchors
+  let sites := fileSites code (.arr bindings) anchors scale
   let mut doc := doc
   for k in ["roots", "values"] do
     doc := doc.setObjVal! k (.arr ((rows k).map fun v =>
@@ -100,90 +120,46 @@ def fileProgram (ast : Json) : Json × Sites := Id.run do
 
 def Sites.unit (s : Sites) (id : String) (inverse : Bool) : String := Id.run do
   if id.startsWith "module:" then return id
-  let [name, n] := id.splitOn "@" | return id
+  let n :: names := (id.splitOn "@").reverse | return id
+  if names.isEmpty then return id
+  let name := String.intercalate "@" names.reverse
   let some n := n.toNat? | return id
   let some m := if inverse then s.offsets.get? n else s.ranks.get? n | return id
   return s!"{name}@{m}"
 
-/-- Located refusal text carries half-open source spans. Other text, including
-external identities, must correspond exactly for the projected check to qualify. -/
-private def Sites.locate (s : Sites) (v : String) : String :=
-  let parts := v.splitOn "["
-  parts.headD "" ++ String.join (parts.tail.map fun suffix => Id.run do
-    let a := suffix.takeWhile Char.isDigit
-    let rest := suffix.drop a.toString.length
-    let b := (rest.drop 1).takeWhile Char.isDigit
-    let some i := a.toString.toNat? | return "[" ++ suffix
-    let some j := b.toString.toNat? | return "[" ++ suffix
-    let tail := rest.drop (b.toString.length + 1)
-    if !rest.startsWith "," || !tail.startsWith ")" then return "[" ++ suffix
-    let some x := s.offsets.get? i | return "[" ++ suffix
-    let some y := s.offsets.get? j | return "[" ++ suffix
-    return s!"[{x},{y}{tail}")
-
-private def Sites.absoluteSpan (s : Sites) (v : Json) : Json := Id.run do
-  let .ok (a,b) := (fromJson? v : Except String (Nat × Nat)) | return v
-  let some x := s.offsets.get? a | return v
-  let some y := s.offsets.get? b | return v
-  return toJson (x,y)
-
-/-- A temporary's origin in the expression and binding plans. Its final
-component identifies a slot inside the plan and keeps its local number. -/
-private def Sites.temporary (s : Sites) (name : String) : String := Id.run do
-  let [kind, suffix] := name.splitOn "@" | return name
-  if !name.startsWith "%" || !suffix.endsWith "%" then return name
-  let parts := (suffix.dropEnd 1).toString.splitOn ":"
-  let absolute := fun t => do let n ← String.toNat? t; toString <$> s.offsets.get? n
-  match parts with
-  | [a,b,slot] =>
-    let some x := absolute a | return name
-    let some y := absolute b | return name
-    return s!"{kind}@{x}:{y}:{slot}%"
-  | [a] =>
-    let some x := absolute a | return name
-    return s!"{kind}@{x}%"
-  | _ => return name
-
-/-- Structured source maps in a diagnostic carry spans, temporary names and
-the entry offset. Sequent labels and store projections have their own indices. -/
-private partial def Sites.diagnostic (s : Sites) (j : Json) : Json := Id.run do
+/-- Substitute whole declaration identities. Their module distinguishes the
+coordinate systems of two declarations with equal source spans. -/
+private partial def replaceIdentities (ids : Std.HashMap Json Json) (j : Json) : Json :=
   match j with
-  | .arr xs => return .arr (xs.map s.diagnostic)
-  | .obj fields =>
-    if external j then return j
-    return Json.mkObj (fields.toList.map fun (k,v) => (k, Id.run do
-      if spanField k || k == "subject" then return s.absoluteSpan v
-      if k == "environmentStart" then
-        if let .ok n := v.getNat? then return toJson (s.offsets.getD n n)
-      if k == "name" then
-        if let .ok n := v.getStr? then return toJson (s.temporary n)
-      if k == "id" && j.getObjValD "phase" == .str "request-validation" then
-        if let .ok id := v.getStr? then
-          if let kind :: pos :: rest := id.splitOn ":" then
-            if let some n := pos.toNat? then
-              return toJson (String.intercalate ":" (kind :: toString (s.offsets.getD n n) :: rest))
-      return s.diagnostic v))
-  | _ => return j
-
-private def Sites.refusal (s : Sites) (text : String) : String :=
-  let marker := "\nobligation-diagnostic: "
-  let parts := text.splitOn marker
-  String.intercalate marker (s.locate (parts.headD "") :: parts.tail.map fun record =>
-    match Json.parse record with
-    | .ok j => (s.diagnostic j).compress
-    | .error _ => s.locate record)
+  | .arr a => .arr (a.map (replaceIdentities ids))
+  | .obj kv => if external j then ids.getD j j else
+      Json.mkObj (kv.toList.map fun (k,v) => (k, replaceIdentities ids v))
+  | _ => j
 
 def Sites.materialize (s : Sites) (line : String) : Except String String := do
   if s.physical then return line
   let j ← Json.parse line
-  let mut j := j.setObjVal! "unit" (toJson (s.unit (← j.getObjValAs? String "unit") true))
+  -- Refusals and elaboration diagnostics contain opaque text produced by
+  -- lowering and proof search, including generated binding and head names.
+  unless (j.getObjValD "refusal").isNull && (j.getObjValD "elaboration").isNull do
+    throw "physical diagnostic required"
+  let unit := fun id => do
+    if id == "init" || id.startsWith "module:" then return id
+    let some n := ((id.splitOn "@").getLast?).bind String.toNat? | throw "missing unit position"
+    unless s.offsets.contains n do throw "missing current unit position"
+    return s.unit id true
+  let mut j := j.setObjVal! "unit" (toJson (← unit (← j.getObjValAs? String "unit")))
   for field in ["members", "depends"] do
-    if let .ok (ids : List String) := j.getObjValAs? (List String) field then
-      j := j.setObjVal! field (toJson (ids.map (s.unit · true)))
-  for field in ["refusal", "elaboration"] do
-    if let .ok reason := j.getObjValAs? String field then
-      j := j.setObjVal! field (toJson (s.refusal reason))
-  return j.compress
+    let ids ← j.getObjValAs? (List String) field
+    j := j.setObjVal! field (toJson (← ids.mapM unit))
+  let contracts ← j.getObjValAs? (Array Json) "contracts"
+  let contracts ← contracts.mapM fun read => do
+    let .ok member := read.getObjVal? "member" | return read
+    let id ← member.getObjVal? "declaration"
+    let some current := s.declarations.get? id | throw "missing current declaration identity"
+    return read.setObjVal! "member" (member.setObjVal! "declaration" current)
+  let contracts := contracts.qsort (·.compress < ·.compress)
+  return (j.setObjVal! "contracts" (.arr contracts)).compress
 
 open EquationLowering
 
@@ -428,7 +404,7 @@ def Input.ofFile (ast claims : Json) (L : SourceLowering) (fr : Front) (i : Nat)
   -- The import binding is in the current file. The identity and its type
   -- annotation belong to the declaring file and keep their own coordinates.
   let declValues := (declarations.getObjValAs? (Array Json) "values").toOption.getD #[]
-  let sites := if physical then (⟨{}, {}, true⟩ : Sites) else Sites.of (.arr #[code, claims, L.claims,
+  let sites := if physical then (⟨{}, {}, true, {}⟩ : Sites) else Sites.of (.arr #[code, claims, L.claims,
     .arr (declValues.map (·.getObjValD "binding"))])
   let span := fun (p : Nat × Nat) => (sites.ranks.getD p.1 p.1, sites.ranks.getD p.2 p.2)
   let identity := fun (j : Json) => if physical then
@@ -507,10 +483,135 @@ structure Slice where
   budget : PositiveCertificates.SearchBudget
   counting : Bool
 
-def Slice.relative (s : Slice) : Slice × Sites :=
-  let (ast, sites) := fileProgram s.ast
+/-- Only a local declarator and its identifier uses can be renamed together.
+A matching string anywhere else in the function reserves its spelling,
+including literal values, property keys and names in annotations. -/
+private structure LocalNames where
+  binders : Std.HashMap String Nat := {}
+  reserved : Std.HashSet String := {}
+
+private def shadowBase (name : String) : Option String := do
+  let [base, suffix] := name.splitOn "@" | none
+  let [line, col] := suffix.splitOn ":" | none
+  guard ((← line.toNat?) > 0 && (← col.toNat?) > 0)
+  return base
+
+private partial def localNames (j : Json) (s : LocalNames) : LocalNames := Id.run do
+  match j with
+  | .arr xs => return xs.foldl (fun acc v => localNames v acc) s
+  | .obj fields =>
+    return fields.foldl (fun acc k v => Id.run do
+      let acc := { acc with reserved := acc.reserved.insert k }
+      if k == "name" then
+        if let .ok name := v.getStr? then
+          if (shadowBase name).isSome then
+            if j.getObjValD "k" == .str "id" then return acc
+            if (j.getObjVal? "early").isOk && (j.getObjVal? "init").isOk then
+              if let .ok (pos, _) := j.getObjValAs? (Nat × Nat) "namePos" then
+                return { acc with binders := acc.binders.insert name pos }
+      return localNames v acc) s
+  | .str name => return { s with reserved := s.reserved.insert name }
+  | _ => return s
+
+private partial def renameStrings (names : Std.HashMap String String) (j : Json) : Json :=
+  match j with
+  | .arr a => .arr (a.map (renameStrings names))
+  | .obj kv => Json.mkObj (kv.toList.map fun (k,v) => (k, renameStrings names v))
+  | .str n => .str (names.getD n n)
+  | _ => j
+
+private def relativeLocals (fn : Json) : Json := Id.run do
+  let names := localNames fn {}
+  let ordered := names.binders.toArray.qsort (fun a b => a.2 < b.2 || (a.2 == b.2 && a.1 < b.1))
+  let mut renames := {}
+  for ((old,_), i) in ordered.zipIdx do
+    let some base := shadowBase old | continue
+    let fresh := s!"{base}@0:{i}"
+    unless names.reserved.contains old || names.reserved.contains fresh do
+      renames := renames.insert old fresh
+  return if renames.isEmpty then fn else renameStrings renames fn
+
+/-- File preparation shares the normalized rows used by each slice. A
+declaration identity is distinguished within its module and name. Canonical
+symbol numbers on module interfaces require the symbol's physical identity. -/
+structure DeclarationSites where
+  rows : Std.HashMap Json Json
+  physicalIds : Std.HashMap Json Json
+  definitions : EquationLowering.DefinitionCache
+
+def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
+  let ast := ast.setObjVal! "modules" (.arr #[])
+  let doc := ast.getObjValD "declarations"
+  let rows := fun k => (doc.getObjValAs? (Array Json) k).toOption.getD #[]
+  let key := fun (id : Json) => (id.getObjValD "module", id.getObjValD "name")
+  let symbols := Std.HashSet.ofArray ((rows "symbols").map key)
+  let span := fun (id : Json) => (id.getObjValAs? (Nat × Nat) "span").toOption.getD (0,0)
+  let ordered := (identities ast {}).toArray.qsort (fun a b => (span a).1 < (span b).1 || ((span a).1 == (span b).1 && (span a).2 < (span b).2))
+  let mut counts : Std.HashMap (Json × Json) Nat := {}
+  let mut relative := {}
+  let mut physical := {}
+  for id in ordered do
+    let k := key id
+    let i := counts.getD k 0 + 1
+    counts := counts.insert k i
+    let canonical := if symbols.contains k || span id == (0,0) then id else id.setObjVal! "span" (toJson (i,i))
+    relative := relative.insert id canonical
+    physical := physical.insert canonical id
+  let subst := replaceIdentities relative
+  let mut replacements := {}
+  let mut defs := #[]
+  let mut occupied : Std.HashSet Nat := {}
+  for k in ["definitions", "values", "roots"] do
+    for row in rows k do
+      let binding := row.getObjVal? "binding"
+      let body := if binding.isOk then row.setObjVal! "binding" .null else row
+      let id := row.getObjValD "declaration"
+      let ownerKey := toJson (k, relative.getD id id, (row.getObjValD "binding").getObjValD "local")
+      -- Start at the same slot when an unrelated declaration is inserted.
+      -- Check occupancy: even colliding hashes get different intervals.
+      let mut owner := (hash ownerKey).toNat % 65536
+      for _ in [:occupied.size] do
+        if !occupied.contains owner then break
+        owner := owner + 1
+      occupied := occupied.insert owner
+      let sites := Sites.of body
+      -- Executable sites are even. Each row has its own disjoint positive
+      -- odd sites, ordered by the distinct offsets within that row.
+      let sites := Sites.ofPairs (sites.offsets.toArray.map fun (rank,n) =>
+        (n, if n == 0 then 0 else (owner + rank) * (owner + rank + 1) + 2 * owner + 1))
+      let normalized := subst (sites.relative body)
+      let normalized := if let .ok b := binding then normalized.setObjVal! "binding" b else normalized
+      replacements := replacements.insert row normalized
+      if k == "definitions" then defs := defs.push normalized
+  for fn in (ast.getObjValAs? (Array Json) "functions").toOption.getD #[] do
+    replacements := replacements.insert fn (relativeLocals (subst fn))
+  for k in ["init", "applications"] do
+    let source := if k == "init" then ast else doc
+    for row in (source.getObjValAs? (Array Json) k).toOption.getD #[] do
+      replacements := replacements.insert row (subst row)
+  return ⟨replacements, physical, EquationLowering.DefinitionCache.ofDocument
+    (Json.mkObj [("definitions", .arr defs)])⟩
+
+def Slice.relative (s : Slice) (decls : DeclarationSites) : Slice × Sites := Id.run do
+  let replace := fun (doc : Json) (k : String) =>
+    doc.setObjVal! k (.arr (((doc.getObjValAs? (Array Json) k).toOption.getD #[]).map fun row =>
+      decls.rows.getD row row))
+  let doc := ["values","definitions","roots","applications"].foldl replace (s.ast.getObjValD "declarations")
+  let ast := replace (replace s.ast "functions") "init" |>.setObjVal! "declarations" doc
+  let (ast, sites) := fileProgram ast 2
+  let sites := { sites with declarations := decls.physicalIds }
   let ast := ast.setObjVal! "file" "group.ts" |>.setObjVal! "sourceSha256" (toJson (String.ofList (List.replicate 64 '0')))
-  ({ s with ast, members := s.members.map (sites.unit · false), proposalOrder := s.proposalOrder.map (sites.unit · false) }, sites)
+  return ({ s with ast, members := s.members.map (sites.unit · false), proposalOrder := s.proposalOrder.map (sites.unit · false) }, sites)
+
+/-- The complete input of the stored operation, including the entire slice
+Fragment. Field hashes in the shadow report are for comparisons only. -/
+def Slice.wire (s : Slice) : Json :=
+  let ⟨order, consumers, ast, members, owned, initOrder, demand, below, imports, est, tables,
+    force, fuel, budget, counting⟩ := s
+  Json.mkObj ([("ast", ast), ("group", toJson members), ("owned", toJson owned), ("initOrder", toJson initOrder),
+    ("demand", toJson demand), ("resultConsumers", toJson consumers), ("proposalOrder", toJson order),
+    ("below", answersWire below), ("controls", toJson (force, fuel, budget.rounds, budget.select, budget.rerun, counting))] ++
+    importFields imports est tables)
 
 /-- Splitting the functions by membership for diagnostics retains their
 interleaving and every other input field, including errors and controls. -/

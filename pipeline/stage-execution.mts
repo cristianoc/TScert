@@ -80,7 +80,7 @@ function noteRead(path: string, status: string | null): void {
 /** Bound the allocation for a native executable or library. The synchronous
  * reads finish consuming each block before the next file can reuse it. */
 const digestBlock = Buffer.allocUnsafe(256 * 1024);
-function digestFile(path: string, size: bigint): string {
+export function digestFile(path: string, size: bigint = statSync(path, { bigint: true }).size): string {
   if (size <= BigInt(digestBlock.length)) return sha256(readFileSync(path));
   const hash = createHash("sha256");
   const fd = openSync(path, "r");
@@ -737,6 +737,7 @@ export type BoundProcess = {
   inputFiles: readonly (readonly [string, Buffer])[];
   outputs: readonly { role: string; path: string | null }[];
   manifest: Canonical;
+  sliceImplementation: Canonical;
   input: string;
   ineligible: string | null;
 };
@@ -805,7 +806,8 @@ export function bindProcess(call: ProcessCall): BoundProcess {
       : "unidentified" in runner ? runner.unidentified
       : "unidentified" in runtime ? runtime.unidentified : null);
   return { program, argv, environment: call.environment, protocol: call.protocol, inputFiles, outputs, manifest,
-    input: canonical(manifest), ineligible };
+    sliceImplementation: { code: manifest.code, runtime: manifest.runtime, executable: manifest.implementation,
+      runner: manifest.runner, environment: manifest.environment }, input: canonical(manifest), ineligible };
 }
 
 /** A fresh directory for a process stage of `stage` to run in. */

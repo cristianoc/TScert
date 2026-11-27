@@ -11,10 +11,12 @@ The runner and worker compute the following.
 invokeWorker(W):
   lookup (W, null), then (W, unitId) for each selected group
   on a miss: prepareUnitsFile validates the file and lowers its front
-  for each missing group i:
-    known(i) obtains groupProposals below i, callees first
-    plan i with those answers and the selection's interface demand
-    passGroupMode8 checks the members and gives dependencies or a refusal
+  for each missing group i in callee order:
+    resolve the ordered named proposals below i
+    build relative slice G from those answers and the current preparation
+    hit: decode the stored proposals and verdict
+    miss: planSlice(G), check its members, publish proposals and verdict together
+    render the verdict at the current occurrences and publish (W, unitId)
 singlePass follows current verdicts and providers to decide verification
 ```
 
@@ -27,15 +29,16 @@ function use(xs: number[]) { touch(xs); return limit; }
 function square(n: number) { return n * n; }
 ```
 
-Changing the multiplication to addition changes W. The current lookup misses
-for all four groups. Under the proposed rule the worker prepares the edited
+Changing the multiplication to addition changes W. The exact-W lookup misses
+for all four groups. With slice replay the worker prepares the edited
 file, obtains the proposal for `touch`, and constructs the input for each
 requested group. With equal binding, store and proposal inputs, `init`,
 `touch` and `use` replay. Only `square` has a changed program. If instead
 `touch` changes, its new proposal value flows into the input of `use`.
-An equal value can preserve that hit even when the current verdict of
-`touch` refuses. The dependency traversal then refuses verification of
-`use`.
+The slice of `use` also contains the body of `touch` for the returned-callable
+round. Editing that body can therefore cost both checks with an unchanged
+proposal. A current refusal of `touch` prevents verification of `use` through
+the dependency traversal.
 
 ### What this duplicates
 
@@ -70,7 +73,14 @@ alone does not determine that second computation. The closed input must
 include its exact inputs or its answer at that prior, with current-file
 correspondence established for both rounds.
 
-Lookup uses the implementation, operation and canonical bytes of G. On a
+Lookup hashes canonical JSON `{operation, implementation, slice}` with
+SHA-256. The operation distinguishes checking from proposal-only planning.
+The implementation contains the adapter, runtime, executable and its
+libraries, runner and stage environment. The slice digest is SHA-256 of
+`Slice.wire.compress` in UTF-8, including the complete relative Fragment
+and every explicit planning input. The driver validates finished entries
+and publishes each complete result under its claim as specified for
+[worker stages](../STAGE-STORE.md#worker-stages). On a
 miss execute check(G), returning its named proposals, member references,
 local verdict, dependencies, contracts and diagnostic sites. An unselected
 dependency can supply the proposal alone. A hit supplies the same proposal
@@ -95,19 +105,20 @@ missing meet and record the first differing field and projection CPU.
 ## Soundness obligation
 
 Equal complete inputs to a deterministic closed operation give equal results.
-The file worker executes the physical slice. Successful explicit import
+The store-backed worker executes the relative slice on a miss. Successful explicit import
 planning and an accepting group check give the premises of
 `Mode8Accepted.slice`. Its proof, `PassUnit.sliceVerdict_sound`, gives
 `PassUnitSafe` for the slice requests. Interpreting them in the current
 file requires the [source correspondence below](#group-local-lowering).
-A cross-version lookup additionally requires that materializing the cached
-relative result reproduces the current physical slice's verdict and proposals.
+A hit reuses the verdict and proposals produced by `planSlice` on
+the identical relative input under the same implementation. The same
+`sliceVerdict_sound` conclusion therefore holds for this slice. The current
+preparation supplies the occurrence map used to render the result.
 Module establishment uses `Mode8Accepted.freshModule`.
 Replay requires a finished result published by this operation and implementation
 at the exact input. Payload integrity, SHA-256 collision resistance, executable
 identity and the runner's association of a response with its request belong
-to the stage store's trust boundary. Projection, serialization and site transport
-require checking before cross-file-version replay can use this argument.
+to the stage store's trust boundary. Projection, serialization and site transport belong to the source and driver correspondence boundary.
 
 ## The worker's shadow check
 
@@ -125,8 +136,7 @@ the return annotation of a function returning a closure changes both its
 literal head's display name and its key. `GroupProjection.fileProgram`
 assigns source sites within each declaration interval and runs equation
 lowering at those coordinates. Declaration identities retain their module,
-name and declaration span. The group occurrence map also transports located
-refusal text, diagnostic source maps and generated temporary names.
+name and declaration span. Opaque refusal and elaboration text requires the physical operation.
 
 `GroupContext.groupOperation_eq` identifies the ordinary group operation's
 plan, proposals and verdict with the current file's interface planner and
@@ -145,8 +155,8 @@ sites. The worker writes the lexical group, ordered field digests, input
 and result digests, projection time and coordinate mode to stderr. An
 unselected dependency reports its proposal result alone.
 
-Cross-snapshot replay requires a proof relating the relative input and
-site transport to the current file before either check executes. The
+A theorem relating the relative input and site transport to the physical
+file would discharge part of the source-lowering correspondence obligation. The
 ordinary planner equation concerns one supplied front. Proposal settlement
 builds stand-ins from the file's declarations, initialization typing can
 grow the equation store, and freezing validates all heads. The shadow input
@@ -184,7 +194,19 @@ same whole-file mentions when checking whether a changed stand-in
 requires a fresh walk. A planned function in initialization's
 recursive group requires the whole initializer.
 
-The worker publishes the physical slice's verdict and proposals. Each slice
+The direct worker publishes the physical slice's verdict and proposals. The
+store-backed worker plans on the canonical relative slice and renders at
+current sites. For example, the refusal for an early binding includes the
+binding's initializer offset in its explanation. The physical group produces
+the entire refusal and its elaboration, including generated names.
+
+`DeclarationSites` ranks the annotation sites of each declaration and
+separates its coordinates from other rows and executable sites. References
+to the same declaration share an identity within its module and name.
+Symbol identities carry their physical spans across module interfaces.
+The occurrence map restores member contract identities before wire sorting.
+A shadowing declarator whose spelling occurs only in its local binding and
+identifier uses takes a function-local name. Each slice
 consumes its callees' published proposals. Declaration decoding and pack
 analysis share answers by complete declaration JSON. Equation heads and
 their references belong to each slice's store.
