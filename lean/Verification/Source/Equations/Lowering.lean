@@ -38,16 +38,39 @@ namespace Verification.EquationLowering
 open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules PositiveCertificates
   CallEffects
 
+/-- Declaration decoding and pack analysis depend only on the declaration row. -/
+def prepareDefinition (row : Json) : Except String (Definition × List Nat) := do
+  let d ← decodeDefinition row
+  return (d, (packedParameters d.expression).eraseDups)
+
+/-- Each entry is computed from its key. JSON equality compares the entire
+row, including parameter defaults, bases and the type expression. -/
+structure DefinitionCache where
+  private mk ::
+  private entries : Std.HashMap Json (Except String (Definition × List Nat)) := {}
+
+instance : EmptyCollection DefinitionCache := ⟨⟨{}⟩⟩
+
+def DefinitionCache.ofDocument (document : Json) : DefinitionCache :=
+  let rows := (document.getObjValAs? (Array Json) "definitions").toOption.getD #[]
+  ⟨rows.foldl (fun cache row => cache.insert row (prepareDefinition row)) {}⟩
+
+def DefinitionCache.read (cache : DefinitionCache) (row : Json) : Except String (Definition × List Nat) :=
+  match cache.entries.get? row with
+  | some entry => entry
+  | none => prepareDefinition row
+
 /-- **The source path's lowering.** `ast` is the parser's function tree with
 its declaration document (`tools/declaration-types.mts`), `claims` the
 source-claims document (§9.1). -/
 def source (ast claims : Json)
-    (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering := do
+    (budget : PositiveCertificates.SearchBudget := {}) (cache : DefinitionCache := ∅) : Except Failure SourceLowering := do
   let document ← (field ast "declarations").mapError Failure.refusal
-  let ds ← (definitions document).mapError Failure.refusal
+  let rows ← (arr document "definitions").mapError Failure.refusal
+  let decoded ← (rows.mapM cache.read).mapError Failure.refusal
+  let (ds, packings) := decoded.unzip
   if let some i := (List.range ds.size).find? (fun i => ImplicitDependency.arrayProto.selects ds[i]!.identity) then
     if i != 0 || !ds[i]!.parameters.isEmpty then throw (.refusal "ArrayProto must be the first declaration")
-  let packings := ds.map fun d => (packedParameters d.expression).eraseDups
   let ((annotations, values, generics, units, initBinders, claims), s) ←
     ((lowerSource ast claims).run
         { doc := ds, identities := identityIndex ds, packings, subtypeBudget := budget, tags := tagSymbols document }).mapError

@@ -704,9 +704,14 @@ export function verifierCall(program: string, args: readonly string[],
   // records its work table (`TSCERT_PROFILE` in its environment, so in the
   // stage's key) and writes it as the output `work.jsonl`.
   const profiled = profileDirectory() !== null;
+  // A shadowed request (`TSCERT_GROUP_SHADOW`): the worker also checks each
+  // group on the whole file and compares (docs/drafts/function-replay.md),
+  // the setting in the stage's key.
+  const shadow = process.env["TSCERT_GROUP_SHADOW"];
+  const settings = { ...environment, ...(profiled ? { TSCERT_PROFILE: "1" } : {}), ...(shadow ? { TSCERT_GROUP_SHADOW: shadow } : {}) };
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
     ({ stage, program, arguments: [...budget, ...controls, { text: mode }, ...list, ...(profiled ? [{ written: workRole }] : [])],
-      environment: profiled ? { ...environment, TSCERT_PROFILE: "1" } : environment, protocol: verifierProtocol });
+      environment: settings, protocol: verifierProtocol });
   if (mode === "--module-interface-plan" && rest.length === 2)
     return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
   if (mode === "--module-interface" && rest.length === 1)

@@ -57,6 +57,26 @@ theorem passUnitVerdict_sound
     PassUnitSafe (preparedMode8 force givenLines infer f₀) i :=
   passUnitVerdict_safe_run (fun _ _ => Verification.TolerantFrames.run_sound_single_pass) hplanned haccepted
 
+/-- Acceptance with explicit import answers establishes safety for the
+requests planned on the supplied front, including a group-local front. -/
+theorem sliceVerdict_sound {imports : GroupImports} {ast : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front updated : Option (PlanningFront force)} {known : List (String × Option StandIn)} {f₀ : FilePlans}
+    {lines : Std.HashMap String Json} {keep : Nat → List (Nat × List HeapKnowledge.Candidate)}
+    {i fuel : Nat} {counting : Bool} {deps : List String}
+    (hp : imports.plan ast fileKey budget names standIns force est tables front known = .ok (f₀, updated))
+    (ha : (let f := preparedMode8 force lines true f₀
+      (f.passGroupMode8 true force keep fuel (f.fr.group i) (counting := counting) (located := true)).2.1) = .ok deps) :
+    PassUnitSafe (preparedMode8 force lines true f₀) i := by
+  apply passGroupMode8_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
+    (fun _ _ => Verification.TolerantFrames.runKeepsSummaries) _ ha
+  have h := withHeadFacts_overStore (groupImportsPlan_overStore hp) (given := lines) (entries := false) (inferred := true)
+  unfold preparedMode8
+  split
+  · exact withFalseStartFact_overStore h
+  · exact h
+
 /-- The plans checked at a fresh module's print site in `establishStep`.
 The supplied lines are `moduleLines location` in `verifyUnitsFile`. -/
 def preparedModuleMode8 (force : List String) (infer : Bool) (lines : Std.HashMap String Json)
@@ -135,6 +155,18 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
       ((preparedMode8 force givenLines infer f₀).fr.group i) compare debugNode repeats given observe counting
       located).2.1 = .ok deps) :
     Mode8Accepted (preparedMode8 force givenLines infer f₀) i
+  | slice
+    {imports : GroupImports} {ast : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front updated : Option (PlanningFront force)} {known : List (String × Option StandIn)} {f₀ : FilePlans}
+    {lines : Std.HashMap String Json} {keep : Nat → List (Nat × List HeapKnowledge.Candidate)}
+    {i fuel : Nat} {counting : Bool} {deps : List String}
+    (hp : imports.plan ast fileKey budget names standIns force est tables front known = .ok (f₀, updated))
+    (hselected : i ∈ (preparedMode8 force lines true f₀).fr.selected names)
+    (ha : (let f := preparedMode8 force lines true f₀
+      (f.passGroupMode8 true force keep fuel (f.fr.group i) (counting := counting) (located := true)).2.1) = .ok deps) :
+    Mode8Accepted (preparedMode8 force lines true f₀) i
   | freshModule
     {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
     {forced : StandIns} {imported : List (String × QualifiedEffect)}
@@ -158,6 +190,7 @@ theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
     (h : Mode8Accepted f i) : PassUnitSafe f i := by
   cases h with
   | main hplanned _ haccepted => exact passUnitVerdict_sound hplanned haccepted
+  | slice hp _ ha => exact sliceVerdict_sound hp ha
   | freshModule hplanned _ haccepted => exact freshModuleVerdict_sound hplanned haccepted
 
 end Verification.SourceClaimJson.PassUnit

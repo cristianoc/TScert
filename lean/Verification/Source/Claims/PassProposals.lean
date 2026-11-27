@@ -653,12 +653,12 @@ language, stand-ins at their controls' footprints), proposed by
 `proposeOne`; a function `known` names taken as known (`none`: nothing
 proposed, read at its written effect or `top`). Every function proposed
 and known, with its proposal. -/
-@[nospecialize] def proposals {σ : Type} (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
+@[nospecialize] def proposals {σ : Type} (fr : Front) (order : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
     (planOf : List StandIn → String → StateM σ (Except String FilePlans)) (known : List (String × Option StandIn) := []) :
     StateM (RoundState σ) (List (String × Option StandIn)) := do
   let controls := standIns.functions.map (·.name)
   let mut out : List (String × Option StandIn) := []
-  for i in calleesFirst fr wanted do
+  for i in order do
     let some (f, _, none) := fr.units[i]? | continue
     if f.async || controls.contains f.name || out.any (·.1 == f.name) then continue
     if let some (_, k) := known.find? (·.1 == f.name) then

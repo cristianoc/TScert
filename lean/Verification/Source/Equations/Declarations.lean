@@ -24,16 +24,15 @@ def bool (j : Json) (name : String) : Except String Bool := do (← field j name
 def identityIndex (ds : Array Definition) : Std.HashMap Json (List Nat) :=
   (List.range ds.size).foldr (fun i m => m.alter ds[i]!.identity fun is => some (i :: is.getD [])) {}
 
-def definitions (document : Json) : Except String (Array Definition) := do
-  (← arr document "definitions").mapM fun j => do
-    fieldsExactly j ["declaration", "parameters", "bases", "expression"]
-    let identity ← field j "declaration"
-    let parameters ← arr j "parameters"
-    for p in parameters do
-      fieldsExactly p ["name", "span", "defaulted"]
-      let _ ← str p "name"
-      let _ ← bool p "defaulted"
-    return ⟨identity, ← str identity "name", parameters, ← arr j "bases", ← field j "expression"⟩
+def decodeDefinition (j : Json) : Except String Definition := do
+  fieldsExactly j ["declaration", "parameters", "bases", "expression"]
+  let identity ← field j "declaration"
+  let parameters ← arr j "parameters"
+  for p in parameters do
+    fieldsExactly p ["name", "span", "defaulted"]
+    let _ ← str p "name"
+    let _ ← bool p "defaulted"
+  return ⟨identity, ← str identity "name", parameters, ← arr j "bases", ← field j "expression"⟩
 
 /-- `ArrayProto`'s identity, the synthetic declaration array types name. -/
 def arrayProtoIdentity : Json :=

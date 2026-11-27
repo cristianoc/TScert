@@ -635,6 +635,8 @@ structure PlanningFront (force : List String) where
   qualified : List (String × QualifiedEffect)
   base : Thunk (Front × Thunk Front) := Thunk.mk fun _ => initializationFront (raw.withQualified qualified) force
   base_eq : base.get = initializationFront (raw.withQualified qualified) force := by rfl
+  /-- Whole-file callee order in local indices and the initializer’s demand for their results. -/
+  proposalInputs : Option (List Nat × List String) := none
   rounds : PassProposals.RoundState (List (TypedInitialization base.get.1 force)) := { planning := [] }
 
 /-- Elaborate and check proposals over this qualified front. Each retained
@@ -643,9 +645,13 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
     (names : Option (List String)) (standIns : StandIns) (force : List String)
     (qualified : List (String × QualifiedEffect)) (depends : List (String × List String))
     (closure proposed interfaceSlots : Bool) (known : List (String × Option StandIn))
-    (cached : PassProposals.RoundState (List (TypedInitialization fr force))) :
+    (cached : PassProposals.RoundState (List (TypedInitialization fr force)))
+    (proposalInputs : Option (List Nat × List String) := none) :
     Except String (FilePlans × PassProposals.RoundState (List (TypedInitialization fr force))) := do
-  let initReads : Std.HashSet String := Std.HashSet.ofList (fr.init.flatMap stmtNames)
+  let consumers := match proposalInputs with
+    | some (_, names) => names
+    | none => fr.init.flatMap stmtNames
+  let initReads := Std.HashSet.ofList consumers
   let initWith (sis : List StandIn) : StateM (List (TypedInitialization fr force)) Front := do
     let affects := sis.any fun s => initReads.contains s.name &&
       fr.d.functions.any fun c => c.name == s.name &&
@@ -676,9 +682,12 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
   -- The functions' footprints their own steps establish, as stand-ins
   -- (`PassProposals.proposals`); the claims and the front again where any
   -- is found.
+  let order := match proposalInputs with
+    | some (indices, _) => indices
+    | none => PassProposals.calleesFirst fr (wantedOf fr names)
   let (computed, refused, rounds) := if force.contains "callees" || force.contains "throws" then ([], [], cached) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      let (out, rounds) := (PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf known).run cached
+      let (out, rounds) := (PassProposals.proposals fr order standIns force [] planOf known).run cached
       let computed := out.filterMap (·.2) |>.filter fun s =>
         s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
       let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
@@ -689,11 +698,11 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
   -- the proposals once more, every function not yet proposed again read
   -- at its first proposal.
   let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
-  let (computed, refused, rounds) := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
+  let (computed, refused, rounds) := if returning.isEmpty || !consumers.any returning.contains then
     (computed, refused, rounds) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
-      let (out, rounds) := (PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf []).run rounds
+      let (out, rounds) := (PassProposals.proposals fr order standIns force computed planOf []).run rounds
       let computed := out.filterMap (·.2) |>.filter fun s =>
         s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
       let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
@@ -752,9 +761,9 @@ def fragmentPlansAndFront (ast : Json) (fileKey : String) (budget : PositiveCert
   if let some supplied := front then
     if standIns.functions.isEmpty && standIns.imports.isEmpty then
       let prepared : PlanningFront force := if qualified == supplied.qualified then supplied else
-        { raw := supplied.raw, claims := supplied.claims, qualified }
+        { raw := supplied.raw, claims := supplied.claims, qualified, proposalInputs := supplied.proposalInputs }
       let (f, rounds) ← plansOnFront ast prepared.claims prepared.base.get.1 prepared.base.get.2 names
-        standIns force qualified depends closure proposed interfaceSlots known prepared.rounds
+        standIns force qualified depends closure proposed interfaceSlots known prepared.rounds prepared.proposalInputs
       return (f, some { prepared with rounds })
   let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
   let raw ← SinglePass.timedKind "lower: fileFront" fun _ =>

@@ -62,8 +62,8 @@ theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except �
   | error e => cases h
   | ok a => exact ⟨a, rfl, h⟩
 
-private theorem plansOnFront_shape {ast claims fr frInit names standIns force qualified depends closure proposed slots known cached f updated}
-    (h : plansOnFront ast claims fr frInit names standIns force qualified depends closure proposed slots known cached = .ok (f, updated)) :
+private theorem plansOnFront_shape {ast claims fr frInit names standIns force qualified depends closure proposed slots known cached proposalInputs f updated}
+    (h : plansOnFront ast claims fr frInit names standIns force qualified depends closure proposed slots known cached proposalInputs = .ok (f, updated)) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
   unfold plansOnFront at h
