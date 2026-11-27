@@ -47,16 +47,26 @@ Three parts, each its own step.
 paper the mode uses as a proposition over a semantics, and bundles them:
 
 ```lean
-structure Semantics where           -- states, admissible transitions, the action of an effect, …
-def BoundRule (S : Semantics) : Prop := …   -- the paper's Bound
-def AnchRule  (S : Semantics) : Prop := …   -- Anch
-def InstRule  (S : Semantics) : Prop := …   -- Inst
-def MeetRule  (S : Semantics) : Prop := …   -- inclusion in a meet
+structure Semantics where                    -- states, transitions, effect actions, …
+def BoundRule          (S : Semantics) : Prop := …  -- Bound
+def AnchRule           (S : Semantics) : Prop := …  -- Anch
+def MeetRule           (S : Semantics) : Prop := …  -- Meet
+def InstRule           (S : Semantics) : Prop := …  -- Inst (parameter renaming)
+def ConfinedRule       (S : Semantics) : Prop := …  -- Confined (M.@state)
+def CallbackInvRule    (S : Semantics) : Prop := …  -- Callback-Inv
+def FieldsDisjRule     (S : Semantics) : Prop := …  -- Fields-Disj ("fields")
+def PlainCellsDisjRule (S : Semantics) : Prop := …  -- Plain-Cells-Disj
+def ElemLenExtendRule  (S : Semantics) : Prop := …  -- Elem-Len-Extend
 structure PaperRules (S : Semantics) : Prop where
   bound : BoundRule S
   anch : AnchRule S
-  inst : InstRule S
   meet : MeetRule S
+  inst : InstRule S
+  confined : ConfinedRule S
+  callbackInv : CallbackInvRule S
+  fieldsDisj : FieldsDisjRule S
+  plainCellsDisj : PlainCellsDisjRule S
+  elemLenExtend : ElemLenExtendRule S
 ```
 
 `Semantics` is an interface that both the idealised model and TScert's
@@ -78,7 +88,8 @@ call. Its transitions are heap extensions; it reads no admissibility. It
 proves:
 
 ```lean
-theorem model_rules : PaperRules Model.semantics
+theorem model_rules (C : ModuleRegion) (F : FieldClass) :
+    PaperRules (Model.semantics C F)
 ```
 
 A rule that is false fails to prove here. A rule that proves here holds in
@@ -208,7 +219,10 @@ prototype: sumAndAlias: refused: the instance changes visited[*] by extend; the 
 ```
 
 With an empty side file the prototype refuses `walk` as the ordinary
-verifier does. Declared reach (`"x.**"`) is not read yet.
+verifier does. Declared reach (`"x.**"`), confined module state
+(`"@state"`), `"fields"`, `"views"`, and `Join<E, P>` are read and
+exercised across all 105/105 units of Pretext's four core modules with
+zero `paperAssume`s.
 
 ## What this duplicates
 
