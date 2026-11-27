@@ -11,10 +11,9 @@
 // there, the obligation's summary in source names (`diagnostic-view.mts`),
 // and the facts the obligation's point requires, over its bindings' names;
 // each fact the refusal lists as left out at a statement entry, with the edge into the entry that does not establish it.
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { checkApart, memberName } from "../pipeline/verify-source.mts";
+import { checkApart, memberName, pretextProject, type PretextProject } from "../pipeline/verify-source.mts";
 import { readDiagnostic, type SourceMapEntry } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { indexFact as fact } from "../tools/fact-text.mts";
@@ -25,13 +24,8 @@ if (checkout === undefined || file === undefined || names === undefined) {
   process.exit(2);
 }
 const root = resolve(checkout);
-const project = mkdtempSync(join(tmpdir(), "check-functions-"));
-writeFileSync(join(project, "tsconfig.json"), JSON.stringify({
-  extends: join(root, "tsconfig.json"),
-  compilerOptions: { types: [] },
-  include: [join(root, "src/**/*.ts")],
-  exclude: [join(root, "src/layout.test.ts")],
-}, null, 2));
+using pretext: PretextProject = pretextProject(root);
+const project = pretext.path;
 const all = names === "*";
 const selected = all ? [] : names.split(",").filter((n) => n !== "");
 const started = performance.now();
