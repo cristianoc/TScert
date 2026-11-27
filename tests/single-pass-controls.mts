@@ -289,6 +289,26 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.match(must(all.answers[units.indexOf("leaf@60")], "forced leaf"), /keep/);
     }
 
+    {
+      const shadow = spawnSync(verifierBuild, args, { input: '{"units":null}\n', encoding: "utf8",
+        cwd: work, env: { ...process.env, TSCERT_GROUP_SHADOW: "replay" } });
+      assert.equal(shadow.status, 0, shadow.stderr);
+      const checked = new Map<string, string>();
+      for (const line of shadow.stderr.split("\n").filter(line => line.startsWith("group-slice "))) {
+        const row: unknown = JSON.parse(line.slice("group-slice ".length));
+        assert.ok(isObject(row) && typeof row.unit === "string" && typeof row.verdict === "string");
+        assert.equal(row.fileVerdict, row.verdict, row.unit);
+        assert.equal(row.graphs, variant === "failed plan" ? "both plans unavailable" : "equal", row.unit);
+        assert.equal(row.bindings, variant === "failed plan" ? null : true, row.unit);
+        assert.equal(row.proposalsEqual, true, row.unit);
+        assert.equal(row.relative, true, row.unit);
+        assert.ok(!checked.has(row.unit));
+        checked.set(row.unit, row.verdict);
+      }
+      assert.deepEqual(units.map(unit => checked.get(unit)), all.lines);
+      if (variant === "ordinary") assert.match(must(all.answers[units.indexOf("outer@80")], "outer’s returned closure"), /"resultFootprint":\{"array":"keep","value":"keep","view":"keep"\}/);
+    }
+
     const call = verifierCall(verifierBuild, args);
     const options = { limitMs: 60_000, force: false, recorder: null };
     const first = invokeWorker(call, { ...fileWorkerProtocol, parts: () => half,

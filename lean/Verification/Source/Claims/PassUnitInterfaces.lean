@@ -339,6 +339,24 @@ theorem passFile_safe_kinds
 
 /-! ## Mode 8's plans as the command line computes them -/
 
+/-- A plan over a supplied front and explicit import answers belongs to the
+store frozen by that plan. This also applies when the front is a slice. -/
+theorem groupImportsPlan_overStore {imports : GroupImports} {ast : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front updated : Option (PlanningFront force)} {known : List (String × Option StandIn)} {f : FilePlans}
+    (hp : imports.plan ast fileKey budget names standIns force est tables front known = .ok (f, updated)) :
+    OverStore f := by
+  unfold GroupImports.plan at hp
+  obtain ⟨⟨_, _⟩, hplan, hp⟩ := except_bind_ok hp
+  cases hp
+  apply refuseUnbound_overStore
+  apply refuseRows_overStore
+  apply fragmentPlansCore_overStore
+  unfold fragmentPlansCore
+  rw [hplan]
+  rfl
+
 /-- Importer plans are over their frozen store. Row and unbound-import
 checks preserve this property of the core planner. -/
 theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
@@ -351,15 +369,7 @@ theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
   obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨⟨_, _⟩, hp, h⟩ := except_bind_ok h
   cases h
-  unfold GroupImports.plan at hp
-  obtain ⟨⟨_, _⟩, hplan, hp⟩ := except_bind_ok hp
-  cases hp
-  apply refuseUnbound_overStore
-  apply refuseRows_overStore
-  apply fragmentPlansCore_overStore
-  unfold fragmentPlansCore
-  rw [hplan]
-  rfl
+  exact groupImportsPlan_overStore hp
 
 /-- **Plans with modules checked in the invocation are over their store**
 (proved): `fragmentPlansWithModules` returns importer plans from the

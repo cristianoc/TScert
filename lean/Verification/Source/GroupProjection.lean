@@ -252,6 +252,67 @@ theorem withInitTypes_eq (fr : Front) (force : List String) :
   split <;> try rfl
   repeat' first | split | rfl
 
+/-- Declaration identities occurring in a term, including references inside
+bounds, method signatures and inherited rows. -/
+private partial def identities (term : Json) (seen : Std.HashSet Json) : Std.HashSet Json :=
+  match term with
+  | .obj fields => if external term then seen.insert term else
+      fields.foldl (fun acc _ child => identities child acc) seen
+  | .arr terms => terms.foldl (fun acc child => identities child acc) seen
+  | _ => seen
+
+/-- Restrict the declaration document before assigning equation head numbers.
+Written application obligations and the document's canonical symbol identities
+survive the restriction. Definitions keep their original relative order. -/
+private def sliceDeclarations (document code : Json) (names : List String) : Except String Json := do
+  let bindingRead := fun (row : Json) =>
+    ((row.getObjValD "binding").getObjValAs? String "local").toOption.any names.contains
+  let roots := (← arr document "roots").filter bindingRead
+  let values := (← arr document "values").filter bindingRead
+  let defs ← arr document "definitions"
+  let mut needed := identities (.arr #[code, .arr roots, .arr values, ← field document "applications"]) {}
+  for row in defs do
+    let id := row.getObjValD "declaration"
+    if ImplicitDependency.all.any (·.selects id) then needed := needed.insert id
+  let mut expanded : Std.HashSet Json := {}
+  for _ in [:defs.size + 1] do
+    let fresh := defs.filter fun row =>
+      let id := row.getObjValD "declaration"
+      needed.contains id && !expanded.contains id
+    if fresh.isEmpty then break
+    for row in fresh do
+      expanded := expanded.insert (row.getObjValD "declaration")
+      needed := identities row needed
+  return document.setObjVal! "roots" (.arr roots) |>.setObjVal! "values" (.arr values)
+    |>.setObjVal! "definitions" (.arr (defs.filter fun row => needed.contains (row.getObjValD "declaration")))
+
+/-- Close the group's executable source over module reads. A group containing
+initialization executes the entire initializer. Other groups retain the
+statements defining the bindings they read, transitively. -/
+def sliceProgram (ast : Json) (fr : Front) (i : Nat) (order : List Nat) : Except String Json := do
+  let functions ← arr ast "functions"
+  let init ← arr ast "init"
+  let members := fr.group i
+  let wholeInit := (members ++ order).any fun j => (fr.group j).any fr.isInitialization
+  let mut names := (members ++ order).eraseDups.filterMap fun j => fr.units[j]?.map (·.1.name)
+  for _ in [:functions.size + init.size + 2] do
+    let mut reads := names
+    for (fn, _, initClaim) in fr.units do
+      if initClaim.isNone && names.contains fn.name then
+        reads := reads ++ SourceElaboration.moduleReadNames fn.body
+    for stmt in fr.init do
+      if wholeInit || stmt.bound.any names.contains then
+        reads := reads ++ SourceElaboration.moduleReadNames [stmt]
+    reads := reads.eraseDups
+    if reads.length == names.eraseDups.length then break
+    names := reads
+  let fs := functions.filter fun f => (f.getObjValAs? String "name").toOption.any names.contains
+  let ss := (init.zip fr.init.toArray).filterMap fun (raw, stmt) =>
+    if wholeInit || stmt.bound.any names.contains then some raw else none
+  let declarations ← sliceDeclarations (← field ast "declarations") (.arr #[.arr fs, .arr ss]) names
+  return ast.setObjVal! "functions" (.arr fs) |>.setObjVal! "init" (.arr ss)
+    |>.setObjVal! "declarations" declarations |>.setObjVal! "modules" (.arr #[])
+
 /-- The equation document's standard encoder contains the rows. Planning
 also consults the intern index, declaration identity index, draft kinds,
 builtins and search policy. Enumerating the complete maps preserves absence.
@@ -338,6 +399,17 @@ structure Input where
 
 def Input.program (g : Input) : Json := g.common.setObjVal! "functions" (.arr g.functions.ordered)
 
+def groupEnvironment (captures : List String) (imports : Except String GroupImports) (est : Established)
+    (tables : List (String × RowTable)) : Except String GroupImports × Established × List (String × RowTable) := Id.run do
+  let imports := imports.map fun r => { r with unbound := r.unbound.filter (captures.contains ·.1) }
+  let reads := (imports.toOption.map (·.reads)).getD []
+  let est := reads.filterMap fun r => (est.lookup (r.location, r.name)).map ((r.location,r.name), ·)
+  let tables := (reads.map (·.location)).eraseDups.filterMap fun loc => do
+    let t ← tables.lookup loc
+    let names := (reads.filter (·.location == loc)).map (·.name)
+    return (loc, { t with interfaces := t.interfaces.filter (names.contains ·.1) })
+  return (imports, est, tables)
+
 def Input.ofFile (ast claims : Json) (L : SourceLowering) (fr : Front) (i : Nat) (demand : Bool)
     (below : List (String × Option StandIn)) (imports : Except String GroupImports)
     (est : Established) (tables : List (String × RowTable)) (force : List String)
@@ -380,14 +452,7 @@ def Input.ofFile (ast claims : Json) (L : SourceLowering) (fr : Front) (i : Nat)
   let functions := Functions.of (funcs.map sites.relative) (fr.group i) reachable
   let common := identity ((Json.mkObj [("init", sites.relative (fr.ast.getObjValD "init"))]).setObjVal! "declarations" bindings
     |>.setObjVal! "omittedMentions" (ast.getObjValD "omittedMentions") |>.setObjVal! "modules" (.arr #[]))
-  let captures := selected.flatMap fr.captureNames
-  let imports := imports.map fun r => { r with unbound := r.unbound.filter (captures.contains ·.1) }
-  let reads := (imports.toOption.map (·.reads)).getD []
-  let est := reads.filterMap fun r => (est.lookup (r.location, r.name)).map ((r.location,r.name), ·)
-  let tables := (reads.map (·.location)).eraseDups.filterMap fun loc => do
-    let t ← tables.lookup loc
-    let names := (reads.filter (·.location == loc)).map (·.name)
-    return (loc, { t with interfaces := t.interfaces.filter (names.contains ·.1) })
+  let (imports, est, tables) := groupEnvironment (selected.flatMap fr.captureNames) imports est tables
   return (⟨common, functions, equations, identity (sites.relative claims), sites.unit (fr.unitId i) false, fr.moduleOwned, fr.initOrder, demand, below,
     imports, est, tables, force, fuel, budget, counting⟩, sites)
 
@@ -397,14 +462,20 @@ private def effectWire (q : QualifiedEffect) := Json.mkObj [
   ("closed", footprint q.1.closed), ("throw", toJson q.1.onThrow),
   ("fresh", toJson q.1.fresh), ("alias", toJson q.1.retAlias)]
 
-/-- Ordered fields for comparing two runs. Field hashes are diagnostics. -/
-def Input.fields (g : Input) : List (String × Json) :=
-  let imports := match g.imports with
+def importFields (answer : Except String GroupImports) (established : Established)
+    (tables : List (String × RowTable)) : List (String × Json) :=
+  let imports := match answer with
     | .error e => toJson e
     | .ok v => Json.mkObj [
         ("reads", toJson (v.reads.map fun r => (r.localName, r.location, r.name, r.namePos))),
         ("qualified", toJson (v.qualified.map fun (n,q) => (n, effectWire q))),
         ("depends", toJson v.depends), ("unbound", toJson v.unbound)]
+  [("imports", imports),
+   ("established", toJson (established.map fun (key,q,id) => (key,effectWire q,id))),
+   ("tables", toJson (tables.map fun (l,t) => (l,t.rowsWire,t.interfaces)))]
+
+/-- Ordered fields for comparing two runs. Field hashes are diagnostics. -/
+def Input.fields (g : Input) : List (String × Json) :=
   [("members", .arr g.functions.members), ("callees", .arr g.functions.callees),
    ("init", g.common.getObjValD "init"), ("signatures", .arr g.functions.signatures),
    ("order", toJson g.functions.order),
@@ -414,9 +485,50 @@ def Input.fields (g : Input) : List (String × Json) :=
    ("omittedMentions", g.common.getObjValD "omittedMentions"),
    ("file", g.common.getObjValD "file"), ("sourceSha256", g.common.getObjValD "sourceSha256"),
    ("leader", toJson g.leader), ("owned", toJson g.owned), ("initOrder", toJson g.initOrder),
-   ("demand", toJson g.demand), ("below", answersWire g.below), ("imports", imports),
-   ("established", toJson (g.established.map fun (key,q,id) => (key,effectWire q,id))),
-   ("tables", toJson (g.tables.map fun (l,t) => (l,t.rowsWire,t.interfaces))),
+   ("demand", toJson g.demand), ("below", answersWire g.below)] ++ importFields g.imports g.established g.tables ++ [
    ("controls", toJson (g.force,g.fuel,g.budget.rounds,g.budget.select,g.budget.rerun,g.counting))]
+
+/-- Raw program and explicit whole-file answers for one independent lowering.
+The member list identifies the group even when the slice renumbers the units. -/
+structure Slice where
+  proposalOrder : List String
+  resultConsumers : List String
+  ast : Json
+  members : List String
+  owned : List String
+  initOrder : Option String
+  demand : Bool
+  below : List (String × Option StandIn)
+  imports : Except String GroupImports
+  established : Established
+  tables : List (String × RowTable)
+  force : List String
+  fuel : Nat
+  budget : PositiveCertificates.SearchBudget
+  counting : Bool
+
+def Slice.relative (s : Slice) : Slice × Sites :=
+  let (ast, sites) := fileProgram s.ast
+  let ast := ast.setObjVal! "file" "group.ts" |>.setObjVal! "sourceSha256" (toJson (String.ofList (List.replicate 64 '0')))
+  ({ s with ast, members := s.members.map (sites.unit · false), proposalOrder := s.proposalOrder.map (sites.unit · false) }, sites)
+
+/-- Splitting the functions by membership for diagnostics retains their
+interleaving and every other input field, including errors and controls. -/
+def Slice.fields (s : Slice) : List (String × Json) :=
+  let ⟨proposalOrder, resultConsumers, ast, members, owned, initOrder, demand, below, imports, est, tables, force, fuel, budget, counting⟩ := s
+  let fs := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
+  let member := fun (f : Json) =>
+    let name := (f.getObjValAs? String "name").toOption.getD ""
+    let pos := (f.getObjValAs? (Nat × Nat) "namePos").toOption.getD (0,0)
+    members.contains s!"{name}@{pos.1}"
+  [("members", toJson (fs.filter member)), ("callees", toJson (fs.filter (!member ·))),
+   ("order", toJson (fs.map member)), ("init", ast.getObjValD "init"),
+   ("declarations", ast.getObjValD "declarations"), ("omittedMentions", ast.getObjValD "omittedMentions"),
+   ("file", ast.getObjValD "file"), ("sourceSha256", ast.getObjValD "sourceSha256"),
+   ("group", toJson members), ("owned", toJson owned), ("initOrder", toJson initOrder),
+   ("demand", toJson demand), ("resultConsumers", toJson resultConsumers),
+   ("proposalOrder", toJson proposalOrder), ("below", answersWire below),
+   ("controls", toJson (force, fuel, budget.rounds, budget.select, budget.rerun, counting))] ++
+   importFields imports est tables
 
 end Verification.GroupProjection

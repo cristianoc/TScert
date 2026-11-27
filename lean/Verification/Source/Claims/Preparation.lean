@@ -222,7 +222,7 @@ the lowering refuses is refused at the unit requiring it, and a claim it
 cannot read is an invalid document. A variance declaration that does not
 check (§7.5) refuses the source at its heads. -/
 def lowerEquationFront (ast claims : Json)
-    (budget : PositiveCertificates.SearchBudget) : Except String SourceLowering := do
+    (budget : PositiveCertificates.SearchBudget) (cache : EquationLowering.DefinitionCache := ∅) : Except String SourceLowering := do
   sourceGate (ast.getObjValD "functions")
   sourceGate (ast.getObjValD "init")
   let document ← jField ast "declarations"
@@ -245,7 +245,7 @@ def lowerEquationFront (ast claims : Json)
     fun f => (f.getObjValAs? Span "namePos").toOption
   let contractSite := firstClaimed.getD (0, 0)
   let empty : EquationStore.State := { doc := #[] }
-  (EquationLowering.source ast claims budget).mapError fun failure => match failure with
+  (EquationLowering.source ast claims budget cache).mapError fun failure => match failure with
     | .refusal reason =>
       if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
           reason.startsWith "a label" || reason.startsWith "a producer's row" then

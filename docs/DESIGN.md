@@ -238,10 +238,11 @@ surface's rows state what each replay assumes.
 
 ### What "verified" means
 
-`SourceClaimJson.PassUnit.mode8Accepted_sound` connects a unit the
-single pass prints accepted, at either of its print sites
-(`--verify-interface-stage 8` and a module's check in `--module-interface`),
-to safety of its certified calculus requests (`PassUnitSafe`). Each **code unit** is a function
+`SourceClaimJson.PassUnit.mode8Accepted_sound` connects acceptance to
+safety of the unit's certified calculus requests (`PassUnitSafe`).
+`--file-worker 8` and `--verify-interface-stage 8` use the theorem's
+`Mode8Accepted.slice` case. A fresh module checked by `--module-interface`
+uses its `freshModule` case. Each **code unit** is a function
 or module-initialization body, checked with the units that reach it and that
 it reaches as one unit ([modules and code units](#modules-and-code-units)).
 Its inputs include parameters and the module, imported and host values it
@@ -254,6 +255,22 @@ promise. It may throw or run forever. Generic units have this guarantee
 at every admissible assignment of their type parameters. All elaborated plans
 pass through the checked conversion to `CertifiedPlan`; acceptance cannot
 silently omit an unhandled kind of plan.
+
+A group planned on a slice has a guarantee about the requests lowered
+from that slice. `PassUnit.sliceVerdict_sound` proves this from the explicit
+import planner's successful result and the group's successful check. Applying
+that guarantee to the TypeScript file requires the same executable member
+and nested graphs, corresponding bindings, entry assumptions and
+promised effects with the same meanings in both stores, and the same
+dependencies supplying those contracts.
+Those are obligations of source lowering. The shadow worker compares the
+physical member identities and executable graphs, accept/refuse outcomes
+and ordered proposals. It compares input and result types by their finite
+equation templates or a checked store map. The ordinary
+worker publishes the physical slice’s verdict and proposals. The file supplies
+interface demand, proposal order, initialization’s demand for returned
+callables, ownership and initialization order.
+[Group-local lowering](drafts/function-replay.md#group-local-lowering)
 
 The invariant is kept by construction. The acceptance path consumes the
 complete `FunctionPlan` sum through one exhaustive conversion
