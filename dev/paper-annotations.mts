@@ -290,7 +290,8 @@ function mentions(node: ts.Node, out: Set<string>): void {
 type Decl =
   | { kind: "param"; owner: ts.Node; type: ts.TypeNode | undefined }
   | { kind: "const" | "let"; init: ts.Expression | undefined; type: ts.TypeNode | undefined; at: ts.Node; field?: string }
-  | { kind: "function"; node: ts.FunctionDeclaration };
+  | { kind: "function"; node: ts.FunctionDeclaration }
+  | { kind: "other"; node: ts.Node };
 
 function declIn(statements: readonly ts.Statement[], name: string): Decl | null {
   for (const st of statements) {
@@ -310,6 +311,10 @@ function declIn(statements: readonly ts.Statement[], name: string): Decl | null 
           }
       }
     } else if (ts.isFunctionDeclaration(st) && st.name?.text === name) return { kind: "function", node: st };
+    else if ((ts.isClassDeclaration(st) || ts.isEnumDeclaration(st)) && st.name?.text === name)
+      return { kind: "other", node: st };
+    else if (ts.isModuleDeclaration(st) && ts.isIdentifier(st.name) && st.name.text === name)
+      return { kind: "other", node: st };
   }
   return null;
 }
@@ -418,7 +423,7 @@ function isNumericExpr(e: ts.Expression): boolean {
   }
   if (ts.isIdentifier(u)) {
     const d = declOf(u.text, u);
-    if (d !== null && d.kind !== "function" && d.type !== undefined)
+    if (d !== null && d.kind !== "function" && d.kind !== "other" && d.type !== undefined)
       return d.type.kind === ts.SyntaxKind.NumberKeyword;
     if (d !== null && d.kind === "const" && d.init !== undefined) return isNumericExpr(d.init);
   }
@@ -493,7 +498,7 @@ function returnsFreshAllocation(decl: ts.FunctionDeclaration): boolean {
       if (isFreshLocalAlloc(u)) return undefined;
       if (ts.isIdentifier(u)) {
         const ad = declOf(u.text, u);
-        if (ad !== null && ad.kind !== "function" && ad.kind !== "param" &&
+        if (ad !== null && ad.kind !== "function" && ad.kind !== "other" && ad.kind !== "param" &&
             ts.isVariableDeclaration(ad.at) && vars.has(ad.at)) {
           // Ensure the local is not passed out or stored in a non-local container.
           for (const r of refsTo(ad.at, body)) {
@@ -651,7 +656,7 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   }
   if (!ts.isIdentifier(e)) return null;
   const d = declOf(e.text, e);
-  if (d === null || d.kind === "function") return null;
+  if (d === null || d.kind === "function" || d.kind === "other") return null;
   const local = closure !== null && (d.kind === "param" ? d.owner === closure || within(d.owner, closure) : within(d.at, closure));
   // A function's own parameter is a root of its own effect (`paramRoots`);
   // a closure's parameter names no caller's storage.
@@ -778,7 +783,7 @@ function normalizeKey(key: string, call: ts.Node, unit: ts.Node | null): { key: 
   if (key === "@state") return { key: "@state", fresh: false };
   const root = rootOf(key);
   const d = declOf(root, call);
-  if (d === null || d.kind === "function") return null;
+  if (d === null || d.kind === "function" || d.kind === "other") return null;
   if (d.kind === "const" && isPathExpr(d.init)) {
     const inner = d.init === undefined ? null : resolveAt(d.init);
     if (inner === null) return null;
@@ -1191,7 +1196,7 @@ root bound to an array literal, or a root whose declared type is closed and,
 at the path, an array and nothing else (`Acc(T)`). */
 function isArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
-  if (d === null || d.kind === "function") return false;
+  if (d === null || d.kind === "function" || d.kind === "other") return false;
   if (r.path.length === 0 && d.kind !== "param" && d.type === undefined) return isArrayLiteral(d.init);
   const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
@@ -1205,23 +1210,131 @@ function isPrimitiveArrayType(type: ts.TypeNode | undefined, sf: ts.SourceFile):
   const e = acc.paths.get("");
   return !acc.open && e !== undefined && e.array && e.keys.size === 0 && acc.paths.get("[*]") === undefined;
 }
-function isTypedArrayType(type: ts.TypeNode | undefined): boolean {
-  if (type === undefined) return false;
-  if (ts.isParenthesizedTypeNode(type)) return isTypedArrayType(type.type);
-  if (ts.isUnionTypeNode(type)) return type.types.every((t) =>
-    t.kind === ts.SyntaxKind.NullKeyword || t.kind === ts.SyntaxKind.UndefinedKeyword ||
-    (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword) || isTypedArrayType(t));
-  return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && TYPED_ARRAY_NAMES.has(type.typeName.text);
+function isTypedArrayType(type: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): boolean {
+  if (type === undefined || depth > 8) return false;
+  if (ts.isParenthesizedTypeNode(type)) return isTypedArrayType(type.type, sf, depth + 1);
+  if (ts.isUnionTypeNode(type)) {
+    let hasTypedArray = false;
+    for (const t of type.types) {
+      if (t.kind === ts.SyntaxKind.NullKeyword || t.kind === ts.SyntaxKind.UndefinedKeyword ||
+          (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword)) continue;
+      if (!isTypedArrayType(t, sf, depth + 1)) return false;
+      hasTypedArray = true;
+    }
+    return hasTypedArray;
+  }
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    const name = type.typeName.text;
+    if ((name === "Dense" || name === "Fresh") && type.typeArguments?.length === 1)
+      return isTypedArrayType(type.typeArguments[0], sf, depth + 1);
+    if ((name === "Effects" || name === "Modifies") && type.typeArguments && type.typeArguments.length >= 2)
+      return isTypedArrayType(type.typeArguments[type.typeArguments.length - 1], sf, depth + 1);
+    if (TYPED_ARRAY_NAMES.has(name))
+      return resolveTypeDecl(name, sf) === null && declIn(sf.statements, name) === null && importedDecl(name, sf) === undefined;
+    const resolved = resolveTypeDecl(name, sf);
+    if (resolved !== null && ts.isTypeAliasDeclaration(resolved.node))
+      return isTypedArrayType(resolved.node.type, resolved.file, depth + 1);
+  }
+  return false;
+}
+function isStringType(type: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): boolean {
+  if (type === undefined || depth > 8) return false;
+  if (type.kind === ts.SyntaxKind.StringKeyword || ts.isTemplateLiteralTypeNode(type)) return true;
+  if (ts.isLiteralTypeNode(type) && ts.isStringLiteral(type.literal)) return true;
+  if (ts.isParenthesizedTypeNode(type)) return isStringType(type.type, sf, depth + 1);
+  if (ts.isUnionTypeNode(type)) return type.types.length > 0 && type.types.every((t) => isStringType(t, sf, depth + 1));
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    const name = type.typeName.text;
+    if ((name === "Effects" || name === "Modifies") && type.typeArguments && type.typeArguments.length >= 2)
+      return isStringType(type.typeArguments[type.typeArguments.length - 1], sf, depth + 1);
+    const resolved = resolveTypeDecl(name, sf);
+    if (resolved !== null && ts.isTypeAliasDeclaration(resolved.node))
+      return isStringType(resolved.node.type, resolved.file, depth + 1);
+  }
+  return false;
+}
+function isNullableStringType(type: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): boolean {
+  if (type === undefined || depth > 8) return false;
+  if (type.kind === ts.SyntaxKind.NullKeyword || type.kind === ts.SyntaxKind.UndefinedKeyword ||
+      (ts.isLiteralTypeNode(type) && type.literal.kind === ts.SyntaxKind.NullKeyword)) return true;
+  if (ts.isParenthesizedTypeNode(type)) return isNullableStringType(type.type, sf, depth + 1);
+  if (ts.isUnionTypeNode(type)) return type.types.length > 0 && type.types.every((t) => isNullableStringType(t, sf, depth + 1));
+  if (isStringType(type, sf, depth + 1)) return true;
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    const resolved = resolveTypeDecl(type.typeName.text, sf);
+    if (resolved !== null && ts.isTypeAliasDeclaration(resolved.node))
+      return isNullableStringType(resolved.node.type, resolved.file, depth + 1);
+  }
+  return false;
+}
+function isStringArrayType(type: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): boolean {
+  if (type === undefined || depth > 8) return false;
+  if (ts.isParenthesizedTypeNode(type)) return isStringArrayType(type.type, sf, depth + 1);
+  if (ts.isTypeOperatorNode(type) && type.operator === ts.SyntaxKind.ReadonlyKeyword)
+    return isStringArrayType(type.type, sf, depth + 1);
+  if (ts.isArrayTypeNode(type)) return isStringType(type.elementType, sf, depth + 1);
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    const name = type.typeName.text;
+    if ((name === "Dense" || name === "Fresh") && type.typeArguments?.length === 1)
+      return isStringArrayType(type.typeArguments[0], sf, depth + 1);
+    if ((name === "Array" || name === "ReadonlyArray") && type.typeArguments?.length === 1)
+      return isStringType(type.typeArguments[0], sf, depth + 1);
+    const resolved = resolveTypeDecl(name, sf);
+    if (resolved !== null && ts.isTypeAliasDeclaration(resolved.node))
+      return isStringArrayType(resolved.node.type, resolved.file, depth + 1);
+  }
+  return false;
+}
+const STRING_RETURNING_METHODS = new Set<string>([
+  "slice", "substring", "trim", "toLowerCase", "toUpperCase", "replace", "replaceAll", "padStart", "padEnd", "repeat", "charAt", "normalize",
+]);
+function isStringExpr(e: ts.Expression, depth: number = 0): boolean {
+  if (depth > 8) return false;
+  const u = unwrapExpr(e);
+  if (ts.isStringLiteral(u) || ts.isNoSubstitutionTemplateLiteral(u) || ts.isTemplateExpression(u)) return true;
+  if (ts.isBinaryExpression(u) && u.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    return isStringExpr(u.left, depth + 1) || isStringExpr(u.right, depth + 1);
+  if (ts.isBinaryExpression(u) && u.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken && isStringExpr(u.right, depth + 1)) {
+    if (isStringExpr(u.left, depth + 1)) return true;
+    const lt = exprDeclaredType(u.left, depth + 1);
+    if (lt !== null && isNullableStringType(lt.type, lt.file)) return true;
+  }
+  if (ts.isConditionalExpression(u))
+    return isStringExpr(u.whenTrue, depth + 1) && isStringExpr(u.whenFalse, depth + 1);
+  if (ts.isCallExpression(u)) {
+    const cal = unwrapExpr(u.expression);
+    if (ts.isIdentifier(cal) && cal.text === "String" && declOf("String", cal) === null && importedDecl("String", cal) === undefined)
+      return true;
+    if (ts.isPropertyAccessExpression(cal)) {
+      if (STRING_RETURNING_METHODS.has(cal.name.text) && isStringExpr(cal.expression, depth + 1)) return true;
+      if (cal.name.text === "join") {
+        const rt = exprDeclaredType(cal.expression, depth + 1);
+        if (rt !== null && isPrimitiveArrayType(rt.type, rt.file)) return true;
+      }
+    }
+  }
+  if (ts.isElementAccessExpression(u)) {
+    const rt = exprDeclaredType(u.expression, depth + 1);
+    if (rt !== null && (isStringType(rt.type, rt.file) || isStringArrayType(rt.type, rt.file))) return true;
+  }
+  if (ts.isIdentifier(u)) {
+    const d = declOf(u.text, u);
+    if (d !== null && d.kind !== "function" && d.kind !== "other" && d.kind !== "param" &&
+        d.type === undefined && d.field === undefined && d.init !== undefined && isStringExpr(d.init, depth + 1))
+      return true;
+  }
+  const t = exprDeclaredType(u, depth + 1);
+  return t !== null && isStringType(t.type, t.file);
 }
 function isTypedArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
-  if (d === null || d.kind === "function") return false;
-  if (r.path.length === 0) return isTypedArrayType(d.type);
+  if (d === null || d.kind === "function" || d.kind === "other") return false;
+  if (r.path.length === 0) return isTypedArrayType(d.type, at.getSourceFile());
   return false;
 }
 function isPrimitiveArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
-  if (d === null || d.kind === "function") return false;
+  if (d === null || d.kind === "function" || d.kind === "other") return false;
   const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
   return !acc.open && e !== undefined && e.array && e.keys.size === 0 &&
@@ -1231,7 +1344,7 @@ function isPrimitiveArrayAt(r: { root: string; path: string[] }, at: ts.Node): b
 its declared type is closed and, at the path, declares keys and no array. */
 function declaredNoArray(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
-  if (d === null || d.kind === "function") return false;
+  if (d === null || d.kind === "function" || d.kind === "other") return false;
   const acc = accOf(d.type, at.getSourceFile());
   const e = acc.paths.get(r.path.join("."));
   return d.type !== undefined && !acc.open && e !== undefined && !e.array;
@@ -1257,7 +1370,9 @@ function hostKindOfType(node: ts.TypeNode | undefined, sf: ts.SourceFile, depth:
   }
   if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) &&
       ts.isIdentifier(node.typeName.left) && node.typeName.left.text === "Intl" &&
-      node.typeName.right.text === "Segmenter") return "segmenter";
+      node.typeName.right.text === "Segmenter" &&
+      resolveTypeDecl("Intl", sf) === null && declIn(sf.statements, "Intl") === null &&
+      importedDecl("Intl", sf) === undefined) return "segmenter";
   if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
     const name = node.typeName.text;
     if ((name === "Effects" || name === "Modifies") && node.typeArguments && node.typeArguments.length >= 2)
@@ -1311,7 +1426,7 @@ function exprDeclaredType(e: ts.Expression, depth: number = 0): { type: ts.TypeN
   const u = unwrapExpr(e);
   if (ts.isIdentifier(u)) {
     const d = declOf(u.text, u);
-    if (d === null || d.kind === "function") return null;
+    if (d === null || d.kind === "function" || d.kind === "other") return null;
     if (d.type !== undefined) return { type: d.type, file: u.getSourceFile() };
     if (d.kind === "const" && d.init !== undefined) {
       const base = exprDeclaredType(d.init, depth + 1);
@@ -1349,7 +1464,7 @@ function hostReceiverKind(e: ts.Expression, depth: number = 0): HostReceiverKind
   if (ts.isIdentifier(u)) {
     const d = declOf(u.text, u);
     if (d === null) return u.text === "document" ? "document" : null;
-    if (d.kind === "function") return null;
+    if (d.kind === "function" || d.kind === "other") return null;
     if (d.type !== undefined) return hostKindOfType(d.type, u.getSourceFile());
     if (d.kind === "const" && d.init !== undefined && d.field === undefined) return hostReceiverKind(d.init, depth + 1);
   }
@@ -1397,8 +1512,12 @@ interface ConfinedModuleInfo {
   cells: Set<ts.VariableDeclaration>;
   containers: Set<ts.VariableDeclaration>;
   nestedLocals: Set<ts.VariableDeclaration>;
+  regexes: Set<ts.VariableDeclaration>;
   failures: Map<ts.VariableDeclaration, string>;
 }
+
+const REGEXP_MEMBERS = new Set<string>(["test", "exec", "lastIndex", "source", "flags", "global", "sticky", "ignoreCase", "multiline", "dotAll", "unicode", "unicodeSets"]);
+const REGEXP_STRING_METHODS = new Set<string>(["match", "matchAll", "replace", "replaceAll", "split", "search"]);
 
 const MUTATING_METHODS = new Set<string>(["set", "delete", "clear", "add", "push", "pop", "shift", "unshift", "splice", "fill", "copyWithin"]);
 const READ_COLLECTION_METHODS = new Set<string>(["get", "has", "indexOf", "lastIndexOf", "includes"]);
@@ -1479,7 +1598,7 @@ function refsTo(decl: ts.VariableDeclaration, scope: ts.Node): ts.Identifier[] {
   const walk = (n: ts.Node): undefined => {
     if (ts.isIdentifier(n) && n.text === name && n !== decl.name && isValueReference(n)) {
       const d = declOf(name, n);
-      if (d !== null && d.kind !== "function" && d.kind !== "param" && d.at === decl) out.push(n);
+      if (d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && d.at === decl) out.push(n);
     }
     n.forEachChild(walk);
     return undefined;
@@ -1496,7 +1615,7 @@ function isFreshStoredValue(expr: ts.Expression, scope: ts.Node, containerDecl: 
   if (isFreshContainerAlloc(u)) return true;
   if (!ts.isIdentifier(u)) return false;
   const d = declOf(u.text, u);
-  if (d === null || d.kind === "function" || d.kind === "param" || !ts.isVariableDeclaration(d.at)) return false;
+  if (d === null || d.kind === "function" || d.kind === "param" || d.kind === "other" || !ts.isVariableDeclaration(d.at)) return false;
   const vDecl = d.at;
   // Check if `vDecl` is a `const` initialized with a fresh container allocation.
   if (d.kind === "const" && isFreshContainerAlloc(d.init)) return true;
@@ -1539,6 +1658,7 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
   const cells = new Set<ts.VariableDeclaration>();
   const containers = new Set<ts.VariableDeclaration>();
   const nestedLocals = new Set<ts.VariableDeclaration>();
+  const regexes = new Set<ts.VariableDeclaration>();
   const failures = new Map<ts.VariableDeclaration, string>();
 
   // Collect all names exported from this module.
@@ -1619,6 +1739,23 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
         failures.set(decl, `module binding ${name} is exported, not module-private`);
         continue;
       }
+      if (isConst && decl.initializer !== undefined && ts.isRegularExpressionLiteral(unwrapExpr(decl.initializer))) {
+        const refs = refsTo(decl, sf);
+        const allNonEscaping = refs.every((r) => {
+          const cur = climbWrappers(r);
+          const p = cur.parent;
+          if (p === undefined) return false;
+          if (ts.isPropertyAccessExpression(p) && p.expression === cur && REGEXP_MEMBERS.has(p.name.text)) return true;
+          if (ts.isCallExpression(p) && p.arguments[0] !== undefined && climbWrappers(p.arguments[0]) === cur) {
+            const cal = unwrapExpr(p.expression);
+            return ts.isPropertyAccessExpression(cal) && REGEXP_STRING_METHODS.has(cal.name.text) && isStringExpr(cal.expression);
+          }
+          return false;
+        });
+        if (allNonEscaping) regexes.add(decl);
+        else failures.set(decl, `module regex ${name} escapes its module`);
+        continue;
+      }
       if (!isFreshModuleInit(decl.initializer)) {
         failures.set(decl, `module binding ${name} is not initialized with a fresh or primitive value`);
         continue;
@@ -1630,7 +1767,7 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
         // that never escapes and is only assigned fresh typed arrays or null.
         let mutatedThrough = false;
         let failReason: string | null = null;
-        let lazyTypedOk = isTypedArrayType(decl.type);
+        let lazyTypedOk = isTypedArrayType(decl.type, sf);
         const lazyAliases: ts.VariableDeclaration[] = [];
         const localEscapes = (vDecl: ts.VariableDeclaration, scope: ts.Node): boolean => {
           for (const lr of refsTo(vDecl, scope)) {
@@ -1754,7 +1891,7 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
       }
     }
   }
-  const info: ConfinedModuleInfo = { cells, containers, nestedLocals, failures };
+  const info: ConfinedModuleInfo = { cells, containers, nestedLocals, regexes, failures };
   moduleConfinementCache.set(sf, info);
   return info;
 }
@@ -1832,7 +1969,7 @@ function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect, ordKee
   // A `TypedArray` parameter's element/spine writes (`p[*]`, `p[#]`) are covered by `"views": "grow"` when stated.
   const hasViews = stated.entries.some(([k, d]) => k === "views" && le("grow", d));
   const typedParams = hasViews
-    ? new Set(decl.parameters.flatMap((p) => ts.isIdentifier(p.name) && isTypedArrayType(p.type) ? [p.name.text] : []))
+    ? new Set(decl.parameters.flatMap((p) => ts.isIdentifier(p.name) && isTypedArrayType(p.type, decl.getSourceFile()) ? [p.name.text] : []))
     : new Set<string>();
   const denseWrites: [number, number][] = [];
   const extraEntries: [string, Change][] = [];
@@ -1880,7 +2017,7 @@ function analyzeFreshReturn(fd: ts.FunctionDeclaration): { allFieldsFresh: boole
     if (isPrimitiveLiteral(u) || isFreshLocalAlloc(u)) return true;
     if (ts.isIdentifier(u)) {
       const d = declOf(u.text, u);
-      return d !== null && d.kind !== "function" && d.kind !== "param" && fdVars.has(d.at);
+      return d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && fdVars.has(d.at);
     }
     return false;
   };
@@ -1978,13 +2115,13 @@ function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts
           const u = unwrapExpr(e);
           if (ts.isIdentifier(u)) {
             const ad = declOf(u.text, u);
-            return ad !== null && ad.kind !== "function" && ad.kind !== "param" &&
+            return ad !== null && ad.kind !== "function" && ad.kind !== "param" && ad.kind !== "other" &&
               (vars.has(ad.at) || (selfDecl !== undefined && ad.at === selfDecl));
           }
           if (ts.isPropertyAccessExpression(u) && ts.isIdentifier(unwrapExpr(u.expression))) {
             const obj = unwrapExpr(u.expression);
             const ad = declOf(obj.getText(), obj);
-            if (ad !== null && ad.kind !== "function" && ad.kind !== "param" && freshFieldObjs.has(ad.at)) return true;
+            if (ad !== null && ad.kind !== "function" && ad.kind !== "param" && ad.kind !== "other" && freshFieldObjs.has(ad.at)) return true;
           }
           if (ts.isCallExpression(u)) {
             const fd = calleeDecl(u);
@@ -2003,7 +2140,7 @@ function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts
             const arr = unwrapExpr(d.initializer);
             if (!ts.isElementAccessExpression(arr) || !ts.isIdentifier(unwrapExpr(arr.expression))) return false;
             const ad = declOf(unwrapExpr(arr.expression).getText(), arr.expression);
-            return ad !== null && ad.kind !== "function" && ad.kind !== "param" && elemArrays.has(ad.at);
+            return ad !== null && ad.kind !== "function" && ad.kind !== "param" && ad.kind !== "other" && elemArrays.has(ad.at);
           })());
         if (initFresh && (isConst ? !isPrimitiveLiteral(d.initializer) : true)) {
           let allFresh = true;
@@ -2030,7 +2167,7 @@ function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts
             const ok = arg !== undefined && (isFreshContainerAlloc(arg) ||
               (ts.isIdentifier(unwrapExpr(arg)) && (() => {
                 const ad = declOf(unwrapExpr(arg).getText(), arg);
-                return ad !== null && ad.kind !== "function" && ad.kind !== "param" && vars.has(ad.at);
+                return ad !== null && ad.kind !== "function" && ad.kind !== "param" && ad.kind !== "other" && vars.has(ad.at);
               })()));
             if (!ok) { allElemsFresh = false; break; }
           } else if (u.kind === "mutateMethod" || u.kind === "mutateProp") {
@@ -2052,7 +2189,7 @@ function isFreshElementExpr(e: ts.Expression, elemArrays: ReadonlySet<ts.Node>):
   const arr = unwrapExpr(u.expression);
   if (!ts.isIdentifier(arr)) return false;
   const d = declOf(arr.text, arr);
-  return d !== null && d.kind !== "function" && d.kind !== "param" && elemArrays.has(d.at);
+  return d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && elemArrays.has(d.at);
 }
 
 /** Whether an identifier expression refers to a variable that is fresh right at
@@ -2103,7 +2240,7 @@ function closureEffect(
     const u = unwrapExpr(e);
     if (!ts.isIdentifier(u)) return false;
     const d = declOf(u.text, u);
-    if (d === null || d.kind === "function" || d.kind === "param" || !ts.isVariableDeclaration(d.at)) return false;
+    if (d === null || d.kind === "function" || d.kind === "param" || d.kind === "other" || !ts.isVariableDeclaration(d.at)) return false;
     return confined.containers.has(d.at) || confined.nestedLocals.has(d.at);
   };
 
@@ -2116,7 +2253,7 @@ function closureEffect(
     if (isFreshElementExpr(u, freshElemArrays)) return true;
     if (ts.isIdentifier(u)) {
       const d = declOf(u.text, u);
-      if (d !== null && d.kind !== "function" && d.kind !== "param" && within(d.at, fn)) {
+      if (d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && within(d.at, fn)) {
         if (freshVars.has(d.at)) return true;
         if (isBlockFreshVar(u, d.at, at)) return true;
         if (d.kind === "const" && d.init !== undefined && isFreshAt(d.init, d.at)) return true;
@@ -2145,8 +2282,8 @@ function closureEffect(
     const u = unwrapExpr(e);
     if (!ts.isIdentifier(u)) return false;
     const d = declOf(u.text, u);
-    return d !== null && d.kind === "const" && d.init !== undefined &&
-      ts.isRegularExpressionLiteral(unwrapExpr(d.init)) && !within(d.at, fn);
+    return d !== null && d.kind === "const" && ts.isVariableDeclaration(d.at) &&
+      !within(d.at, fn) && confined.regexes.has(d.at);
   };
 
   const write = (target: ts.Expression, change: Change, at: ts.Node): undefined => {
@@ -2163,7 +2300,7 @@ function closureEffect(
           const d = declOf(u.text, u);
           if (d !== null && d.kind === "const" && d.init !== undefined) {
             const init = unwrapExpr(d.init);
-            if (isTypedArrayType(d.type) || isFreshTypedArrayAlloc(init) ||
+            if (isTypedArrayType(d.type, sf) || isFreshTypedArrayAlloc(init) ||
                 (ts.isBinaryExpression(init) && init.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken && isFreshTypedArrayAlloc(init.right))) {
               entries.push(["views", "grow"]);
               return undefined;
@@ -2181,7 +2318,7 @@ function closureEffect(
         }
         if (ts.isElementAccessExpression(t)) {
           const recvType = exprDeclaredType(t.expression);
-          if (recvType !== null && isTypedArrayType(recvType.type)) {
+          if (recvType !== null && isTypedArrayType(recvType.type, recvType.file)) {
             entries.push(["views", "grow"]);
             return undefined;
           }
@@ -2213,14 +2350,14 @@ function closureEffect(
     }
     if (ts.isIdentifier(t)) {
       const d = declOf(t.text, t);
-      const local = d !== null && d.kind !== "function" &&
+      const local = d !== null && d.kind !== "function" && d.kind !== "other" &&
         (d.kind === "param" ? d.owner === fn || within(d.owner, fn) : within(d.at, fn));
       if (local) return undefined;
       if (d !== null && d.kind === "let" && ts.isVariableDeclaration(d.at) && confined.cells.has(d.at)) {
         entries.push(["@state", "any"]);
         return undefined;
       }
-      const why = d !== null && d.kind !== "function" && d.kind !== "param" && ts.isVariableDeclaration(d.at)
+      const why = d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && ts.isVariableDeclaration(d.at)
         ? confined.failures.get(d.at) : undefined;
       return fail(at, why !== undefined ? `assigns a non-confined module binding (${why})` : "assigns a captured binding");
     }
@@ -2268,7 +2405,7 @@ function closureEffect(
           const u = unwrapExpr(callee.expression);
           if (!ts.isIdentifier(u)) return false;
           const d = declOf(u.text, u);
-          return d !== null && d.kind !== "function" && d.kind !== "param" && isPrimitiveArrayType(d.type, sf);
+          return d !== null && d.kind !== "function" && d.kind !== "param" && d.kind !== "other" && isPrimitiveArrayType(d.type, sf);
         })()) {
           // `.slice(...)` on a confined primitive-element array allocates a fresh copy without mutating old storage.
         } else if (MUTATING_METHODS.has(m)) {
@@ -2371,20 +2508,24 @@ function closureEffect(
       } else if (ts.isPropertyAccessExpression(callee) && PURE_STRING_METHODS.has(callee.name.text)) {
         // Pure string methods (`charCodeAt`, `slice`, `includes`, etc.) mutate no heap location.
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "split" &&
+          isStringExpr(callee.expression) &&
           n.arguments.length === 1 && n.arguments[0] !== undefined && isStatelessRegExp(n.arguments[0])) {
         // `s.split(re)` with a stateless regex literal allocates a fresh `string[]` without mutating old storage.
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "match" &&
+          isStringExpr(callee.expression) &&
           n.arguments.length === 1 && n.arguments[0] !== undefined &&
           (isStatelessRegExp(n.arguments[0]) || isModuleConstRegExp(n.arguments[0]))) {
-        // `s.match(re)` with a stateless regex is pure; with a module-private `const` regex updates its `lastIndex` (`@state`).
+        // `s.match(re)` with a stateless regex is pure; with a confined module-private `const` regex updates its `lastIndex` (`@state`).
         if (!isStatelessRegExp(n.arguments[0])) entries.push(["@state", "any"]);
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "replace" &&
+          isStringExpr(callee.expression) &&
           n.arguments.length === 2 && n.arguments[0] !== undefined && n.arguments[1] !== undefined &&
           (ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0])) || isModuleConstRegExp(n.arguments[0])) &&
           ts.isStringLiteral(unwrapExpr(n.arguments[1]))) {
-        // `s.replace(re, "...")` with a fresh regex literal is pure; with a module-private `const` regex updates its `lastIndex` (`@state`).
+        // `s.replace(re, "...")` with a fresh regex literal is pure; with a confined module-private `const` regex updates its `lastIndex` (`@state`).
         if (!ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0]))) entries.push(["@state", "any"]);
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "replace" &&
+          isStringExpr(callee.expression) &&
           n.arguments.length === 2 && n.arguments[0] !== undefined && n.arguments[1] !== undefined &&
           ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0])) && isFn(unwrapExpr(n.arguments[1]))) {
         // `s.replace(/.../, cb)` with a fresh regex literal and inline callback: inline the callback's body under `fn`.
@@ -2517,7 +2658,7 @@ function closureEffect(
                   const argType = exprDeclaredType(arg);
                   const fieldName = loc.path[0];
                   const ft = argType === null || fieldName === undefined ? null : fieldTypeOfType(argType.type, argType.file, fieldName);
-                  if (ft !== null && isTypedArrayType(ft.type)) {
+                  if (ft !== null && isTypedArrayType(ft.type, ft.file)) {
                     entries.push(["views", "grow"]);
                     continue;
                   }
@@ -2535,7 +2676,7 @@ function closureEffect(
               }
               if (loc !== null && (loc.kind === "spine" || loc.kind === "cells") && loc.path.length === 0 && arg !== undefined) {
                 const argType = exprDeclaredType(arg);
-                if (argType !== null && isTypedArrayType(argType.type)) {
+                if (argType !== null && isTypedArrayType(argType.type, argType.file)) {
                   entries.push(["views", "grow"]);
                   continue;
                 }

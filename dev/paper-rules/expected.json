@@ -217,6 +217,10 @@
       "walkPure": "accepted",
       "callPureWithState": "refused",
       "callUserAppendChild": "refused",
+      "matchExportedRe": "refused",
+      "callUserReplace": "refused",
+      "getFakeTyped": "accepted",
+      "writeShadowedTyped": "refused",
       "init": "accepted"
     }
   },

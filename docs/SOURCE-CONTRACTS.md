@@ -2260,7 +2260,7 @@ the intrinsics stating them, and so is an element write at a number,
 ```
 
 ```math
-\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset\mathtt{number}\mid\mathtt{undefined}
+\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\mathsf{ensures}\ 0=\mathtt{undefined}\lor(\mathrm{int}(3)\land 0\le 3<\mathrm{view}(2))}\mathtt{number}\mid\mathtt{undefined}
 \qquad
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset\mathtt{number}
 \qquad
@@ -2359,8 +2359,14 @@ keeps the integer, $`+0`$ of $`-0`$ in an integer format (proved:
 300, 255 after $`-1`$ and 0 after NaN, and a write at index 5 of a view of
 length 1 leaves its element (`node-bytes-write`, run under Node).
 
-The intrinsics state these rules as signatures: `%ByteAt%`'s two above and
-the following, `%ByteLength%`'s result the safe integer
+The intrinsics state these rules as signatures: `%ByteAt%`'s two above
+(its unbounded overload carries three guarded postconditions,
+$`r=\mathtt{undefined}\lor\mathrm{int}(k)`$, $`r=\mathtt{undefined}\lor 0\le k`$,
+and $`r=\mathtt{undefined}\lor k<\mathrm{view}(b)`$, by ECMA-262
+`TypedArray.[[Get]]` / `TypedArrayGetElement`, which returns `undefined` for
+every number outside $`0\le k<\mathrm{view}(b)`$ without consulting prototypes;
+`typed-array-read-defined`, negative `invalid-array-read-defined` run under
+Node), `%ByteLength%`'s result the safe integer
 $`\mathrm{view}(b)`$, and `%ByteSet%`'s first, which holds of every element
 assignment and states View-Write at the typed array's own format and the
 value as the result (`elementWrite` `assign`, `CallEffects.ViewAssign`),

@@ -156,11 +156,11 @@ def tagRefinable (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Bool 
 `as` establish for slot `i`. -/
 def slotRefine (G : NormalGraph ι) (as : List HeapKnowledge.IndexAtom) (i : Nat) (A : Ty ι) : Ty ι :=
   let A0 := match intLabel G with
-    | some L => if HeapKnowledge.intSlot as i && intRefinable G A then [L] else A
+    | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
     | none => A
-  let A1 := if HeapKnowledge.slotGuardTag as i .notNull && tagRefinable G A0 .isNul false then
+  let A1 := if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
     BranchRefinement.tagSlice G A0 .isNul false else A0
-  if HeapKnowledge.slotGuardTag as i .notUndef && tagRefinable G A1 .isUndef false then
+  if tagRefinable G A1 .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef then
     BranchRefinement.tagSlice G A1 .isUndef false else A1
 
 /-- **A context refined by integer and nullish-exclusion facts**: each slot
@@ -174,11 +174,11 @@ def slotRefines [DecidableEq ι] (G : NormalGraph ι) (as : List HeapKnowledge.I
   if D == A then true
   else if (match intLabel G with | some L => D == [L] && HeapKnowledge.intSlot as i | none => false) then true
   else
-    let nN := HeapKnowledge.slotGuardTag as i .notNull
-    let nU := HeapKnowledge.slotGuardTag as i .notUndef
     let sN := BranchRefinement.tagSlice G A .isNul false
-    let sU := BranchRefinement.tagSlice G A .isUndef false
-    (nN && D == sN) || (nU && D == sU) || (nN && nU && D == BranchRefinement.tagSlice G sN .isUndef false)
+    (D == sN && HeapKnowledge.slotGuardTag as i .notNull) ||
+    (D == BranchRefinement.tagSlice G A .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef) ||
+    (D == BranchRefinement.tagSlice G sN .isUndef false &&
+      HeapKnowledge.slotGuardTag as i .notNull && HeapKnowledge.slotGuardTag as i .notUndef)
 
 /-- Whether `Δ` is `Γ` refined by integer and nullish-exclusion facts: as long,
 each slot its type in `Γ` or a proved refinement of it in `as`. -/
@@ -225,7 +225,7 @@ private theorem slotRefine_meaning {G : NormalGraph ι} {as bs : List HeapKnowle
   unfold slotRefine
   dsimp only
   have hA0 : meaning G (match intLabel G with
-      | some L => if HeapKnowledge.intSlot as i && intRefinable G A then [L] else A
+      | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
       | none => A) n W (ρ i) := by
     cases hL : intLabel G with
     | none => exact hA
@@ -233,23 +233,23 @@ private theorem slotRefine_meaning {G : NormalGraph ι} {as bs : List HeapKnowle
       dsimp only
       split
       · rename_i hc
-        exact intSlot_meaning hL hk (hint (Bool.and_eq_true_iff.mp hc).1)
+        exact intSlot_meaning hL hk (hint (Bool.and_eq_true_iff.mp hc).2)
       · exact hA
   generalize (match intLabel G with
-      | some L => if HeapKnowledge.intSlot as i && intRefinable G A then [L] else A
+      | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
       | none => A) = A0 at hA0 ⊢
-  have hA1 : meaning G (if HeapKnowledge.slotGuardTag as i .notNull && tagRefinable G A0 .isNul false then
+  have hA1 : meaning G (if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
       BranchRefinement.tagSlice G A0 .isNul false else A0) n W (ρ i) := by
     split
     · rename_i hc
-      have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notNull (Bool.and_eq_true_iff.mp hc).1)
+      have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notNull (Bool.and_eq_true_iff.mp hc).2)
       exact BranchRefinement.tagSlice_sound hA0 (.inl (tagHolds_isNul_of_ne hne))
     · exact hA0
-  generalize (if HeapKnowledge.slotGuardTag as i .notNull && tagRefinable G A0 .isNul false then
+  generalize (if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
       BranchRefinement.tagSlice G A0 .isNul false else A0) = A1 at hA1 ⊢
   split
   · rename_i hc
-    have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notUndef (Bool.and_eq_true_iff.mp hc).1)
+    have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notUndef (Bool.and_eq_true_iff.mp hc).2)
     exact BranchRefinement.tagSlice_sound hA1 (.inl (tagHolds_isUndef_of_ne hne))
   · exact hA1
 
@@ -282,14 +282,14 @@ theorem envOk_intRefines [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty
   dsimp only at hc
   have hm := he.2 i _ hA
   have htags : ∀ {A : Ty ι}, meaning G A n W (ρ i) →
-      (HeapKnowledge.slotGuardTag as i .notNull && D == BranchRefinement.tagSlice G A .isNul false ||
-       HeapKnowledge.slotGuardTag as i .notUndef && D == BranchRefinement.tagSlice G A .isUndef false ||
-       HeapKnowledge.slotGuardTag as i .notNull && HeapKnowledge.slotGuardTag as i .notUndef &&
-         D == BranchRefinement.tagSlice G (BranchRefinement.tagSlice G A .isNul false) .isUndef false) = true →
+      (D == BranchRefinement.tagSlice G A .isNul false && HeapKnowledge.slotGuardTag as i .notNull ||
+       D == BranchRefinement.tagSlice G A .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef ||
+       D == BranchRefinement.tagSlice G (BranchRefinement.tagSlice G A .isNul false) .isUndef false &&
+         HeapKnowledge.slotGuardTag as i .notNull && HeapKnowledge.slotGuardTag as i .notUndef) = true →
       meaning G D n W (ρ i) := by
     intro A hA ht
     simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at ht
-    rcases ht with (⟨hnN, hEq⟩ | ⟨hnU, hEq⟩) | ⟨⟨hnN, hnU⟩, hEq⟩
+    rcases ht with (⟨hEq, hnN⟩ | ⟨hEq, hnU⟩) | ⟨⟨hEq, hnN⟩, hnU⟩
     · subst hEq
       exact BranchRefinement.tagSlice_sound hA (.inl (tagHolds_isNul_of_ne (HeapKnowledge.slotGuardTag_sound hk hnN)))
     · subst hEq
@@ -321,7 +321,7 @@ theorem envOk_intRefines [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty
 def intAtoms (as : List HeapKnowledge.IndexAtom) : List HeapKnowledge.IndexAtom :=
   as.filter fun a => a.cond.isNone && (match a.fact with
     | .int _ | .length _ _ | .linear _ => true
-    | _ => !(HeapKnowledge.atomGuardTags a.fact).isEmpty)
+    | f => HeapKnowledge.atomMayHaveGuardTag f)
 
 /-- Knowledge `k` with the atoms of `k₀` stating safe integers or slot guard
 tags: a writing step's facts over every location, with the facts its context
@@ -352,13 +352,8 @@ theorem slotGuardTag_intAtoms (as : List HeapKnowledge.IndexAtom) (i : Nat) (t :
     refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, h⟩
     simp only [Bool.and_eq_true] at h ⊢
     refine ⟨h.1, ?_⟩
-    obtain ⟨-, h2⟩ := h
-    obtain ⟨p, hp, -⟩ := List.any_eq_true.mp h2
-    have hne : !(HeapKnowledge.atomGuardTags a.fact).isEmpty = true := by
-      cases hts : HeapKnowledge.atomGuardTags a.fact with
-      | nil => rw [hts] at hp; cases hp
-      | cons _ _ => rfl
-    cases hf : a.fact <;> simp only [hf] at hne ⊢ <;> first | rfl | exact hne
+    have hmay := HeapKnowledge.atomMayHaveGuardTag_of_has h.2
+    cases hf : a.fact <;> simp only [hf] at hmay ⊢ <;> first | rfl | exact hmay
 
 theorem intSlot_withInts (k k₀ : HeapKnowledge.Knowledge) (i : Nat) :
     (HeapKnowledge.intSlot k₀.indices i = true → HeapKnowledge.intSlot (withInts k k₀).indices i = true) ∧
