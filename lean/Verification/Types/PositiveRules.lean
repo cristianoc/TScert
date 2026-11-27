@@ -851,7 +851,10 @@ host must meet is met by the target's host, being within one the target's
 must meet. -/
 @[nospecialize] def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : MethodMembers.Sig (List ι)) : Prop :=
-  (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
+  (∀ t ∈ q.calls, (∃ s ∈ p.calls, Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∨
+    (∃ s ∈ p.rests, Domains R (t.arguments.take s.arguments.1.length) s.arguments.1 ∧
+      ElemRest elem R (t.arguments.drop s.arguments.1.length) s.arguments.2 ∧
+      R s.result t.result ∧ s.effect.covers t.effect = true)) ∧
   (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
     IntoRest elem R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
   (∀ t ∈ q.schemes, ∃ s ∈ p.schemes, R s t) ∧
@@ -866,8 +869,13 @@ host-relative member. -/
 @[nospecialize] def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (L : Ops ι) (S : List (RestArrow (List ι)))
     (q : MethodMembers.Sig (List ι)) : Prop :=
-  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
-    Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
+  q.schemes = [] ∧ (∀ t ∈ q.calls,
+    (∃ s ∈ L, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
+      Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∨
+    (∃ s ∈ S, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
+      Domains R (t.arguments.take s.arguments.1.length) s.arguments.1 ∧
+      ElemRest (restElem G) R (t.arguments.drop s.arguments.1.length) s.arguments.2 ∧
+      R s.result t.result ∧ s.effect.covers t.effect = true)) ∧
   (∀ t ∈ q.rests, ∃ s ∈ S, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
     Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
     IntoRest (restElem G) R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true)
@@ -1415,14 +1423,19 @@ checks over the supplied subtype relation. -/
   -- A static field the target states is one the source states at the same
   -- contract, as a callable object's bag field; a readonly one, a field or
   -- a view the source states within it.
-  | .ctors L S a bs vs, .ctors M T c ds ws => ((∀ q ∈ M, ∃ p ∈ L,
-        (Domains R q.arguments p.arguments ∨ [] ∈ q.arguments) ∧ R p.result q.result ∧
-          p.effect.covers q.effect = true) ∧
-      -- A variadic one by one taking as many fixed parameters, each at least as
-      -- wide, a rest at least as wide and a result at most as wide, that
-      -- supplies its effect; or by a fixed one, when its rest is an exact tuple.
-      ∀ t ∈ T, (∃ s ∈ S, Domains R t.arguments.1 s.arguments.1 ∧ R t.arguments.2 s.arguments.2 ∧
-          R s.result t.result ∧ s.effect.covers t.effect = true) ∨
+  | .ctors L S a bs vs, .ctors M T c ds ws => ((∀ q ∈ M,
+        (∃ p ∈ L, (Domains R q.arguments p.arguments ∨ [] ∈ q.arguments) ∧ R p.result q.result ∧
+          p.effect.covers q.effect = true) ∨
+        (∃ s ∈ S, Domains R (q.arguments.take s.arguments.1.length) s.arguments.1 ∧
+          ElemRest (restElem G) R (q.arguments.drop s.arguments.1.length) s.arguments.2 ∧
+          R s.result q.result ∧ s.effect.covers q.effect = true)) ∧
+      -- A variadic one by one taking as many or fewer fixed parameters, each at
+      -- least as wide, further fixed ones within its rest, a rest at least as
+      -- wide and a result at most as wide, that supplies its effect; or by a
+      -- fixed one, when its rest is an exact tuple.
+      ∀ t ∈ T, (∃ s ∈ S, Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
+          IntoRest (restElem G) R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧
+          R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∨
         ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds) ∧ CoversBagViews R (a :: bs) vs ws
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
@@ -1693,10 +1706,17 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
     exact hrn _ _ hst W _ (hB oid _ (List.mem_map_of_mem hs))
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hd, hres, heff⟩ := hcalls t ht
-    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) host
-      (fun j hj U args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j hj) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
-      (fun m hm U w hw => hr m hm _ _ hres U w hw)
+    rcases hcalls t ht with ⟨s, hs, hd, hres, heff⟩ | ⟨s, hs, hd, hel, hres, heff⟩
+    · exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) host
+        (fun j hj U args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j hj) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
+        (fun m hm U w hw => hr m hm _ _ hres U w hw)
+    · unfold ElemRest at hel
+      split at hel
+      · rename_i El hE
+        exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) host
+          (fun j hj U args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_short (hr j hj) hE hd hel (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
+          (fun m hm U w hw => hr m hm _ _ hres U w hw)
+      · exact hel.elim
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hd, hin, he, hres, heff⟩ := hrests t ht
@@ -2267,11 +2287,19 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
   · simp [MethodMembers.Member.of, hnone] at hF
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hsr, hd, hres, heff⟩ := hcalls t ht
-    exact ((hsem.1.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
-      (fun j' hj' U' args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j' (by omega)) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
-      (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
-      (fun j' hj' U' hU' r hr' => host s.receiver hsr j' hj' U' hU' r hr')
+    rcases hcalls t ht with ⟨s, hs, hsr, hd, hres, heff⟩ | ⟨s, hs, hsr, hd, hel, hres, heff⟩
+    · exact ((hsem.1.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+        (fun j' hj' U' args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j' (by omega)) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
+        (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
+        (fun j' hj' U' hU' r hr' => host s.receiver hsr j' hj' U' hU' r hr')
+    · unfold ElemRest at hel
+      split at hel
+      · rename_i El hE
+        exact ((hsem.2.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+          (fun j' hj' U' args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_short (hr j' (by omega)) hE hd hel (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
+          (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
+          (fun j' hj' U' hU' r hr' => host s.receiver hsr j' hj' U' hU' r hr')
+      · exact hel.elim
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hsr, hd, hin, he, hres, heff⟩ := hrests t ht
@@ -3173,25 +3201,66 @@ theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
   refine ⟨⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩, covers_bags_sound hc.2.1 n hr W v hb,
     covers_bag_views_sound hc.2.2 n hr W v hb hvs⟩
   · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
-    obtain ⟨p, hp, hd, hres, heff⟩ := hc.1.1 q0 hq0
-    rcases hd with hd | hnever
-    · exact (hv.2 _ (List.mem_map_of_mem hp)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
-        (fun j hj U args ha => Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
-        (fun m hm V u hu => hr m hm _ _ hres V u hu)
-    · -- No actual meets `never`: the promise is vacuous.
-      intro j hj U hx hu heap hh hvr args hvals har ha
-      obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
-      exact absurd ha' (by simp [mixedValues, setSem])
+    rcases hc.1.1 q0 hq0 with ⟨p, hp, hd, hres, heff⟩ | ⟨s, hs, hd, hel, hres, heff⟩
+    · rcases hd with hd | hnever
+      · exact (hv.2 _ (List.mem_map_of_mem hp)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
+          (fun j hj U args ha => Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
+          (fun m hm V u hu => hr m hm _ _ hres V u hu)
+      · -- No actual meets `never`: the promise is vacuous.
+        intro j hj U hx hu heap hh hvr args hvals har ha
+        obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
+        exact absurd ha' (by simp [mixedValues, setSem])
+    · unfold ElemRest at hel
+      split at hel
+      · rename_i El hE
+        refine (hw.2 _ (List.mem_map_of_mem hs)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
+          (fun j hj U args ha => ?_) (fun m hm V u hu => hr m hm _ _ hres V u hu)
+        have hlen_t : (q0.arguments.take s.arguments.1.length).length = s.arguments.1.length := Domains.length_eq hd
+        have hle : s.arguments.1.length ≤ q0.arguments.length := by
+          have := List.length_take (i := s.arguments.1.length) (l := q0.arguments); omega
+        simp only [MethodArrow.map, Contract.map] at ha
+        have ha_len : args.length = q0.arguments.length := by
+          simpa using ArgsT_length ha
+        have ⟨htake, hdrop⟩ := ArgsT_take_drop s.arguments.1.length ha
+        rw [← List.map_take] at htake
+        rw [← List.map_drop] at hdrop
+        simp only [MethodRestArrow.mapWith, Contract.map, CtorRest, List.length_map]
+        refine ⟨by omega, Domains.sound hd (fun a b hab => hr j hj a b hab) htake, (mixed_restElem hE).mpr ?_⟩
+        exact ArgsT_all_le (fun F hF u hu => by
+          obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hF
+          exact hr j hj A0 El (hel A0 hA0) U u hu) hdrop
+      · exact hel.elim
   · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-    rcases hc.1.2 t0 ht0 with ⟨s, hs, hd, hrest, hres, heff⟩ | ⟨p, hp, hfp⟩
-    · have hl : t0.arguments.1.length = s.arguments.1.length := Domains.length_eq hd
+    rcases hc.1.2 t0 ht0 with ⟨s, hs, hd, hin, hrest, hres, heff⟩ | ⟨p, hp, hfp⟩
+    · have hlen_t : (t0.arguments.1.take s.arguments.1.length).length = s.arguments.1.length := Domains.length_eq hd
+      have hle : s.arguments.1.length ≤ t0.arguments.1.length := by
+        have := List.length_take (i := s.arguments.1.length) (l := t0.arguments.1); omega
       refine (hw.2 _ (List.mem_map_of_mem hs)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
         (fun j hj U args ha => ?_) (fun m hm V u hu => hr m hm _ _ hres V u hu)
       obtain ⟨hlen, hfix, hpack⟩ := ha
-      simp only [MethodRestArrow.mapWith, Contract.map, List.length_map] at hlen hfix hpack ⊢
-      exact ⟨by simpa [← hl] using hlen,
-        by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
-        by simpa [← hl] using hpa j hj _ _ hrest U _ hpack⟩
+      simp only [MethodRestArrow.mapWith, Contract.map, CtorRest, List.length_map] at hlen hfix hpack ⊢
+      have ⟨htake, hdrop⟩ := ArgsT_take_drop s.arguments.1.length hfix
+      rw [← List.map_take, List.take_take, Nat.min_eq_left hle] at htake
+      rw [← List.map_drop] at hdrop
+      have hE := hpa j hj _ _ hrest U _ hpack
+      refine ⟨by omega, Domains.sound hd (fun a b hab => hr j hj a b hab) htake, ?_⟩
+      rcases hin with hdrop_nil | hel
+      · have hle_eq : t0.arguments.1.length = s.arguments.1.length := by
+          have := List.drop_eq_nil_iff.mp hdrop_nil; omega
+        simpa [← hle_eq] using hE
+      · unfold ElemRest at hel
+        split at hel
+        · rename_i El hEl
+          have hdrop_split : args.drop s.arguments.1.length =
+              (args.take t0.arguments.1.length).drop s.arguments.1.length ++ args.drop t0.arguments.1.length := by
+            have h := (List.take_append_drop (t0.arguments.1.length - s.arguments.1.length) (args.drop s.arguments.1.length)).symm
+            rw [List.drop_drop, Nat.add_sub_of_le hle, ← List.drop_take] at h
+            exact h
+          rw [hdrop_split]
+          refine mixed_restElem_append hEl (ArgsT_all_le (fun F hF u hu => by
+            obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hF
+            exact hr j hj A0 El (hel A0 hA0) U u hu) hdrop) hE
+        · exact hel.elim
     · unfold FixedCoversPack at hfp
       split at hfp
       · rename_i τ hP

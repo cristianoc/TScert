@@ -1143,7 +1143,11 @@ and the target's receivers, its signatures against the target's schemes'). -/
     let own := ms.filter (·.key == q.key)
     let targetSchemes := q.schemes.flatMap schemeSigs
     (own.flatMap fun p =>
-      signaturePairs (p.calls.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
+      let pRests := p.rests.map (·.withReceiver [])
+      let qCalls := q.calls.map (·.withReceiver [])
+      let qRests := q.rests.map (·.withReceiver [])
+      signaturePairs (p.calls.map (·.withReceiver [])) qCalls ++
+      restPairs pRests qRests ++ elemPairs G pRests qRests ++ restFixedPairs G pRests qCalls ++
       (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S')) ++
       (p.receivers.flatMap fun T => q.receivers.map fun T' => (T', T))) ++
     ((keyed q.key ++ (proto.flatMap (protoChain G PositiveRules.protoChainDepth)).flatMap fun P =>
@@ -1151,10 +1155,13 @@ and the target's receivers, its signatures against the target's schemes'). -/
       (((match expand G F with
         | [.arrs L S] => [(L, S)]
         | _ => []) ++ (known.filter (·.1 == F)).map (·.2)).flatMap fun (L, S) =>
+          let sRests := S.map (·.withReceiver [])
+          let qCalls := q.calls.map (·.withReceiver [])
+          let qRests := q.rests.map (·.withReceiver [])
           (L.map fun s => (self, s.receiver)) ++ (S.map fun s => (self, s.receiver)) ++
           (q.receivers.flatMap fun T => L.map (fun s => (T, s.receiver)) ++ S.map (fun s => (T, s.receiver))) ++
-          signaturePairs (L.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
-          restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))) ++
+          signaturePairs (L.map (·.withReceiver [])) qCalls ++
+          restPairs sRests qRests ++ elemPairs G sRests qRests ++ restFixedPairs G sRests qCalls) ++
       (if targetSchemes.isEmpty then [] else schemeSigs F).flatMap fun s =>
         (s.signatures.map fun p => (self, p.receiver)) ++
         targetSchemes.flatMap fun s' => if s.binders = s'.binders then
@@ -1188,7 +1195,9 @@ and the target's receivers, its signatures against the target's schemes'). -/
     let rest (p : MethodRestArrow (List ι)) : RestArrow (List ι) := p.withReceiver []
     recordPairs G known self (Stored.views (a :: bs).flatten) vs [] [] (Stored.views (c :: ds).flatten) ws [] [] ++
     signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
-      packPairs G (L.map fixed) ((T.filter fun q => !S.contains q).map rest)
+      elemPairs G (S.map rest) (T.map rest) ++
+      packPairs G (L.map fixed) ((T.filter fun q => !S.contains q).map rest) ++
+      restFixedPairs G (S.map rest) ((M.filter fun q => !L.contains q).map fixed)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>
     (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
       let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList

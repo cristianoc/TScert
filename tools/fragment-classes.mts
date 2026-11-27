@@ -934,10 +934,16 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       lambda: constructs || extended ? { k: "id", pos: gate.span(name), name: freshName(name.text) } : constructorLambda,
       ...(staticFields.length ? { statics: staticFields.map((f) =>
         ({ name: f.name, e: { k: "id", pos: f.pos, name: f.binding } satisfies Expr })) } : {}) };
-    const type: TypeTerm = { k: "constructor", effect: ordinaryEffect, params: params.map((p) => p.type), rest: null,
-      result: instance,
+    const fixedType: Extract<TypeTerm, { k: "constructor" }> = { k: "constructor", effect: ordinaryEffect,
+      params: params.map((p) => p.type), rest: null, result: instance,
       ...(staticFields.length ? { statics: staticFields.map((f) => ({ name: f.name, type: f.type })) } : {}),
       span: gate.span(name) };
+    const variadicType: TypeTerm = { k: "constructor", effect: ordinaryEffect,
+      params: params.map((p) => p.type), rest: { k: "atom", name: "unknown", span: gate.span(name) },
+      result: instance, span: gate.span(name) };
+    const type: TypeTerm = typeParams.length
+      ? fixedType
+      : { k: "intersection", parts: [fixedType, variadicType], span: gate.span(name) };
     // A class another extends is also bound, first, as its fresh
     // constructor, claimed at the instance it allocates besides its own
     // construct signature; the class value is that binding.

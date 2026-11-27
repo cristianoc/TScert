@@ -567,7 +567,10 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
   let ps ← ps.mapM fun q => do groundT (← named q)
   let r ← groundT (← named r)
   let (sigs, rests) ← match rest with
-    | none => pure ([⟨rc, ps, r, effect⟩], [])
+    | none => do
+      let unknown ← internS .source
+      let pack ← internS (.pack ⟨[], [], some [unknown], false, .dense⟩ [])
+      pure ([⟨rc, ps, r, effect⟩], [⟨rc, (ps, [pack]), r, effect⟩])
     | some e => do
       let E ← groundT (← named e)
       let pack ← internS (.pack ⟨[], [], some E, false, .dense⟩ [])

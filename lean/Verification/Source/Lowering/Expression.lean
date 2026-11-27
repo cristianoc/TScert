@@ -668,42 +668,40 @@ slots are introduced only after the operand supplying their type is checked. -/
     let H := M :: K
     let dsH := held ⟨"",some callee.span⟩ :: ds
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc dsH H a
-    let fixedFits := match PositiveRules.expand G M with
-      | [.arrs L _] | [.callable _ _ L _ _] => L.any fun p => args.length ≤ p.arguments.length
-      | _ => false
     let term := Tm.invoke (.var 0) (.var (ri+1)) (actuals.map (·.term))
-    let call ← match PositiveRules.expand G M, ProgramTyping.restSigs G M with
-      | _, sigs@(_ :: _) =>
-        -- A variadic method: the fixed actuals at its parameters, trailing
-        -- ones omitted as `undefined`, every further actual at its position
-        -- in the rest.
-        if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
-        let some ⟨Rt, (Ps, E), R, effect⟩ := (sigs.find? fun sig => r.type.all sig.receiver.contains) <|> sigs.head?
-          | throw "internal variadic signature"
-        let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
-        obligation o.span receiver.goal (some receiver) "method-receiver" dsH
-        let k := min actuals.length Ps.length
-        let extra := actuals.drop k
-        let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
-          | some D => pure D
-          | none => throw "an actual past the rest's positions"
-        pure (DirectProof.node H term R
-          (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
-          (DirectProof.var H 0 M :: receiver ::
-            ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
-            ++ omittedPremises H Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast H D a))
-      | [.arrs L _], [] | [.callable _ _ L _ _], [] =>
-        let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type)) r.type
-        let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
-        obligation o.span receiver.goal (some receiver) "method-receiver" dsH
-        let rule := match PositiveRules.expand G M with
-          | [.callable ..] => ProgramCertificates.Rule.callCallable
-          | _ => .app
-        pure (DirectProof.node H term R (rule effect)
-          (DirectProof.var H 0 M :: receiver
-            :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
-              ++ omittedPremises H Ds actuals.length))
-      | _, _ => throw "a method call's target requires one callable contract"
+    let call ← match PositiveRules.expand G M with
+      | [.arrs L _] | [.callable _ _ L _ _] =>
+        let restCall := fun (sigs : List (RestArrow (Ty Tree))) => do
+          let some ⟨Rt, (Ps, E), R, effect⟩ := (sigs.find? fun sig => r.type.all sig.receiver.contains) <|> sigs.head?
+            | throw "internal variadic signature"
+          let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
+          obligation o.span receiver.goal (some receiver) "method-receiver" dsH
+          let k := min actuals.length Ps.length
+          let extra := actuals.drop k
+          let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
+            | some D => pure D
+            | none => throw "an actual past the rest's positions"
+          pure (DirectProof.node H term R
+            (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
+            (DirectProof.var H 0 M :: receiver ::
+              ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
+              ++ omittedPremises H Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast H D a))
+        let fixedCall := fun (sig : Arrow (Ty Tree)) => do
+          let ⟨Rt,Ds,R,effect⟩ := sig
+          let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
+          obligation o.span receiver.goal (some receiver) "method-receiver" dsH
+          let rule := match PositiveRules.expand G M with
+            | [.callable ..] => ProgramCertificates.Rule.callCallable
+            | _ => .app
+          pure (DirectProof.node H term R (rule effect)
+            (DirectProof.var H 0 M :: receiver
+              :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
+                ++ omittedPremises H Ds actuals.length))
+        match selectSignature G L (actuals.map (·.type)) r.type, ProgramTyping.restSigs G M with
+        | .ok sig, _ => fixedCall sig
+        | .error _, sigs@(_ :: _) => restCall sigs
+        | .error msg, [] => throw msg
+      | _ => throw "a method call's target requires one callable contract"
     pure (saveOperands (saved ++ [method]) call)
   | .call _ f args spreads _ => do
     -- Reading a spread operand's elements is an array operation, which a
@@ -713,37 +711,38 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- A variadic signature serves a call no fixed arrow takes by arity: its
     -- fixed parameters, trailing ones omitted as `undefined`, then every
     -- further actual at its position in the rest.
-    let fixedFits := match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _ _] => L.any fun p => args.length ≤ p.arguments.length
-      | _ => false
-    match PositiveRules.expand G callee.type, ProgramTyping.restSigs G callee.type with
-    | _, ⟨Rt, (Ps, E), R, effect⟩ :: _ =>
-      if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
+    match PositiveRules.expand G callee.type with
+    | [.arrs L _] | [.callable _ _ L _ _] =>
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
-      let k := min actuals.length Ps.length
-      let extra := actuals.drop k
-      let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
-        | some D => pure D
-        | none => throw "an actual past the rest's positions"
-      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R
-        (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
-        (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
-          ++ omittedPremises Γ Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast Γ D a))
-    | [.arrs L _], [] | [.callable _ _ L _ _], [] =>
-      let rule := match PositiveRules.expand G callee.type with
-        | [.callable ..] => ProgramCertificates.Rule.callCallable
-        | _ => .app
-      let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
-      let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type))
-      -- A plain call passes `undefined`: a signature that needs a receiver
-      -- is a located obligation, apart from the call's own typing.
-      if !admitsUndefined G Rt then
-        let plan := plainReceiver Γ Rt
-        obligation f.span plan.goal (some plan) "method-receiver" scope
-      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R (rule effect)
-        (callee :: plainReceiver Γ Rt :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
-          ++ omittedPremises Γ Ds actuals.length))
-    | _, _ =>
+      let fixedCall := fun (sig : Arrow (Ty Tree)) => do
+        let ⟨Rt,Ds,R,effect⟩ := sig
+        let rule := match PositiveRules.expand G callee.type with
+          | [.callable ..] => ProgramCertificates.Rule.callCallable
+          | _ => .app
+        -- A plain call passes `undefined`: a signature that needs a receiver
+        -- is a located obligation, apart from the call's own typing.
+        if !admitsUndefined G Rt then
+          let plan := plainReceiver Γ Rt
+          obligation f.span plan.goal (some plan) "method-receiver" scope
+        pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R (rule effect)
+          (callee :: plainReceiver Γ Rt :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
+            ++ omittedPremises Γ Ds actuals.length))
+      let restCall := fun (sig : RestArrow (Ty Tree)) => do
+        let ⟨Rt, (Ps, E), R, effect⟩ := sig
+        let k := min actuals.length Ps.length
+        let extra := actuals.drop k
+        let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
+          | some D => pure D
+          | none => throw "an actual past the rest's positions"
+        pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R
+          (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
+          (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
+            ++ omittedPremises Γ Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast Γ D a))
+      match selectSignature G L (actuals.map (·.type)), ProgramTyping.restSigs G callee.type with
+      | .ok sig, _ => fixedCall sig
+      | .error _, sig :: _ => restCall sig
+      | .error msg, [] => throw msg
+    | _ =>
       if callee.type.length ≤ 1 then throw "callee must name a source arrow"
       -- Save callee first, then each actual, before splitting its immutable slot.
       let (_,_,actuals) ← args.attach.foldlM (fun (ctx,sc,ps) ⟨a,_⟩ => do

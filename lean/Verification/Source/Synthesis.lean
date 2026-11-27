@@ -3399,6 +3399,8 @@ def calleeAtCall (c : Callee) (σ : List (Tree × Ty Tree)) (inst : CallEffects.
         lower (do return [← SourceTypes.use (.pack
           { t with required := t.required.map sub, optional := t.optional.map sub, rest := t.rest.map sub } [])])
       | _, _ => pure r'.arguments.2
+    if c.construct then
+      return [← lower (SourceTypes.use (.ctors [] [⟨(), (r'.arguments.1, pack), r'.result, r'.effect⟩]))]
     return [← lower (SourceTypes.use (.arrs [] [{ r' with arguments := (r'.arguments.1, pack) }]))]
   | none, none =>
     if c.construct then do return [← lower (SourceTypes.use (.ctors [⟨(), inst.arguments, inst.result, inst.effect⟩]))]
@@ -4355,6 +4357,11 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           | some A => if A == I then [] else [A]
           | none => []
         let own : List (CallEffects.MethodArrow (Ty Tree)) := (allocates ++ [I]).map fun R => ⟨(), ps, R, .ordinary⟩
+        let U ← prim .source
+        let unknownPack ← lower (SourceTypes.use (.pack ⟨[], [], some U, false, .dense⟩ []))
+        let ownRest : List (CallEffects.MethodRestArrow (Ty Tree)) :=
+          (allocates ++ [I]).map fun R => ⟨(), (ps, [unknownPack]), R, .ordinary⟩
+        let rests := ownRest ++ extraRests.filter (!ownRest.contains ·)
         if let some g := generic then
           if !fields.isEmpty then throw "an internal constructor scheme has no static fields"
           let binders ← (constructorBinderNames initBinders g.binders).mapM fun n => do
@@ -4371,7 +4378,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
             (label, T))
           pure [label]
         else
-          prim (.ctors (own ++ extra.filter (!own.contains ·)) extraRests fields)
+          prim (.ctors (own ++ extra.filter (!own.contains ·)) rests fields)
       | .var _ n, none =>
         let some F := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
         ofClass F
@@ -6050,12 +6057,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       if let (.lambda _ _ [] _ [] false (some _) none _ _ _ _, some L, none, true, false) :=
           (b.init, A, b.annot, (← get).moduleInit, (← get).inLiteral) then
         let G := SourceTypes.graph (← StateT.lift table)
-        if let ([own], []) := (ProgramTyping.callSigs G L, ProgramTyping.restSigs G L) then
+        if let (own :: more, []) := (ProgramTyping.callSigs G L, ProgramTyping.restSigs G L) then
           let U ← StateT.lift (prim .source)
           let L' ← StateT.lift (lower do
             let pack ← SourceTypes.use (.pack ⟨[], [], some U, false, .dense⟩ [])
             let r : CallEffects.RestArrow (Ty Tree) := ⟨own.receiver, (own.arguments, [pack]), own.result, own.effect⟩
-            return [← SourceTypes.use (.arrs [own] [r])])
+            return [← SourceTypes.use (.arrs (own :: more) [r])])
           let _ ← record b.init (.ok L')
           A₀ := some L'
       let A := A₀
