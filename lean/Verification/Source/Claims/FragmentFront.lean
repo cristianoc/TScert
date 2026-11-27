@@ -612,102 +612,95 @@ def Front.proposes (fr : Front) (n : String) : Bool :=
     fr.statesMore n
 
 
-/-- **A selected unit's plans from the fragment alone** (mode 8): the front
-of `fragmentClaims`, no import planned, each import read at its declared
-type, at its stand-in's footprint, or at the footprint `qualified` gives it
-(an import whose module's units establish it, `fragmentPlansWithModules`),
-the module values typed by the initialization's walk, and each selected
-group's units elaborated over their computed types (`retypeFromFragment`),
-the functions' footprints their own steps give (`PassProposals.proposals`),
-those `known` names taken as given. With
-`closure`, the selected groups and every group they reach; with
-`proposed`, of the selected functions those whose footprint is more than
-the ordinary effect. -/
-def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
-    (imported : List (String × QualifiedEffect) := [])
-    (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
-    (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
-    Except String FilePlans := do
-  let ast := ast.setObjVal! "modules" (Json.arr #[])
-  -- A stand-in's footprint first; then the footprint the module's units
-  -- establish.
-  let given := standIns.imports.map fun s => (s.name, QualifiedEffect.ofClosed s.footprint s.onThrow s.resultFootprint s.returnAlias)
-  let qualified := given ++ imported.filter fun q => !given.any (·.1 == q.1)
-  let depends := depends.filter fun d => !given.any (·.1 == d.1)
-  -- (`front`: the claims and front `fileFront` gave with no qualified read
-  -- and no stand-in, given again with these reads)
-  let (claims, fr) ← match front with
-    | some (claims, fr) =>
-      if standIns.functions.isEmpty && standIns.imports.isEmpty then pure (claims, fr.withQualified qualified)
-      else do
-        let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
-        pure (claims, ← SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
-          fileFront ast claims fileKey budget qualified (lenient := true))
-    | none => do
-      let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
-      pure (claims, ← SinglePass.timedKind "lower: fileFront" fun _ =>
-        SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
-        fileFront ast claims fileKey budget qualified (lenient := true))
+/-- The group planner's common input to initialization typing. A changed
+stand-in read by the initializer requires typing that front separately. -/
+def initializationFront (fr : Front) (force : List String) : Front × Thunk Front :=
   let fr := fr.withNeverImports
-  -- (each typing of the initialization recorded as one, `SinglePass.work`;
-  -- reused whenever a stand-in list changes no function named in `fr.init`)
-  let initTyped := fun (g : Front) => SinglePass.work "prepare: initialization typing" s!"{fileItem ast}#init" fun _ =>
-    g.withInitTypes force
+  (fr, Thunk.mk fun _ => SinglePass.work "prepare: initialization typing" s!"{fileItem fr.ast}#init"
+    fun _ => fr.withInitTypes force)
+
+/-- A stand-in-dependent initialization, tied to the front and force
+settings at which it was typed. Equality is of complete ordered inputs. -/
+structure TypedInitialization (fr : Front) (force : List String) where
+  inputs : List StandIn
+  typed : Front
+  correct : typed = (fr.withStandIns inputs).withInitTypes force
+
+/-- A worker's lowered front, with its shared initialization at one ordered
+vector of qualified imports. Both components are determined by the lowered front
+and the same force settings as the planner. -/
+structure PlanningFront (force : List String) where
+  claims : Json
+  raw : Front
+  qualified : List (String × QualifiedEffect)
+  base : Thunk (Front × Thunk Front) := Thunk.mk fun _ => initializationFront (raw.withQualified qualified) force
+  base_eq : base.get = initializationFront (raw.withQualified qualified) force := by rfl
+  rounds : PassProposals.RoundState (List (TypedInitialization base.get.1 force)) := { planning := [] }
+
+/-- Elaborate and check proposals over this qualified front. Each retained
+initialization is a value of this same initialization computation. -/
+def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
+    (names : Option (List String)) (standIns : StandIns) (force : List String)
+    (qualified : List (String × QualifiedEffect)) (depends : List (String × List String))
+    (closure proposed interfaceSlots : Bool) (known : List (String × Option StandIn))
+    (cached : PassProposals.RoundState (List (TypedInitialization fr force))) :
+    Except String (FilePlans × PassProposals.RoundState (List (TypedInitialization fr force))) := do
   let initReads : Std.HashSet String := Std.HashSet.ofList (fr.init.flatMap stmtNames)
-  let frInit := Thunk.mk fun _ => initTyped fr
-  let initWith (sis : List StandIn) : Front :=
+  let initWith (sis : List StandIn) : StateM (List (TypedInitialization fr force)) Front := do
     let affects := sis.any fun s => initReads.contains s.name &&
       fr.d.functions.any fun c => c.name == s.name &&
         (c.footprint, c.onThrow, c.resultFootprint, c.returnAlias) != (s.footprint, s.onThrow, s.resultFootprint, s.returnAlias)
-    if sis.isEmpty then frInit.get
-    else if !affects then frInit.get.withStandIns sis
-    else initTyped (fr.withStandIns sis)
+    if sis.isEmpty then return frInit.get
+    if !affects then return frInit.get.withStandIns sis
+    if let some entry := (← get).find? (·.inputs == sis) then return entry.typed
+    let typed := SinglePass.work "prepare: initialization typing" s!"{fileItem ast}#init" fun _ =>
+      (fr.withStandIns sis).withInitTypes force
+    modify (⟨sis, typed, rfl⟩ :: ·)
+    return typed
   let wantedOf (fr : Front) (names : Option (List String)) : List Nat :=
     let selected := (fr.selected names).flatMap fr.group
     if closure then (selected ++ selected.flatMap fr.reach).eraseDups.flatMap fr.group |>.eraseDups else selected
   -- A function's member planned with the functions `sis` names at their
   -- footprints, as the plans below are: the proposals' runs read it.
-  let planOf := fun (sis : List StandIn) (name : String) =>
-      SinglePass.work "propose: member plans" (fr.nameItem name) fun _ => (do
-    let fr' := initWith sis
+  let planOf (sis : List StandIn) (name : String) : StateM (List (TypedInitialization fr force)) (Except String FilePlans) := do
+    let fr' ← initWith sis
+    return SinglePass.work "propose: member plans" (fr.nameItem name) fun _ => (do
     let members := (fr'.selected (some [name])).flatMap fr'.group
     let (T, plans) := fr'.elaborateSome (members.foldl (·.insert ·) {}) (some (retypeFromFragment force))
       (some (instancesFromWalk force)) (some (writtenSchemes force))
     let F ← EquationStore.freeze T
-    let f : FilePlans := ⟨⟨ast, withStandIns claims sis, qualified, [], depends⟩, fr', F,
-      plans.map fun e => e.bind (FunctionPlan.over F), [], {}, []⟩
+    -- Provider identities are used by the final verdict only.
+    let f : FilePlans := ⟨⟨ast, withStandIns claims sis, qualified, [], []⟩, fr', F,
+      plans.map fun e => e.bind (FunctionPlan.over F), [], []⟩
     return f.withHeadFacts {} false (inferred := true) : Except String FilePlans)
   -- The functions' footprints their own steps establish, as stand-ins
   -- (`PassProposals.proposals`); the claims and the front again where any
   -- is found.
-  let (computed, refused, memo) := if force.contains "callees" || force.contains "throws" then ([], [], memo) else
+  let (computed, refused, rounds) := if force.contains "callees" || force.contains "throws" then ([], [], cached) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      let (out, memo) := PassProposals.proposalsOf fr (wantedOf fr names) standIns force [] planOf known memo
+      let (out, rounds) := (PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf known).run cached
       let computed := out.filterMap (·.2) |>.filter fun s =>
         s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
       let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
         out.filterMap fun (n, o) => if o.isNone && !known.any (·.1 == n) then some n else none
-      (computed, refused, memo)
+      (computed, refused, rounds)
   -- Where the initialization calls a function proposed a returned
   -- function's footprint, the module values it types hold such functions:
   -- the proposals once more, every function not yet proposed again read
-  -- at its first proposal; a function planned at the same inputs as
-  -- before read from the memo.
+  -- at its first proposal.
   let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
-  let (computed, refused, memo) := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
-    (computed, refused, memo) else
+  let (computed, refused, rounds) := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
+    (computed, refused, rounds) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
-      let (out, memo) := PassProposals.proposalsOf fr (wantedOf fr names) standIns force computed planOf [] memo
+      let (out, rounds) := (PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf []).run rounds
       let computed := out.filterMap (·.2) |>.filter fun s =>
         s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
       let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
         out.filterMap fun (n, o) => if o.isNone then some n else none
-      (computed, refused, memo)
+      (computed, refused, rounds)
   let claims := if computed.isEmpty then claims else withStandIns claims computed
-  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initWith computed
+  let (fr, cached) := SinglePass.timedKind "lower: initialization's walk" fun _ => (initWith computed).run rounds.planning
   -- With `proposed`, the selected functions whose footprint is more than
   -- the ordinary effect alone, and what they reach.
   let names := if !proposed then names else names.map (·.filter fr.proposes)
@@ -730,7 +723,57 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     SinglePass.work "prepare: plans over the store" (fileItem ast) fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
-  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, memo, refused⟩
+  return (⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, refused⟩, { rounds with planning := cached })
+
+/-- **A selected unit's plans from the fragment alone** (mode 8): the front
+of `fragmentClaims`, no import planned, each import read at its declared
+type, at its stand-in's footprint, or at the footprint `qualified` gives it
+(an import whose module's units establish it, `fragmentPlansWithModules`),
+the module values typed by the initialization's walk, and each selected
+group's units elaborated over their computed types (`retypeFromFragment`),
+the functions' footprints their own steps give (`PassProposals.proposals`),
+those `known` names taken as given. With
+`closure`, the selected groups and every group they reach; with
+`proposed`, of the selected functions those whose footprint is more than
+the ordinary effect. -/
+def fragmentPlansAndFront (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
+    (imported : List (String × QualifiedEffect) := [])
+    (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
+    (front : Option (PlanningFront force) := none) (interfaceSlots : Bool := false)
+    (known : List (String × Option StandIn) := []) :
+    Except String (FilePlans × Option (PlanningFront force)) := do
+  let ast := ast.setObjVal! "modules" (Json.arr #[])
+  -- A stand-in's footprint first; then the footprint the module's units
+  -- establish.
+  let given := standIns.imports.map fun s => (s.name, QualifiedEffect.ofClosed s.footprint s.onThrow s.resultFootprint s.returnAlias)
+  let qualified := given ++ imported.filter fun q => !given.any (·.1 == q.1)
+  let depends := depends.filter fun d => !given.any (·.1 == d.1)
+  if let some supplied := front then
+    if standIns.functions.isEmpty && standIns.imports.isEmpty then
+      let prepared : PlanningFront force := if qualified == supplied.qualified then supplied else
+        { raw := supplied.raw, claims := supplied.claims, qualified }
+      let (f, rounds) ← plansOnFront ast prepared.claims prepared.base.get.1 prepared.base.get.2 names
+        standIns force qualified depends closure proposed interfaceSlots known prepared.rounds
+      return (f, some { prepared with rounds })
+  let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
+  let raw ← SinglePass.timedKind "lower: fileFront" fun _ =>
+    SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
+      fileFront ast claims fileKey budget qualified (lenient := true)
+  let (fr, frInit) := initializationFront raw force
+  let (f, _) ← plansOnFront ast claims fr frInit names standIns force qualified depends closure proposed interfaceSlots known { planning := [] }
+  return (f, none)
+
+/-- The ordinary planner consumes the plans of the same group operation. -/
+def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
+    (imported : List (String × QualifiedEffect) := [])
+    (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
+    (front : Option (PlanningFront force) := none) (interfaceSlots : Bool := false)
+    (known : List (String × Option StandIn) := []) :
+    Except String FilePlans := do
+  return (← fragmentPlansAndFront ast fileKey budget names standIns force imported depends closure proposed
+    front interfaceSlots known).1
 
 /-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
 def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
@@ -838,7 +881,7 @@ checked: the store-map check from the entry's rows to the type the unit
 reads it at (`importerRowsAgree`); a refused one refuses the unit. (An
 import read at its entry: its slot the entry's reading, `importedArrow`; one
 read otherwise, a never-returning import at its declared type, is read at
-its declaration's contract.) The importer's reads (`fragmentPlansOfInterfaces`)
+its declaration's contract.) The importer's reads (`groupImports`)
 and a module's own reads of the entries published before it
 (`establishStep`) alike. -/
 def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (established : Established)
@@ -1319,22 +1362,6 @@ def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option 
         else some (StandIn.ofFormat g.name c.footprint c.onThrow c.resultFootprint c.returnAlias))
     | _ => none
 
-/-- Importer planning from closed interfaces. No module is planned here. -/
-def fragmentPlansOfInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable)) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {})
-    (scope : Unit → Except String ImportScope := fun _ => ImportScope.of ast)
-    (code : Thunk (Except String ImporterCode) := Thunk.mk fun _ => decodeImporter ast) : Except String FilePlans := do
-  if established.isEmpty then
-    return ← fragmentPlansCore ast fileKey budget names standIns force (front := front) (known := known) (memo := memo)
-  let sc ← scope ()
-  let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name) code
-  let rs := readsOf reads established
-  let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2)) (front := front)
-    (known := known) (memo := memo)
-  return f.refuseRows reads established tables
-
 /-- The module scope and unbound import reads depend only on the fragment.
 A file worker shares this value across the groups it checks. -/
 structure PlanImports where
@@ -1346,27 +1373,40 @@ def planImports (ast : Json) : Except String PlanImports := do
   let sc ← ImportScope.of ast
   return ⟨sc, Thunk.mk fun _ => decodeImporter ast, unboundImports sc ast⟩
 
-/-- Importer planning from closed interfaces (`fragmentPlansOfInterfaces`),
-each unit reading an import whose module's document leaves a name its read
-reaches unbound refused (`unboundImports`): the fragment's module documents
-are the interfaces' (`decodeInterfaces` refuses another), so a module's
-missing function is told from an entry not established on both paths. -/
-def fragmentPlansWithImports (imports : Except String PlanImports) (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
-    Except String FilePlans := do
+/-- The reads of a selected group, with their established effects and
+provider identities, and the file's unbound reads. -/
+structure GroupImports where
+  reads : List FragmentRead
+  qualified : List (String × QualifiedEffect)
+  depends : List (String × List String)
+  unbound : List (String × List (String × String))
+
+def groupImports (imports : Except String PlanImports) (ast : Json) (names : Option (List String))
+    (standIns : StandIns) (established : Established) : Except String GroupImports := do
   let ctx ← imports
-  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known memo
-    (fun _ => .ok ctx.scope) ctx.code).refuseUnbound ctx.unbound
+  let reads ← if established.isEmpty then pure [] else
+    importerReads ctx.scope ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name) ctx.code
+  let rs := readsOf reads established
+  return ⟨reads, rs.map (·.1), rs.map (·.2), ctx.unbound⟩
+
+/-- Elaboration at the group's imports, followed by row and binding checks. -/
+def GroupImports.plan (imports : GroupImports) (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
+    (tables : List (String × RowTable)) (front : Option (PlanningFront force))
+    (known : List (String × Option StandIn)) : Except String (FilePlans × Option (PlanningFront force)) := do
+  let (f, updated) ← fragmentPlansAndFront ast fileKey budget names standIns force imports.qualified imports.depends
+    (front := front) (known := known)
+  return ((f.refuseRows imports.reads established tables).refuseUnbound imports.unbound, updated)
 
 /-- The importer planned with the scope and unbound reads of this fragment. -/
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
+    (tables : List (String × RowTable) := []) (front : Option (PlanningFront force) := none)
+    (known : List (String × Option StandIn) := []) :
     Except String FilePlans :=
-  fragmentPlansWithImports (planImports ast) ast fileKey budget names standIns force established tables front known memo
+  do
+  let imports ← groupImports (planImports ast) ast names standIns established
+  return (← imports.plan ast fileKey budget names standIns force established tables front known).1
 
 /-- Direct invocation uses the same canonical component computation as
 stored interfaces. Its result is local to this invocation. -/

@@ -339,31 +339,27 @@ theorem passFile_safe_kinds
 
 /-! ## Mode 8's plans as the command line computes them -/
 
-/-- **Importer plans from interfaces are over their store** (proved): both
-branches of `fragmentPlansOfInterfaces` return the core planner's plans, the
-rows check (`refuseRows`) and the unbound-import check (`refuseUnbound`)
-refusing plans and keeping the rest. -/
+/-- Importer plans are over their frozen store. Row and unbound-import
+checks preserve this property of the core planner. -/
 theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
     {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
     {force : List String} {est : Established} {tables : List (String × RowTable)}
-    {front : Option (Json × Front)} {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
-    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known memo = .ok f) :
+    {front : Option (PlanningFront force)} {known : List (String × Option StandIn)} {f : FilePlans}
+    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known = .ok f) :
     OverStore f := by
-  unfold fragmentPlansFromInterfaces fragmentPlansWithImports at h
+  unfold fragmentPlansFromInterfaces at h
   obtain ⟨_, -, h⟩ := except_bind_ok h
-  obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
+  obtain ⟨⟨_, _⟩, hp, h⟩ := except_bind_ok h
   cases h
+  unfold GroupImports.plan at hp
+  obtain ⟨⟨_, _⟩, hplan, hp⟩ := except_bind_ok hp
+  cases hp
   apply refuseUnbound_overStore
-  unfold fragmentPlansOfInterfaces at h₁
-  by_cases he : est.isEmpty = true
-  · rw [ite_eq_left he] at h₁
-    exact fragmentPlansCore_overStore h₁
-  · rw [ite_eq_right he] at h₁
-    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
-    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
-    obtain ⟨_, h₂, h₁⟩ := except_bind_ok h₁
-    cases h₁
-    exact refuseRows_overStore (fragmentPlansCore_overStore h₂)
+  apply refuseRows_overStore
+  apply fragmentPlansCore_overStore
+  unfold fragmentPlansCore
+  rw [hplan]
+  rfl
 
 /-- **Plans with modules checked in the invocation are over their store**
 (proved): `fragmentPlansWithModules` returns importer plans from the
@@ -409,12 +405,12 @@ theorem preparedMode8_overStore
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
-    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo = .ok f₀) ∨
+    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known = .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes))) :
     OverStore (preparedMode8 force givenLines infer f₀) := by
   have h0 : OverStore f₀ := by
-    rcases hplanned with ⟨est, tables, front, known, memo, h⟩ | ⟨ms, notes, h⟩
+    rcases hplanned with ⟨est, tables, front, known, h⟩ | ⟨ms, notes, h⟩
     · exact fragmentPlansFromInterfaces_overStore h
     · exact fragmentPlansWithModules_overStore h
   unfold preparedMode8
@@ -437,7 +433,7 @@ theorem passUnitCli_safe
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.Candidate)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool} {deps : List String}
-    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo = .ok f₀) ∨
+    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known = .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
     (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel

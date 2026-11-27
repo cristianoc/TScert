@@ -845,12 +845,8 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
           p.proposals.modify (·.insert g entries)
     for i in p.units do
       let known ← p.known i
-      let known := known ++ paperWalkers ++ (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
-        | some (f, _, none) => some (f.name, none)
-        | _ => none
-      let memo ← p.memo.get
       let unit := p.fr.unitId i
-      match p.plan i known memo with
+      match (← p.plan i false (known ++ paperWalkers)).planned with
       | .error reason => IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", reason)]))
       | .ok f =>
         let t0 ← if prof then IO.monoNanosNow else pure 0

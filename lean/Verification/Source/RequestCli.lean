@@ -368,41 +368,47 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     | .ok j => IO.println j.compress; return 0
     | .error e => refuse e
 
-/-- A file prepared for mode 8 (`prepareUnitsFile`): what is a function of
-the file and its inputs alone and every unit's check reads: the fragment,
-the module interfaces decoded (their entries and row tables, the module
-units they establish, each printed accepted), the file's claims and front
-(its lowering, its type store and its units' groups, no import read at an
-interface), the selection, and the settings each unit's check reads; and the
-proposals of the groups planned so far (`proposals`) and the plans of those the selection checks later, until their check (`plans`),
-which a later unit reads instead of computing them again, and what their
-proposals established (`memo`). -/
-structure PreparedFile where
+abbrev GroupAnswers := List (String × Option SourceClaimJson.StandIn)
+
+structure GroupVerdict where
+  line : String
+  refusal : Option String
+  diagnostics : List String
+
+/-- A group's plan or planning refusal, together with precisely the answers
+its callers receive in either case. -/
+structure PlannedGroup where
+  planned : Except String SourceClaimJson.FilePlans
+  answers : GroupAnswers
+  verdict : Bool → GroupVerdict
+
+/-- The immutable file inputs of a group's planning and verdict. -/
+structure GroupContext where
   ast : Json
-  imports : Thunk (Except String SourceClaimJson.PlanImports)
   fileKey : String
   budget : PositiveCertificates.SearchBudget
   est : SourceClaimJson.Established
   tables : List (String × SourceClaimJson.RowTable)
+  force : List String
   front : Json × SourceClaimJson.Front
+  givenLines : Std.HashMap String Json
+  fuel : Nat
+
+/-- File selection, shared preparation and the results retained by this worker. -/
+structure PreparedFile extends GroupContext where
+  imports : Thunk (Except String SourceClaimJson.PlanImports)
+  fronts : IO.Ref (List (SourceClaimJson.PlanningFront force))
   modules : List String
   selected : Option (List String)
   /-- Groups whose interface another reachable group consumes. -/
   interfaceDemand : Std.HashSet Nat
-  force : List String
-  givenLines : Std.HashMap String Json
-  fuel : Nat
   quiet : Bool
   t0 : Nat
-  proposals : IO.Ref (Std.HashMap Nat (List (String × Option SourceClaimJson.StandIn)))
-  plans : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.FilePlans))
-  /-- What the proposals of the groups planned so far established, by
-  their inputs (`FilePlans.proposed`): a later planning reads an entry only
-  for the same inputs. -/
-  memo : IO.Ref SourceClaimJson.ProposalMemo
+  proposals : IO.Ref (Std.HashMap Nat GroupAnswers)
+  plans : IO.Ref (Std.HashMap Nat PlannedGroup)
 
 /-- The prepared file's front: its units, their identities and groups. -/
-def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
+def GroupContext.fr (p : GroupContext) : SourceClaimJson.Front := p.front.2
 
 /-- Interface demand of one prepared selection, using the existing group
 dependency graph. Every reachable group is queued once. An incomplete walk
@@ -480,29 +486,78 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
-  let memo ← IO.mkRef {}
+  let fronts ← IO.mkRef []
   return prepared.map fun (est, tables, front, a) =>
-    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, fileKey, budget, est, tables, front, fronts, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans, memo }
+      givenLines, fuel, quiet, t0, proposals, plans }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
 def PreparedFile.units (p : PreparedFile) : List Nat := p.fr.selected p.selected
 
-/-- Unit `i`'s group planned alone (`fragmentPlansFromInterfaces` at the
-names of `i`'s group, over the prepared front), each function its group
-reaches outside it read at the proposal `known` gives, what proposals
-established read from `memo` for the same inputs, and prepared
-(`preparedMode8`). -/
-def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
-    (memo : SourceClaimJson.ProposalMemo) : Except String SourceClaimJson.FilePlans := do
-  let f ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
-    SourceClaimJson.fragmentPlansWithImports p.imports.get p.ast p.fileKey p.budget
-      (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known memo
-  let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
-    f.withHeadFacts p.givenLines false (inferred := true)
-  return if p.force.contains "start-facts" then f.withFalseStartFact else f
+/-- Named empty answers suppress inference for these members. -/
+def GroupContext.emptyAnswers (p : GroupContext) (i : Nat) : GroupAnswers :=
+  (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
+    | some (f, _, none) => some (f.name, none)
+    | _ => none
+
+/-- The worker shares initialization typing across groups reading the same
+ordered qualified effects. The file, lowered front and force are fixed. -/
+def PreparedFile.frontAt (p : PreparedFile) (imports : SourceClaimJson.GroupImports) :
+    IO (SourceClaimJson.PlanningFront p.force) := do
+  if let some f := (← p.fronts.get).find? (·.qualified == imports.qualified) then return f
+  let f : SourceClaimJson.PlanningFront p.force :=
+    { claims := p.front.1, raw := p.fr, qualified := imports.qualified }
+  return f
+
+/-- The group's ordinary verdict and reporting lines, including a planning
+refusal. Counting controls the pass diagnostics printed alongside the verdict. -/
+def GroupContext.groupVerdict (p : GroupContext) (i : Nat) (planned : Except String SourceClaimJson.FilePlans)
+    (counting : Bool) : GroupVerdict :=
+  let unit := p.fr.unitId i
+  let members := (p.fr.group i).map p.fr.unitId
+  match planned with
+  | .error reason => ⟨WorkerWire.verdictLine unit members (.error reason) (some reason) [], some reason, []⟩
+  | .ok f =>
+    let (lines, verdict, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
+      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i) (counting := counting) (located := true)
+    let diagnostics := lines ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else [])
+    let line := WorkerWire.verdictLine unit members verdict (f.elaborationRefusal (some [SourceClaimJson.memberName unit]))
+      (f.contractReads (p.fr.group i))
+    ⟨line, match verdict with | .ok _ => none | .error reason => some reason, diagnostics⟩
+
+/-- One group operation. The verdict uses the very plan that produced its
+answers, and is evaluated only if the group is requested for checking. -/
+def GroupContext.groupOperation (p : GroupContext) (i : Nat) (demand : Bool) (below : GroupAnswers)
+    (inputs : Except String (SourceClaimJson.GroupImports × SourceClaimJson.PlanningFront p.force)) :
+    PlannedGroup × Option (SourceClaimJson.PlanningFront p.force) :=
+  let result := do
+    let (imports, front) ← inputs
+    let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
+    let known := if demand then below else below ++ p.emptyAnswers i
+    let (f, updated) ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
+      imports.plan p.ast p.fileKey p.budget names {} p.force p.est p.tables (some front) known
+    let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
+      f.withHeadFacts p.givenLines false (inferred := true)
+    return (if p.force.contains "start-facts" then f.withFalseStartFact else f, updated)
+  let planned := result.map Prod.fst
+  let answers := match planned with
+    | .ok f => f.groupProposals i
+    | .error _ => p.emptyAnswers i
+  (⟨planned, answers, p.groupVerdict i planned⟩, result.toOption.bind Prod.snd)
+
+/-- Supply this group's current import reads and their shared front. -/
+def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : GroupAnswers) : IO PlannedGroup := do
+  let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
+  let reads ← IO.lazyPure fun _ => SourceClaimJson.groupImports p.imports.get p.ast names {} p.est
+  let inputs ← match reads with
+    | .error reason => pure (.error reason)
+    | .ok imports => pure (.ok (imports, ← p.frontAt imports))
+  let (group, updated) ← IO.lazyPure fun _ => p.groupOperation i demand below inputs
+  if let some f := updated then
+    p.fronts.modify fun fs => f :: fs.filter (·.qualified != f.qualified)
+  return group
 
 /-- The groups a group reaches outside itself, by their first members,
 each after those it reaches (`Front.edges` over the groups). -/
@@ -529,9 +584,18 @@ Module-interface publication uses its own planner and still infers its rows. -/
 def PreparedFile.needsInterface (p : PreparedFile) (i : Nat) : Bool :=
   let group := p.fr.group i
   let own := group.filterMap fun j => (p.fr.units[j]?).map (·.1.name)
-  p.interfaceDemand.contains i ||
+  !p.force.isEmpty || p.interfaceDemand.contains i ||
     group.any (fun j => (p.fr.mentions j).any own.contains ||
       ((p.fr.units[j]?).any fun (f, _, _) => f.stated.isSome))
+
+/-- Every lower group has answered when its caller is planned. A named
+empty answer and a group with no function answers are both completed reads. -/
+def PreparedFile.lowerAnswers (p : PreparedFile) (groups : List Nat) : IO GroupAnswers := do
+  let answers ← p.proposals.get
+  let values ← groups.mapM fun g => match answers.get? g with
+    | some value => pure value
+    | none => throw (IO.userError s!"file worker: missing proposals for {p.fr.unitId g}")
+  return values.flatten
 
 /-- **The proposals unit `i`'s planning reads**: for each group `i`'s group
 reaches outside itself (`groupsBelow`, callees first), its members'
@@ -547,22 +611,11 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   let below := groupsBelow fr i
   for g in below do
     if (← p.proposals.get).contains g then continue
-    let memo ← p.proposals.get
-    let known := (groupsBelow fr g).flatMap fun h => (memo.get? h).getD []
-    let memo ← p.memo.get
-    let planned ← IO.lazyPure fun _ => p.plan g known memo
-    if let .ok f := planned then p.memo.set f.proposed
-    -- (kept for the group's own check where the selection checks it; its
-    -- proposals alone otherwise)
-    if p.units.contains g then p.plans.modify (·.insert g planned)
-    let got : List (String × Option SourceClaimJson.StandIn) := match planned with
-      | .ok f => f.groupProposals g
-      | .error _ => (fr.group g).filterMap fun j => match fr.units[j]? with
-        | some (u, _, none) => some (u.name, none)
-        | _ => none
-    p.proposals.modify (·.insert g got)
-  let memo ← p.proposals.get
-  return below.flatMap fun h => (memo.get? h).getD []
+    let known ← p.lowerAnswers (groupsBelow fr g)
+    let group ← p.plan g (p.needsInterface g) known
+    if p.units.contains g then p.plans.modify (·.insert g group)
+    p.proposals.modify (·.insert g group.answers)
+  p.lowerAnswers below
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
@@ -575,7 +628,6 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let emit := fun (s : String) => if p.quiet then pure () else IO.eprintln s
   let fr := p.fr
   let unit := fr.unitId i
-  let members := (fr.group i).map fr.unitId
   let s0 ← IO.monoNanosNow
   let p0 ← SinglePass.passNanos.get
   let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
@@ -585,51 +637,38 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
-  let known ← p.known i
-  -- (a group's plans kept from a later unit's proposals read once, here:
-  -- no unit checked after this one reads them, only their proposals)
-  let planned ← match (← p.plans.get).get? i with
-    | some planned => do p.plans.modify (·.erase i); pure planned
+  let group ← match (← p.plans.get).get? i with
+    | some group => do p.plans.modify (·.erase i); pure group
     | none => do
-      let memo ← p.memo.get
-      -- No reachable caller consumes this group's extra proposal. The
-      -- existing `known` entry with `none` omits only optional inference;
-      -- ordinary declarations and every member's body are checked below.
-      let known := if !p.force.isEmpty || p.needsInterface i then known else
-        known ++ (fr.group i).filterMap fun j => match fr.units[j]? with
-          | some (f, _, none) => some (f.name, none)
-          | _ => none
-      let planned ← IO.lazyPure fun _ => p.plan i known memo
-      if let .ok f := planned then p.memo.set f.proposed
-      pure planned
-  let (lines, verdict, elaboration, contracts) ← match planned with
-    | .error reason => pure ([], .error reason, some reason, [])
-    | .ok f => do
-      if (fr.group i).head? == some i then
-        p.proposals.modify (·.insert i (f.groupProposals i))
-      let raw := (← IO.getEnv "TSCERT_PASS_REFUSALS") == some "raw"
-      if compare || debugNode != 1000000000 || repeats != 1 || observe.isSome || raw then
-        let (diagnostics, observed, _, _) ← IO.lazyPure fun _ =>
-          f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
-            compare debugNode repeats none observe counting (!raw)
-        for line in diagnostics do IO.eprintln line
-        if raw then
-          if let .error reason := observed then IO.eprintln reason
-      IO.lazyPure fun _ =>
-        let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
-          f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
-          (counting := counting) (located := true)
-        (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
-          f.elaborationRefusal (some [SourceClaimJson.memberName unit]),
-          f.contractReads (fr.group i))
+      let below ← p.known i
+      let group ← p.plan i (p.needsInterface i) below
+      p.proposals.modify (·.insert i group.answers)
+      pure group
+  if (← IO.getEnv "TSCERT_TRACE_PROPOSALS").isSome then
+    let footprint := fun (f : Footprints.Closed) => Json.mkObj
+      [("value", EffectJson.changeName f.value), ("array", EffectJson.changeName f.array), ("view", EffectJson.changeName f.view)]
+    let answers := group.answers.map fun (name, value) => (name, value.map fun (v : SourceClaimJson.StandIn) =>
+      Json.mkObj [("normal", toJson (v.summary.normal.map footprint)), ("exceptional", toJson (v.summary.exceptional.map footprint)),
+        ("resultFootprint", footprint v.resultFootprint), ("returnAlias", toJson v.returnAlias)])
+    IO.eprintln (Json.mkObj [("unit", toJson unit), ("answers", toJson answers)]).compress
+  if let .ok f := group.planned then
+    let raw := (← IO.getEnv "TSCERT_PASS_REFUSALS") == some "raw"
+    if compare || debugNode != 1000000000 || repeats != 1 || observe.isSome || raw then
+      let (diagnostics, observed, _, _) ← IO.lazyPure fun _ =>
+        f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
+          compare debugNode repeats none observe counting (!raw)
+      for line in diagnostics do IO.eprintln line
+      if raw then
+        if let .error reason := observed then IO.eprintln reason
+  let result ← IO.lazyPure fun _ => group.verdict counting
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
-  for line in lines do emit line
+  for line in result.diagnostics do emit line
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (WorkerWire.verdictLine unit members verdict elaboration contracts, match verdict with | .ok _ => none | .error r => some r)
+  return (result.line, result.refusal)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/

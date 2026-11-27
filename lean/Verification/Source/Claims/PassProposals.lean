@@ -29,6 +29,7 @@ structure StandIn where
   summary : SourceElaboration.ClassSummary := ⟨some .top, some .top⟩
   resultFootprint : Footprints.Closed := .top
   returnAlias : Option Nat := none
+  deriving DecidableEq
 
 /-- **A stand-in in today's effect format**: its summary's projection
 (`ClassSummary.project`, an upper bound at each exit), where a plan's
@@ -534,34 +535,14 @@ that document's format. -/
 def written (f : Fragment.Fn) : Option SourceElaboration.ClassSummary :=
   f.stated.map fun s => if s.regions.isEmpty then .ofFormat s.closed s.onThrow else .ofFormat .top false
 
-/-- **The inputs a proposal's runs read, digested**: of each member of
-member `j`'s group in the plans `fp` the proposal planned, its name and
-position and its plan (the program, claims, result, start, inputs,
-statement entries' candidates and cuts, assertions, entry facts, the code
-requests' goals, its declared footprint, throw bound, freshness, spine
-regions, postcondition, stated effect, asyncness and qualification), and
-the reads `reads` gives the functions the group reaches (their signatures
-in the store): `settledInterface fp proposalDepth j` reads these alone. -/
-def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
-  let reached := (((fp.fr.group j).flatMap fp.fr.reach).filterMap fun k =>
-    (fp.fr.units[k]?).map (·.1.name)).eraseDups
-  let read := (reads.filter (reached.contains ·.name)).map fun s =>
-    (s.name, reprStr s.summary, reprStr s.resultFootprint, s.returnAlias)
-  let members := (fp.fr.group j).map fun k =>
-    let unit := (fp.fr.units[k]?).map fun (g, _, c) => (g.name, g.namePos, c.isSome)
-    match fp.plans[k]? with
-    | some (.ok p) =>
-      let r := p.parts.2.2
-      [hash (reprStr unit), hash (match p with | .graph .. => 0), hash (toJson r.program).compress, hash (r.claims.map fun c => (c.context, c.type)),
-        hash r.result, hash r.start, hash r.inputs, hash (toJson r.candidates).compress, hash r.cuts,
-        hash (reprStr r.assertions), hash (toJson r.entryIndices).compress, hash (reprStr (r.codes.map (·.entry.goal))),
-        hash (reprStr (r.footprint, r.onThrow, r.fresh, r.regional, r.async, r.qualification.isSome)),
-        hash (reprStr r.ensures), hash (reprStr r.stated), hash (reprStr r.promise),
-        hash (match p with
-          | .graph .. => "")].foldl mixHash 11
-    | some (.error e) => mixHash (hash (reprStr unit)) (hash e)
-    | none => hash (reprStr unit)
-  mixHash (hash (reprStr read)) (members.foldl mixHash (hash proposalDepth))
+/-- Inference at one fixed front and member planner, shared across groups
+and proposal rounds. The index selects a member and list equality checks every
+ordered stand-in, including its normal and exceptional effects. -/
+abbrev RoundAnswers := Std.HashMap Nat (List (List StandIn × Option Established))
+
+structure RoundState (σ : Type) where
+  answers : RoundAnswers := {}
+  planning : σ
 
 /-- **One function's proposal by the pass** (function `i`, of name and
 position `f`): its member planned by `planOf` with each function `found`
@@ -582,14 +563,13 @@ rounds suffice is argued, not proved: a round that does not stop raises a
 component of an exit's bound, at most 4 times for each of the 3 components
 of the 2 exits. The round that stops proposes the summary read; the
 function's own unit checks it.
-`memo` keys each run by its inputs, both exits of each summary read
-included (`inputDigest`). None where the pass
+None where the pass
 establishes nothing of it (callers read it at its written effect or `top`).
 With `results` (`--force-proposals`, the adversarial proposal), each returned
 function's footprint keep/keep. -/
-def proposeOne (fr : Front) (controls : List String) (force : List String) (prior : List StandIn)
-    (found : List StandIn) (planOf : List StandIn → String → Except String FilePlans) (i : Nat) (f : Fragment.Fn)
-    (memo : ProposalMemo) : Option StandIn × ProposalMemo :=
+@[nospecialize] def proposeOne {σ : Type} (fr : Front) (controls : List String) (force : List String) (prior : List StandIn)
+    (found : List StandIn) (planOf : List StandIn → String → StateM σ (Except String FilePlans)) (i : Nat) (f : Fragment.Fn) :
+    StateM (RoundState σ) (Option StandIn) := do
   let cycle := (fr.group i).filterMap fun j => match fr.units[j]? with
     | some (g, _, none) => if j != i && (fr.group i).length > 1 then some g.name else none
     | _ => none
@@ -602,36 +582,31 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       | some p, _ => some p
       | none, some S => some { name := nm, summary := S }
       | none, none => some { name := nm }
-  -- What the member's runs establish at its reads (`settledInterface`),
-  -- read from `memo` where a proposal planned the same inputs
-  -- (`inputDigest`), a refusal (`none`) included.
-  let establish := fun (own : Option StandIn) (memo : ProposalMemo) =>
-      SinglePass.work "propose: establish" (fr.nameItem f.name) fun _ =>
-    match planOf (reads own) f.name with
-    | .error _ => ((none : Option Established), memo)
-    | .ok fp =>
-      match (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
+  let establish (own : Option StandIn) : StateM (RoundState σ) (Option Established) := do
+    let inputs := reads own
+    let state ← get
+    let previous := state.answers.getD i []
+    if let some (_, answer) := previous.find? (·.1 == inputs) then return answer
+    let (planned, planning) := (planOf inputs f.name).run state.planning
+    let answer := SinglePass.work "propose: establish" (fr.nameItem f.name) fun _ => do
+      let fp ← planned.toOption
+      let j ← (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
         | some (g, _, none) => g.name == f.name && g.namePos == f.namePos
-        | _ => false with
-      | none => (none, memo)
-      | some j =>
-        let key := inputDigest fp j (reads own)
-        match memo.get? key with
-        | some got => (got.map fun (S, R, ra, v) => ⟨S, R, ra, v⟩, memo)
-        | none =>
-          let got := settledInterface fp proposalDepth j
-          (got, memo.insert key (got.map fun e => (e.summary, e.result, e.returnAlias, e.visits)))
+        | _ => false
+      settledInterface fp proposalDepth j
+    set (σ := RoundState σ) { answers := state.answers.insert i ((inputs, answer) :: previous), planning }
+    return answer
   -- A written effect fixes `summary` to `S`; `establish` can only contribute a
   -- returned function's footprint, which `resultWithFootprint` rejects unless
   -- `f.ret` is a function type whose signatures state no effect.
   let canReturnFn := (resultWithFootprint fr.d.types f.ret keepAll).isOk
-  let (r, memo) : Option Established × ProposalMemo := if let some S := written f then
+  let infer : StateM (RoundState σ) (Option Established) := do
+    if let some S := written f then
       if !canReturnFn then
-        (some { summary := S, result := .top, visits := 0 }, memo)
-      else
-        let (got, memo) := establish (some { name := f.name, summary := S }) memo
-        (got.map fun got => { got with summary := S }, memo)
-    else if (fr.mentions i).contains f.name then Id.run do
+        pure (some { summary := S, result := .top, visits := 0 })
+      else do
+        return (← establish (some { name := f.name, summary := S })).map fun got => { got with summary := S }
+    else if (fr.mentions i).contains f.name then do
       -- A recursion assumption, per exit, found by a bounded search: first
       -- both exits keeping everything; kept where each exit of what the
       -- body establishes entails the assumption's (`ClassSummary.within`,
@@ -641,23 +616,19 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       -- not stop raises a component of an exit's bound, at most 4 raises
       -- for each of the 3 components of the 2 exits.)
       let mut assumed : SourceElaboration.ClassSummary := .ofFormat keepAll true
-      let mut memo := memo
       for _ in List.range 25 do
-        let (got, memo') := establish (some { name := f.name, summary := assumed }) memo
-        memo := memo'
-        match got with
-        | none => return (none, memo)
+        match ← establish (some { name := f.name, summary := assumed }) with
+        | none => return none
         | some got =>
           if got.summary.within assumed then
-            return (some { got with summary := assumed }, memo)
+            return some { got with summary := assumed }
           assumed := assumed.choice got.summary
-      return (none, memo)
-    else establish none memo
-  (r.map fun got =>
+      return none
+    else establish none
+  return (← infer).map fun got =>
     let R := if force.contains "results" then keepAll else got.result
     let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
-    { name := f.name, summary := got.summary, resultFootprint := R, returnAlias := got.returnAlias },
-    memo)
+    { name := f.name, summary := got.summary, resultFootprint := R, returnAlias := got.returnAlias }
 
 /-- The functions a wanted unit reaches, callees first: each after every
 function it reaches outside its group (a depth-first walk of `Front.edges`). -/
@@ -682,12 +653,11 @@ language, stand-ins at their controls' footprints), proposed by
 `proposeOne`; a function `known` names taken as known (`none`: nothing
 proposed, read at its written effect or `top`). Every function proposed
 and known, with its proposal. -/
-def proposalsOf (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
-    (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := [])
-    (memo : ProposalMemo := {}) : List (String × Option StandIn) × ProposalMemo := Id.run do
+@[nospecialize] def proposals {σ : Type} (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
+    (planOf : List StandIn → String → StateM σ (Except String FilePlans)) (known : List (String × Option StandIn) := []) :
+    StateM (RoundState σ) (List (String × Option StandIn)) := do
   let controls := standIns.functions.map (·.name)
   let mut out : List (String × Option StandIn) := []
-  let mut memo := memo
   for i in calleesFirst fr wanted do
     let some (f, _, none) := fr.units[i]? | continue
     if f.async || controls.contains f.name || out.any (·.1 == f.name) then continue
@@ -695,18 +665,9 @@ def proposalsOf (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : 
       out := out ++ [(f.name, k)]
       continue
     let found := out.filterMap (·.2)
-    let (got, memo') := proposeOne fr controls force prior found planOf i f memo
-    memo := memo'
+    let got ← proposeOne fr controls force prior found planOf i f
     out := out ++ [(f.name, got)]
-  return (out, memo)
-
-/-- The proposals that state more than the ordinary effect
-(`proposalsOf`), and the memo of what was established. -/
-def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
-    (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := [])
-    (memo : ProposalMemo := {}) : List StandIn × ProposalMemo :=
-  let (out, memo) := proposalsOf fr wanted standIns force prior planOf known memo
-  (out.filterMap (·.2) |>.filter fun s => s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome, memo)
+  return out
 
 end PassProposals
 

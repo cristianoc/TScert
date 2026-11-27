@@ -38,7 +38,7 @@ import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
-import type { Ast } from "../tools/fragment.mts";
+import type { Ast, Expr, FunctionAst } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { StatedFrame, SpineRegion } from "../tools/type-graph.mts";
 import { emptyEffect, ordinaryEffect, statedExits } from "../tools/type-graph.mts";
@@ -208,50 +208,98 @@ for (const k of forcedProposals) {
 // The file worker: a unit's line is a function of the file's check and the
 // unit (STAGE-STORE.md, "Worker stages").
 
-control("worker order: a unit's line whatever units the worker checked before it", async (): Promise<void> => {
-  const fragment = fragmentOf(run("evolving-bindings"));
-  const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
-  const key = isObject(ast) && typeof ast.file === "string" ? ast.file : "";
+control("worker order: proposals and verdicts in fresh, reversed and resumed workers", async (): Promise<void> => {
   const work = runDirectory("single-pass-worker-");
+  const key = join(work, "worker.ts");
   const interfaces = join(work, "interfaces.json");
   writeFileSync(interfaces, '{"modules":[]}');
-  const worker = (request: string): string[] => {
-    const p = spawnSync(verifierBuild, ["--subtype-rounds", "4096", "--file-worker", "8", fragment, interfaces, key, "12", ""],
-      { input: request + "\n", encoding: "utf8", cwd: work });
-    assert.equal(p.status, 0, `the file worker: ${p.stderr}`);
-    return p.stdout.split("\n").filter((l) => l !== "");
-  };
-  const [prepared, ...inOrder] = worker('{"units":null}');
-  const units = decodeWorkerPrepared(prepared).selected.map((u) => u.unit);
-  assert.ok(units.length >= 3, "a file of several units");
-  assert.deepEqual(inOrder.map((l) => decodeVerdictLine(l).unit), units, "every unit, in order");
-  const byUnit = new Map(inOrder.map((l) => [decodeVerdictLine(l).unit, l]));
-  // Reversed, in one worker.
-  const [again, ...reversed] = worker(JSON.stringify({ units: [...units].reverse() }));
-  assert.equal(again, prepared, "the same preparation");
-  for (const l of reversed) assert.equal(l, byUnit.get(decodeVerdictLine(l).unit), "a unit's line, the units reversed");
-  // Through the driver: a first worker answers the first half, then a
-  // resumed worker the rest, the first half replayed.
-  const store = join(work, "store");
-  const enclosing = process.env.TSCERT_STAGE_STORE;
-  process.env.TSCERT_STAGE_STORE = store;
-  try {
-    const call = verifierCall(verifierBuild, ["--subtype-rounds", "4096", "--file-worker", "8", fragment, interfaces, key, "12", ""]);
-    const half = units.slice(0, Math.floor(units.length / 2));
+
+  // factory returns () => 1, use calls factory, and initialization calls
+  // factory too. Its inferred result footprint triggers the second round.
+  const number: TypeTerm = { k: "atom", name: "number", span: [1, 2] };
+  const callable: TypeTerm = { k: "function", effect: ordinaryEffect, receiver: null, params: [],
+    rest: null, result: number, span: [2, 3] };
+  const callAt = (name: string, n: number): Expr => ({ k: "apply", pos: [n, n + 3], args: [],
+    callee: { k: "id", name, pos: [n, n + 1] } });
+  const fn = (name: string, n: number, retType: TypeTerm, e: Expr): FunctionAst => ({
+    name, namePos: [n, n + 1], retType, typeParams: [], params: [], guard: null, stated: null,
+    requires: [], ensures: [], completion: "sync", strict: true, body: [{ k: "return", pos: [n + 2, n + 10], e }],
+  });
+  const ast: Ast = { file: key, sourceSha256: "0".repeat(64), modules: [], omittedMentions: [],
+    declarations: { roots: [], definitions: [], values: [], symbols: [], applications: [] },
+    functions: [fn("factory", 10, callable, { k: "lambda", pos: [13, 19], params: [], typeParams: [],
+      receiver: null, guard: null, stated: null, requires: [], result: number, completion: "sync",
+      body: { k: "lit", pos: [17, 18], lit: { a: "numberlit", v: "1" } } }),
+      fn("use", 30, callable, callAt("factory", 34)),
+      fn("outer", 80, callable, callAt("use", 84)),
+      fn("leaf", 60, number, { k: "lit", pos: [64, 65], lit: { a: "numberlit", v: "0" } })],
+    init: [{ k: "effect", pos: [50, 55], e: callAt("factory", 51) }] };
+
+  for (const variant of ["ordinary", "forced", "failed plan"]) {
+    const fragment = join(work, variant + ".json");
+    // Empty interfaces defer import-scope decoding to group planning.
+    writeFileSync(fragment, JSON.stringify(variant === "failed plan" ? { ...ast, modules: [{}] } : ast));
+    const args = ["--subtype-rounds", "4096", ...proposalArgs(variant === "forced" ? ["results"] : []),
+      "--file-worker", "8", fragment, interfaces, key, "12", ""];
+    const worker = (units: readonly string[] | null, selection: string = "") => {
+      const p = spawnSync(verifierBuild, [...args.slice(0, -1), selection], { input: JSON.stringify({ units }) + "\n", encoding: "utf8",
+        cwd: work, env: { ...process.env, TSCERT_TRACE_PROPOSALS: "1" } });
+      assert.equal(p.status, 0, `the file worker: ${p.stderr}`);
+      const [prepared, ...lines] = p.stdout.trimEnd().split("\n");
+      const answers = p.stderr.trimEnd().split("\n").filter(l => l.startsWith('{"answers":'));
+      assert.equal(answers.length, lines.length, "every verdict has its proposal answers");
+      return { prepared, lines, answers };
+    };
+    const all = worker(null);
+    const units = decodeWorkerPrepared(all.prepared).selected.map(u => u.unit);
+    assert.equal(units.length, 5);
+    assert.deepEqual(all.lines.map(l => decodeVerdictLine(l).unit), units);
+    const compare = (order: string[]): void => {
+      const result = worker(order);
+      assert.equal(result.prepared, all.prepared);
+      assert.deepEqual(result.lines, order.map(u => all.lines[units.indexOf(u)]));
+      assert.deepEqual(result.answers, order.map(u => all.answers[units.indexOf(u)]));
+    };
+    compare([...units].reverse());
+    for (const unit of units) compare([unit]);
+    compare([...units].reverse().concat(units));
+    const half = units.slice(0, 1);
+    compare(units.slice(half.length));
+
+    const factory = must(all.answers[units.indexOf("factory@10")], "factory proposal");
+    if (variant === "failed plan") {
+      for (const line of all.lines) {
+        const verdict = decodeVerdictLine(line);
+        assert.ok("refusal" in verdict && verdict.refusal === verdict.elaboration);
+        assert.match(verdict.refusal, /unexpected fields: expected \[location, sourceSha256/);
+      }
+      assert.match(factory, /\["factory",null\]/);
+    } else {
+      assert.match(factory, /"resultFootprint":\{"array":"keep","value":"keep","view":"keep"\}/,
+        "factory offers the returned closure’s footprint");
+      assert.ok(all.lines.every(l => "accepted" in decodeVerdictLine(l)));
+      const use = decodeVerdictLine(must(all.lines[units.indexOf("use@30")], "use verdict"));
+      assert.ok("depends" in use && use.depends.includes("factory@10"));
+      if (variant === "ordinary") {
+        const alone = worker(null, "factory");
+        assert.deepEqual(decodeWorkerPrepared(alone.prepared).selected.map(u => u.unit), ["factory@10"]);
+        assert.match(must(alone.answers[0], "factory without a caller"), /\["factory",null\]/);
+        assert.match(must(all.answers[units.indexOf("leaf@60")], "leaf proposal"), /\["leaf",null\]/);
+      } else
+        assert.match(must(all.answers[units.indexOf("leaf@60")], "forced leaf"), /keep/);
+    }
+
+    const call = verifierCall(verifierBuild, args);
+    const options = { limitMs: 60_000, force: false, recorder: null };
     const first = invokeWorker(call, { ...fileWorkerProtocol, parts: () => half,
-      request: () => JSON.stringify({ units: half }) }, { limitMs: 60_000, force: false, recorder: null });
-    assert.deepEqual(first.parts.map((p) => p.execution), half.map(() => "executed"), "the first half executed");
-    const resumed = invokeWorker(call, fileWorkerProtocol, { limitMs: 60_000, force: false, recorder: null });
-    assert.equal(resumed.starts, 1, "one worker resumed");
-    assert.equal(resumed.preparation.execution, "replayed", "the preparation's result replayed");
-    assert.deepEqual(resumed.parts.map((p) => p.execution),
-      units.map((u) => half.includes(u) ? "replayed" : "executed"), "the first half replayed, the rest executed");
-    for (const p of resumed.parts) assert.equal(p.stdout.trim(), byUnit.get(p.part ?? ""), `${p.part}: its line, resumed`);
-  } finally {
-    if (enclosing === undefined) delete process.env.TSCERT_STAGE_STORE;
-    else process.env.TSCERT_STAGE_STORE = enclosing;
+      request: () => JSON.stringify({ units: half }) }, options);
+    assert.deepEqual(first.parts.map(p => p.execution), ["executed"]);
+    const resumed = invokeWorker(call, fileWorkerProtocol, options);
+    assert.equal(resumed.starts, 1);
+    assert.equal(resumed.preparation.execution, "replayed");
+    assert.deepEqual(resumed.parts.map(p => p.execution), units.map(u => half.includes(u) ? "replayed" : "executed"));
+    assert.deepEqual(resumed.parts.map(p => p.stdout.trimEnd()), all.lines);
   }
-  say(`worker order: ${units.length} units' lines identical in order, reversed and through a resumed worker`);
 });
 
 control("probe settings leave the production verdict intact", async (): Promise<void> => {

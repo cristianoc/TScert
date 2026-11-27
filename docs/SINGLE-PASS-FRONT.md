@@ -348,10 +348,8 @@ establish is within the one read (`ClassSummary.within`, a weakening at each
 exit, `ClassSummary.within_weakens`),
 $`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$: a round that does not stop raises
 a component of an exit's bound, at most 4 for each of the 3 components of
-the 2 exits, so at most 25 rounds reach both exits at `top` and stop. A stand-in, a recursion assumption and an entry of the
-proposals' memo carry that summary; a plan reads its projection
-(`ClassSummary.project`), and the memo's key digests both exits of every
-summary its run reads. A member of a cycle of two or more functions reads
+the 2 exits, so at most 25 rounds reach both exits at `top` and stop. Stand-ins and recursion assumptions carry that summary.
+The plan reads its projection (`ClassSummary.project`). A member of a cycle of two or more functions reads
 the members not yet proposed at their written effect, else at the ordinary
 effect. A function whose
 result annotation can state a returned function's footprint

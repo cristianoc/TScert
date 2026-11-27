@@ -613,6 +613,10 @@ There is another repetition obligation: `Synthesis.walkUnit` repeats source walk
 
 #### Commit order
 
+[Function-granular replay](function-replay.md) takes up C4's immutable group
+inputs, C10's shared planning and initialization, and C11's per-group keys
+and current dependency closure for the existing SCC checker.
+
 Every commit builds and keeps the suite green. Verdict comparison uses stable unit identities and records both conditional acceptance and closed verification. A changed verdict is named, its cause explained and its source preserved; changing an expected classification does not satisfy the unchanged-verdict gate.
 
 Cleanups replace each semantic selection list in its own commit before later changes build on it. If a cleanup requires a more general proof to preserve verdicts, that proof belongs in the cleanup before it lands. Merely renaming a filter to an obligation is insufficient.

@@ -62,6 +62,39 @@ theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except �
   | error e => cases h
   | ok a => exact ⟨a, rfl, h⟩
 
+private theorem plansOnFront_shape {ast claims fr frInit names standIns force qualified depends closure proposed slots known cached f updated}
+    (h : plansOnFront ast claims fr frInit names standIns force qualified depends closure proposed slots known cached = .ok (f, updated)) :
+    f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
+      f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
+  unfold plansOnFront at h
+  dsimp only at h
+  repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
+  cases h
+  exact ⟨rfl, _, rfl⟩
+
+theorem fragmentPlansAndFront_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String}
+    {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
+    {closure proposed : Bool} {front : Option (PlanningFront force)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans} {updated}
+    (h : fragmentPlansAndFront ast fileKey budget names standIns force imported depends closure proposed front
+      interfaceSlots known = .ok (f, updated)) :
+    f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
+      f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
+  unfold fragmentPlansAndFront at h
+  cases front <;> dsimp only at h
+  case' some =>
+    split at h
+    · obtain ⟨⟨_, _⟩, hp, h⟩ := except_bind_ok h
+      cases h
+      exact plansOnFront_shape hp
+  all_goals
+    obtain ⟨_, -, h⟩ := except_bind_ok h
+    obtain ⟨_, -, h⟩ := except_bind_ok h
+    obtain ⟨⟨_, _⟩, hp, h⟩ := except_bind_ok h
+    cases h
+    exact plansOnFront_shape hp
+
 /-- **The core planner's result** (proved), at every value of its
 arguments (the imported footprints, dependencies, closure, proposal flag and
 front given and the interface slots included): its import plan has no module run, and its plans are
@@ -69,38 +102,25 @@ plans over its frozen store. -/
 theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (PlanningFront force)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known memo = .ok f) :
+      interfaceSlots known = .ok f) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
-  unfold fragmentPlansCore at h
-  cases front with
-  | none =>
-    dsimp only at h
-    repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
-    cases h; exact ⟨rfl, _, rfl⟩
-  | some p =>
-    obtain ⟨claims, fr⟩ := p
-    dsimp only at h
-    by_cases hc : (standIns.functions.isEmpty && standIns.imports.isEmpty) = true
-    · rw [ite_eq_left hc] at h
-      repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
-      cases h; exact ⟨rfl, _, rfl⟩
-    · rw [ite_eq_right hc] at h
-      repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
-      cases h; exact ⟨rfl, _, rfl⟩
+  obtain ⟨⟨_, _⟩, hp, h⟩ := except_bind_ok h
+  cases h
+  exact fragmentPlansAndFront_shape hp
 
 /-- **The core planner's plans are over its frozen store** (proved), at
 every value of its arguments. -/
 theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (PlanningFront force)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known memo = .ok f) :
+      interfaceSlots known = .ok f) :
     OverStore f := by
   obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
   intro i p hi
@@ -119,10 +139,10 @@ its arguments. -/
 theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × QualifiedEffect)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (PlanningFront force)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known memo = .ok f) :
+      interfaceSlots known = .ok f) :
     f.p.modules = [] :=
   (fragmentPlansCore_shape h).1
 
