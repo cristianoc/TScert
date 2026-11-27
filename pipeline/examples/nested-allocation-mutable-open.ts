@@ -37,3 +37,24 @@ export function reassignDeepAndAlias(openRec: { a: number }): number {
 export function genericIdReturn(): { inner: { a: number } } {
   return id({ inner: { a: 1 } });
 }
+
+type Overloaded = ((
+  service: { readonly build: (x: number) => { readonly a: number } },
+  opts: { leader: { host: string }; lazies?: { a?: () => number } },
+) => number) &
+  ((
+    service: {
+      readonly build: (x: number) => { readonly a: number; readonly b: string };
+    },
+    opts: {
+      leader: { host: string };
+      lazies?: { a?: () => number; b?: () => string };
+    },
+  ) => number);
+
+export function overloadedNestedLiteralFallback(f: Overloaded): number {
+  return f(
+    { build: (x) => ({ a: x, b: "ok" }) },
+    { leader: { host: "localhost" }, lazies: { b: () => "hi" } },
+  );
+}
