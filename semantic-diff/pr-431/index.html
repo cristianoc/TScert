@@ -1,0 +1,146 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-431"><code>21cac4f996bdcad67f2b1680c1f370b05db57d5c..pr-431</code></a><ul><li>4 commits</li><li>changes: 5 Docs, 2 Tooling</li><li>parts: <span class="chip">docs</span> <span class="chip">docs/drafts/tolerant-frames-patterns-note</span></li></ul></li></ul></section>
+<h2 id="g-pr-431"><code>21cac4f996bdcad67f2b1680c1f370b05db57d5c..pr-431</code></h2><article class="card" id="c-500e2c53a"><header><div><div class="sha">500e2c53a · Cristiano Calcagno · Nov 27, 05:54</div><h3>Revise effect-languages note, rebuild PDF, and sync companion docs</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Review of <code>docs/drafts/effect-languages-note/note.tex</code> found two hard <code>pdflatex</code> compilation errors (<code>\code{\pi[i].length}</code>), a counterexample to Conjecture 2 (<code>Anchored effects are transitive</code>) under the weaker entry-only Clause (1) of Definition 9, a tautological Conjecture 3, missing <code>PlainElemCellsDisjoint</code> heap ownership for <code>Plain-Cells-Disj</code>, region grammar and <code>Declared reach</code> drift from <code>Footprints.Region</code>, TypeScript listing errors in Sections 6-7, a dangling <code>\cite{icp}</code>, stale prototype/helper claims omitting the 105/105 Pretext evaluation, and stale rule/status counts in companion markdown notes.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">effect-languages note and PDF</span></h4><div class="prose"><p>- <code>docs/drafts/effect-languages-note/note.tex</code>: replace <code>\code{\pi[i].length}</code> with <code>\len{\pi[i]}</code>; strengthen Definition 9(1) to all-pairs stepwise non-widening, generalize semantic instances to finite joins of environment-paired basic effects, promote transitivity of anchored effects to Proposition 1 with proof, and replace tautological Conjecture 3 with syntactic anchoring; state plain-array cell ownership (<code>PlainElemCellsDisjoint</code>), generalize <code>Plain-Cells-Disj</code>, and restrict <code>Elem-Write</code>/<code>Push</code> to plain arrays; align regions with <code>Footprints.Region</code> (<code>\pi ::= x \mid \pi.f</code>, add <code>\pi.\kw{elemSpines}</code> and <code>\sem{\kw{fields}}</code>, drop <code>r \cap \kw{cls}(G)</code>) and guard <code>.spine</code>/<code>.cells</code> in Definition 4 (<code>Declared reach</code>) for arrays and typed arrays; clean Section 4.2 rules and prose, fix TypeScript listings in Sections 6-7 (<code>E extends Footprint</code>, <code>Effects&lt;Join&lt;...&gt;&gt;</code> with <code>&quot;@state&quot;: &quot;any&quot;</code>, explicit type argument in <code>findWholeLine</code>), remove <code>\cite{icp}</code>/<code>\bibitem{icp}</code>, add the 105/105 Pretext evaluation subsection and table (0 assumes, 56 restored guards, 2 upstream bounds bugs, 2 <code>#365</code> cursor boundary checks), update Section 8 prototype architecture/approximations/limits without repo-internal pointers, and fix typography (<code>\lean</code> line breaks, TypeScript keywords, <code>\sep</code>, <code>\bibitem{tf}</code> date <code>24 November 2026</code>). - <code>docs/drafts/effect-languages-note/effect-languages.pdf</code>: rebuild from <code>note.tex</code> (18 pages, 0 errors, 0 warnings, 0 overfull/underfull hboxes).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">companion markdown notes</span></h4><div class="prose"><p>- <code>docs/drafts/effect-languages.md</code>: update mechanized rule list from six to all nine rules and add the 105/105 Pretext evaluation summary. - <code>docs/drafts/paper-rules-mode.md</code>: update <code>PaperRules</code> and <code>model_rules</code> to all nine rules and replace the stale declared-reach status note. - <code>docs/REFERENCES.md</code>: update the Effect languages paper entry title, date (<code>27 November 2026</code>), and mechanization/prototype status.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>pdflatex</code> (3 passes): 18 pages, 0 errors, 0 undefined references or citations, 0 overfull/underfull <code>\hbox</code>es. - <code>node tests/docs.mts</code>: 88 documents, 935 citations in code, 0 problems.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>5 files changed, 468 insertions(+), 267 deletions(-)</summary><pre class="code"> docs/REFERENCES.md                                 |  19 +-
+ .../effect-languages-note/effect-languages.pdf     | Bin 359035 -&gt; 384552 bytes
+ docs/drafts/effect-languages-note/note.tex         | 676 +++++++++++++--------
+ docs/drafts/effect-languages.md                    |  10 +-
+ docs/drafts/paper-rules-mode.md                    |  30 +-</pre></details>
+<div class="sha">with Antigravity</div>
+</article>
+<article class="card" id="c-2eb943c90"><header><div><div class="sha">2eb943c90 · Cristiano Calcagno · Nov 27, 05:54</div><h3>Revise &quot;Tolerant frames&quot; note, scripts, and PDF for review items</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Carbon's audit of <code>docs/drafts/tolerant-frames-note/note.tex</code> against the Lean development and build scripts found a removed rule and dangling citation (<code>Read-only frame</code> / <code>rof</code>), semantic and rule precision gaps (untagged spines in <code>extend</code>/<code>grow</code>, heap vs. state quantification in <code>Admissible</code> and box satisfaction, loop break postcondition and modified variables, Pattern 8 derivation), drift against current proved Lean capabilities (<code>Confinement</code>, <code>ApartSupport</code>, <code>bitMask</code>, <code>elemSpines</code>, guarded/parallel quantified clauses, <code>Dense&lt;T&gt;</code> writes, <code>denseAppendAtoms</code>, <code>slice</code>/<code>subarray</code>, <code>HeapSeparation</code>, <code>run_sound_single_pass</code>), and build-script drift in <code>prep.py</code>, <code>color.py</code>, and <code>build.py</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/drafts/tolerant-frames-note/note.tex and tolerant-frames.pdf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>presented the deleted <code>Read-only frame</code> rule and <code>\cite{rof}</code> with component tags; used untagged <code>Spine</code>, heap-only box quantification, single-invariant <code>Loop</code>, unused <code>extend</code> in <code>Push</code>/<code>supp</code>, <code>conj.</code> marks on <code>apart</code> mirror support, <code>Write-End</code> element equality, and regional transfer, four term kinds and four path regions, and an invalid Pattern 8 justification</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>replaces section 6.3 with checked local-object confinement (<code>Confine</code>, <code>ClosedOut</code>, <code>NoPriv</code>, <code>steps_confined_unreachable</code>, <code>run_sound_checked_confined</code>) and cites the companion effect-languages paper; tags spines (<code>arr</code>/<code>view_t</code>); quantifies <code>Admissible</code> and box satisfaction over states; separates <code>I</code> and <code>J</code> with <code>fv(R, Phi) cap mod(c) = empty</code> in <code>Loop</code>; wires <code>extend</code> into <code>Push</code> and <code>\forall_p</code> support and updates <code>apart</code> support to <code>ApartSupport.lean</code>; syncs Lean parity (<code>bitMask</code>, <code>elemSpines</code>, guarded/parallel clauses, <code>Dense&lt;T&gt;</code>, <code>slice</code>/<code>subarray</code>, <code>denseAppendAtoms_sound</code>, <code>run_sound_single_pass</code>, <code>HeapSeparation</code>); fixes Pattern 8, <code>(Sep)</code>, and Definition 23; formalizes mark-restricted effects <code>c :_m Phi | Phi^e</code> and general <code>Fresh-Eff</code>; closes grammar/rigidity/alloc/<code>-0</code>/Example 24 gaps; promotes &quot;What verifies&quot; subsection; rebuilds colored <code>tolerant-frames.pdf</code></p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">docs/drafts/tolerant-frames-note/{prep,color,build}.py</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">`prep.py` omitted `extend` and `\vw` and used a fragile regex for</span><span class="ln">`Frame^+`; `color.py` missed mid-tag `; conj.` clauses; `build.py`</span><span class="ln">hardcoded a stale subtitle date</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">`prep.py` styles `extend` and `\vw` and balances `Frame^+`; `color.py`</span><span class="ln">highlights both leading and mid-tag `conj.` clauses; `build.py` reads</span><span class="ln">`\date{...}` from `note.tex`</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>pdflatex 3-pass on note-color.tex (0 errors, 0 warnings, 0 overfull boxes) and note.tex (0 errors) · node tests/docs.mts (88 documents, 935 citations, 0 problems) · all 232 Lean citations verified</dd></dl>
+<details><summary>5 files changed, 414 insertions(+), 293 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/build.py          |   4 +-
+ docs/drafts/tolerant-frames-note/color.py          |  36 +-
+ docs/drafts/tolerant-frames-note/note.tex          | 654 ++++++++++++---------
+ docs/drafts/tolerant-frames-note/prep.py           |  13 +-
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 472412 -&gt; 489378 bytes</pre></details>
+</article>
+<article class="card" id="c-b71389f1e"><header><div><div class="sha">b71389f1e · Cristiano Calcagno · Nov 27, 05:54</div><h3>Revise Tolerant Frames in Practice paper and rebuild PDF</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><p>The companion catalogue <code>docs/drafts/tolerant-frames-patterns-note/note.tex</code> still cited the removed Read-only frames note, described patterns already verified by SinglePass (P3, P12, P17, and P4's <code>paths</code>) as refused, misstated P4's comparison rule and P6/P13's diagnoses, lagged behind the nine mechanized rules and 105/105 Pretext results of An Effect Language for TScert, and had broken HTML build scripts and orphaned listing page splits.</p>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">tolerant-frames-patterns-note</span></h4><p>- Removed all Read-only frames content (Appendix A, Trust item 4, <code>\cite{rof}</code>,</p><div class="prose"><p>and relation blocks), replacing P15/P16/P20's contrasts with <code>Confined</code> (<code>M.@state</code>) in An Effect Language for TScert.</p></div>
+<p>- Updated P3, P12 (fixing <code>extras[i] ?? null</code>), P17, and P4's <code>paths</code> to</p><div class="prose"><p>reflect SinglePass verification, fixed P4's <code>SafeInt</code> comparison rule for any length <code>&lt;= 2^53 - 1</code>, and corrected P6 (<code>Fields-Disj</code>) and P13 (<code>writtenPrefix</code> vs. two-cell <code>fill</code>) diagnoses.</p></div>
+<p>- Synced P22 (retitled to contrast <code>Anch</code> unreachability against <code>Bound</code></p><div class="prose"><p>read-only reach), P7 (<code>Callback-Inv</code> and <code>@requires</code> on <code>group</code>), and P20 with all nine rules of An Effect Language for TScert and Pretext <code>0dafecb3</code> (105/105 units, 0 <code>paperAssume</code>s, 56 restored guards, 2 upstream bounds bugs, and 2 public-API cursor boundary checks).</p></div>
+<p>- Reframed entries around Obligation / Verification principle / Verifier</p><div class="prose"><p>status, illustrated P1/P2/P8 in §1.2 with transparent P1 walker accounting and <code>Write-End</code> vs. <code>denseAppendAtoms_sound</code> scope, explained <code>x[k]!</code> and <code>SafeInt</code> in §1.1, made references and unclassified sites self-contained, pruned unused preamble macros, fixed page breaks and Table 1 placement, and rebuilt <code>tolerant-frames-patterns.pdf</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tolerant-frames-patterns-note build scripts</span></h4><p>- Fixed the syntax error and stale metadata in <code>build.py</code>, aligned <code>prep.py</code></p><pre class="code"><span class="ln">with the pruned macros and `\AtBeginDocument`, and removed obsolete</span><span class="ln">`color.py`.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs/drafts/tolerant-frames-patterns-note</span></dd><dt>Tests</dt><dd>pdflatex (2 passes, 0 warnings/errors/overfull boxes) · python3 build.py (0 HTML errors) · node tests/docs.mts (0 problems)</dd></dl>
+<details><summary>5 files changed, 886 insertions(+), 932 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-patterns-note/build.py |  188 ++-
+ docs/drafts/tolerant-frames-patterns-note/color.py |  133 --
+ docs/drafts/tolerant-frames-patterns-note/note.tex | 1430 ++++++++++----------
+ docs/drafts/tolerant-frames-patterns-note/prep.py  |   67 +-
+ .../tolerant-frames-patterns.pdf                   |  Bin 350739 -&gt; 329206 bytes</pre></details>
+</article>
+<article class="card" id="c-1896ff905"><header><div><div class="sha">1896ff905 · Cristiano Calcagno · Nov 27, 06:03</div><h3>Align cross-paper bibliography dates and Write-End wording across the three notes</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>After revising all three companion notes to 27 November 2026, two cross-references still carried earlier dates or the pre-revision <code>Write-End</code> summary (<code>tolerant-frames-patterns-note</code> cited <code>Write-End</code> as length-only and <code>11/24 November 2026</code>, and <code>effect-languages-note</code> cited <code>24 November 2026</code>).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">cross-paper bibliography and Write-End sync</span></h4><div class="prose"><p>- <code>docs/drafts/tolerant-frames-patterns-note/note.tex</code> and <code>tolerant-frames-patterns.pdf</code>: align P8's <code>Write-End</code> summary with <code>tolerant-frames-note</code>'s <code>x[old(|x|)] = v</code> rule and update <code>\bibitem{tf,el}</code> dates to <code>27 November 2026</code>. - <code>docs/drafts/effect-languages-note/note.tex</code> and <code>effect-languages.pdf</code>: update <code>\bibitem{tf,patterns}</code> dates to <code>27 November 2026</code>.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>/Library/TeX/texbin/pdflatex</code> (2 passes on both notes): 0 errors. - <code>node tests/docs.mts</code>: 88 documents, 935 citations in code, 0 problems.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>4 files changed, 9 insertions(+), 9 deletions(-)</summary><pre class="code"> .../effect-languages-note/effect-languages.pdf     | Bin 384552 -&gt; 384550 bytes
+ docs/drafts/effect-languages-note/note.tex         |   4 ++--
+ docs/drafts/tolerant-frames-patterns-note/note.tex |  14 +++++++-------
+ .../tolerant-frames-patterns.pdf                   | Bin 329206 -&gt; 329508 bytes</pre></details>
+<div class="sha">with Antigravity</div>
+</article>
+</main></body></html>
