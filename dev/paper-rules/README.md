@@ -117,13 +117,29 @@ Build first: `(cd lean && lake build verifier paper-rules-prototype)` and
 the prototype's edits and `src/paper.d.ts`, the effect language's
 declarations (`Footprint`, `AtMost`, `Effects`, `Join`), a declaration file
 so that their effect parameters, which their bodies do not name, are no
-unused ones to TypeScript. Every edit is marked:
+unused ones to TypeScript. Every edit is marked to distinguish permanent
+changes from temporary paper-experiment edits:
+
+**Permanent changes** (same markers as `.claude/skills/bounds-chain/SKILL.md`):
+
+- `// bounds bug: <what upstream does wrong>`: an upstream bounds defect fixed
+  in place;
+- `// boundary check: <what caller or host input is validated and why>`: a
+  pragmatic runtime check validating caller or host input at a public API or
+  host boundary;
+- `// contract on callers: <plain words>`: an assumed precondition on public
+  API callers.
+
+**Paper-experiment and temporary edits**:
 
 - `// PAPER`: a paper annotation (a bound, an instance, a visitor type's
   `Modifies<E, void>`, the verifier's declarations the instances need);
-- `// PAPER: annotation`: a bounds annotation (`@requires`, `@ensures`,
-  `@invariant`, `Modifies`) added for the experiment;
+- `// PAPER: annotation`: a bounds or effect annotation (`@requires`,
+  `@ensures`, `@invariant`, `Modifies`, `Effects`) added for the experiment;
 - `// PAPER: guard removed`: a `?? missing()` read restored to `x[k]!`;
+- `// PAPER: workaround (<gap>): <reason>`: a temporary proof-aid restructuring
+  or runtime check waiting on a specific verifier capability, to be reverted
+  once that gap closes;
 - `paperAssume(fact, "#N");`: an unsafe assumption of a condition, tracked
   by issue N, which is either a verifier extension or a proof the source
   does not yet give. `paperAssume` is

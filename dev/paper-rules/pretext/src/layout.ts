@@ -329,12 +329,14 @@ function stepNextLine(
   const internal = getInternalPrepared(prepared)
   lineEnd.segmentIndex = start.segmentIndex
   lineEnd.graphemeIndex = start.graphemeIndex
+  // boundary check: validates caller-supplied LayoutCursor (segmentIndex, graphemeIndex,
+  // and breakableFitAdvances bounds) at the public streaming API boundary (#365).
   const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
-  if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')   // PAPER: the caller's cursor checked at the API boundary
+  if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')
   const graphemeAtStart = lineEnd.graphemeIndex   // PAPER: a local copy for the check
-  if (!(Number.isSafeInteger(graphemeAtStart) && 0 <= graphemeAtStart)) throw new RangeError('cursor grapheme index out of range')   // PAPER: the caller's cursor checked at the API boundary
+  if (!(Number.isSafeInteger(graphemeAtStart) && 0 <= graphemeAtStart)) throw new RangeError('cursor grapheme index out of range')
   const breakableFitAdvances = internal.breakableFitAdvances   // PAPER: keep array read link across branch
-  if (graphemeAtStart > 0) {   // PAPER: the caller's cursor checked at the API boundary
+  if (graphemeAtStart > 0) {
     if (segmentAtStart >= internal.widths.length || segmentAtStart >= breakableFitAdvances.length) return null
     const advances = breakableFitAdvances[segmentAtStart]
     if (advances === undefined || advances === null || graphemeAtStart >= advances.length) throw new RangeError('cursor grapheme index out of range')

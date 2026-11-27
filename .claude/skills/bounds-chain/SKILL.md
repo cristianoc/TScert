@@ -46,7 +46,7 @@ local checkout or worktree is only a copy of it.
 No other branch is made on either side: a worktree for a step is made on
 these branches, outside `~/GitHub`, and removed when the step lands.
 
-`tscert-bounds` differs from upstream `0d102a5c` in five kinds of change,
+`tscert-bounds` differs from upstream `0d102a5c` in six kinds of change,
 and in nothing else:
 
 1. **A bound check**: `x[k] ?? missing()`, a local followed by
@@ -57,19 +57,23 @@ and in nothing else:
 2. **An annotation** inside pretext: `@requires`, `@ensures`, `@invariant`,
    `@stable`, `Modifies<P, T>`, `Fresh<T>`, the last two declared by
    `src/resolvable.d.ts`, a copy of TScert's `tools/resolvable.d.ts`.
-3. **A bounds bug found in upstream**, fixed where it is, under a line
-   starting `// bounds bug:` that says what upstream does wrong; each fix
+3. **A bounds bug found in upstream** (permanent), fixed where it is, under a
+   line starting `// bounds bug:` that says what upstream does wrong; each fix
    approved by the owner.
-4. **A rewrite into TScert's source fragment**, listed in TScert issue #94
-   with the TScert gap whose closing lets it go back to upstream's form.
-5. **An annotation on the public API**, on what `src/layout.ts` and
+4. **A rewrite into TScert's source fragment** (temporary), listed in TScert
+   issue #94 with the TScert gap whose closing lets it go back to upstream's
+   form.
+5. **An annotation on the public API** (permanent), on what `src/layout.ts` and
    `src/rich-inline.ts` export, which user code must meet and which is
    assumed, under a line starting `// contract on callers:` that says it in
    plain words, with its row in the trust surface of
    [DESIGN.md](../../../docs/DESIGN.md).
+6. **A pragmatic boundary check** (permanent), a runtime check at a public API
+   or host boundary validating caller or host input, under a line starting
+   `// boundary check:` that names what is validated and why.
 
 A step commits only changes of these kinds, each kind recognisable in the
-source: by its form (1, 2, 4) or by its marker (3, 5).
+source: by its form (1, 2, 4) or by its marker (3, 5, 6).
 
 ## Starting from nothing
 
