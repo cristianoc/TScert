@@ -16,8 +16,7 @@
 // `cases`, `pretext` and `census-verdicts` print each file's and each
 // unit's verdict, one line each, sorted, to compare two runs.
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { readInvocationLog, type AttemptRecord } from "../pipeline/stages.mts";
 
@@ -541,15 +540,15 @@ if (command === "report") {
   writeFileSync(rest[0], lines.sort().join("\n") + "\n");
   process.stdout.write(`${selected.length} cases with projects, ${((performance.now() - started) / 1000).toFixed(1)} s\n`);
 } else if (command === "pretext") {
-  const { checkApart } = await import("../pipeline/verify-source.mts");
+  const { checkApart, pretextProject } = await import("../pipeline/verify-source.mts");
+  type PretextProject = import("../pipeline/verify-source.mts").PretextProject;
   const { startEviction } = await import("../pipeline/stages.mts");
   const files = option("--files");
   if (rest.length !== 2) throw Error("usage: pretext <checkout> <verdicts out> [--files a.ts,…]");
   startEviction();
   const root = resolve(rest[0]);
-  const project = mkdtempSync(join(tmpdir(), "work-report-pretext-"));
-  writeFileSync(join(project, "tsconfig.json"), JSON.stringify({ extends: join(root, "tsconfig.json"),
-    compilerOptions: { types: [] }, include: [join(root, "src/**/*.ts")], exclude: [join(root, "src/layout.test.ts")] }));
+  using pretext: PretextProject = pretextProject(root);
+  const project = pretext.path;
   const chosen = files?.split(",") ?? readdirSync(join(root, "src"))
     .filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts") && !f.includes(".test.")).sort();
   const started = performance.now();

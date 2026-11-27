@@ -14,13 +14,12 @@
 // `--update` records the selected files' functions for the checkout's commit.
 // Stages replay from the stage store; the summary counts the stage
 // invocations each part executed and replayed.
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { cases, type Case } from "../pipeline/cases.mts";
 import { expectOutcome, pooled } from "../pipeline/run-cases.mts";
-import { checkApart, invocationLog, memberName, type Outcome } from "../pipeline/verify-source.mts";
+import { checkApart, invocationLog, memberName, pretextProject, type Outcome, type PretextProject } from "../pipeline/verify-source.mts";
 import { initOmission } from "../tools/fragment-parse.mts";
 import { readInvocationLog } from "../pipeline/stages.mts";
 import { linkFixtures } from "../pipeline/fixture-links.mts";
@@ -252,11 +251,8 @@ const out: string[] = [];
 const root = resolve(checkout);
 const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
 const dirty = spawnSync("git", ["-C", root, "status", "--porcelain", "--", "src"], { encoding: "utf8" }).stdout.trim() !== "";
-const project = mkdtempSync(join(tmpdir(), "pretext-tier-"));
-writeFileSync(join(project, "tsconfig.json"), JSON.stringify({
-  extends: join(root, "tsconfig.json"), compilerOptions: { types: [] },
-  include: [join(root, "src/**/*.ts")], exclude: [join(root, "src/layout.test.ts")],
-}, null, 2));
+using pretext: PretextProject = pretextProject(root);
+const project = pretext.path;
 const pretextCounts = counts();
 let pretextTime: string = "";
 const pretextChecks = Promise.all(selectedFiles.map((f) => checkPretextFile(root, project, f, pretextCounts)))
@@ -280,7 +276,6 @@ for (const [name, part, total] of [["pattern cases", patterns, patternCases.leng
 out.push(`  cases: done at ${caseTime}, ${stages(caseCounts)}`);
 
 const records = await pretextChecks;
-rmSync(project, { recursive: true, force: true });
 const expected: Expected = readExpected(readFileSync(expectedPath, "utf8"));
 const atHead = expected[head];
 if (update) {

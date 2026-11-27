@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { fork, spawn, type ChildProcess } from "node:child_process";
-import { readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
-import { availableParallelism } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment Lean reads.
@@ -705,6 +705,28 @@ function give(worker: ChildProcess, job: Job): void {
   // A worker that ended before the request reaches it fails the write; its
   // `close` reports the check.
   worker.send({ ...job.request, artifacts }, () => {});
+}
+
+/** A project directory, removed at disposal where the run owns it. */
+export interface PretextProject extends Disposable { readonly path: string }
+
+/** A pretext checkout's project: its own `tsconfig.json` with `types: []`,
+ * its sources included and its tests left out. With the store, the project
+ * is a stable directory named by the configuration's content
+ * (`Store.stableDirectory`), so runs over one checkout share their parse and
+ * module entries, which key on the project's path; where the store gives
+ * none, a directory of this run's, removed at disposal. */
+export function pretextProject(checkout: string): PretextProject {
+  const root = resolve(checkout);
+  const configuration = Buffer.from(JSON.stringify({
+    extends: join(root, "tsconfig.json"), compilerOptions: { types: [] },
+    include: [join(root, "src/**/*.ts")], exclude: [join(root, "src/layout.test.ts")],
+  }, null, 2));
+  const stable = currentStore()?.stableDirectory("sources", [["tsconfig.json", configuration]]) ?? null;
+  if (stable !== null) return { path: stable, [Symbol.dispose]: () => {} };
+  const path = mkdtempSync(join(tmpdir(), "pretext-project-"));
+  writeFileSync(join(path, "tsconfig.json"), configuration);
+  return { path, [Symbol.dispose]: () => rmSync(path, { recursive: true, force: true }) };
 }
 /** The same check in one of a pool of worker processes, one per core, each
  * keeping its compiler between checks: for a caller that must stay responsive
