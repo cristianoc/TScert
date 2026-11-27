@@ -151,3 +151,10 @@ export function walkPure<E extends AtMost<{ else: "keep" }>>(
 export function callPureWithState(p: Prepared): number {
   return walkPure<{ "@state": "any" }>(p, () => { lookupRule("k"); });
 }
+
+// Negative 9 (unsafe / non-host method name): user-defined `appendChild` is
+// not a DOM host method and may mutate caller state, so `@state` must be refused.
+interface Box { log: number[]; appendChild(n: number): void }
+export function callUserAppendChild(b: Box): Effects<{ "@state": "any" }, void> {
+  b.appendChild(1);
+}

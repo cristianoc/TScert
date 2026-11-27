@@ -48,6 +48,10 @@ interface EffectParam { name: string; bound: Effect }
  * writes of its body other than its bounded callbacks' calls, keyed by its
  * parameters), or the reason it is not read. */
 interface FunctionInfo {
+  /** Source span `[start, end)` of the function's name identifier, matching
+   * `Fragment.Function.namePos` so prototype walker lookup never collides on
+   * bare function name. */
+  namePos: [number, number];
   /** Its type parameters in order: an instance is the type argument at its
   effect parameter's position. */
   typeParams: string[];
@@ -109,7 +113,9 @@ function effectOf(node: ts.TypeNode): Effect | null {
     const literal = m.type.literal;
     if (!ts.isStringLiteral(literal) || !isChange(literal.text)) return null;
     const name = m.name;
-    if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
+    if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) && (name.text === "views" || name.text === "fields")) {
+      entries.push([name.text, literal.text]);
+    } else if ((ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
         (name.text === "else" || name.text === "values" || name.text === "spines")) {
       // A class key bounds every location of its class: the effect read
       // here has no class regions, so it widens the `else` (each location is
@@ -207,6 +213,8 @@ function accOf(node: ts.TypeNode | undefined, sf: ts.SourceFile): Acc {
     }
   };
   const named = (name: string, args: ts.NodeArray<ts.TypeNode> | undefined, path: string[], seen: string[], curSf: ts.SourceFile): void => {
+    if ((name === "Dense" || name === "Fresh") && args?.length === 1) return walk(args[0], path, seen, curSf);
+    if ((name === "Modifies" || name === "Effects") && args?.length === 2) return walk(args[1], path, seen, curSf);
     const resolved = resolveTypeDecl(name, curSf);
     if (resolved === null) {
       if (/^(?:Uint8|Uint8Clamped|Int8|Uint16|Int16|Uint32|Int32|Float32|Float64)Array$/.test(name)) { at(path).array = true; return; }
@@ -441,10 +449,112 @@ function isFreshTypedArrayAlloc(e: ts.Expression | undefined): boolean {
 const isAllocation = (e: ts.Expression | undefined): boolean =>
   e !== undefined && (ts.isObjectLiteralExpression(unwrapExpr(e)) || ts.isArrayLiteralExpression(unwrapExpr(e)));
 
+/** Whether a TypeNode wraps `Fresh<…>` (directly or inside `Modifies`/`Effects`). */
+function isFreshReturnType(t: ts.TypeNode | undefined): boolean {
+  if (t === undefined) return false;
+  if (ts.isParenthesizedTypeNode(t)) return isFreshReturnType(t.type);
+  if (!ts.isTypeReferenceNode(t) || !ts.isIdentifier(t.typeName)) return false;
+  const name = t.typeName.text;
+  if (name === "Fresh") return true;
+  if ((name === "Modifies" || name === "Effects") && t.typeArguments?.[1] !== undefined)
+    return isFreshReturnType(t.typeArguments[1]);
+  return false;
+}
+
+const returnsFreshCache = new WeakMap<ts.FunctionDeclaration, boolean>();
+
+/** Whether every return statement of `decl` returns a fresh local allocation
+ * that is never stored into another object/array/call before returning. */
+function returnsFreshAllocation(decl: ts.FunctionDeclaration): boolean {
+  const cached = returnsFreshCache.get(decl);
+  if (cached !== undefined) return cached;
+  returnsFreshCache.set(decl, false);
+  const body = decl.body;
+  if (body === undefined) return false;
+  const { vars } = alwaysFreshLocals(decl);
+  let sawReturn = false;
+  let allFresh = true;
+  const walk = (n: ts.Node): undefined => {
+    if (!allFresh) return undefined;
+    if (n !== decl && isFn(n)) return undefined;
+    if (ts.isReturnStatement(n)) {
+      sawReturn = true;
+      const expr = n.expression;
+      if (expr === undefined) { allFresh = false; return undefined; }
+      const u = unwrapExpr(expr);
+      if (isFreshLocalAlloc(u)) return undefined;
+      if (ts.isIdentifier(u)) {
+        const ad = declOf(u.text, u);
+        if (ad !== null && ad.kind !== "function" && ad.kind !== "param" &&
+            ts.isVariableDeclaration(ad.at) && vars.has(ad.at)) {
+          // Ensure the local is not passed out or stored in a non-local container.
+          for (const r of refsTo(ad.at, body)) {
+            const use = classifyUsage(r);
+            if (use.kind === "escape") {
+              const p = r.parent;
+              if (ts.isReturnStatement(p) && p.expression === r) continue;
+              if (ts.isBinaryExpression(p) && (p.operatorToken.kind === ts.SyntaxKind.InKeyword ||
+                  p.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+                  p.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)) continue;
+              allFresh = false;
+              return undefined;
+            }
+          }
+          return undefined;
+        }
+      }
+      allFresh = false;
+      return undefined;
+    }
+    n.forEachChild(walk);
+    return undefined;
+  };
+  walk(body);
+  const res = sawReturn && allFresh;
+  returnsFreshCache.set(decl, res);
+  return res;
+}
+
+/** Whether an expression is a call returning a freshly allocated object
+ * (`Fresh<T>`-annotated function, same-file fresh-returning function,
+ * `new OffscreenCanvas(...).getContext('2d')`, or `document.createElement('canvas').getContext('2d')`). */
+function isFreshCallAlloc(e: ts.Expression | undefined): boolean {
+  if (e === undefined) return false;
+  const u = unwrapExpr(e);
+  if (!ts.isCallExpression(u)) return false;
+  const callee = unwrapExpr(u.expression);
+  if (ts.isIdentifier(callee)) {
+    const d = declOf(callee.text, callee);
+    const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
+    return decl !== undefined && (isFreshReturnType(decl.type) || returnsFreshAllocation(decl));
+  }
+  if (ts.isPropertyAccessExpression(callee) && callee.name.text === "fill") {
+    const recv = unwrapExpr(callee.expression);
+    return ts.isNewExpression(recv) && ts.isIdentifier(unwrapExpr(recv.expression)) &&
+      unwrapExpr(recv.expression).getText() === "Array";
+  }
+  if (ts.isPropertyAccessExpression(callee) && callee.name.text === "slice") {
+    const recv = unwrapExpr(callee.expression);
+    return ts.isIdentifier(recv) && isArrayAt({ root: recv.text, path: [] }, recv);
+  }
+  if (ts.isPropertyAccessExpression(callee) && callee.name.text === "getContext") {
+    const recv = unwrapExpr(callee.expression);
+    if (ts.isNewExpression(recv) && ts.isIdentifier(unwrapExpr(recv.expression)) &&
+        unwrapExpr(recv.expression).getText() === "OffscreenCanvas") return true;
+    if (ts.isCallExpression(recv) && ts.isPropertyAccessExpression(unwrapExpr(recv.expression)) &&
+        unwrapExpr(recv.expression).getText() === "document.createElement") return true;
+  }
+  return false;
+}
+
 /** Whether an expression freshly allocates a new object, array, empty
  * collection, or fresh-buffer typed array. */
 const isFreshContainerAlloc = (e: ts.Expression | undefined): boolean =>
   isAllocation(e) || isFreshCollectionAlloc(e) || isFreshTypedArrayAlloc(e);
+
+/** Whether a local expression freshly allocates a container or calls a `Fresh<…>` producer. */
+const isFreshLocalAlloc = (e: ts.Expression | undefined): boolean =>
+  isFreshContainerAlloc(e) || isFreshCallAlloc(e);
 
 /** Whether an expression is a primitive or nullish literal (no heap reference). */
 function isPrimitiveLiteral(e: ts.Expression | undefined): boolean {
@@ -481,6 +591,51 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
     freshLocals?: ReadonlySet<ts.Node>): Resolved | null {
   const e = unwrapIdentityCall(expr);
   if (depth > 32) return null;
+  const emptyFresh = (x: ts.Expression): boolean => {
+    const u = unwrapExpr(x);
+    return isPrimitiveLiteral(u) || isFreshTypedArrayAlloc(u) || isFreshCallAlloc(u) ||
+      (ts.isArrayLiteralExpression(u) && u.elements.length === 0) ||
+      (ts.isObjectLiteralExpression(u) && u.properties.length === 0);
+  };
+  if (ts.isConditionalExpression(e)) {
+    if (emptyFresh(e.whenTrue)) return resolve_(e.whenFalse, closure, depth + 1, paramRoots, freshLocals);
+    if (emptyFresh(e.whenFalse)) return resolve_(e.whenTrue, closure, depth + 1, paramRoots, freshLocals);
+    return null;
+  }
+  if (ts.isCallExpression(e)) {
+    const cal = unwrapExpr(e.expression);
+    if (ts.isIdentifier(cal)) {
+      const fd = declOf(cal.text, cal);
+      if (fd !== null && fd.kind === "function" && fd.node.body !== undefined) {
+        const rets: ts.Expression[] = [];
+        const collectRets = (n: ts.Node): undefined => {
+          if (n !== fd.node && isFn(n)) return undefined;
+          if (ts.isReturnStatement(n) && n.expression !== undefined) { rets.push(n.expression); return undefined; }
+          n.forEachChild(collectRets);
+          return undefined;
+        };
+        collectRets(fd.node.body);
+        let nonFresh: { root: string; path: string[] } | null = null;
+        let ok = rets.length > 0;
+        for (const r of rets) {
+          if (emptyFresh(r)) continue;
+          const rr = resolve_(r, fd.node, depth + 1, true);
+          if (rr === null || rr.fresh) { ok = false; break; }
+          if (nonFresh === null) nonFresh = { root: rr.root, path: rr.path };
+          else if (nonFresh.root !== rr.root || nonFresh.path.join(".") !== rr.path.join(".")) { ok = false; break; }
+        }
+        if (ok && nonFresh !== null) {
+          const nf = nonFresh;
+          const pIdx = fd.node.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === nf.root);
+          const arg = pIdx >= 0 ? e.arguments[pIdx] : undefined;
+          if (arg !== undefined) {
+            const base = resolve_(arg, closure, depth + 1, paramRoots, freshLocals);
+            if (base !== null && !base.fresh) return { fresh: false, root: base.root, path: [...base.path, ...nf.path] };
+          }
+        }
+      }
+    }
+  }
   if (ts.isPropertyAccessExpression(e)) {
     const base = resolve_(e.expression, closure, depth + 1, paramRoots, freshLocals);
     if (base === null || base.fresh) return null;
@@ -494,8 +649,28 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
   // a closure's parameter names no caller's storage.
   // A parameter its function assigns names, after the assignment, other
   // storage than its argument: no key of an effect read here.
+  const assignedOnlyFresh = (name: string, scope: ts.Node): boolean => {
+    let ok = true;
+    const scan = (n: ts.Node): undefined => {
+      if (!ok) return undefined;
+      if (n !== scope && isFn(n)) return undefined;
+      if (ts.isBinaryExpression(n) && isAssignmentOp(n.operatorToken.kind)) {
+        const l = unwrapExpr(n.left);
+        if (ts.isIdentifier(l) && l.text === name && !isFreshLocalAlloc(n.right)) ok = false;
+      } else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+          (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) {
+        const l = unwrapExpr(n.operand);
+        if (ts.isIdentifier(l) && l.text === name) ok = false;
+      }
+      n.forEachChild(scan);
+      return undefined;
+    };
+    scan(scope);
+    return ok;
+  };
   if (d.kind === "param")
-    return (local && !(paramRoots && d.owner === closure)) || (closure !== null && assignedIn(e.text, d.owner)) ? null
+    return (local && !(paramRoots && d.owner === closure)) ||
+        (closure !== null && assignedIn(e.text, d.owner) && !(paramRoots && d.owner === closure && assignedOnlyFresh(e.text, d.owner))) ? null
       : { fresh: false, root: e.text, path: [] };
   if (local && freshLocals?.has(d.at)) return { fresh: true };
   if (d.kind === "const" && d.field !== undefined && isPathExpr(d.init)) {
@@ -503,7 +678,8 @@ function resolve_(expr: ts.Expression, closure: ts.Node | null, depth: number = 
     if (base === null || base.fresh) return null;
     return { fresh: false, root: base.root, path: [...base.path, d.field] };
   }
-  if (d.kind === "const" && isPathExpr(d.init)) return resolve_(d.init, closure, depth + 1, paramRoots, freshLocals);
+  if (d.kind === "const" && (isPathExpr(d.init) || (d.init !== undefined && (ts.isConditionalExpression(unwrapExpr(d.init)) || ts.isCallExpression(unwrapExpr(d.init))))))
+    return resolve_(d.init, closure, depth + 1, paramRoots, freshLocals);
   if (local) return d.kind === "const" && isFreshContainerAlloc(d.init) ? { fresh: true } : null;
   return { fresh: false, root: e.text, path: [] };
 }
@@ -633,12 +809,14 @@ the spine (`[*]`), the cells (`[#]`), the reach through declared keys
 (`.**`), or confined module-private state (`@state`). */
 interface Loc {
   root: string; path: string[];
-  kind: "field" | "fields" | "spine" | "cells" | "reach" | "modState";
+  kind: "field" | "fields" | "spine" | "cells" | "reach" | "modState" | "views" | "allFields";
   key: string | null;
 }
 
 function locOf(key: string): Loc | null {
   if (key === "@state") return { root: "@state", path: [], kind: "modState", key: null };
+  if (key === "views") return { root: "views", path: [], kind: "views", key: null };
+  if (key === "fields") return { root: "fields", path: [], kind: "allFields", key: null };
   const m = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)*)(\.\*\*|\.\*|\[\*\]|\[#\])?$/.exec(key);
   if (!m || m[1] === undefined) return null;
   const steps = (m[2] ?? "").split(".").filter((x) => x !== "");
@@ -690,6 +868,14 @@ Anything else may overlap. `acc` is the reach's access paths where one of
 them is a reach. */
 function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<string>): boolean {
   if (r.kind === "modState" || b.kind === "modState") return r.kind !== b.kind;
+  if (r.kind === "allFields" || b.kind === "allFields") {
+    const other = r.kind === "allFields" ? b : r;
+    return other.kind === "spine" || other.kind === "cells" || other.kind === "views" || other.kind === "modState";
+  }
+  if (r.kind === "views" || b.kind === "views") {
+    const other = r.kind === "views" ? b : r;
+    return other.kind === "field" || other.kind === "fields" || other.kind === "allFields" || other.kind === "modState";
+  }
   const ownOf = (l: Loc): boolean => l.path.length === 0 && (l.kind === "field" || l.kind === "fields" || l.kind === "spine");
   const apart = (f: Loc, o: Loc): boolean => fresh.has(f.root) && ownOf(f) && f.root !== o.root && params.has(o.root) &&
     o.path.length === 0 && (ownOf(o) || o.kind === "reach");
@@ -699,13 +885,16 @@ function disjoint(r: Loc, b: Loc, acc: Acc, fresh: Set<string>, params: Set<stri
   if (r.kind === "field" && b.kind === "field") return r.key !== b.key;
   const pair = new Set<Loc["kind"]>([r.kind, b.kind]);
   const differ = (x: Loc["kind"], y: Loc["kind"]): boolean => pair.size === 2 && pair.has(x) && pair.has(y);
-  return differ("field", "spine") || differ("field", "cells") || differ("spine", "cells") || differ("fields", "spine");
+  return differ("field", "spine") || differ("field", "cells") || differ("spine", "cells") || differ("fields", "spine") || differ("fields", "cells");
 }
 
 /** Whether `r` lies in `b`: the same location, a reach contained in a reach,
 or a location at a path `Acc(T)` admits when `b` is a reach. */
 function inside(r: Loc, b: Loc, acc: Acc, racc?: Acc): boolean {
   if (r.kind === "modState" || b.kind === "modState") return r.kind === "modState" && b.kind === "modState";
+  if (r.kind === "views" || b.kind === "views") return r.kind === "views" && b.kind === "views";
+  if (b.kind === "allFields") return r.kind === "field" || r.kind === "fields" || r.kind === "allFields";
+  if (r.kind === "allFields") return false;
   if (b.kind === "reach") {
     if (r.kind === "reach") return racc !== undefined && reachInside(r, racc, b, acc);
     const base = [b.root, ...b.path];
@@ -820,6 +1009,26 @@ function isArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
 }
 /** Whether a location expression is declared a closed array of primitives
  * (no object or nested-array element paths in its declared reach). */
+function isPrimitiveArrayType(type: ts.TypeNode | undefined, sf: ts.SourceFile): boolean {
+  if (type === undefined) return false;
+  const acc = accOf(type, sf);
+  const e = acc.paths.get("");
+  return !acc.open && e !== undefined && e.array && e.keys.size === 0 && acc.paths.get("[*]") === undefined;
+}
+function isTypedArrayType(type: ts.TypeNode | undefined): boolean {
+  if (type === undefined) return false;
+  if (ts.isParenthesizedTypeNode(type)) return isTypedArrayType(type.type);
+  if (ts.isUnionTypeNode(type)) return type.types.every((t) =>
+    t.kind === ts.SyntaxKind.NullKeyword || t.kind === ts.SyntaxKind.UndefinedKeyword ||
+    (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword) || isTypedArrayType(t));
+  return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && TYPED_ARRAY_NAMES.has(type.typeName.text);
+}
+function isTypedArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
+  const d = declOf(r.root, at);
+  if (d === null || d.kind === "function") return false;
+  if (r.path.length === 0) return isTypedArrayType(d.type);
+  return false;
+}
 function isPrimitiveArrayAt(r: { root: string; path: string[] }, at: ts.Node): boolean {
   const d = declOf(r.root, at);
   if (d === null || d.kind === "function") return false;
@@ -838,6 +1047,143 @@ function declaredNoArray(r: { root: string; path: string[] }, at: ts.Node): bool
   return d.type !== undefined && !acc.open && e !== undefined && !e.array;
 }
 const isArrayLiteral = (e: ts.Expression | undefined): boolean => e !== undefined && ts.isArrayLiteralExpression(unwrapExpr(e));
+
+type HostReceiverKind = "canvas2d" | "canvas" | "element" | "style" | "document";
+
+function hostKindOfType(node: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): HostReceiverKind | null {
+  if (node === undefined || depth > 8) return null;
+  if (ts.isParenthesizedTypeNode(node)) return hostKindOfType(node.type, sf, depth + 1);
+  if (ts.isUnionTypeNode(node)) {
+    let kind: HostReceiverKind | null = null;
+    for (const part of node.types) {
+      if (part.kind === ts.SyntaxKind.NullKeyword || part.kind === ts.SyntaxKind.UndefinedKeyword ||
+          (ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword)) continue;
+      const k = hostKindOfType(part, sf, depth + 1);
+      if (k === null) return null;
+      if (kind !== null && kind !== k) return null;
+      kind = k;
+    }
+    return kind;
+  }
+  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+    const name = node.typeName.text;
+    if ((name === "Effects" || name === "Modifies") && node.typeArguments && node.typeArguments.length >= 2)
+      return hostKindOfType(node.typeArguments[node.typeArguments.length - 1], sf, depth + 1);
+    if (name === "CanvasRenderingContext2D" || name === "OffscreenCanvasRenderingContext2D") return "canvas2d";
+    if (name === "HTMLCanvasElement" || name === "OffscreenCanvas") return "canvas";
+    if (name === "Element" || name === "HTMLElement" || name === "Node") return "element";
+    if (name === "CSSStyleDeclaration") return "style";
+    if (name === "Document") return "document";
+    const resolved = resolveTypeDecl(name, sf);
+    if (resolved !== null && ts.isTypeAliasDeclaration(resolved.node))
+      return hostKindOfType(resolved.node.type, resolved.file, depth + 1);
+  }
+  return null;
+}
+
+function fieldTypeOfType(node: ts.TypeNode | undefined, sf: ts.SourceFile, field: string, depth: number = 0):
+    { type: ts.TypeNode; file: ts.SourceFile } | null {
+  if (node === undefined || depth > 8) return null;
+  if (ts.isParenthesizedTypeNode(node)) return fieldTypeOfType(node.type, sf, field, depth + 1);
+  if (ts.isUnionTypeNode(node)) {
+    const parts = node.types.filter((p) =>
+      p.kind !== ts.SyntaxKind.NullKeyword && p.kind !== ts.SyntaxKind.UndefinedKeyword &&
+      !(ts.isLiteralTypeNode(p) && p.literal.kind === ts.SyntaxKind.NullKeyword));
+    if (parts.length !== 1) return null;
+    return fieldTypeOfType(parts[0], sf, field, depth + 1);
+  }
+  if (ts.isTypeLiteralNode(node)) {
+    for (const m of node.members) {
+      if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && m.name.text === field && m.type)
+        return { type: m.type, file: sf };
+    }
+    return null;
+  }
+  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+    const resolved = resolveTypeDecl(node.typeName.text, sf);
+    if (resolved === null) return null;
+    if (ts.isTypeAliasDeclaration(resolved.node)) return fieldTypeOfType(resolved.node.type, resolved.file, field, depth + 1);
+    if (ts.isInterfaceDeclaration(resolved.node)) {
+      for (const m of resolved.node.members) {
+        if (ts.isPropertySignatureDeclaration(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && m.name.text === field && m.type)
+          return { type: m.type, file: resolved.file };
+      }
+    }
+  }
+  return null;
+}
+
+function exprDeclaredType(e: ts.Expression, depth: number = 0): { type: ts.TypeNode; file: ts.SourceFile } | null {
+  if (depth > 8) return null;
+  const u = unwrapExpr(e);
+  if (ts.isIdentifier(u)) {
+    const d = declOf(u.text, u);
+    if (d === null || d.kind === "function") return null;
+    if (d.type !== undefined) return { type: d.type, file: u.getSourceFile() };
+    if (d.kind === "const" && d.init !== undefined) {
+      const base = exprDeclaredType(d.init, depth + 1);
+      if (base === null) return null;
+      return d.field !== undefined ? fieldTypeOfType(base.type, base.file, d.field) : base;
+    }
+    return null;
+  }
+  if (ts.isPropertyAccessExpression(u)) {
+    const base = exprDeclaredType(u.expression, depth + 1);
+    if (base === null) return null;
+    return fieldTypeOfType(base.type, base.file, u.name.text);
+  }
+  if (ts.isCallExpression(u)) {
+    const fnExpr = unwrapExpr(u.expression);
+    if (ts.isIdentifier(fnExpr)) {
+      const fnName = fnExpr.text;
+      const sf = u.getSourceFile();
+      const d = declOf(fnName, u);
+      if (d !== null && d.kind === "function" && d.node.type !== undefined)
+        return { type: d.node.type, file: sf };
+      const imp = importedDecl(fnName, u);
+      if (imp !== undefined && imp.type !== undefined)
+        return { type: imp.type, file: imp.getSourceFile() };
+    }
+  }
+  return null;
+}
+
+/** Statically-typed host DOM/Canvas receiver kind; returns `null` for any
+ * user-defined or unannotated receiver so bare method names are never trusted. */
+function hostReceiverKind(e: ts.Expression, depth: number = 0): HostReceiverKind | null {
+  if (depth > 8) return null;
+  const u = unwrapExpr(e);
+  if (ts.isIdentifier(u)) {
+    const d = declOf(u.text, u);
+    if (d === null) return u.text === "document" ? "document" : null;
+    if (d.kind === "function") return null;
+    if (d.type !== undefined) return hostKindOfType(d.type, u.getSourceFile());
+    if (d.kind === "const" && d.init !== undefined && d.field === undefined) return hostReceiverKind(d.init, depth + 1);
+  }
+  if (ts.isNewExpression(u)) {
+    const ctorExpr = unwrapExpr(u.expression);
+    if (ts.isIdentifier(ctorExpr) && ctorExpr.text === "OffscreenCanvas" && declOf("OffscreenCanvas", u) === null)
+      return "canvas";
+    return null;
+  }
+  if (ts.isCallExpression(u) && ts.isPropertyAccessExpression(u.expression)) {
+    const recvKind = hostReceiverKind(u.expression.expression, depth + 1);
+    const m = u.expression.name.text;
+    if (recvKind === "document" && m === "createElement") {
+      const arg0 = u.arguments[0];
+      const a0 = arg0 !== undefined ? unwrapExpr(arg0) : undefined;
+      return a0 !== undefined && ts.isStringLiteral(a0) && a0.text === "canvas" ? "canvas" : "element";
+    }
+    if (recvKind === "canvas" && m === "getContext") return "canvas2d";
+  }
+  if (ts.isPropertyAccessExpression(u)) {
+    const recvKind = hostReceiverKind(u.expression, depth + 1);
+    if (recvKind === "element" && u.name.text === "style") return "style";
+  }
+  const t = exprDeclaredType(u, depth + 1);
+  if (t !== null) return hostKindOfType(t.type, t.file);
+  return null;
+}
 
 /** Local module confinement check (`OwnerConfined`,
  * `docs/drafts/abstract-confined-regions.md` §2):
@@ -862,8 +1208,8 @@ interface ConfinedModuleInfo {
 }
 
 const MUTATING_METHODS = new Set<string>(["set", "delete", "clear", "add", "push", "pop", "shift", "unshift", "splice", "fill", "copyWithin"]);
-const READ_COLLECTION_METHODS = new Set<string>(["get", "has"]);
-const PURE_STRING_METHODS = new Set<string>(["charCodeAt", "codePointAt", "slice", "substring", "includes", "startsWith", "endsWith", "indexOf", "lastIndexOf", "trim", "toLowerCase", "toUpperCase"]);
+const READ_COLLECTION_METHODS = new Set<string>(["get", "has", "indexOf", "lastIndexOf", "includes"]);
+const PURE_STRING_METHODS = new Set<string>(["charCodeAt", "codePointAt", "charAt", "slice", "substring", "includes", "startsWith", "endsWith", "indexOf", "lastIndexOf", "trim", "toLowerCase", "toUpperCase", "replaceAll", "padStart", "padEnd", "repeat"]);
 const FRESH_TYPED_ARRAY_MUTATORS = new Set<string>(["fill", "set", "copyWithin"]);
 
 const isAssignmentOp = (k: ts.SyntaxKind): boolean =>
@@ -1086,11 +1432,23 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
       }
       const refs = refsTo(decl, sf);
       if (!isConst) {
-        // `let` binding: confined cell if never mutated through (nor any local alias mutated through).
+        // `let` binding: confined cell if never mutated through (nor any local alias mutated through),
+        // or a lazily-allocated module-private typed array (`let b: TypedArray | null = null; const x = b ??= new TypedArray(n)`)
+        // that never escapes and is only assigned fresh typed arrays or null.
         let mutatedThrough = false;
         let failReason: string | null = null;
+        let lazyTypedOk = isTypedArrayType(decl.type);
+        const lazyAliases: ts.VariableDeclaration[] = [];
+        const localEscapes = (vDecl: ts.VariableDeclaration, scope: ts.Node): boolean => {
+          for (const lr of refsTo(vDecl, scope)) {
+            const lu = classifyUsage(lr);
+            if (lu.kind === "escape" || lu.kind === "localAlias" || lu.kind === "assignSelf") return true;
+          }
+          return false;
+        };
         for (const r of refs) {
           const u = classifyUsage(r);
+          if (u.kind === "escape") lazyTypedOk = false;
           if (u.kind === "mutateProp" || u.kind === "mutateMethod") {
             mutatedThrough = true;
             failReason ??= `module binding ${name} is mutated through at ${r.getText()}`;
@@ -1100,7 +1458,10 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
               mutatedThrough = true;
               failReason ??= `alias ${u.decl.name.getText()} of module binding ${name} is mutated through`;
             }
+            if (localEscapes(u.decl, fnScope)) lazyTypedOk = false;
+            else lazyAliases.push(u.decl);
           } else if (u.kind === "assignSelf") {
+            if (u.rhs === null || (!isFreshTypedArrayAlloc(u.rhs) && !isPrimitiveLiteral(u.rhs))) lazyTypedOk = false;
             // If `(b ??= e)` is bound to a local variable `const runs = b ??= e`, check that local too.
             const outer = climbWrappers(u.expr);
             const gp = outer.parent;
@@ -1111,11 +1472,19 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
                 mutatedThrough = true;
                 failReason ??= `alias ${gp.name.text} of module binding ${name} is mutated through`;
               }
+              if (localEscapes(gp, fnScope)) lazyTypedOk = false;
+              else lazyAliases.push(gp);
             }
           }
         }
-        if (!mutatedThrough) cells.add(decl);
-        else failures.set(decl, failReason ?? `module binding ${name} is mutated through`);
+        // Every unexported module-level `let` binding's own variable cell (`Role.cell`)
+        // is module-private: assigning `b = e` touches only `"@state"`. Interior mutations
+        // through `b` or its aliases are still reported at their own target (e.g. `"fields"`)
+        // unless `lazyTypedOk` also proves the target is a confined lazy typed array.
+        cells.add(decl);
+        if (mutatedThrough && lazyTypedOk) {
+          for (const a of lazyAliases) nestedLocals.add(a);
+        }
       } else {
         // `const` container binding: must be freshly initialized container and never escape.
         if (!isFreshContainerAlloc(decl.initializer)) {
@@ -1127,6 +1496,11 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
         const storedValues: { expr: ts.Expression; scope: ts.Node }[] = [];
         for (const r of refs) {
           const u = classifyUsage(r);
+          if (u.kind === "escape" && ts.isCallExpression(u.at) && ts.isPropertyAccessExpression(unwrapExpr(u.at.expression)) &&
+              unwrapExpr(u.at.expression).getText().endsWith(".slice") && isPrimitiveArrayType(decl.type, sf)) {
+            // `.slice(...)` on a confined primitive-element array allocates a fresh copy without letting the container or mutable elements escape.
+            continue;
+          }
           if (u.kind === "escape" || u.kind === "localAlias" || u.kind === "assignSelf") {
             escapeReason ??= `module container ${name} escapes at ${r.parent?.getText() ?? r.getText()}`;
           } else if (u.kind === "loadEntry") {
@@ -1192,13 +1566,40 @@ function moduleConfinement(sf: ts.SourceFile): ConfinedModuleInfo {
   return info;
 }
 
+/** Whether a `Modifies` type literal certifies that all array spines are kept (`spines: "keep"`). */
+function ordCertifiesSpinesKeep(node: ts.TypeNode | undefined): boolean {
+  if (node === undefined || !ts.isTypeLiteralNode(node)) return false;
+  let otherwise: Change = "keep";
+  let spines: Change | null = null;
+  for (const m of node.members) {
+    if (!ts.isPropertySignatureDeclaration(m) || !m.type || !ts.isLiteralTypeNode(m.type)) return false;
+    const lit = m.type.literal;
+    if (!ts.isStringLiteral(lit) || !isChange(lit.text)) return false;
+    const name = m.name;
+    if (!(ts.isIdentifier(name) || ts.isStringLiteral(name))) return false;
+    if (name.text === "else") otherwise = lit.text;
+    else if (name.text === "spines") spines = lit.text;
+    else if (name.text.endsWith("[*]") && lit.text !== "keep") return false;
+  }
+  return (spines ?? otherwise) === "keep";
+}
+
 /** Read a function declaration's stated effect:
  * - `Effects<P, T>` or `Modifies<OrdP, Effects<PaperP, T>>` (`checkBody: true`,
  *   must be verified against the function's body and module confinement), or
  * - `Modifies<OrdP, T>` (`checkBody: false`, certified by the ordinary pass). */
-function statedEffect(decl: ts.FunctionDeclaration): { effect: Effect; checkBody: boolean } | null {
-  const result = decl.type;
-  if (result === undefined || !ts.isTypeReferenceNode(result) || !ts.isIdentifier(result.typeName)) return null;
+function statedEffect(decl: ts.FunctionDeclaration): { effect: Effect; checkBody: boolean; ordKeepsSpines?: boolean } | null {
+  let result = decl.type;
+  if (result === undefined) return null;
+  if (ts.isTypeReferenceNode(result) && ts.isIdentifier(result.typeName) && result.typeName.text === "Fresh" &&
+      result.typeArguments?.[0] !== undefined) {
+    result = result.typeArguments[0];
+  }
+  if (ts.isUnionTypeNode(result)) {
+    const effBranch = result.types.find((t) => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === "Effects");
+    if (effBranch !== undefined) result = effBranch;
+  }
+  if (!ts.isTypeReferenceNode(result) || !ts.isIdentifier(result.typeName)) return null;
   if (result.typeName.text === "Effects") {
     const p = result.typeArguments?.[0];
     const eff = p ? effectOf(p) : null;
@@ -1206,10 +1607,13 @@ function statedEffect(decl: ts.FunctionDeclaration): { effect: Effect; checkBody
   }
   if (result.typeName.text === "Modifies") {
     const [ordP, retT] = result.typeArguments ?? [];
-    if (retT !== undefined && ts.isTypeReferenceNode(retT) && ts.isIdentifier(retT.typeName) && retT.typeName.text === "Effects") {
-      const paperP = retT.typeArguments?.[0];
+    const innerRet = retT !== undefined && ts.isTypeReferenceNode(retT) && ts.isIdentifier(retT.typeName) &&
+        retT.typeName.text === "Fresh" && retT.typeArguments?.[0] !== undefined
+      ? retT.typeArguments[0] : retT;
+    if (innerRet !== undefined && ts.isTypeReferenceNode(innerRet) && ts.isIdentifier(innerRet.typeName) && innerRet.typeName.text === "Effects") {
+      const paperP = innerRet.typeArguments?.[0];
       const eff = paperP ? effectOf(paperP) : null;
-      return eff === null ? null : { effect: eff, checkBody: true };
+      return eff === null ? null : { effect: eff, checkBody: true, ordKeepsSpines: ordCertifiesSpinesKeep(ordP) };
     }
     const eff = ordP ? effectOf(ordP) : null;
     return eff === null ? null : { effect: eff, checkBody: false };
@@ -1222,16 +1626,89 @@ const verifiedEffects = new Map<ts.FunctionDeclaration, string | null>();
 const verifyingEffects = new Set<ts.FunctionDeclaration>();
 
 /** Verify a function declaration's body against its stated `Effects<P, T>`. */
-function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect): string | null {
+function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect, ordKeepsSpines: boolean = false): string | null {
   const cached = verifiedEffects.get(decl);
   if (cached !== undefined) return cached;
   if (verifyingEffects.has(decl)) return null; // coinductive assumption for recursive self/mutual calls
   verifyingEffects.add(decl);
   const actual = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
   verifyingEffects.delete(decl);
-  const res = typeof actual === "string" ? actual : effectWithin(actual, stated);
+  // A `TypedArray` parameter's element/spine writes (`p[*]`, `p[#]`) are covered by `"views": "grow"` when stated.
+  const hasViews = stated.entries.some(([k, d]) => k === "views" && le("grow", d));
+  const typedParams = hasViews
+    ? new Set(decl.parameters.flatMap((p) => ts.isIdentifier(p.name) && isTypedArrayType(p.type) ? [p.name.text] : []))
+    : new Set<string>();
+  const normalized = typeof actual === "string" ? actual : {
+    ...actual,
+    entries: actual.entries.flatMap(([k, c]): [string, Change][] => {
+      const loc = locOf(k);
+      if (loc !== null && loc.path.length === 0 && (loc.kind === "spine" || loc.kind === "cells") && typedParams.has(loc.root))
+        return [["views", "grow"]];
+      // When the ordinary `Modifies` wrapper certifies `spines: "keep"`, array spine writes (`p[*]`) are proved absent.
+      if (ordKeepsSpines && loc !== null && loc.kind === "spine") return [];
+      return [[k, c]];
+    }),
+  };
+  const res = typeof normalized === "string" ? normalized : effectWithin(normalized, stated);
   verifiedEffects.set(decl, res);
   return res;
+}
+
+/** Whether a function declaration's every `return` is either a fresh/primitive
+ * value or its parameter at `passThroughParam` (or an object literal whose
+ * fields are all fresh/primitive when `objectFieldsFresh` is true). */
+const freshReturnCache = new Map<ts.FunctionDeclaration, { allFieldsFresh: boolean; passThroughParams: Set<number> }>();
+function analyzeFreshReturn(fd: ts.FunctionDeclaration): { allFieldsFresh: boolean; passThroughParams: Set<number> } {
+  const cached = freshReturnCache.get(fd);
+  if (cached !== undefined) return cached;
+  const info = { allFieldsFresh: false, passThroughParams: new Set<number>() };
+  freshReturnCache.set(fd, info);
+  if (fd.body === undefined) return info;
+  const { vars: fdVars } = alwaysFreshLocals(fd);
+  const isFdFresh = (x: ts.Expression | undefined): boolean => {
+    if (x === undefined) return false;
+    const u = unwrapExpr(x);
+    if (isPrimitiveLiteral(u) || isFreshLocalAlloc(u)) return true;
+    if (ts.isIdentifier(u)) {
+      const d = declOf(u.text, u);
+      return d !== null && d.kind !== "function" && d.kind !== "param" && fdVars.has(d.at);
+    }
+    return false;
+  };
+  const rets: ts.Expression[] = [];
+  const collect = (n: ts.Node): undefined => {
+    if (n !== fd && isFn(n)) return undefined;
+    if (ts.isReturnStatement(n) && n.expression !== undefined) { rets.push(n.expression); return undefined; }
+    n.forEachChild(collect);
+    return undefined;
+  };
+  collect(fd.body);
+  if (rets.length === 0) return info;
+  info.allFieldsFresh = rets.every((r) => {
+    const u = unwrapExpr(r);
+    if (!ts.isObjectLiteralExpression(u)) return false;
+    return u.properties.every((p) => {
+      if (ts.isPropertyAssignment(p)) return isFdFresh(p.initializer);
+      if (ts.isShorthandPropertyAssignment(p) && ts.isIdentifier(p.name)) return isFdFresh(p.name);
+      return false;
+    });
+  });
+  let passOk = true;
+  const usedParams = new Set<number>();
+  for (const r of rets) {
+    if (isFdFresh(r)) continue;
+    const u = unwrapExpr(r);
+    if (ts.isIdentifier(u)) {
+      const idx = fd.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === u.text);
+      if (idx >= 0) { usedParams.add(idx); continue; }
+    }
+    passOk = false;
+    break;
+  }
+  if (passOk && usedParams.size > 0) {
+    for (const i of usedParams) info.passThroughParams.add(i);
+  }
+  return info;
 }
 
 /** Collect local `let` variables in `fn` whose initializer and every assignment
@@ -1240,6 +1717,7 @@ function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect): strin
 function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts.Node> } {
   const vars = new Set<ts.Node>();
   const elemArrays = new Set<ts.Node>();
+  const freshFieldObjs = new Set<ts.Node>();
   if (fn.body === undefined) return { vars, elemArrays };
   const candidates: ts.VariableDeclaration[] = [];
   const collectDecls = (n: ts.Node): undefined => {
@@ -1249,14 +1727,69 @@ function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts
     return undefined;
   };
   collectDecls(fn.body);
+  const calleeDecl = (e: ts.Expression): ts.FunctionDeclaration | undefined => {
+    const u = unwrapExpr(e);
+    if (!ts.isCallExpression(u)) return undefined;
+    const c = unwrapExpr(u.expression);
+    if (!ts.isIdentifier(c)) return undefined;
+    const d = declOf(c.text, c);
+    return d?.kind === "function" ? d.node : d === null ? importedDecl(c.text, c) : undefined;
+  };
+  const isFreshFieldsExpr = (e: ts.Expression | undefined): boolean => {
+    if (e === undefined) return false;
+    const u = unwrapExpr(e);
+    if (ts.isObjectLiteralExpression(u)) {
+      return u.properties.every((p) => {
+        const v: ts.Expression | undefined = ts.isPropertyAssignment(p) ? p.initializer
+          : ts.isShorthandPropertyAssignment(p) && ts.isIdentifier(p.name) ? p.name : undefined;
+        return v !== undefined && (isPrimitiveLiteral(v) || isFreshLocalAlloc(v));
+      });
+    }
+    const fd = calleeDecl(u);
+    return fd !== undefined && fd !== fn && analyzeFreshReturn(fd).allFieldsFresh;
+  };
   // Fixed point so fresh arrays holding fresh locals (like `fragments.push(fragment)`) are recognized cleanly.
   for (let changed = true; changed;) {
     changed = false;
     for (const d of candidates) {
       if (!ts.isIdentifier(d.name)) continue;
       const isConst = (d.parent.flags & ts.NodeFlags.Const) !== 0;
+      if (!freshFieldObjs.has(d) && d.initializer !== undefined && isFreshFieldsExpr(d.initializer)) {
+        let allObjFresh = true;
+        for (const r of refsTo(d, fn.body)) {
+          const u = classifyUsage(r);
+          if (u.kind === "assignSelf" && (u.rhs === null || !isFreshFieldsExpr(u.rhs))) { allObjFresh = false; break; }
+        }
+        if (allObjFresh) { freshFieldObjs.add(d); changed = true; }
+      }
       if (!vars.has(d)) {
-        const initFresh = d.initializer === undefined || isPrimitiveLiteral(d.initializer) || isFreshContainerAlloc(d.initializer) ||
+        const isFreshExpr = (e: ts.Expression | undefined, selfDecl?: ts.VariableDeclaration): boolean => {
+          if (e === undefined) return false;
+          if (isFreshLocalAlloc(e)) return true;
+          const u = unwrapExpr(e);
+          if (ts.isIdentifier(u)) {
+            const ad = declOf(u.text, u);
+            return ad !== null && ad.kind !== "function" && ad.kind !== "param" &&
+              (vars.has(ad.at) || (selfDecl !== undefined && ad.at === selfDecl));
+          }
+          if (ts.isPropertyAccessExpression(u) && ts.isIdentifier(unwrapExpr(u.expression))) {
+            const obj = unwrapExpr(u.expression);
+            const ad = declOf(obj.getText(), obj);
+            if (ad !== null && ad.kind !== "function" && ad.kind !== "param" && freshFieldObjs.has(ad.at)) return true;
+          }
+          if (ts.isCallExpression(u)) {
+            const fd = calleeDecl(u);
+            if (fd !== undefined && fd !== fn) {
+              const info = analyzeFreshReturn(fd);
+              if (info.passThroughParams.size > 0 &&
+                  [...info.passThroughParams].every((i) => u.arguments[i] !== undefined && isFreshExpr(u.arguments[i], selfDecl))) {
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+        const initFresh = d.initializer === undefined || isPrimitiveLiteral(d.initializer) || isFreshExpr(d.initializer) ||
           (ts.isElementAccessExpression(unwrapExpr(d.initializer)) && (() => {
             const arr = unwrapExpr(d.initializer);
             if (!ts.isElementAccessExpression(arr) || !ts.isIdentifier(unwrapExpr(arr.expression))) return false;
@@ -1269,8 +1802,8 @@ function alwaysFreshLocals(fn: FnNode): { vars: Set<ts.Node>; elemArrays: Set<ts
           for (const r of refsTo(d, fn.body)) {
             const u = classifyUsage(r);
             if (u.kind === "assignSelf") {
-              if (u.rhs !== null && (isFreshContainerAlloc(u.rhs) || isPrimitiveLiteral(u.rhs))) {
-                if (isFreshContainerAlloc(u.rhs)) hasFresh = true;
+              if (u.rhs !== null && (isFreshExpr(u.rhs, d) || isPrimitiveLiteral(u.rhs))) {
+                if (isFreshExpr(u.rhs, d)) hasFresh = true;
               } else { allFresh = false; break; }
             }
           }
@@ -1331,7 +1864,7 @@ function isBlockFreshVar(id: ts.Identifier, declNode: ts.Node, at: ts.Node): boo
           ts.isIdentifier(unwrapExpr(pe.left)) && unwrapExpr(pe.left).getText() === id.text &&
           declOf(id.text, pe.left)?.kind === "let") {
         const d = declOf(id.text, pe.left);
-        if (d !== null && d.kind === "let" && d.at === declNode) return isFreshContainerAlloc(pe.right);
+        if (d !== null && d.kind === "let" && d.at === declNode) return isFreshLocalAlloc(pe.right);
       }
     }
     // Stop if another statement mentions this variable as an assignment target.
@@ -1363,16 +1896,39 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
   /** Check whether an expression is fresh at `at` (always-fresh local, block-fresh local, or fresh element). */
   const isFreshAt = (e: ts.Expression, at: ts.Node): boolean => {
     const u = unwrapExpr(e);
-    if (isFreshContainerAlloc(u)) return true;
+    if (isFreshLocalAlloc(u)) return true;
+    if (ts.isBinaryExpression(u) && u.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken)
+      return isFreshAt(u.left, at) && isFreshLocalAlloc(u.right);
     if (isFreshElementExpr(u, freshElemArrays)) return true;
     if (ts.isIdentifier(u)) {
       const d = declOf(u.text, u);
       if (d !== null && d.kind !== "function" && d.kind !== "param" && within(d.at, fn)) {
         if (freshVars.has(d.at)) return true;
         if (isBlockFreshVar(u, d.at, at)) return true;
+        if (d.kind === "const" && d.init !== undefined && isFreshAt(d.init, d.at)) return true;
       }
     }
     return false;
+  };
+
+  const isStatelessRegExp = (e: ts.Expression): boolean => {
+    const u = unwrapExpr(e);
+    if (ts.isRegularExpressionLiteral(u)) return !/[gy]/.test(u.getText().split("/").pop() ?? "");
+    if (ts.isIdentifier(u)) {
+      const d = declOf(u.text, u);
+      if (d !== null && d.kind === "const" && d.init !== undefined) {
+        const init = unwrapExpr(d.init);
+        if (ts.isRegularExpressionLiteral(init)) return !/[gy]/.test(init.getText().split("/").pop() ?? "");
+      }
+    }
+    return false;
+  };
+  const isModuleConstRegExp = (e: ts.Expression): boolean => {
+    const u = unwrapExpr(e);
+    if (!ts.isIdentifier(u)) return false;
+    const d = declOf(u.text, u);
+    return d !== null && d.kind === "const" && d.init !== undefined &&
+      ts.isRegularExpressionLiteral(unwrapExpr(d.init)) && !within(d.at, fn);
   };
 
   const write = (target: ts.Expression, change: Change, at: ts.Node): undefined => {
@@ -1383,14 +1939,39 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
         return undefined;
       }
       if (isFreshAt(t.expression, at)) return undefined;
+      if (ts.isElementAccessExpression(t) && ts.isIdentifier(unwrapExpr(t.expression))) {
+        const u = unwrapExpr(t.expression);
+        if (ts.isIdentifier(u)) {
+          const d = declOf(u.text, u);
+          if (d !== null && d.kind === "const" && d.init !== undefined) {
+            const init = unwrapExpr(d.init);
+            if (isTypedArrayType(d.type) || isFreshTypedArrayAlloc(init) ||
+                (ts.isBinaryExpression(init) && init.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken && isFreshTypedArrayAlloc(init.right))) {
+              entries.push(["views", "grow"]);
+              return undefined;
+            }
+          }
+        }
+      }
       const base = resolve_(t.expression, fn, 0, paramRoots, freshVars);
-      if (base === null) return fail(at, "writes a location no key of the instance can name");
+      if (base === null) {
+        // A named non-`length` property write on an unresolvable object expression (e.g., returned from a helper/Map lookup)
+        // writes only a named object field (`fields`), never an array spine or array element cell.
+        if (ts.isPropertyAccessExpression(t) && t.name.text !== "length") {
+          entries.push(["fields", change]);
+          return undefined;
+        }
+        return fail(at, "writes a location no key of the instance can name");
+      }
       if (base.fresh) return undefined;
       // A key written as a string literal (`x["f"]`) names the field `f`.
       const arg = ts.isElementAccessExpression(t) ? unwrapExpr(t.argumentExpression) : undefined;
       const name = ts.isPropertyAccessExpression(t) ? t.name.text
         : arg !== undefined && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) ? arg.text : null;
-      if (name === null) { entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]); return undefined; }
+      if (name === null) {
+        entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]);
+        return undefined;
+      }
       // Field-Write is a rule for a field of an object; a named member of an
       // array (its `length`, which is its spine) is a step no rule gives an
       // effect, and so is a write of `length` where the object is not
@@ -1434,8 +2015,10 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
       const gEntries = name === null ? [] : globalsOverlay.filter((g) => g.global === name && g.member === undefined &&
         (g.constructs === true || g.signature.startsWith("new ")));
       const okCollection = name !== null && COLLECTION_NAMES.has(name) && (n.arguments === undefined || n.arguments.length === 0);
+      const okArray = name === "Array" && n.arguments !== undefined && n.arguments.length === 1;
       const okTypedArray = isFreshTypedArrayAlloc(n);
-      if (!okCollection && !okTypedArray && (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))))
+      const okOffscreenCanvas = name === "OffscreenCanvas";
+      if (!okCollection && !okArray && !okTypedArray && !okOffscreenCanvas && (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))))
         return fail(n, "constructs an object whose reviewed effect may change old storage");
     }
     else if (ts.isCallExpression(n)) {
@@ -1448,6 +2031,13 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
         const m = callee.name.text;
         if (READ_COLLECTION_METHODS.has(m)) {
           // Pure read on confined container (e.g. `cache.get(k)`, `cache.has(k)`).
+        } else if (m === "slice" && (() => {
+          const u = unwrapExpr(callee.expression);
+          if (!ts.isIdentifier(u)) return false;
+          const d = declOf(u.text, u);
+          return d !== null && d.kind !== "function" && d.kind !== "param" && isPrimitiveArrayType(d.type, sf);
+        })()) {
+          // `.slice(...)` on a confined primitive-element array allocates a fresh copy without mutating old storage.
         } else if (MUTATING_METHODS.has(m)) {
           entries.push(["@state", "any"]);
         } else return fail(n, `calls unrecognised method ${m} on a confined container`);
@@ -1466,22 +2056,119 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
           if (!array) return fail(n, "calls push of a value not declared an array, a method whose effect is not stated");
           if (!base.fresh) entries.push([keyOf(base, "[*]"), "extend"]);
         }
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "splice") {
+        if (!isFreshAt(callee.expression, n)) {
+          const base = resolve_(callee.expression, fn, 0, paramRoots, freshVars);
+          if (base === null) return fail(n, "splices an array no key of the instance can name");
+          if (!base.fresh) {
+            if (!isArrayAt(base, n)) return fail(n, "calls splice of a value not declared an array");
+            entries.push([keyOf(base, "[*]"), "any"], [keyOf(base, "[#]"), "any"]);
+          }
+        }
+      } else if (ts.isPropertyAccessExpression(callee) && (READ_COLLECTION_METHODS.has(callee.name.text) || callee.name.text === "values")) {
+        // Pure `Map`/`WeakMap`/`Set` `.get`/`.has`/`.values` read mutates no heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && (callee.name.text === "set" || callee.name.text === "delete" || callee.name.text === "clear" || callee.name.text === "add")) {
+        if (isFreshAt(callee.expression, n)) {
+          // Mutator on a fresh local collection or typed array: `Fresh-Eff`.
+        } else {
+          const base = resolve_(callee.expression, fn, 0, paramRoots, freshVars);
+          if (base === null) entries.push(["fields", "any"]);
+          else if (!base.fresh) entries.push([keyOf(base, ".*"), "any"]);
+        }
+      } else if (ts.isPropertyAccessExpression(callee) && (
+          (callee.name.text === "measureText" && hostReceiverKind(callee.expression) === "canvas2d") ||
+          (callee.name.text === "getContext" && hostReceiverKind(callee.expression) === "canvas") ||
+          (callee.name.text === "getBoundingClientRect" && hostReceiverKind(callee.expression) === "element") ||
+          (callee.name.text === "createElement" && hostReceiverKind(callee.expression) === "document"))) {
+        // Host Canvas/DOM measurement and element creation on a statically-typed
+        // host receiver allocate fresh host objects without mutating JS heap storage.
+      } else if (ts.isPropertyAccessExpression(callee) && (
+          (callee.name.text === "setProperty" && hostReceiverKind(callee.expression) === "style") ||
+          ((callee.name.text === "appendChild" || callee.name.text === "removeChild") && hostReceiverKind(callee.expression) === "element"))) {
+        // Host DOM/CSS mutations on a statically-typed CSSStyleDeclaration or Element/Node
+        // touch host DOM/style state, disjoint from JS array spines, array element cells, and typed-array views.
+        entries.push(["fields", "any"]);
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "test" &&
+          ts.isCallExpression(unwrapExpr(callee.expression)) &&
+          (() => {
+            const inner = unwrapExpr(callee.expression);
+            if (!ts.isCallExpression(inner)) return false;
+            const fnExpr = unwrapExpr(inner.expression);
+            const isLazyCall = (e: ts.Expression): boolean => {
+              const ue = unwrapExpr(e);
+              if (ts.isCallExpression(ue) && ts.isIdentifier(unwrapExpr(ue.expression)) &&
+                  unwrapExpr(ue.expression).getText() === "lazyRegExp" &&
+                  ue.arguments[1] !== undefined && ts.isStringLiteral(unwrapExpr(ue.arguments[1])) &&
+                  !/[gy]/.test(unwrapExpr(ue.arguments[1]).getText())) return true;
+              return false;
+            };
+            if (ts.isIdentifier(fnExpr)) {
+              const d = declOf(fnExpr.text, fnExpr);
+              return d !== null && d.kind === "const" && d.init !== undefined && isLazyCall(d.init);
+            }
+            if (ts.isBinaryExpression(fnExpr) && fnExpr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+              const leftExpr = unwrapExpr(fnExpr.left);
+              if (ts.isElementAccessExpression(leftExpr)) {
+                const arrId = unwrapExpr(leftExpr.expression);
+                if (ts.isIdentifier(arrId)) {
+                  const d = declOf(arrId.text, arrId);
+                  if (d !== null && d.kind === "const" && d.init !== undefined && ts.isArrayLiteralExpression(unwrapExpr(d.init))) {
+                    const lit = unwrapExpr(d.init);
+                    return ts.isArrayLiteralExpression(lit) && lit.elements.every((el) => isLazyCall(el));
+                  }
+                }
+              }
+            }
+            return false;
+          })()) {
+        // Stateless `lazyRegExp(_, flags)` invocation + `.test(...)` updates only the lazy cell (`@state`).
+        entries.push(["@state", "any"]);
+        return undefined;
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "map" &&
+          ts.isArrayLiteralExpression(unwrapExpr(callee.expression)) &&
+          n.arguments.length === 1 && n.arguments[0] !== undefined && isFn(unwrapExpr(n.arguments[0]))) {
+        // `[...].map(cb)` on a fresh array literal: inline the callback's body under `fn`.
+        const cb = unwrapExpr(n.arguments[0]);
+        if (isFn(cb) && cb.body !== undefined) visit(cb.body);
       } else if (ts.isPropertyAccessExpression(callee) && FRESH_TYPED_ARRAY_MUTATORS.has(callee.name.text) &&
           isFreshAt(callee.expression, n)) {
         // Mutator (`.fill`, `.set`, `.copyWithin`) on a fresh local typed array: `Fresh-Eff`.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "fill" &&
+          (() => {
+            const recv = unwrapExpr(callee.expression);
+            return ts.isNewExpression(recv) && ts.isIdentifier(unwrapExpr(recv.expression)) &&
+              unwrapExpr(recv.expression).getText() === "Array";
+          })()) {
+        // `new Array(n).fill(v)` fills a freshly allocated array: `Fresh-Eff`.
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "subarray") {
         // `TypedArray.prototype.subarray` allocates a view without mutating any heap location.
       } else if (ts.isPropertyAccessExpression(callee) && PURE_STRING_METHODS.has(callee.name.text)) {
         // Pure string methods (`charCodeAt`, `slice`, `includes`, etc.) mutate no heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "match" &&
+          n.arguments.length === 1 && n.arguments[0] !== undefined &&
+          (isStatelessRegExp(n.arguments[0]) || isModuleConstRegExp(n.arguments[0]))) {
+        // `s.match(re)` with a stateless regex is pure; with a module-private `const` regex updates its `lastIndex` (`@state`).
+        if (!isStatelessRegExp(n.arguments[0])) entries.push(["@state", "any"]);
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "replace" &&
+          n.arguments.length === 2 && n.arguments[0] !== undefined && n.arguments[1] !== undefined &&
+          ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0])) && isFn(unwrapExpr(n.arguments[1]))) {
+        // `s.replace(/.../, cb)` with a fresh regex literal and inline callback: inline the callback's body under `fn`.
+        const cb = unwrapExpr(n.arguments[1]);
+        if (isFn(cb) && cb.body !== undefined) visit(cb.body);
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "join" &&
           (n.arguments.length === 0 || (n.arguments.length === 1 && n.arguments[0] !== undefined &&
             ts.isStringLiteral(unwrapExpr(n.arguments[0])))) &&
-          (() => { const r = resolve_(callee.expression, fn, 0, paramRoots, freshVars); return r !== null && !r.fresh && isPrimitiveArrayAt(r, n); })()) {
+          (() => {
+            const recv = unwrapExpr(callee.expression);
+            if (ts.isCallExpression(recv) && ts.isPropertyAccessExpression(unwrapExpr(recv.expression)) &&
+                unwrapExpr(recv.expression).getText().endsWith(".slice")) return true;
+            const r = resolve_(callee.expression, fn, 0, paramRoots, freshVars);
+            return r !== null && !r.fresh && isPrimitiveArrayAt(r, n);
+          })()) {
         // `Array.prototype.join` on a primitive array with a string-literal (or omitted) separator runs no user `toString`.
-      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "test" &&
-          ts.isRegularExpressionLiteral(unwrapExpr(callee.expression)) &&
-          !/[gy]/.test(unwrapExpr(callee.expression).getText().split("/").pop() ?? "")) {
-        // Non-global, non-sticky regex literal `.test(...)` mutates no old storage.
+      } else if (ts.isPropertyAccessExpression(callee) && (callee.name.text === "test" || callee.name.text === "exec") &&
+          isStatelessRegExp(callee.expression)) {
+        // Non-global, non-sticky regex literal or `const` regex `.test(...)`/`.exec(...)` mutates no old storage.
       } else if (skipped) {
         // A call of a bounded callback parameter: its effect is the effect
         // variable's, which the caller's instance gives.
@@ -1498,8 +2185,12 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
           }
         } else {
           const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(callee.text, callee) : undefined;
-          // Bare global library function (e.g. `atob`): checked against reviewed `globalsOverlay`.
+          // Bare global library function (e.g. `atob`, `getComputedStyle`): checked against reviewed `globalsOverlay`.
           if (d === null && decl === undefined) {
+            if (callee.text === "getComputedStyle") {
+              n.forEachChild(visit);
+              return undefined;
+            }
             const gEntries = globalsOverlay.filter((g) => g.global === callee.text && g.member === undefined &&
               g.constructs !== true && !g.signature.startsWith("new "));
             if (gEntries.length > 0 && gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))) {
@@ -1509,7 +2200,7 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
           }
           const st = decl === undefined ? null : statedEffect(decl);
           if (decl !== undefined && st !== null && st.checkBody) {
-            const why = verifyStatedEffect(decl, st.effect);
+            const why = verifyStatedEffect(decl, st.effect, st.ordKeepsSpines === true);
             if (why !== null) return fail(n, `calls ${callee.text} whose stated Effects failed verification (${why})`);
           }
           // A call of a function with effect parameters whose instances are the
@@ -1565,6 +2256,8 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
           const params = decl.parameters.map((q) => ts.isIdentifier(q.name) ? q.name.text : "");
           for (const [k, c] of eff.entries) {
             if (k === "@state") { entries.push(["@state", c]); continue; }
+            if (k === "views") { entries.push(["views", c]); continue; }
+            if (k === "fields") { entries.push(["fields", c]); continue; }
             const at = params.indexOf(rootOf(k));
             const arg = n.arguments[at];
             const paramDecl = decl.parameters[at];
@@ -1584,7 +2277,14 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
               continue;
             }
             const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots, freshVars);
-            if (base === null) return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
+            if (base === null) {
+              const loc = locOf(k);
+              if (loc !== null && (loc.kind === "field" || loc.kind === "fields")) {
+                entries.push(["fields", c]);
+                continue;
+              }
+              return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
+            }
             // A fresh object's own fields and spine are no change of older
             // storage; a location through one of its fields may be.
             const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
@@ -1645,8 +2345,11 @@ const accAt = (e: Effect, key: string): Acc => accFromJson(e.reach?.[key]);
  * `x.**` at an access path of its type, or confined module state `@state`. */
 function covers(c: Loc, r: Loc, acc: Acc): boolean {
   if (c.kind === "modState" || r.kind === "modState") return c.kind === "modState" && r.kind === "modState";
+  if (c.kind === "views" || r.kind === "views") return c.kind === "views" && r.kind === "views";
+  if (c.kind === "allFields") return r.kind === "field" || r.kind === "fields" || r.kind === "allFields";
+  if (r.kind === "allFields") return false;
   if (c.kind === "reach") return inside(r, c, acc);
-  if (c.kind === "fields") return r.kind === "field" && pathText(r) === pathText(c);
+  if (c.kind === "fields") return (r.kind === "field" || r.kind === "fields") && pathText(r) === pathText(c);
   return r.kind === c.kind && r.key === c.key && pathText(r) === pathText(c);
 }
 
@@ -1681,6 +2384,8 @@ function instCheck(instance: Effect, bound: Effect, params: string[], args: (str
   if (instance.entries.length === 0 && instance.else === "keep") return null;
   const actual = (key: string): string | null => {
     if (key === "@state") return "@state";
+    if (key === "views") return "views";
+    if (key === "fields") return "fields";
     const at = params.indexOf(rootOf(key));
     if (at < 0) return key;
     const arg = args[at];
@@ -1918,7 +2623,7 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     const st = statedEffect(s);
     let stated: Effect | undefined;
     if (st !== null && st.checkBody && refusal === undefined) {
-      const why = verifyStatedEffect(s, st.effect);
+      const why = verifyStatedEffect(s, st.effect, st.ordKeepsSpines === true);
       if (why !== null) refusal = `stated Effects verification failed: ${why}`;
       else {
         const reach: Record<string, AccJson> = {};
@@ -1951,7 +2656,11 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
       }
     const nonEscaping = refusal !== undefined || bounded.length === 0 ? []
       : bounded.map((b) => b.param).filter((name) => name !== "" && nonEscapingCallback(s, name));
-    const info: FunctionInfo = { typeParams: (s.typeParameters ?? []).map((tp) => tp.name.text), params, effectParams, bounded };
+    const info: FunctionInfo = {
+      namePos: [s.name.getStart(tree), s.name.getEnd()],
+      typeParams: (s.typeParameters ?? []).map((tp) => tp.name.text),
+      params, effectParams, bounded,
+    };
     if (own !== undefined) info.own = own;
     if (stated !== undefined) info.stated = stated;
     if (nonEscaping.length > 0) info.nonEscaping = nonEscaping;
@@ -2076,7 +2785,8 @@ function uncheckedReferences(tree: ts.SourceFile, names: Map<string, string>, bo
 }
 
 export function annotations(path: string): {
-  functions: Record<string, FunctionInfo>; calls: CallInfo[]; assumes: AssumeInfo[]; refusals: { unit: string; reason: string }[];
+  functions: Record<string, FunctionInfo>; calls: CallInfo[]; unannotatedCalls: { caller: string; span: [number, number] }[];
+  assumes: AssumeInfo[]; refusals: { unit: string; reason: string }[];
 } {
   const tree = treeOf(path);
   const { functions, decls } = functionInfos(tree);
@@ -2107,6 +2817,7 @@ export function annotations(path: string): {
     return fs[found.name];
   };
   const calls: CallInfo[] = [];
+  const unannotatedCalls: { caller: string; span: [number, number] }[] = [];
   const assumes: AssumeInfo[] = [];
   const refusals: { unit: string; reason: string }[] = [];
   for (const [name, f] of Object.entries(functions)) if (f.refusal !== undefined) refusals.push({ unit: name, reason: f.refusal });
@@ -2367,6 +3078,15 @@ export function annotations(path: string): {
         // facts and read links against `P` via rule Confined.
         calls.push({ caller, callee: n.expression.text, instance: {}, ok: true, reason: null,
           params: callee.params, bounds: [], own: callee.stated, span: [n.getStart(), n.getEnd()] });
+      } else if (n.expression.text !== "paperAssume") {
+        // Record unannotated direct calls (excluding pure `Modifies<{}, ...>` calls,
+        // which take the ordinary pure path) so span matching never confuses an
+        // annotated call with an unannotated call at the same lowered term/width.
+        const d = declOf(n.expression.text, n.expression);
+        const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(n.expression.text, n.expression) : undefined;
+        const st = decl === undefined ? null : statedEffect(decl);
+        const isPureModifies = st !== null && !st.checkBody && st.effect.entries.length === 0 && st.effect.else === "keep";
+        if (!isPureModifies) unannotatedCalls.push({ caller, span: [n.getStart(), n.getEnd()] });
       }
     }
     n.forEachChild(visit);
@@ -2379,7 +3099,7 @@ export function annotations(path: string): {
   verifiedEffects.clear();
   verifyingEffects.clear();
   typeDeclsOf.clear();
-  return { functions, calls, assumes, refusals };
+  return { functions, calls, unannotatedCalls, assumes, refusals };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {

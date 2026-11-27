@@ -226,7 +226,7 @@ export const HANGUL = 6
 let bmpProperties: Uint16Array | null = null
 const astralProperties = new Map<number, number>()
 
-export function hasProperty(cp: number, property: number): boolean {
+export function hasProperty(cp: number, property: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const bmp = bmpProperties ??= new Uint16Array(0x10000)
   const has = 1 << (property * 2)
   let bits = cp < 0x10000 ? (bmp[cp] ?? missing()) : astralProperties.get(cp) ?? 0

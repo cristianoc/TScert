@@ -97,6 +97,7 @@ export type PrepareOptions = {
 
 // --- Public API ---
 
+/** @requires segments === null || segments.length === 0 */
 function prepareInternal(
   text: string,
   font: string,
@@ -109,8 +110,36 @@ function prepareInternal(
   // One language read: break rules and measurement both follow it.
   const language = getPreparationLanguage(engineProfile)
   const analysis = analyzeText(text, engineProfile, options?.whiteSpace, wordBreak, language)
-  const prepared = measureAnalysis(analysis, 0, analysis.flags.length, font, segments, letterSpacing, engineProfile, language, true, null)   // PAPER: the result through a local
-  return prepared
+  const from = 0
+  const to = analysis.flags.length
+  if (to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('analysis')
+  if (segments !== null && segments.length !== 0) throw new RangeError('segments')
+  const prepared = measureAnalysis(analysis, from, to, font, segments, letterSpacing, engineProfile, language, true, null, 0)   // PAPER: the result through a local
+  const widths = prepared.widths
+  const segmentFlags = prepared.segmentFlags
+  const breakableFitAdvances = prepared.breakableFitAdvances
+  const breakableLineStartExtras = prepared.breakableLineStartExtras
+  const lineStartExtras = prepared.lineStartExtras
+  const lineEndTrims = prepared.lineEndTrims
+  const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const result: PreparedText = {   // PAPER: explicit fields so items is absent for PreparedLineData invariant
+    widths,
+    segmentFlags,
+    simpleLineWalkFastPath: prepared.simpleLineWalkFastPath,
+    simpleLineCountFastPath: prepared.simpleLineCountFastPath,
+    breakableFitAdvances,
+    breakableLineStartExtras,
+    lineStartExtras,
+    lineEndTrims,
+    overflowLineEndTrims,
+    letterSpacing: prepared.letterSpacing,
+    discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
+    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    tabStopAdvance: prepared.tabStopAdvance,
+    minimumTabAdvance: prepared.minimumTabAdvance,
+  }
+  if (result.items !== undefined) throw new RangeError('items')
+  return result
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,
@@ -140,7 +169,17 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
   const prepared = prepareInternal(text, font, segments, options)
   // Each segment's kind by name, from its flags.
   const kinds: SegmentBreakKind[] = []
-  /** @invariant prepared.segmentFlags.length === prepared.widths.length && prepared.widths !== kinds */
+  /** @invariant prepared.segmentFlags.length === prepared.widths.length && prepared.breakableFitAdvances.length === prepared.widths.length && prepared.widths !== kinds
+   *  @invariant prepared.lineStartExtras === null || prepared.widths.length <= prepared.lineStartExtras.length
+   *  @invariant prepared.lineEndTrims === null || prepared.widths.length <= prepared.lineEndTrims.length
+   *  @invariant prepared.overflowLineEndTrims === null || prepared.widths.length <= prepared.overflowLineEndTrims.length
+   *  @invariant prepared.breakableLineStartExtras === null || prepared.widths.length <= prepared.breakableLineStartExtras.length
+   *  @invariant forall i in prepared.breakableFitAdvances: prepared.breakableFitAdvances[i] === null || 1 <= prepared.breakableFitAdvances[i].length
+   *  @invariant prepared.breakableLineStartExtras === null || forall i in prepared.breakableFitAdvances: prepared.breakableFitAdvances[i] === null || prepared.breakableLineStartExtras[i] === null || prepared.breakableFitAdvances[i].length <= prepared.breakableLineStartExtras[i].length
+   *  @invariant prepared.items === undefined || prepared.items.hyphenWidths === null || prepared.widths.length <= prepared.items.hyphenWidths.length
+   *  @invariant prepared.items === undefined || prepared.items.hyphenRooms === null || prepared.widths.length < prepared.items.hyphenRooms.length
+   *  @invariant prepared.items === undefined || prepared.items.itemEndHalts === null || prepared.widths.length <= prepared.items.itemEndHalts.length
+   *  @invariant prepared.items === undefined || prepared.items.openingEdges === null || prepared.widths.length <= prepared.items.openingEdges.length */
   for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
   const result = { ...prepared, segments, kinds }   // PAPER: the result through a local
   return result

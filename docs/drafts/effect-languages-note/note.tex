@@ -102,12 +102,13 @@ framing, subeffecting, and callback bound checking all reduce to one
 inclusion relation. To verify higher-order functions such as collection
 and text walkers, the language adds capture-rooted regions, type-driven
 declared reach ($\reach{\pi}{T}$), module-private confined state
-($\modstate{M}$), and bounded effect polymorphism via six rules
+($\modstate{M}$), and bounded effect polymorphism via nine rules
 (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst},
-\ruleName{Confined}, \ruleName{Callback-Inv}). On Pretext's line walkers, patterns W1--W5 derive
+\ruleName{Confined}, \ruleName{Callback-Inv}, \ruleName{Fields-Disj},
+\ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend}). On Pretext's line walkers, patterns W1--W5 derive
 directly given helper effects and local module confinement checks, and W6
 is an open-world API boundary assumption. TScert's verified footprint
-fragment $\Lang_0$ embeds directly into this language; all six rules are
+fragment $\Lang_0$ embeds directly into this language; all nine rules are
 mechanized in Lean over an idealised heap model and exercised on Pretext
 through an experimental prototype mode.
 \end{abstract}
@@ -121,13 +122,14 @@ tiers:
 \item \textbf{Verified in TScert's calculus ($\Lang_0$):} Section~\ref{sec:l0}
   embeds TScert's existing footprint calculus into this language; verified
   rules cite their Lean theorem names inline.
-\item \textbf{Mechanized in an idealised heap model:} The six
-  effect-variable, confined-state, and scoped-callback rules (\ruleName{Bound},
-  \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst}, \ruleName{Confined},
-  \ruleName{Callback-Inv})
+\item \textbf{Mechanized in an idealised heap model:} The nine
+  effect-variable, confined-state, scoped-callback, and region/monotonicity rules
+  (\ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet}, \ruleName{Inst},
+  \ruleName{Confined}, \ruleName{Callback-Inv}, \ruleName{Fields-Disj},
+  \ruleName{Plain-Cells-Disj}, \ruleName{Elem-Len-Extend})
   are specified over an abstract semantics in the module
   \lean{Verification.Paper.EffectLanguage.Rules} and proved sound over a
-  heap-extension model with confined module regions in the module
+  heap-extension model with confined module regions and role-typed fields in
   \lean{Verification.Paper.EffectLanguage.Model} (\lean{model\_rules}).
 \item \textbf{Conjectured for TScert's full calculus:}
   Conjectures~\ref{conj:regions}--\ref{conj:generic} state the region
@@ -229,7 +231,7 @@ signatures is:
 \text{Changes} & \delta,\gamma &::=& \keep\mid\init\mid\scalar\mid\extend\mid\grow\mid\any\\
 \text{Categories} & G &\subseteq& \{\kw{value},\,\kw{array},\,\kw{view}\}\\
 \text{Access paths} & \pi &::=& x\mid\pi.f\mid\pi[\ast]\\
-\text{Regions} & r &::=& \val\mid\st\mid\vw\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.f\\
+\text{Regions} & r &::=& \val\mid\st\mid\vw\mid\kw{fields}\mid\pi.\kw{spine}\mid\pi.\kw{cells}\mid\pi.f\\
  & & \mid & \pi.\kw{fields}\mid\reach{\pi}{T}\mid\modstate{M}\mid r\cap\kw{cls}(G)\mid\kw{all}\mid\kw{old}\\
 \text{Basic effects} & \Phi,\Psi &::=& \{r_1:\delta_1,\dots,r_k:\delta_k;\ \kw{else}:\delta_0\}\mid N(\pi_1,\dots,\pi_n)\\
 \text{Effect expressions} & E &::=& \Phi\mid\varepsilon\mid E\sqcup E\mid E\sqcap E\\
@@ -691,12 +693,15 @@ upper-bounds every transition of $E_2$ evaluated after an $E_1$-step
 \ruleName{Sub}, \ruleName{Call-Var}, and \ruleName{Fresh-Eff} are not
 stated as standalone Lean theorems in $\Lang_0$.}
 
-\subsection{Subeffecting, Effect-Variable, Confined-State, and Scoped-Callback Rules}
+\subsection{Subeffecting, Effect-Variable, Confined-State, and Framing Rules}
 
-The six rules below govern effect polymorphism, module-private confined
-state, and scoped callback invariants, corresponding one-to-one to
+The nine rules below govern effect polymorphism, module-private confined
+state, scoped callback invariants, role-typed field disjointness,
+plain-array cell disjointness, and element-length monotonicity under
+$\extend$, corresponding one-to-one to
 \lean{BoundRule}, \lean{AnchRule}, \lean{MeetRule}, \lean{InstRule},
-\lean{ConfinedRule}, and \lean{CallbackInvRule} in
+\lean{ConfinedRule}, \lean{CallbackInvRule}, \lean{FieldsDisjRule},
+\lean{PlainCellsDisjRule}, and \lean{ElemLenExtendRule} in
 \lean{Verification.Paper.EffectLanguage.Rules}.
 Here $\Same(\Phi,h_0,h)$ holds when $\Phi$ assigns every location $l<m$
 the same change bound in $h$ as at call entry $h_0$, and
@@ -735,6 +740,20 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
    K;C\vdash_m \Phi_{\mathrm{cb}}\sqsubseteq\Psi \quad \Anch(\Phi_{\mathrm{cb}},\rho,h_0) \\
    \mathit{cb}\text{ does not escape }\mathit{fn}}
   {\forall h.\;\mathrm{Steps}(\Phi_{\mathrm{own}},\Phi_{\mathrm{cb}},h_0,h)\Rightarrow P(h)}
+\\
+\inferrule*[left=Fields-Disj]
+  {\Phi\text{ has }\kw{else}:\any\text{ and every constrained entry of }\Phi\text{ is non-field (spines, element cells, element spines)}}
+  {K;C\vdash_m \{\kw{fields}:\any;\ \kw{else}:\keep\}\sqsubseteq\Phi}
+\\
+\inferrule*[left=Plain-Cells-Disj]
+  {\pi,\pi'\text{ plain arrays (not typed-array views)} \\
+   \pi.\kw{spine}\mathrel{\#}\pi'.\kw{spine}}
+  {K;C\vdash_m \{\pi.\kw{cells}:\delta;\ \kw{else}:\keep\}\sqsubseteq\{\pi'.\kw{cells}:\keep;\ \kw{else}:\any\}}
+\\
+\inferrule*[left=Elem-Len-Extend]
+  {P:\mathbb{N}\to\mathrm{Prop}\text{ monotone} \\
+   \Phi\text{ keeps }\pi\text{'s path, spine, and element cells and bounds }\pi.\kw{elemSpines}\text{ by }\extend}
+  {\mathrm{Preserves}(\Phi,\;\forall i.\;P(\code{\pi[i].length}))}
 \end{mathpar}
 
 \begin{description}[leftmargin=1.5em,itemsep=2pt]
@@ -797,6 +816,27 @@ allocations lie outside $\kw{old}_{\mathcal{C}}$).
   direct forward to another non-escaping parameter), every invocation of
   $\mathit{cb}$ occurs in such a heap, so $\mathit{cb}$'s body may assume
   $P$ over its captured variables on entry.
+\item[\ruleName{Fields-Disj}] Non-spine object field locations
+  (\code{"fields"}, \code{Role.field}) are disjoint by allocation role from
+  array/view spines (\code{Role.spine}), array element cells
+  (\code{Role.elem}), and element spines (\lean{fieldClass\_region\_disjoint}).
+  Consequently, a helper whose effect is $\{\kw{fields}:\any;\ \kw{else}:\keep\}$
+  (or $\{\kw{fields}:\any,\ \modstate{M}:\any;\ \kw{else}:\keep\}$) preserves
+  every spine, element-cell, and element-spine invariant.
+\item[\ruleName{Plain-Cells-Disj}] Distinct plain array spines own disjoint
+  element cells (\lean{PlainElemCellsDisjoint},
+  \lean{plainArray\_cells\_disjoint}); typed-array views (\code{.viewSpine})
+  are excluded because \code{.subarray()} views may share cells. When static
+  types guarantee two plain-array paths have apart spines
+  (\lean{typesPathSpinesApart\_sound} together with
+  \lean{tyArrayOrNonObj}), writes to one array's element cells preserve
+  facts over the other array's element cells.
+\item[\ruleName{Elem-Len-Extend}] Any $\extend$-bounded transition on an
+  array spine leaves it an array spine of at least the same length
+  (\lean{extend\_arr\_back}). Hence an effect that keeps an outer array's
+  path, spine, and element cells while bounding its element spines by
+  $\extend$ preserves every monotone lower bound on element lengths (such as
+  $\forall i.\;1\le\code{\pi[i].length}$).
 \end{description}
 
 \begin{theorem}[Idealised model soundness]\label{thm:model}
@@ -804,7 +844,8 @@ Over the idealised heap-extension model of
 \lean{Verification.Paper.EffectLanguage.Model} (built on
 \lean{Verification.Semantics.Footprints} and
 \lean{Verification.Semantics.Confinement}), for any universe $C$ of
-confined module regions (\lean{ModuleRegion}):
+confined module regions (\lean{ModuleRegion}) and role-typed field class
+$F$ (\lean{FieldClass}):
 \begin{enumerate}[leftmargin=1.5em,itemsep=1pt]
 \item Boundary closure implies disjointness of $\modstate{M}$ from every
   externally rooted concrete region (\lean{closedOut\_region\_disjoint},
@@ -813,9 +854,17 @@ confined module regions (\lean{ModuleRegion}):
 \item Joining confined module regions into an anchored effect preserves
   anchoring and inclusion (\lean{eff1\_add\_modules\_anchored},
   \lean{eff1\_add\_modules\_within}).
-\item All six rules \ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet},
-  \ruleName{Inst}, \ruleName{Confined}, and \ruleName{Callback-Inv} are sound
-  (\lean{model\_rules : (C : ModuleRegion) -> PaperRules (semantics C)}).
+\item Non-spine object fields are disjoint from spines, element cells, and
+  element spines (\lean{fieldClass\_region\_disjoint},
+  \lean{fieldsDisj\_of\_nonField}); distinct plain-array spines have
+  disjoint element cells (\lean{plainArray\_cells\_disjoint},
+  \lean{plainCellsDisj\_of\_apart}); and $\extend$ preserves monotone
+  element-length lower bounds (\lean{extend\_arr\_back}).
+\item All nine rules \ruleName{Bound}, \ruleName{Anch}, \ruleName{Meet},
+  \ruleName{Inst}, \ruleName{Confined}, \ruleName{Callback-Inv},
+  \ruleName{Fields-Disj}, \ruleName{Plain-Cells-Disj}, and
+  \ruleName{Elem-Len-Extend} are sound
+  (\lean{model\_rules : (C : ModuleRegion) -> (F : FieldClass) -> PaperRules (semantics C F)}).
 \end{enumerate}
 \end{theorem}
 
@@ -1204,10 +1253,10 @@ Rule / feature & Conservative approximation in \code{paper-rules-prototype}\\
 \midrule
 \ruleName{Anch} & Decided only for own fields and spines of locally allocated objects (from allocation separation facts), not nested elements or paths through fields.\\
 Declared reach & Expands finite local and imported object/interface/array/union/intersection types (leaving generics, tuples, index signatures, and recursive types open); read at $\keep$ only, matched via pass read/alias links and reach inclusion ($\reach{\pi.f}{U}\subseteq\reach{\pi}{T}$).\\
-Region keys & Bounds and call effects accept parameter-rooted \code{p[*]}, \code{p[\#]}, \code{p.f}, \code{p.*}, \code{p.**}, and \code{"@state"} (no class keys in bounds, no arbitrary multi-hop paths, no structural region equality across different spellings).\\
+Region keys & Bounds and call effects accept parameter-rooted paths \code{p.f$_1$.\dots.f$_k$[*]}, \code{p.f$_1$.\dots.f$_k$[\#]}, \code{p.f$_1$.\dots.f$_k$.f}, \code{p.f$_1$.\dots.f$_k$.*} (for any $k\ge 0$), \code{p.**}, \code{"@state"}, and class keys \code{"fields"} (non-spine object fields, \code{Role.field}, framed by \ruleName{Fields-Disj}) and \code{"views"} (typed-array view contents) in \code{Effects<P, T>} (no class keys in callback bounds, no structural region equality across different spellings). \ruleName{Plain-Cells-Disj} is applied up to path depth 2 (\code{typeRegionQuery}), and \ruleName{Elem-Len-Extend} is applied to linear lower-bound body clauses whose element-length terms carry negative coefficients (\code{onlyLowerElemLengthBody}).\\
 \ruleName{Inst} \& anchoring & Disjointness and anchoring are decided syntactically before the pass over \code{const} locals, unassigned parameters, and \code{"@state"} (fresh literal locals apart from parameter reaches if unescaped before the call; forwarded effect variables discharge callee bound entries on own locations of caller-allocated \code{const} literals via \ruleName{Anch} and \ruleName{Meet}; paths, reaches, and cells not decided anchored; joins \code{Join<E, P>} checked componentwise).\\
-\ruleName{Confined} & Checked locally per defining module: non-exported \code{let} cells never mutated through and non-exported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) that never escape; if a container's loaded values are mutated, every stored value must be fresh and never escape (refuses escaping containers, exported caches, or absorbed external references); verified monomorphic \code{Effects<P, T>} calls are framed at their call sites against \code{P}.\\
-Closures \& callbacks & Callback types must carry a bare effect variable \code{Modifies<E, T>}. Closure effects are inferred from field/element writes, array \code{push}, fresh typed-array mutators, stated/forwarded calls, and pure natives/identity wrappers; stated \code{Effects<P, T>} signatures are checked coinductively against their bodies and module confinement.\\
+\ruleName{Confined} & Checked locally per defining module: the variable cell (\code{Role.cell}) of any unexported module-level \code{let} binding (with interior writes through aliases charged to their target region, such as \code{"fields"}), and non-exported \code{const} fresh containers (\code{Record}, \code{Map}, \code{WeakMap}, arrays, typed arrays) or lazy typed arrays that never escape; if a container's loaded values are mutated, every stored value must be fresh and never escape (refuses escaping containers, exported caches, or absorbed external references); verified monomorphic \code{Effects<P, T>} calls are framed at their call sites against \code{P}.\\
+Closures \& callbacks & Callback types must carry a bare effect variable \code{Modifies<E, T>}. Closure effects are inferred from field/element writes, array \code{push}, fresh typed-array and \code{new Array(n).fill(v)} allocations, conditional/helper fresh-or-path resolution, stated/forwarded calls, and pure/host natives; stated \code{Effects<P, T>} signatures are checked coinductively against their bodies and module confinement. Cross-module imports establish module interfaces under \code{paper-rules-prototype --module-interface} (refusing any dependency carrying \code{paperAssume}).\\
 \ruleName{Bound} stability & Decided for single-location fields/spines at parameters, and for a reach only when the body's own effect (excluding callback calls) keeps the reach (using \code{"@state"} and explicit helper \code{Effects}); calls through aliased callback locals or reassigned parameters are not read.\\
 Call sites \& exits & Checks \ruleName{Inst} across function declarations in the project (refusing unanalysed value escapes of quantified functions); reads call arguments that are plain variables, paths, or pure identity wrappers; ignores \code{onThrow}; evaluates changes per location category (\lean{Change.onSpine}, \lean{Change.onValue}) and over-approximates instantiated calls using their bounds.\\
 \bottomrule

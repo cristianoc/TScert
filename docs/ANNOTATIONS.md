@@ -325,11 +325,19 @@ so they leave every ordinary verdict unchanged.
 - **`"@state"`**: as a region key in `Effects<P, T>`, `Join<E, P>`, or a
   call's effect instance (`{ "@state": "any" }`), denotes the confined
   module-private state of the defining module and its confined callees
-  (unexported `let` cells never mutated through, and unexported freshly
-  initialized containers that never escape and whose mutated nested interiors
-  are freshly acquired and never escape). By boundary closure
+  (the variable cell `Role.cell` of any unexported module-level `let` binding,
+  and unexported freshly initialized containers or lazy typed arrays that never
+  escape and whose mutated nested interiors are freshly acquired and never
+  escape). Mutations through an alias of a non-container `let` remain charged
+  to their own target region (such as `"fields"`). By boundary closure
   (`Confinement.ClosedOut`), `"@state"` is disjoint from every external root
   region and declared reach `"x.**"`.
+- **`"fields"`**: as a region key in `Effects<P, T>`, denotes named non-spine
+  object fields (`Role.field`), disjoint from array spines, array element cells,
+  element spines, and typed-array views.
+- **`"views"`**: as a region key in `Effects<P, T>`, denotes typed-array view
+  contents (`Role.view`), disjoint from array spines, array element cells, and
+  named object fields.
 
 ```ts
 let cached: Config | null = null;

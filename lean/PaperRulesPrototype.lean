@@ -38,13 +38,16 @@ structure AccPath where
   deriving Repr, BEq
 
 /-- A bound entry's region, relative to a parameter: its spine, its cells,
-a field, every field, its reach through the access paths its declared type
-admits (`"x.**"`), or confined module-private state (`"@state"`). -/
+a field, every field (at any path `p`), typed-array views (`"views"`), its
+reach through the access paths its declared type admits (`"x.**"`), or
+confined module-private state (`"@state"`). -/
 inductive Key where
-  | spine
-  | cells
-  | field (f : String)
-  | fields
+  | spine (p : List String := [])
+  | cells (p : List String := [])
+  | field (p : List String) (f : String)
+  | fields (p : List String := [])
+  | allFields
+  | views
   | reach (acc : List AccPath)
   | moduleState
   deriving Repr, BEq
@@ -88,9 +91,15 @@ structure Assume where
 /-- The rules' information about one unit: its bounded callbacks, and the
 number of its parameters, the last of the graph's inputs. -/
 structure Unit where
+  /-- Source span `[start, end)` of the unit's name identifier, matching
+  `Fragment.Function.namePos`. -/
+  namePos : Option (Nat × Nat) := none
   bounds : List Bound
   /-- The calls of the unit to functions with effect parameters. -/
   calls : List QCall := []
+  /-- Spans of unannotated calls in the unit, so span matching never confuses
+  an annotated call with an unannotated call at the same lowered term and width. -/
+  unannotatedCalls : List (Nat × Nat) := []
   /-- The unit's unsafe assumes. -/
   assumes : List Assume := []
   /-- The unit's nodes as the pass gives them: expression, context width,
@@ -123,11 +132,14 @@ the facts' supports take: a key at the empty path of the slot, the spine
 at the key `[]`; none for a reach or confined module state, which are no
 slot-rooted footprint regions. -/
 def keyRegion (s : Nat) : Key → Option Footprints.Region
-  | .spine => some (Footprints.Region.path s [] arraySpineKey)
-  | .cells => some (Footprints.Region.cells s)
-  | .field f => some (Footprints.Region.path s [] (.str f))
-  | .fields => some (Footprints.Region.fields s)
-  | .reach _ | .moduleState => none
+  | .spine p => some (Footprints.Region.path s p arraySpineKey)
+  | .cells [] => some (Footprints.Region.cells s)
+  | .cells p => some (Footprints.Region.pathCells s p)
+  | .field p f => some (Footprints.Region.path s p (.str f))
+  | .fields [] => some (Footprints.Region.fields s)
+  | .fields p => some (Footprints.Region.pathFields s p)
+  | .views => some (Footprints.Region.cls .views)
+  | .allFields | .reach _ | .moduleState => none
 
 /-- The bound's entries as regions at the call's slots. -/
 def boundAt (u : Unit) (d : Nat) (b : Bound) : Footprints.Footprint :=
@@ -210,14 +222,23 @@ def mayOverlapModState : Footprints.Region → Bool
   | .field _ (.str "value") | .path _ [] (.str "value") => true
   | _ => false
 
+/-- Whether a support region may overlap named object fields (`"fields"`,
+`Role.field`): array spines, array element cells, and element spines are
+disjoint from `Role.field`. -/
+def mayOverlapFields : Footprints.Region → Bool
+  | .spine _ _ | .cells _ | .pathCells _ _ | .elemSpines _ _ => false
+  | .field _ k | .path _ _ k => k != arraySpineKey
+  | .cls s => s.value
+  | _ => true
+
 /-- Whether a support region `r` is covered by a bound entry's region `b`,
 modulo alias links (`sameSlot x y` when `x` and `y` denote the same object). -/
 def coveredByBound (sameSlot : Nat → Nat → Bool) (r b : Footprints.Region) : Bool :=
   r == b || match r, b with
   | .field x k, .field y k' | .field x k, .path y [] k'
   | .path x [] k, .field y k' | .path x [] k, .path y [] k' => sameSlot x y && k == k'
-  | .spine x [], .path y [] k' => sameSlot x y && k' == arraySpineKey
-  | .spine x p, .spine y q => sameSlot x y && p == q
+  | .spine x p, .path y q k' => sameSlot x y && p == q && k' == arraySpineKey
+  | .path x p k, .path y q k' => sameSlot x y && p == q && k == k'
   | .field x k, .fields y | .path x [] k, .fields y => sameSlot x y && k != arraySpineKey
   | .fields x, .fields y | .pathFields x [], .fields y => sameSlot x y
   | .cells x, .cells y | .pathCells x [], .cells y => sameSlot x y
@@ -232,49 +253,107 @@ def coveredByBound (sameSlot : Nat → Nat → Bool) (r b : Footprints.Region) :
   location; its `else` is `keep`;
 - Bound: every bound entry not disjoint from `r` is within `δ` (the
   existing `respects`, with its separation query), any confined module-state
-  entry `modChange` that may overlap `r` is within `δ`, and the bound's `else`
+  entry `modChange` that may overlap `r` is within `δ`, any `"fields"` entry
+  `fieldsChange` that may overlap `r` is within `δ`, and the bound's `else`
   is within `δ` unless `r` lies in an entry: covered by a bound entry's region
   (up to alias links), or in a reach entry's declared reach. -/
 def keepsPair (q : Footprints.SepQuery) (sameSlot : Nat → Nat → Bool) (fresh : List Nat)
     (bound : Footprints.Footprint) (otherwise : Footprints.Change)
     (reach : Footprints.Region → Bool) (modChange : Footprints.Change)
+    (fieldsChange : Footprints.Change)
     (e : Footprints.Region × Footprints.Change) : Bool :=
   (ownSlot e.1).any (fun s => fresh.any (sameSlot s)) ||
     (Footprints.respects q [e] bound &&
       (!mayOverlapModState e.1 || (atCategory e.1 modChange).le e.2) &&
+      (!mayOverlapFields e.1 || (atCategory e.1 fieldsChange).le e.2) &&
       ((atCategory e.1 otherwise).le e.2 || reach e.1 || bound.any (fun b => coveredByBound sameSlot e.1 b.1)))
 
 /-- An effect the layer reads at a call: its entries at the call's slots,
 its `else`, the roots of its reach entries with their access paths, the
-maximum change on confined module state `"@state"`, and the slots of storage
-it leaves alone by Anch (none at a call whose effect is not an anchored
-variable). -/
+maximum change on confined module state `"@state"`, the maximum change on
+named object fields `"fields"`, and the slots of storage it leaves alone by
+Anch (none at a call whose effect is not an anchored variable). -/
 structure CallEff where
   fresh : List Nat
   bound : Footprints.Footprint
   otherwise : Footprints.Change
   roots : List (Nat × List AccPath)
   modChange : Footprints.Change := .keep
+  fieldsChange : Footprints.Change := .keep
+
+/-- Separation query combining `typeSpineQuery` with element-cell disjointness
+for type-disjoint plain arrays (`Plain-Cells-Disj` in `Rules.lean` /
+`Model.lean`: two plain arrays whose element types cannot overlap cannot share
+an element cell; typed-array views are excluded by `tyArrayOrNonObj` because
+`.subarray()` views may share cells). -/
+def typeRegionQuery {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) :
+    Footprints.SepQuery :=
+  let spineQ := HeapExpressionRules.typeSpineQuery G Γ
+  let cellSite : Footprints.Region → Option (Nat × List String)
+    | .cells x => some (x, [])
+    | .pathCells x p => some (x, p)
+    | _ => none
+  let isPlain := fun (x : Nat) (p : List String) =>
+    match HeapExpressionRules.pathTys G Γ x p with
+    | some Us => Us.all (HeapExpressionRules.tyArrayOrNonObj G)
+    | none => false
+  ⟨fun r s => spineQ.disjoint r s || match cellSite r, cellSite s with
+    | some (x, px), some (y, py) =>
+      decide (px.length ≤ 2) && decide (py.length ≤ 2) &&
+      isPlain x px && isPlain y py &&
+      HeapExpressionRules.typesPathSpinesApart G Γ x px y py
+    | _, _ => false⟩
+
+/-- Whether every occurrence of `.project .length []` in a linear clause has a
+negative coefficient (a lower bound such as `1 <= elem.length`), which is
+monotone under `.extend` of element spines. -/
+def onlyLowerElemLengthLinear : LinearClause HeapKnowledge.Bound → Bool
+  | .atom (.le form _) => form.all fun (b, c) => b != .project .length [] || c < 0
+  | .atom (.ne form _) => form.all fun (b, _) => b != .project .length []
+  | .either A B => onlyLowerElemLengthLinear A && onlyLowerElemLengthLinear B
+
+/-- Whether every occurrence of `.project .length []` in a quantified body
+clause is a monotone lower bound (preserved when element spines extend). -/
+def onlyLowerElemLengthBody : BodyClause → Bool
+  | .clause c => onlyLowerElemLengthLinear c
+  | .guarded _ _ b => onlyLowerElemLengthBody b
+  | .either A B => onlyLowerElemLengthBody A && onlyLowerElemLengthBody B
 
 /-- The facts of the call's entry that every effect of `effs` keeps, past
 the call's result. The effects are the components of one call's effect
 (its union), or of several calls the layer cannot tell apart: the facts
 every one keeps survive. -/
-def keptBy (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
-  let q := Footprints.knowledgeQuery k
+def keptBy {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (effs : List CallEff) (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
+  let c : Footprints.ReadContext :=
+    { (Footprints.ReadContext.ofFirst stable) with arrayPath := HeapExpressionRules.arrayPathOf G Γ }
+  let typeQ := typeRegionQuery G Γ
+  let combine := fun (q : Footprints.SepQuery) => (⟨fun r s => q.disjoint r s || typeQ.disjoint r s⟩ : Footprints.SepQuery)
+  let baseQ := combine (Footprints.knowledgeQuery k)
   let sameSlot := fun (x y : Nat) => x == y || (HeapLinks.aliases k.links x).contains y
   let prepared := effs.map fun c => (c, inReach (reachPairs k c.roots))
-  let keeps := fun (S : Footprints.Footprint) => !prepared.isEmpty && prepared.all fun (c, reach) =>
-    S.all (keepsPair q sameSlot c.fresh c.bound c.otherwise reach c.modChange)
-  let idx := k.indices.filter fun a => !a.fact.envOnly &&
-    match a.fact.support? (.ofFirst stable) with
-    | some S => keeps S
-    | none => false
-  let cells := k.cells.filter fun f => keeps [(Footprints.Region.field f.slot f.field, .keep)]
+  let keeps := fun (q : Footprints.SepQuery) (S : Footprints.Footprint) => !prepared.isEmpty && prepared.all fun (c, reach) =>
+    S.all (keepsPair q sameSlot c.fresh c.bound c.otherwise reach c.modChange c.fieldsChange)
+  let rec keepsFact (gs : List (Nat × GuardTag)) : IndexFact → Bool
+    | .guarded s [] t B => keepsFact ((s, t) :: gs) B
+    | F =>
+      let q := if gs.isEmpty then baseQ else combine (Footprints.knowledgeQueryUnder k gs)
+      match F.support? c with
+      | some S =>
+        let S := match F with
+          | .every s p _ _ body =>
+            if body.all onlyLowerElemLengthBody then
+              S.map fun (r, ch) => if r == .elemSpines s p && ch == .keep then (r, .extend) else (r, ch)
+            else S
+          | _ => S
+        keeps q S
+      | none => false
+  let idx := k.indices.filter fun a => !a.fact.envOnly && keepsFact [] a.fact
+  let cells := k.cells.filter fun f => keeps baseQ [(Footprints.Region.field f.slot f.field, .keep)]
   -- A read link `y = x.f` holds while the field location of `x` at `f`
   -- keeps its contents: its support is that location at `keep`. An alias
   -- link reads no heap, and the ordinary output keeps it.
-  let links := k.links.filter fun l => !l.alias && keeps [(Footprints.Region.path l.cell [] l.field, .keep)]
+  let links := k.links.filter fun l => !l.alias && keeps baseQ [(Footprints.Region.path l.cell [] l.field, .keep)]
   { cells := HeapFacts.shift cells, indices := HeapKnowledge.shiftIndices idx,
     links := links.map fun l => { l with cell := l.cell + 1, value := l.value + 1 } }
 
@@ -289,12 +368,21 @@ of entries (`keep` when none). -/
 def modChangeOf (es : List (Nat × Key × Footprints.Change)) : Footprints.Change :=
   es.foldl (fun acc (_, key, ch) => match key with | .moduleState => acc.max ch | _ => acc) .keep
 
+/-- The largest change stated for named object fields `"fields"` in a list
+of entries (`keep` when none). -/
+def fieldsChangeOf (es : List (Nat × Key × Footprints.Change)) : Footprints.Change :=
+  es.foldl (fun acc (_, key, ch) => match key with | .allFields => acc.max ch | _ => acc) .keep
+
 /-- At a call of a bounded callback parameter: the callback's effect is
 the variable, within the bound (Bound) and within `{old: any}` (Anch). -/
-def kept (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
+def kept {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (u : Unit) (b : Bound) (stable : Nat → String → Bool) (d : Nat) (k : Knowledge) : Knowledge :=
   let roots := reachRoots (b.entries.map fun (p, key, c) => (slotOf u d p, key, c))
-  keptBy [{ fresh := freshSlots k, bound := boundAt u d b, otherwise := b.otherwise, roots,
-            modChange := modChangeOf b.entries }] stable k
+  let eff : CallEff := {
+    fresh := freshSlots k, bound := boundAt u d b, otherwise := b.otherwise, roots := roots,
+    modChange := modChangeOf b.entries, fieldsChange := fieldsChangeOf b.entries
+  }
+  keptBy G Γ [eff] stable k
 
 /-- At a call of a function with effect parameters (rule Inst's
 conclusion): the call's effect is the callee's effect with each variable
@@ -311,19 +399,33 @@ def atCall (u : Unit) (d : Nat) (c : QCall) (args : List Tm) : Option (List Call
     | some (.num _) | some (.str _) | some (.bigint _) | some (.sym _) => some none
     | some _ => none
   let calleeEffs ← c.components.mapM fun pe => do
-    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState
+    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState && key != .views && key != .allFields
+    let viewEntries := pe.entries.filterMap fun (_, key, ch) =>
+      if key == .views then some (Footprints.Region.cls .views, ch) else none
     let esOpt ← paramEntries.mapM fun (p, key, ch) => (entrySlot p).map fun oa => oa.map fun a => (a, key, ch)
     let es := esOpt.filterMap id
-    let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
+    let bound := viewEntries ++ es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
     pure { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es,
-           modChange := modChangeOf pe.entries }
+           modChange := modChangeOf pe.entries, fieldsChange := fieldsChangeOf pe.entries }
   let callerEffs := c.callerComponents.map fun pe =>
-    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState
+    let paramEntries := pe.entries.filter fun (_, key, _) => key != .moduleState && key != .views && key != .allFields
+    let viewEntries := pe.entries.filterMap fun (_, key, ch) =>
+      if key == .views then some (Footprints.Region.cls .views, ch) else none
     let es := paramEntries.map fun (p, key, ch) => (slotOf u d p, key, ch)
-    let bound := es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
+    let bound := viewEntries ++ es.filterMap fun (a, key, ch) => (keyRegion a key).map (·, ch)
     { fresh := [], bound, otherwise := pe.otherwise, roots := reachRoots es,
-      modChange := modChangeOf pe.entries : CallEff }
+      modChange := modChangeOf pe.entries, fieldsChange := fieldsChangeOf pe.entries : CallEff }
   pure (calleeEffs ++ callerEffs)
+
+/-- Whether a callee slot holds an intrinsic exact-write operation (such as
+`%SetIndex%`), never a user-annotated call. -/
+def isExactWriteCallee {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
+  match Γ[s]? with
+  | some F => match PositiveRules.expand G F with
+    | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
+        L.any fun p => (PromiseCalls.exactWriteOf p.effect).isSome
+    | _ => false
+  | none => false
 
 /-- The layer's step: the ordinary checker's output, and at a call of a
 bounded callback parameter the facts the rules keep added to it. -/
@@ -331,6 +433,7 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (base : Checker G images) (j : Sequent ι) (k : Knowledge) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) : CheckResult ι Knowledge :=
   let r := base.run j k e codes sums
+  if base.normal j k e codes sums == .empty then r else
   match j.term with
   | .invoke (.var s) _ args =>
     let d := j.context.length
@@ -341,19 +444,18 @@ def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       { out with cells := out.cells ++ add.cells, indices := out.indices ++ add.indices,
                  links := (out.links ++ add.links).eraseDups }
     match u.bounds.find? (fun b => aliases (slotOf u d b.callback)) with
-    | some b => add (kept u b (stableFirst G j.context) d k)
+    | some b => add (kept G j.context u b (stableFirst G j.context) d k)
     | none =>
-      -- A call of a function with effect parameters, identified by its
-      -- source span: the spans of the unit's nodes whose expression and
-      -- context width are this step's, each the span of a side-file call,
-      -- and all of them one call. Where the nodes give no span, or two
-      -- calls, nothing is added.
-      let spans := u.sites.filterMap fun (t, w, sp) => if t == j.term && w == d then some sp else none
-      -- Nodes with equal terms and context widths are one site to the
-      -- layer: it keeps what every call at such a node keeps.
+      if isExactWriteCallee G j.context s then r else
+      let spans := u.sites.filterMap fun (t, w, sp) =>
+        if t == j.term && w == d then
+          match sp with
+          | some p => if u.calls.any (·.span == p) || u.unannotatedCalls.contains p then some (some p) else none
+          | none => none
+        else none
       let effs := spans.map fun sp => sp.bind fun sp => (u.calls.find? (·.span == sp)).bind (atCall u d · args)
       match (effs.mapM id).map List.flatten with
-      | some (c :: cs) => add (keptBy (c :: cs) (stableFirst G j.context) k)
+      | some (c :: cs) => add (keptBy G j.context (c :: cs) (stableFirst G j.context) k)
       | _ => r
   | _ => r
 
@@ -375,31 +477,43 @@ axiom paperKeptFactsSurvive {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {i
 a slot. -/
 theorem run_eq_base {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) {j : Sequent ι} {k e codes sums}
-    (h : ∀ s t args, j.term ≠ .invoke (.var s) t args) :
+    (h : (base.normal j k e codes sums == .empty) = true ∨ ∀ s t args, j.term ≠ .invoke (.var s) t args) :
     run u base j k e codes sums = base.run j k e codes sums := by
   unfold run
   split
-  · rename_i s t args heq; exact absurd heq (h s t args)
   · rfl
+  · rename_i hne
+    have hnot := h.resolve_left hne
+    split
+    · rename_i s t args heq; exact absurd heq (hnot s t args)
+    · rfl
 
 /-- The layer: a checker whose `run` is the rules' step, and whose normal
-effect is the ordinary checker's at every step it leaves to that checker. -/
+effect is the ordinary checker's wherever the ordinary checker is pure or
+at every step it leaves to that checker. -/
 def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) : Checker G images where
   run := run u base
   sound := paperKeptFactsSurvive u base
-  normal := fun j k e codes sums => match j.term with
-    | .invoke (.var _) _ _ => Footprints.Closed.top
-    | _ => base.normal j k e codes sums
+  normal := fun j k e codes sums =>
+    if base.normal j k e codes sums == .empty then base.normal j k e codes sums
+    else match j.term with
+      | .invoke (.var _) _ _ => Footprints.Closed.top
+      | _ => base.normal j k e codes sums
   normal_sound := by
     intro j k e out codes sums hrun hc hs ε ρ n W h henv hk hW hok hrefs hn
     split at hn
-    · exact absurd hn Footprints.Closed.top_ne_empty
-    · rename_i hnot
-      have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums)
-        (fun s t args hj => hnot s t args hj)
+    · rename_i hemp
+      have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) (.inl hemp)
       rw [heq] at hrun
       exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
+    · split at hn
+      · exact absurd hn Footprints.Closed.top_ne_empty
+      · rename_i hnot
+        have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums)
+          (.inr fun s t args hj => hnot s t args hj)
+        rw [heq] at hrun
+        exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
 
 /-! ## The side file -/
 
@@ -413,16 +527,23 @@ def changeOf : String → Option Footprints.Change
 other key (a path through a field), which the layer does not read. -/
 def keyOf (params : List String) (reach : String → Option (List AccPath)) (key : String) : Option (Nat × Key) :=
   let root := fun (n : Nat) => String.ofList (key.toList.take (key.length - n))
+  let splitPath := fun (s : String) => match s.splitOn "." with
+    | r :: p => (params.idxOf? r).map (·, p)
+    | [] => none
   if key == "@state" then some (0, .moduleState)
+  else if key == "views" then some (0, .views)
+  else if key == "fields" then some (0, .allFields)
   else if key.endsWith ".**" then do
     let acc ← reach key
     (params.idxOf? (root 3)).map (·, .reach acc)
-  else if key.endsWith "[*]" then (params.idxOf? (root 3)).map (·, .spine)
-  else if key.endsWith "[#]" then (params.idxOf? (root 3)).map (·, .cells)
-  else if key.endsWith ".*" then (params.idxOf? (root 2)).map (·, .fields)
+  else if key.endsWith "[*]" then (splitPath (root 3)).map fun (i, p) => (i, .spine p)
+  else if key.endsWith "[#]" then (splitPath (root 3)).map fun (i, p) => (i, .cells p)
+  else if key.endsWith ".*" then (splitPath (root 2)).map fun (i, p) => (i, .fields p)
   else match key.splitOn "." with
-    | [r, f] => (params.idxOf? r).map (·, .field f)
-    | _ => none
+    | r :: rest => match rest.reverse with
+      | f :: pr => (params.idxOf? r).map (·, .field pr.reverse f)
+      | [] => none
+    | [] => none
 
 open Lean in
 /-- The access paths of an effect's reach entries, by key. -/
@@ -465,7 +586,11 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
   let fns ← side.getObjVal? "functions"
   let .obj kvs := fns | throw "functions: an object"
   let mut out : Std.HashMap String Unit := {}
+  let mut namePositions : Std.HashMap String (Nat × Nat) := {}
   for (name, info) in kvs.toArray do
+    if let .ok np := info.getObjVal? "namePos" then
+      if let (.ok s, .ok e) := (np.getArrVal? 0 >>= (·.getNat?), np.getArrVal? 1 >>= (·.getNat?)) then
+        namePositions := namePositions.insert name (s, e)
     let params ← (← info.getObjVal? "params").getArr?
     let params ← params.toList.mapM (·.getStr?)
     let effects ← (← info.getObjVal? "effectParams").getArr?
@@ -479,7 +604,8 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
       match paramEff params (← ep.getObjVal? "bound") with
       | some pe => bounds := bounds ++ [{ callback := index, entries := pe.entries, otherwise := pe.otherwise : Bound }]
       | none => readable := false
-    if readable && !bounds.isEmpty then out := out.insert name { bounds, params := params.length }
+    if readable && !bounds.isEmpty then
+      out := out.insert name { namePos := namePositions.get? name, bounds, params := params.length }
   -- Each caller's calls with instances within their bounds and the
   -- callee's own effect read, by source span.
   let calls ← (← side.getObjVal? "calls").getArr?
@@ -515,6 +641,16 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
     let c : QCall := { span, components, callerComponents, scopedCallbacks }
     let u := (out.get? caller).getD { bounds := [], params := 0 }
     out := out.insert caller { u with calls := u.calls ++ [c] }
+  -- Unannotated call spans per unit, to guard against span collisions.
+  let unann ← match side.getObjVal? "unannotatedCalls" with
+    | .ok a => a.getArr?
+    | .error _ => pure #[]
+  for item in unann do
+    let caller ← (← item.getObjVal? "caller").getStr?
+    let span ← item.getObjVal? "span"
+    let span : Nat × Nat := (← (← span.getArrVal? 0).getNat?, ← (← span.getArrVal? 1).getNat?)
+    let u := (out.get? caller).getD { bounds := [], params := 0 }
+    out := out.insert caller { u with unannotatedCalls := u.unannotatedCalls ++ [span] }
   -- Each unit's unsafe assumes whose form the side script read.
   let assumes ← match side.getObjVal? "assumes" with
     | .ok a => a.getArr?
@@ -594,7 +730,7 @@ def closureFacts (units : Std.HashMap String Unit) {ι : Type} [DecidableEq ι] 
       let sameSlot := fun (x y : Nat) => x == y || (HeapLinks.aliases k.links x).contains y
       let stable := stableFirst G site.callContext
       let keeps := fun (S : Footprints.Footprint) => effs.all fun ce =>
-        S.all (keepsPair q sameSlot ce.fresh ce.bound ce.otherwise (inReach (reachPairs k ce.roots)) ce.modChange)
+        S.all (keepsPair q sameSlot ce.fresh ce.bound ce.otherwise (inReach (reachPairs k ce.roots)) ce.modChange ce.fieldsChange)
       let remap := fun (x : Nat) =>
         site.captureSlots.zipIdx.findSome? fun (capOpt, idx) =>
           capOpt.bind fun s => if sameSlot x s then some (site.captureOffset + idx) else none
@@ -650,27 +786,132 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
       | .ok f =>
         -- The verifier's own route (`PreparedFile.check`): the pass over the
         -- group with inferred loop-head facts, here with the layer.
-        let (_, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) fuel (p.fr.group i)
+        let (diagLines, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) fuel (p.fr.group i)
           (located := true) (layer := some (layerOf units))
-        let applies := (p.fr.group i).any fun j => match p.fr.units[j]? with
-          | some (fn, _, _) => units.contains fn.name
-          | none => false
         -- The unsafe assumes the group's units rely on, by issue and line.
         let assumes := (p.fr.group i).flatMap fun j => match p.fr.units[j]? with
           | some (fn, _, _) => ((units.get? fn.name).map (·.assumes)).getD []
           | none => []
         let assumesJson := Json.arr (assumes.map fun a => Json.str s!"{a.issue} at line {a.line}").toArray
+        -- Every verdict accepted by the prototype stays its own and names the
+        -- prototype's axiom (including when imported dependencies were
+        -- established via `--module-interface` under the paper's rules).
         match verdict with
-        | .ok _ => IO.println (Json.compress (Json.mkObj (if applies
-            then [("unit", unit), ("acceptedUnderPaperRules", true), ("assumed", "paperKeptFactsSurvive"),
-                  ("assumes", assumesJson)]
-            else [("unit", unit), ("accepted", true)])))
+        | .ok _ => IO.println (Json.compress (Json.mkObj
+            [("unit", unit), ("acceptedUnderPaperRules", true), ("assumed", "paperKeptFactsSurvive"),
+             ("assumes", assumesJson)]))
         | .error reason =>
-          IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", (reason.take 400).toString)]))
+          let full := (← IO.getEnv "PAPER_TRACE").isSome
+          if full then
+            for dl in diagLines do IO.eprintln s!"diag {unit}: {dl}"
+          let msg := if full then reason else (reason.take 400).toString
+          IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", msg)]))
     return 0
+
+/-- A component interface established under the paper's rules, mirroring
+`RequestCli.interfaceFile` with `layerOf` per module location. Modules with
+unsafe `paperAssume`s are refused. -/
+def interfaceFile (sideMap : Std.HashMap String (Std.HashMap String HeapExpressionRules.PaperRules.Unit))
+    (path : String) (budget : PositiveCertificates.SearchBudget) : IO UInt32 := do
+  let request ← RequestCli.readJson path
+  let parsed : Except String (Json × List SourceClaimJson.ModuleVerdict × List String) := do
+    let j ← request
+    fieldsExactly j ["modules", "names", "dependencies", "force", "fuel", "mode"]
+    let members ← jArr j "modules"
+    let ds ← jArr j "dependencies"
+    Fragment.symbolNumbersApart (members ++ ds.flatMap fun d =>
+      (((d.getObjValD "interface").getObjValAs? (Array Json) "modules").toOption.getD #[]).toList.map
+        (·.getObjValD "module"))
+    let modules ← members.mapM fun m => do Fragment.decodeModule (← Fragment.canonicalSymbols m)
+    let mut imported : List Fragment.ModuleAst := []
+    for d in ds do
+      fieldsExactly d ["key", "interface"]
+      let _ ← d.getObjValAs? String "key"
+      let i ← jField d "interface"
+      fieldsExactly i ["modules"]
+      for row in ← jArr i "modules" do
+        let m ← Fragment.decodeModule (← Fragment.canonicalSymbols (← jField row "module"))
+        if modules.any (·.location == m.location) || imported.any (·.location == m.location) then
+          throw "component dependency overlaps"
+        imported := imported ++ [m]
+    let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
+    let item := (modules.head?.map fun m => SourceClaimJson.fileItem m.document).getD ""
+    let decoded ← ds.mapM fun (d : Json) => SinglePass.work "rows: decode interfaces" item fun _ =>
+      SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let incoming := decoded.flatMap (·.1)
+    let incomingTables := decoded.flatMap (·.2)
+    let rawNames ← jArr j "names"
+    let mut requested : List (String × List String) := []
+    for entry in rawNames do
+      fieldsExactly entry ["location", "names"]
+      let loc ← entry.getObjValAs? String "location"
+      let ns : List String ← fromJson? (← jField entry "names")
+      if requested.any (·.1 == loc) then throw s!"duplicate requested module {loc}"
+      if !modules.any (·.location == loc) then throw s!"requested names for unknown module {loc}"
+      requested := requested ++ [(loc, ns.eraseDups.mergeSort (· ≤ ·))]
+    let own ← modules.mapM fun m => do
+      let some ns := requested.lookup m.location | throw s!"missing requested names for {m.location}"
+      let declared ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
+      if ns.any (fun n => !declared.contains n) then throw s!"requested unknown function in {m.location}"
+      let reads ← SourceClaimJson.moduleReads sc m ns
+      return ({ module := m, names := ns, reads } : SourceClaimJson.ModuleNeed)
+    let given : Std.HashMap String Json := {}
+    let force : List String ← fromJson? (← jField j "force")
+    let fuel ← j.getObjValAs? Nat "fuel"
+    let mode ← j.getObjValAs? Nat "mode"
+    if mode != 8 then throw "interface mode must be 8"
+    let infer := true
+    let prepare := fun location (f : SourceClaimJson.FilePlans) =>
+      SinglePass.work "prepare: head facts" (SourceClaimJson.fileItem f.fr.ast) fun _ =>
+      { f.withHeadFacts (RequestCli.forModule location given) false (inferred := infer) with proposalRefused := [] }
+    let check := fun (f : SourceClaimJson.FilePlans) group =>
+      SinglePass.work "check: group" (f.fr.workItem (group.headD 0)) fun _ =>
+      let sha := (f.fr.ast.getObjValAs? String "sourceSha256").toOption
+      let loc := (modules.find? fun m =>
+        sha.isSome && (m.document.getObjValAs? String "sourceSha256").toOption == sha).map (·.location)
+        |>.getD ((f.fr.ast.getObjValAs? String "location").toOption.getD
+          ((f.fr.ast.getObjValAs? String "file").toOption.getD ""))
+      let units := (sideMap.get? loc).getD {}
+      let r := f.passGroupMode8 infer force (fun _ => []) fuel group
+        (given := some (RequestCli.moduleGiven f.fr.ast given))
+        (layer := some (layerOf units))
+      (r.1, r.2.1)
+    let (est, verdicts, notes, tables) ← SourceClaimJson.establishModules
+      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
+    let encoded ← SourceClaimJson.encodeInterfaces modules est tables
+    return (encoded, verdicts, notes)
+  match parsed with
+  | .error e => RequestCli.refuse e
+  | .ok (j, verdicts, notes) =>
+    if (← IO.getEnv "PAPER_TRACE").isSome then
+      for mv in verdicts do
+        match mv.verdict with
+        | .ok _ => pure ()
+        | .error e => IO.eprintln s!"paper-interface refused {mv.unit}: {(e.take 300).toString}"
+      for n in notes do
+        IO.eprintln s!"paper-interface note: {(n.take 300).toString}"
+    match EffectCodec.document j with
+    | .ok j => IO.println j.compress; return 0
+    | .error e => RequestCli.refuse e
+
+def parseSideMap (j : Json) : Except String (Std.HashMap String (Std.HashMap String HeapExpressionRules.PaperRules.Unit)) := do
+  let .obj kvs := j | throw "side map: an object"
+  let mut out : Std.HashMap String (Std.HashMap String HeapExpressionRules.PaperRules.Unit) := {}
+  for (loc, side) in kvs.toArray do
+    let units ← HeapExpressionRules.PaperRules.unitsOf side
+    for (name, u) in units.toArray do
+      if !u.assumes.isEmpty then
+        throw s!"{loc}#{name}: module interface refused because it contains paperAssume"
+    out := out.insert loc units
+  return out
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--module-interface", sideMapPath, requestPath] =>
+    let text ← IO.FS.readFile sideMapPath
+    match Json.parse text >>= parseSideMap with
+    | .error e => IO.eprintln s!"side map: {e}"; return 2
+    | .ok sideMap => interfaceFile sideMap requestPath {}
   | [side, ast, interfaces, key, depth] =>
     let some fuel := depth.toNat? | IO.eprintln "usage: depth is a number"; return 2
     let text ← IO.FS.readFile side
@@ -686,4 +927,5 @@ def main (args : List String) : IO UInt32 := do
         checkFile units assumed key fuel interfaces
   | _ =>
     IO.eprintln "usage: paper-rules-prototype <side.json> <ast.json> <interfaces.json> <file-key> <depth>"
+    IO.eprintln "       paper-rules-prototype --module-interface <side-map.json> <request.json>"
     return 2

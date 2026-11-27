@@ -292,17 +292,126 @@ theorem closedOut_reach_disjoint (M : ModuleRegion) {h : Heap} {v : Val} {l : Na
   | false => rfl
   | true => exact False.elim ((M.closedOut h).not_reaches hnp hr hm)
 
+/-! ## Non-spine object fields class (`"fields"`, `Role.field`) -/
+
+/-- A role-typed set of non-spine object field locations (`"fields"`,
+`Role.field`): allocated locations disjoint from every array spine, element
+cell, and element spine (which carry `Role.spine` or `Role.elem`). -/
+structure FieldClass where
+  mem : Heap → Nat → Bool
+  bounded : ∀ h l, mem h l = true → l < h.length
+  noSpine : ∀ h v s, HeapKnowledge.elementsOf v = some s → mem h s = false
+  noElemCell : ∀ h v l, some l ∈ spineCells h v → mem h l = false
+  noSpineKey : ∀ h v l, (fieldsOf v).lookup arraySpineKey = some l → mem h l = false
+
+/-- Regions whose locations are never non-spine object fields (`Role.field`):
+array/view spines, array element cells, element spines, and spine-key lookups. -/
+def nonFieldRegion : Region → Bool
+  | .spine _ _ | .cells _ | .pathCells _ _ | .elemSpines _ _ => true
+  | .field _ k | .path _ _ k => k == arraySpineKey
+  | _ => false
+
+/-- **Role disjointness for `"fields"`**: every location of a `nonFieldRegion`
+lies outside `FieldClass`. -/
+theorem fieldClass_region_disjoint (F : FieldClass) {ρ : Env} {h : Heap} {r : Region} {l : Nat}
+    (hnf : nonFieldRegion r = true) (hm : r.mem ρ h l = true) : F.mem h l = false := by
+  cases r with
+  | spine x p =>
+    simp only [Region.mem] at hm
+    cases hrp : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hrp] at hm; cases hm
+    | some v =>
+      rw [hrp] at hm; simp only [beq_iff_eq] at hm
+      exact F.noSpine h v l hm
+  | cells x =>
+    simp only [Region.mem, List.contains_iff_mem] at hm
+    exact F.noElemCell h (ρ x) l hm
+  | pathCells x p =>
+    simp only [Region.mem] at hm
+    cases hrp : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hrp] at hm; cases hm
+    | some v =>
+      rw [hrp] at hm; simp only [List.contains_iff_mem] at hm
+      exact F.noElemCell h v l hm
+  | elemSpines x p =>
+    simp only [Region.mem] at hm
+    cases hrp : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hrp] at hm; cases hm
+    | some v =>
+      rw [hrp] at hm; simp only [List.any_eq_true] at hm
+      obtain ⟨o, _, ho⟩ := hm
+      cases o with
+      | none => cases ho
+      | some c =>
+        simp only at ho
+        cases hcu : h[c]? with
+        | none => rw [hcu] at ho; cases ho
+        | some u =>
+          rw [hcu] at ho; simp only [beq_iff_eq] at ho
+          exact F.noSpineKey h u l ho
+  | field x k =>
+    simp only [nonFieldRegion, beq_iff_eq] at hnf; subst hnf
+    simp only [Region.mem, beq_iff_eq] at hm
+    exact F.noSpineKey h (ρ x) l hm
+  | path x p k =>
+    simp only [nonFieldRegion, beq_iff_eq] at hnf; subst hnf
+    simp only [Region.mem] at hm
+    cases hrp : HeapKnowledge.readPath h (ρ x) p with
+    | none => rw [hrp] at hm; cases hm
+    | some v =>
+      rw [hrp] at hm; simp only [beq_iff_eq] at hm
+      exact F.noSpineKey h v l hm
+  | fields _ | pathFields _ _ | cls _ | all => cases hnf
+
+/-! ## Plain-array element-cell disjointness (`Plain-Cells-Disj`) -/
+
+/-- Distinct plain array spines in `h` own disjoint element cells (plain array
+creation and extension allocate fresh element cells per spine; typed-array
+`.viewSpine` views are excluded because `.subarray()` may share cells). -/
+def PlainElemCellsDisjoint (h : Heap) : Prop :=
+  ∀ (s t : Nat) (ls₁ ls₂ : List (Option Nat)) (l : Nat), s ≠ t →
+    h[s]? = some (Tm.arr ls₁) → h[t]? = some (Tm.arr ls₂) →
+    some l ∈ ls₁ → some l ∉ ls₂
+
+/-- **Plain-array element-cell disjointness**: in a `PlainElemCellsDisjoint`
+heap, any two plain-array paths `(x, p)` and `(y, q)` (no view descriptor
+spine) whose array spines are distinct have disjoint `pathCells` regions. -/
+theorem plainArray_cells_disjoint {ρ : Env} {h : Heap}
+    (hdisj : PlainElemCellsDisjoint h)
+    {x y : Nat} {p q : List String} {u w : Val} {s t : Nat} {ls₁ ls₂ : List (Option Nat)}
+    (hu : HeapKnowledge.readPath h (ρ x) p = some u)
+    (hw : HeapKnowledge.readPath h (ρ y) q = some w)
+    (hdu : HeapKnowledge.descriptorSpine u = none)
+    (hdw : HeapKnowledge.descriptorSpine w = none)
+    (hsu : spineOf u = some s) (hsw : spineOf w = some t)
+    (hs₁ : h[s]? = some (.arr ls₁)) (hs₂ : h[t]? = some (.arr ls₂))
+    (hne : s ≠ t) {l : Nat}
+    (hm₁ : (Region.pathCells x p).mem ρ h l = true) :
+    (Region.pathCells y q).mem ρ h l = false := by
+  have hlu : (fieldsOf u).lookup arraySpineKey = some s := by simpa [spineOf] using hsu
+  have hlw : (fieldsOf w).lookup arraySpineKey = some t := by simpa [spineOf] using hsw
+  have hsc₁ : spineCells h u = ls₁ := by
+    simp [spineCells, entriesAt, hlu, hdu, hs₁, spineEntries]
+  have hsc₂ : spineCells h w = ls₂ := by
+    simp [spineCells, entriesAt, hlw, hdw, hs₂, spineEntries]
+  simp only [Region.mem, hu, hsc₁, List.contains_iff_mem] at hm₁
+  simp only [Region.mem, hw, hsc₂]
+  cases hc : ls₂.contains (some l) with
+  | false => rfl
+  | true => exact False.elim (hdisj s t ls₁ ls₂ l hne hs₁ hs₂ hm₁ (List.contains_iff_mem.mp hc))
+
 /-! ## Effects and bounds -/
 
 /-- The largest of a list of changes, `keep` for none. -/
 def maxOf (cs : List Change) : Change := cs.foldr Change.max .keep
 
 /-- An effect of the paper without variables: concrete regions, confined
-module-state regions `M.@state`, a default `else` change, and the environment
-its concrete regions read. -/
+module-state regions `M.@state`, an optional `"fields"` class entry, a default
+`else` change, and the environment its concrete regions read. -/
 structure Eff1 where
   entries : Footprint
   modules : List (ModuleRegion × Change) := []
+  fields : Option (FieldClass × Change) := none
   dflt : Change
   env : Env
 
@@ -316,9 +425,10 @@ inductive Atom where
 /-- An effect: the meet of its atoms. -/
 abbrev Eff := List Atom
 
-/-- The changes of the concrete and module entries whose regions cover `l`. -/
+/-- The changes of the concrete, `"fields"`, and module entries whose regions cover `l`. -/
 def Eff1.cov (Φ : Eff1) (h : Heap) (l : Nat) : List Change :=
   (Φ.entries.filter fun e => e.1.mem Φ.env h l).map Prod.snd ++
+  (match Φ.fields with | some (F, c) => if F.mem h l then [c] else [] | none => []) ++
   (Φ.modules.filter fun e => e.1.mem h l).map Prod.snd
 
 /-- The change an effect allows at `l`: the largest covering entry's, or
@@ -368,7 +478,7 @@ and the caller's environment. -/
 abbrev Ren := (Nat → Option Nat) × Env
 
 def renAtom (σ : Ren) : Atom → Atom
-  | .eff Φ => .eff ⟨Φ.entries.renameM σ.1, Φ.modules, Φ.dflt, σ.2⟩
+  | .eff Φ => .eff ⟨Φ.entries.renameM σ.1, Φ.modules, Φ.fields, Φ.dflt, σ.2⟩
   | .old n C => .old n C
 
 def rename (σ : Ren) (E : Eff) : Eff := E.map (renAtom σ)
@@ -384,7 +494,7 @@ abbrev Mod (C : ModuleRegion) := { M : ModuleRegion // M.Sub C }
 /-- The effect `{ M.@state : any; else : keep }` of mutating confined module
 state `M`. -/
 def modEff {C : ModuleRegion} (M : Mod C) : Eff :=
-  [.eff ⟨[], [(M.1, .any)], .keep, fun _ => .undef⟩]
+  [.eff ⟨[], [(M.1, .any)], none, .keep, fun _ => .undef⟩]
 
 /-- `M.@state` is disjoint from `Φ` from `h₀` onward when every atom of `Φ` is
 an effect with `else : any` whose entries never cover `M.@state` at any
@@ -393,10 +503,66 @@ def ModDisjoint {C : ModuleRegion} (M : Mod C) (Φ : Eff) (h₀ : Heap) : Prop :
   ∀ a ∈ Φ, match a with
     | .eff Ψ =>
       Ψ.dflt = .any ∧
+      Ψ.fields = none ∧
       ∀ h, Reaches h₀ h → ∀ l, M.1.mem h l = true →
         (∀ e ∈ Ψ.entries, e.1.mem Ψ.env h l = false) ∧
         (∀ e ∈ Ψ.modules, e.1.mem h l = false)
     | .old _ _ => False
+
+/-- The class effect `{ fields : any; else : keep }` of mutating non-spine
+object fields (`Role.field`). -/
+def fieldsEff (F : FieldClass) : Eff :=
+  [.eff ⟨[], [], some (F, .any), .keep, fun _ => .undef⟩]
+
+/-- `"fields"` is disjoint from `Φ` from `h₀` onward when every atom of `Φ` is
+an effect with `else : any` and no `"fields"` entry whose concrete and module
+entries never cover `F` at any reachable heap. -/
+def FieldsDisjoint (F : FieldClass) (Φ : Eff) (h₀ : Heap) : Prop :=
+  ∀ a ∈ Φ, match a with
+    | .eff Ψ =>
+      Ψ.dflt = .any ∧
+      Ψ.fields = none ∧
+      ∀ h, Reaches h₀ h → ∀ l, F.mem h l = true →
+        (∀ e ∈ Ψ.entries, e.1.mem Ψ.env h l = false) ∧
+        (∀ e ∈ Ψ.modules, e.1.mem h l = false)
+    | .old _ _ => False
+
+/-- Two effects `E` and `Φ` are plain-array element-cell disjoint at `h₀`
+(within module universe `C`) when every location `E` may mutate at `h₀` (and at
+post-entry locations in `C`) is allowed `.any` by `Φ`. -/
+def PlainCellsDisj (C : ModuleRegion) (E Φ : Eff) (h₀ : Heap) : Prop :=
+  (∀ l < h₀.length, bnd E h₀ l ≠ .keep → bnd Φ h₀ l = .any) ∧
+  (∀ h, Reaches h₀ h → ∀ l, h₀.length ≤ l → C.mem h l = true → bnd E h l ≠ .keep → bnd Φ h l = .any)
+
+/-- Every present element of the array at path `(x, p)` whose array spine
+holds `.arr ls` satisfies `P ls.length`. -/
+def AllElemLen (P : Nat → Prop) (ρ : Env) (x : Nat) (p : List String) (h : Heap) : Prop :=
+  ∀ v c u s ls,
+    HeapKnowledge.readPath h (ρ x) p = some v →
+    some c ∈ spineCells h v →
+    h[c]? = some u →
+    (fieldsOf u).lookup arraySpineKey = some s →
+    h[s]? = some (.arr ls) →
+    P ls.length
+
+/-- An effect `Φ` preserves an outer array's path, spine, and element cells
+while bounding every element spine by at most `.extend`, paired with a monotone
+lower-bound predicate `P` on each element's spine length. -/
+def ElemLenExtend (Φ : Eff) (Q : Heap → Prop) : Prop :=
+  ∃ (P : Nat → Prop) (ρ : Env) (x : Nat) (p : List String),
+    (∀ a b, a ≤ b → P a → P b) ∧
+    Q = AllElemLen P ρ x p ∧
+    ∀ h h' v c u s,
+      Act Φ h h' →
+      HeapKnowledge.readPath h' (ρ x) p = some v →
+      some c ∈ spineCells h' v →
+      h'[c]? = some u →
+      (fieldsOf u).lookup arraySpineKey = some s →
+      HeapKnowledge.readPath h (ρ x) p = some v ∧
+      some c ∈ spineCells h v ∧
+      h[c]? = some u ∧
+      s < h.length ∧
+      (bnd Φ h s).le .extend = true
 
 /-! ## Lemmas -/
 
@@ -503,12 +669,99 @@ theorem modEff_bnd {C : ModuleRegion} (M : Mod C) (h : Heap) (l : Nat) :
     Eff1.cov, List.filter_nil, List.map_nil, List.nil_append, List.filter_cons]
   cases hm : M.1.mem h l <;> rfl
 
+/-- The pointwise bound of `fieldsEff F` at `(h, l)`: `any` inside `"fields"`,
+`keep` outside. -/
+theorem fieldsEff_bnd (F : FieldClass) (h : Heap) (l : Nat) :
+    bnd (fieldsEff F) h l = if F.mem h l then .any else .keep := by
+  simp only [fieldsEff, bnd, List.foldr_cons, List.foldr_nil, min_any_right, Atom.bnd, Eff1.bnd,
+    Eff1.cov, List.filter_nil, List.map_nil, List.nil_append, List.append_nil]
+  cases hf : F.mem h l <;> rfl
+
+/-- **Disjointness of `"fields"` from non-field regions**: if `Ψ` has
+`else : any`, no module or `"fields"` entries, and every concrete entry of `Ψ`
+is a `nonFieldRegion` (array/view spines, element cells, element spines), then
+`FieldsDisjoint F [.eff Ψ] h₀` holds. -/
+theorem fieldsDisj_of_nonField (F : FieldClass) (Ψ : Eff1) (h₀ : Heap)
+    (hdflt : Ψ.dflt = .any) (hmods : Ψ.modules = []) (hflds : Ψ.fields = none)
+    (hnf : ∀ e ∈ Ψ.entries, nonFieldRegion e.1 = true) :
+    FieldsDisjoint F [.eff Ψ] h₀ := by
+  intro a ha
+  simp only [List.mem_singleton] at ha
+  subst ha
+  refine ⟨hdflt, hflds, fun h _ l hfl => ⟨fun e he => ?_, fun e he => by rw [hmods] at he; cases he⟩⟩
+  cases hm : e.1.mem Ψ.env h l with
+  | false => rfl
+  | true =>
+    have := fieldClass_region_disjoint F (hnf e he) hm
+    rw [hfl] at this; cases this
+
+/-- **Plain-array cell disjointness lifted to `PlainCellsDisj`**: if `E` only
+mutates `Region.pathCells x p` of a plain array and every entry of `Φ` (with
+`else : any`, no module or `"fields"` entries) is a `Region.pathCells y q` of a
+plain array whose spine is distinct from `(x, p)` in `PlainElemCellsDisjoint`
+heaps, then `PlainCellsDisj C E [.eff Φ] h₀` holds. -/
+theorem plainCellsDisj_of_apart {C : ModuleRegion} {ρ : Env} {x : Nat} {p : List String}
+    {c : Change} {Φ : Eff1} {h₀ : Heap}
+    (hdflt : Φ.dflt = .any) (hmods : Φ.modules = []) (hflds : Φ.fields = none)
+    (hapart : ∀ h, Reaches h₀ h →
+      PlainElemCellsDisjoint h ∧
+      (∀ e ∈ Φ.entries, ∃ y q u w s t ls₁ ls₂,
+        e.1 = .pathCells y q ∧
+        HeapKnowledge.readPath h (ρ x) p = some u ∧
+        HeapKnowledge.readPath h (Φ.env y) q = some w ∧
+        HeapKnowledge.descriptorSpine u = none ∧
+        HeapKnowledge.descriptorSpine w = none ∧
+        spineOf u = some s ∧ spineOf w = some t ∧
+        h[s]? = some (.arr ls₁) ∧ h[t]? = some (.arr ls₂) ∧
+        s ≠ t)) :
+    PlainCellsDisj C [.eff ⟨[(Region.pathCells x p, c)], [], none, .keep, ρ⟩] [.eff Φ] h₀ := by
+  have step : ∀ h, Reaches h₀ h → ∀ l,
+      bnd [.eff ⟨[(Region.pathCells x p, c)], [], none, .keep, ρ⟩] h l ≠ .keep →
+      bnd [.eff Φ] h l = .any := by
+    intro h hr l hne
+    have hm₁ : (Region.pathCells x p).mem ρ h l = true := by
+      cases hm : (Region.pathCells x p).mem ρ h l with
+      | true => rfl
+      | false =>
+        exfalso; apply hne
+        simp [bnd, min_any_right, Atom.bnd, Eff1.bnd, Eff1.cov, hm]
+    obtain ⟨hdisj, hent⟩ := hapart h hr
+    have hfilt : (Φ.entries.filter fun e => e.1.mem Φ.env h l) = [] := by
+      refine List.filter_eq_nil_iff.mpr fun e he => ?_
+      obtain ⟨y, q, u, w, s, t, ls₁, ls₂, heq, hu, hw, hdu, hdw, hsu, hsw, hs₁, hs₂, hst⟩ := hent e he
+      rw [heq]
+      have hlu : (fieldsOf u).lookup arraySpineKey = some s := by simpa [spineOf] using hsu
+      have hlw : (fieldsOf w).lookup arraySpineKey = some t := by simpa [spineOf] using hsw
+      have hsc₁ : spineCells h u = ls₁ := by
+        simp [spineCells, entriesAt, hlu, hdu, hs₁, spineEntries]
+      have hsc₂ : spineCells h w = ls₂ := by
+        simp [spineCells, entriesAt, hlw, hdw, hs₂, spineEntries]
+      simp only [Region.mem, hu, hsc₁, List.contains_iff_mem] at hm₁
+      simp only [Region.mem, hw, hsc₂]
+      cases hc : ls₂.contains (some l) with
+      | false => simp
+      | true => exact False.elim (hdisj s t ls₁ ls₂ l hst hs₁ hs₂ hm₁ (List.contains_iff_mem.mp hc))
+    simp [bnd, min_any_right, Atom.bnd, Eff1.bnd, Eff1.cov, hfilt, hmods, hflds, hdflt]
+  exact ⟨fun l _ hne => step h₀ (Nat.le_refl _) l hne, fun h hr l _ _ hne => step h hr l hne⟩
+
+/-- An `.extend` step producing an array spine `.arr ls'` comes from an array
+spine `.arr ls` of length at most `ls'.length`. -/
+theorem extend_arr_back {b : Nat} {v : Val} {ls' : List (Option Nat)}
+    (h : Change.extend.Holds b v (.arr ls')) :
+    ∃ ls, v = .arr ls ∧ ls.length ≤ ls'.length := by
+  rcases h with hEq | hsc | hext
+  · exact ⟨ls', hEq.symm, Nat.le_refl _⟩
+  · simp [ScalarStep, isArr] at hsc
+  · obtain ⟨ls, more, rfl, h2, _, hlen⟩ := hext
+    cases h2
+    exact ⟨ls, rfl, hlen.1⟩
+
 /-- **Disjointness of `M.@state` from an external bound**: if `Ψ` has
-`else : any`, no module entries, and every concrete entry of `Ψ` is rooted at
-an external slot satisfying `NoPriv` (on `HeapNoDup` heaps), then
+`else : any`, no module or `"fields"` entries, and every concrete entry of `Ψ`
+is rooted at an external slot satisfying `NoPriv` (on `HeapNoDup` heaps), then
 `ModDisjoint M [.eff Ψ] h₀` holds. -/
 theorem modDisjoint_of_external {C : ModuleRegion} (M : Mod C) (Ψ : Eff1) (h₀ : Heap)
-    (hdflt : Ψ.dflt = .any) (hmods : Ψ.modules = [])
+    (hdflt : Ψ.dflt = .any) (hmods : Ψ.modules = []) (hflds : Ψ.fields = none)
     (hext : ∀ h, Reaches h₀ h →
       HeapNoDup h ∧
       ∀ e ∈ Ψ.entries, ∃ x, rootOf e.1 = some x ∧
@@ -517,7 +770,7 @@ theorem modDisjoint_of_external {C : ModuleRegion} (M : Mod C) (Ψ : Eff1) (h₀
   intro a ha
   simp only [List.mem_singleton] at ha
   subst ha
-  refine ⟨hdflt, fun h hr l hml => ⟨fun e he => ?_, fun e he => by rw [hmods] at he; cases he⟩⟩
+  refine ⟨hdflt, hflds, fun h hr l hml => ⟨fun e he => ?_, fun e he => by rw [hmods] at he; cases he⟩⟩
   obtain ⟨hnd, hent⟩ := hext h hr
   obtain ⟨x, hrx, hnp, hxd⟩ := hent e he
   cases hmem : e.1.mem Ψ.env h l with
@@ -614,13 +867,13 @@ theorem eff1_add_modules_within {C : ModuleRegion} {Φ : Eff1} {ms : List (Modul
           cases a with
           | old _ _ => exact False.elim ha
           | eff P =>
-            obtain ⟨hdP, hno⟩ := ha
+            obtain ⟨hdP, hfP, hno⟩ := ha
             obtain ⟨he', hm'⟩ := hno h hr l hmem.2
             have hf₁ : (P.entries.filter fun x => x.1.mem P.env h l) = [] :=
               List.filter_eq_nil_iff.mpr fun x hx => by simp [he' x hx]
             have hf₂ : (P.modules.filter fun x => x.1.mem h l) = [] :=
               List.filter_eq_nil_iff.mpr fun x hx => by simp [hm' x hx]
-            simp [Atom.bnd, Eff1.bnd, Eff1.cov, hf₁, hf₂, hdP]
+            simp [Atom.bnd, Eff1.bnd, Eff1.cov, hf₁, hf₂, hfP, hdP]
       rw [hΨ Ψ hd]
       exact le_any _
   have bnd_one : ∀ (P : Eff1) (h : Heap) (l : Nat), bnd [.eff P] h l = P.bnd h l := fun P h l => by
@@ -639,7 +892,7 @@ theorem eff1_add_modules_within {C : ModuleRegion} {Φ : Eff1} {ms : List (Modul
 
 /-! ## The model and its rules -/
 
-def semantics (C : ModuleRegion) : Semantics where
+def semantics (C : ModuleRegion) (F : FieldClass) : Semantics where
   St := Heap
   Eff := Eff
   Ren := Ren
@@ -655,8 +908,12 @@ def semantics (C : ModuleRegion) : Semantics where
   RenOk := RenOk
   modEff := modEff
   ModDisjoint := ModDisjoint
+  fieldsEff := fieldsEff F
+  FieldsDisjoint := FieldsDisjoint F
+  PlainCellsDisj := PlainCellsDisj C
+  ElemLenExtend := ElemLenExtend
 
-theorem bound_rule (C : ModuleRegion) : BoundRule (semantics C) := by
+theorem bound_rule (C : ModuleRegion) (F : FieldClass) : BoundRule (semantics C F) := by
   intro (θ : Eff) (Φ : Eff) (h₀ : Heap) (h : Heap) hw hr ha hs (h' : Heap) hact
   obtain ⟨hold, hnew⟩ := ha h hr
   refine act_mono (fun l _ => ?_) hact
@@ -672,7 +929,7 @@ theorem bound_rule (C : ModuleRegion) : BoundRule (semantics C) := by
       rw [hnew l hge hC]
       exact keep_le _
 
-theorem anch_rule (C : ModuleRegion) : AnchRule (semantics C) := by
+theorem anch_rule (C : ModuleRegion) (F : FieldClass) : AnchRule (semantics C F) := by
   intro (θ : Eff) (h₀ : Heap) (h : Heap) ha hr (h' : Heap) hact
   obtain ⟨-, hnew⟩ := ha h hr
   refine act_mono (fun l _ => ?_) hact
@@ -689,7 +946,7 @@ theorem anch_rule (C : ModuleRegion) : AnchRule (semantics C) := by
       rw [hnew l hge hC]
       exact keep_le _
 
-theorem meet_rule (C : ModuleRegion) : MeetRule (semantics C) := by
+theorem meet_rule (C : ModuleRegion) (F : FieldClass) : MeetRule (semantics C F) := by
   intro (E : Eff) (Φ₁ : Eff) (Φ₂ : Eff) (h : Heap) h₁ h₂ (h' : Heap) hact
   obtain ⟨hlen, a₁⟩ := h₁ h' hact
   obtain ⟨-, a₂⟩ := h₂ h' hact
@@ -703,7 +960,7 @@ theorem meet_rule (C : ModuleRegion) : MeetRule (semantics C) := by
   rw [bnd_append]
   exact ⟨hh₁, hh₂⟩
 
-theorem inst_rule (C : ModuleRegion) : InstRule (semantics C) := by
+theorem inst_rule (C : ModuleRegion) (F : FieldClass) : InstRule (semantics C F) := by
   intro (σ : Ren) (E : Eff) (h : Heap) (h' : Heap) hσ hact
   refine ⟨hact.1, fun l v hv => ?_⟩
   obtain ⟨v', hv', hh⟩ := hact.2 l v hv
@@ -712,7 +969,7 @@ theorem inst_rule (C : ModuleRegion) : InstRule (semantics C) := by
   rw [rename_bnd hσ]
   exact hh
 
-theorem confined_rule (C : ModuleRegion) : ConfinedRule (semantics C) := by
+theorem confined_rule (C : ModuleRegion) (F : FieldClass) : ConfinedRule (semantics C F) := by
   intro (M : Mod C) (h₀ : Heap)
   constructor
   · intro (h : Heap) hr
@@ -746,13 +1003,13 @@ theorem confined_rule (C : ModuleRegion) : ConfinedRule (semantics C) := by
         cases a with
         | old _ _ => exact False.elim ha
         | eff Ψ =>
-          obtain ⟨hdflt, hno⟩ := ha
+          obtain ⟨hdflt, hflds, hno⟩ := ha
           obtain ⟨he, hm⟩ := hno h hr l hml
           have hf₁ : (Ψ.entries.filter fun e => e.1.mem Ψ.env h l) = [] :=
             List.filter_eq_nil_iff.mpr fun e hmem => by simp [he e hmem]
           have hf₂ : (Ψ.modules.filter fun e => e.1.mem h l) = [] :=
             List.filter_eq_nil_iff.mpr fun e hmem => by simp [hm e hmem]
-          simp [Atom.bnd, Eff1.bnd, Eff1.cov, hf₁, hf₂, hdflt]
+          simp [Atom.bnd, Eff1.bnd, Eff1.cov, hf₁, hf₂, hflds, hdflt]
     constructor
     · intro l _
       show (bnd (modEff M) h₀ l).le (bnd Φ h₀ l) = true
@@ -771,9 +1028,9 @@ theorem confined_rule (C : ModuleRegion) : ConfinedRule (semantics C) := by
         rw [bnd_any h hr l hm]
         exact le_any _
 
-theorem callbackInv_rule (C : ModuleRegion) : CallbackInvRule (semantics C) := by
+theorem callbackInv_rule (C : ModuleRegion) (F : FieldClass) : CallbackInvRule (semantics C F) := by
   intro Φ_own Φ_cb Ψ P h₀ h hp₀ hpres hstab hwOwn haOwn hwCb haCb hsteps
-  suffices ∀ h₁ h₂, Semantics.Steps (semantics C) Φ_own Φ_cb h₁ h₂ →
+  suffices ∀ h₁ h₂, Semantics.Steps (semantics C F) Φ_own Φ_cb h₁ h₂ →
       Reaches h₀ h₁ → Same Ψ h₀ h₁ → P h₁ → P h₂ from
     this h₀ h hsteps (Nat.le_refl _) (fun _ _ => rfl) hp₀
   intro h₁ h₂ hst
@@ -783,16 +1040,82 @@ theorem callbackInv_rule (C : ModuleRegion) : CallbackInvRule (semantics C) := b
     intro hr hs hp
     have hactΨ : Act Ψ a b := by
       rcases hab with hown | hcb
-      · exact bound_rule C Φ_own Ψ h₀ a hwOwn hr haOwn hs b hown
-      · exact bound_rule C Φ_cb Ψ h₀ a hwCb hr haCb hs b hcb
+      · exact bound_rule C F Φ_own Ψ h₀ a hwOwn hr haOwn hs b hown
+      · exact bound_rule C F Φ_cb Ψ h₀ a hwCb hr haCb hs b hcb
     have hr' : Reaches h₀ b := Nat.le_trans hr hactΨ.1
     have hstab' : Same Ψ a b := hstab a b hactΨ
     have hs' : Same Ψ h₀ b := fun l hlt => (hstab' l (Nat.lt_of_lt_of_le hlt hr)).trans (hs l hlt)
     exact ih hr' hs' (hpres a b hp hactΨ)
 
-/-- **The idealised model meets all six paper rules**, for any universe `C` of
-confined module regions. -/
-theorem model_rules (C : ModuleRegion) : PaperRules (semantics C) :=
-  ⟨bound_rule C, anch_rule C, meet_rule C, inst_rule C, confined_rule C, callbackInv_rule C⟩
+theorem fieldsDisj_rule (C : ModuleRegion) (F : FieldClass) : FieldsDisjRule (semantics C F) := by
+  intro (Φ : Eff) (h₀ : Heap) hdisj
+  have bnd_any : ∀ h, Reaches h₀ h → ∀ l, F.mem h l = true → bnd Φ h l = .any := by
+    intro h hr l hfl
+    induction Φ with
+    | nil => rfl
+    | cons a rest ih =>
+      have ha := hdisj a List.mem_cons_self
+      have hrest := ih (fun x hx => hdisj x (List.mem_cons_of_mem _ hx))
+      change (a.bnd h l).min (bnd rest h l) = .any
+      rw [hrest, min_any_right]
+      cases a with
+      | old _ _ => exact False.elim ha
+      | eff Ψ =>
+        obtain ⟨hdflt, hflds, hno⟩ := ha
+        obtain ⟨he, hm⟩ := hno h hr l hfl
+        have hf₁ : (Ψ.entries.filter fun e => e.1.mem Ψ.env h l) = [] :=
+          List.filter_eq_nil_iff.mpr fun e hmem => by simp [he e hmem]
+        have hf₂ : (Ψ.modules.filter fun e => e.1.mem h l) = [] :=
+          List.filter_eq_nil_iff.mpr fun e hmem => by simp [hm e hmem]
+        simp [Atom.bnd, Eff1.bnd, Eff1.cov, hf₁, hf₂, hflds, hdflt]
+  constructor
+  · intro l _
+    show (bnd (fieldsEff F) h₀ l).le (bnd Φ h₀ l) = true
+    rw [fieldsEff_bnd]
+    cases hf : F.mem h₀ l with
+    | false => exact keep_le _
+    | true =>
+      rw [bnd_any h₀ (Nat.le_refl _) l hf]
+      exact le_any _
+  · intro h hr l _ _
+    show (bnd (fieldsEff F) h l).le (bnd Φ h l) = true
+    rw [fieldsEff_bnd]
+    cases hf : F.mem h l with
+    | false => exact keep_le _
+    | true =>
+      rw [bnd_any h hr l hf]
+      exact le_any _
+
+theorem plainCellsDisj_rule (C : ModuleRegion) (F : FieldClass) : PlainCellsDisjRule (semantics C F) := by
+  intro (E : Eff) (Φ : Eff) (h₀ : Heap) hdisj
+  constructor
+  · intro l hlt
+    show (bnd E h₀ l).le (bnd Φ h₀ l) = true
+    by_cases hk : bnd E h₀ l = .keep
+    · rw [hk]; exact keep_le _
+    · rw [hdisj.1 l hlt hk]; exact le_any _
+  · intro h hr l hge hC
+    show (bnd E h l).le (bnd Φ h l) = true
+    by_cases hk : bnd E h l = .keep
+    · rw [hk]; exact keep_le _
+    · rw [hdisj.2 h hr l hge hC hk]; exact le_any _
+
+theorem elemLenExtend_rule (C : ModuleRegion) (F : FieldClass) : ElemLenExtendRule (semantics C F) := by
+  intro (Φ : Eff) Q hex (h : Heap) (h' : Heap) hQ hact
+  obtain ⟨P, ρ, x, p, hmono, rfl, hkeep⟩ := hex
+  intro v c u s ls' hrp' hc' hu' hsu hs'
+  obtain ⟨hrp, hc, hu, hslt, hle⟩ := hkeep h h' v c u s hact hrp' hc' hu' hsu
+  have hvs : h[s]? = some h[s] := List.getElem?_eq_some_iff.mpr ⟨hslt, rfl⟩
+  obtain ⟨vs', hvs', hholds⟩ := hact.2 s h[s] hvs
+  rw [hs'] at hvs'; cases hvs'
+  obtain ⟨ls, hls, hlen⟩ := extend_arr_back (hholds.mono hle)
+  rw [hls] at hvs
+  exact hmono ls.length ls'.length hlen (hQ v c u s ls hrp hc hu hsu hvs)
+
+/-- **The idealised model meets all nine paper rules**, for any universe `C` of
+confined module regions and role-typed field class `F`. -/
+theorem model_rules (C : ModuleRegion) (F : FieldClass) : PaperRules (semantics C F) :=
+  ⟨bound_rule C F, anch_rule C F, meet_rule C F, inst_rule C F, confined_rule C F,
+   callbackInv_rule C F, fieldsDisj_rule C F, plainCellsDisj_rule C F, elemLenExtend_rule C F⟩
 
 end Verification.Paper.EffectLanguage.Model

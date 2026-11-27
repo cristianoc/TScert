@@ -47,18 +47,18 @@ const closePunctuationRe = /\p{Pe}/u
 // and closing mark and every quote is in these ranges.
 const maybeHanKerningRe = /[\u2018-\u301F\uFF08-\uFF60]/
 
-function maybeHanKerns(c: number): boolean {
+function maybeHanKerns(c: number): Effects<{}, boolean> {   // PAPER: annotation
   return (c >= 0x2018 && c <= 0x301F) || (c >= 0xFF08 && c <= 0xFF60)
 }
 
-export function textMayHanKern(text: string): boolean {
+export function textMayHanKern(text: string): Effects<{}, boolean> {   // PAPER: annotation
   return maybeHanKerningRe.test(text)
 }
 
 // HanKerningCharType (character_property_data_generator.cc:143-167, han_kerning_char_type.h:17-44)
 // of the code unit at `index`: the listed quotes, dots, colon, semicolon and middles, then Ps and Pe,
 // fullwidth when in the CJK Symbols block or East_Asian_Width F.
-function getStaticCharType(text: string, index: number): number {
+function getStaticCharType(text: string, index: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   const c = text.charCodeAt(index)
   switch (c) {
     case 0x2018: case 0x201C: return OPEN_QUOTE
@@ -92,7 +92,7 @@ export type HanKerningFontData = {
 // centered. Canvas shapes a CJK symbol next to 中 as Han, so its right edge comes from `中c`
 // and its left edge from `c中`, where 中's ink covers neither. Curly quotes and U+FF1B are
 // words of their own in Canvas (NextWordEndIndex) and are measured alone.
-function getTypeFromBounds(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, c: number, hanWidth: number): { advance: number; type: number } {
+function getTypeFromBounds(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, c: number, hanWidth: number): Effects<{}, { advance: number; type: number }> {   // PAPER: annotation
   const s = String.fromCharCode(c)
   let advance: number
   let left: number
@@ -113,7 +113,7 @@ function getTypeFromBounds(ctx: CanvasRenderingContext2D | OffscreenCanvasRender
   return { advance, type }
 }
 
-function getTrim(data: HanKerningFontData, c: number, measurement: FontMeasurement): number {
+function getTrim(data: HanKerningFontData, c: number, measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
   let trim = data.trims.get(c)
   if (trim === undefined) {
     const one = String.fromCharCode(c)
@@ -124,7 +124,7 @@ function getTrim(data: HanKerningFontData, c: number, measurement: FontMeasureme
 }
 
 // HanKerning::FontData (han_kerning.cc:400-535); null where the font that draws 「 has no halt.
-function getFontData(measurement: FontMeasurement): HanKerningFontData | null {
+function getFontData(measurement: FontMeasurement): Effects<{ fields: "any" }, HanKerningFontData | null> {   // PAPER: annotation
   if (measurement.hanKerning !== undefined) return measurement.hanKerning
   const data: HanKerningFontData = { typeForDot: OTHER, typeForColon: OTHER, typeForSemicolon: OTHER, quoteFullwidth: false, trims: new Map() }
   if (getTrim(data, 0x300C, measurement) <= 1e-3) {
@@ -150,7 +150,7 @@ function getFontData(measurement: FontMeasurement): HanKerningFontData | null {
 }
 
 // HanKerning::GetCharType (han_kerning.cc:142-168).
-function getCharType(data: HanKerningFontData, text: string, index: number): number {
+function getCharType(data: HanKerningFontData, text: string, index: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   const type = getStaticCharType(text, index)
   switch (type) {
     case DOT: return data.typeForDot
@@ -164,7 +164,7 @@ function getCharType(data: HanKerningFontData, text: string, index: number): num
 
 // HanKerning::ShouldKern and ShouldKernLast (han_kerning.h:164-174): the halted character of
 // the pair (earlier, later), 1 for the later, -1 for the earlier, 0 for neither.
-function haltedSide(earlier: number, later: number): number {
+function haltedSide(earlier: number, later: number): Effects<{}, number> {   // PAPER: annotation
   if (later === OPEN && (earlier === OPEN || earlier === MIDDLE || earlier === CLOSE || earlier === OPEN_NARROW)) return 1
   if (earlier === CLOSE && (later === CLOSE || later === MIDDLE || later === CLOSE_NARROW)) return -1
   return 0
@@ -174,7 +174,7 @@ function haltedSide(earlier: number, later: number): number {
 // HanKerning types. Canvas starts a word where exactly one of two such characters is a CJK
 // symbol (NextWordEndIndex, plain_text_node.cc:93-155): curly quotes, U+00B7, U+2027, U+FF1B
 // and the narrow brackets aren't.
-function isCanvasCjkSymbol(c: number): boolean {
+function isCanvasCjkSymbol(c: number): Effects<{}, boolean> {   // PAPER: annotation
   return (c >= 0x3000 && c <= 0x30FF) || (c >= 0xFE30 && c <= 0xFE6F) || (c >= 0xFF00 && c <= 0xFFEF && c !== 0xFF1B)
 }
 
@@ -199,20 +199,33 @@ export type HanKerningTrims = {
 // paragraph's text, whatever items they are in, and types both by the font of the run it shapes
 // (HanKerning::AppendFontFeatures, han_kerning.cc:242-243, 266-273, 288-294, 314-319), so a pair
 // of marks an item start splits halts as in one text, each mark by its own item's font.
-export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextAnalysis, from: number, to: number): HanKerningTrims {
-  const out: HanKerningTrims = { widthTrims: null, lineStartExtras: null, lineEndTrims: null, overflowLineEndTrims: null }
+function addWidthTrim(trims: Dense<number[]>, idx: number, trim: number): Modifies<{ values: "any" }, Effects<{ "trims[*]": "grow"; "trims[#]": "any" }, void>> {   // PAPER: top-level helper so getHanKerningTrims preserves other trim arrays' lengths
+  const value = (trims[idx] ?? missing()) + trim
+  if ((idx & 0x7fffffff) !== idx || idx >= trims.length) throw new RangeError('index')
+  trims[idx] = value
+}
+
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+ *  @ensures result.lineStartExtras === null || to - from <= result.lineStartExtras.length
+ *  @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
+ *  @ensures result.overflowLineEndTrims === null || to - from <= result.overflowLineEndTrims.length */
+export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextAnalysis, from: number, to: number): Effects<{ fields: "any"; "@state": "any" }, HanKerningTrims> {   // PAPER: annotation
+  let widthTrims: Dense<number[]> | null = null
+  let lineStartExtras: Dense<number[]> | null = null
+  let lineEndTrims: Dense<number[]> | null = null
+  let overflowLineEndTrims: Dense<number[]> | null = null
   const data = getFontData(measurement)
-  if (data === null) return out
+  if (data === null) return { widthTrims, lineStartExtras, lineEndTrims, overflowLineEndTrims }
   const { flags, starts, normalized } = analysis
   const count = flags.length
-  const addWidthTrim = (i: number, trim: number): Modifies<{ values: "any" }, void> => {
-    out.widthTrims ??= zeros(to - from)
-    const idx = i - from
-    const widthTrimsStore = out.widthTrims
-    const widthTrimsValue = (widthTrimsStore[idx] ?? missing()) + trim
-    if ((idx & 0x7fffffff) !== idx || idx >= widthTrimsStore.length) throw new RangeError('index')
-    widthTrimsStore[idx] = widthTrimsValue
-  }
+  const len = to - from
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(len) && 0 <= from && from <= to && len === to - from
+   *  @invariant lineStartExtras === null || len <= lineStartExtras.length
+   *  @invariant lineEndTrims === null || len <= lineEndTrims.length
+   *  @invariant overflowLineEndTrims === null || len <= overflowLineEndTrims.length
+   *  @invariant widthTrims === null || lineStartExtras === null || widthTrims !== lineStartExtras
+   *  @invariant widthTrims === null || lineEndTrims === null || widthTrims !== lineEndTrims
+   *  @invariant widthTrims === null || overflowLineEndTrims === null || widthTrims !== overflowLineEndTrims */
   for (let i = from; i < to; i++) {
     if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT) continue
     const start = starts[i]
@@ -221,26 +234,38 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     const first = normalized.charCodeAt(start)
     if (i > 0 && maybeHanKerns(first) && haltedSide(getCharType(data, normalized, start - 1), getCharType(data, normalized, start)) === 1) {
       const trim = getTrim(data, first, measurement)
-      out.lineStartExtras ??= zeros(to - from)
+      lineStartExtras ??= zeros(len)
       const idx = i - from
-      const lineStartExtrasStore = out.lineStartExtras
+      const lineStartExtrasStore = lineStartExtras
       if ((idx & 0x7fffffff) !== idx || idx >= lineStartExtrasStore.length) throw new RangeError('index')
       lineStartExtrasStore[idx] = trim
-      addWidthTrim(i, trim)
+      widthTrims ??= zeros(len)
+      addWidthTrim(widthTrims, idx, trim)
     }
+    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(len) && 0 <= from && from <= to && len === to - from
+     *  @invariant lineStartExtras === null || len <= lineStartExtras.length
+     *  @invariant lineEndTrims === null || len <= lineEndTrims.length
+     *  @invariant overflowLineEndTrims === null || len <= overflowLineEndTrims.length
+     *  @invariant widthTrims === null || lineStartExtras === null || widthTrims !== lineStartExtras
+     *  @invariant widthTrims === null || lineEndTrims === null || widthTrims !== lineEndTrims
+     *  @invariant widthTrims === null || overflowLineEndTrims === null || widthTrims !== overflowLineEndTrims */
     for (let k = start + 1; k < end; k++) {
       const earlier = normalized.charCodeAt(k - 1)
       const later = normalized.charCodeAt(k)
       if (!(maybeHanKerns(earlier) || maybeHanKerns(later)) || isCanvasCjkSymbol(earlier) === isCanvasCjkSymbol(later)) continue
       const side = haltedSide(getCharType(data, normalized, k - 1), getCharType(data, normalized, k))
-      if (side !== 0) addWidthTrim(i, getTrim(data, side === 1 ? later : earlier, measurement))
+      if (side !== 0) {
+        widthTrims ??= zeros(len)
+        addWidthTrim(widthTrims, i - from, getTrim(data, side === 1 ? later : earlier, measurement))
+      }
     }
     const last = normalized.charCodeAt(end - 1)
     if (!maybeHanKerns(last)) continue
     // The text after it halts a closing mark wherever the line ends.
     const atEnd = i + 1 === count
     if (!atEnd && haltedSide(getCharType(data, normalized, end - 1), getCharType(data, normalized, end)) === -1) {
-      addWidthTrim(i, getTrim(data, last, measurement))
+      widthTrims ??= zeros(len)
+      addWidthTrim(widthTrims, i - from, getTrim(data, last, measurement))
       continue
     }
     // Character::MaybeHanKerningClose (character.h:131-133, character.cc:130-135). Blink then
@@ -250,20 +275,20 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     if ((lastType !== CLOSE && lastType !== CLOSE_QUOTE) || getCharType(data, normalized, end - 1) !== CLOSE) continue
     // A break directly after the segment: text after a break, or the end of the text.
     if (atEnd || (((flags[i + 1] ?? missing()) & KIND_BITS) === TEXT && ((flags[i + 1] ?? missing()) & UNBROKEN) === 0)) {
-      out.lineEndTrims ??= zeros(to - from)
+      lineEndTrims ??= zeros(len)
       const idx = i - from
-      const lineEndTrimsStore = out.lineEndTrims
+      const lineEndTrimsStore = lineEndTrims
       const lineEndTrimsValue = getTrim(data, last, measurement)
       if ((idx & 0x7fffffff) !== idx || idx >= lineEndTrimsStore.length) throw new RangeError('index')
       lineEndTrimsStore[idx] = lineEndTrimsValue
     } else {
-      out.overflowLineEndTrims ??= zeros(to - from)
+      overflowLineEndTrims ??= zeros(len)
       const idx = i - from
-      const overflowLineEndTrimsStore = out.overflowLineEndTrims
+      const overflowLineEndTrimsStore = overflowLineEndTrims
       const overflowLineEndTrimsValue = getTrim(data, last, measurement)
       if ((idx & 0x7fffffff) !== idx || idx >= overflowLineEndTrimsStore.length) throw new RangeError('index')
       overflowLineEndTrimsStore[idx] = overflowLineEndTrimsValue
     }
   }
-  return out
+  return { widthTrims, lineStartExtras, lineEndTrims, overflowLineEndTrims }
 }
