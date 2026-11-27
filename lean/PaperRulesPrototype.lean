@@ -770,13 +770,33 @@ def layerOf (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) : S
 /-- Each selected unit's group checked by the pass with the layer; a verdict
 line per unit, accepted ones naming the assumption. -/
 def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (astPath fileKey : String) (fuel : Nat)
-    (interfacesPath : String) : IO UInt32 := do
+    (interfacesPath : String) (prof : Bool := false) : IO UInt32 := do
   match ← RequestCli.prepareUnitsFile astPath fileKey fuel none {} interfacesPath true with
   | .error e => RequestCli.refuse e
   | .ok p =>
+    if prof then SinglePass.profiling.set true
+    let isPaperWalker (name : String) (namePos : Nat × Nat) : Bool :=
+      match units.get? name with
+      | some u => !u.bounds.isEmpty && u.namePos == some namePos
+      | none => false
+    let paperWalkers : List (String × Option SourceClaimJson.StandIn) :=
+      p.fr.units.filterMap fun
+        | (fn, _, none) => if isPaperWalker fn.name fn.namePos then some (fn.name, none) else none
+        | _ => none
+    -- Pre-seed `p.proposals` for groups containing a paper-rules callback
+    -- walker (keyed by `(name, namePos)`) so `p.known` does not spend time
+    -- running ordinary `PassProposals` on walkers that require the paper layer.
+    for j in List.range p.fr.units.length do
+      if let some (fn, _, none) := p.fr.units[j]? then
+        if isPaperWalker fn.name fn.namePos then
+          let g := ((p.fr.group j).head?).getD j
+          let entries := (p.fr.group j).filterMap fun m => match p.fr.units[m]? with
+            | some (u, _, none) => some (u.name, none)
+            | _ => none
+          p.proposals.modify (·.insert g entries)
     for i in p.units do
       let known ← p.known i
-      let known := known ++ (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
+      let known := known ++ paperWalkers ++ (p.fr.group i).filterMap fun j => match p.fr.units[j]? with
         | some (f, _, none) => some (f.name, none)
         | _ => none
       let memo ← p.memo.get
@@ -784,10 +804,14 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
       match p.plan i known memo with
       | .error reason => IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", reason)]))
       | .ok f =>
+        let t0 ← if prof then IO.monoNanosNow else pure 0
         -- The verifier's own route (`PreparedFile.check`): the pass over the
         -- group with inferred loop-head facts, here with the layer.
         let (diagLines, verdict, _, _) := f.passGroupMode8 true p.force (f.givenAt p.givenLines) fuel (p.fr.group i)
           (located := true) (layer := some (layerOf units))
+        if prof then
+          let t1 ← IO.monoNanosNow
+          IO.eprintln s!"profile unit {unit}: {(t1 - t0) / 1000000} ms"
         -- The unsafe assumes the group's units rely on, by issue and line.
         let assumes := (p.fr.group i).flatMap fun j => match p.fr.units[j]? with
           | some (fn, _, _) => ((units.get? fn.name).map (·.assumes)).getD []
@@ -807,6 +831,81 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
           let msg := if full then reason else (reason.take 400).toString
           IO.println (Json.compress (Json.mkObj [("unit", unit), ("refusal", msg)]))
     return 0
+
+/-- Prototype module-interface step mirroring `SourceClaimJson.establishStep`,
+skipping ordinary footprint proposals for functions with paper-rules callback
+bounds (which ordinary `SinglePass` cannot establish without the paper layer). -/
+def establishStepPaper (budget : PositiveCertificates.SearchBudget) (force : List String)
+    (knownFor : String → List (String × Option SourceClaimJson.StandIn))
+    (prepare : String → SourceClaimJson.FilePlans → SourceClaimJson.FilePlans)
+    (check : SourceClaimJson.FilePlans → List Nat → List String × Except String (List String))
+    (established : SourceClaimJson.Established) (tables : List (String × SourceClaimJson.RowTable))
+    (m : SourceClaimJson.ModuleNeed) :
+    SourceClaimJson.Established × List SourceClaimJson.ModuleVerdict × List String × List (String × SourceClaimJson.RowTable) :=
+  let location := m.module.location
+  let foreign := m.reads.filter (·.location != location)
+  let rs := SourceClaimJson.readsOf foreign established
+  let forced : SourceClaimJson.StandIns := if force.contains "imports" then
+      { functions := m.names.map fun n => SourceClaimJson.StandIn.ofFormat n ⟨.keep, .keep, .keep⟩ true } else {}
+  let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
+    SourceClaimJson.fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
+      (closure := true) (proposed := true) (interfaceSlots := true) (known := knownFor location)
+  match planned with
+  | .error e => ([], [], [s!"{location}: its plans: {e.take 200}"], [])
+  | .ok fm =>
+    let fm := (prepare location fm).refuseRows foreign established tables
+    let toCheck := SourceClaimJson.establishChecked m fm
+    let checkedNotes := (toCheck.flatMap fm.fr.group).filterMap fun j => match fm.fr.units[j]? with
+      | some (g, _, none) => (fm.fr.d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map fun c =>
+        s!"{location}#{g.name}: checked at {(toJson c.footprint).compress} onThrow {c.onThrow}"
+      | _ => none
+    let wire := fun (d : String) => if d.startsWith "module:" then d else SourceClaimJson.moduleUnitId location d
+    let verdicts := toCheck.map fun l =>
+      let group := fm.fr.group l
+      let (lines, v) := SinglePass.timedKind "modules: pass" fun _ => check fm group
+      (⟨SourceClaimJson.moduleUnitId location (fm.fr.unitId l), group.map (fun j => SourceClaimJson.moduleUnitId location (fm.fr.unitId j)),
+        lines, v.map (·.map wire)⟩ : SourceClaimJson.ModuleVerdict)
+    let accepted := verdicts.filterMap fun mv => match mv.verdict with
+      | .ok deps => some (mv.unit, deps)
+      | .error _ => none
+    let ok := SourceClaimJson.establishedUnits accepted (established.map (·.2.2))
+    let entries := m.names.map (SourceClaimJson.establishEntry location fm ok)
+    let candidates := entries.filterMap (·.toOption)
+    let ifaces := candidates.filterMap fun e => (fm.slots.lookup e.1.2).map (e.1.2, ·)
+    let (rows, ifs, pos) := SourceClaimJson.encodeRowTableWithMap fm.F.store ifaces
+    let table := SourceClaimJson.decodeRowTable rows ifs
+    let tableOk := match table with
+      | .ok t => SinglePass.work "rows: publication check" (SourceClaimJson.fileItem fm.fr.ast) fun _ =>
+          SourceClaimJson.checkModuleTable fm.F.store t pos
+      | .error _ => false
+    let (laid, outsideD) := fm.laidOut
+    let checked := candidates.map fun e => if !laid.contains e.1.2 then
+        Except.error s!"{location}#{e.1.2}: not laid out: {((outsideD.find? (·.1 == e.1.2)).map (·.2)).getD ""}"
+      else match fm.slots.lookup e.1.2, table with
+      | some I, .ok t =>
+        if (tableOk && SourceClaimJson.checkModuleEntry t pos e.1.2 I) ||
+            (SinglePass.work "rows: publication check" (fm.fr.nameItem e.1.2) fun _ =>
+              SourceClaimJson.moduleRowsAgree fm.F.store t e.1.2 I) then Except.ok e
+        else .error s!"{location}#{e.1.2}: its interface rows refused by the store-map check"
+      | none, _ => .error s!"{location}#{e.1.2}: no interface type"
+      | _, .error w => .error s!"{location}#{e.1.2}: its interface rows: {w}"
+    let published := checked.filterMap (·.toOption)
+    (published, verdicts, checkedNotes ++ (entries ++ checked).filterMap (fun
+      | .error e => if e.isEmpty then none else some e
+      | .ok _ => none), match table with
+      | .ok t => if published.isEmpty then [] else [(location, t)]
+      | .error _ => [])
+
+def establishModulesPaper (needs : List SourceClaimJson.ModuleNeed) (budget : PositiveCertificates.SearchBudget)
+    (force : List String) (incoming : SourceClaimJson.Established)
+    (knownFor : String → List (String × Option SourceClaimJson.StandIn))
+    (prepare : String → SourceClaimJson.FilePlans → SourceClaimJson.FilePlans)
+    (check : SourceClaimJson.FilePlans → List Nat → List String × Except String (List String))
+    (incomingTables : List (String × SourceClaimJson.RowTable) := []) :
+    Except String (SourceClaimJson.Established × List SourceClaimJson.ModuleVerdict × List String × List (String × SourceClaimJson.RowTable)) :=
+  .ok (needs.foldl (fun (est, vs, ns, ts) m =>
+    let (es, vs', ns', ts') := establishStepPaper budget force knownFor prepare check est (incomingTables ++ ts) m
+    (est ++ es, vs ++ vs', ns ++ ns', ts ++ ts')) (incoming, [], [], []))
 
 /-- A component interface established under the paper's rules, mirroring
 `RequestCli.interfaceFile` with `layerOf` per module location. Modules with
@@ -876,8 +975,10 @@ def interfaceFile (sideMap : Std.HashMap String (Std.HashMap String HeapExpressi
         (given := some (RequestCli.moduleGiven f.fr.ast given))
         (layer := some (layerOf units))
       (r.1, r.2.1)
-    let (est, verdicts, notes, tables) ← SourceClaimJson.establishModules
-      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
+    let knownFor := fun (loc : String) =>
+      ((sideMap.get? loc).getD {}).toList.filterMap fun (name, u) => if !u.bounds.isEmpty then some (name, none) else none
+    let (est, verdicts, notes, tables) ← establishModulesPaper
+      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming knownFor prepare check incomingTables
     let encoded ← SourceClaimJson.encodeInterfaces modules est tables
     return (encoded, verdicts, notes)
   match parsed with
@@ -906,26 +1007,34 @@ def parseSideMap (j : Json) : Except String (Std.HashMap String (Std.HashMap Str
   return out
 
 def main (args : List String) : IO UInt32 := do
-  match args with
-  | ["--module-interface", sideMapPath, requestPath] =>
-    let text ← IO.FS.readFile sideMapPath
-    match Json.parse text >>= parseSideMap with
-    | .error e => IO.eprintln s!"side map: {e}"; return 2
-    | .ok sideMap => interfaceFile sideMap requestPath {}
-  | [side, ast, interfaces, key, depth] =>
-    let some fuel := depth.toNat? | IO.eprintln "usage: depth is a number"; return 2
-    let text ← IO.FS.readFile side
-    match Json.parse text >>= HeapExpressionRules.PaperRules.unitsOf with
-    | .error e => IO.eprintln s!"side file: {e}"; return 2
-    | .ok units =>
-      -- The parsed file with its unsafe assumes read as guards, beside it.
-      match Json.parse (← IO.FS.readFile ast) with
-      | .error e => IO.eprintln s!"parsed file: {e}"; return 2
-      | .ok parsed =>
-        let assumed := "fragment-assumed.json"
-        IO.FS.writeFile assumed (HeapExpressionRules.PaperRules.assumedFile parsed).compress
-        checkFile units assumed key fuel interfaces
-  | _ =>
-    IO.eprintln "usage: paper-rules-prototype <side.json> <ast.json> <interfaces.json> <file-key> <depth>"
-    IO.eprintln "       paper-rules-prototype --module-interface <side-map.json> <request.json>"
-    return 2
+  let prof := (← IO.getEnv "PAPER_PROFILE").isSome || (← IO.getEnv "TSCERT_PROFILE").isSome
+  SinglePass.profiling.set prof
+  let code ← match args with
+    | ["--module-interface", sideMapPath, requestPath] =>
+      let text ← IO.FS.readFile sideMapPath
+      match Json.parse text >>= parseSideMap with
+      | .error e => IO.eprintln s!"side map: {e}"; pure 2
+      | .ok sideMap => interfaceFile sideMap requestPath {}
+    | [side, ast, interfaces, key, depth] =>
+      let some fuel := depth.toNat? | do IO.eprintln "usage: depth is a number"; pure 2
+      let text ← IO.FS.readFile side
+      match Json.parse text >>= HeapExpressionRules.PaperRules.unitsOf with
+      | .error e => IO.eprintln s!"side file: {e}"; pure 2
+      | .ok units =>
+        -- The parsed file with its unsafe assumes read as guards, beside it.
+        match Json.parse (← IO.FS.readFile ast) with
+        | .error e => IO.eprintln s!"parsed file: {e}"; pure 2
+        | .ok parsed =>
+          let assumed := "fragment-assumed.json"
+          IO.FS.writeFile assumed (HeapExpressionRules.PaperRules.assumedFile parsed).compress
+          checkFile units assumed key fuel interfaces prof
+    | _ =>
+      IO.eprintln "usage: paper-rules-prototype <side.json> <ast.json> <interfaces.json> <file-key> <depth>"
+      IO.eprintln "       paper-rules-prototype --module-interface <side-map.json> <request.json>"
+      pure 2
+  if prof then
+    let kinds ← SinglePass.kindNanos.get
+    let sorted := kinds.toList.mergeSort fun a b => a.2.1 ≥ b.2.1
+    for (k, t, n) in sorted.take 25 do
+      IO.eprintln s!"profile kind {t / 1000000} ms ({n}x): {k}"
+  return code

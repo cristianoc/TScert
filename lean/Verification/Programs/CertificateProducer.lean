@@ -2077,7 +2077,8 @@ meets establishes every candidate. -/
   let a := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ k target.mapping facts)
   let cls := LinkClasses.closure a.links
   let M := Partitions.cls cls
-  let tags := HeapKnowledge.guardTags a
+  let gt := HeapKnowledge.GuardTagTable.ofKnowledge a
+  let tags := gt.check
   let B := HeapKnowledge.bridgeOf a.links a.indices k.indices
   let m := target.mapping
   cs.filter fun
@@ -2100,30 +2101,34 @@ each kept where every edge's knowledge entails it. Search only: each edge is
 checked again. -/
 def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.Knowledge) :
     List HeapKnowledge.IndexAtom :=
-  let existingGuards : List (Nat × HeapKnowledge.GuardTag) := (projections.flatMap fun p => p.indices.filterMap fun a =>
-    if a.cond.isSome then none else match a.fact with
-    | .guarded g [] t _ => some (g, t)
-    | _ => none).eraseDups
-  let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
+  let projTags := projections.map HeapKnowledge.GuardTagTable.ofKnowledge
+  let projAliases := projections.map (fun p => HeapLinks.aliasesMap p.links)
+  let existingGuards : List (Nat × HeapKnowledge.GuardTag) :=
+    (keepFirst {} (projections.flatMap fun p => p.indices.filterMap fun a =>
+      if a.cond.isSome then none else match a.fact with
+      | .guarded g [] t _ => some (g, t)
+      | _ => none)).2.toList
+  let restated := (projections.zip projAliases).flatMap fun (p, amP) => p.indices.flatMap fun a =>
     if a.cond.isSome then [] else match a.fact with
     | .spineApart x q y r =>
       let guardsOf := fun (w : Nat) (mk : Nat → HeapKnowledge.IndexFact) =>
-        (HeapLinks.aliases p.links w).flatMap fun z =>
+        (HeapLinks.aliasesOf amP w).flatMap fun z =>
           ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
-            projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
+            projTags.any fun tg => tg.check z [] g).map fun g =>
               ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
       guardsOf x (fun z => .spineApart z q y r) ++ guardsOf y (fun z => .spineApart x q z r)
     | .element v x idx =>
-      (HeapLinks.aliases p.links v).flatMap fun z =>
+      (HeapLinks.aliasesOf amP v).flatMap fun z =>
         ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
-          projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
+          projTags.any fun tg => tg.check z [] g).map fun g =>
             ({ fact := .guarded z [] g (.element z x idx) } : HeapKnowledge.IndexAtom)
     | .every .. | .apart .. =>
       a :: existingGuards.map fun (g, t) => ({ fact := .guarded g [] t a.fact } : HeapKnowledge.IndexAtom)
     | .guarded _ [] _ (.every ..) | .guarded _ [] _ (.apart ..) => [a]
     | _ => []
-  let candidates := ((projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
-    restated.eraseDups).filter fun a => !k.indices.contains a
+  let kSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList k.indices
+  let raw := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices) ++ restated
+  let candidates := (keepFirst {} raw).2.toList.filter fun a => !kSet.contains a
   projections.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
 
 /-- Propagate established postconditions along single-predecessor paths. The

@@ -130,6 +130,32 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
 def knowledgeSeps (k : Knowledge) : List SepFact :=
   k.indices.flatMap fun a => if a.cond.isNone then factSeps k.links a.fact else []
 
+def factSepsWith (am : Std.HashMap Nat (List Nat)) : IndexFact → List SepFact
+  | .spineApart a p b q => [.spines (a, p) (b, q)]
+  | .apart a p b q => [.arrays (a, p) (b, q)]
+  | .elemSpineApart a p b q => [.elemSpines (a, p) (b, q)]
+  | .guarded g [] t B => if t.isPositive then (factSepsWith am B).filter fun e => match e.sites with
+    | some (a, b) => (HeapLinks.aliasesOf am g).contains a.1 || (HeapLinks.aliasesOf am g).contains b.1
+    | none => false
+    else []
+  | _ => []
+
+theorem factSepsWith_eq (ls : HeapLinks.Links) : ∀ F, factSepsWith (HeapLinks.aliasesMap ls) F = factSeps ls F
+  | .spineApart .. | .apart .. | .elemSpineApart .. => rfl
+  | .guarded g [] t B => by
+    simp only [factSepsWith, factSeps, factSepsWith_eq ls B, HeapLinks.aliasesOf_eq_aliases]
+  | .guarded _ (_ :: _) _ _ => rfl
+  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .linear _ | .element _ _ _ | .fieldRead _ _ _
+  | .every _ _ _ _ _ | .atIndex _ _ _ _ _ | .same _ _ | .either _ _ => rfl
+
+def knowledgeSepsFast (k : Knowledge) : List SepFact :=
+  let am := HeapLinks.aliasesMap k.links
+  k.indices.flatMap fun a => if a.cond.isNone then factSepsWith am a.fact else []
+
+@[csimp] theorem knowledgeSeps_eq_fast : @knowledgeSeps = @knowledgeSepsFast := by
+  funext k
+  simp only [knowledgeSeps, knowledgeSepsFast, factSepsWith_eq]
+
 theorem knowledgeSeps_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
     ∀ e ∈ knowledgeSeps k, e.Holds ρ h := by
   intro e he
@@ -292,6 +318,35 @@ theorem factSepsUnder_holds {ls : HeapLinks.Links} {gs : List (Nat × GuardTag)}
 def knowledgeSepsUnder (k : Knowledge) (gs : List (Nat × GuardTag)) : List SepFact :=
   k.indices.flatMap fun a => if a.cond.isNone then factSepsUnder k.links gs a.fact else []
 
+def factSepsUnderWith (am : Std.HashMap Nat (List Nat)) (gs : List (Nat × GuardTag)) : IndexFact → List SepFact
+  | .spineApart a p b q => [.spines (a, p) (b, q)]
+  | .apart a p b q => [.arrays (a, p) (b, q)]
+  | .elemSpineApart a p b q => [.elemSpines (a, p) (b, q)]
+  | .guarded g [] t B =>
+    if gs.contains (g, t) then factSepsUnderWith am gs B
+    else if t.isPositive then (factSepsUnderWith am gs B).filter fun e => match e.sites with
+      | some (a, b) => (HeapLinks.aliasesOf am g).contains a.1 || (HeapLinks.aliasesOf am g).contains b.1
+      | none => false
+    else []
+  | _ => []
+
+theorem factSepsUnderWith_eq (ls : HeapLinks.Links) (gs : List (Nat × GuardTag)) :
+    ∀ F, factSepsUnderWith (HeapLinks.aliasesMap ls) gs F = factSepsUnder ls gs F
+  | .spineApart .. | .apart .. | .elemSpineApart .. => rfl
+  | .guarded g [] t B => by
+    simp only [factSepsUnderWith, factSepsUnder, factSepsUnderWith_eq ls gs B, HeapLinks.aliasesOf_eq_aliases]
+  | .guarded _ (_ :: _) _ _ => rfl
+  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .linear _ | .element _ _ _ | .fieldRead _ _ _
+  | .every _ _ _ _ _ | .atIndex _ _ _ _ _ | .same _ _ | .either _ _ => rfl
+
+def knowledgeSepsUnderFast (k : Knowledge) (gs : List (Nat × GuardTag)) : List SepFact :=
+  let am := HeapLinks.aliasesMap k.links
+  k.indices.flatMap fun a => if a.cond.isNone then factSepsUnderWith am gs a.fact else []
+
+@[csimp] theorem knowledgeSepsUnder_eq_fast : @knowledgeSepsUnder = @knowledgeSepsUnderFast := by
+  funext k gs
+  simp only [knowledgeSepsUnder, knowledgeSepsUnderFast, factSepsUnderWith_eq]
+
 theorem knowledgeSepsUnder_holds {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
     (hk : HeapKnowledge.Holds k ε ρ h) (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
     ∀ e ∈ knowledgeSepsUnder k gs, e.Holds ρ h := by
@@ -393,6 +448,191 @@ theorem IndexFact.keepsUnder_sound {k : Knowledge} {c : ReadContext} {Φ : Footp
   | _ =>
     intro gs hgs hkeep hF
     exact IndexFact.keeps_sound hkeep (knowledgeQueryUnder_sound hk hok hρ hgs) hp hc hF
+
+/-- Whether a fact has a separation leaf (`spineApart`, `apart`, `elemSpineApart`)
+under zero or more leading slot guards. -/
+def _root_.Verification.HeapKnowledge.IndexFact.hasSepLeaf : IndexFact → Bool
+  | .spineApart .. | .apart .. | .elemSpineApart .. => true
+  | .guarded _ [] _ B => B.hasSepLeaf
+  | _ => false
+
+/-- Slot guards `(g, t)` wrapping a separation leaf in `F`. -/
+def _root_.Verification.HeapKnowledge.IndexFact.sepGuardKeys : IndexFact → List (Nat × GuardTag)
+  | .guarded g [] t B => (g, t) :: B.sepGuardKeys
+  | _ => []
+
+/-- Peel leading slot guards `(s, t)` into `gs`, matching `keepsUnder`'s order. -/
+def _root_.Verification.HeapKnowledge.IndexFact.peelGuards (gs : List (Nat × GuardTag)) :
+    IndexFact → List (Nat × GuardTag) × IndexFact
+  | .guarded s [] t B => B.peelGuards ((s, t) :: gs)
+  | F => (gs, F)
+
+/-- Precomputed separation context shared across all atoms of a state `k` when
+checking guarded survival (`IndexFact.keepsUnderCtx`). -/
+structure KeepsUnderCtx where
+  baseQ : SepQuery
+  queryByGs : Std.HashMap (List (Nat × GuardTag)) (Thunk SepQuery)
+
+def KeepsUnderCtx.ofKnowledge (k : Knowledge) : KeepsUnderCtx :=
+  let am := HeapLinks.aliasesMap k.links
+  let sepFacts := separationFacts k.separation
+  let sepAtoms := k.indices.filterMap fun a =>
+    if a.cond.isNone && a.fact.hasSepLeaf then some a.fact else none
+  let guardedSepKeys : Std.HashSet (Nat × GuardTag) := sepAtoms.foldl (fun acc F =>
+    F.sepGuardKeys.foldl (·.insert ·) acc) {}
+  let baseSeps := sepAtoms.flatMap (factSepsUnderWith am [])
+  let baseQ := ({ links := k.links, facts := baseSeps ++ sepFacts } : SepEvidence).query
+  let queryByGs : Std.HashMap (List (Nat × GuardTag)) (Thunk SepQuery) :=
+    if guardedSepKeys.isEmpty then {}
+    else k.indices.foldl (fun m a =>
+      if a.fact.envOnly then m else
+      let (gs, _) := a.fact.peelGuards []
+      if gs.isEmpty || m.contains gs || !gs.any (guardedSepKeys.contains ·) then m
+      else m.insert gs (Thunk.mk fun _ =>
+        let seps := sepAtoms.flatMap (factSepsUnderWith am gs)
+        ({ links := k.links, facts := seps ++ sepFacts } : SepEvidence).query)) {}
+  { baseQ, queryByGs }
+
+def _root_.Verification.HeapKnowledge.IndexFact.keepsUnderCtx (ctx : KeepsUnderCtx)
+    (_k : Knowledge) (c : ReadContext) (Φ : Footprint) (gs : List (Nat × GuardTag)) : IndexFact → Bool
+  | .guarded s [] t B => B.keepsUnderCtx ctx _k c Φ ((s, t) :: gs)
+  | F =>
+    if F.keeps ctx.baseQ c Φ then true
+    else match ctx.queryByGs[gs]? with
+      | some tq => F.keeps tq.get c Φ
+      | none => false
+
+private theorem sepAtoms_seps_holds {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    ∀ e ∈ (k.indices.filterMap fun a =>
+        if a.cond.isNone && a.fact.hasSepLeaf then some a.fact else none).flatMap
+        (factSepsUnderWith (HeapLinks.aliasesMap k.links) gs),
+      e.Holds ρ h := by
+  intro e he
+  obtain ⟨F0, hF0, he⟩ := List.mem_flatMap.mp he
+  obtain ⟨a, ha, hfa⟩ := List.mem_filterMap.mp hF0
+  split at hfa
+  · rename_i hcond
+    simp only [Option.some.injEq] at hfa
+    subst hfa
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hcond
+    rw [factSepsUnderWith_eq] at he
+    exact factSepsUnder_holds hk.2.2.1 hgs a.fact (hk.2.2.2.2.2 a ha fun b hb => by rw [hcond.1] at hb; cases hb) e he
+  · cases hfa
+
+private theorem keepsUnderCtx_query_sound {k : Knowledge} {gs : List (Nat × GuardTag)} {ρ : Env} {h : Heap}
+    {n : Nat} {W : WorldT n} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1)) :
+    (({ links := k.links,
+        facts := (k.indices.filterMap fun a =>
+          if a.cond.isNone && a.fact.hasSepLeaf then some a.fact else none).flatMap
+            (factSepsUnderWith (HeapLinks.aliasesMap k.links) gs) ++
+          separationFacts k.separation } : SepEvidence).query).Sound ρ h := by
+  refine SepEvidence.query_sound ⟨noClassEvidence_ok ρ h,
+    ⟨fun _ _ hc => by simp at hc, fun _ _ hc => by simp at hc⟩,
+    fun _ _ hij => hij, hk.2.2.1, fun e he => ?_⟩ hok hρ
+  rcases List.mem_append.mp he with he | he
+  · exact sepAtoms_seps_holds hk hgs e he
+  · exact separationFacts_holds hk.2.2.2.1 e he
+
+private theorem queryByGs_sound {k : Knowledge} {ρ : Env} {h : Heap} {n : Nat} {W : WorldT n}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    {gs : List (Nat × GuardTag)} {tq : Thunk SepQuery}
+    (hgs : ∀ g ∈ gs, ¬g.2.holds (ρ g.1))
+    (hm : (KeepsUnderCtx.ofKnowledge k).queryByGs[gs]? = some tq) :
+    tq.get.Sound ρ h := by
+  unfold KeepsUnderCtx.ofKnowledge at hm
+  dsimp only at hm
+  split at hm
+  · simp at hm
+  · let am := HeapLinks.aliasesMap k.links
+    let sepFacts := separationFacts k.separation
+    let sepAtoms := k.indices.filterMap fun a =>
+      if a.cond.isNone && a.fact.hasSepLeaf then some a.fact else none
+    let guardedSepKeys : Std.HashSet (Nat × GuardTag) := sepAtoms.foldl (fun acc F =>
+      F.sepGuardKeys.foldl (·.insert ·) acc) {}
+    have hstep : ∀ (xs : List IndexAtom) (m : Std.HashMap (List (Nat × GuardTag)) (Thunk SepQuery)),
+        (∀ (gs' : List (Nat × GuardTag)) (tq' : Thunk SepQuery),
+          (∀ g ∈ gs', ¬g.2.holds (ρ g.1)) → m[gs']? = some tq' → tq'.get.Sound ρ h) →
+        ∀ (gs' : List (Nat × GuardTag)) (tq' : Thunk SepQuery),
+          (∀ g ∈ gs', ¬g.2.holds (ρ g.1)) →
+          (xs.foldl (fun m a =>
+            if a.fact.envOnly then m else
+            let (gs0, _) := a.fact.peelGuards []
+            if gs0.isEmpty || m.contains gs0 || !gs0.any (guardedSepKeys.contains ·) then m
+            else m.insert gs0 (Thunk.mk fun _ =>
+              let seps := sepAtoms.flatMap (factSepsUnderWith am gs0)
+              ({ links := k.links, facts := seps ++ sepFacts } : SepEvidence).query)) m)[gs']? = some tq' →
+          tq'.get.Sound ρ h := by
+      intro xs
+      induction xs with
+      | nil => intro m hinv gs' tq' hgs' hm'; exact hinv gs' tq' hgs' hm'
+      | cons a xs ih =>
+        intro m hinv
+        apply ih
+        intro gs' tq' hgs' hm'
+        dsimp only at hm'
+        split at hm'
+        · exact hinv gs' tq' hgs' hm'
+        · split at hm'
+          · exact hinv gs' tq' hgs' hm'
+          · rw [Std.HashMap.getElem?_insert] at hm'
+            split at hm'
+            · rename_i heq
+              simp only [Option.some.injEq] at hm'
+              subst hm'
+              have heq : (a.fact.peelGuards []).1 = gs' := by simpa using heq
+              rw [heq]
+              exact keepsUnderCtx_query_sound hk hok hρ hgs'
+            · exact hinv gs' tq' hgs' hm'
+    exact hstep k.indices {} (fun _ _ _ h => by simp at h) gs tq hgs hm
+
+theorem IndexFact.keepsUnderCtx_sound {k : Knowledge} {c : ReadContext} {Φ : Footprint} {ρ : Env} {h h' : Heap}
+    {n : Nat} {W : WorldT n} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hp : Post Φ ρ h h') (hc : c.Holds ρ h h') :
+    ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      (∀ g ∈ gs, ¬g.2.holds (ρ g.1)) →
+      F.keepsUnderCtx (KeepsUnderCtx.ofKnowledge k) k c Φ gs = true → F.HoldsAt ε ρ h → F.HoldsAt ε ρ h' := by
+  have hbase : (KeepsUnderCtx.ofKnowledge k).baseQ.Sound ρ h :=
+    keepsUnderCtx_query_sound hk hok hρ (by simp)
+  have hleaf : ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      (∀ g ∈ gs, ¬g.2.holds (ρ g.1)) →
+      (if F.keeps (KeepsUnderCtx.ofKnowledge k).baseQ c Φ then true
+       else match (KeepsUnderCtx.ofKnowledge k).queryByGs[gs]? with
+         | some tq => F.keeps tq.get c Φ
+         | none => false) = true →
+      F.HoldsAt ε ρ h → F.HoldsAt ε ρ h' := by
+    intro F gs hgs hkeep hF
+    split at hkeep
+    · rename_i hb
+      exact IndexFact.keeps_sound hb hbase hp hc hF
+    · split at hkeep
+      · rename_i tq htq
+        exact IndexFact.keeps_sound hkeep (queryByGs_sound hk hok hρ hgs htq) hp hc hF
+      · cases hkeep
+  intro F
+  induction F with
+  | guarded s p t B ih =>
+    cases p with
+    | nil =>
+      intro gs hgs hkeep hF
+      obtain ⟨v, hv, hor⟩ := hF
+      simp only [readGuard, Option.some.injEq] at hv
+      subst hv
+      refine ⟨ρ s, rfl, ?_⟩
+      by_cases ht : t.holds (ρ s)
+      · exact .inl ht
+      · refine .inr (ih ((s, t) :: gs) ?_ hkeep (hor.resolve_left ht))
+        intro g hg
+        rcases List.mem_cons.mp hg with rfl | hg
+        · exact ht
+        · exact hgs g hg
+    | cons _ _ =>
+      intro gs hgs hkeep hF
+      exact hleaf _ gs hgs hkeep hF
+  | _ =>
+    intro gs hgs hkeep hF
+    exact hleaf _ gs hgs hkeep hF
 
 end Verification.Footprints
 

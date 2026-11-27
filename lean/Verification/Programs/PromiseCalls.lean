@@ -3111,11 +3111,10 @@ keeps the heap, whose output keeps every atom (`call-keep`). -/
   if keepsHeap eff then [] else
   let c : Footprints.ReadContext := { (Footprints.ReadContext.ofFirst stable) with arrayPath }
   let Φ := callerFrame eff t
-  let sepFacts := Footprints.separationFacts k.separation
-  let baseQ := Footprints.knowledgeQueryUnder k []
-  let callQ := callQuery G Γ k
+  let ctx := Footprints.KeepsUnderCtx.ofKnowledge k
+  let callQ := Thunk.mk fun _ => callQuery G Γ k
   HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-    !a.fact.envOnly && (a.fact.keepsUnderWith baseQ sepFacts k c Φ [] || a.fact.keeps callQ c Φ))
+    !a.fact.envOnly && (a.fact.keepsUnderCtx ctx k c Φ [] || a.fact.keeps callQ.get c Φ))
 
 theorem effectKept_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {stable : Nat → String → Bool}
     {arrayPath : Nat → List String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge}
@@ -3133,10 +3132,10 @@ theorem effectKept_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {stable : Nat 
   · exact HeapKnowledge.indexHolds_nil _ _
   · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
     obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Footprints.IndexFact.keepsUnderWith_eq] at hkeep
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at hkeep
     have hF := hk.2.2.2.2.2 a ha hcd
     rcases hkeep.2 with hku | hkq
-    · exact Footprints.IndexFact.keepsUnder_sound (c := { (Footprints.ReadContext.ofFirst stable) with arrayPath }) hk hok hρ
+    · exact Footprints.IndexFact.keepsUnderCtx_sound (c := { (Footprints.ReadContext.ofFirst stable) with arrayPath }) hk hok hρ
           (callerFrame_post hw) ⟨(Footprints.ReadContext.ofFirst_holds hst).1, harr⟩ a.fact [] (by simp) hku hF
     · exact Footprints.IndexFact.keeps_sound hkq (callQuery_sound he hk hok hρ)
           (callerFrame_post hw) ⟨(Footprints.ReadContext.ofFirst_holds hst).1, harr⟩ hF
@@ -5916,12 +5915,13 @@ def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (
   (callEntry stable eff t k0).consequences.map fun F => { fact := .linear F }) ++
   match callSlots t with
   | some (recv, slots) =>
+    let matching := eff.schema.normal.facts.filter fun F => match F with
+      | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
+      | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone
+    if matching.isEmpty then [] else
     let P : Composer := ⟨callEntry stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots,
       absentSlot slots⟩
-    ((eff.schema.normal.facts.filter fun F => match F with
-      | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
-      | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone).flatMap
-      P.fact).map fun F => { fact := F }
+    (matching.flatMap P.fact).map fun F => { fact := F }
   | none => []
 
 open HeapKnowledge in
@@ -5940,16 +5940,19 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
       exact entry_sound hE F hF
   · split at ha
     · rename_i recv slots hs
-      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
-      obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
-      have hsound : Composer.Sound ⟨callEntry stable eff t k0, callVar recv slots, ensuresSlot recv slots,
-          absentAt slots, absentSlot slots⟩ ε
-          ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
-          ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-            (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
-        ⟨hE, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
-          fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
-      exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
+      dsimp only at ha
+      split at ha
+      · cases ha
+      · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
+        obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
+        have hsound : Composer.Sound ⟨callEntry stable eff t k0, callVar recv slots, ensuresSlot recv slots,
+            absentAt slots, absentSlot slots⟩ ε
+            ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
+            ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+              (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
+          ⟨hE, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+            fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
+        exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
 
 /-- The alias links a call's return-alias postconditions (`IndexFact.same 0 (p + 1)`
@@ -6728,9 +6731,10 @@ atoms its growth of its receiver's spine keeps or extends (`appendKept`), then
 the instances of quantified facts the element reads among them state
 (`withElements`). -/
 def withEnsures (stable : Nat → String → Bool) (G : NormalGraph ι) (Γ : List (Ty ι)) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  HeapKnowledge.dischargeGuards <| HeapKnowledge.withElements
+  let kLinks := Std.HashSet.ofList k.links
+  HeapKnowledge.dischargeGuards <| HeapKnowledge.withElementsAfter k.indices.length k.links.length
     { k with cells := k.cells ++ (frameCells stable eff t k0).filter (!k.cells.contains ·),
-             links := k.links ++ (frameLinks stable eff t k0).filter (!k.links.contains ·) ++ sameLinks eff t,
+             links := k.links ++ (frameLinks stable eff t k0).filter (!kLinks.contains ·) ++ sameLinks eff t,
              indices := k.indices ++ ensuresAtoms eff t ++ effectKept G Γ stable (HeapExpressionRules.arrayPathOf G Γ) eff t k0 ++ appendKept G Γ eff t k0 ++
         writeKept G Γ eff t k0 ++ linearAppendKept G Γ eff t k0 ++ ensuresComposed stable eff t k0 ++
         freshCallSpineApart stable G Γ eff t k0 ++ freshCallApart stable G Γ eff t k0 ++
@@ -6744,7 +6748,7 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {G : NormalGraph ι
       (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
-    HeapKnowledge.Holds (withEnsures stable G Γ eff t k0 k) ε (push v ρ) h' := HeapKnowledge.dischargeGuards_holds <| HeapKnowledge.withElements_holds
+    HeapKnowledge.Holds (withEnsures stable G Γ eff t k0 k) ε (push v ρ) h' := HeapKnowledge.dischargeGuards_holds <| HeapKnowledge.withElementsAfter_holds
   ⟨fun f hf => (List.mem_append.mp hf).elim (hk.1 f)
       (fun hf => frameCells_holds hk0 hok hρ hq hstable f (List.mem_filter.mp hf).1),
     hk.2.1,

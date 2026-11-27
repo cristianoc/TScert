@@ -140,7 +140,9 @@ theorem lowerGuards_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ : Env
 /-- A knowledge's lowered form (as the merge's join reads it) holds where
 the knowledge does. -/
 theorem lowered_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
-    Holds { k with indices := k.indices ++ ((lowerGuards k.links k.indices).filter (!k.indices.contains ·)) } ε ρ h := by
+    let pSet : Std.HashSet IndexAtom := Std.HashSet.ofList k.indices
+    Holds { k with indices := k.indices ++ ((lowerGuards k.links k.indices).filter (!pSet.contains ·)) } ε ρ h := by
+  intro pSet
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hk
   refine ⟨h1, h2, h3, h4, h5, fun a ha hc => ?_⟩
   rcases List.mem_append.mp ha with ha | ha

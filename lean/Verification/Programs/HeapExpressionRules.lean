@@ -4175,13 +4175,15 @@ def stableIndices (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Lis
 /-- A step's output with the input's stable links, stable cell facts and
 stable index facts, past the result slot, each once. -/
 def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Knowledge :=
+  let outLinks := Std.HashSet.ofList out.links
+  let outIndices := Std.HashSet.ofList out.indices
   { out with
     cells := out.cells ++
       (HeapFacts.shift (stableCells G Γ k)).filter fun f => !out.cells.contains f
     links := out.links ++
-      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g
+      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !outLinks.contains g
     indices := out.indices ++
-      (mapIndices (fun i => some (i+1)) (stableIndices G Γ k)).filter fun a => !out.indices.contains a }
+      (mapIndices (fun i => some (i+1)) (stableIndices G Γ k)).filter fun a => !outIndices.contains a }
 
 /-- The stable cell facts and read links, as fact kinds. -/
 def stableKinds (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List Footprints.FactKind :=

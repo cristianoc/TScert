@@ -1,5 +1,6 @@
 import Verification.Semantics.HeapFacts
 import Std.Data.HashSet.Lemmas
+import Std.Data.HashMap.Lemmas
 
 /-! A read-to-cell relation is a current-heap fact, not a timeless alias of an
 immutable value. It survives pure slot transfers and allocation, but is discarded
@@ -109,6 +110,67 @@ theorem rep_eq {ρ cs} (hcs : OneValue ρ cs) (i : Nat) : ρ (rep cs i) = ρ i :
     exact hcs _ hk r (List.mem_cons_self ..) i (List.contains_iff_mem.mp hi)
   · rfl
 
+/-- Hash-indexed representative table for `cs`: maps every slot of each class
+to the class's head slot in `O(1)` lookup time. -/
+def repMap (cs : List (List Nat)) : Std.HashMap Nat Nat :=
+  cs.foldl (fun m k => match k with
+    | r :: _ => k.foldl (fun m x => m.insert x r) m
+    | [] => m) {}
+
+/-- `O(1)` slot representative lookup in a precomputed `repMap`. Callers bind
+`let rm := repMap cs` once (a concrete `HashMap`, not a curried function) and
+pass `repOf rm` so Lean's arity flattening does not rebuild the table. -/
+def repOf (m : Std.HashMap Nat Nat) (i : Nat) : Nat :=
+  m.getD i i
+
+theorem repMap_eq {ρ cs} (hcs : OneValue ρ cs) :
+    ∀ {i r}, (repMap cs)[i]? = some r → ρ r = ρ i := by
+  have hstep : ∀ (xs : List (List Nat)) (m : Std.HashMap Nat Nat),
+      (∀ k ∈ xs, ∀ x ∈ k, ∀ y ∈ k, ρ x = ρ y) →
+      (∀ {i r}, m[i]? = some r → ρ r = ρ i) →
+      ∀ {i r}, (xs.foldl (fun m k => match k with
+        | r :: _ => k.foldl (fun m x => m.insert x r) m
+        | [] => m) m)[i]? = some r → ρ r = ρ i := by
+    intro xs
+    induction xs with
+    | nil => intro m _ hm i r h; exact hm h
+    | cons k xs ih =>
+      intro m hxs hm
+      apply ih _ (fun k' hk' => hxs k' (List.mem_cons_of_mem _ hk'))
+      cases k with
+      | nil => exact hm
+      | cons r0 t =>
+        have hk := hxs (r0 :: t) (List.mem_cons_self ..)
+        have hinner : ∀ (ys : List Nat) (m' : Std.HashMap Nat Nat),
+            (∀ y ∈ ys, ρ r0 = ρ y) →
+            (∀ {i r}, m'[i]? = some r → ρ r = ρ i) →
+            ∀ {i r}, (ys.foldl (fun m x => m.insert x r0) m')[i]? = some r → ρ r = ρ i := by
+          intro ys
+          induction ys with
+          | nil => intro m' _ hm' i r h; exact hm' h
+          | cons y ys ihy =>
+            intro m' hys hm'
+            apply ihy _ (fun z hz => hys z (List.mem_cons_of_mem _ hz))
+            intro i r h
+            rw [Std.HashMap.getElem?_insert] at h
+            split at h
+            · rename_i hyi
+              simp only [Option.some.injEq] at h
+              subst h
+              have hyi : y = i := by simpa using hyi
+              subst hyi
+              exact hys y (List.mem_cons_self ..)
+            · exact hm' h
+        exact fun {i r} => hinner (r0 :: t) m (fun y hy => hk r0 (List.mem_cons_self ..) y hy) hm
+  exact fun {i r} => hstep cs {} hcs (by intro i r h; simp at h)
+
+theorem repOf_eq {ρ cs} (hcs : OneValue ρ cs) (i : Nat) : ρ (repOf (repMap cs) i) = ρ i := by
+  unfold repOf
+  rw [Std.HashMap.getD_eq_getD_getElem?]
+  cases h : (repMap cs)[i]? with
+  | none => rfl
+  | some r => exact repMap_eq hcs h
+
 /-- Each target link must hold of the source links under the mapping, up to
 the source's alias classes: a target alias relates two slots of one class,
 and a target read is a source read between the same classes, one that found
@@ -123,7 +185,9 @@ def checkWith (r : Nat → Nat) (a b : Links) (m : PointClaims.Mapping) : Bool :
     if g.alias then c == v
     else reads.contains ⟨c, v, false, g.field, g.optional⟩ || (g.optional && reads.contains ⟨c, v, false, g.field, false⟩)
 
-def check (a b : Links) (m : PointClaims.Mapping) : Bool := checkWith (rep (classes a)) a b m
+def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
+  let rm := repMap (classes a)
+  checkWith (repOf rm) a b m
 
 /-- The check by any representatives of slots holding one value. -/
 theorem checkWith_sound {r a b m ρ h} (hr : ∀ x, ρ (r x) = ρ x) (hc : checkWith r a b m = true) (hh : Holds a ρ h) :
@@ -171,7 +235,7 @@ theorem checkWith_sound {r a b m ρ h} (hr : ∀ x, ρ (r x) = ρ x) (hc : check
 
 theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h :=
-  checkWith_sound (rep_eq (classes_one hh)) hc hh
+  checkWith_sound (repOf_eq (classes_one hh)) hc hh
 
 /-- The links without repetitions, each at its first occurrence. -/
 def dedup (ls : Links) : Links :=
@@ -230,6 +294,77 @@ theorem aliases_eq {ls i j ρ h} (hh : Holds ls ρ h) (hj : j ∈ aliases ls i) 
   · rfl
   · exact neighbors_eq hh hj
   · exact (neighbors_eq hh hj).trans (neighbors_eq hh hk)
+
+/-- Hash-indexed alias adjacency map for `ls`: built in one `O(|ls|)` pass so
+`m.getD i [] = neighbors ls i` in `O(1)`. -/
+def aliasesMap (ls : Links) : Std.HashMap Nat (List Nat) :=
+  ls.reverse.foldl (fun m g =>
+    if g.alias then
+      let m := m.insert g.cell (g.value :: m.getD g.cell [])
+      if g.cell == g.value then m else m.insert g.value (g.cell :: m.getD g.value [])
+    else m) {}
+
+/-- `O(1)` alias lookup backed by `aliasesMap`, matching `aliases ls` exactly. -/
+def aliasesOf (m : Std.HashMap Nat (List Nat)) (i : Nat) : List Nat :=
+  let near := m.getD i []
+  i :: near ++ near.flatMap (m.getD · [])
+
+theorem aliasesMap_getD (ls : Links) (i : Nat) : (aliasesMap ls).getD i [] = neighbors ls i := by
+  unfold aliasesMap neighbors
+  have hgo : ∀ (xs : Links),
+      (xs.reverse.foldl (fun (m : Std.HashMap Nat (List Nat)) g =>
+        if g.alias then
+          let m := m.insert g.cell (g.value :: m.getD g.cell [])
+          if g.cell == g.value then m else m.insert g.value (g.cell :: m.getD g.value [])
+        else m) {}).getD i [] =
+      xs.filterMap (fun g => if g.alias then
+        if g.cell == i then some g.value else if g.value == i then some g.cell else none
+        else none) := by
+    intro xs
+    induction xs with
+    | nil => simp
+    | cons g xs ih =>
+      rw [List.reverse_cons, List.foldl_append, List.foldl_cons, List.foldl_nil, List.filterMap_cons]
+      dsimp only
+      cases ha : g.alias
+      · simp only [Bool.false_eq_true, ↓reduceIte, ih]
+      · simp only [↓reduceIte]
+        by_cases hcv : g.cell == g.value
+        · simp only [hcv, ↓reduceIte]
+          rw [Std.HashMap.getD_insert]
+          by_cases hci : g.cell == i
+          · have hce : g.cell = i := beq_iff_eq.mp hci
+            simp only [hce, beq_self_eq_true, ↓reduceIte, ih]
+          · have hvi : (g.value == i) = false := by
+              have h1 : g.cell = g.value := beq_iff_eq.mp hcv
+              rw [← h1]; simpa using hci
+            simp only [hci, hvi, Bool.false_eq_true, ↓reduceIte, ih]
+        · simp only [hcv, Bool.false_eq_true, ↓reduceIte]
+          rw [Std.HashMap.getD_insert]
+          by_cases hvi : g.value == i
+          · have hve : g.value = i := beq_iff_eq.mp hvi
+            have hci : (g.cell == i) = false := by
+              cases h2 : (g.cell == i)
+              · rfl
+              · exfalso; exact hcv (beq_iff_eq.mpr ((beq_iff_eq.mp h2).trans hve.symm))
+            simp only [hvi, hci, Bool.false_eq_true, ↓reduceIte]
+            rw [Std.HashMap.getD_insert]
+            simp only [hve, hci, Bool.false_eq_true, ↓reduceIte, ih]
+          · simp only [hvi, Bool.false_eq_true, ↓reduceIte]
+            rw [Std.HashMap.getD_insert]
+            by_cases hci : g.cell == i
+            · have hce : g.cell = i := beq_iff_eq.mp hci
+              simp only [hce, beq_self_eq_true, ↓reduceIte, ih]
+            · simp only [hci, Bool.false_eq_true, ↓reduceIte, ih]
+  exact hgo ls
+
+theorem aliasesOf_eq_aliases (ls : Links) (i : Nat) : aliasesOf (aliasesMap ls) i = aliases ls i := by
+  unfold aliasesOf aliases
+  simp only [aliasesMap_getD]
+
+theorem aliasesOf_eq {ls i j ρ h} (hh : Holds ls ρ h) (hj : j ∈ aliasesOf (aliasesMap ls) i) : ρ j = ρ i := by
+  rw [aliasesOf_eq_aliases] at hj
+  exact aliases_eq hh hj
 
 /-- Each read link restated between the slots one or two alias links relate
 to its cell and to its value (`aliases`): a read between two classes holds
