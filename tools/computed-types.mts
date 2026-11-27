@@ -13,8 +13,8 @@ import { SignatureKind, SymbolFlags, TypeFlags, isBigIntLiteralType, isBooleanLi
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import type { TypeTerm } from "./declaration-types.mts";
-import { computedAlias, computedForm, numericKey, optionalTerm } from "./type-term.mts";
+import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import { computedAlias, computedForm, isEmptyObject, numericKey, optionalTerm, reduceLiteralIntersection } from "./type-term.mts";
 import { passToolFailure } from "./thrown.mts";
 
 /** A reader of type syntax: it may read the checker and grow the stores it
@@ -61,6 +61,34 @@ export type ComputedContext = {
    * listed symbols, as a computed key `[k]` naming it is read. Throws the
    * reason where the symbol it holds is not known. */
   unique: (type: Type) => number;
+  /** Whether a declaration belongs to the standard library (`lib.*.d.ts`). */
+  isLibrary?: (node: Node) => boolean;
+  /** Declaration metadata for the `Ref` in `T extends Ref<infer ...>`. */
+  conditionalTarget?: (ref: TypeReferenceNode) => ConditionalTargetInfo | null;
+  /** Structural/inheritance metadata for a `reference` term tested against `Ref<infer ...>`. */
+  conditionalMember?: (ref: Extract<TypeTerm, { k: "reference" }>) => MemberReferenceInfo | null;
+  /** Evaluate a branch of a conditional type with `infer` type parameters bound. */
+  withBindings?: (node: TypeNode, bindings: ReadonlyMap<string, TypeTerm>, baseRead: TypeReader) => TypeTerm;
+};
+
+/** Declaration metadata for the target `Ref` of `T extends Ref<infer ...>`. */
+export type ConditionalTargetInfo = {
+  identity: DeclarationIdentity;
+  paramCount: number;
+  paramBounds: readonly (TypeTerm | null)[];
+  requiredProps: readonly string[];
+  hasNominalMember: boolean;
+  isClassOrInterface: boolean;
+  allParamsUsed: boolean;
+  isLibraryWrapper: boolean;
+};
+
+/** Metadata for a concrete reference `member` tested against `Ref<infer ...>`. */
+export type MemberReferenceInfo = {
+  unfolded: TypeTerm | null;
+  bases: readonly TypeTerm[];
+  props: readonly string[] | null;
+  hasStringIndex: boolean;
 };
 
 /** Whether a checker type denotes class instances or an interface, including
@@ -146,6 +174,39 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   const { checker } = context;
   const form = computedForm(node) ?? "a computed type";
   context.captures(node);
+  // Sound TypeTerm-level conditional `infer` on generic references must run
+  // BEFORE `literalUnion` so TScert never trusts TS's structural `extends`
+  // check for ambiguous cases even when the result happens to be a primitive.
+  if (ts.isConditionalTypeNode(node) && isReferenceInferConditional(node)) {
+    const checkTerm = read(node.checkType);
+    return evaluateConditionalOnTerm({
+      body: node,
+      checkTerm,
+      distributive: false,
+      span,
+      readBranch: (branch, bindings) =>
+        context.withBindings ? context.withBindings(branch, bindings, read) : read(branch),
+      targetInfo: ref => context.conditionalTarget?.(ref) ?? null,
+      memberInfo: ref => context.conditionalMember?.(ref) ?? null,
+    });
+  }
+  if (ts.isTypeReferenceNode(node)) {
+    const alias = context.alias(node);
+    if (alias && computedAlias(alias, context.alias, new Set(), context.isLibrary)) {
+      let body = alias.type;
+      while (ts.isParenthesizedTypeNode(body)) body = body.type;
+      if (ts.isConditionalTypeNode(body) && isReferenceInferConditional(body)) {
+        const type = checker.getTypeFromTypeNode(node);
+        const computed = type && !type.isErrorType() ? describe(checker, type) : alias.name.text;
+        return aliasApplication(context, node, span, read, computed);
+      }
+      if (ts.isMappedTypeNode(body)) {
+        const type = checker.getTypeFromTypeNode(node);
+        const computed = type && !type.isErrorType() ? describe(checker, type) : alias.name.text;
+        return aliasApplication(context, node, span, read, computed);
+      }
+    }
+  }
   const type = checker.getTypeFromTypeNode(node);
   if (!type || type.isErrorType()) throw Error(`TypeScript computes no type for this ${form}: it is not valid TypeScript`);
   const literals = literalUnion(type, span, context.unique);
@@ -170,7 +231,7 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
 function aliasApplication(context: ComputedContext, node: TypeReferenceNode, span: Span,
     read: TypeReader, computed: string): TypeTerm {
   const alias = context.alias(node);
-  if (!alias || !computedAlias(alias, context.alias))
+  if (!alias || !computedAlias(alias, context.alias, new Set(), context.isLibrary))
     throw Error(`${computed} is not an application of a type alias TypeScript computes`);
   // An omitted argument is its parameter's default, read at the earlier
   // arguments.
@@ -178,13 +239,14 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   if (!applied) throw Error(`${computed} omits an argument of ${alias.name.text} that has no default`);
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
-  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members);
   const atArguments = context.applied(alias, applied.args, node);
+  if (ts.isMappedTypeNode(body)) return atArguments(body);
+  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members, atArguments);
   // An application of an alias that is no computed alias, one of whose
   // arguments is computed (`Pick<T, Exclude<keyof T, K>>`), is that alias
   // at the arguments, each evaluated at this reference.
   const target = ts.isTypeReferenceNode(body) ? context.alias(body) : null;
-  if (ts.isTypeReferenceNode(body) && !(target && computedAlias(target, context.alias))) return atArguments(body);
+  if (ts.isTypeReferenceNode(body) && !(target && computedAlias(target, context.alias, new Set(), context.isLibrary))) return atArguments(body);
   return computedType(context, body, span, atArguments);
 }
 
@@ -227,7 +289,7 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: TypeReader
   }
   const alias = ts.isTypeReferenceNode(node) ? context.alias(node) : null;
   // A computed alias has no equation to read members from.
-  const computed = (n: Node): boolean => computedAlias(n, context.alias);
+  const computed = (n: Node): boolean => computedAlias(n, context.alias, new Set(), context.isLibrary);
   if (!alias || !ts.isTypeReferenceNode(node) || seen.has(alias) || enclosingBinders(alias).length || computed(alias))
     return [{ node, read, params }];
   const applied = parameterMembers(context, alias, node, read, params);
@@ -242,17 +304,38 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: TypeReader
  * the union of those members, each read as written. Where TypeScript computes
  * a union of literals and primitives for it, that union was taken already. */
 function distributed(context: ComputedContext, node: TypeReferenceNode, alias: TypeAliasDeclaration,
-    body: ts.ConditionalTypeNode, span: Span, computed: string, args: ReadonlyMap<Node, Member>): TypeTerm {
+    body: ts.ConditionalTypeNode, span: Span, computed: string, args: ReadonlyMap<Node, Member>,
+    atArguments: TypeReader): TypeTerm {
   const { checker } = context;
-  const type = checker.getTypeFromTypeNode(node);
-  if (!type || generic(type))
-    throw Error(`a conditional type over a type parameter, ${computed}, is computed only at an instance`);
-  const check = body.checkType;
+  let check = body.checkType;
+  while (ts.isParenthesizedTypeNode(check)) check = check.type;
   const index = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) && !check.typeArguments?.length
     ? (alias.typeParameters ?? []).findIndex(p => ts.isIdentifier(check.typeName) && p.name.text === check.typeName.text)
     : -1;
   const parameter = (alias.typeParameters ?? [])[index];
   const decided = parameter && args.get(parameter);
+  if (isReferenceInferConditional(body)) {
+    const checkTerm = decided
+      ? (() => {
+          const ms = unionMembers(context, decided.node, decided.read, new Set<Node>(), decided.params).map(m => m.read(m.node));
+          const [only] = ms;
+          return !only ? { k: "atom" as const, name: "never" as const, span } : ms.length === 1 ? only : { k: "union" as const, parts: ms, span };
+        })()
+      : atArguments(body.checkType);
+    return evaluateConditionalOnTerm({
+      body,
+      checkTerm,
+      distributive: !!decided,
+      span,
+      readBranch: (branch, bindings) =>
+        context.withBindings ? context.withBindings(branch, bindings, atArguments) : atArguments(branch),
+      targetInfo: ref => context.conditionalTarget?.(ref) ?? null,
+      memberInfo: ref => context.conditionalMember?.(ref) ?? null,
+    });
+  }
+  const type = checker.getTypeFromTypeNode(node);
+  if (!type || generic(type))
+    throw Error(`a conditional type over a type parameter, ${computed}, is computed only at an instance`);
   if (!decided)
     throw Error(`the conditional type ${alias.name.text} decides a type other than one of its parameters, ` +
       `${computed}: it distributes over no union`);
@@ -724,4 +807,357 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
       throw Error(`the indexed access ${computed} over a type parameter is computed only at an instance`);
     throw error;
   }
+}
+
+
+const FUNCTION_PROPS = new Set(["apply", "call", "bind", "prototype", "length", "arguments", "caller", "name", "toString"]);
+const ARRAY_PROPS = new Set(["length", "toString", "toLocaleString", "pop", "push", "concat", "join", "reverse",
+  "shift", "slice", "sort", "splice", "unshift", "indexOf", "lastIndexOf", "every", "some", "forEach", "map",
+  "filter", "reduce", "reduceRight", "find", "findIndex", "fill", "copyWithin", "entries", "keys", "values",
+  "includes", "flatMap", "flat", "at"]);
+
+function sameIdentity(a: DeclarationIdentity, b: DeclarationIdentity): boolean {
+  return a.module === b.module && a.name === b.name && a.span[0] === b.span[0] && a.span[1] === b.span[1];
+}
+
+function flattenUnion(term: TypeTerm): TypeTerm[] {
+  return term.k === "union" ? term.parts.flatMap(flattenUnion) : [term];
+}
+
+function sameTermList(a: readonly TypeTerm[], b: readonly TypeTerm[]): boolean {
+  return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether `body`'s `extendsType` is a generic reference containing `infer` parameters. */
+export function isReferenceInferConditional(body: ts.ConditionalTypeNode): boolean {
+  let ext = body.extendsType;
+  while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
+  if (!ts.isTypeReferenceNode(ext) || !ext.typeArguments?.length) return false;
+  const hasInfer = (n: Node): boolean =>
+    ts.isInferTypeNode(n) || (n.forEachChild(c => hasInfer(c) || undefined) ?? false);
+  return ext.typeArguments.some(hasInfer);
+}
+
+export type ConditionalEvalOptions = {
+  body: ts.ConditionalTypeNode;
+  checkTerm: TypeTerm;
+  distributive: boolean;
+  span: Span;
+  readBranch: (branch: TypeNode, bindings: ReadonlyMap<string, TypeTerm>) => TypeTerm;
+  targetInfo: (ref: TypeReferenceNode) => ConditionalTargetInfo | null;
+  memberInfo: (ref: Extract<TypeTerm, { k: "reference" }>) => MemberReferenceInfo | null;
+};
+
+/** Sound `TypeTerm`-level evaluation of `T extends Ref<infer A, infer B, ...> ? True : False`.
+ * Matches `TypeTerm` directly by declaration identity (following type aliases and
+ * declared heritage bases), takes `False` only when `T` is provably disjoint from
+ * `Ref`, and refuses ambiguous or structurally overlapping cases. */
+export function evaluateConditionalOnTerm(options: ConditionalEvalOptions): TypeTerm {
+  const { body, checkTerm, distributive, span, readBranch, targetInfo, memberInfo } = options;
+  let ext = body.extendsType;
+  while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
+  if (!ts.isTypeReferenceNode(ext) || !ext.typeArguments?.length)
+    throw Error("conditional `infer` requires a generic reference pattern `Ref<infer ...>`");
+  const inferNames: string[] = [];
+  for (const arg of ext.typeArguments) {
+    let inner = arg;
+    while (ts.isParenthesizedTypeNode(inner)) inner = inner.type;
+    if (!ts.isInferTypeNode(inner))
+      throw Error("conditional `infer` over a generic reference requires every type argument of the pattern to be `infer P`");
+    if (inner.typeParameter.constraint)
+      throw Error(`constrained \`infer ${inner.typeParameter.name.text} extends ...\` is outside the fragment`);
+    const paramName = inner.typeParameter.name.text;
+    if (inferNames.includes(paramName))
+      throw Error(`duplicate \`infer ${paramName}\` parameter in conditional pattern is outside the fragment`);
+    inferNames.push(paramName);
+  }
+  const target = targetInfo(ext);
+  if (!target)
+    throw Error(`conditional \`infer\` target ${ext.typeName.getText(ext.getSourceFile())} is not a declared generic class, interface or alias`);
+  if (!target.isClassOrInterface && !target.allParamsUsed)
+    throw Error(`conditional \`infer\` target alias ${target.identity.name} drops a type parameter, which cannot be inferred soundly`);
+  if (target.paramCount !== inferNames.length)
+    throw Error(`conditional \`infer\` target ${target.identity.name} takes ${target.paramCount} type arguments, not ${inferNames.length}`);
+
+  type MatchOutcome =
+    | { kind: "match"; args: readonly TypeTerm[] }
+    | { kind: "disjoint" }
+    | { kind: "ambiguous"; reason: string };
+
+  const searchBases = (bases: readonly TypeTerm[], depth: number): { kind: "found"; args: readonly TypeTerm[] } | { kind: "none" } | { kind: "conflict" } => {
+    if (depth > 16) return { kind: "conflict" };
+    let found: readonly TypeTerm[] | null = null;
+    for (const base of bases) {
+      if (base.k !== "reference") continue;
+      if (sameIdentity(base.reference.target, target.identity) && base.args.length === inferNames.length) {
+        if (found && !sameTermList(found, base.args)) return { kind: "conflict" };
+        found = base.args;
+        continue;
+      }
+      const info = memberInfo(base);
+      if (info && info.bases.length) {
+        const sub = searchBases(info.bases, depth + 1);
+        if (sub.kind === "conflict") return { kind: "conflict" };
+        if (sub.kind === "found") {
+          if (found && !sameTermList(found, sub.args)) return { kind: "conflict" };
+          found = sub.args;
+        }
+      }
+    }
+    return found ? { kind: "found", args: found } : { kind: "none" };
+  };
+
+  const matchSingle = (member: TypeTerm, depth: number): MatchOutcome => {
+    if (depth > 16) return { kind: "ambiguous", reason: "alias unfolding exceeded depth limit" };
+    switch (member.k) {
+      case "reference": {
+        if (sameIdentity(member.reference.target, target.identity) && member.args.length === inferNames.length)
+          return { kind: "match", args: member.args };
+        const info = memberInfo(member);
+        if (!info) return { kind: "ambiguous", reason: `no declaration shape for ${member.reference.name}` };
+        if (info.unfolded) return matchSingle(info.unfolded, depth + 1);
+        if (info.bases.length) {
+          const inherited = searchBases(info.bases, depth + 1);
+          if (inherited.kind === "found") return { kind: "match", args: inherited.args };
+          if (inherited.kind === "conflict")
+            return { kind: "ambiguous", reason: `${member.reference.name} inherits ${target.identity.name} at conflicting arguments` };
+        }
+        if (target.isLibraryWrapper)
+          return { kind: "ambiguous", reason: `cannot decide disjointness from library wrapper ${target.identity.name}` };
+        if (target.hasNominalMember) return { kind: "disjoint" };
+        if (!info.hasStringIndex && info.props !== null) {
+          const owned = new Set(info.props);
+          if (target.requiredProps.some(req => !owned.has(req))) return { kind: "disjoint" };
+        }
+        return { kind: "ambiguous", reason: `${member.reference.name} structurally overlaps ${target.identity.name} without extending it` };
+      }
+      case "atom": {
+        if (member.name === "unknown" || member.name === "object")
+          return { kind: "ambiguous", reason: `\`${member.name}\` may or may not extend ${target.identity.name}` };
+        if (!target.isLibraryWrapper && (target.hasNominalMember || target.requiredProps.length > 0))
+          return { kind: "disjoint" };
+        return { kind: "ambiguous", reason: `${target.identity.name} has no required member excluding \`${member.name}\`` };
+      }
+      case "literal":
+      case "unique": {
+        if (!target.isLibraryWrapper && (target.hasNominalMember || target.requiredProps.length > 0))
+          return { kind: "disjoint" };
+        return { kind: "ambiguous", reason: `${target.identity.name} has no required member excluding literals` };
+      }
+      case "function":
+      case "constructor": {
+        if (!target.isLibraryWrapper && (target.hasNominalMember || target.requiredProps.some(p => !FUNCTION_PROPS.has(p))))
+          return { kind: "disjoint" };
+        return { kind: "ambiguous", reason: `function/constructor may overlap ${target.identity.name}` };
+      }
+      case "array":
+      case "tuple": {
+        if (!target.isLibraryWrapper && (target.hasNominalMember || target.requiredProps.some(p => !ARRAY_PROPS.has(p))))
+          return { kind: "disjoint" };
+        return { kind: "ambiguous", reason: `array/tuple may overlap ${target.identity.name}` };
+      }
+      case "object": {
+        if (target.isLibraryWrapper)
+          return { kind: "ambiguous", reason: `cannot decide disjointness from library wrapper ${target.identity.name}` };
+        if (target.hasNominalMember) return { kind: "disjoint" };
+        if (member.stringIndex === null) {
+          const owned = new Set(member.fields.filter(f => typeof f.name === "string").map(f => String(f.name)));
+          if (target.requiredProps.some(req => !owned.has(req))) return { kind: "disjoint" };
+        }
+        return { kind: "ambiguous", reason: `record structurally overlaps ${target.identity.name} without nominal match` };
+      }
+      default:
+        return { kind: "ambiguous", reason: `cannot soundly decide conditional \`infer\` over ${member.k}` };
+    }
+  };
+
+  const makeBindings = (args: readonly TypeTerm[]): Map<string, TypeTerm> => {
+    const map = new Map<string, TypeTerm>();
+    for (let i = 0; i < inferNames.length; i++) {
+      const n = inferNames[i];
+      const a = args[i];
+      if (n !== undefined && a !== undefined) map.set(n, a);
+    }
+    return map;
+  };
+
+  const parts = flattenUnion(checkTerm).filter(p => !(p.k === "atom" && p.name === "never"));
+  if (distributive) {
+    if (!parts.length) return { k: "atom", name: "never", span };
+    const results: TypeTerm[] = [];
+    for (const part of parts) {
+      const outcome = matchSingle(part, 0);
+      if (outcome.kind === "ambiguous")
+        throw Error(`conditional \`infer\` over ${target.identity.name} is ambiguous: ${outcome.reason}`);
+      const branch = outcome.kind === "match"
+        ? readBranch(body.trueType, makeBindings(outcome.args))
+        : readBranch(body.falseType, new Map());
+      if (!(branch.k === "atom" && branch.name === "never")) results.push(branch);
+    }
+    const [only] = results;
+    if (!only) return { k: "atom", name: "never", span };
+    return results.length === 1 ? only : { k: "union", parts: results, span };
+  }
+
+  // Non-distributive conditional (e.g. `Defs[K] extends InputDefinition<infer Key, infer Val> ? ... : never`).
+  if (!parts.length) {
+    // In TypeScript, `never extends Ref<infer P_1, ...>` takes the true branch
+    // with each `P_i` falling back to `Ref`'s parameter constraint (or `unknown`).
+    const fallback = target.paramBounds.map(b => b ?? { k: "atom" as const, name: "unknown" as const, span });
+    return readBranch(body.trueType, makeBindings(fallback));
+  }
+  // Refuse if any member is an open type parameter/binder.
+  for (const part of parts) {
+    if (part.k === "binder" || part.k === "parameter")
+      throw Error(`conditional \`infer\` over ${target.identity.name} on an open type parameter is evaluated only at a concrete instance`);
+  }
+  const outcomes = parts.map(part => matchSingle(part, 0));
+  if (outcomes.some(o => o.kind === "disjoint"))
+    return readBranch(body.falseType, new Map());
+  const ambiguous = outcomes.find((o): o is { kind: "ambiguous"; reason: string } => o.kind === "ambiguous");
+  if (ambiguous)
+    throw Error(`conditional \`infer\` over ${target.identity.name} is ambiguous: ${ambiguous.reason}`);
+  const matched = outcomes.filter((o): o is { kind: "match"; args: readonly TypeTerm[] } => o.kind === "match");
+  const [first, ...rest] = matched;
+  if (!first || rest.some(m => !sameTermList(m.args, first.args)))
+    throw Error(`conditional \`infer\` over ${target.identity.name} on a union of distinct instantiations is ambiguous`);
+  return readBranch(body.trueType, makeBindings(first.args));
+}
+
+/** Pure `TypeTerm`-level `keyof` for records, empty objects, intersections, unions,
+ * `never`, and (via `referenceKeys`) named interfaces/aliases. Returns null when
+ * the key set cannot be determined directly from `term`. */
+export function keyofTerm(term: TypeTerm, span: Span,
+    referenceKeys?: (ref: Extract<TypeTerm, { k: "reference" }>) => TypeTerm | null,
+    skipNumericKeys: boolean = false): TypeTerm | null {
+  if (isEmptyObject(term)) return { k: "atom", name: "never", span };
+  if (term.k === "atom" && term.name === "never")
+    return { k: "union", parts: [
+      { k: "atom", name: "string", span },
+      { k: "atom", name: "number", span },
+      { k: "atom", name: "symbol", span },
+    ], span };
+  if (term.k === "object") {
+    if (skipNumericKeys && term.fields.some(f => typeof f.name === "string" && /^(0|[1-9][0-9]*)$/.test(f.name)))
+      return null;
+    const parts: TypeTerm[] = [];
+    for (const f of term.fields) {
+      if (typeof f.name === "string") parts.push({ k: "literal", name: "string", text: f.name, span });
+      else parts.push({ k: "unique", symbol: f.name.symbol, span });
+    }
+    if (term.stringIndex) {
+      parts.push({ k: "atom", name: "string", span });
+      parts.push({ k: "atom", name: "number", span });
+    }
+    if (term.numberIndex && !term.stringIndex) parts.push({ k: "atom", name: "number", span });
+    if (term.symbolIndex) parts.push({ k: "atom", name: "symbol", span });
+    const [only] = parts;
+    if (!only) return { k: "atom", name: "never", span };
+    return parts.length === 1 ? only : { k: "union", parts, span };
+  }
+  if (term.k === "reference") return referenceKeys?.(term) ?? null;
+  if (term.k === "intersection") {
+    const sub: TypeTerm[] = [];
+    for (const p of term.parts) {
+      const k = keyofTerm(p, span, referenceKeys, skipNumericKeys);
+      if (!k) return null;
+      if (!(k.k === "atom" && k.name === "never")) sub.push(k);
+    }
+    const [only] = sub;
+    if (!only) return { k: "atom", name: "never", span };
+    return sub.length === 1 ? only : { k: "union", parts: sub, span };
+  }
+  if (term.k === "union") {
+    const sub: TypeTerm[] = [];
+    for (const p of term.parts) {
+      const k = keyofTerm(p, span, referenceKeys, skipNumericKeys);
+      if (!k) return null;
+      sub.push(k);
+    }
+    return reduceLiteralIntersection(sub, span);
+  }
+  return null;
+}
+
+/** Pure `TypeTerm`-level indexed access `object[keys]` (used during `instantiateAt`
+ * when operands come from substituted `TypeTerm`s). Returns null when it cannot be
+ * resolved directly. */
+export function projectTerm(object: TypeTerm, keys: TypeTerm, span: Span,
+    unfold?: (ref: Extract<TypeTerm, { k: "reference" }>) => TypeTerm | null): TypeTerm | null {
+  const keyList = flattenUnion(keys).filter(k => !(k.k === "atom" && k.name === "never"));
+  if (!keyList.length) return { k: "atom", name: "never", span };
+  const combine = (parts: TypeTerm[]): TypeTerm => {
+    const [only] = parts;
+    if (!only) return { k: "atom", name: "never", span };
+    return parts.length === 1 ? only : { k: "union", parts, span };
+  };
+  const go = (obj: TypeTerm, depth: number): TypeTerm | null => {
+    if (depth > 32) return null;
+    switch (obj.k) {
+      case "union": {
+        const res: TypeTerm[] = [];
+        for (const p of obj.parts) {
+          const projected = go(p, depth + 1);
+          if (!projected) return null;
+          res.push(projected);
+        }
+        return combine(res);
+      }
+      case "intersection": {
+        const res: TypeTerm[] = [];
+        for (const p of obj.parts) {
+          const projected = go(p, depth + 1);
+          if (!projected) return null;
+          res.push(projected);
+        }
+        return { k: "intersection", parts: res, span };
+      }
+      case "array":
+        if (keyList.every(k => k.k === "atom" && k.name === "number")) return obj.element;
+        return null;
+      case "tuple": {
+        const out: TypeTerm[] = [];
+        for (const key of keyList) {
+          if (key.k === "atom" && key.name === "number") {
+            out.push(...obj.required, ...obj.optional.map(t => optionalTerm(t, span)), ...(obj.rest ? [obj.rest] : []));
+          } else if (key.k === "literal" && key.name === "number" && /^[0-9]+$/.test(key.text)) {
+            const i = Number(key.text);
+            const pos = obj.required[i] ?? obj.optional[i - obj.required.length];
+            if (pos) out.push(i < obj.required.length ? pos : optionalTerm(pos, span));
+            else if (obj.rest) out.push(obj.rest);
+            else return null;
+          } else {
+            return null;
+          }
+        }
+        return combine(out);
+      }
+      case "object": {
+        const out: TypeTerm[] = [];
+        for (const key of keyList) {
+          if (key.k === "literal" && key.name === "string") {
+            const field = obj.fields.find(f => f.name === key.text);
+            if (field) out.push(field.optional ? optionalTerm(field.type, span) : field.type);
+            else if (obj.stringIndex) out.push(obj.stringIndex.value);
+            else return null;
+          } else if (key.k === "atom" && key.name === "string" && obj.stringIndex) {
+            out.push(obj.stringIndex.value);
+          } else if (key.k === "atom" && key.name === "number" && (obj.numberIndex ?? obj.stringIndex)) {
+            const idx = obj.numberIndex ?? obj.stringIndex;
+            if (idx) out.push(idx.value);
+          } else {
+            return null;
+          }
+        }
+        return combine(out);
+      }
+      case "reference": {
+        const next = unfold?.(obj);
+        return next ? go(next, depth + 1) : null;
+      }
+      default:
+        return null;
+    }
+  };
+  return go(object, 0);
 }

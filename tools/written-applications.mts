@@ -83,6 +83,13 @@ export type SweepContext = {
   /** Whether a class member is read: a host class's are its view's
    * (COMPILER-API.md, reading rule 4). */
   admits?: (member: Entity) => boolean;
+  /** Whether a type parameter belongs to a declaration whose bounds or
+   * generic signature are instantiated per concrete application/call site
+   * (computed-bound type or computed generic function). */
+  isComputedParam?: (parameter: ts.TypeParameterDeclaration) => boolean;
+  /** Whether a type declaration has computed parameter bounds that are checked
+   * at concrete instantiations rather than with open binders. */
+  hasComputedBounds?: (declaration: Node) => boolean;
 };
 
 /** A written application whose obligation cannot be stated: refused where
@@ -98,7 +105,12 @@ export class SweepError extends Error {
 /** A binder in force: its fresh name and the term of its assumption, read
  * in its group's scope, or null for none. */
 type Binder = { node: Node; name: string; bound: () => TypeTerm | null };
-type Env = { names: Map<Node, string>; levels: Binder[][] };
+type Env = {
+  names: Map<Node, string>;
+  levels: Binder[][];
+  inferBinders: ReadonlySet<Node>;
+  computedBinders: ReadonlySet<Node>;
+};
 
 /** Every written application in `roots` and in the declarations they reach
  * by name (`typeof` included), each user declaration once with all its
@@ -285,15 +297,30 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const resolve = (env: Env) => (declaration: ts.TypeParameterDeclaration): string | undefined =>
     env.names.get(declaration);
   // A binder group: all its names are in scope in all its bounds.
-  const group = (env: Env, parameters: readonly ts.TypeParameterDeclaration[]): Env => {
+  const group = (env: Env, parameters: readonly ts.TypeParameterDeclaration[], isInfer = false): Env => {
     const names = new Map(env.names);
-    for (const p of parameters) names.set(p, fresh(p));
-    const inner: Env = { names, levels: env.levels };
+    const inferBinders = isInfer ? new Set<Node>([...env.inferBinders, ...parameters]) : env.inferBinders;
+    const computedBinders = new Set<Node>(env.computedBinders);
+    for (const p of parameters) {
+      names.set(p, fresh(p));
+      if (!isInfer && context.isComputedParam?.(p)) computedBinders.add(p);
+    }
+    const inner: Env = { names, levels: env.levels, inferBinders, computedBinders };
     const level: Binder[] = parameters.map(p => {
       const name = names.get(p) ?? fresh(p);
       return { node: p, name, bound: () => p.constraint ? context.read(p.constraint, resolve(inner)) : null };
     });
-    return { names, levels: [...env.levels, level] };
+    return { names, levels: [...env.levels, level], inferBinders, computedBinders };
+  };
+  const usesBinderIn = (node: Node, set: ReadonlySet<Node>, includeInferNodes: boolean): boolean => {
+    if (includeInferNodes && ts.isInferTypeNode(node)) return true;
+    if (ts.isIdentifier(node) && context.declarationsOf(node).some(d => set.has(d))) return true;
+    return node.forEachChild(child => usesBinderIn(child, set, includeInferNodes) || undefined) ?? false;
+  };
+  const usesAnyBinder = (node: Node, env: Env): boolean => {
+    if (ts.isInferTypeNode(node)) return true;
+    if (ts.isIdentifier(node) && context.declarationsOf(node).some(d => env.names.has(d))) return true;
+    return node.forEachChild(child => usesAnyBinder(child, env) || undefined) ?? false;
   };
   const site = (node: Node): string => {
     let at: Node | undefined = node;
@@ -318,6 +345,13 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     const first = target.find(t => childParameters(t).length);
     const parameters = first ? context.parameters(first) : [];
     if (!first || !parameters.some(p => p.constraint)) return;
+    // Applications in `infer` patterns or referencing `infer` / computed-bound
+    // binders, or targeting a computed-bound declaration with open binders,
+    // are checked at each concrete instantiation rather than uninstantiated.
+    if (args.some(arg => usesBinderIn(arg, env.inferBinders, true) || usesBinderIn(arg, env.computedBinders, false)))
+      return;
+    if (context.hasComputedBounds?.(first) && args.some(arg => usesAnyBinder(arg, env)))
+      return;
     const read = resolve(env);
     const file = node.getSourceFile();
     const span: Span | null = file === context.client ? [node.getStart(file), node.end] : null;
@@ -446,12 +480,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       names.set(key, fresh(key));
       const level: Binder[] = [{ node: key, name: fresh(key),
         bound: () => key.constraint ? context.read(key.constraint, resolve(env)) : null }];
-      return { names, levels: [...env.levels, level] };
+      return { names, levels: [...env.levels, level], inferBinders: env.inferBinders, computedBinders: env.computedBinders };
     }
     if (ts.isConditionalTypeNode(node)) {
       if (child !== node.extendsType && child !== node.trueType) return env;
       const infers = inferred(node.extendsType);
-      const withInfers = infers.length ? group(env, infers) : env;
+      const withInfers = infers.length ? group(env, infers, true) : env;
       return child === node.trueType ? refined(node, withInfers, env) : withInfers;
     }
     const parameters = childParameters(node);
@@ -478,7 +512,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     const span = spanOf(node);
     const level: Binder[] = [{ node: declaration, name, bound: () => ({ k: "intersection", span,
       parts: [{ k: "binder", name: outerName, span }, context.read(node.extendsType, resolve(outer))] }) }];
-    return { names, levels: [...env.levels, level] };
+    return { names, levels: [...env.levels, level], inferBinders: env.inferBinders, computedBinders: env.computedBinders };
   };
   // The binders an entry keeps: those its arguments name, closed under the
   // binders their bounds name, each with its assumption. Dropping a
@@ -502,7 +536,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       .map((b): SourceTypeParameter<TypeTerm> => ({ name: b.name, bound: bounds.get(b.name) ?? null, resolution: null })))
       .filter(level => level.length);
   };
-  const empty: Env = { names: new Map<Node, string>(), levels: [] };
+  const empty: Env = { names: new Map<Node, string>(), levels: [], inferBinders: new Set<Node>(), computedBinders: new Set<Node>() };
   for (const root of roots) visit(root, empty, root.getSourceFile() === context.client);
   // The binder groups of the declarations enclosing `node`, outermost
   // first.

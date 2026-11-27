@@ -16,9 +16,9 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
-import { wildcardReadings, classInstance, isAmbientClass, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
-  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, FRESH_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
+import { childOf, childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
+import { wildcardReadings, classInstance, isAmbientClass, computedAlias, emptyObject, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, reduceLiteralIntersection, restPositions, restTerm, signature, signatures, statedResult, substitute,
+  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, FRESH_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember, type MappedTransform,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -35,14 +35,14 @@ import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
-import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
+import { computedType, enclosingBinders, evaluateConditionalOnTerm, inferredTerm, isInstanceReference, isReferenceInferConditional, keyofTerm, literalUnion, projectTerm, type ComputedContext, type ConditionalTargetInfo, type MemberReferenceInfo } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, Region, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { FRAME_ARGUMENT, literal, parameterKinds, SweepError, withoutMeaning, writtenApplications, type Entity, type ParameterKind } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { withPromise, footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
-import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
+import { definitionKey, deferredInDocument, identityText, settleDocument, settleTerm, termsText, termText, type NamedRecords } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
 import { closureRequiresTags, clauseParameterName, ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
@@ -448,7 +448,7 @@ function typeNodeAt(file: SourceFile, span: Span): TypeNode | null {
 function computedAt(file: SourceFile, span: Span): TypeNode | null {
   const visit = (node: Node): TypeNode | null => {
     if (node.end < span[1] || node.pos > span[0]) return null;
-    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node) && (computedForm(node) !== null || ts.isTypeReferenceNode(node)) &&
+    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node) && (computedForm(node) !== null || ts.isTypeReferenceNode(node) || ts.isMappedTypeNode(node)) &&
         node.getStart(file) === span[0] && node.end === span[1]) return node;
     return node.forEachChild(visit) ?? null;
   };
@@ -1167,7 +1167,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
     const brandKey = (id: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
-    const identityOf = (node: TypeDeclaration): DeclarationIdentity => resolutionIdentityOf(idOf, brands, brandKey, node);
+    const declarationByKey = new Map<string, TypeDeclaration>();
+    const identityOf = (node: TypeDeclaration): DeclarationIdentity => {
+      const id = resolutionIdentityOf(idOf, brands, brandKey, node);
+      declarationByKey.set(definitionKey(id), node);
+      return id;
+    };
     const isBrand = (id: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, boolean> => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
@@ -1827,9 +1832,74 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    const isLibraryDeclaration = (node: Node): boolean => libraryFile(node.getSourceFile());
+    const isComputedAlias = (node: Node): node is TypeAliasDeclaration =>
+      computedAlias(node, aliasOf, new Set(), isLibraryDeclaration);
     // Computed members have an equation only at closed arguments. Each
     // instance retains the declaration's whole admitted shape and heritage.
-    const computedMembers = (node: TypeDeclaration): boolean => elaborationComputedMembers(partners, aliasOf, node);
+    const computedMembers = (node: TypeDeclaration): boolean =>
+      elaborationComputedMembers(partners, aliasOf, node, isLibraryDeclaration);
+    const computedBoundsCache = new Map<Node, boolean>();
+    const computedBounds = (node: TypeDeclaration, seen: Set<Node> = new Set()): boolean => {
+      const cached = computedBoundsCache.get(node);
+      if (cached !== undefined) return cached;
+      if (isTypeAlias(node) || !node.typeParameters?.length || seen.has(node)) return false;
+      seen.add(node);
+      const names = new Set(node.typeParameters.map(p => p.name.text));
+      const mentions = (part: Node): boolean =>
+        (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
+        (part.forEachChild(c => mentions(c) || undefined) ?? false);
+      const hasComputed = (part: Node): boolean => {
+        if (ts.isTypeNode(part) && !ts.isExpressionWithTypeArguments(part) && mentions(part)) {
+          if (computedForm(part) !== null || ts.isMappedTypeNode(part)) return true;
+          if (ts.isTypeReferenceNode(part)) {
+            const alias = aliasOf(part);
+            if (alias && isComputedAlias(alias)) return true;
+            if (ts.isIdentifier(part.typeName)) {
+              const decls = typeDeclarationsOf(part.typeName).filter(isTypeDeclaration);
+              if (decls.some(d => computedMembers(d) || computedBounds(d, new Set(seen)))) return true;
+            }
+          }
+        }
+        return part.forEachChild(c => hasComputed(c) || undefined) ?? false;
+      };
+      const result = (partners.get(node) ?? [node]).some(part =>
+        (part.typeParameters ?? []).some(p =>
+          (!!p.constraint && hasComputed(p.constraint)) || (!!p.defaultType && hasComputed(p.defaultType))));
+      computedBoundsCache.set(node, result);
+      return result;
+    };
+    const isComputedGenericFunction = (node: ts.FunctionDeclaration | ts.MethodSignatureDeclaration): boolean => {
+      if (!node.typeParameters?.length) return false;
+      const names = new Set(node.typeParameters.map(p => p.name.text));
+      const mentions = (part: Node): boolean =>
+        (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
+        (part.forEachChild(c => mentions(c) || undefined) ?? false);
+      const hasComputed = (part: Node): boolean => {
+        if (ts.isTypeNode(part) && !ts.isExpressionWithTypeArguments(part) && mentions(part)) {
+          if (computedForm(part) !== null || ts.isMappedTypeNode(part)) return true;
+          if (ts.isTypeReferenceNode(part)) {
+            const alias = aliasOf(part);
+            if (alias && isComputedAlias(alias)) return true;
+            if (ts.isIdentifier(part.typeName)) {
+              const decls = typeDeclarationsOf(part.typeName).filter(isTypeDeclaration);
+              if (decls.some(d => computedMembers(d) || computedBounds(d))) return true;
+            }
+          }
+        }
+        return part.forEachChild(c => hasComputed(c) || undefined) ?? false;
+      };
+      return node.typeParameters.some(p => (!!p.constraint && hasComputed(p.constraint)) || (!!p.defaultType && hasComputed(p.defaultType))) ||
+        node.parameters.some(p => !!p.type && hasComputed(p.type)) ||
+        (!!node.type && hasComputed(node.type));
+    };
+    const deferredTransforms = new Map<string, MappedTransform>();
+    let nextTransformId = 0;
+    const instantiatedApplications: WrittenApplication[] = [];
+    const recordedInstantiatedApps = new Set<string>();
+    const pendingComputedValues: { index: number; reading: DeclarationReading; node: ts.FunctionDeclaration; what: string; external: boolean; span: Span }[] = [];
+    const computedMethodOwners = new Set<string>();
+    const computedFunctionDecls = new Set<Node>();
     const instances = new Map<string, DeclarationInstanceRequest>();
     const instanceOf = (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span): TypeTerm =>
       elaborationInstanceOf(instances, identityOf, node, args, use, span);
@@ -1871,6 +1941,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         symbol: symbolOf,
         literalKey: literalKeyOf,
         computed: (part, pos, read) => computedType(computedContext(reading), part, pos, read),
+        mappedTransform: (mappedNode, objectNode, keyName) =>
+          makeMappedTransform(reading, valueScope(reading, node, what, binders, captured), mappedNode, objectNode, keyName),
         keys: keyTypeOf,
         modifiers: mappedModifiersOf,
         enumerated,
@@ -1896,7 +1968,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
           // An alias TypeScript computes from its parameters is the type it
           // computes at this reference's arguments.
-          if (computedAlias(targetNode, aliasOf)) return computedType(computedContext(reading), part, pos, read);
+          if (isComputedAlias(targetNode)) return computedType(computedContext(reading), part, pos, read);
           const args = part.typeArguments ?? [];
           const target = `${identityOf(targetNode).module}#${name.text}`;
           const completed = completeArguments(reading, targetNode, args.map(read), part, target, captured ?? (parameter => {
@@ -2078,28 +2150,39 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // so an error inside it is not the graph's.
         for (const part of [...(node.typeParameters ?? []), ...node.parameters, ...(node.type ? [node.type] : [])])
           clean(part, `${idOf(source)}#${node.name.text}`);
-        const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
         const declaration = { module: idOf(source), name: node.name.text, span };
-        const clauses = writtenClauses(node);
-        const synchronous = !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
-        const plainNames = synchronous && node.parameters.every(clauseParameterName);
-        // The type invariants its types name, of the program's sources
-        // alone, which the client reads off its signature as its own module
-        // reads them (`typeInvariants`).
-        const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
-        const invariants: ImportedInvariants = {
-          receiver: node.parameters[0] !== undefined && ts.isIdentifier(node.parameters[0].name) &&
-            node.parameters[0].name.text === "this",
-          params: node.parameters.map(p => own && synchronous && plainParameter(p)),
-          kept: node.parameters.map(p => own && synchronous && plainParameter(p) && parameterKept(p, node.body)),
-          result: own && synchronous, ensures: own ? ensuresTags(source.text.slice(node.pos, node.getStart(source))) : [],
-          ensuresParameters: synchronous && node.parameters.every(p => !p.dotDotDotToken && ts.isIdentifier(p.name))
-            ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null };
-        if (clauses.length > 0 || own)
-          observations.requires?.(declaration, clauses,
-            plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);
-        return { declaration, construct: false, typeParams,
-          type: oneTerm(signature(valueScope(reading, node, what, names), node.parameters, node.type, node, span, true), span) };
+        const readPoly = (): Omit<ValueRoot, "binding"> => {
+          const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
+          const clauses = writtenClauses(node);
+          const synchronous = !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
+          const plainNames = synchronous && node.parameters.every(clauseParameterName);
+          const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
+          const invariants: ImportedInvariants = {
+            receiver: node.parameters[0] !== undefined && ts.isIdentifier(node.parameters[0].name) &&
+              node.parameters[0].name.text === "this",
+            params: node.parameters.map(p => own && synchronous && plainParameter(p)),
+            kept: node.parameters.map(p => own && synchronous && plainParameter(p) && parameterKept(p, node.body)),
+            result: own && synchronous, ensures: own ? ensuresTags(source.text.slice(node.pos, node.getStart(source))) : [],
+            ensuresParameters: synchronous && node.parameters.every(p => !p.dotDotDotToken && ts.isIdentifier(p.name))
+              ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null };
+          if (clauses.length > 0 || own)
+            observations.requires?.(declaration, clauses,
+              plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);
+          return { declaration, construct: false, typeParams,
+            type: oneTerm(signature(valueScope(reading, node, what, names), node.parameters, node.type, node, span, true), span) };
+        };
+        if (isComputedGenericFunction(node)) {
+          const savedStarts = valueStarts.length;
+          try {
+            return readPoly();
+          } catch (error) {
+            passToolFailure(error);
+            valueStarts.length = savedStarts;
+            computedFunctionDecls.add(node);
+            return { declaration, construct: false, typeParams: [], type: { k: "callable", span } };
+          }
+        }
+        return readPoly();
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
@@ -2341,6 +2424,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           throw Error(`the unique symbol ${checker.typeToString(type)} is declared by no one constant`);
         return symbolOf(name);
       },
+      isLibrary: isLibraryDeclaration,
+      conditionalTarget: ref => conditionalTargetInfo(reading, ref),
+      conditionalMember: ref => conditionalMemberInfo(reading, ref),
+      withBindings: (branch, bindings, baseRead) => readWithInferBindings(reading, branch, bindings, baseRead),
     });
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
@@ -2454,7 +2541,431 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // or a computed alias's application naming them, what TypeScript
     // computes for it at the application `use`; any other computed form
     // what TypeScript computes for it where it is written.
-    const instantiateAt = (reading: DeclarationReading, declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode, bound?: boolean) => TypeTerm => {
+    const hasOpenTypeParam = (term: TypeTerm): boolean => {
+      let open = false;
+      visitType(term, t => { if (t.k === "binder" || t.k === "parameter") open = true; });
+      return open;
+    };
+    const sameSyntaxNode = (a: Node, b: Node): boolean => {
+      let la: Node = a;
+      while (ts.isParenthesizedTypeNode(la)) la = la.type;
+      let lb: Node = b;
+      while (ts.isParenthesizedTypeNode(lb)) lb = lb.type;
+      if (la.kind !== lb.kind) return false;
+      const as: Node[] = [], bs: Node[] = [];
+      la.forEachChild(c => void as.push(c));
+      lb.forEachChild(c => void bs.push(c));
+      if (!as.length && !bs.length) return la.getText(la.getSourceFile()) === lb.getText(lb.getSourceFile());
+      return as.length === bs.length && as.every((c, i) => { const d = bs[i]; return !!d && sameSyntaxNode(c, d); });
+    };
+    const recordInstantiatedApplication = (reading: DeclarationReading, targetNode: TypeDeclaration,
+        completed: readonly TypeTerm[], use: Node | null, span: Span, siteName: string): void => {
+      if (completed.some(hasOpenTypeParam)) return;
+      const params = parametersOf(targetNode);
+      if (!params.some(p => p.constraint) && !computedBounds(targetNode)) return;
+      const targetId = identityOf(targetNode);
+      const dedupKey = `[${identityText(targetId)},${termsText(completed)}]`;
+      if (recordedInstantiatedApps.has(dedupKey)) return;
+      recordedInstantiatedApps.add(dedupKey);
+      if (params.some(p => p.constraint)) {
+        const inst = instantiateAt(reading, targetNode, completed, use);
+        const bounds = params.map(p => p.constraint ? inst(p.constraint, true) : null);
+        const clientSpan: Span | null = use && use.getSourceFile() === client ? [use.getStart(client), use.end] : null;
+        instantiatedApplications.push({
+          scope: [],
+          reference: { name: targetId.name, span, arguments: [], target: targetId },
+          parameters: params.map(p => {
+            const pNode = p.name.parent ?? p.name;
+            const pf = pNode.getSourceFile();
+            return { name: p.name.text, span: [pNode.getStart(pf), pNode.end] };
+          }),
+          args: [...completed],
+          bounds,
+          span: clientSpan,
+          site: siteName,
+        });
+      }
+      if (computedBounds(targetNode) && !computedMembers(targetNode)) {
+        const bodyInst = instantiateAt(reading, targetNode, completed, use);
+        const walkBody = (n: Node): void => {
+          if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) {
+            const decls = typeDeclarationsOf(n.typeName).filter(isTypeDeclaration);
+            const [first] = decls;
+            if (first && !isLibraryDeclaration(first) && !isComputedAlias(first)) {
+              const target = declarationOf(decls, n.typeName.text);
+              if (parametersOf(target).some(p => p.constraint) || computedBounds(target)) {
+                const argTerms = (n.typeArguments ?? []).map(a => bodyInst(a));
+                const full = completeArguments(reading, target, argTerms, use, target.name?.text ?? n.typeName.text);
+                recordInstantiatedApplication(reading, target, full, use, span, siteName);
+              }
+            }
+          }
+          n.forEachChild(walkBody);
+        };
+        for (const part of partners.get(targetNode) ?? [targetNode]) {
+          if (ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)) {
+            for (const m of part.members) walkBody(m);
+            for (const h of part.heritageClauses ?? []) walkBody(h);
+          }
+        }
+      }
+    };
+    const LIBRARY_WRAPPERS = new Set(["Object", "Function", "Array", "ReadonlyArray", "String", "Number", "Boolean", "Symbol", "BigInt"]);
+    const collectDeclShapeInfo = (decl: TypeDeclaration, visited: Set<string> = new Set()): {
+      requiredProps: string[]; allProps: string[]; hasNominalMember: boolean; hasStringIndex: boolean;
+    } => {
+      const key = definitionKey(identityOf(decl));
+      if (visited.has(key)) return { requiredProps: [], allProps: [], hasNominalMember: false, hasStringIndex: false };
+      visited.add(key);
+      const requiredProps: string[] = [];
+      const allProps: string[] = [];
+      let hasNominalMember = false;
+      let hasStringIndex = false;
+      const addProp = (name: string, optional: boolean): void => {
+        if (!allProps.includes(name)) allProps.push(name);
+        if (!optional && !requiredProps.includes(name)) requiredProps.push(name);
+      };
+      const parts = partners.get(decl) ?? [decl];
+      for (const part of parts) {
+        if (ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)) {
+          for (const member of part.members) {
+            if (ts.isClassDeclaration(part) && (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
+                member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword)) continue;
+            if (ts.isIndexSignatureDeclaration(member)) {
+              const pt = member.parameters[0]?.type;
+              if (pt && pt.kind === ts.SyntaxKind.StringKeyword) hasStringIndex = true;
+              continue;
+            }
+            if (ts.isConstructorDeclaration(member)) {
+              for (const p of member.parameters) {
+                if (!p.modifiers?.length) continue;
+                if (p.modifiers.some(m => m.kind === ts.SyntaxKind.PrivateKeyword || m.kind === ts.SyntaxKind.ProtectedKeyword))
+                  hasNominalMember = true;
+                if (ts.isIdentifier(p.name)) addProp(p.name.text, !!p.questionToken);
+              }
+              continue;
+            }
+            if (ts.isPropertySignatureDeclaration(member) || ts.isMethodSignatureDeclaration(member) ||
+                ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) {
+              const mods = childrenOf(member, "modifiers");
+              if (mods.some(m => m.kind === ts.SyntaxKind.PrivateKeyword || m.kind === ts.SyntaxKind.ProtectedKeyword))
+                hasNominalMember = true;
+              const optional = childOf(member, "postfixToken")?.kind === ts.SyntaxKind.QuestionToken ||
+                !!childOf(member, "questionToken");
+              const mName = member.name;
+              if (mName && ts.isPrivateIdentifier(mName)) hasNominalMember = true;
+              else if (mName && ts.isComputedPropertyName(mName)) hasNominalMember = true;
+              else if (mName && (ts.isIdentifier(mName) || ts.isStringLiteral(mName))) addProp(mName.text, optional);
+              else if (mName && ts.isNumericLiteral(mName)) addProp(numericKey(mName.text), optional);
+            }
+          }
+          for (const clause of part.heritageClauses ?? []) {
+            if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+            for (const expr of clause.types) {
+              if (ts.isIdentifier(expr.expression)) {
+                const baseDecls = typeDeclarationsOf(expr.expression).filter(isTypeDeclaration);
+                if (baseDecls.length) {
+                  const base = declarationOf(baseDecls, expr.expression.text);
+                  const sub = collectDeclShapeInfo(base, visited);
+                  for (const rp of sub.requiredProps) addProp(rp, false);
+                  for (const ap of sub.allProps) if (!allProps.includes(ap)) allProps.push(ap);
+                  if (sub.hasNominalMember) hasNominalMember = true;
+                  if (sub.hasStringIndex) hasStringIndex = true;
+                }
+              }
+            }
+          }
+        } else if (isTypeAlias(part)) {
+          let body = part.type;
+          while (ts.isParenthesizedTypeNode(body)) body = body.type;
+          if (ts.isTypeLiteralNode(body)) {
+            for (const member of body.members) {
+              if (ts.isIndexSignatureDeclaration(member)) {
+                const pt = member.parameters[0]?.type;
+                if (pt && pt.kind === ts.SyntaxKind.StringKeyword) hasStringIndex = true;
+              } else if (ts.isPropertySignatureDeclaration(member) || ts.isMethodSignatureDeclaration(member)) {
+                const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
+                const mName = member.name;
+                if (mName && ts.isComputedPropertyName(mName)) hasNominalMember = true;
+                else if (mName && (ts.isIdentifier(mName) || ts.isStringLiteral(mName))) addProp(mName.text, optional);
+                else if (mName && ts.isNumericLiteral(mName)) addProp(numericKey(mName.text), optional);
+              }
+            }
+          }
+        }
+      }
+      return { requiredProps, allProps, hasNominalMember, hasStringIndex };
+    };
+    const conditionalTargetInfo = (reading: DeclarationReading, ref: ts.TypeReferenceNode): ConditionalTargetInfo | null => {
+      const name = memberName(ref.typeName);
+      if (!name) return null;
+      const decls = typeDeclarationsOf(name).filter(isTypeDeclaration);
+      if (!decls.length) return null;
+      let target = declarationOf(decls, name.text);
+      for (let steps = 0; steps < 8 && isTypeAlias(target); steps++) {
+        let body = target.type;
+        while (ts.isParenthesizedTypeNode(body)) body = body.type;
+        if (!ts.isTypeReferenceNode(body)) break;
+        const ownParams = (target.typeParameters ?? []).map(p => p.name.text);
+        const bodyArgs = body.typeArguments ?? [];
+        const sameOrder = ownParams.length === bodyArgs.length && bodyArgs.every((a, i) =>
+          ts.isTypeReferenceNode(a) && ts.isIdentifier(a.typeName) && !a.typeArguments?.length && a.typeName.text === ownParams[i]);
+        if (!sameOrder) break;
+        const innerName = memberName(body.typeName);
+        if (!innerName) break;
+        const innerDecls = typeDeclarationsOf(innerName).filter(isTypeDeclaration);
+        if (!innerDecls.length) break;
+        target = declarationOf(innerDecls, innerName.text);
+      }
+      const targetIsComputed: boolean = isComputedAlias(target);
+      if (targetIsComputed || computedMembers(target)) return null;
+      const merged = parametersOf(target);
+      if (merged.some(p => p.captured)) return null;
+      const ownNames = new Set(merged.map(p => p.name.text));
+      const mentionsOwn = (n: Node): boolean =>
+        (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && ownNames.has(n.typeName.text)) ||
+        (n.forEachChild(c => mentionsOwn(c) || undefined) ?? false);
+      const paramBounds = merged.map(p => {
+        if (!p.constraint || mentionsOwn(p.constraint)) return null;
+        try {
+          return typeTerm(valueScope(reading, target, `${idOf(target.getSourceFile())}#${target.name?.text ?? name.text}`), p.constraint, p.name.parent ?? target);
+        } catch (error) {
+          passToolFailure(error);
+          return null;
+        }
+      });
+      const shape = collectDeclShapeInfo(target);
+      const isClassOrInterface = ts.isClassDeclaration(target) || ts.isInterfaceDeclaration(target);
+      const allParamsUsed = !isTypeAlias(target) || merged.every(p => {
+        const uses = (n: Node): boolean =>
+          (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && n.typeName.text === p.name.text) ||
+          (n.forEachChild(c => uses(c) || undefined) ?? false);
+        return uses(target.type);
+      });
+      return {
+        identity: identityOf(target),
+        paramCount: merged.length,
+        paramBounds,
+        requiredProps: shape.requiredProps,
+        hasNominalMember: shape.hasNominalMember,
+        isClassOrInterface,
+        allParamsUsed,
+        isLibraryWrapper: isLibraryDeclaration(target) && !!target.name && LIBRARY_WRAPPERS.has(target.name.text),
+      };
+    };
+    const conditionalMemberInfo = (reading: DeclarationReading, ref: Extract<TypeTerm, { k: "reference" }>): MemberReferenceInfo | null => {
+      const decl = declarationByKey.get(definitionKey(ref.reference.target));
+      if (!decl) return null;
+      if (isTypeAlias(decl)) {
+        const declIsComputed: boolean = isComputedAlias(decl);
+        if (declIsComputed) return null;
+        const unfolded = instantiateAt(reading, decl, ref.args, null)(decl.type);
+        return { unfolded, bases: [], props: null, hasStringIndex: false };
+      }
+      const inst = instantiateAt(reading, decl, ref.args, null);
+      const bases: TypeTerm[] = [];
+      for (const part of partners.get(decl) ?? [decl]) {
+        if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) continue;
+        for (const clause of part.heritageClauses ?? []) {
+          if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+          for (const expr of clause.types) {
+            if (!ts.isIdentifier(expr.expression)) continue;
+            const baseDecls = typeDeclarationsOf(expr.expression).filter(isTypeDeclaration);
+            if (!baseDecls.length) continue;
+            const baseNode = declarationOf(baseDecls, expr.expression.text);
+            const argTerms = (expr.typeArguments ?? []).map(a => inst(a));
+            const completed = completeArguments(reading, baseNode, argTerms, null, baseNode.name?.text ?? expr.expression.text);
+            const span: Span = [expr.getStart(expr.getSourceFile()), expr.end];
+            bases.push({
+              k: "reference",
+              reference: { name: baseNode.name?.text ?? expr.expression.text, span, arguments: [], target: identityOf(baseNode) },
+              args: completed,
+              span,
+            });
+          }
+        }
+      }
+      const shape = collectDeclShapeInfo(decl);
+      return { unfolded: null, bases, props: shape.allProps, hasStringIndex: shape.hasStringIndex };
+    };
+    const referenceKeysOf = (reading: DeclarationReading, ref: Extract<TypeTerm, { k: "reference" }>, span: Span): TypeTerm | null => {
+      const decl = declarationByKey.get(definitionKey(ref.reference.target));
+      if (!decl || isLibraryDeclaration(decl) || hostType(decl) || ts.isClassDeclaration(decl)) return null;
+      if (isTypeAlias(decl)) {
+        const declIsComputed: boolean = isComputedAlias(decl);
+        if (declIsComputed) return null;
+        const unfolded = instantiateAt(reading, decl, ref.args, null)(decl.type);
+        return keyofTerm(unfolded, span, r => referenceKeysOf(reading, r, span));
+      }
+      const keyParts: TypeTerm[] = [];
+      let hasString = false;
+      let hasNumber = false;
+      let hasSymbol = false;
+      const seenKeys = new Set<string>();
+      const visited = new Set<string>();
+      const walkIface = (iface: TypeDeclaration): boolean => {
+        const k = definitionKey(identityOf(iface));
+        if (visited.has(k)) return true;
+        visited.add(k);
+        if (!ts.isInterfaceDeclaration(iface)) return false;
+        for (const part of partners.get(iface) ?? [iface]) {
+          if (!ts.isInterfaceDeclaration(part)) return false;
+          for (const m of part.members) {
+            if (ts.isIndexSignatureDeclaration(m)) {
+              const pt = m.parameters[0]?.type;
+              if (!pt) return false;
+              if (pt.kind === ts.SyntaxKind.StringKeyword) { hasString = true; hasNumber = true; }
+              else if (pt.kind === ts.SyntaxKind.NumberKeyword) hasNumber = true;
+              else if (pt.kind === ts.SyntaxKind.SymbolKeyword) hasSymbol = true;
+              else return false;
+            } else if (ts.isPropertySignatureDeclaration(m) || ts.isMethodSignatureDeclaration(m)) {
+              const mn = m.name;
+              if (ts.isIdentifier(mn) || ts.isStringLiteral(mn)) {
+                if (!seenKeys.has(`s:${mn.text}`)) {
+                  seenKeys.add(`s:${mn.text}`);
+                  keyParts.push({ k: "literal", name: "string", text: mn.text, span });
+                }
+              } else if (ts.isNumericLiteral(mn)) {
+                const nk = numericKey(mn.text);
+                if (!seenKeys.has(`s:${nk}`)) {
+                  seenKeys.add(`s:${nk}`);
+                  keyParts.push({ k: "literal", name: "string", text: nk, span });
+                }
+              } else if (ts.isComputedPropertyName(mn) && (ts.isIdentifier(mn.expression) || ts.isPropertyAccessExpression(mn.expression))) {
+                const lit = literalKeyOf(mn.expression);
+                if (lit !== null) {
+                  if (!seenKeys.has(`s:${lit}`)) {
+                    seenKeys.add(`s:${lit}`);
+                    keyParts.push({ k: "literal", name: "string", text: lit, span });
+                  }
+                } else {
+                  const sym = symbolOf(mn.expression);
+                  if (!seenKeys.has(`u:${sym}`)) {
+                    seenKeys.add(`u:${sym}`);
+                    keyParts.push({ k: "unique", symbol: sym, span });
+                  }
+                }
+              } else return false;
+            }
+          }
+          for (const clause of part.heritageClauses ?? []) {
+            if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+            for (const expr of clause.types) {
+              if (!ts.isIdentifier(expr.expression)) return false;
+              const baseDecls = typeDeclarationsOf(expr.expression).filter(isTypeDeclaration);
+              if (!baseDecls.length) return false;
+              if (!walkIface(declarationOf(baseDecls, expr.expression.text))) return false;
+            }
+          }
+        }
+        return true;
+      };
+      if (!walkIface(decl)) return null;
+      if (hasString) keyParts.push({ k: "atom", name: "string", span });
+      if (hasNumber) keyParts.push({ k: "atom", name: "number", span });
+      if (hasSymbol) keyParts.push({ k: "atom", name: "symbol", span });
+      const [only] = keyParts;
+      if (!only) return { k: "atom", name: "never", span };
+      return keyParts.length === 1 ? only : { k: "union", parts: keyParts, span };
+    };
+    const readWithInferBindings = (reading: DeclarationReading, branch: TypeNode,
+        bindings: ReadonlyMap<string, TypeTerm>, baseRead: (n: TypeNode) => TypeTerm,
+        baseScope?: TermScope): TypeTerm => {
+      if (!bindings.size) return baseRead(branch);
+      const source = branch.getSourceFile();
+      const fallback = baseScope ?? valueScope(reading, branch, `${idOf(source)}#${branch.getText(source)}`);
+      const boundScope: TermScope = {
+        ...fallback,
+        source,
+        named: (part, pos, read) => {
+          if (ts.isIdentifier(part.typeName) && !part.typeArguments?.length) {
+            const bound = bindings.get(part.typeName.text);
+            if (bound) return bound;
+          }
+          const result = fallback.named(part, pos, read);
+          if (result.k === "reference" && ts.isIdentifier(part.typeName)) {
+            const decls = typeDeclarationsOf(part.typeName).filter(isTypeDeclaration);
+            const [firstDecl] = decls;
+            if (firstDecl && !isLibraryDeclaration(firstDecl)) {
+              const target = declarationOf(decls, part.typeName.text);
+              recordInstantiatedApplication(reading, target, result.args, null, pos, `${idOf(source)}#${part.typeName.text}`);
+            }
+          }
+          return result;
+        },
+      };
+      return typeTerm(boundScope, branch);
+    };
+    const makeMappedTransform = (reading: DeclarationReading, baseScope: TermScope,
+        mappedNode: ts.MappedTypeNode, objectNode: TypeNode, keyName: string): MappedTransform => {
+      const id = `t${nextTransformId++}`;
+      const apply = (fieldType: TypeTerm, keyTerm: TypeTerm, span: Span): TypeTerm => {
+        const valueNode = mappedNode.type;
+        if (!valueNode) throw Error("mapped type missing value type");
+        const memberScope: TermScope = {
+          ...baseScope,
+          source: mappedNode.getSourceFile(),
+          named: (part, pos, read) => {
+            if (ts.isIdentifier(part.typeName) && !part.typeArguments?.length && part.typeName.text === keyName)
+              return keyTerm;
+            const alias = aliasOf(part);
+            if (alias && isComputedAlias(alias)) {
+              const argTerms = (part.typeArguments ?? []).map(read);
+              const completed = completeArguments(reading, alias, argTerms, null, alias.name.text);
+              if (!completed.some(hasOpenTypeParam)) {
+                recordInstantiatedApplication(reading, alias, completed, null, pos, `${idOf(mappedNode.getSourceFile())}#${alias.name.text}`);
+                return instantiateAt(reading, alias, completed, null)(alias.type);
+              }
+            }
+            return baseScope.named(part, pos, read);
+          },
+          computed: (part, pos, read) => {
+            if (ts.isIndexedAccessTypeNode(part)) {
+              let idx = part.indexType;
+              while (ts.isParenthesizedTypeNode(idx)) idx = idx.type;
+              if (ts.isTypeReferenceNode(idx) && ts.isIdentifier(idx.typeName) && !idx.typeArguments?.length &&
+                  idx.typeName.text === keyName && sameSyntaxNode(part.objectType, objectNode))
+                return fieldType;
+              const obj = read(part.objectType);
+              const k = read(part.indexType);
+              const proj = projectTerm(obj, k, pos, r => conditionalMemberInfo(reading, r)?.unfolded ?? null);
+              if (proj) return proj;
+            }
+            if (ts.isConditionalTypeNode(part) && isReferenceInferConditional(part)) {
+              const checkTerm = read(part.checkType);
+              return evaluateConditionalOnTerm({
+                body: part,
+                checkTerm,
+                distributive: false,
+                span: pos,
+                readBranch: (branch, bindings) =>
+                  readWithInferBindings(reading, branch, bindings, n => typeTerm(memberScope, n), memberScope),
+                targetInfo: ref => conditionalTargetInfo(reading, ref),
+                memberInfo: ref => conditionalMemberInfo(reading, ref),
+              });
+            }
+            if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword) {
+              const target = read(part.type);
+              const keys = keyofTerm(target, pos, r => referenceKeysOf(reading, r, pos));
+              if (keys) return keys;
+            }
+            if (ts.isIntersectionTypeNode(part)) {
+              const ops = part.types.map(read);
+              const reduced = reduceLiteralIntersection(ops, pos);
+              if (reduced) return reduced;
+            }
+            return baseScope.computed ? baseScope.computed(part, pos, read) : computedType(computedContext(reading), part, pos, read);
+          },
+        };
+        memberScope.mappedTransform = (innerMapped, innerObj, innerKey) =>
+          makeMappedTransform(reading, memberScope, innerMapped, innerObj, innerKey);
+        return typeTerm(memberScope, valueNode, mappedNode);
+      };
+      const transform: MappedTransform = { id, apply };
+      deferredTransforms.set(id, transform);
+      return transform;
+    };
+    const instantiateAtScope = (reading: DeclarationReading, declaration: Node, args: readonly TypeTerm[], use: Node | null): TermScope => {
       const source = declaration.getSourceFile();
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
       const merged = parametersOf(declaration);
@@ -2476,6 +2987,61 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       });
       const evaluate: ComputedHook = (part, pos, read) => {
         if (!namesParameter(part)) return computedType(computedContext(reading), part, pos, read);
+        const canProbe = !!use && !ts.isCallExpression(use) && isTypeDeclaration(declaration) && !merged.some(p => p.captured);
+        if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword) {
+          if (canProbe) {
+            computedContext(reading).captures(part);
+            return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
+          }
+          const target = read(part.type);
+          const keys = keyofTerm(target, pos, r => referenceKeysOf(reading, r, pos), true);
+          if (keys) return keys;
+        }
+        if (ts.isConditionalTypeNode(part) && isReferenceInferConditional(part)) {
+          let check = part.checkType;
+          while (ts.isParenthesizedTypeNode(check)) check = check.type;
+          const isNakedOwn = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) &&
+            !check.typeArguments?.length && parameters.includes(check.typeName.text);
+          const checkTerm = read(part.checkType);
+          return evaluateConditionalOnTerm({
+            body: part,
+            checkTerm,
+            distributive: isNakedOwn,
+            span: pos,
+            readBranch: (branch, bindings) =>
+              readWithInferBindings(reading, branch, bindings, n => typeTerm(scope, n), scope),
+            targetInfo: ref => conditionalTargetInfo(reading, ref),
+            memberInfo: ref => conditionalMemberInfo(reading, ref),
+          });
+        }
+        if (ts.isIndexedAccessTypeNode(part)) {
+          const obj = read(part.objectType);
+          const idx = read(part.indexType);
+          const proj = projectTerm(obj, idx, pos, r => conditionalMemberInfo(reading, r)?.unfolded ?? null);
+          if (proj) return proj;
+        }
+        if (ts.isIntersectionTypeNode(part)) {
+          const ops = part.types.map(read);
+          const reduced = reduceLiteralIntersection(ops, pos);
+          if (reduced) return reduced;
+        }
+        if (ts.isTypeReferenceNode(part)) {
+          const alias = aliasOf(part);
+          if (alias && isComputedAlias(alias)) {
+            let body = alias.type;
+            while (ts.isParenthesizedTypeNode(body)) body = body.type;
+            const termComputed = ts.isMappedTypeNode(body) ||
+              (ts.isConditionalTypeNode(body) && isReferenceInferConditional(body));
+            if (termComputed || !canProbe) {
+              const argTerms = (part.typeArguments ?? []).map(read);
+              const completed = completeArguments(reading, alias, argTerms, use, alias.name.text);
+              if (!completed.some(hasOpenTypeParam)) {
+                recordInstantiatedApplication(reading, alias, completed, use, pos, what);
+                return instantiateAt(reading, alias, completed, null)(alias.type);
+              }
+            }
+          }
+        }
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
           "and is evaluated only at an application written in source");
         if (merged.some(p => p.captured)) throw Error(`${what}: ${part.getText(source)} names the parameters of ` +
@@ -2487,11 +3053,39 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         named: (part, pos, read) => {
           const argument = argumentOf(part);
           if (argument) return argument;
+          const name = memberName(part.typeName);
+          if (name) {
+            const known = library(name, what);
+            if (known)
+              return libraryTerm(known, libraryArguments(known, part.typeArguments ?? [], read, keyTypeOf), pos,
+                message => { throw Error(`${message} in ${what}`); });
+          }
           const alias = aliasOf(part);
-          if (alias && computedAlias(alias, aliasOf) && namesParameter(part)) return evaluate(part, pos, read);
-          return outer.named(part, pos, read);
+          if (alias && isComputedAlias(alias)) {
+            if (namesParameter(part)) return evaluate(part, pos, read);
+            return computedType(computedContext(reading), part, pos, read);
+          }
+          const result = outer.named(part, pos, read);
+          if (name) {
+            const decls = typeDeclarationsOf(name).filter(isTypeDeclaration);
+            const [firstDecl] = decls;
+            if (firstDecl && !isLibraryDeclaration(firstDecl) && !isComputedAlias(firstDecl)) {
+              const targetNode = declarationOf(decls, name.text);
+              const argTerms = (part.typeArguments ?? []).map(read);
+              const completed = completeArguments(reading, targetNode, argTerms, use, targetNode.name?.text ?? name.text);
+              recordInstantiatedApplication(reading, targetNode, completed, use, pos, what);
+            }
+          }
+          return result;
         },
         computed: evaluate };
+      scope.mappedTransform = (mappedNode, objectNode, keyName) =>
+        makeMappedTransform(reading, scope, mappedNode, objectNode, keyName);
+      return scope;
+    };
+    const instantiateAt = (reading: DeclarationReading, declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode, bound?: boolean) => TypeTerm => {
+      const source = declaration.getSourceFile();
+      const scope = instantiateAtScope(reading, declaration, args, use);
       // An external declaration's bound is a type-level wildcard: each `any`
       // in it the top type at its position.
       return (node, bound = false) => typeTerm(bound && !programFile(source)
@@ -2838,8 +3432,13 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name &&
             familyOfGuard(guard) === familyOfFile(node.getSourceFile().fileName) ? guard : null;
           const value = valueOf(emptyDeclarationReading, nodes, binding.name, entry);
+          const valueIndex = values.length;
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...value });
+          if (nodes.length === 1 && node && ts.isFunctionDeclaration(node) && computedFunctionDecls.has(node)) {
+            const external = !programFile(node.getSourceFile()) || ambient(node);
+            pendingComputedValues.push({ index: valueIndex, reading: emptyDeclarationReading, node, what: binding.name, external, span: binding.span });
+          }
           const forms = value.type.k === "intersection" ? value.type.parts : [value.type];
           const plainForm = forms.find(f => f.k === "function" && f.effect.promise === null);
           const domain = plainForm?.k === "function" ? plainForm.params[0] : undefined;
@@ -2865,7 +3464,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const declaration = lookup(binding.at, binding.name);
         // An imported alias TypeScript computes from its parameters has no
         // equation, as a local one has none: each application is a computed type.
-        if (computedAlias(declaration, aliasOf) || computedMembers(declaration)) continue;
+        if (isComputedAlias(declaration) || computedMembers(declaration)) continue;
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.name,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
@@ -2895,8 +3494,14 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const statement = client.statements.find(s => s.pos <= identifier.pos && identifier.end <= s.end);
       const at: Span = statement ? [statement.getStart(client), statement.end] : span;
       try {
+        const resolvedNodes = resolveDeclarations(identifier, identifier.text);
+        const valueIndex = values.length;
         values.push({ binding: { local: identifier.text, imported: identifier.text, specifier: ambientSpecifier,
-          span: at }, ...valueOf(emptyDeclarationReading, resolveDeclarations(identifier, identifier.text), identifier.text) });
+          span: at }, ...valueOf(emptyDeclarationReading, resolvedNodes, identifier.text) });
+        const [firstAmb] = resolvedNodes;
+        if (resolvedNodes.length === 1 && firstAmb && ts.isFunctionDeclaration(firstAmb) && computedFunctionDecls.has(firstAmb)) {
+          pendingComputedValues.push({ index: valueIndex, reading: emptyDeclarationReading, node: firstAmb, what: identifier.text, external: true, span: at });
+        }
       } catch (error) {
         refuseAt(at, error);
       }
@@ -2930,7 +3535,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // A merged interface's later declarations are the same root. An
         // alias TypeScript computes from its parameters has no equation: each
         // reference to it is a computed type.
-        if (roots.some(r => r.node === node) || computedAlias(node, aliasOf) || computedMembers(node)) continue;
+        if (roots.some(r => r.node === node) || isComputedAlias(node) || computedMembers(node)) continue;
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -2999,7 +3604,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const node = lookup(identifier, identifier.text);
         // A global alias TypeScript computes from its parameters, as
         // `Extract` is, has no equation: each application is a computed type.
-        if (computedAlias(node, aliasOf) || computedMembers(node)) continue;
+        if (isComputedAlias(node) || computedMembers(node)) continue;
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -4051,6 +4656,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         else if (key & TypeFlags.ESSymbol) symbolIndex = index;
         else throw Error(`the contextual record ${text} has an index of key ${checker.typeToString(info.keyType)}, which an annotation states`);
       }
+      if (!fields.length && !stringIndex && !numberIndex && !symbolIndex) return emptyObject(span);
       return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
         ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
     };
@@ -4230,7 +4836,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           // arguments TypeScript's type does not state.
           if (args.length !== parametersOf(node).length)
             throw Error(`the contextual type ${text()} does not state every declaration argument`);
-          if (computedMembers(node)) throw Error(`the contextual type ${text()} needs a written application to read its computed members`);
+          if (isTypeAlias(node) && isComputedAlias(node)) {
+            if (args.some(hasOpenTypeParam)) throw Error(`the contextual computed alias ${text()} needs closed type arguments`);
+            recordInstantiatedApplication(emptyDeclarationReading, node, args, null, span, `${idOf(client)}#${node.name.text}`);
+            return instantiateAt(emptyDeclarationReading, node, args, null)(node.type);
+          }
+          if (computedMembers(node)) {
+            if (args.some(hasOpenTypeParam)) throw Error(`the contextual type ${text()} needs closed type arguments to read its computed members`);
+            recordInstantiatedApplication(emptyDeclarationReading, node, args, null, span, `${idOf(client)}#${node.name.text}`);
+            return instanceOf(node, args, client, span);
+          }
           const declared = declarationOf([node], text());
           contextualStarts.push({ node: declared, span });
           return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
@@ -4290,12 +4905,239 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         typesRead.delete(type.id);
       }
     };
+    const extractTypeParamProposal = (
+      fnNode: ts.FunctionDeclaration | ts.MethodSignatureDeclaration,
+      resolvedSig: ReturnType<Checker["getResolvedSignature"]>,
+    ): Map<string, Type> => {
+      const found = new Map<string, Type>();
+      if (!resolvedSig) return found;
+      const paramNames = new Set((fnNode.typeParameters ?? []).map(p => p.name.text));
+      const match = (pattern: TypeNode | undefined, actual: Type | undefined, depth: number): void => {
+        if (!pattern || !actual || actual.isErrorType() || depth > 12) return;
+        let node = pattern;
+        while (ts.isParenthesizedTypeNode(node)) node = node.type;
+        if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && !node.typeArguments?.length &&
+            paramNames.has(node.typeName.text)) {
+          if (!found.has(node.typeName.text)) found.set(node.typeName.text, actual);
+          return;
+        }
+        if (ts.isTypeReferenceNode(node) && node.typeArguments?.length) {
+          const typeArgs = actual.getAliasSymbol() ? actual.getAliasTypeArguments()
+            : isTypeReference(actual) ? checker.getTypeArguments(actual) : [];
+          if (typeArgs.length === node.typeArguments.length) {
+            for (let i = 0; i < node.typeArguments.length; i++)
+              match(node.typeArguments[i], typeArgs[i], depth + 1);
+            return;
+          }
+        }
+        if (ts.isArrayTypeNode(node) && checker.isArrayType(actual) && isTypeReference(actual)) {
+          const [el] = checker.getTypeArguments(actual);
+          match(node.elementType, el, depth + 1);
+          return;
+        }
+        if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+          match(node.type, actual, depth + 1);
+          return;
+        }
+        if (ts.isTypeLiteralNode(node) && (actual.flags & TypeFlags.Object)) {
+          for (const m of node.members) {
+            if (ts.isPropertySignatureDeclaration(m) && m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
+              const prop = checker.getPropertyOfType(actual, m.name.text);
+              const propType = prop ? checker.getTypeOfSymbol(prop) : undefined;
+              if (propType) {
+                const stripped = m.postfixToken ? checker.getNonNullableType(propType) ?? propType : propType;
+                match(m.type, stripped, depth + 1);
+              }
+            }
+          }
+          return;
+        }
+        if (ts.isFunctionTypeNode(node)) {
+          const sigs = checker.getSignaturesOfType(actual, SignatureKind.Call);
+          const [sig] = sigs;
+          if (sig) {
+            const declaredParams = node.parameters.filter(p => !(ts.isIdentifier(p.name) && p.name.text === "this"));
+            for (let i = 0; i < declaredParams.length; i++)
+              match(declaredParams[i]?.type, checker.getParameterType(sig, i), depth + 1);
+            match(node.type, checker.getReturnTypeOfSignature(sig), depth + 1);
+          }
+          return;
+        }
+        if (ts.isUnionTypeNode(node) && isUnionType(actual)) {
+          const nonUndefNodes = node.types.filter(t => t.kind !== ts.SyntaxKind.UndefinedKeyword && t.kind !== ts.SyntaxKind.NullKeyword);
+          const nonUndefActual = checker.getNonNullableType(actual);
+          if (nonUndefNodes.length === 1 && nonUndefActual) match(nonUndefNodes[0], nonUndefActual, depth + 1);
+        }
+      };
+      const ordinary = fnNode.parameters.filter(p => !(ts.isIdentifier(p.name) && p.name.text === "this"));
+      for (let i = 0; i < ordinary.length; i++) {
+        const p = ordinary[i];
+        if (!p?.type) continue;
+        const pType = checker.getParameterType(resolvedSig, i);
+        const target = pType && (p.questionToken || p.initializer) ? (checker.getNonNullableType(pType) ?? pType) : pType;
+        match(p.type, target, 0);
+      }
+      if (fnNode.type) match(fnNode.type, checker.getReturnTypeOfSignature(resolvedSig), 0);
+      return found;
+    };
+    const instantiateCallSite = (
+      reading: DeclarationReading,
+      fnNode: ts.FunctionDeclaration | ts.MethodSignatureDeclaration,
+      call: ts.CallExpression,
+      what: string,
+      span: Span,
+    ): FunctionTerm[] => {
+      const source = fnNode.getSourceFile();
+      const fnName = fnNode.name && ts.isIdentifier(fnNode.name) ? fnNode.name.text : what;
+      const callSpan: Span = [call.getStart(client), call.end];
+      const tps = fnNode.typeParameters ?? [];
+      let args: TypeTerm[];
+      if (call.typeArguments?.length) {
+        const callScope = valueScope(reading, call, what, enclosingBinders(call));
+        const written = call.typeArguments.map(a => typeTerm(callScope, a, call));
+        args = completeArguments(reading, fnNode, written, call, what);
+      } else {
+        const resolvedSig = checker.getResolvedSignature(call);
+        if (!resolvedSig) throw Error(`TypeScript resolves no call signature for ${what}`);
+        const proposed = extractTypeParamProposal(fnNode, resolvedSig);
+        args = [];
+        for (const tp of tps) {
+          const propType = proposed.get(tp.name.text);
+          if (propType) {
+            args.push(contextualTerm(new Map(), new Set(), propType, callSpan));
+          } else if (tp.defaultType) {
+            args.push(instantiateAt(reading, fnNode, args, call)(tp.defaultType));
+          } else {
+            throw Error(`cannot extract concrete type argument for ${tp.name.text} at call to ${what}`);
+          }
+        }
+      }
+      if (args.some(hasOpenTypeParam))
+        throw Error(`call to ${what} with computed types needs closed ground type arguments`);
+      const boundInst = instantiateAt(reading, fnNode, args, call);
+      const bounds = tps.map(p => p.constraint ? boundInst(p.constraint, true) : null);
+      if (bounds.some(b => b !== null)) {
+        instantiatedApplications.push({
+          scope: [],
+          reference: { name: fnName, span: callSpan, arguments: (call.typeArguments ?? []).map(a => [a.getStart(client), a.end]),
+            target: { module: idOf(source), name: fnName, span } },
+          parameters: tps.map(p => ({ name: p.name.text, span: [p.getStart(source), p.end] })),
+          args,
+          bounds,
+          span: callSpan,
+          site: `${idOf(client)}#${fnName}`,
+        });
+      }
+      const sigScope = instantiateAtScope(reading, fnNode, args, call);
+      return signatures(sigScope, fnNode.parameters, fnNode.type, fnNode, span, true);
+    };
+    const isInTypePosition = (n: Node): boolean => {
+      for (let at: Node | undefined = n.parent; at; at = at.parent) {
+        if (ts.isTypeNode(at) || ts.isTypeAliasDeclaration(at) || ts.isInterfaceDeclaration(at)) return true;
+        if (ts.isStatement(at) || ts.isExpression(at)) return false;
+      }
+      return false;
+    };
+    const isDeclarationSite = (n: Node): boolean => {
+      const parent = n.parent;
+      if (!parent) return false;
+      if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent) ||
+          ts.isExportSpecifier(parent)) return true;
+      if ("name" in parent && parent.name === n && !ts.isPropertyAccessExpression(parent)) return true;
+      return false;
+    };
+    const findFunctionCalls = (targetFn: ts.FunctionDeclaration, what: string): ts.CallExpression[] => {
+      const targetKey = nodeKey(targetFn);
+      const calls: ts.CallExpression[] = [];
+      const seenCalls = new Set<string>();
+      const visit = (n: Node): void => {
+        if (ts.isIdentifier(n) && !isDeclarationSite(n) && !isInTypePosition(n)) {
+          const sym = checker.getSymbolAtLocation(n);
+          const resolved = sym && (sym.flags & SymbolFlags.Alias) ? checker.getAliasedSymbol(sym) : sym;
+          const hits = (resolved?.declarations ?? []).some(d => { const r = d.resolve(); return !!r && nodeKey(r) === targetKey; });
+          if (hits) {
+            let expr: Node = n;
+            if (expr.parent && ts.isPropertyAccessExpression(expr.parent) && expr.parent.name === expr)
+              expr = expr.parent;
+            while (expr.parent && ts.isParenthesizedExpression(expr.parent)) expr = expr.parent;
+            if (expr.parent && ts.isCallExpression(expr.parent) && expr.parent.expression === expr) {
+              const cKey = nodeKey(expr.parent);
+              if (!seenCalls.has(cKey)) {
+                seenCalls.add(cKey);
+                calls.push(expr.parent);
+              }
+            } else {
+              throw Error(`${what} has computed types in its signature or bounds and can only be called directly, not used as a value`);
+            }
+          }
+        }
+        n.forEachChild(visit);
+      };
+      visit(client);
+      return calls;
+    };
+    const instantiateComputedMethod = (ownerId: DeclarationIdentity, member: ts.MethodSignatureDeclaration, memberSpan: Span): TypeTerm | null => {
+      if (!isComputedGenericFunction(member)) return null;
+      computedMethodOwners.add(definitionKey(ownerId));
+      const targetKey = nodeKey(member);
+      const calls: ts.CallExpression[] = [];
+      const visit = (n: Node): void => {
+        if (ts.isCallExpression(n)) {
+          const decl = checker.getResolvedSignature(n)?.declaration?.resolve();
+          if (decl && nodeKey(decl) === targetKey) calls.push(n);
+        }
+        n.forEachChild(visit);
+      };
+      visit(client);
+      if (!calls.length) return { k: "callable", span: memberSpan };
+      const allForms: FunctionTerm[] = [];
+      const seen = new Set<string>();
+      const what = `${ownerId.name}.${member.name.getText(member.getSourceFile())}`;
+      for (const call of calls) {
+        const forms = instantiateCallSite(emptyDeclarationReading, member, call, what, memberSpan);
+        for (const f of forms) {
+          const bound: FunctionTerm = { ...f, receiver: { k: "self", span: memberSpan } };
+          const key = termText(bound);
+          if (!seen.has(key)) { seen.add(key); allForms.push(bound); }
+        }
+      }
+      return oneTerm(allForms, memberSpan);
+    };
+    for (const pending of pendingComputedValues) {
+      try {
+        const calls = findFunctionCalls(pending.node, pending.what);
+        let type: TypeTerm;
+        if (!calls.length) {
+          type = { k: "callable", span: pending.span };
+        } else {
+          const allForms: FunctionTerm[] = [];
+          const seen = new Set<string>();
+          for (const call of calls) {
+            const forms = instantiateCallSite(pending.reading, pending.node, call, pending.what, pending.span);
+            for (const f of forms) {
+              const key = termText(f);
+              if (!seen.has(key)) { seen.add(key); allForms.push(f); }
+            }
+          }
+          type = oneTerm(allForms, pending.span);
+        }
+        const existing = values[pending.index];
+        if (existing) values[pending.index] = { ...existing, typeParams: [], type };
+        if (pending.external) externalTypes.push({ what: pending.what, type });
+      } catch (error) {
+        refuseAt(pending.span, error);
+      }
+    }
     const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
       const visit = (node: Node): ts.ParameterDeclaration | null => {
         if (ts.isParameterDeclaration(node) && node.name.getStart(client) === span[0] && node.name.end === span[1]) return node;
         return node.getStart(client) <= span[0] && span[1] <= node.end ? node.forEachChild(visit) ?? null : null;
       };
       return visit(client);
+    };
+    const pendingTermAnswers: { span: Span; terms: TypeTerm[]; failed: boolean; deliver: (settled: TypeTerm[]) => void; refuse: (msg: string) => void }[] = [];
+    const queueTermAnswer = (span: Span, terms: TypeTerm[], deliver: (settled: TypeTerm[]) => void, refuse: (msg: string) => void): void => {
+      pendingTermAnswers.push({ span, terms, failed: false, deliver, refuse });
     };
     for (const span of typesRequested.staticTypes ?? []) {
       const name = identifierAt(client, span);
@@ -4304,7 +5146,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const type = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this static field no type");
-        typeAnswers.staticType?.(span, { ok: true, value: contextualTerm(new Map(), new Set(), type, span) });
+        queueTermAnswer(span, [contextualTerm(new Map(), new Set(), type, span)],
+          ([v]) => { if (v) typeAnswers.staticType?.(span, { ok: true, value: v }); },
+          refused => typeAnswers.staticType?.(span, { ok: false, refused }));
       } catch (error) {
         typeAnswers.staticType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
@@ -4358,7 +5202,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
         const renames = new Map([...closureBinders.values()].map(b => [b.spelled, b.fresh]));
-        typeAnswers.contextualParam?.(span, { ok: true, value: renameFree(contextualTerm(closureBinders, new Set(), type, span), renames) });
+        queueTermAnswer(span, [renameFree(contextualTerm(closureBinders, new Set(), type, span), renames)],
+          ([v]) => { if (v) typeAnswers.contextualParam?.(span, { ok: true, value: v }); },
+          refused => typeAnswers.contextualParam?.(span, { ok: false, refused }));
       } catch (error) {
         typeAnswers.contextualParam?.(span, { ok: false, refused: refusalAt(span, error) });
       }
@@ -4393,8 +5239,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (!bagType || bagType.k !== "object")
           throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
             "literal's record of literals and primitives");
-        typeAnswers.assignTypes?.(span, { ok: true, value: { bagType, functionType: { k: "function", effect: ordinaryEffect,
-          receiver: null, params, rest: null, result: contextualTerm(new Map(), new Set(), returned, span), span } } });
+        queueTermAnswer(span, [bagType, { k: "function", effect: ordinaryEffect, receiver: null, params, rest: null,
+          result: contextualTerm(new Map(), new Set(), returned, span), span }],
+          ([b, f]) => { if (b && f) typeAnswers.assignTypes?.(span, { ok: true, value: { bagType: b, functionType: f } }); },
+          refused => typeAnswers.assignTypes?.(span, { ok: false, refused }));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         typeAnswers.assignTypes?.(span, { ok: false, refused: "the type arguments TypeScript infers for this Object.assign: " +
@@ -4512,27 +5360,32 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     }
     // The client's computed types: each evaluated where it is written, with
     // the binders of the functions around it, or refused with the reason.
+    const pendingComputedAnswers: { span: Span; result: Answered<TypeTerm> }[] = [];
     for (const span of typesRequested.computed ?? []) {
       const node = computedAt(client, span);
       if (!node) throw declarationError(span, "TypeScript computed type missing");
       // A global or an imported type's application is computed when the alias it names is.
       const ambient = ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) &&
         ambientQualifiedType(node.typeName) !== null;
+      if (ts.isTypeReferenceNode(node) && !ambient && ts.isIdentifier(node.typeName) &&
+          library(node.typeName, node.typeName.text) !== null) continue;
       const alias = ts.isTypeReferenceNode(node) && !ambient ? aliasOf(node) : null;
       const aggregate = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
         && typeDeclarationsOf(node.typeName).some(d => ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d))
         ? lookup(node.typeName, node.typeName.text) : null;
       if (ts.isTypeReferenceNode(node) && !ambient &&
-          !(alias && computedAlias(alias, aliasOf)) && !(aggregate && computedMembers(aggregate))) continue;
+          !(alias && isComputedAlias(alias)) && !(aggregate && computedMembers(aggregate))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
       const scope = valueScope(emptyDeclarationReading, node, what, enclosingBinders(node));
       try {
         if (ambient) clean(node, what);
-        typeAnswers.computedType?.(span, { ok: true, value: ambient || aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
-          : computedType(computedContext(emptyDeclarationReading), node, span, part => typeTerm(scope, part)) });
+        const value = ambient || ts.isMappedTypeNode(node) || (aggregate && computedMembers(aggregate))
+          ? typeTerm(scope, node)
+          : computedType(computedContext(emptyDeclarationReading), node, span, part => typeTerm(scope, part));
+        pendingComputedAnswers.push({ span, result: { ok: true, value } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        typeAnswers.computedType?.(span, { ok: false, refused: refusalAt(span, error) });
+        pendingComputedAnswers.push({ span, result: { ok: false, refused: refusalAt(span, error) } });
       }
     }
     // The client's references to types declared in its blocks, each the
@@ -4553,7 +5406,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const what = `${idOf(client)}#${name.text}`;
         if (isTypeAlias(target) && associatedAlias(target))
           throw Error(`an associated-result alias declared in a block is outside the fragment: ${what}`);
-        const computed = computedAlias(target, aliasOf);
+        const computed = isComputedAlias(target);
         const captured = capturedOf(target);
         for (const parameter of captured) capturedAt(node, what)(parameter);
         const own = parametersOf(target).filter(p => !p.captured);
@@ -4578,14 +5431,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const span: Span = [node.getStart(client), node.end];
           try {
             const target = lookup(name, name.text);
-            if (!computedAlias(target, aliasOf)) {
+            if (!isComputedAlias(target)) {
               const scope = valueScope(emptyDeclarationReading, node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
               const closed = capturedOf(target).length;
               const completed = completeArguments(emptyDeclarationReading, target,
                 withoutMeaning(written, meaningless(name), arg => typeTerm(scope, arg),
                   (_arg, message) => { throw Error(message); }), node, name.text,
                 capturedAt(node, name.text));
-              typeAnswers.completion?.(span, { ok: true, value: completed.slice(closed + written.length) });
+              queueTermAnswer(span, completed.slice(closed + written.length),
+                settled => typeAnswers.completion?.(span, { ok: true, value: settled }),
+                refused => typeAnswers.completion?.(span, { ok: false, refused }));
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
@@ -4755,6 +5610,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         },
         module: file => idOf(file),
         client,
+        isComputedParam: param => {
+          const owner = param.parent;
+          if (!owner) return false;
+          if (computedFunctionDecls.has(owner)) return true;
+          if ((ts.isFunctionDeclaration(owner) || ts.isMethodSignatureDeclaration(owner)) &&
+              isComputedGenericFunction(owner)) return true;
+          if (isTypeDeclaration(owner) && computedBounds(owner)) return true;
+          return false;
+        },
+        hasComputedBounds: node => isTypeDeclaration(node) && computedBounds(node),
       }, [client, ...valueDeclarations]);
     } catch (error) {
       refuseAt(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0], error);
@@ -4770,6 +5635,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const collectionContext: DeclarationCollectionContext = {
       complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup, meaningless,
       computedMembers, instanceOf, instantiate: (owner, node, args, use) => instantiateAt({ owner, externalReads: 0 }, node, args, use),
+      isLibrary: isLibraryDeclaration,
+      computedMethod: (ownerId, member, memberSpan) => instantiateComputedMethod(ownerId, member, memberSpan),
+      recordApplication: (owner, targetNode, completed, use, span) => recordInstantiatedApplication({ owner, externalReads: 0 }, targetNode, completed, use, span, owner),
       enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation: (owner, node) => equation({ owner, externalReads: 0 }, node),
       libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
       guardPromises,
@@ -4836,11 +5704,100 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     arrayProto = collected.arrayProto;
     appendDocumentDefinitions(definitions, selections, overlayDefinitions, primitiveProtos, regexpDefinitions,
       collectionDefinitions, stableListed, arrayProto);
+    applications = [...applications, ...instantiatedApplications];
+    let mergedInstantiatedCount = instantiatedApplications.length;
     // The graph is complete: each mapped type read at a named type before
-    // its definition was is expanded at it (`settleDocument`).
+    // its definition was is expanded at it (`settleDocument`). Settling a
+    // transforming mapped type can discover new declarations, so drain in a fixpoint.
     const settledAt = starts[0]?.span ?? [0, 0];
-    applications = settleDeclarations({ definitions, values, applications }, records,
-      (_where, error) => refuseAt(settledAt, error));
+    const transformLookup = (id: string): MappedTransform | undefined => deferredTransforms.get(id);
+    const seenExtra = new Set(definitions.map(d => `${d.declaration.module}#${d.declaration.span[0]}:${d.declaration.span[1]}`));
+    let collectedInstCount = instances.size;
+    for (let pass = 0; pass < 16; pass++) {
+      const prevValues = valueStarts.length;
+      const prevInstances = instances.size;
+      applications = settleDeclarations({ definitions, values, applications }, records,
+        (_where, error) => refuseAt(settledAt, error), transformLookup);
+      const byKey = new Map(definitions.map(d => [definitionKey(d.declaration), d] as const));
+      const answerRecords: NamedRecords = {
+        record: id => records.has(definitionKey(id)),
+        definition: id => byKey.get(definitionKey(id)),
+        transform: transformLookup,
+      };
+      for (const entry of pendingComputedAnswers) {
+        if (!entry.result.ok) continue;
+        try {
+          entry.result = { ok: true, value: settleTerm(entry.result.value, answerRecords, "the source", (_w, error) => { throw error; }) };
+        } catch (error) {
+          if (error instanceof DeclarationError) throw error;
+          entry.result = { ok: false, refused: refusalAt(entry.span, error) };
+        }
+      }
+      for (const entry of pendingTermAnswers) {
+        if (entry.failed) continue;
+        try {
+          entry.terms = entry.terms.map(t => settleTerm(t, answerRecords, "the source", (_w, error) => { throw error; }));
+        } catch (error) {
+          if (error instanceof DeclarationError) throw error;
+          entry.failed = true;
+          entry.refuse(refusalAt(entry.span, error));
+        }
+      }
+      if (mergedInstantiatedCount < instantiatedApplications.length) {
+        applications = [...applications, ...instantiatedApplications.slice(mergedInstantiatedCount)];
+        mergedInstantiatedCount = instantiatedApplications.length;
+      }
+      if (valueStarts.length === prevValues && instances.size === prevInstances) break;
+      const extraDefs: TypeDefinition[] = [];
+      collectFrom(valueStarts.slice(prevValues).map(node => ({ node, span: settledAt })), seenExtra, extraDefs, collectionContext);
+      collectedInstCount = collectInstances(instances, collectedInstCount, seenExtra, extraDefs, collectionContext);
+      definitions.push(...extraDefs);
+    }
+    for (const entry of pendingComputedAnswers) typeAnswers.computedType?.(entry.span, entry.result);
+    for (const entry of pendingTermAnswers) {
+      if (!entry.failed) entry.deliver(entry.terms);
+    }
+    if (computedMethodOwners.size) {
+      const checkPolarity = (term: TypeTerm, positive: boolean, where: string, seen: Set<string>): void => {
+        if (term.k === "reference") {
+          const k = definitionKey(term.reference.target);
+          if (!positive && computedMethodOwners.has(k))
+            throw Error(`${where} accepts ${term.reference.name} (which has a call-site-instantiated generic method) in a contravariant position`);
+          if (!seen.has(`${k}:${positive}`)) {
+            seen.add(`${k}:${positive}`);
+            const def = definitions.find(d => definitionKey(d.declaration) === k);
+            if (def?.expression) checkPolarity(substitute(def.expression, term.args), positive, where, seen);
+          }
+          return;
+        }
+        if (term.k === "function" || term.k === "constructor") {
+          for (const p of term.params) checkPolarity(p, !positive, where, seen);
+          if (term.rest) checkPolarity(term.rest, !positive, where, seen);
+          checkPolarity(term.result, positive, where, seen);
+          return;
+        }
+        for (const part of typeParts(term)) checkPolarity(part, positive, where, seen);
+      };
+      for (const ext of externalTypes) checkPolarity(ext.type, true, ext.what, new Set());
+      const checkClientClasses = (n: Node): void => {
+        if (ts.isClassDeclaration(n)) {
+          for (const clause of n.heritageClauses ?? []) {
+            for (const expr of clause.types) {
+              if (ts.isIdentifier(expr.expression)) {
+                const decls = typeDeclarationsOf(expr.expression).filter(isTypeDeclaration);
+                if (decls.length) {
+                  const id = identityOf(declarationOf(decls, expr.expression.text));
+                  if (computedMethodOwners.has(definitionKey(id)))
+                    refuseAt([expr.getStart(client), expr.end], Error(`a class cannot extend or implement ${id.name}, which has a call-site-instantiated generic method`));
+                }
+              }
+            }
+          }
+        }
+        n.forEachChild(checkClientClasses);
+      };
+      checkClientClasses(client);
+    }
     // Trusted generic promise results have a stable non-thenable payload
     // contract, so fresh resolution preserves that payload. Bound each
     // type parameter a Promise or PromiseLike position names accordingly
@@ -4955,8 +5912,9 @@ function appendDocumentDefinitions(definitions: TypeDefinition[], selections: re
 
 /** Settle the complete graph, retaining the definition and value arrays. */
 function settleDeclarations(parts: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
-    records: Set<string>, refused: (where: string, error: unknown) => never): WrittenApplication[] {
-  const settledDocument = settleDocument(parts, id => records.has(definitionKey(id)), refused);
+    records: Set<string>, refused: (where: string, error: unknown) => never,
+    transform?: (id: string) => MappedTransform | undefined): WrittenApplication[] {
+  const settledDocument = settleDocument(parts, id => records.has(definitionKey(id)), refused, transform);
   parts.definitions.splice(0, parts.definitions.length, ...settledDocument.definitions);
   parts.values.splice(0, parts.values.length, ...settledDocument.values);
   return settledDocument.applications;
@@ -6253,6 +7211,9 @@ interface DeclarationElaborationContext {
   computedMembers: (node: TypeDeclaration) => boolean;
   instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
   instantiate: (owner: string, node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
+  isLibrary: (node: Node) => boolean;
+  computedMethod: (ownerId: DeclarationIdentity, member: ts.MethodSignatureDeclaration, memberSpan: Span) => TypeTerm | null;
+  recordApplication: (owner: string, targetNode: TypeDeclaration, completed: readonly TypeTerm[], use: Node | null, span: Span) => void;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether an identity is a branded string of the host (reading rule 5). */
   isBrand: BrandPredicate;
@@ -6427,11 +7388,12 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     }
     // An alias TypeScript computes from its parameters is the type it
     // computes at this reference's arguments.
-    if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
+    if (written && computedAlias(targetNode, context.alias, new Set(), context.isLibrary)) return computed(written, pos, read);
     const target = identityOf(targetNode);
     const completed = context.complete(key, targetNode, withoutMeaning(arguments_, context.meaningless(identifier), read,
       (_arg, message) => { throw Error(message); }), written ?? null,
       `${target.module}#${target.name}`, capturedHere);
+    if (applied) context.recordApplication(key, targetNode, completed, written ?? applied.use, pos);
     if (context.computedMembers(targetNode)) {
       if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
       return context.instanceOf(targetNode, completed, written, pos);
@@ -6472,6 +7434,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     keys: context.keys,
     modifiers: context.modifiers,
     computed,
+    computedMethod: (member, memberSpan) => context.computedMethod(identity, member, memberSpan),
     enumerated: context.enumerated,
     fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
     named: (part, pos, read) => {
@@ -6510,7 +7473,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
   // An alias TypeScript computes from its parameters has no equation: its
   // definition states its parameters and defaults.
   // (A predicate's false branch would narrow `node` to no alias.)
-  const computedEquation: boolean = computedAlias(node, context.alias);
+  const computedEquation: boolean = computedAlias(node, context.alias, new Set(), context.isLibrary);
   if (computedEquation || (!applied && context.computedMembers(node))) {
     output.definitions.push({ declaration: identity, parameters, bases: [], expression: null });
     return;
@@ -7290,6 +8253,9 @@ function resolutionTypeDeclarationsOf(checker: Checker, name: Identifier): Node[
 
 /** Read captured parameters followed by the merged declaration’s parameters. */
 function resolutionParametersOf(typeDeclarationsOf: (name: Identifier) => Node[], capturedOf: (declaration: Node) => ts.TypeParameterDeclaration[], declaration: Node): MergedParameter[] {
+  if (ts.isFunctionDeclaration(declaration) || ts.isMethodSignatureDeclaration(declaration)) {
+    return (declaration.typeParameters ?? []).map(p => ({ name: p.name, constraint: p.constraint, default: p.defaultType }));
+  }
   const name = nameOf(declaration);
   const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
   const own = isTypeDeclaration(declaration) ? [declaration] : [];
@@ -7377,7 +8343,8 @@ function resolutionPromise(checker: Checker, client: SourceFile, clean: (node: N
 
 /** Detect parameter-dependent computed members in the ordered merged parts. */
 function elaborationComputedMembers(partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>,
-    aliasOf: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null, node: TypeDeclaration): boolean {
+    aliasOf: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null, node: TypeDeclaration,
+    isLibrary?: (node: Node) => boolean): boolean {
   if (isTypeAlias(node) || !node.typeParameters?.length) return false;
   const names = new Set(node.typeParameters.map(p => p.name.text));
   const mentions = (part: Node): boolean =>
@@ -7386,7 +8353,8 @@ function elaborationComputedMembers(partners: ReadonlyMap<TypeDeclaration, reado
   const computed = (part: Node): boolean => {
     const alias = ts.isTypeReferenceNode(part) ? aliasOf(part) : null;
     if (ts.isTypeNode(part) && !ts.isExpressionWithTypeArguments(part) && (computedForm(part) !== null ||
-        (alias !== null && computedAlias(alias, aliasOf))) && mentions(part)) return true;
+        ts.isMappedTypeNode(part) ||
+        (alias !== null && computedAlias(alias, aliasOf, new Set(), isLibrary))) && mentions(part)) return true;
     return part.forEachChild(c => computed(c) || undefined) ?? false;
   };
   return (partners.get(node) ?? [node]).some(part =>

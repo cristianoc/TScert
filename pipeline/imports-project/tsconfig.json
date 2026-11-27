@@ -58,7 +58,8 @@
       "@fixture/failures-getter": ["./failures-getter.ts"],
       "@fixture/failures-default-hook": ["./failures-default-hook.ts"],
       "@fixture/failures-heritage-hook": ["./failures-heritage-hook.ts"],
-      "@fixture/failures-setter-hook": ["./failures-setter-hook.ts"]
+      "@fixture/failures-setter-hook": ["./failures-setter-hook.ts"],
+      "@fixture/mapped-service-api": ["./mapped-service-api.d.ts"]
     }
   },
   "include": [
@@ -109,6 +110,7 @@
     "./extended.ts",
     "./stated-ambient.d.ts",
     "./hooks-ambient.d.ts",
+    "./mapped-service-api.d.ts",
     "./partial.ts",
     "./partial-init.ts",
     "./failures.ts",

@@ -110,9 +110,22 @@ export function bigintText(literal: string, negative: boolean): Modifies<{ value
 /** `{}`, an object type with no member: it constrains no key, and is every
  * value but `null` and `undefined`, a primitive included, not an empty
  * record. */
-function emptyObject(span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
+export function emptyObject(span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   return { k: "union", span, parts: (["boolean", "number", "string", "bigint", "symbol", "object"] as const)
     .map(name => ({ k: "atom", name, span })) };
+}
+
+const EMPTY_OBJECT_ATOMS = new Set(["boolean", "number", "string", "bigint", "symbol", "object"]);
+
+/** Whether `term` is the empty-object union `{}` (`emptyObject`). */
+export function isEmptyObject(term: TypeTerm): Modifies<{}, boolean> {
+  if (term.k !== "union" || term.parts.length !== 6) return false;
+  const names = new Set<string>();
+  for (const part of term.parts) {
+    if (part.k !== "atom" || !EMPTY_OBJECT_ATOMS.has(part.name)) return false;
+    names.add(part.name);
+  }
+  return names.size === 6;
 }
 
 /** The property key a numeric literal names: `ToString` of its value, as
@@ -287,6 +300,11 @@ export type TermScope = {
    * from an alias's meaning. A scope without it, or answering null, defers
    * such a mapped type (`deferredIdentity`). */
   alias?: AliasHook;
+  /** Per-key value transform for a homomorphic mapped type `{ [K in keyof X]: V(X[K]) }`. */
+  mappedTransform?: MappedTransformHook;
+  /** Call-site-instantiated contract for a generic method whose signature or bounds
+   * mention computed/mapped forms over its own type parameters. */
+  computedMethod?: ComputedMethodHook;
 };
 
 /** The hooks of a scope its readers pass on or implement apart from it:
@@ -302,6 +320,12 @@ export type RecordHook = (reference: Extract<TypeTerm, { k: "reference" }>, fail
  * which holds no `undefined`, an alias's equation at the reference's
  * arguments otherwise; null where the definitions are not yet complete. */
 export type AliasHook = (reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm | "record" | null>;
+export type MappedTransform = {
+  id: string;
+  apply: (fieldType: TypeTerm, keyTerm: TypeTerm, span: Span) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>;
+};
+export type MappedTransformHook = (node: ts.MappedTypeNode, objectNode: TypeNode, keyName: string) => Modifies<{ values: "any"; spines: "grow" }, MappedTransform | null>;
+export type ComputedMethodHook = (member: ts.MethodSignatureDeclaration, span: Span) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null>;
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
@@ -329,20 +353,26 @@ export function computedForm(node: TypeNode): Modifies<{ values: "any"; spines: 
  * at the reference's arguments (`computed-types.mts`). `aliasOf` is the alias
  * a reference names, if any. */
 export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode) => TypeAliasDeclaration | null,
-    seen: Set<Node> = new Set()): node is TypeAliasDeclaration {
+    seen: Set<Node> = new Set(), isLibrary?: (node: Node) => boolean): node is TypeAliasDeclaration {
   if (!isTypeAlias(node) || !node.typeParameters?.length || seen.has(node)) return false;
   seen.add(node);
   const body = unwrap(node.type);
   if (computedForm(body) !== null) return true;
+  // A user/non-library generic mapped-type alias (e.g. `AllInputDefs<T>`,
+  // `InputCollections<Defs>`) is expanded at each concrete application.
+  // Standard-library mapped aliases (`Partial`, `Readonly`, `Required`, `Pick`,
+  // `Record`) remain handled by `libraryTerm`.
+  if (ts.isMappedTypeNode(body) && !isLibrary?.(node)) return true;
   if (!ts.isTypeReferenceNode(body)) return false;
   const computed = (reference: TypeReferenceNode): boolean => {
     const target = aliasOf(reference);
-    return !!target && computedAlias(target, aliasOf, new Set(seen));
+    return !!target && computedAlias(target, aliasOf, new Set(seen), isLibrary);
   };
-  return computed(body) || (body.typeArguments ?? []).some(argument => {
-    const a = unwrap(argument);
-    return computedForm(a) !== null || (ts.isTypeReferenceNode(a) && computed(a));
-  });
+  const computedArg = (arg: TypeNode): boolean => {
+    const a = unwrap(arg);
+    return computedForm(a) !== null || ts.isMappedTypeNode(a) || (ts.isTypeReferenceNode(a) && computed(a));
+  };
+  return computed(body) || (body.typeArguments ?? []).some(computedArg);
 }
 
 const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.UndefinedKeyword,
@@ -536,8 +566,11 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   }
   if (ts.isTypeLiteralNode(node))
     return members(scope, node.members, node, span, node === scope.body ? true : "nested");
-  if (ts.isMappedTypeNode(node))
+  if (ts.isMappedTypeNode(node)) {
+    if (!scope.mappedTransform && scope.computed && isTransformingMappedNode(node))
+      return scope.computed(node, span, part => typeTerm(scope, part));
     return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record, scope.alias);
+  }
   if (ts.isFunctionTypeNode(node)) {
     // A rest admitting no argument list, `(...args: never) => R`: no call
     // is possible, and the type is every value with call code.
@@ -678,10 +711,29 @@ export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readon
  * decides the value type `-?` gives an optional field; null where the scope
  * reading the mapped type does not state the program's option. */
 export type Identity = { object: TypeTerm; homomorphic: boolean; readonlyMod: Modifier; optionalMod: Modifier;
-  exact: boolean | null };
+  exact: boolean | null; constant?: TypeTerm; transform?: MappedTransform };
 export type Modifier = "keep" | "add" | "remove";
 /** A property of a mapped type over `keyof X` and its modifiers. */
 export type MappedMember = { name: string; optional: boolean; readonly: boolean };
+
+/** Whether a mapped type `{ [K in keyof X]: V }` transforms each key's value
+ * (i.e. `V` names `K`, and is not the plain identity `X[K]`). */
+export function isTransformingMappedNode(node: ts.MappedTypeNode): Modifies<{ values: "any"; spines: "grow" }, boolean> {
+  const constraint = node.typeParameter.constraint;
+  if (!constraint || !ts.isTypeOperatorNode(constraint) || constraint.operator !== ts.SyntaxKind.KeyOfKeyword) return false;
+  const value = node.type;
+  if (!value) return false;
+  const name = node.typeParameter.name.text;
+  const names = (t: Node): boolean =>
+    (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === name) ||
+    (t.forEachChild(names) ?? false);
+  if (!names(value)) return false;
+  if (ts.isIndexedAccessTypeNode(value) && ts.isTypeReferenceNode(value.indexType) &&
+      ts.isIdentifier(value.indexType.typeName) && value.indexType.typeName.text === name && !value.indexType.typeArguments &&
+      !names(value.objectType))
+    return false;
+  return true;
+}
 
 export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ values: "any"; spines: "grow" }, Mapped> {
   if (node.nameType) scope.fail(node, "a mapped type with an 'as' clause is outside the fragment");
@@ -736,22 +788,41 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ va
         exact: scope.exactOptional ?? null } };
     }
   }
-  if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
-  // A homomorphic mapped type, `{ [P in keyof X]: V }`, copies X's
-  // modifiers to each key where it writes none of its own: each member at
-  // the modifiers TypeScript resolves.
   const constraint = parameter.constraint;
-  const members = constraint && ts.isTypeOperatorNode(constraint) &&
-      constraint.operator === ts.SyntaxKind.KeyOfKeyword && (!node.readonlyToken || !node.questionToken)
-    ? scope.modifiers?.(node) ?? scope.fail(node, "a mapped type over `keyof` copies its source's modifiers " +
-      "where it writes none, and TypeScript resolves it to no record whose members state them")
-    : undefined;
+  const isKeyof = !!constraint && ts.isTypeOperatorNode(constraint) && constraint.operator === ts.SyntaxKind.KeyOfKeyword;
+  // Homomorphic mapped type transforming each key's value `X[P]` (e.g.
+  // `{ readonly [K in keyof Defs]: Defs[K] extends ... ? ... : ... }`).
+  if (node.type && names(node.type)) {
+    if (isKeyof && scope.mappedTransform) {
+      const transform = scope.mappedTransform(node, constraint.type, name);
+      if (transform) {
+        const object = typeTerm(scope, constraint.type);
+        const key: TypeTerm = { k: "atom", name: "never", span: [constraint.pos, constraint.end] };
+        return { key, value: object, optional: false, readonly: false,
+          identity: { object, homomorphic: true, readonlyMod: modifier(node.readonlyToken),
+            optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null, transform } };
+      }
+    }
+    scope.fail(node, "a mapped type's value names its key");
+  }
+  if (!node.type) scope.fail(node, "a mapped type needs a value type");
+  // Homomorphic mapped type with a fixed value `{ [mod] [P in keyof X][mod]: V }`:
+  // iterate X's record shape (directly or deferred at a named X) to preserve/override
+  // X's modifiers and index signatures without requiring TS's property list.
+  if (isKeyof) {
+    const object = typeTerm(scope, constraint.type);
+    const constant = typeTerm(scope, node.type);
+    const key: TypeTerm = { k: "atom", name: "never", span: [constraint.pos, constraint.end] };
+    return { key, value: object, optional: false, readonly: false,
+      identity: { object, homomorphic: true, readonlyMod: modifier(node.readonlyToken),
+        optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null, constant } };
+  }
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
   const key = parameter.constraint && scope.keys?.(parameter.constraint);
   return { key: key ?? typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
     optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
-    readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword), ...(members ? { members } : {}) };
+    readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword) };
 }
 
 /** A mapped type at a known key, as TypeScript expands it: over string and
@@ -819,6 +890,16 @@ export const DEFERRED_MODULE = "#deferred-mapped-identity";
  * complete (`settleTerm`, named-record.mts), and a document holding one is
  * refused (`deferredInDocument`, `deferredInAst`, `deferredInModule`). */
 export function deferredIdentity(id: Identity, key: TypeTerm, span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
+  if (id.transform) {
+    return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
+      arguments: [], target: { module: DEFERRED_MODULE,
+        name: `transform:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}:${id.transform.id}`, span } } };
+  }
+  if (id.constant) {
+    return { k: "reference", span, args: [id.object, key, id.constant], reference: { name: "a mapped type over a named type", span,
+      arguments: [], target: { module: DEFERRED_MODULE,
+        name: `const:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}`, span } } };
+  }
   return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
     arguments: [], target: { module: DEFERRED_MODULE,
       name: `${id.homomorphic ? "keyof" : "pick"}:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}`, span } } };
@@ -832,13 +913,25 @@ const isModifier = (text: string | undefined): text is Modifier =>
 
 /** A deferred mapped type's identity and key (`deferredIdentity`), or null
  * for any other term. */
-export function deferredOf(term: TypeTerm): Modifies<{ values: "any"; spines: "grow" }, { identity: Identity; key: TypeTerm } | null> {
+export function deferredOf(term: TypeTerm): Modifies<{ values: "any"; spines: "grow" }, { identity: Identity; key: TypeTerm; transformId?: string } | null> {
   if (term.k !== "reference" || term.reference.target.module !== DEFERRED_MODULE) return null;
   const [form, readonlyMod, optionalMod, exactText, ...rest] = term.reference.target.name.split(":");
-  const [object, key, ...more] = term.args;
+  const [object, key, third, ...more] = term.args;
   const exact = exactOf(exactText);
-  if ((form !== "keyof" && form !== "pick") || !isModifier(readonlyMod) || !isModifier(optionalMod) || exact === undefined ||
-      rest.length || !object || !key || more.length)
+  if (!isModifier(readonlyMod) || !isModifier(optionalMod) || exact === undefined || !object || !key || more.length)
+    throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
+  if (form === "transform") {
+    const [transformId, ...extra] = rest;
+    if (!transformId || extra.length || third)
+      throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
+    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact }, key, transformId };
+  }
+  if (form === "const") {
+    if (rest.length || !third)
+      throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
+    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact, constant: third }, key };
+  }
+  if ((form !== "keyof" && form !== "pick") || rest.length || third)
     throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
   return { identity: { object, homomorphic: form === "keyof", readonlyMod, optionalMod, exact }, key };
 }
@@ -852,22 +945,53 @@ export function deferredOf(term: TypeTerm): Modifies<{ values: "any"; spines: "g
 function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never,
     record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   let x = id.object;
+  if (isEmptyObject(x)) return emptyObject(span);
   if (x.k === "reference") {
     const shape = record?.(x, fail) ?? null;
     if (!shape) return deferredIdentity(id, key, span);
     x = shape;
   }
+  if (isEmptyObject(x)) return emptyObject(span);
   if (x.k !== "object") return fail("a mapped type's value names its key, over a type that is no record the reader holds");
   if (x.calls.length || x.prototype || x.host || x.view || x.stable)
     return fail("a mapped type's value names its key, over a type with call signatures, a prototype or a host's members");
-  // A method's receiver is the declaration it is a member of: mapped, the
-  // member is a field of another type, of which no receiver is stated.
-  let receiver = false;
-  for (const f of x.fields) visitType(f.type, part => { if (part.k === "self") receiver = true; });
-  if (receiver) return fail("a mapped type's value names its key, over a type with a method whose receiver is that type");
+  // A method's receiver is the declaration it is a member of: mapped as
+  // identity, the member is a field of another type, of which no receiver is stated.
+  if (!id.constant && !id.transform) {
+    let receiver = false;
+    for (const f of x.fields) visitType(f.type, part => { if (part.k === "self") receiver = true; });
+    if (receiver) return fail("a mapped type's value names its key, over a type with a method whose receiver is that type");
+  }
   const apply = (mod: Modifier, own: boolean): boolean => (mod === "keep" ? own : mod === "add");
   const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
   const optional = (own: boolean): boolean => apply(id.optionalMod, own);
+  if (id.homomorphic && (id.constant || id.transform)) {
+    if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
+      return fail("an optional mapped type over an index signature's keys is outside the fragment");
+    if (!x.fields.length && !x.stringIndex && !x.numberIndex && !x.symbolIndex) return emptyObject(span);
+    const mapField = (f: Extract<TypeTerm, { k: "object" }>["fields"][number]): TypeTerm => {
+      if (id.constant) return id.constant;
+      const transform = id.transform;
+      if (!transform) return f.type;
+      const keyTerm: TypeTerm = typeof f.name === "string"
+        ? { k: "literal", name: "string", text: f.name, span }
+        : { k: "unique", symbol: f.name.symbol, span };
+      const inputType = f.optional && id.optionalMod !== "remove" && id.exact !== true
+        ? optionalTerm(f.type, span) : f.type;
+      return transform.apply(inputType, keyTerm, span);
+    };
+    const mapIndex = (idx: { readonly: boolean; value: TypeTerm; span: Span }, keyAtom: "string" | "number" | "symbol") => {
+      const value = id.constant ? id.constant
+        : id.transform ? id.transform.apply(idx.value, { k: "atom", name: keyAtom, span }, span) : idx.value;
+      return { readonly: readonly(idx.readonly), value, span };
+    };
+    return { ...x,
+      fields: x.fields.map(f => ({ ...f, type: mapField(f), readonly: readonly(f.readonly), optional: optional(f.optional), span })),
+      stringIndex: x.stringIndex && mapIndex(x.stringIndex, "string"),
+      ...(x.numberIndex ? { numberIndex: mapIndex(x.numberIndex, "number") } : {}),
+      ...(x.symbolIndex ? { symbolIndex: mapIndex(x.symbolIndex, "symbol") } : {}),
+      span };
+  }
   // `-?` keeps an optional field's type where `exactOptionalPropertyTypes`
   // is on, and takes `undefined` from it where it is off (`withoutUndefined`).
   // A scope stating no option refuses every field whose type may hold
@@ -1047,11 +1171,68 @@ function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span
  * (`T & U`, `T & "fixed"`). An annotation's union operand holding a type
  * parameter, `(T | null) & A`, is refused: it would distribute into meets
  * each known only at an instance. */
+const PRIMITIVE_ATOMS = new Set(["string", "number", "bigint", "boolean", "symbol", "null", "undefined", "void", "never", "unknown"]);
+
+function isLiteralOrPrimitiveTerm(term: TypeTerm): Modifies<{}, boolean> {
+  if (term.k === "literal" || term.k === "unique") return true;
+  if (term.k === "atom") return PRIMITIVE_ATOMS.has(term.name);
+  if (term.k === "union") return term.parts.every(isLiteralOrPrimitiveTerm);
+  return false;
+}
+
+function meetAtomOrLiteral(a: TypeTerm, b: TypeTerm, span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null> {
+  if (a.k === "atom" && a.name === "never") return null;
+  if (b.k === "atom" && b.name === "never") return null;
+  if (a.k === "atom" && a.name === "unknown") return b;
+  if (b.k === "atom" && b.name === "unknown") return a;
+  if (a.k === "atom" && b.k === "atom") return a.name === b.name ? { k: "atom", name: a.name, span } : null;
+  if (a.k === "literal" && b.k === "literal")
+    return a.name === b.name && a.text === b.text ? { k: "literal", name: a.name, text: a.text, span } : null;
+  if (a.k === "unique" && b.k === "unique")
+    return a.symbol === b.symbol ? { k: "unique", symbol: a.symbol, span } : null;
+  const litInAtom = (lit: TypeTerm, atom: Extract<TypeTerm, { k: "atom" }>): TypeTerm | null => {
+    if (lit.k === "literal") {
+      if (lit.name === "string" && atom.name === "string") return { ...lit, span };
+      if (lit.name === "number" && atom.name === "number") return { ...lit, span };
+      if (lit.name === "bigint" && atom.name === "bigint") return { ...lit, span };
+      if ((lit.name === "true" || lit.name === "false") && atom.name === "boolean") return { ...lit, span };
+    }
+    if (lit.k === "unique" && atom.name === "symbol") return { ...lit, span };
+    return null;
+  };
+  if (b.k === "atom") return litInAtom(a, b);
+  if (a.k === "atom") return litInAtom(b, a);
+  return null;
+}
+
+/** Exact meet of primitive/literal/unique union terms (e.g. `("a" | number) & string = "a"`). */
+export function reduceLiteralIntersection(parts: readonly TypeTerm[], span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null> {
+  const [first, ...restParts] = parts;
+  if (!first || !parts.every(isLiteralOrPrimitiveTerm)) return null;
+  let current: TypeTerm[] = unionParts(first);
+  for (const part of restParts) {
+    const right = unionParts(part);
+    const next: TypeTerm[] = [];
+    for (const l of current) {
+      for (const r of right) {
+        const met = meetAtomOrLiteral(l, r, span);
+        if (met && !next.some(existing => sameTerm(existing, met))) next.push(met);
+      }
+    }
+    current = next;
+  }
+  const [only] = current;
+  if (!only) return { k: "atom", name: "never", span };
+  return current.length === 1 ? only : { k: "union", parts: current, span };
+}
+
 function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   if (computedForm(node) !== null && scope.computed)
     return scope.computed(node, span, part => typeTerm(scope, part));
   const operands = intersectionOperands(node);
   const parts = operands.map(operand => typeTerm(scope, operand));
+  const reduced = reduceLiteralIntersection(parts, span);
+  if (reduced) return reduced;
   return { k: "intersection", parts, span };
 }
 
@@ -1578,6 +1759,11 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       // contract, and no weaker type is safe for both.
       const name = named(member, "unsupported method signature");
       if (!member.type) scope.fail(member, "unsupported method signature");
+      const instantiated = scope.computedMethod?.(member, memberSpan);
+      if (instantiated) {
+        fields.push({ name, optional: false, readonly: true, type: instantiated, span: memberSpan });
+        continue;
+      }
       const { binders, forms } = quantified(scope, typeParameters, member.parameters, member.type,
         member, memberSpan);
       if (forms.some(m => m.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);

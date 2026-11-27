@@ -29,7 +29,7 @@ import type { DeclarationIdentity, ResolutionSlots, TypeDefinition, TypeTerm, Va
 import type { StatedFrame } from "./type-graph.mts";
 import { withConditions } from "./type-graph.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
-import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
+import { computedAlias, computedForm, isTransformingMappedNode, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
@@ -2344,6 +2344,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const findComputed = (node: Node): void => {
     if (isTypeAlias(node) || ts.isInterfaceDeclaration(node)) return;
     if (ts.isTypeNode(node) && (computedForm(node) !== null ||
+        (ts.isMappedTypeNode(node) && isTransformingMappedNode(node)) ||
         (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && computedAliases.has(node.typeName.text) &&
           !enclosingBinders(node).includes(node.typeName.text)))) {
       computedNodes.push(node);
