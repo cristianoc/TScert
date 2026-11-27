@@ -3773,7 +3773,7 @@ where the native is modelled, and audited otherwise:
 | `map` at any receiver and any callback | `{value: any, spine: any}` | the unrestricted signature, with a result that may hold holes |
 | `every` at a guard within the empty footprint promising `R`'s type, `R` one of `string`, `number`, `boolean` | the empty footprint, and on a `true` result every present element of the receiver of kind `R` (`elements R`) | `every` reads the length once, tests presence and calls the guard with each present element, answering `false` at the first falsy answer; the guard changes no location, so the spine and each element keep their contents through the call, and a guard's answer is a Boolean, so `true` follows only from `true` at every visit, which leaves that element in `R` ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.every`; audited) |
 | `map` at a callback within the empty footprint taking `R`'s type, its receiver's present elements of kind `R` at the call (`requires R`), at a dense receiver and at any receiver | the empty footprint, a fresh result, dense at a dense receiver | the callback changes no location, so the fact holds at every visit (`elems_rely`) and each element `map` passes is in `R`; `map` skips a hole and leaves it in its result, built by ordinary construction ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.map`; audited) |
-| a global, sticky or conservative native regex's `exec` and `test`; its `[Symbol.match]` and `[Symbol.replace]` at a string | `{this.lastIndex: scalar}` (closed bound `{value: scalar, spine: keep}`); `{value: scalar, spine: keep}` | they write only the receiver's own `lastIndex`, a number, and no other field, object or spine ([ECMA-262](REFERENCES.md#ecma-262), `RegExpBuiltinExec`, `RegExp.prototype.test`, `RegExp.prototype[@@match]`, `RegExp.prototype[@@replace]`; audited) |
+| a global, sticky or conservative native regex's `exec` and `test`; its `[Symbol.match]` and `[Symbol.replace]` at a string | `{this.lastIndex: scalar}` (closed bound `{value: scalar, spine: keep}`); `{value: scalar, spine: keep}` | they write only the receiver's own `lastIndex`, a number, and no other field, object or spine; Annex-B legacy static properties (`RegExp.$1`, etc.) are unexposed by the model ([ECMA-262](REFERENCES.md#ecma-262), `RegExpBuiltinExec`, `RegExp.prototype.test`, `RegExp.prototype[@@match]`, `RegExp.prototype[@@replace]`; audited). Trust refined on 2026-11-27, for the owner's review (`regexp-test-stateless-framing`; `invalid-regexp-test-global-mutates`, run under Node) |
 | a native regex's other members; a regex neither global nor sticky's `exec`, `test`, `[Symbol.match]` at a string and `[Symbol.replace]` at a string and a string replacement | the empty footprint | they write nothing (audited) |
 | a native regex's `[Symbol.replace]` at a replacement callback within `{value: any, spine: keep}`, the regex a literal written at the call | `{value: any, spine: keep}` | audited against [ECMA-262](REFERENCES.md#ecma-262), `RegExp.prototype[@@replace]` with a function `replaceValue`: beside the callback's calls it reads the fresh literal's flags, writes its `lastIndex`, an own data property holding a number, runs `RegExpBuiltinExec`, allocates the match results and the arguments it passes, and converts each callback result, a string, by `ToString`, which runs no code; the callback is called within the footprint its type states. Trust added on 2026-11-08, for the owner's review (`regexp-replace-callback-keeps-lengths`; `invalid-regexp-replace-callback-pops`, run under Node) |
 | a native regex's `[Symbol.replace]` at any other replacement callback, the regex a literal written at the call | none stated | it calls the callback, client code (`invalid-regexp-replace-callback-effect`) |
@@ -6344,7 +6344,8 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 \epsilon_{N(\Sigma)}(m)=\begin{cases}
 \emptyset & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
 \emptyset & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
-\{\mathit{value}{:}\,\mathsf{any},\ \mathit{spine}{:}\,\mathsf{keep}\} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ g\lor y\\
+\{\mathit{this}.\mathtt{lastIndex}{:}\,\mathsf{scalar}\} & m\in\{\mathtt{exec},\mathtt{test}\},\ \Sigma=\Sigma_\top\lor g\lor y\\
+\{\mathit{value}{:}\,\mathsf{scalar},\ \mathit{spine}{:}\,\mathsf{keep}\} & m\in\{[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma=\Sigma_\top\lor g\lor y\\
 \top & \text{otherwise}
 \end{cases}
 ```
@@ -6353,10 +6354,14 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 `[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
 writes no `lastIndex`; one that is leaves it where its last match ended,
 changing one location, which holds a number by its contract
-(`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read:
-`exec`, `test`, `[@@match]` and `[@@replace]` state
-$`\{\mathit{value}\colon\mathsf{any},\ \mathit{spine}\colon\mathsf{keep}\}`$,
-the bound of a global or sticky regex, and `[@@search]` and `[@@split]`
+(`map-stable-regexp-test`, `regexp-test-stateless-framing`; Annex-B legacy
+static slots such as `RegExp.$1` are unexposed by the model). At $`\Sigma_\top`$
+the flags are not read: `exec` and `test` state
+$`\{\mathit{this}.\mathtt{lastIndex}\colon\mathsf{scalar}\}`$ (closed bound
+$`\{\mathit{value}\colon\mathsf{scalar},\ \mathit{spine}\colon\mathsf{keep}\}`$),
+`[@@match]` and `[@@replace]` state
+$`\{\mathit{value}\colon\mathsf{scalar},\ \mathit{spine}\colon\mathsf{keep}\}`$,
+and `[@@search]` and `[@@split]`
 state none. A regex's `exec` and `test` take
 `string | undefined`: they convert their argument by `ToString`, which runs no
 code on `undefined` and gives `"undefined"` (`/^undefined$/.test(undefined)`

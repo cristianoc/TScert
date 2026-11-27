@@ -942,32 +942,32 @@ function exportedConstFrom(file: string, name: string, depth: number = 0): ts.Ex
   if (depth > 16 || !existsSync(file)) return undefined;
   const tree = treeOf(file);
   for (const st of tree.statements) {
-    if (ts.isVariableStatement(st) && (st.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
-        st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+    if (ts.isVariableStatement(st) && st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
       for (const d of st.declarationList.declarations) {
-        if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer !== undefined) return d.initializer;
+        if (ts.isIdentifier(d.name) && d.name.text === name) {
+          if ((st.declarationList.flags & ts.NodeFlags.Const) !== 0 && d.initializer !== undefined) return d.initializer;
+          return undefined;
+        }
       }
     }
   }
+  // Check local and explicit named exports before `export * from`, matching ES shadowing semantics.
   for (const st of tree.statements) {
-    if (!ts.isExportDeclaration(st)) continue;
+    if (!ts.isExportDeclaration(st) || st.exportClause === undefined || !ts.isNamedExports(st.exportClause)) continue;
     const spec = st.moduleSpecifier;
     const target = spec !== undefined && ts.isStringLiteral(spec) ? importedFile(file, spec.text) : null;
     if (spec !== undefined && target === null) continue;
-    if (st.exportClause === undefined) {
-      const r = target === null ? undefined : exportedConstFrom(target, name, depth + 1);
-      if (r !== undefined) return r;
-      continue;
-    }
-    if (!ts.isNamedExports(st.exportClause)) continue;
     for (const e of st.exportClause.elements) {
       if (e.name.text !== name) continue;
       const local = e.propertyName?.text ?? e.name.text;
       if (target !== null) return exportedConstFrom(target, local, depth + 1);
       for (const v of tree.statements) {
-        if (ts.isVariableStatement(v) && (v.declarationList.flags & ts.NodeFlags.Const) !== 0) {
+        if (ts.isVariableStatement(v)) {
           for (const d of v.declarationList.declarations) {
-            if (ts.isIdentifier(d.name) && d.name.text === local && d.initializer !== undefined) return d.initializer;
+            if (ts.isIdentifier(d.name) && d.name.text === local) {
+              if ((v.declarationList.flags & ts.NodeFlags.Const) !== 0 && d.initializer !== undefined) return d.initializer;
+              return undefined;
+            }
           }
         }
       }
@@ -979,7 +979,16 @@ function exportedConstFrom(file: string, name: string, depth: number = 0): ts.Ex
         for (const ie of named.elements)
           if (!ie.isTypeOnly && ie.name.text === local) return exportedConstFrom(from, ie.propertyName?.text ?? local, depth + 1);
       }
+      return undefined;
     }
+  }
+  for (const st of tree.statements) {
+    if (!ts.isExportDeclaration(st) || st.exportClause !== undefined) continue;
+    const spec = st.moduleSpecifier;
+    const target = spec !== undefined && ts.isStringLiteral(spec) ? importedFile(file, spec.text) : null;
+    if (target === null) continue;
+    const r = exportedConstFrom(target, name, depth + 1);
+    if (r !== undefined) return r;
   }
   return undefined;
 }
@@ -1001,49 +1010,44 @@ function importedConstInit(name: string, from: ts.Node): ts.Expression | undefin
   return undefined;
 }
 
-/** Whether `name` is a module-level `const` initialized by calling a factory
- * function whose body allocates only private `let` cell(s) (initialized to
- * primitive literals, never escaping) and returns a 0-argument closure whose
- * only writes are assignments to those private cells (and pure `new RegExp`
- * allocations from primitive factory parameters). Such a closure mutates only
- * its own confined closure state (`@state`), disjoint from every caller
- * parameter, array spine, array cell, and external field (rule Confined). */
-function confinedFactoryCallEffect(name: string, at: ts.Node): Effect | null {
-  const d = declOf(name, at);
-  if (d === null || d.kind !== "const" || d.init === undefined) return null;
-  if (!ts.isVariableDeclaration(d.at) || !ts.isVariableDeclarationList(d.at.parent) ||
-      !ts.isVariableStatement(d.at.parent.parent) || !ts.isSourceFile(d.at.parent.parent.parent))
-    return null;
-  const init = unwrapExpr(d.init);
-  if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression)) return null;
+/** Whether `expr` calls a factory function whose body allocates only private
+ * `let` cell(s) (initialized to primitive literals, never escaping) and returns
+ * a 0-argument closure whose only writes are assignments to those private cells
+ * (and pure global `new RegExp` allocations from primitive factory parameters).
+ * When `requireStatelessFlags` is true, also checks that any `new RegExp` flags
+ * argument is a non-global, non-sticky string literal. */
+function isConfinedFactoryCall(expr: ts.Expression, requireStatelessFlags: boolean = false): boolean {
+  const init = unwrapExpr(expr);
+  if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression)) return false;
   const fDecl = declOf(init.expression.text, init.expression);
   const factory = fDecl?.kind === "function" ? fDecl.node
     : fDecl === null ? importedDecl(init.expression.text, init.expression) : undefined;
-  if (factory === undefined || !factory.body) return null;
-  const primParams = new Set<string>();
-  for (const p of factory.parameters) {
-    if (!ts.isIdentifier(p.name) || p.type === undefined) return null;
+  if (factory === undefined || !factory.body) return false;
+  const primParams = new Map<string, number>();
+  for (let i = 0; i < factory.parameters.length; i++) {
+    const p = factory.parameters[i];
+    if (!p || !ts.isIdentifier(p.name) || p.type === undefined) return false;
     const tk = p.type.kind;
     if (tk !== ts.SyntaxKind.StringKeyword && tk !== ts.SyntaxKind.NumberKeyword && tk !== ts.SyntaxKind.BooleanKeyword)
-      return null;
-    primParams.add(p.name.text);
+      return false;
+    primParams.set(p.name.text, i);
   }
   const stmts = factory.body.statements;
-  if (stmts.length === 0) return null;
+  if (stmts.length === 0) return false;
   const last = stmts[stmts.length - 1];
-  if (!last || !ts.isReturnStatement(last) || !last.expression) return null;
+  if (!last || !ts.isReturnStatement(last) || !last.expression) return false;
   const retFn = unwrapExpr(last.expression);
-  if (!isFn(retFn) || retFn.parameters.length !== 0 || !retFn.body) return null;
+  if (!isFn(retFn) || retFn.parameters.length !== 0 || !retFn.body) return false;
   const privCells = new Set<string>();
   for (let i = 0; i < stmts.length - 1; i++) {
     const s = stmts[i];
-    if (!s || !ts.isVariableStatement(s) || (s.declarationList.flags & ts.NodeFlags.Let) === 0) return null;
+    if (!s || !ts.isVariableStatement(s) || (s.declarationList.flags & ts.NodeFlags.Let) === 0) return false;
     for (const vd of s.declarationList.declarations) {
-      if (!ts.isIdentifier(vd.name) || !vd.initializer || !isPrimitiveLiteral(vd.initializer)) return null;
+      if (!ts.isIdentifier(vd.name) || !vd.initializer || !isPrimitiveLiteral(vd.initializer)) return false;
       privCells.add(vd.name.text);
     }
   }
-  if (privCells.size === 0) return null;
+  if (privCells.size === 0) return false;
   const isAssign = (k: ts.SyntaxKind): boolean =>
     k === ts.SyntaxKind.EqualsToken || k === ts.SyntaxKind.PlusEqualsToken ||
     k === ts.SyntaxKind.QuestionQuestionEqualsToken || k === ts.SyntaxKind.BarBarEqualsToken ||
@@ -1063,8 +1067,25 @@ function confinedFactoryCallEffect(name: string, at: ts.Node): Effect | null {
     }
     if (ts.isNewExpression(node)) {
       const ctor = unwrapExpr(node.expression);
-      if (ts.isIdentifier(ctor) && ctor.text === "RegExp" &&
-          (node.arguments ?? []).every((a) => isSafeArg(a))) return;
+      const args = node.arguments ?? [];
+      if (ts.isIdentifier(ctor) && ctor.text === "RegExp" && declOf("RegExp", ctor) === null &&
+          args.every((a) => isSafeArg(a))) {
+        if (requireStatelessFlags && args.length >= 2 && args[1] !== undefined) {
+          const fa = unwrapExpr(args[1]);
+          let flagVal: string | null = null;
+          if (ts.isStringLiteral(fa)) flagVal = fa.text;
+          else if (ts.isIdentifier(fa)) {
+            const pidx = primParams.get(fa.text);
+            const callArg = pidx === undefined ? undefined : init.arguments[pidx];
+            if (callArg !== undefined && ts.isStringLiteral(unwrapExpr(callArg))) {
+              const s = unwrapExpr(callArg);
+              if (ts.isStringLiteral(s)) flagVal = s.text;
+            }
+          }
+          if (flagVal === null || /[gy]/.test(flagVal)) { ok = false; return; }
+        }
+        return;
+      }
       ok = false;
       return;
     }
@@ -1081,7 +1102,20 @@ function confinedFactoryCallEffect(name: string, at: ts.Node): Effect | null {
     node.forEachChild(checkBody);
   };
   checkBody(retFn.body);
-  return ok ? { entries: [["@state", "any"]], else: "keep" } : null;
+  return ok;
+}
+
+/** Whether `name` is a module-level `const` initialized by calling a confined
+ * private-cell factory (`isConfinedFactoryCall`). Such a closure mutates only
+ * its own confined closure state (`@state`), disjoint from every caller
+ * parameter, array spine, array cell, and external field (rule Confined). */
+function confinedFactoryCallEffect(name: string, at: ts.Node): Effect | null {
+  const d = declOf(name, at);
+  if (d === null || d.kind !== "const" || d.init === undefined) return null;
+  if (!ts.isVariableDeclaration(d.at) || !ts.isVariableDeclarationList(d.at.parent) ||
+      !ts.isVariableStatement(d.at.parent.parent) || !ts.isSourceFile(d.at.parent.parent.parent))
+    return null;
+  return isConfinedFactoryCall(d.init) ? { entries: [["@state", "any"]], else: "keep" } : null;
 }
 
 /** A function's effect parameters: its type parameters bounded by `AtMost`. */
@@ -2276,17 +2310,9 @@ function closureEffect(
             const inner = unwrapExpr(callee.expression);
             if (!ts.isCallExpression(inner)) return false;
             const fnExpr = unwrapExpr(inner.expression);
-            const isLazyCall = (e: ts.Expression): boolean => {
-              const ue = unwrapExpr(e);
-              if (ts.isCallExpression(ue) && ts.isIdentifier(unwrapExpr(ue.expression)) &&
-                  unwrapExpr(ue.expression).getText() === "lazyRegExp" &&
-                  ue.arguments[1] !== undefined && ts.isStringLiteral(unwrapExpr(ue.arguments[1])) &&
-                  !/[gy]/.test(unwrapExpr(ue.arguments[1]).getText())) return true;
-              return false;
-            };
             if (ts.isIdentifier(fnExpr)) {
               const d = declOf(fnExpr.text, fnExpr);
-              return d !== null && d.kind === "const" && d.init !== undefined && isLazyCall(d.init);
+              return d !== null && d.kind === "const" && d.init !== undefined && isConfinedFactoryCall(d.init, true);
             }
             if (ts.isBinaryExpression(fnExpr) && fnExpr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
               const leftExpr = unwrapExpr(fnExpr.left);
@@ -2296,14 +2322,14 @@ function closureEffect(
                   const d = declOf(arrId.text, arrId);
                   if (d !== null && d.kind === "const" && d.init !== undefined && ts.isArrayLiteralExpression(unwrapExpr(d.init))) {
                     const lit = unwrapExpr(d.init);
-                    return ts.isArrayLiteralExpression(lit) && lit.elements.every((el) => isLazyCall(el));
+                    return ts.isArrayLiteralExpression(lit) && lit.elements.every((el) => isConfinedFactoryCall(el, true));
                   }
                 }
               }
             }
             return false;
           })()) {
-        // Stateless `lazyRegExp(_, flags)` invocation + `.test(...)` updates only the lazy cell (`@state`).
+        // Stateless confined regex-factory invocation + `.test(...)` updates only its private cell (`@state`).
         entries.push(["@state", "any"]);
         return undefined;
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "map" &&
@@ -2382,8 +2408,11 @@ function closureEffect(
           }
           const st = decl === undefined ? null : statedEffect(decl);
           if (decl !== undefined && st !== null && st.checkBody) {
-            const { error: why } = verifyStatedEffect(decl, st.effect, st.ordKeepsSpines === true);
+            const { error: why, denseWrites: calleeDenseWrites } = verifyStatedEffect(decl, st.effect, st.ordKeepsSpines === true);
             if (why !== null) return fail(n, `calls ${callee.text} whose stated Effects failed verification (${why})`);
+            if (calleeDenseWrites.length > 0 && !ts.isSourceFile(decl.parent)) {
+              return fail(n, `calls nested ${callee.text} relying on dense-write spine omission without a top-level unit to certify denseWriteStep`);
+            }
           }
           // A call of a function with effect parameters whose instances are the
           // calling function's own effect parameters (or joins `[E, P]`), or

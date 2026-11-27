@@ -5260,5 +5260,5 @@ export const cases: Case[] = [
   negative("invalid-nested-allocation-alias-write", "a mutable field cannot hold both a closed record for a readonly index-signature view and an open record for a mutable writer (returns a string for number under Node)", /no derivation of its binding-annotation claim/),
   positive("dense-write-type-disjoint-frame", "in-bounds writes on `Dense<number[]>` (and `Dense<number[]> | null` initialized via `??=`) frame quantified invariants on type-disjoint `(number[] | null)[]` and union-clause `Dense<(number[] | null)[]> | null` arrays without `!==`"),
   negative("invalid-dense-write-same-elem-type-clobbers", "without `widths !== targets`, an in-bounds write on `Dense<number[]>` can alias `number[]` and clobber `forall k in targets: 1 <= targets[k]`, reading `out[-1]` (`undefined`) and returning `NaN` (run under Node)",
-    /source expression obligation|evidence search failed/i),
+    /source expression obligation at \[674,684\)/),
 ];

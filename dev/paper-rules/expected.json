@@ -272,7 +272,9 @@
       "callerPreservesLengths": "accepted",
       "writeDenseAppend": "refused",
       "writeNonDenseInBounds": "refused",
-      "writeDenseAtLength": "refused"
+      "writeDenseAtLength": "refused",
+      "nestedDenseAppendOuter": "refused",
+      "callerOfNestedDenseAppend": "refused"
     }
   }
 }

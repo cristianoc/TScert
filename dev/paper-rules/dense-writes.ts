@@ -109,3 +109,24 @@ export function writeDenseAtLength(
 ): Effects<{ "arr[#]": "any" }, void> {
   arr[i] = v;
 }
+
+// Negative: a nested function claiming `Effects<{ "a[#]": "any" }, void>`
+// around `a[a.length] = x` has no top-level Lean unit to certify
+// `denseWriteStep`, so calling it must be refused.
+export function nestedDenseAppendOuter(
+  arr: Dense<number[]>,
+  v: number,
+): Effects<{ "arr[#]": "any" }, void> {
+  function inner(a: Dense<number[]>, x: number): Effects<{ "a[#]": "any" }, void> {
+    a[a.length] = x;
+  }
+  inner(arr, v);
+}
+
+/**
+ * @requires safeInteger(i) && 0 <= i && i < xs.length
+ */
+export function callerOfNestedDenseAppend(xs: Dense<number[]>, i: number): number {
+  nestedDenseAppendOuter(xs, 1);
+  return xs[i]!;
+}

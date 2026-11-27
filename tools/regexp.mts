@@ -127,9 +127,11 @@ function replacer(shape: RegExpShape, effect: Effect = ordinaryEffect): TypeTerm
  * `[Symbol.split]` and `[Symbol.matchAll]` step a fresh clone: the empty
  * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
  * string replacement) state the empty footprint where the regex is neither
- * global nor sticky, and where it is, or where the shape is the conservative
- * one, whose flags are not read, `{this.lastIndex: scalar}` (closed bound
- * `{value: scalar, spine: keep}`): they leave `lastIndex`, an own property of
+ * global nor sticky; where it is, or where the shape is the conservative
+ * one, whose flags are not read, `exec` and `test` state
+ * `{this.lastIndex: scalar}` (closed bound `{value: scalar, spine: keep}`) and
+ * `[Symbol.match]` and `[Symbol.replace]` (at a string replacement) state
+ * `{value: scalar, spine: keep}`: they leave `lastIndex`, an own property of
  * the receiver holding a number, where the last match ended (0 after the
  * last). `[Symbol.search]` and `[Symbol.split]` of the conservative shape
  * state none (SOURCE-CONTRACTS.md, "Native footprints"). */

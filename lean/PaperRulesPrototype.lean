@@ -514,7 +514,8 @@ theorem run_eq_base {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : 
 
 /-- The layer: a checker whose `run` is the rules' step, and whose normal
 effect is the ordinary checker's wherever the ordinary checker is pure or
-at every step it leaves to that checker. -/
+at every step it leaves to that checker (including `.writeAt`, where `run`
+returns either `failure` or `base.run`). -/
 def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) : Checker G images where
   run := run u base
@@ -523,7 +524,7 @@ def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
     if u.missingDenseSite then Footprints.Closed.top
     else if base.normal j k e codes sums == .empty then base.normal j k e codes sums
     else match j.term with
-      | .invoke (.var _) _ _ | .writeAt .. => Footprints.Closed.top
+      | .invoke (.var _) _ _ => Footprints.Closed.top
       | _ => base.normal j k e codes sums
   normal_sound := by
     intro j k e out codes sums hrun hc hs ε ρ n W h henv hk hW hok hrefs hn
@@ -536,14 +537,10 @@ def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
         have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) hmiss' (.inl hemp)
         rw [heq] at hrun
         exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
-      · split at hn
+      · rename_i hne
+        split at hn
         · exact absurd hn Footprints.Closed.top_ne_empty
-        · exact absurd hn Footprints.Closed.top_ne_empty
-        · rename_i hnotI hnotW
-          have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) hmiss'
-            (.inr ⟨fun s t args hj => hnotI s t args hj, fun f o v hj => hnotW f o v hj⟩)
-          rw [heq] at hrun
-          exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
+        · exact absurd (by simp [hn]) hne
 
 /-! ## The side file -/
 
@@ -818,6 +815,15 @@ def checkFile (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) (
   | .error e => RequestCli.refuse e
   | .ok p =>
     if prof then SinglePass.profiling.set true
+    -- Fail closed if any side-file unit carrying `denseWrites` matches no pass unit
+    -- (matching by name and `namePos` when present).
+    for (uname, u) in units.toList do
+      if !u.denseWrites.isEmpty then
+        let matched := p.fr.units.any fun
+          | (fn, _, none) => fn.name == uname && (u.namePos.isNone || u.namePos == some fn.namePos)
+          | _ => false
+        if !matched then
+          return ← RequestCli.refuse s!"side-file unit {uname} with denseWrites matches no pass unit"
     let isPaperWalker (name : String) (namePos : Nat × Nat) : Bool :=
       match units.get? name with
       | some u => !u.bounds.isEmpty && u.namePos == some namePos
