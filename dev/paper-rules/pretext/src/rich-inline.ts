@@ -1517,9 +1517,10 @@ function createLine(
 }
 
 // The paragraph's segment a cursor names, or the segment count for one past the last item.
+/** @requires safeInteger(cursor.itemIndex) && 0 <= cursor.itemIndex */   // PAPER: annotation
 function getSegmentIndex(flow: InternalPreparedRichInline, cursor: RichInlineCursor): number {
   const { itemSegments } = flow
-  return cursor.itemIndex < itemSegments.length ? (itemSegments[cursor.itemIndex] ?? missing()) + cursor.segmentIndex : flow.data.widths.length
+  return cursor.itemIndex < itemSegments.length ? itemSegments[cursor.itemIndex]! + cursor.segmentIndex : flow.data.widths.length   // PAPER: guard removed
 }
 
 export function layoutNextRichInlineLineRange(
@@ -1529,22 +1530,23 @@ export function layoutNextRichInlineLineRange(
 ): RichInlineLineRange | null {
   const flow = getInternalPreparedRichInline(prepared)
   const safeWidth = Math.max(0, maxWidth)
+  // boundary check: validates caller-supplied RichInlineCursor (itemIndex, segmentIndex,
+  // graphemeIndex, and breakableFitAdvances bounds) at the public streaming API boundary (#365).
+  if (!(Number.isSafeInteger(start.itemIndex) && 0 <= start.itemIndex)) throw new RangeError('cursor item index out of range')
+  if (!(Number.isSafeInteger(start.segmentIndex) && 0 <= start.segmentIndex)) throw new RangeError('cursor segment index out of range')
+  if (!(Number.isSafeInteger(start.graphemeIndex) && 0 <= start.graphemeIndex)) throw new RangeError('cursor grapheme index out of range')
   if (start.itemIndex === 0 && start.segmentIndex === 0 && start.graphemeIndex === 0 && fitsWhole(flow, safeWidth)) {
     return flow.onlyItem >= 0 ? createOnlyItemLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0) : createLine(flow, flow.wholeWidth ?? missing(), flow.wholeStart, 0, flow.wholeEnd, 0)
   }
   const lineEnd: LayoutCursor = { segmentIndex: getSegmentIndex(flow, start), graphemeIndex: start.graphemeIndex }
-  // boundary check: validates caller-supplied RichInlineCursor (itemIndex/segmentIndex,
-  // graphemeIndex, and breakableFitAdvances bounds) at the public streaming API boundary (#365).
   const segmentAtStart = lineEnd.segmentIndex   // PAPER: a local copy for the check
   if (!(Number.isSafeInteger(segmentAtStart) && 0 <= segmentAtStart)) throw new RangeError('cursor segment index out of range')
-  const graphemeAtStart = lineEnd.graphemeIndex   // PAPER: a local copy for the check
-  if (!(Number.isSafeInteger(graphemeAtStart) && 0 <= graphemeAtStart)) throw new RangeError('cursor grapheme index out of range')
   const data = flow.data   // PAPER: the handle through a local
   const breakableFitAdvances = data.breakableFitAdvances   // PAPER: keep array read link across branch
-  if (graphemeAtStart > 0) {
+  if (lineEnd.graphemeIndex > 0) {
     if (segmentAtStart >= data.widths.length || segmentAtStart >= breakableFitAdvances.length) return null
     const advances = breakableFitAdvances[segmentAtStart]
-    if (advances === undefined || advances === null || graphemeAtStart >= advances.length) throw new RangeError('cursor grapheme index out of range')
+    if (advances === undefined || advances === null || lineEnd.graphemeIndex >= advances.length) throw new RangeError('cursor grapheme index out of range')
   }
   if (!normalizePreparedLineStart(data, lineEnd)) return null
   const startSegmentIndex = lineEnd.segmentIndex
@@ -1626,6 +1628,8 @@ export function materializeRichInlineLineRange(
   line: RichInlineLineRange,
 ): RichInlineLine {
   const flow = getInternalPreparedRichInline(prepared)
+  // boundary check: validates caller-supplied line.end.itemIndex at the public API boundary (#365).
+  if (!(Number.isSafeInteger(line.end.itemIndex) && 0 <= line.end.itemIndex)) throw new RangeError('cursor item index out of range')
   const { data, itemSegments } = flow
   let { sourceStarts, sourceEnds, sourceUnits } = flow
   if (sourceStarts === null) ({ sourceStarts, sourceEnds, sourceUnits } = textSources.get(flow) ?? findSegmentSources(flow))
