@@ -7,11 +7,12 @@
 #   census/history.tsv a line per census;
 # - the census record, the next census's baseline, and the refusals ranking
 #   (census.mts refusals), artifacts of the run.
-# Main and single-pass comment on the pull request the pushed commit belongs
-# to, or on the commit where no pull request holds it, with the movement: the
-# counts before and after, the functions gained and lost, and the executed
-# CPU at the previous census's machine speed, mentioning the owner when
-# coverage is lost or that CPU rises by more than a quarter.
+# Where coverage moved or the executed CPU, at the previous census's machine
+# speed, rose by more than a quarter or fell by more than a fifth, main and
+# single-pass comment on the pull request the pushed commit belongs to, or on
+# the commit where no pull request holds it, with the movement: the counts
+# before and after, the functions gained and lost, and that CPU, mentioning
+# the owner when coverage is lost or that CPU rises.
 # A pull request changing this workflow runs the census and writes its
 # report to the run's summary, publishing nothing.
 
@@ -219,6 +220,16 @@ jobs:
           if grep -m1 '^cpu:' "$CENSUS/movement.txt" | grep -oE 'ratio [0-9.]+' |
               awk '{ up = $2 > 1.25 } END { exit !up }'; then
             mention="${mention:-@${GITHUB_REPOSITORY_OWNER} }CPU up. "
+          fi
+          # A census posts only where coverage moved, shallow or deep, or its
+          # CPU ratio is outside 0.8 to 1.25; its run keeps every count.
+          if ! grep -qE '^  (gained|lost) \([1-9]' "$CENSUS/movement.txt" &&
+            ! grep -m1 '^shallow: verified statement coverage:' "$CENSUS/movement.txt" |
+              awk '{ n = 0; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%$/) v[++n] = $i + 0 } END { exit !(n >= 2 && v[2] != v[1]) }' &&
+            ! grep -m1 '^cpu:' "$CENSUS/movement.txt" | grep -oE 'ratio [0-9.]+' |
+              awk '{ out = $2 > 1.25 || $2 < 0.8 } END { exit !out }'; then
+            echo "coverage and CPU unchanged: no comment"
+            exit 0
           fi
           {
             echo "${mention}**Census** of \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: ${report}"

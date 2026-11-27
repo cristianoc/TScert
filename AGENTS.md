@@ -92,10 +92,10 @@ Work lands on the line `single-pass`
 census of `tools/` runs on each push to `main` or `single-pass`, by the
 [Census workflow](.github/workflows/census.yml), compared with the last
 successful census pushed to the same branch and kept as the run's artifact.
-It comments on the pushed commit's pull request, or on the commit where no
-pull request holds it, mentioning the owner when coverage is lost or the
-executed CPU, at the previous census's machine speed, rises by more than a
-quarter; on
+Where coverage moved or the executed CPU, at the previous census's machine
+speed, changed by more than a quarter rising or a fifth falling, it comments
+on the pushed commit's pull request, or on the commit where no pull request
+holds it, mentioning the owner when coverage is lost or that CPU rises; on
 `main` it also publishes its page. Its commands are
 [`dev/census.mts`'s](dev/census.mts). A branch runs no census, over
 `tools/` or over a file: it shows a change does what it is for by the function it targets and one depending on it, before

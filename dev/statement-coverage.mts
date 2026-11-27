@@ -193,7 +193,7 @@ const percent = (v: number, n: number): string => (n === 0 ? "n/a" : `${((100 * 
 /** The coverage line of a set of counts, with its functions' count. */
 function line(c: Counts, functions: { verified: number; all: number }): string {
   return `${percent(c.v, c.n).padStart(6)}  ${String(c.v).padStart(5)} of ${String(c.n).padEnd(5)} statements · ` +
-    `functions ${functions.verified} of ${functions.all} verified`;
+    `functions ${functions.verified} of ${functions.all} verified (${percent(functions.verified, functions.all)})`;
 }
 
 /** The verified coverage of `units` for the directory, per file and, with

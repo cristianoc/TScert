@@ -1008,7 +1008,9 @@ function comparison(before: Census, after: Census): string {
   const out: string[] = [];
   for (const [name, test] of [["shallow", shallow], ["deep", deep]] as const) {
     const [x, y] = [new Set(a.filter(test).map((r) => `${r.file}#${r.fn}`)), new Set(b.filter(test).map((r) => `${r.file}#${r.fn}`))];
-    out.push(`${name} verified: ${x.size} of ${a.length} → ${y.size} of ${b.length}`);
+    const share = (v: number, n: number): string => (n === 0 ? "n/a" : `${((100 * v) / n).toFixed(1)}%`);
+    out.push(`${name} verified: ${x.size} of ${a.length} (${share(x.size, a.length)}) → ` +
+      `${y.size} of ${b.length} (${share(y.size, b.length)})`);
     out.push(`  gained (${[...y].filter((k) => !x.has(k)).length}): ${[...y].filter((k) => !x.has(k)).join(", ")}`);
     out.push(`  lost (${[...x].filter((k) => !y.has(k)).length}): ${[...x].filter((k) => !y.has(k)).join(", ")}`);
   }
