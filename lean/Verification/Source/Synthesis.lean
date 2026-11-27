@@ -256,6 +256,9 @@ structure Walk where
   (`applyCall`): the call is walked again with each expected there
   (`exprCall`). -/
   misfits : List (Nat × Ty Tree) := []
+  /-- Alternative overload parameter lists for `exprCall` when a non-generic
+  overloaded call's primary `misfits` retry fails. -/
+  altMisfits : List (List (Nat × Ty Tree)) := []
   changedFrame : Footprints.Footprint := []
   /-- The environments a `continue` of the innermost loop leaves with. -/
   continues : List Env := []
@@ -4581,7 +4584,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     | _ => ([], true)
   if w1.misfits.isEmpty || spread then return r
   let exps := (List.range args.length).map fun i => w1.misfits.lookup i
-  set { w0 with misfits := [], exactMisfits := [], exactAt := w1.exactMisfits ++ w0.exactAt }
+  set { w0 with misfits := [], altMisfits := [], exactMisfits := [], exactAt := w1.exactMisfits ++ w0.exactAt }
   let r' ← exprCallAt env e exp exps
   modify fun w => { w with exactAt := w0.exactAt }
   let w2 ← get
@@ -4589,11 +4592,21 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
   let admitted := w1.misfits.all fun (i, P) =>
     (args[i]?.bind fun x => (w2.exprs.get? x.span).bind (·.2.toOption)).any (within T · P)
   if r'.1.isSome && admitted then return r'
+  for alt in w1.altMisfits do
+    let altExps := (List.range args.length).map fun i => alt.lookup i
+    set { w0 with misfits := [], altMisfits := [], exactMisfits := [] }
+    let r' ← exprCallAt env e exp altExps (retrying := true)
+    let w2 ← get
+    let T ← StateT.lift table
+    let ok := w2.misfits.isEmpty && (alt.filter fun (i, _) => i < args.length).all fun (i, P) =>
+      (args[i]?.bind fun x => (w2.exprs.get? x.span).bind (·.2.toOption)).any (within T · P)
+    if r'.1.isSome && ok then return r'
   set w1
   return r
 
 /-- `exprCall`, each actual walked at its expected type in `exps`. -/
-partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : List (Option (Ty Tree))) :
+partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : List (Option (Ty Tree)))
+    (retrying : Bool := false) :
     W (Option (Ty Tree) × Env) := do
   match e with
   | .construct _ callee args spreads typeArgs =>
@@ -4636,7 +4649,7 @@ partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : L
       | some g => if g.binders.length == c.binders.length then { c with names := g.binders } else c
       | none => c
     modify fun w => { w with lastInstance := none, lastResolution := [] }
-    let r ← called e2 c args As e.span exp
+    let r ← called e2 c args As e.span exp (retrying := retrying)
     -- A generic class's occurrence is read at its instance, and the call's
     -- type arguments recorded.
     if let (.ok c, .ok (inst, _)) := (c, r) then
@@ -4666,7 +4679,7 @@ partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : L
       | .error _ => (args, As)
     let c := (·.2.2) <$> c
     modify fun w => { w with lastInstance := none, lastResolution := [] }
-    let r ← called e2 c args As e.span exp
+    let r ← called e2 c args As e.span exp (retrying := retrying)
     -- A generic module function's occurrence, and a scheme-typed local's,
     -- is read at its instance (`Scheme.closureRows`' instances), and a
     -- generic module function's type arguments recorded.
@@ -4686,7 +4699,7 @@ partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : L
     let (As, e3) ← actuals e2 args exps
     let c ← StateT.lift (tryCatch (do
         return Except.ok (← calleeOf (← need F "the callee") (R.getD [Labels.undef]))) fun m => pure (.error m))
-    let r ← called e3 c args As e.span exp
+    let r ← called e3 c args As e.span exp (retrying := retrying)
     return (← record e ((·.2) <$> r), ← afterCall e3 r)
   | .applyWithReceiver _ callee recv list _ =>
     -- `f.apply(o, list)`, `Reflect.apply(f, o, list)`: the target, the
@@ -4890,7 +4903,7 @@ partial def exprCallAt (env : Env) (e : Expr) (exp : Option (Ty Tree)) (exps : L
     let receiverFresh := match o with
       | .var _ n => anyFresh || fcs.contains n
       | _ => false
-    let r ← called e2 c args As e.span exp receiverFresh
+    let r ← called e2 c args As e.span exp receiverFresh retrying
     -- A call dispatched on its receiver's shape is lowered as a test of
     -- each shape, then the object arm (`Plans.dispatchCallTerm`): where that
     -- arm calls a member no contract states (`objectArmUnstated`), the call
@@ -4932,13 +4945,14 @@ partial def actuals (env : Env) (args : List Expr) (exps : List (Option (Ty Tree
 /-- `applyCall` where the callee is known; the callbacks walked unexpected
 where it is not. -/
 partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (at_ : Span) (exp : Option (Ty Tree) := none) (receiverFresh : Bool := false) :
+    (at_ : Span) (exp : Option (Ty Tree) := none) (receiverFresh : Bool := false)
+    (retrying : Bool := false) :
     W (Except String (Ty Tree × Ty Tree)) := do
-  modify fun w => { w with changedValues := false, misfits := [] }
+  modify fun w => { w with changedValues := false, misfits := [], altMisfits := [] }
   match c with
   | .ok c =>
     let c ← if (← get).generalCalls.contains at_ then StateT.lift (generalArrayCallee c As) else pure c
-    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
+    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh retrying
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
     return .error m
@@ -4981,7 +4995,7 @@ remains; each literal actual at the parameter's shape (`fit`); each actual
 its parameter does not admit recorded (`misfits`). The callee's type at the
 call and the call's result. -/
 partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) :
+    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) (retrying : Bool := false) :
     W (Except String (Ty Tree × Ty Tree)) := do
   let T ← StateT.lift table
   let G := SourceTypes.graph T
@@ -5204,7 +5218,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- differently is made at the first candidate's parameter it fits, as
   -- TypeScript reads a literal against each overload in turn (the
   -- producer's `shared_actuals`).
-  if candidates.length > 1 && c.binders.isEmpty then
+  if candidates.length > 1 && c.binders.isEmpty && !retrying then
     for (x, i) in args.zipIdx do
       let literal := match x with
         | .alloc .. | .arrayLit _ _ [] => true
@@ -5464,7 +5478,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
               if !As[i]?.join.any (within Tc · U) then
                 misfits := misfits ++ [(i, U)]
                 if isRes then exactMisfits := exactMisfits ++ tailAllocs x
-  modify fun w => { w with misfits, exactMisfits }
+  let altMisfits := if !misfits.isEmpty && !retrying && c.binders.isEmpty && candidates.length > 1 then
+      (candidates.filter fun (a', _) => a' != a).map fun (a', _) =>
+        a'.arguments.zipIdx.map fun (P, i) => (i, P)
+    else []
+  modify fun w => { w with misfits, altMisfits, exactMisfits }
   let own ← StateT.lift (calleeAtCall c σ inst rest (c.fixed.filter fits))
   return .ok (own, result)
 
