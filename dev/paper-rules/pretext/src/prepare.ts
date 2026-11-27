@@ -74,16 +74,19 @@ const complexTextPathRanges = [
 
 const extendedPictographicRe = /\p{Extended_Pictographic}/u
 const leadingCombiningMarkRe = lazyRegExp(String.raw`^\p{M}`, 'u')
-function hasLeadingCombiningMark(text: string): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
+function hasLeadingCombiningMark(text: string): Effects<{ "@state": "any" }, boolean> {
   return leadingCombiningMarkRe().test(text)
 }
 // Decimal digits and the joiners of numbers, times and dates.
 const numericRunRe = /^[\p{Nd}:\-/×,.+\u2013\u2014]+$/u
 const controlCharacterRe = /^[\p{Cc}\u2028\u2029]$/u
-function isNumericRun(text: string): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
+function isNumericRun(text: string): Effects<{ "@state": "any" }, boolean> {
   return numericRunRe.test(text)
 }
-function isControlCharacter(text: string): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
+function isControlCharacter(text: string): Effects<{ "@state": "any" }, boolean> {
   return controlCharacterRe.test(text)
 }
 
@@ -105,11 +108,13 @@ function needsComplexTextPath(text: string): Effects<{}, boolean> {   // PAPER: 
 // has, or an explicit bidi control.
 const mixedDirectionRe = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u200F\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}\u202A-\u202E\u2066-\u2069]/u
 
-function hasMixedDirection(text: string): Effects<{}, boolean> {   // PAPER: annotation
+// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
+function hasMixedDirection(text: string): Effects<{}, boolean> {
   return mixedDirectionRe.test(text)
 }
 
-function hasKanaPair(text: string): Effects<{}, boolean> {   // PAPER: annotation
+// PAPER: workaround (RegExp.test framing): imported kanaPairRe.test needs a local literal + Effects wrapper to preserve quantified invariants in SinglePass
+function hasKanaPair(text: string): Effects<{}, boolean> {
   return /[\u3041-\u30FF]{2}/.test(text)
 }
 
@@ -186,6 +191,7 @@ function mayHoldCursive(text: string): Effects<{ "@state": "any" }, boolean> {  
 // How far a text's script runs are read, the scripts the run there can be in, and each
 // bracket open there: its opening character, then the script of the run it was opened in,
 // 0 while that run goes on. Confined module scratch state reset at each measureAnalysis() call.
+// PAPER: workaround (confined-state framing for ScriptRuns): hoist ScriptRuns into module-private @state so readScriptRuns frames against measureAnalysisInto's local/parameter arrays
 let scriptRead: number = 0
 let scriptMask: number = 31 // ANY_SCRIPT
 const scriptOpenBrackets: number[] = []
@@ -279,7 +285,7 @@ function spaceSharesScriptRun(text: string, at: number, end: number): Effects<{ 
 // run that resolves to one and isn't a no-break space. A rich item's text starts a run of
 // its own (ENGINE_FOLLOWUPS.md, Letter spacing).
 function getUnspacedGraphemes(text: string, start: number, end: number, graphemeTable: GraphemeTable, useRuns: boolean): Effects<{ "@state": "any" }, number[] | null> {   // PAPER: annotation
-  if (!(Number.isSafeInteger(start) && Number.isSafeInteger(end) && 0 <= start && start <= end && end <= text.length)) return null   // PAPER: bounds check for findGraphemeEnds contract
+  if (!(Number.isSafeInteger(start) && Number.isSafeInteger(end) && 0 <= start && start <= end && end <= text.length)) return null   // PAPER: workaround (analysis.ts @ensures): TextAnalysis does not prove starts[mi] - ownStart + text.length <= own.length for findGraphemeEnds
   const ends = new Int32Array(end - start)
   const count = findGraphemeEnds(graphemeTable, text, start, end, ends)
   let unspaced: number[] | null = null
@@ -370,18 +376,13 @@ function getJoinedNarrowing(analysis: TextAnalysis, analysisIndex: number, to: n
   return apart - together > lineFitEpsilon ? apart - together : 0
 }
 
-/** @requires safeInteger(idx) && 0 <= idx && idx < widths.length */
-function addWidthAt(widths: Dense<number[]>, idx: number, delta: number): Modifies<{ values: "any" }, Effects<{ "widths[#]": "any" }, void>> {   // PAPER: annotation
-  const widthsValue = (widths[idx] ?? missing()) + delta
-  if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
-  widths[idx] = widthsValue
-}
-
+// PAPER: workaround (dense-write effect framing): direct arr[idx] = val classifies as arr[*]: grow in paper-annotations; wrap with Effects<{ "arr[#]": "any" }>
 function setNumberAt(arr: Dense<number[]>, idx: number, value: number): Modifies<{ values: "any" }, Effects<{ "arr[#]": "any" }, void>> {   // PAPER: annotation
   if ((idx & 0x7fffffff) !== idx || idx >= arr.length) throw new RangeError('index')
   arr[idx] = value
 }
 
+// PAPER: workaround (lazy null-prefix + disjunctive branch split): allocate null prefix by push and split on advances[idx] === null to establish shifted quantified invariant
 /** @requires safeInteger(base) && safeInteger(count) && 0 <= base && 0 <= count && base + count <= advances.length
  *  @ensures result.length === count
  *  @ensures forall k in result: advances[base + k] === null || result[k] === null || advances[base + k].length <= result[k].length */
@@ -404,6 +405,7 @@ function emptyExtrasFor(advances: (number[] | null)[], base: number, count: numb
   return res
 }
 
+// PAPER: workaround (zero-shift quantifier equivalence): copy extras[k] to res[0 + k] to convert shifted forall k in extras to unshifted forall i in advances
 /** @requires safeInteger(base) && base === 0 && advances.length === extras.length
  *  @requires forall k in extras: advances[base + k] === null || extras[k] === null || advances[base + k].length <= extras[k].length
  *  @ensures result.length === advances.length
@@ -415,61 +417,27 @@ function alignSingleExtras(advances: (number[] | null)[], extras: (number[] | nu
    *  @invariant forall i in advances: advances[i] === null || res[i] === null || advances[i].length <= res[i].length */
   for (let k = 0; k < advances.length; k++) {
     const idx = base + k
-    if ((idx & 0x7fffffff) !== idx || idx >= res.length) throw new RangeError('index')
     res[idx] = extras[k] ?? null
   }
   return res
 }
 
-/** @requires safeInteger(base) && safeInteger(count) && 0 <= base && 0 <= count && arr.length === base
- *  @ensures arr.length - base === count */
-function extendZeros(arr: Dense<number[]>, base: number, count: number): Effects<{ "arr[*]": "extend" }, void> {   // PAPER: annotation
-  if (arr.length !== base) throw new RangeError('length')
-  /** @invariant safeInteger(k) && safeInteger(base) && safeInteger(count) && 0 <= k && k <= count && arr.length - base === k */
+// PAPER: workaround (dense-write pre-extension): pre-extend paragraph widths with push(0) so loop writes are in-bounds overwrites
+/** @requires safeInteger(_base) && safeInteger(count) && 0 <= _base && 0 <= count && arr.length === _base
+ *  @ensures arr.length - _base === count */
+function extendZeros(arr: Dense<number[]>, _base: number, count: number): Effects<{ "arr[*]": "extend" }, void> {   // PAPER: annotation
+  /** @invariant safeInteger(k) && safeInteger(_base) && safeInteger(count) && 0 <= k && k <= count && arr.length - _base === k */
   for (let k = 0; k < count; k++) arr.push(0)
 }
 
-/** @ensures result.length === advances.length */
-function withFollowingSpaceKerning(advances: Dense<number[]>, kerning: number): Effects<{}, Dense<number[]>> {   // PAPER: annotation
-  const copy = advances.slice()
-  const idx = copy.length - 1
-  const value = (copy[idx] ?? missing()) + kerning
-  if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
-  copy[idx] = value
-  return copy
-}
-
+// PAPER: workaround (SinglePass CFG scaling): nested loop in measureAnalysisInto explodes CFG verification past 60s
 function sumExtraSpacings(extraSpacings: readonly number[], letterSpacing: number): Modifies<{}, number> {
   let sum = 0
   for (let k = 0; k < extraSpacings.length; k++) sum += extraSpacings[k]! * letterSpacing
   return sum
 }
 
-/** @ensures result.length === advances.length */
-function withExtraSpacings(advances: Dense<number[]>, extraSpacings: readonly number[], letterSpacing: number): Effects<{}, Dense<number[]>> {   // PAPER: annotation
-  const copy = advances.slice()
-  /** @invariant copy.length === advances.length */
-  for (let k = 0; k < extraSpacings.length; k++) {
-    const value = (copy[k] ?? missing()) + extraSpacings[k]! * letterSpacing
-    if ((k & 0x7fffffff) !== k || k >= copy.length) throw new RangeError('index')
-    copy[k] = value
-  }
-  return copy
-}
-
-/** @ensures result.length === advances.length */
-function withoutUnspacedSpacing(advances: Dense<number[]>, unspaced: readonly number[], letterSpacing: number): Effects<{}, Dense<number[]>> {   // PAPER: annotation
-  const copy = advances.slice()
-  /** @invariant copy.length === advances.length */
-  for (let k = 0; k < unspaced.length; k++) {
-    const idx = unspaced[k]!
-    const value = (copy[idx] ?? missing()) - letterSpacing
-    if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
-    copy[idx] = value
-  }
-  return copy
-}
-
+// PAPER: workaround (SinglePass CFG scaling): extracted from measureAnalysisInto's loop to avoid nested loops and branch merges blowing past 60s
 /** @ensures result.length === advances.length */
 function adjustFitAdvances(
   advances: Dense<number[]>,
@@ -478,16 +446,37 @@ function adjustFitAdvances(
   unspaced: number[] | null,
   letterSpacing: number,
 ): Effects<{}, Dense<number[]>> {   // PAPER: annotation
+  // PAPER: workaround (branch-merge length equality): SinglePass loses fitAdvances.length === advances.length across conditional reassignment `fitAdvances = copy`
   const len = advances.length
   let fitAdvances: Dense<number[]> = advances
   if (followingSpaceKerning !== 0) {
-    fitAdvances = withFollowingSpaceKerning(fitAdvances, followingSpaceKerning)
+    const copy = fitAdvances.slice()
+    const idx = copy.length - 1
+    const value = (copy[idx] ?? missing()) + followingSpaceKerning
+    if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
+    copy[idx] = value
+    fitAdvances = copy
   }
   if (extraSpacings.length !== 0) {
-    fitAdvances = withExtraSpacings(fitAdvances, extraSpacings, letterSpacing)
+    const copy = fitAdvances.slice()
+    /** @invariant copy.length === advances.length */
+    for (let k = 0; k < extraSpacings.length; k++) {
+      const value = (copy[k] ?? missing()) + extraSpacings[k]! * letterSpacing
+      if ((k & 0x7fffffff) !== k || k >= copy.length) throw new RangeError('index')
+      copy[k] = value
+    }
+    fitAdvances = copy
   }
   if (unspaced !== null) {
-    fitAdvances = withoutUnspacedSpacing(fitAdvances, unspaced, letterSpacing)
+    const copy = fitAdvances.slice()
+    /** @invariant copy.length === advances.length */
+    for (let k = 0; k < unspaced.length; k++) {
+      const idx = unspaced[k]!
+      const value = (copy[idx] ?? missing()) - letterSpacing
+      if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
+      copy[idx] = value
+    }
+    fitAdvances = copy
   }
   if (fitAdvances.length !== len) throw new RangeError('length')
   return fitAdvances
@@ -545,6 +534,7 @@ export function measureAnalysis(
   // The paragraph's lists for a rich-inline item, null for a text.
   paragraph: ParagraphLists | null,
   // Where the first measured segment goes in the lists (0 for a text, paragraph.widths.length for an item).
+  // PAPER: workaround (parameterized paragraph-vs-single split): split single-text vs paragraph-item entrypoints and pass base explicitly so loop invariants link widths/breakableFitAdvances to base
   base: number,
 ): Effects<{ "paragraph.widths[*]": "extend"; "paragraph.widths[#]": "any"; "paragraph.breakableFitAdvances[*]": "extend"; "segments[*]": "extend"; fields: "any"; views: "grow"; "@state": "any" }, MeasuredSegments> {   // PAPER: annotation
   if (paragraph === null) {
@@ -552,31 +542,11 @@ export function measureAnalysis(
     const segmentFlags: Uint8Array = new Uint8Array(to - from)
     const breakableFitAdvances: (number[] | null)[] = []
     const res = measureAnalysisInto(analysis, from, to, font, segments, letterSpacing, engineProfile, language, overflowBreaks, widths, segmentFlags, breakableFitAdvances, base)
-    if (segmentFlags.length !== to - from) throw new RangeError('length')
     const lineStartExtras = res.lineStartExtras
     const lineEndTrims = res.lineEndTrims
     const overflowLineEndTrims = res.overflowLineEndTrims
     const resExtras = res.breakableLineStartExtras
-    if (resExtras !== null) {
-      const singleExtras = alignSingleExtras(breakableFitAdvances, resExtras, base)
-      const prepared: MeasuredSegments = {   // PAPER: annotation
-        widths,
-        segmentFlags,
-        simpleLineWalkFastPath: res.simpleLineWalkFastPath,
-        simpleLineCountFastPath: res.simpleLineCountFastPath,
-        breakableFitAdvances,
-        letterSpacing: res.letterSpacing,
-        discretionaryHyphenWidth: res.discretionaryHyphenWidth,
-        discretionaryHyphenContexts: res.discretionaryHyphenContexts,
-        breakableLineStartExtras: singleExtras,
-        lineStartExtras,
-        lineEndTrims,
-        overflowLineEndTrims,
-        tabStopAdvance: res.tabStopAdvance,
-        minimumTabAdvance: res.minimumTabAdvance,
-      }
-      return prepared
-    }
+    const breakableLineStartExtras = resExtras !== null ? alignSingleExtras(breakableFitAdvances, resExtras, base) : null
     const prepared: MeasuredSegments = {   // PAPER: annotation
       widths,
       segmentFlags,
@@ -586,7 +556,7 @@ export function measureAnalysis(
       letterSpacing: res.letterSpacing,
       discretionaryHyphenWidth: res.discretionaryHyphenWidth,
       discretionaryHyphenContexts: res.discretionaryHyphenContexts,
-      breakableLineStartExtras: null,
+      breakableLineStartExtras,
       lineStartExtras,
       lineEndTrims,
       overflowLineEndTrims,
@@ -726,7 +696,7 @@ function measureAnalysisInto(
   // they cost about 1% of preparing a text again in Safari 27, 1.9% at most in one run
   // (RESEARCH.md, Keeping Work Bounded, JavaScript Engines, under A list made where it is
   // filled; Decisions Log, 2026-10-09, a paragraph's lists).
-  let s = 0
+  let s = 0   // PAPER: workaround (shifted loop counter #397): 0-based counter s = mi - from so post-loop derives breakableLineStartExtras.length === to - from
   /**
    * @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(at) && safeInteger(s) && 0 <= from && from <= mi && mi <= to && to <= flags.length && to <= starts.length && to <= texts.length && 0 <= base && base <= 4294967295 && s === mi - from && at === base + s && widths.length === base + (to - from) && breakableFitAdvances.length === at && widths !== breakableFitAdvances
    * @invariant discretionaryHyphenContexts === null || discretionaryHyphenContexts.length === to - from && widths !== discretionaryHyphenContexts && breakableFitAdvances !== discretionaryHyphenContexts
@@ -737,7 +707,7 @@ function measureAnalysisInto(
    * @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
    * @invariant breakableLineStartExtras === null || forall k in breakableLineStartExtras: breakableFitAdvances[base + k] === null || breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= breakableLineStartExtras[k].length
    */
-  for (let mi = from, at = base; mi < to; mi++, at++, s++) {   // PAPER: 0-based counter s = mi - from for interval/shifted loop invariants
+  for (let mi = from, at = base; mi < to; mi++, at++, s++) {
     const text = texts[mi]!
     const segment = flags[mi]!
     const kind = segment & KIND_BITS
@@ -788,7 +758,8 @@ function measureAnalysisInto(
             if (spaceBefore && kerning.before !== 0 &&
               !(((flags[mi - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && (mi === from + 1 || ((flags[mi - 2] ?? missing()) & KIND_BITS) === HARD_BREAK)) &&
               spaceSharesScriptRun(own, starts[mi]! - ownStart, starts[mi]! - ownStart + text.length)) {
-              addWidthAt(widths, at - 1, kerning.before)
+              const idx = at - 1
+              setNumberAt(widths, idx, (widths[idx] ?? missing()) + kerning.before)
             }
           }
         }
@@ -856,8 +827,8 @@ function measureAnalysisInto(
     if (kind !== TEXT && kind !== SPACE && kind !== ZERO_WIDTH_BREAK) simpleKinds = false
     if (kind !== TEXT && kind !== SOFT_HYPHEN) previousJoinablePiece = null
     segmentFlags[at] = (segment & ~ONE_CLUSTER) | (hasLetterSpacing && spacingGraphemeCount > 0 ? SPACED : 0)
-    const widthsValue = addInternalLetterSpacing(width, spacingGraphemeCount, letterSpacing)
-    setNumberAt(widths, at, widthsValue)
+    setNumberAt(widths, at, addInternalLetterSpacing(width, spacingGraphemeCount, letterSpacing))
+    // PAPER: workaround (parallel push ordering): defer getSegmentFit out of switch and branch on breakableLineStartExtras === null so breakableFitAdvances.push and breakableLineStartExtras.push stay paired
     if (fitTextMetrics !== null) {
       const fitMode: BreakableFitMode = letterSpacing !== 0 ? 'segment-prefixes'
         : isNumericRun(text) ? 'pair-context'
@@ -911,6 +882,7 @@ function measureAnalysisInto(
       }
     }
     if (segments !== null) {
+      // PAPER: workaround (disjunctive aliasing before push): split on breakableLineStartExtras === null so SinglePass discharges breakableLineStartExtras !== segments across segments.push
       if (breakableLineStartExtras === null) {
         segments.push(text)
       } else {
@@ -927,10 +899,8 @@ function measureAnalysisInto(
         segmentFlags[at] = (segmentFlags[at] ?? missing()) | DROPPED
         simpleKinds = false
       }
-      discretionaryHyphenContexts ??= zeros(to - from)
-      const discretionaryHyphenContextsStore = discretionaryHyphenContexts
-      const discretionaryHyphenContextsValue = returnFitsEachSideAlone ? 0 : getJoinedNarrowing(analysis, mi, to, previousJoinablePiece, previousJoinableMetrics, fontMeasurement, emojiCorrection, engineProfile.lineFitEpsilon)
-      setNumberAt(discretionaryHyphenContextsStore, s, discretionaryHyphenContextsValue)
+      discretionaryHyphenContexts ??= zeros(to - from)   // PAPER: workaround (dense-write pre-allocation): allocate full to - from zeros so discretionaryHyphenContexts writes are in-bounds overwrites
+      setNumberAt(discretionaryHyphenContexts, s, returnFitsEachSideAlone ? 0 : getJoinedNarrowing(analysis, mi, to, previousJoinablePiece, previousJoinableMetrics, fontMeasurement, emojiCorrection, engineProfile.lineFitEpsilon))
     }
   }
 
@@ -957,13 +927,13 @@ function measureAnalysisInto(
       for (let i = 0; i < trims.length; i++) {
         const idx = base + i
         const widthsValue = (widths[idx] ?? missing()) - trims[i]!
-        if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
         setNumberAt(widths, idx, widthsValue)
       }
     }
   }
   // The loop above has measured every segment in the font, so text in a font that has measured
   // no kana, as in one that has answered that it kerns none, isn't looked through for kana.
+  // PAPER: workaround (fields-effect read hoisting): read hanKerning fields before addKanaKerning (Effects<{ fields: "any" }>) to preserve their length bounds
   let lineStartExtras = hanKerning.lineStartExtras
   let lineEndTrims = hanKerning.lineEndTrims
   const overflowLineEndTrims = hanKerning.overflowLineEndTrims
@@ -1027,22 +997,18 @@ function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>,
       if (kerning === 0) continue
       if (k > start) {
         const widthsValue = (widths[at] ?? missing()) + kerning
-        if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
         setNumberAt(widths, at, widthsValue)
       } else if (kerning > 0) {
         const idx = at - 1
         const widthsValue = (widths[idx] ?? missing()) + kerning
-        if ((idx & 0x7fffffff) !== idx || idx >= widths.length) throw new RangeError('index')
         setNumberAt(widths, idx, widthsValue)
       } else {
         const widthsValue = (widths[at] ?? missing()) + kerning
-        if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
         setNumberAt(widths, at, widthsValue)
         extras ??= zeros(to - from)
         const idx = i - from
         const extrasStore = extras
         const extrasValue = (extrasStore[idx] ?? missing()) - kerning
-        if ((idx & 0x7fffffff) !== idx || idx >= extrasStore.length) throw new RangeError('index')
         setNumberAt(extrasStore, idx, extrasValue)
       }
     }
@@ -1099,7 +1065,6 @@ function addIdeographicSpaceHangs(
     const idx = i - from
     const trimsStore = trims
     const trimsValue = (trimsStore[idx] ?? missing()) + hang
-    if ((idx & 0x7fffffff) !== idx || idx >= trimsStore.length) throw new RangeError('index')
     setNumberAt(trimsStore, idx, trimsValue)
   }
   return trims
