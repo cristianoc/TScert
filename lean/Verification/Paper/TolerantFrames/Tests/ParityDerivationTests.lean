@@ -766,7 +766,8 @@ private def raw : RawDerivation :=
 -- and array spines and view spines are disjoint classes.
 #guard InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .spines, .grow)]
 #guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .spines, .grow)] [(.cls .views, .keep)]
-#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .arrays, .grow)]
+#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .arrays, .grow)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .grow)] [(.cls .arrays, .grow)]
 #guard Selector.arrays.disjoint Selector.views
 
 -- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.

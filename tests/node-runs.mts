@@ -2658,6 +2658,10 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runExample("invalid-regexp-compile", `recompiled().exec("c").length`), 1);
   // A subclass's `exec` is what `replace` calls: no match is replaced.
   assert.equal(runExample("invalid-regexp-subclass", "make()"), "ab");
+  // A global regex's `test` mutates its own `lastIndex`: calling it twice on
+  // the same input answers `true`, then `false`.
+  assert.equal(JSON.stringify(runExample("invalid-regexp-test-global-mutates", `[hasA("a"), hasA("a")]`)),
+    JSON.stringify([true, false]));
   // The positive cases run as their types say.
   assert.equal(JSON.stringify(runExample("regexp-literals", `[assignment("k=v"), digits("-"), escape("<\`a\`>"),
     words(" a b "), tokens("ab 12"), count("a1b22")]`)),

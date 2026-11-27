@@ -1012,16 +1012,20 @@ theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
 def Footprint.le (cl : ClassEvidence) (Φ Ψ : Footprint) : Bool :=
-  Φ.all fun e => Ψ.any fun f => e.2.le f.2 && Region.sub cl e.1 f.1
+  Φ.all fun e => e.2 == .keep || Ψ.any fun f => e.2.le f.2 && Region.sub cl e.1 f.1
 
 theorem Allowed.mono {cl Φ Ψ ρ h l v v'} (hle : Footprint.le cl Φ Ψ = true)
     (hc : ClassOk cl ρ h) (hl : l < h.length) (ha : Allowed Φ ρ h l v v') :
     Allowed Ψ ρ h l v v' := by
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact .inl rfl
-  · obtain ⟨f, hf, hfe⟩ := List.any_eq_true.mp (List.all_eq_true.mp hle e he)
-    simp only [Bool.and_eq_true] at hfe
-    exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hl hm, hh.mono hfe.1⟩
+  · rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hle e he) with hkeep | hany
+    · simp only [beq_iff_eq] at hkeep
+      rw [hkeep] at hh
+      exact .inl hh
+    · obtain ⟨f, hf, hfe⟩ := List.any_eq_true.mp hany
+      simp only [Bool.and_eq_true] at hfe
+      exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hl hm, hh.mono hfe.1⟩
 
 /-- **Coverage.** A footprint within another, by inclusions justified by
 class evidence valid at the heap they are read at, bounds less. -/

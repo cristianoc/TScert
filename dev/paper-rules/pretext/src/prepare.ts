@@ -42,6 +42,7 @@ import {
   getSpaceKerning,
   getSpaceWidth,
   getTextWidth,
+  kanaPairRe,
   noExtraSpacings,
   noSpaceKerning,
   textMayContainEmoji,
@@ -74,21 +75,9 @@ const complexTextPathRanges = [
 
 const extendedPictographicRe = /\p{Extended_Pictographic}/u
 const leadingCombiningMarkRe = lazyRegExp(String.raw`^\p{M}`, 'u')
-// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
-function hasLeadingCombiningMark(text: string): Effects<{ "@state": "any" }, boolean> {
-  return leadingCombiningMarkRe().test(text)
-}
 // Decimal digits and the joiners of numbers, times and dates.
 const numericRunRe = /^[\p{Nd}:\-/×,.+\u2013\u2014]+$/u
 const controlCharacterRe = /^[\p{Cc}\u2028\u2029]$/u
-// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
-function isNumericRun(text: string): Effects<{ "@state": "any" }, boolean> {
-  return numericRunRe.test(text)
-}
-// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
-function isControlCharacter(text: string): Effects<{ "@state": "any" }, boolean> {
-  return controlCharacterRe.test(text)
-}
 
 function needsComplexTextPath(text: string): Effects<{}, boolean> {   // PAPER: annotation
   let previousIsEmoji = false
@@ -107,16 +96,6 @@ function needsComplexTextPath(text: string): Effects<{}, boolean> {   // PAPER: 
 // A character of the right-to-left blocks, whose letters have bidi class R or AL, as RLM
 // has, or an explicit bidi control.
 const mixedDirectionRe = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u200F\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}\u202A-\u202E\u2066-\u2069]/u
-
-// PAPER: workaround (RegExp.test framing): stateless RegExp.test needs an Effects wrapper to preserve quantified invariants in SinglePass
-function hasMixedDirection(text: string): Effects<{}, boolean> {
-  return mixedDirectionRe.test(text)
-}
-
-// PAPER: workaround (RegExp.test framing): imported kanaPairRe.test needs a local literal + Effects wrapper to preserve quantified invariants in SinglePass
-function hasKanaPair(text: string): Effects<{}, boolean> {
-  return /[\u3041-\u30FF]{2}/.test(text)
-}
 
 function isSpaceKind(kind: number): Effects<{}, boolean> {   // PAPER: annotation
   return kind === SPACE || kind === PRESERVED_SPACE
@@ -668,7 +647,7 @@ function measureAnalysisInto(
   // direction depends on the paragraph's, which preparation can't see, so text with a
   // right-to-left letter or an explicit bidi control takes none.
   let fontSpaceKerning = engineProfile.kernsAcrossCanvasWords && own.includes(' ') ? getFontSpaceKerning(fontMeasurement) : null
-  if (fontSpaceKerning !== null && hasMixedDirection(own)) fontSpaceKerning = null
+  if (fontSpaceKerning !== null && mixedDirectionRe.test(own)) fontSpaceKerning = null
   resetScriptRuns()
   const useUnspacedRuns = engineProfile.unspacedCursive === 'run'
   // What the word before a space adds to that space, the next segment.
@@ -722,7 +701,7 @@ function measureAnalysisInto(
     switch (kind) {
       case TEXT: {
         // A control the engine hides takes no advance, only letter spacing.
-        if (engineProfile.hidesControlCharacters && isControlCharacter(text)) {
+        if (engineProfile.hidesControlCharacters && controlCharacterRe.test(text)) {
           spacingGraphemeCount = 1
           break
         }
@@ -815,7 +794,7 @@ function measureAnalysisInto(
         const nextText = mi + 1 < to ? texts[mi + 1]! : ''
         if (hasLetterSpacing && (
           (mi > from && (flags[mi - 1]! & KIND_BITS) === TEXT && needsComplexTextPath(texts[mi - 1]!)) ||
-          (hasLeadingCombiningMark(nextText) && needsComplexTextPath(nextText))
+          (leadingCombiningMarkRe().test(nextText) && needsComplexTextPath(nextText))
         )) spacingGraphemeCount = 1
         break
       }
@@ -831,7 +810,7 @@ function measureAnalysisInto(
     // PAPER: workaround (parallel push ordering): defer getSegmentFit out of switch and branch on breakableLineStartExtras === null so breakableFitAdvances.push and breakableLineStartExtras.push stay paired
     if (fitTextMetrics !== null) {
       const fitMode: BreakableFitMode = letterSpacing !== 0 ? 'segment-prefixes'
-        : isNumericRun(text) ? 'pair-context'
+        : numericRunRe.test(text) ? 'pair-context'
         : fitTextMetrics.width < engineProfile.prefixFitMinWidth ? 'sum-graphemes'
         : engineProfile.cutWordFit
       const cachedFit = getSegmentFit(text, fitTextMetrics, fontMeasurement, emojiCorrection, fitMode, fitFollowingSpaceTail === '' ? spaceWidth : null)
@@ -937,7 +916,7 @@ function measureAnalysisInto(
   let lineStartExtras = hanKerning.lineStartExtras
   let lineEndTrims = hanKerning.lineEndTrims
   const overflowLineEndTrims = hanKerning.overflowLineEndTrims
-  if (engineProfile.kernsAcrossCanvasWords && fontMeasurement.measuredKana && fontMeasurement.kanaKerning !== null && hasKanaPair(own)) {
+  if (engineProfile.kernsAcrossCanvasWords && fontMeasurement.measuredKana && fontMeasurement.kanaKerning !== null && kanaPairRe.test(own)) {
     const kanaKerning = getFontKanaKerning(fontMeasurement)
     if (kanaKerning !== null) lineStartExtras = addKanaKerning(lineStartExtras, widths, base, analysis, from, to, fontMeasurement, kanaKerning)
   }

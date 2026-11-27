@@ -54,8 +54,8 @@ theorem _root_.Verification.Footprints.Region.sub_refl (cl : ClassEvidence) (r :
 
 theorem _root_.Verification.Footprints.Footprint.le_of_subset {cl : ClassEvidence} {Φ Ψ : Footprint} (h : ∀ e ∈ Φ, e ∈ Ψ) :
     Footprint.le cl Φ Ψ = true :=
-  List.all_eq_true.mpr fun e he => List.any_eq_true.mpr
-    ⟨e, h e he, by simp [Change.le_refl, Region.sub_refl]⟩
+  List.all_eq_true.mpr fun e he => Bool.or_eq_true_iff.mpr (.inr (List.any_eq_true.mpr
+    ⟨e, h e he, by simp [Change.le_refl, Region.sub_refl]⟩))
 
 theorem _root_.Verification.Footprints.Footprint.le_refl (cl : ClassEvidence) (Φ : Footprint) : Footprint.le cl Φ Φ = true :=
   Footprint.le_of_subset fun _ h => h

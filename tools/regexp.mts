@@ -23,7 +23,7 @@
  *   intrinsic `%Iterate:RegExpString%` requires. */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { RegExpShape } from "./regexp-shape.mts";
-import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { closedFootprints, emptyEffect, footprintEffect, frameEffect, ordinaryEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 type Signature = Extract<TypeTerm, { k: "function" }>;
@@ -128,10 +128,11 @@ function replacer(shape: RegExpShape, effect: Effect = ordinaryEffect): TypeTerm
  * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
  * string replacement) state the empty footprint where the regex is neither
  * global nor sticky, and where it is, or where the shape is the conservative
- * one, whose flags are not read, `{value: any, spine: keep}`: they leave
- * `lastIndex`, a location holding a number, where the last match ended (0
- * after the last). `[Symbol.search]` and `[Symbol.split]` of the
- * conservative shape state none (SOURCE-CONTRACTS.md, "Native footprints"). */
+ * one, whose flags are not read, `{this.lastIndex: scalar}` (closed bound
+ * `{value: scalar, spine: keep}`): they leave `lastIndex`, an own property of
+ * the receiver holding a number, where the last match ended (0 after the
+ * last). `[Symbol.search]` and `[Symbol.split]` of the conservative shape
+ * state none (SOURCE-CONTRACTS.md, "Native footprints"). */
 function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean = false): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
@@ -139,21 +140,27 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean 
   // A callback keeping every spine, called by `[Symbol.replace]`, which
   // writes the fresh regex's `lastIndex`, a location holding a number.
   const keepsSpines: Effect = footprintEffect({ value: "any", spine: "keep" });
-  const stateless: Effect = shape === null || shape.global || shape.sticky
-    ? footprintEffect({ value: "any", spine: "keep" }) : emptyEffect;
+  const matcherMark: TypeTerm = record([readonlyField({ symbol: keys.matcher }, atom("undefined"))]);
+  const changesLastIndex: Effect = frameEffect([{ region: { field: { x: 0, key: "lastIndex" } }, change: "scalar" }]);
+  const stateful = shape === null || shape.global || shape.sticky;
+  const execTestEffect: Effect = stateful ? changesLastIndex : emptyEffect;
+  const dispatchEffect: Effect = stateful ? footprintEffect({ value: "scalar", spine: "keep" }) : emptyEffect;
+  const scopedMethod = (name: string, params: TypeTerm[], result: TypeTerm, effect: Effect): Field =>
+    ({ name, optional: false, readonly: true, span,
+      type: { k: "function", effect, receiver: matcherMark, params, rest: null, result, span } });
   // A native `exec` and `test` convert their argument by `ToString`, which
   // runs no code on `undefined` (`"undefined"`): stated there too.
   const input = either(atom("string"), atom("undefined"));
   return [
-    methodField("exec", [input], either(exec, atom("null")), stateless),
-    methodField("test", [input], atom("boolean"), stateless),
-    methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null")), stateless),
+    scopedMethod("exec", [input], either(exec, atom("null")), execTestEffect),
+    scopedMethod("test", [input], atom("boolean"), execTestEffect),
+    methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null")), dispatchEffect),
     { name: { symbol: keys.replace }, optional: false, readonly: false, span,
       type: shape !== null && callback ? { k: "intersection", span, parts: [
-        method([atom("string"), atom("string")], atom("string"), stateless),
+        method([atom("string"), atom("string")], atom("string"), dispatchEffect),
         method([atom("string"), replacer(shape, keepsSpines)], atom("string"), keepsSpines),
         method([atom("string"), replacer(shape)], atom("string"), ordinaryEffect)] }
-        : method([atom("string"), atom("string")], atom("string"), stateless) },
+        : method([atom("string"), atom("string")], atom("string"), dispatchEffect) },
     methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),
     methodField({ symbol: keys.split }, [atom("string"), optionalNumber], splitResult(shape), restoring),
     methodField({ symbol: keys.matchAll }, [atom("string")], nativeIterator(exec), restoring),

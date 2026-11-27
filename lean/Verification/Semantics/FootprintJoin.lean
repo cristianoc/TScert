@@ -43,7 +43,7 @@ theorem Footprint.Covers.le {Φ Ψ : Footprint} (h : Footprint.Covers Φ Ψ) (cl
     Footprint.le cl Φ Ψ = true := by
   refine List.all_eq_true.mpr fun e he => ?_
   obtain ⟨f, hf, hfe, hle⟩ := h e he
-  exact List.any_eq_true.mpr ⟨f, hf, by rw [hfe]; simp [hle, Region.sub_refl]⟩
+  exact Bool.or_eq_true_iff.mpr (.inr (List.any_eq_true.mpr ⟨f, hf, by rw [hfe]; simp [hle, Region.sub_refl]⟩))
 
 theorem Footprint.covers_insertMax (Φ : Footprint) (e : Region × Change) :
     Footprint.Covers Φ (Footprint.insertMax Φ e) ∧

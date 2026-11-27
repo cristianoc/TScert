@@ -932,6 +932,154 @@ function importedDecl(name: string, from: ts.Node): ts.FunctionDeclaration | und
   return undefined;
 }
 
+/** An exported `const` variable initializer resolved from a module, directly
+ * or through re-exports. */
+function exportedConstFrom(file: string, name: string, depth: number = 0): ts.Expression | undefined {
+  if (depth > 16 || !existsSync(file)) return undefined;
+  const tree = treeOf(file);
+  for (const st of tree.statements) {
+    if (ts.isVariableStatement(st) && (st.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+        st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer !== undefined) return d.initializer;
+      }
+    }
+  }
+  for (const st of tree.statements) {
+    if (!ts.isExportDeclaration(st)) continue;
+    const spec = st.moduleSpecifier;
+    const target = spec !== undefined && ts.isStringLiteral(spec) ? importedFile(file, spec.text) : null;
+    if (spec !== undefined && target === null) continue;
+    if (st.exportClause === undefined) {
+      const r = target === null ? undefined : exportedConstFrom(target, name, depth + 1);
+      if (r !== undefined) return r;
+      continue;
+    }
+    if (!ts.isNamedExports(st.exportClause)) continue;
+    for (const e of st.exportClause.elements) {
+      if (e.name.text !== name) continue;
+      const local = e.propertyName?.text ?? e.name.text;
+      if (target !== null) return exportedConstFrom(target, local, depth + 1);
+      for (const v of tree.statements) {
+        if (ts.isVariableStatement(v) && (v.declarationList.flags & ts.NodeFlags.Const) !== 0) {
+          for (const d of v.declarationList.declarations) {
+            if (ts.isIdentifier(d.name) && d.name.text === local && d.initializer !== undefined) return d.initializer;
+          }
+        }
+      }
+      for (const im of tree.statements) {
+        if (!ts.isImportDeclaration(im) || !ts.isStringLiteral(im.moduleSpecifier)) continue;
+        const named = im.importClause?.namedBindings;
+        const from = importedFile(file, im.moduleSpecifier.text);
+        if (from === null || !named || !ts.isNamedImports(named)) continue;
+        for (const ie of named.elements)
+          if (!ie.isTypeOnly && ie.name.text === local) return exportedConstFrom(from, ie.propertyName?.text ?? local, depth + 1);
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The initializer of an imported `const` binding named `name`, read from the
+ * module it is imported from (following re-exports and import aliases). */
+function importedConstInit(name: string, from: ts.Node): ts.Expression | undefined {
+  const sf = from.getSourceFile();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const named = st.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    const elem = named.elements.find((e) => !e.isTypeOnly && e.name.text === name);
+    if (!elem) continue;
+    const file = importedFile(sf.fileName, st.moduleSpecifier.text);
+    if (file === null) return undefined;
+    return exportedConstFrom(file, elem.propertyName?.text ?? elem.name.text);
+  }
+  return undefined;
+}
+
+/** Whether `name` is a module-level `const` initialized by calling a factory
+ * function whose body allocates only private `let` cell(s) (initialized to
+ * primitive literals, never escaping) and returns a 0-argument closure whose
+ * only writes are assignments to those private cells (and pure `new RegExp`
+ * allocations from primitive factory parameters). Such a closure mutates only
+ * its own confined closure state (`@state`), disjoint from every caller
+ * parameter, array spine, array cell, and external field (rule Confined). */
+function confinedFactoryCallEffect(name: string, at: ts.Node): Effect | null {
+  const d = declOf(name, at);
+  if (d === null || d.kind !== "const" || d.init === undefined) return null;
+  if (!ts.isVariableDeclaration(d.at) || !ts.isVariableDeclarationList(d.at.parent) ||
+      !ts.isVariableStatement(d.at.parent.parent) || !ts.isSourceFile(d.at.parent.parent.parent))
+    return null;
+  const init = unwrapExpr(d.init);
+  if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression)) return null;
+  const fDecl = declOf(init.expression.text, init.expression);
+  const factory = fDecl?.kind === "function" ? fDecl.node
+    : fDecl === null ? importedDecl(init.expression.text, init.expression) : undefined;
+  if (factory === undefined || !factory.body) return null;
+  const primParams = new Set<string>();
+  for (const p of factory.parameters) {
+    if (!ts.isIdentifier(p.name) || p.type === undefined) return null;
+    const tk = p.type.kind;
+    if (tk !== ts.SyntaxKind.StringKeyword && tk !== ts.SyntaxKind.NumberKeyword && tk !== ts.SyntaxKind.BooleanKeyword)
+      return null;
+    primParams.add(p.name.text);
+  }
+  const stmts = factory.body.statements;
+  if (stmts.length === 0) return null;
+  const last = stmts[stmts.length - 1];
+  if (!last || !ts.isReturnStatement(last) || !last.expression) return null;
+  const retFn = unwrapExpr(last.expression);
+  if (!isFn(retFn) || retFn.parameters.length !== 0 || !retFn.body) return null;
+  const privCells = new Set<string>();
+  for (let i = 0; i < stmts.length - 1; i++) {
+    const s = stmts[i];
+    if (!s || !ts.isVariableStatement(s) || (s.declarationList.flags & ts.NodeFlags.Let) === 0) return null;
+    for (const vd of s.declarationList.declarations) {
+      if (!ts.isIdentifier(vd.name) || !vd.initializer || !isPrimitiveLiteral(vd.initializer)) return null;
+      privCells.add(vd.name.text);
+    }
+  }
+  if (privCells.size === 0) return null;
+  const isAssign = (k: ts.SyntaxKind): boolean =>
+    k === ts.SyntaxKind.EqualsToken || k === ts.SyntaxKind.PlusEqualsToken ||
+    k === ts.SyntaxKind.QuestionQuestionEqualsToken || k === ts.SyntaxKind.BarBarEqualsToken ||
+    k === ts.SyntaxKind.AmpersandAmpersandEqualsToken || arithmetic.has(k);
+  const isSafeArg = (e: ts.Expression): boolean => {
+    const u = unwrapExpr(e);
+    return isPrimitiveLiteral(u) || (ts.isIdentifier(u) && primParams.has(u.text));
+  };
+  let ok = true;
+  const checkBody = (node: ts.Node): void => {
+    if (!ok) return;
+    if (ts.isBinaryExpression(node) && isAssign(node.operatorToken.kind)) {
+      const lhs = unwrapExpr(node.left);
+      if (!ts.isIdentifier(lhs) || !privCells.has(lhs.text)) { ok = false; return; }
+      checkBody(node.right);
+      return;
+    }
+    if (ts.isNewExpression(node)) {
+      const ctor = unwrapExpr(node.expression);
+      if (ts.isIdentifier(ctor) && ctor.text === "RegExp" &&
+          (node.arguments ?? []).every((a) => isSafeArg(a))) return;
+      ok = false;
+      return;
+    }
+    if (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node) ||
+        ts.isElementAccessExpression(node) || ts.isPostfixUnaryExpression(node) ||
+        (ts.isPrefixUnaryExpression(node) && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken))) {
+      ok = false;
+      return;
+    }
+    if (ts.isIdentifier(node) && !privCells.has(node.text) && !primParams.has(node.text)) {
+      ok = false;
+      return;
+    }
+    node.forEachChild(checkBody);
+  };
+  checkBody(retFn.body);
+  return ok ? { entries: [["@state", "any"]], else: "keep" } : null;
+}
+
 /** A function's effect parameters: its type parameters bounded by `AtMost`. */
 function effectVars(fn: FnNode): string[] {
   return (fn.typeParameters ?? []).filter((tp) => {
@@ -1911,14 +2059,18 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
     return false;
   };
 
+  const isStatelessRegExpLiteral = (u: ts.Expression): boolean =>
+    ts.isRegularExpressionLiteral(u) && !/[gy]/.test(u.getText(u.getSourceFile()).split("/").pop() ?? "");
   const isStatelessRegExp = (e: ts.Expression): boolean => {
     const u = unwrapExpr(e);
-    if (ts.isRegularExpressionLiteral(u)) return !/[gy]/.test(u.getText().split("/").pop() ?? "");
+    if (isStatelessRegExpLiteral(u)) return true;
     if (ts.isIdentifier(u)) {
       const d = declOf(u.text, u);
       if (d !== null && d.kind === "const" && d.init !== undefined) {
-        const init = unwrapExpr(d.init);
-        if (ts.isRegularExpressionLiteral(init)) return !/[gy]/.test(init.getText().split("/").pop() ?? "");
+        if (isStatelessRegExpLiteral(unwrapExpr(d.init))) return true;
+      } else if (d === null) {
+        const init = importedConstInit(u.text, u);
+        if (init !== undefined && isStatelessRegExpLiteral(unwrapExpr(init))) return true;
       }
     }
     return false;
@@ -3079,14 +3231,20 @@ export function annotations(path: string): {
         calls.push({ caller, callee: n.expression.text, instance: {}, ok: true, reason: null,
           params: callee.params, bounds: [], own: callee.stated, span: [n.getStart(), n.getEnd()] });
       } else if (n.expression.text !== "paperAssume") {
-        // Record unannotated direct calls (excluding pure `Modifies<{}, ...>` calls,
-        // which take the ordinary pure path) so span matching never confuses an
-        // annotated call with an unannotated call at the same lowered term/width.
-        const d = declOf(n.expression.text, n.expression);
-        const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(n.expression.text, n.expression) : undefined;
-        const st = decl === undefined ? null : statedEffect(decl);
-        const isPureModifies = st !== null && !st.checkBody && st.effect.entries.length === 0 && st.effect.else === "keep";
-        if (!isPureModifies) unannotatedCalls.push({ caller, span: [n.getStart(), n.getEnd()] });
+        const factoryEff = confinedFactoryCallEffect(n.expression.text, n.expression);
+        if (factoryEff !== null) {
+          calls.push({ caller, callee: n.expression.text, instance: {}, ok: true, reason: null,
+            params: [], bounds: [], own: factoryEff, span: [n.getStart(), n.getEnd()] });
+        } else {
+          // Record unannotated direct calls (excluding pure `Modifies<{}, ...>` calls,
+          // which take the ordinary pure path) so span matching never confuses an
+          // annotated call with an unannotated call at the same lowered term/width.
+          const d = declOf(n.expression.text, n.expression);
+          const decl = d?.kind === "function" ? d.node : d === null ? importedDecl(n.expression.text, n.expression) : undefined;
+          const st = decl === undefined ? null : statedEffect(decl);
+          const isPureModifies = st !== null && !st.checkBody && st.effect.entries.length === 0 && st.effect.else === "keep";
+          if (!isPureModifies) unannotatedCalls.push({ caller, span: [n.getStart(), n.getEnd()] });
+        }
       }
     }
     n.forEachChild(visit);
