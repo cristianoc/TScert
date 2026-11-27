@@ -444,9 +444,11 @@ def onlyObj (V : ValueSet) : Bool :=
     V.num == .none && V.str == .none && V.big == .none
 
 /-- Whether every value in `V` is a plain (prototype-free) object omitting
-property key `k`, so reading `k` on it always yields `undefined`. -/
+non-inherited property key `k`, so reading `k` on it always yields `undefined`
+in both the model and JavaScript (`!Calculus.inheritedKey k` excludes
+`Object.prototype` keys such as `toString` and `constructor`). -/
 def omitsKey (V : ValueSet) (k : PropKey) : Bool :=
-  V.onlyObj && match V.ownKeys with
+  !inheritedKey k && V.onlyObj && match V.ownKeys with
     | some ks => !ks.contains k
     | none => false
 
@@ -454,7 +456,7 @@ theorem omitsKey_sound {V : ValueSet} {k : PropKey} {v : Tm}
     (ho : V.omitsKey k = true) (hv : V.mem v = true) :
     ∃ fs c oid, v = .objAt fs c oid ∧ fs.lookup k = none ∧ fs.lookup CallArguments.protoField = none := by
   simp only [omitsKey, onlyObj, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at ho
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hnul, hundef⟩, htru⟩, hfls⟩, hsym⟩, harr⟩, hnum⟩, hstr⟩, hbig⟩, hok⟩ := ho
+  obtain ⟨⟨_, ⟨⟨⟨⟨⟨⟨⟨⟨hnul, hundef⟩, htru⟩, hfls⟩, hsym⟩, harr⟩, hnum⟩, hstr⟩, hbig⟩⟩, hok⟩ := ho
   cases hkeys : V.ownKeys with
   | none => rw [hkeys] at hok; cases hok
   | some ks =>
