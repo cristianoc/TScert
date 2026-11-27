@@ -3622,4 +3622,6 @@ for (const [file, call] of [
   assert.deepEqual(runPlain(negative("invalid-object-spread-present-optional"),
     "(() => { const r = spreadWithItems({ widths: [1], items: { extras: [10] } }); return [r.items !== undefined, r.widths.length, r.items.extras.length, r.items.extras[1] === undefined]; })()"),
     [true, 2, 1, true], "invalid-object-spread-present-optional: object spread copies items from base and breaks guarded invariant");
+  assert.equal(runExample(negative("invalid-nonempty-string-length"), `firstAfterNotA("")`), undefined,
+    "invalid-nonempty-string-length: excluding 'a' still admits '', so codePointAt(0) returns undefined at number");
 }

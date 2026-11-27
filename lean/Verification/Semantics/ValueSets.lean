@@ -553,6 +553,37 @@ theorem le_sound {a b : ValueSet} {v : Tm} (h : le a b = true) (hv : a.mem v = t
     exact ⟨Obj.le_sound hobj hv.1, OwnKeys.le_sound hao hok hv.2⟩
   | _ => simp [mem] at hv
 
+/-- A string admitted by a value set that excludes `""` is non-empty. -/
+theorem str_ne_empty_of_not_mem {V : ValueSet} {s : String}
+    (hn : V.str.mem "" = false) (hm : V.mem (.str s) = true) : s ≠ "" := by
+  rintro rfl
+  simp only [mem] at hm
+  rw [hn] at hm
+  cases hm
+
+/-- The unique string admitted by a value set, where its string component is one
+singleton literal. -/
+def singleStr (V : ValueSet) : Option String :=
+  match V.str with
+  | .these [s] => some s
+  | _ => none
+
+theorem singleStr_eq {V : ValueSet} {s t : String}
+    (hs : V.singleStr = some t) (hm : V.mem (.str s) = true) : s = t := by
+  unfold singleStr at hs
+  cases hstr : V.str with
+  | these xs =>
+    rw [hstr] at hs
+    cases xs with
+    | nil => cases hs
+    | cons a tl =>
+      cases tl with
+      | nil =>
+        cases hs
+        simpa [mem, hstr, Lit.mem] using hm
+      | cons _ _ => cases hs
+  | allBut _ => rw [hstr] at hs; cases hs
+
 end ValueSet
 
 /-! ## Today's atoms -/
