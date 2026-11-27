@@ -1,0 +1,208 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-435"><code>01c7bdd0dd4dc3c6a951e1cb93ac0efbc2a5f5d3..pr-435</code></a><ul><li>3 commits, units 11 verified</li><li>changes: 2 Definition, 2 Docs, 1 Lowering</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></li></ul></li></ul></section>
+<h2 id="g-pr-435"><code>01c7bdd0dd4dc3c6a951e1cb93ac0efbc2a5f5d3..pr-435</code></h2><article class="card" id="c-27bef5ed3"><header><div><div class="sha">27bef5ed3 · Cristiano Calcagno · Nov 27, 13:55</div><h3>Keep the names at a loop head's fresh slots on the edges into it</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>family-activation.mts#installations</span><span>declaration-graph.mts#resolutionClean</span><span>fresh-head-slot-live.ts#owners</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>An edge into a loop head checks that each slot the head states fresh holds a fresh name, but the liveness of 74146aba1 left those slots out of the slots such an edge reads, so the edge dropped their names and the check refused it. In family-activation.mts, <code>installations</code> loops over the fresh array <code>found</code>, which no later node reads, and was refused: &quot;edge from node 120 into statement entry 4: a fresh slot&quot;; <code>resolutionClean</code> (declaration-graph.mts) the same way.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">single pass: the slots an edge into a loop head reads</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">headReads</span>(<var>t</var>) <span class="m-rel">=</span> <span class="m-con">slots</span><span class="m-text">(given state of</span> <var>t</var>) ∪ <span class="m-text">tests and targets of its given</span></span></div><div class="row cont"><span><span class="m-text">implications</span> ∪ <span class="m-text">its promised input's slots</span> ∪ <span class="m-text">its inputs' slots</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">headReads</span>(<var>t</var>) <span class="m-rel">=</span> <span class="m-con">slots</span><span class="m-text">(given state of</span> <var>t</var>) ∪ <span class="m-text">tests and targets of its given</span></span></div><div class="row cont"><span><span class="m-text">implications</span> ∪ <span class="m-text">its promised input's slots</span> ∪ <span class="m-text">its inputs' slots</span></span></div><div class="row cont"><span>∪ <span class="m-text">the slots</span> <var>t</var> <span class="m-text">states fresh</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SINGLE-PASS.md &quot;One state&quot;</span></h4><div class="prose"><p>the slots an edge into a loop head reads include those it states fresh</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>fresh-head-slot-live</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the fresh array keeps its name into the inner loop's head</span></summary><pre class="code"><span class="tk-c">// An edge into a loop head keeps the names at the slots the head states</span>
+<span class="tk-c">// fresh: `found`, a fresh array, holds its name on every edge into the</span>
+<span class="tk-c">// inner loop, whose head states it fresh, although no later node of the</span>
+<span class="tk-c">// loop reads it (SINGLE-PASS.md, &quot;One state&quot;).</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// family-activation.mts#installations, declaration-graph.mts#resolutionClean.</span>
+<span class="tk-k">type</span> <span class="tk-t">Description</span> = { <span class="tk-k">readonly</span> marker: string; <span class="tk-k">readonly</span> guards: <span class="tk-k">readonly</span> string[] };
+<span class="tk-k">declare</span> <span class="tk-k">function</span> active(): <span class="tk-k">readonly</span> <span class="tk-t">Description</span>[];
+<span class="tk-k">declare</span> <span class="tk-k">function</span> rootOf(d: <span class="tk-t">Description</span>): string;
+<span class="tk-k">export</span> <span class="tk-k">function</span> owners(): <span class="tk-k">readonly</span> { description: <span class="tk-t">Description</span>; root: string }[] {
+  <span class="tk-k">const</span> found = active().flatMap(description =&gt; [{ description, root: rootOf(description) }]);
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> [i, a] <span class="tk-k">of</span> found.entries())
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> b <span class="tk-k">of</span> found.slice(i + <span class="tk-n">1</span>)) {
+      <span class="tk-k">if</span> (a.description.marker === b.description.marker) <span class="tk-k">throw</span> <span class="tk-t">Error</span>(<span class="tk-s">`two own ${a.description.marker}`</span>);
+      <span class="tk-k">if</span> (a.root === b.root || a.root.startsWith(b.root + <span class="tk-s">&quot;/&quot;</span>)) <span class="tk-k">throw</span> <span class="tk-t">Error</span>(<span class="tk-s">`shared ${a.root}`</span>);
+      <span class="tk-k">if</span> (a.description.guards.some(g =&gt; b.description.guards.includes(g))) <span class="tk-k">throw</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;a shared guard&quot;</span>);
+    }
+  <span class="tk-k">return</span> found;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Keeping a name is the absence of a weakening: <code>edgeTransfer_ok</code> holds whatever names an edge drops, so no statement changes.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SinglePass.headReads · SinglePass.liveSlots</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>census of the v0.94 corpus with this commit, functions installations and resolutionClean: refused → verified · fresh-head-slot-live refused on 896dfcd16, verified with this commit</dd><dt>Tests</dt><dd><span class="test pos">fresh-head-slot-live</span></dd></dl>
+<details><summary>4 files changed, 30 insertions(+), 9 deletions(-)</summary><pre class="code"> docs/SINGLE-PASS.md                        |  2 +-
+ lean/Verification/Programs/SinglePass.lean | 17 +++++++++--------
+ pipeline/cases.mts                         |  1 +
+ pipeline/examples/fresh-head-slot-live.ts  | 19 +++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-a2683fd09"><header><div><div class="sha">a2683fd09 · Cristiano Calcagno · Nov 27, 13:55</div><h3>Narrow a comparison's operands for the next operand of a condition</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>family-activation.mts#checkInventory</span><span>comparison-narrows-next-operand.ts#names</span><span>comparison-narrows-next-operand.ts#computed</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Since 7ce793036 the claims after <code>if (n !== s || v !== t) …</code> narrow <code>n</code> and <code>v</code> by the tags of the other operand's type, as the comparisons' yields state, but the context the lowering gives the right operand of <code>||</code> kept <code>n</code> at its declared type: the narrowing the first comparison's edge established was lost at the second comparison, and the edge into the statement after the <code>if</code> was refused. The smallest program: <code>if (a !== s || b !== t) return 0; return 1;</code> with <code>a, b : number | null</code>. In family-activation.mts, <code>checkInventory</code> was refused at <code>if (name !== description.package.name || version !== …) throw …</code>: &quot;edge from node 74 to node 35&quot;, and seven functions depending on it.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">lowering: the context a short-circuit operand runs in</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">context</span>(<var>x</var> <span class="m-rel">=</span><span class="m-rel">=</span><span class="m-rel">=</span> <var>y</var>, <span class="m-lit">true</span>) <span class="m-rel">=</span> <var>Γ</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">context</span>(<var>x</var> <span class="m-rel">=</span><span class="m-rel">=</span><span class="m-rel">=</span> <var>y</var>, <span class="m-lit">true</span>) <span class="m-rel">=</span> <var>Γ</var> <span class="m-text">with each operand</span> <var>z</var> <span class="m-rel">∈</span> {<var>x</var>, <var>y</var>} <span class="m-text">that is an</span></span></div><div class="row cont"><span><span class="m-text">immutable binding</span> <var>b</var>, <span class="m-text">or a field</span> <var>b</var>.<var>f</var> <span class="m-text">of one, at</span></span></div><div class="row cont"><span><var>b</var><span class="m-rel">:</span> ⋃ { <span class="m-op">slice</span>(<var>Γ</var>(<var>b</var>), <var>τ</var>) | <var>τ</var> <span class="m-rel">∈</span> <span class="m-con">tags</span><span class="m-text">(type of the other operand)</span> }</span></div><div class="row cont"><span><var>b</var>.<var>f</var><span class="m-rel">:</span> <span class="m-text">the arms of</span> <var>Γ</var>(<var>b</var>) <span class="m-text">whose field</span> <var>f</var> <span class="m-text">has a slice at those tags</span></span></div><div class="row cont"><span><span class="m-text">tags</span> <span class="m-rel">=</span> <span class="m-text">equalityTags, the other operand's type from</span> <var>Γ</var>, <span class="m-text">or from its</span></span></div><div class="row cont"><span><span class="m-text">claim where it is no binding of the scope</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md &quot;Contexts&quot;</span></h4><div class="prose"><p>the narrowing after a strict comparison that answered true</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>comparison-narrows-next-operand</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">against a field and against a computed value</span></summary><pre class="code"><span class="tk-c">// A strict comparison that answered `true` narrows the operands the next</span>
+<span class="tk-c">// operand of `||` reads: past `n !== d.name || v !== d.version`, where it</span>
+<span class="tk-c">// failed, `n` and `v` are numbers, as the claims at the statement after the</span>
+<span class="tk-c">// `if` state (SOURCE-ELABORATION.md, &quot;Contexts&quot;).</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// family-activation.mts#checkInventory.</span>
+<span class="tk-k">type</span> <span class="tk-t">D</span> = { name: number; version: number };
+<span class="tk-k">export</span> <span class="tk-k">function</span> names(n: number | <span class="tk-k">null</span>, v: number | <span class="tk-k">null</span>, d: <span class="tk-t">D</span>): number {
+  <span class="tk-k">if</span> (n !== d.name || v !== d.version) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> n + v;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> computed(a: number | <span class="tk-k">null</span>, b: number | <span class="tk-k">null</span>, s: number, t: number): number {
+  <span class="tk-k">if</span> (a !== s + <span class="tk-n">0</span> || b !== t) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> a + b;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The context is a proposal: each edge into the operand's nodes checks it, the comparison's yields by comparisonYield_sound.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>LoweringControl.conditionContext · LoweringControl.comparisonOperands · LoweringAtoms.compileConditionAtom · LoweringExecution (the correlated condition's arms)</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>census of the v0.94 corpus with this and the previous commit, family-activation.mts: checkInventory and its 7 dependents refused → verified · comparison-narrows-next-operand refused on 896dfcd16, verified with this commit</dd><dt>Tests</dt><dd><span class="test pos">comparison-narrows-next-operand</span></dd></dl>
+<details><summary>6 files changed, 68 insertions(+), 9 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                         |  7 +++-
+ lean/Verification/Source/Lowering/Atoms.lean       |  5 ++-
+ lean/Verification/Source/Lowering/Control.lean     | 42 ++++++++++++++++++----
+ lean/Verification/Source/Lowering/Execution.lean   |  7 +++-
+ pipeline/cases.mts                                 |  1 +
+ .../examples/comparison-narrows-next-operand.ts    | 15 ++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-9feed8070"><header><div><div class="sha">9feed8070 · Cristiano Calcagno · Nov 27, 13:55</div><h3>Share a disjunction's last alternative only where a conjunction reaches it twice</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>fragment-support.mts#bindingScope</span><span>fragment-support.mts#runsCode</span><span>fragment-support.mts#runsCodeOrWrites</span><span>fragment-expressions.mts#testPosition</span><span>blocker-disjoint-tag-plain-guards.ts#opaque</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>3bd59ed80 joins the first two of three disjoint tag alternatives into a saved Boolean, so that the third is lowered once where failing the first two reaches it along several paths. A plain disjunction of guard calls, <code>ts.isA(n) || ts.isB(n) || ts.isC(n)</code>, reaches its third test along one path, gains nothing, and the join loses the narrowing of the first two tests: in fragment-support.mts, <code>bindingScope</code>, <code>runsCode</code> and <code>runsCodeOrWrites</code>, and in fragment-expressions.mts <code>testPosition</code>, were refused at the join (&quot;edge from node 55 to node 54&quot;), with <code>shadowingLocals</code> and <code>neverAssigned</code>, which depend on them.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">short-circuit conditions on disjoint tag cases</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><var>a</var>₁ || <var>a</var>₂ || <var>a</var>₃, <span class="m-text">each a</span>ᵢ <span class="m-text">led by a test of disjoint tags on one variable</span></span></div><div class="map"><code class="src">and field</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>a</var>₁ || <var>a</var>₂ <span class="m-text">decided into a saved Boolean, then one copy of a</span>₃</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">the same, where a</span>₁ <span class="m-text">or a</span>₂ <span class="m-text">is a conjunction (its</span> <span class="m-lit">false</span> <span class="m-text">answer reached</span></span></div><div class="cond"><span class="tgt"><span class="m-text">where either operand fails); otherwise each test in place, as before</span></span></div><div class="cond"><span class="tgt">3<span class="m-op">bd59ed80</span></span></div><div class="cond"><span class="label">label</span><span class="tgt"><span class="m-text">a conjunction among the first two alternatives</span></span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-disjoint-tag-plain-guards</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">three guard calls, each lowered in place</span></summary><pre class="code"><span class="tk-c">// A disjunction of plain guard calls on one value reaches its last test</span>
+<span class="tk-c">// along one path: each test is lowered in place and its narrowing reaches</span>
+<span class="tk-c">// the branch.</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// fragment-support.mts#bindingScope, fragment-support.mts#runsCode,</span>
+<span class="tk-c">// fragment-expressions.mts#testPosition.</span>
+<span class="tk-k">import</span> * <span class="tk-k">as</span> ts <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> opaque(n: ts.<span class="tk-t">Node</span>): boolean {
+  <span class="tk-k">if</span> (ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isFunctionDeclaration(n)) <span class="tk-k">return</span> <span class="tk-k">false</span>;
+  <span class="tk-k">return</span> <span class="tk-k">true</span>;
+}</pre></details></li><li><details><summary><code>blocker-disjoint-tag-join</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">its alternatives are conjunctions</span></summary><pre class="code"><span class="tk-k">import</span> * <span class="tk-k">as</span> ts <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-k">type</span> <span class="tk-t">Parent</span> =
+  | ts.<span class="tk-t">NewExpression</span>
+  | ts.<span class="tk-t">CallExpression</span>
+  | ts.<span class="tk-t">ExpressionWithTypeArguments</span>
+  | ts.<span class="tk-t">Identifier</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> guarded(parent: <span class="tk-t">Parent</span>, child: ts.<span class="tk-t">Node</span>): boolean {
+  <span class="tk-k">return</span> (ts.isNewExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isCallExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isExpressionWithTypeArguments(parent) &amp;&amp; parent.expression === child)
+    ? <span class="tk-k">true</span>
+    : <span class="tk-k">false</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> narrowed(
+  parent: <span class="tk-t">Parent</span>,
+  child: ts.<span class="tk-t">Node</span>,
+): ts.<span class="tk-t">Expression</span> | <span class="tk-k">undefined</span> {
+  <span class="tk-k">if</span> (
+    (ts.isNewExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isCallExpression(parent) &amp;&amp; parent.expression === child) ||
+    (ts.isExpressionWithTypeArguments(parent) &amp;&amp; parent.expression === child)
+  ) {
+    <span class="tk-k">return</span> parent.expression;
+  }
+  <span class="tk-k">return</span> <span class="tk-k">undefined</span>;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExecution.separateTagAlternatives · SourceExecution.conjunction</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>census of the v0.94 corpus with this and the two previous commits: bindingScope, runsCode, runsCodeOrWrites, testPosition, shadowingLocals, neverAssigned refused → verified · run-cases over 18 patterns of the three fixes 842 of 842 as expected · single-pass-controls 183, 0 failures</dd><dt>Tests</dt><dd><span class="test pos">blocker-disjoint-tag-plain-guards</span></dd></dl>
+<details><summary>3 files changed, 23 insertions(+), 2 deletions(-)</summary><pre class="code"> lean/Verification/Source/ExpressionPlan.lean           | 13 +++++++++++--
+ pipeline/cases.mts                                     |  1 +
+ pipeline/examples/blocker-disjoint-tag-plain-guards.ts | 11 +++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
