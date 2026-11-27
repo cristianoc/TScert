@@ -59,9 +59,43 @@ def code_args(s):
     return ''.join(out)
 
 
+def status_args(s):
+    out = []
+    i = 0
+    key = r'\status{'
+    while True:
+        j = s.find(key, i)
+        if j < 0:
+            out.append(s[i:])
+            break
+        out.append(s[i:j])
+        k = j + len(key)
+        d = 1
+        while d:
+            c = s[k]
+            if c == '\\':
+                k += 2
+                continue
+            if c == '{':
+                d += 1
+            elif c == '}':
+                d -= 1
+            k += 1
+        arg = s[j + len(key):k - 1]
+        if arg.lstrip().startswith('conj.'):
+            out.append(r'\statusc{' + arg + '}')
+        elif '; conj.' in arg:
+            head_part, conj_part = arg.split('; conj.', 1)
+            out.append(r'\status{' + head_part + r'; \textcolor{conjc}{conj.' + conj_part + '}}')
+        else:
+            out.append(r'\status{' + arg + '}')
+        i = k
+    return ''.join(out)
+
+
 head, body = t.split(r'\begin{document}', 1)
 body = code_args(body)
-body = body.replace(r'\status{conj.', r'\statusc{conj.')
+body = status_args(body)
 body = re.sub(r'\\textsc\{', r'\\rn{', body)
 t = head + r'\begin{document}' + body
 
