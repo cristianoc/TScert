@@ -290,11 +290,11 @@ $\len{\mathit{xs}} = \max(\old(\len{\mathit{xs}}), k+1)$ via rules
 frames}~\cite{tf} (proved by \lean{atLengthAtoms\_sound}), covering both
 direct reads at the written index and builders that append via
 \code{widths[at] = mi}. Note that in \emph{Tolerant frames}~\cite{tf},
-\ruleName{Write-End} specifies only the length increase
-$\len{x}=\old(\len{x})+1$ (listing stored-element density under future
-work); typing \code{xs[k]!} on \code{number[]} in \lean{SinglePass}
-additionally relies on its mechanized dense-write rule
-(\lean{denseAppendAtoms\_sound}).
+\ruleName{Write-End} specifies $\len{x}=\old(\len{x})+1 \wedge
+x[\old(\len{x})]\doteq v$ (leaving standalone $\old(\mathsf{dense}(x,i))
+\Rightarrow \mathsf{dense}(x,i+1)$ under future work); typing \code{xs[k]!} on
+\code{number[]} in \lean{SinglePass} relies on its mechanized
+dense-write rule (\lean{denseAppendAtoms\_sound}).
 
 \paragraph{P21: Shift-left and bitwise-OR table indexing (1 site, behind P5).}
 \status{Verified in SinglePass}
@@ -1308,8 +1308,8 @@ assumptions rather than internal proofs:
 \end{enumerate}
 
 \begin{thebibliography}{4}\small\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
-\bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 11 November 2026 (revised 24 November 2026).
-\bibitem{el} TScert Working Paper. \emph{An Effect Language for TScert: Relational Effects, Bounded Effect Polymorphism, and Tolerant Framing}. 24 November 2026.
+\bibitem{tf} TScert Working Note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 27 November 2026.
+\bibitem{el} TScert Working Paper. \emph{An Effect Language for TScert: Relational Effects, Bounded Effect Polymorphism, and Tolerant Framing}. 27 November 2026.
 \bibitem{pretext} Pretext. TypeScript text-layout library (\texttt{chenglou/pretext}), baseline bound-rewrite audit corpus at commit \code{9268edb1} and walker/builder verification against upstream commit \code{0dafecb3}.
 \end{thebibliography}
 
