@@ -216,6 +216,7 @@
       "mutateSubarrayCache": "refused",
       "walkPure": "accepted",
       "callPureWithState": "refused",
+      "callUserAppendChild": "refused",
       "init": "accepted"
     }
   },

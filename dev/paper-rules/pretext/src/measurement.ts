@@ -24,6 +24,8 @@ export type SpaceKerning = {
 
 // Where a segment breaks under overflow-wrap: break-word in one fit mode (getSegmentFit),
 // replaced whole when another mode is asked for.
+/** @invariant this.advances === null || 1 <= this.advances.length
+ *  @invariant this.advances === null || this.lineStartExtras === null || this.advances.length <= this.lineStartExtras.length */
 export type SegmentFit = {
   mode: BreakableFitMode
   advances: Dense<number[]> | null // Per grapheme, or null for one grapheme
@@ -492,7 +494,7 @@ const familyRe = /(?:"[^"]*"|'[^']*'|[^,])+/g
 // macOS's family lacks to iOS's, where the page falls back by language.
 const webkitGenericFamilyTable: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(webkitGenericFamilies))
 
-function getWebKitGenericFamilies(language: string, ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): string[] | null {
+function getWebKitGenericFamilies(language: string, ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): Effects<{ fields: "any" }, string[] | null> {   // PAPER: annotation
   let tag = language.toLowerCase().replaceAll('_', '-')
   let han: boolean | null = null
   for (let at = tag; han === null;) {
@@ -532,7 +534,7 @@ function getWebKitGenericFamilies(language: string, ctx: CanvasRenderingContext2
 const familyProbeText = 'Hamburg 한中 नम សួ ನಮ ສະ നമ မင ନମ ආය བཀ'
 
 // Whether the context has a family: the probe text measures differently with it first.
-function hasFamily(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, family: string): boolean {
+function hasFamily(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, family: string): Effects<{ fields: "any" }, boolean> {   // PAPER: annotation
   for (const fallback of ['monospace', 'serif']) {
     ctx.font = `16px ${fallback}`
     const width = ctx.measureText(familyProbeText).width
@@ -544,7 +546,7 @@ function hasFamily(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingConte
 
 // The Canvas font that measures what the page draws: each unquoted generic keyword
 // in the family list, after the size, becomes the page's families for it.
-function getCanvasFont(font: string, families: readonly string[]): string {
+function getCanvasFont(font: string, families: readonly string[]): Effects<{ "@state": "any" }, string> {   // PAPER: annotation
   const size = fontSizeRe.exec(font)
   if (size === null) return font
   const start = size.index + size[0].length
@@ -575,13 +577,14 @@ function getCanvasFont(font: string, families: readonly string[]): string {
 // by unicode-range is asked whole, where the engines ask only the face that holds the space;
 // and where no listed family gives a font the answer is `-`, where the engines ask their
 // last-resort font.
-export function getHyphenText(measurement: FontMeasurement): string {
+export function getHyphenText(measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, string> {   // PAPER: annotation
   if (measurement.hyphenText !== null) return measurement.hyphenText
   const font = measurement.canvasFont
   const size = fontSizeRe.exec(font)
   let hyphenText = '-'
   if (size !== null && getSegmentMetrics('\u2010', measurement).width !== getSegmentMetrics('-', measurement).width) {
-    const context = getContext(measurement)
+    getContext(measurement)
+    const context = measurement.state.context
     const start = size.index + size[0].length
     const prefix = font.slice(0, start)
     const families = font.slice(start).match(familyRe) ?? []
@@ -602,7 +605,7 @@ export function getHyphenText(measurement: FontMeasurement): string {
   return hyphenText
 }
 
-function measureIn(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, font: string, text: string): number {
+function measureIn(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, font: string, text: string): Effects<{ "context.font": "any" }, number> {   // PAPER: annotation
   context.font = font
   return context.measureText(text).width
 }
@@ -640,7 +643,7 @@ const MAX_APP_UNITS = (1 << 30) - 1
 // whole app units are the float32 times 60, rounded half away from zero and clamped
 // (DefaultLengthToAppUnits, ServoStyleConstsInlines.h:584-595), and a spacing that
 // rounds to none keeps the text's ligatures (nsLayoutUtils.cpp:6896-6904).
-export function readLetterSpacing(letterSpacing: number | undefined, profile: EngineProfile): number {
+export function readLetterSpacing(letterSpacing: number | undefined, profile: EngineProfile): Effects<{}, number> {   // PAPER: annotation
   const value = letterSpacing ?? 0
   if (!Number.isFinite(value)) throw new RangeError(`letterSpacing must be a finite number of CSS px, not ${value}`)
   if (!profile.letterSpacingInAppUnits) return value
@@ -650,8 +653,11 @@ export function readLetterSpacing(letterSpacing: number | undefined, profile: En
 
 // A zero per segment, where per-segment widths start, pushed in a loop: Array.from over
 // `{ length }` reads every index off the object and calls its map function for each.
+/** @requires safeInteger(count) && 0 <= count
+ *  @ensures result.length === count */
 export function zeros(count: number): Modifies<{}, Fresh<Dense<number[]>>> {   // PAPER: annotation
   const out: Dense<number[]> = []
+  /** @invariant safeInteger(count) && safeInteger(i) && 0 <= i && i <= count && out.length === i */
   for (let i = 0; i < count; i++) out.push(0)
   return out
 }
@@ -679,7 +685,7 @@ export const noExtraSpacings: Dense<number[]> = []
 // for each prefix new to the font, which WebKit shapes each time, since it keeps no width
 // measured under a letter spacing (TextMeasurementCache.h:165-167). Under a context that
 // takes no letterSpacing every grapheme takes one.
-export function getExtraSpacings(seg: string, measurement: FontMeasurement): Dense<number[]> {
+export function getExtraSpacings(seg: string, measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, Dense<number[]>> {   // PAPER: annotation
   if (!measurement.state.takesLetterSpacing) return noExtraSpacings
   const ends = new Int32Array(seg.length)
   const count = findGraphemeEnds(getEngineProfile().graphemeTable, seg, 0, seg.length, ends)
@@ -687,8 +693,8 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Den
   const counts = measurement.glyphCounts
   // The font's context once Canvas is asked, under the counting spacing from then on, so
   // it changes its spacing once, and not at all for a segment whose prefixes are counted.
-  let context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
-  let extras: Dense<number[]> = noExtraSpacings
+  let asked = false
+  let extras: Dense<number[]> | null = null
   try {
     let before = 0
     for (let i = 0; i < count; i++) {
@@ -696,25 +702,26 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Den
       const text = seg.slice(prefixes ? 0 : start, ends[i])
       let glyphs = counts.get(text)
       if (glyphs === undefined) {
-        if (context === null) {
-          context = getContext(measurement)
-          context.letterSpacing = `${GLYPH_COUNT_SPACING}px`
+        if (!asked) {
+          getContext(measurement)
+          measurement.state.context.letterSpacing = `${GLYPH_COUNT_SPACING}px`
+          asked = true
         }
-        glyphs = Math.round(context.measureText(text).width / GLYPH_COUNT_SPACING)
+        glyphs = Math.round(measurement.state.context.measureText(text).width / GLYPH_COUNT_SPACING)
         counts.set(text, glyphs)
       }
       const extra = glyphs - (prefixes ? before : 0) - 1
       before = glyphs
-      if (extra === 0 && extras.length === 0) continue
-      if (extras.length === 0) extras = zeros(count)
+      if (extra === 0 && extras === null) continue
+      extras ??= zeros(count)
       const extrasStore: Dense<number[]> = extras
       if ((i & 0x7fffffff) !== i || i >= extrasStore.length) throw new RangeError('index')
       extrasStore[i] = extra
     }
   } finally {
-    if (context !== null) context.letterSpacing = measurement.letterSpacing
+    if (asked) measurement.state.context.letterSpacing = measurement.letterSpacing
   }
-  return extras
+  return extras ?? noExtraSpacings
 }
 
 // The lookup internalizes seg, and a string V8 hashes for the first time there gets a one-byte
@@ -724,16 +731,16 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Den
 // own string, since a slice of a whole string is that string, and so is a rich item that is one
 // segment (prepareRichInline() in src/rich-inline.ts): a two-byte one that something hashed
 // before without internalizing it, as a RegExp made from it does, stays two-byte.
-export function getSegmentMetrics(seg: string, measurement: FontMeasurement): SegmentMetrics {
+export function getSegmentMetrics(seg: string, measurement: FontMeasurement): Effects<{ fields: "any" }, SegmentMetrics> {   // PAPER: annotation
   return measurement.metrics.get(seg) ?? addMetrics(measurement.metrics, seg, seg, measurement)
 }
 
 // Metrics of seg measured together with one following U+0020.
-export function getFollowingSpaceMetrics(seg: string, measurement: FontMeasurement): SegmentMetrics {
+export function getFollowingSpaceMetrics(seg: string, measurement: FontMeasurement): Effects<{ fields: "any" }, SegmentMetrics> {   // PAPER: annotation
   return measurement.followingSpaceMetrics.get(seg) ?? addMetrics(measurement.followingSpaceMetrics, seg, seg + ' ', measurement)
 }
 
-function addMetrics(cache: Map<string, SegmentMetrics>, seg: string, text: string, measurement: FontMeasurement): SegmentMetrics {
+function addMetrics(cache: Map<string, SegmentMetrics>, seg: string, text: string, measurement: FontMeasurement): Effects<{ fields: "any" }, SegmentMetrics> {   // PAPER: annotation
   const metrics: SegmentMetrics = { width: getContext(measurement).measureText(text).width, emojiCount: -1, fit: null, spaceKerning: null, extraSpacings: null }
   cache.set(seg, metrics)
   measurement.state.segments++
@@ -755,13 +762,13 @@ export const noSpaceKerning: SpaceKerning = { after: 0, before: 0 }
 // punctuation after it (NextWordEndIndex, plain_text_node.cc:92-153, over
 // kIsCjkIdeographOrSymbolRanges, character_property_data.h:40-80, of which these are the
 // letters).
-function isCanvasWordLetter(code: number): boolean {
+function isCanvasWordLetter(code: number): Effects<{}, boolean> {   // PAPER: annotation
   return (code >= 0x3041 && code <= 0x3096) || (code >= 0x30a1 && code <= 0x30fa) ||
     (code >= 0x3400 && code <= 0x9fff) || (code >= 0xf900 && code <= 0xfaff)
 }
 
 // Whether a character takes no kerning with a space, and Canvas isn't asked.
-function takesNoSpaceKerning(code: number): boolean {
+function takesNoSpaceKerning(code: number): Effects<{ "@state": "any"; views: "grow" }, boolean> {   // PAPER: annotation
   // A combining mark or half of a surrogate pair is part of a longer cluster. Canvas shows no
   // kerning beside a letter it shapes as a word of its own.
   return hasProperty(code, MARK) || (code & 0xf800) === 0xd800 || isCanvasWordLetter(code) ||
@@ -776,7 +783,7 @@ function takesNoSpaceKerning(code: number): boolean {
 // kerning from GPOS, `kern` and `kerx` (hb-ot-shape.cc:127-131, hb-ot-kern-table.hh:67). Asked
 // once per font. Premise: a font that kerns no printable ASCII character with the space kerns
 // nothing with it (RESEARCH.md, Kerning At Line Edges, has the fonts that do).
-export function getFontSpaceKerning(measurement: FontMeasurement): Map<number, number> | null {
+export function getFontSpaceKerning(measurement: FontMeasurement): Effects<{ fields: "any" }, Map<number, number> | null> {   // PAPER: annotation
   if (measurement.spaceKerning === undefined) {
     const context = getContext(measurement)
     let probe = '\u2028'
@@ -793,7 +800,7 @@ export function getFontSpaceKerning(measurement: FontMeasurement): Map<number, n
 
 // A character's kerning with a space glyph after it, or before it: the two in one string, with
 // U+2028 for the space, less each alone. Asked of Canvas once per font and side.
-function getCharacterSpaceKerning(code: number, spaceFirst: boolean, measurement: FontMeasurement, kernings: Map<number, number>): number {
+function getCharacterSpaceKerning(code: number, spaceFirst: boolean, measurement: FontMeasurement, kernings: Map<number, number>): Effects<{ fields: "any"; "@state": "any"; views: "grow" }, number> {   // PAPER: annotation
   const key = code << 1 | (spaceFirst ? 1 : 0)
   let kerning = kernings.get(key)
   if (kerning === undefined) {
@@ -817,7 +824,7 @@ function getCharacterSpaceKerning(code: number, spaceFirst: boolean, measurement
 // doesn't cut there. Premise: the segment's last and first character stand for the word, past
 // default ignorables, which HarfBuzz's lookups pass over, and a first character with a combining
 // mark after it takes none (RESEARCH.md, Kerning At Line Edges, has the gaps).
-export function getSpaceKerning(seg: string, metrics: SegmentMetrics, measurement: FontMeasurement, kernings: Map<number, number>): SpaceKerning {
+export function getSpaceKerning(seg: string, metrics: SegmentMetrics, measurement: FontMeasurement, kernings: Map<number, number>): Effects<{ fields: "any"; "@state": "any"; views: "grow" }, SpaceKerning> {   // PAPER: annotation
   let first = 0
   let last = seg.length - 1
   while (first < last && hasProperty(seg.charCodeAt(first), DEFAULT_IGNORABLE)) first++
@@ -829,7 +836,7 @@ export function getSpaceKerning(seg: string, metrics: SegmentMetrics, measuremen
 
 // The font's space, which holds no emoji. Every text asks for it, so it is kept beside the font's
 // Map, which still answers the first one.
-export function getSpaceWidth(measurement: FontMeasurement): number {
+export function getSpaceWidth(measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
   return measurement.spaceWidth ??= getSegmentMetrics(' ', measurement).width
 }
 
@@ -847,7 +854,7 @@ const KANA_PROBE = '\u30D7\u30C0\u30B0\u30BF\u30CE\u30E0\u30D6\u30A4\u30E1\u3048
 // took, and where a shorter one is no font string, as a list cut inside a calc() size, the
 // context keeps the list before it and reads what it read under that one, so the search goes
 // on to the next list or ends on the font's own.
-function getWholeRunContext(measurement: FontMeasurement): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+function getWholeRunContext(measurement: FontMeasurement): Effects<{ "measurement.state.*": "any"; "measurement.state.wholeRunContext.*": "any" }, CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D> {   // PAPER: annotation
   const state = measurement.state
   if (state.wholeRunContext === null) {
     state.wholeRunContext = createContext(state.language)
@@ -859,31 +866,13 @@ function getWholeRunContext(measurement: FontMeasurement): CanvasRenderingContex
 
 // Whether two measurements of one string are of the same glyphs at the same places: as wide,
 // with the same ink edges, to float32 rounding (getKanaKerning has the bound).
-function sameInk(a: TextMetrics, b: TextMetrics): boolean {
+function sameInk(a: TextMetrics, b: TextMetrics): Effects<{}, boolean> {   // PAPER: annotation
   const bound = a.width / 0x400000
   return Math.abs(a.width - b.width) <= bound && Math.abs(a.actualBoundingBoxLeft - b.actualBoundingBoxLeft) <= bound &&
     Math.abs(a.actualBoundingBoxRight - b.actualBoundingBoxRight) <= bound
 }
 
-// What is kept of the font's kerning between kana, or null for a font that shows none: one in
-// which KANA_PROBE, shaped whole, is as wide with kerning off (getFontSpaceKerning has what
-// `fontKerning` turns off). Canvas shapes a string whole by the list's first font alone, where
-// Blink's layout shapes the kana of a run together whatever font leads the list
-// (InlineNode::ShapeText, inline_node.cc:1551-1718), so a list that shows no kerning is asked
-// again without its first family, then without its first two, and so on: once the first
-// font's lookups cover the space glyph, as the kana's own font's do, Canvas shapes the probe
-// whole. A shorter list stands for the font only where the same font draws its kana, which
-// two answers tell. It draws the probe with the same glyphs, as wide and with the same ink
-// edges with kerning off: the first that doesn't ends the search, since a family left out
-// drew the kana. And the kerning Canvas does show under the font's own list, a kana's with a
-// U+3002 it keeps in the kana's word (NextWordEndIndex, plain_text_node.cc:129-153), is the
-// shorter list's and isn't nothing: Hiragino Sans GB draws Hiragino Sans's kana and kerns
-// none. A font that shows no kerning under any list stays as wide as Canvas measures its kana
-// apart. Asked once per font, with two measurements for each list tried and three more for
-// one that shows kerning. Premises: a font that kerns kana kerns one of the probe's pairs
-// (RESEARCH.md, Kerning At Line Edges, has the fonts measured), and one of its hiragana with
-// U+3002 (ENGINE_FOLLOWUPS.md, Kerning between kana).
-export function getFontKanaKerning(measurement: FontMeasurement): Float64Array | null {
+export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, Float64Array | null> {   // PAPER: annotation
   let kerning = measurement.kanaKerning
   if (kerning === undefined) {
     kerning = measurement.kanaKerning = null
@@ -896,7 +885,9 @@ export function getFontKanaKerning(measurement: FontMeasurement): Float64Array |
     for (let i = 0; i < lists; i++) {
       const list = i === 0 ? font : font.slice(0, start) + (families ?? missing()).slice(i).join(',')
       measurement.kanaFont = list
-      const context = getWholeRunContext(measurement)
+      getWholeRunContext(measurement)
+      const context = measurement.state.wholeRunContext
+      if (context === null) throw new RangeError('missing value')
       const kerned = context.measureText(KANA_PROBE).width
       context.fontKerning = 'none'
       const unkerned = context.measureText(KANA_PROBE)
@@ -910,7 +901,9 @@ export function getFontKanaKerning(measurement: FontMeasurement): Float64Array |
         for (let code = 0x3041; code <= 0x3096; code++) pairs += String.fromCharCode(code, 0x3002)
         const shorter = context.measureText(pairs).width
         measurement.kanaFont = font
-        const ownContext = getWholeRunContext(measurement)
+        getWholeRunContext(measurement)
+        const ownContext = measurement.state.wholeRunContext
+        if (ownContext === null) throw new RangeError('missing value')
         const ownKerned = ownContext.measureText(pairs).width
         ownContext.fontKerning = 'none'
         const ownUnkerned = ownContext.measureText(pairs).width
@@ -926,17 +919,7 @@ export function getFontKanaKerning(measurement: FontMeasurement): Float64Array |
   return kerning
 }
 
-// The kerning Blink's layout gives text[at - 1] and text[at] that no measured width holds, or
-// 0: that of two characters of the kana blocks that were measured apart. `start` is where the
-// segment that holds text[at] starts. Two segments are measured apart, so a segment's first
-// character takes its kerning with the one before it. Inside a segment Canvas cuts before a
-// kana letter where the word before it holds a letter already. A mark such as U+30FC stays in
-// the word before it, and a word that marks or CJK punctuation began takes the first letter
-// after them (NextWordEndIndex's has_any_script, plain_text_node.cc:129-153), so Canvas has
-// measured those pairs together; a character below the CJK ranges is in a word of other
-// scripts, which ends before the letter. Each pair is asked of Canvas once per font and kept
-// in the font's table by its two characters, where a pair not asked about yet is NaN.
-export function getKanaKerning(text: string, start: number, at: number, measurement: FontMeasurement, kernings: Float64Array): number {
+export function getKanaKerning(text: string, start: number, at: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ fields: "any"; views: "grow" }, number> {   // PAPER: annotation
   const second = text.charCodeAt(at)
   if (second < 0x3041 || second > 0x30ff) return 0
   const first = text.charCodeAt(at - 1)
@@ -960,7 +943,7 @@ export function getKanaKerning(text: string, start: number, at: number, measurem
 
 // The kerning of two kana in a row: the two in one string on the context that shapes a string
 // whole, less each alone.
-function measureKanaKerning(pair: string, measurement: FontMeasurement): number {
+function measureKanaKerning(pair: string, measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
   const pairWidth = getWholeRunContext(measurement).measureText(pair).width
   const kerning = pairWidth - getSegmentMetrics(pair[0] ?? missing(), measurement).width - getSegmentMetrics(pair[1] ?? missing(), measurement).width
   // As for a character and a space, up to the pair's width / 2^22 is rounding.
@@ -968,7 +951,7 @@ function measureKanaKerning(pair: string, measurement: FontMeasurement): number 
 }
 
 // A text's width in the font, less the emoji correction.
-export function getTextWidth(text: string, measurement: FontMeasurement, emojiCorrection: number): number {
+export function getTextWidth(text: string, measurement: FontMeasurement, emojiCorrection: number): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   return getCorrectedSegmentWidth(text, getSegmentMetrics(text, measurement), measurement, emojiCorrection)
 }
 
@@ -1046,17 +1029,17 @@ function buildEngineProfile(): Effects<{}, EngineProfile> {   // PAPER: annotati
   }
 }
 
-export function parseFontSize(font: string): number {
+export function parseFontSize(font: string): Effects<{}, number> {   // PAPER: annotation
   // A failed size can restart at the next digit run, not at every digit in it.
   const m = font.match(/(?:^|\D)(\d+(?:\.\d+)?)\s*px/)
   return m ? parseFloat(m[1]!) : 16
 }
 
-export function textMayContainEmoji(text: string): boolean {
+export function textMayContainEmoji(text: string): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return maybeEmojiRe.test(text)
 }
 
-export function getEmojiCorrection(font: string, measurement: FontMeasurement): number {
+export function getEmojiCorrection(font: string, measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   let correction = measurement.emojiCorrection
   if (correction !== null) return correction
 
@@ -1091,7 +1074,7 @@ export function getEmojiCorrection(font: string, measurement: FontMeasurement): 
 // its initial value, and important, so that nothing the page declares reaches the span,
 // inherited from <body> or matched by a rule: a letter-spacing, a text-indent or a padding
 // would be read as part of the emoji, and a vertical writing-mode gives a line's height.
-function readEmojiWidth(font: string): number {
+function readEmojiWidth(font: string): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   // The span goes in <body>, beside the page's text, and in <html> where that gives it no
   // box: document.body is null until the parser reaches <body>, and a <body> that is
   // display: none, as a page hidden until it is ready, has no boxes. A document whose root
@@ -1121,7 +1104,7 @@ function readEmojiWidth(font: string): number {
 // within those digits, and the resolved one where something scales the span. The rectangle
 // is asked first: before the parser reaches <body>, Firefox makes the document's first boxes
 // for a rectangle and not for a resolved width, which is `auto` until then.
-function readWidthIn(parent: Element, span: Element): number {
+function readWidthIn(parent: Element, span: Element): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   parent.appendChild(span)
   const drawn = span.getBoundingClientRect().width
   const width = parseFloat(getComputedStyle(span).width)
@@ -1146,7 +1129,7 @@ const WORD_SUM_ROUNDING = 2 ** -17
 // How many glyphs of the emoji font draw a text: the emoji font gives every glyph one
 // advance, the probe's, so text it draws measures a whole number of them, and none
 // where it measures anything else.
-function getEmojiGlyphs(text: string, measurement: FontMeasurement): number {
+function getEmojiGlyphs(text: string, measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
   const width = getSegmentMetrics(text, measurement).width
   const glyphs = Math.round(width / measurement.emojiWidth)
   return Math.abs(width - glyphs * measurement.emojiWidth) <= width * CANVAS_WIDTH_ROUNDING ? glyphs : 0
@@ -1185,7 +1168,7 @@ const emojiStretchRe = /[\p{Extended_Pictographic}\p{Emoji_Component}\uFE0E]+/gu
 // Those and the other gaps are in ENGINE_FOLLOWUPS.md, Emoji correction: another font's
 // glyph exactly as wide as an emoji takes the correction, as does Firefox's box for a
 // missing glyph at 13px, and an emoji font whose advances vary would take none.
-function countEmojiGlyphs(text: string, measurement: FontMeasurement): number {
+function countEmojiGlyphs(text: string, measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   const ends = new Int32Array(text.length)
   const graphemeCount = findGraphemeEnds(getEngineProfile().graphemeTable, text, 0, text.length, ends)
   let count = 0
@@ -1197,12 +1180,14 @@ function countEmojiGlyphs(text: string, measurement: FontMeasurement): number {
   return count
 }
 
-export function getCorrectedSegmentWidth(seg: string, metrics: SegmentMetrics, measurement: FontMeasurement, emojiCorrection: number): number {
+export function getCorrectedSegmentWidth(seg: string, metrics: SegmentMetrics, measurement: FontMeasurement, emojiCorrection: number): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
   if (emojiCorrection === 0) return metrics.width
   if (metrics.emojiCount < 0) metrics.emojiCount = countEmojiGlyphs(seg, measurement)
   return metrics.width - metrics.emojiCount * emojiCorrection
 }
 
+/** @ensures result.advances === null || 1 <= result.advances.length
+ *  @ensures result.advances === null || result.lineStartExtras === null || result.advances.length <= result.lineStartExtras.length */
 export function getSegmentFit(
   seg: string,
   metrics: SegmentMetrics,
@@ -1212,8 +1197,14 @@ export function getSegmentFit(
   // When metrics measured seg together with one following U+0020, the width of
   // that space alone. The last grapheme then keeps its kerning with the space.
   followingSpaceWidth: number | null,
-): SegmentFit {
-  if (metrics.fit !== null && metrics.fit.mode === mode) return metrics.fit
+): Effects<{ fields: "any"; views: "grow"; "@state": "any" }, SegmentFit> {   // PAPER: annotation
+  const cached = metrics.fit
+  if (cached !== null && cached.mode === mode) {
+    const cachedAdvances = cached.advances
+    if (cachedAdvances === null) return cached
+    const cachedExtras = cached.lineStartExtras
+    if (cachedAdvances.length >= 1 && (cachedExtras === null || cachedAdvances.length <= cachedExtras.length)) return cached   // PAPER: Map<string, SegmentMetrics> drops field invariants on cache lookup
+  }
   const profile = getEngineProfile()
   const ends = new Int32Array(seg.length)
   const count = findGraphemeEnds(profile.graphemeTable, seg, 0, seg.length, ends)
@@ -1240,6 +1231,7 @@ export function getSegmentFit(
       pairs = count > MAX_PREFIX_FIT_GRAPHEMES || addUpTo(advances, width)
       if (!pairs) advances = measureFitAdvances(seg, ends, count, 'segment-prefixes', metrics, measurement, emojiCorrection, followingSpaceWidth)
       const extras: Dense<number[]> = [0]
+      /** @invariant safeInteger(count) && safeInteger(i) && 1 <= i && i <= count && extras.length === i && advances.length === count */
       for (let i = 1; i < count; i++) extras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
       lineStartExtras = extras
     }
@@ -1261,6 +1253,8 @@ export function getSegmentFit(
   if (profile.kernsAcrossCanvasWords && measurement.kanaKerning !== null && kanaPairRe.test(seg)) {
     const kernings = getFontKanaKerning(measurement)
     if (kernings !== null) {
+      /** @invariant safeInteger(count) && safeInteger(g) && 1 <= g && g <= count && 2 <= count && advances.length === count
+       *  @invariant lineStartExtras === null || lineStartExtras.length === count */
       for (let g = 1; g < count; g++) {
         const kerning = getKanaKerning(seg, pairs && g > 1 ? (ends[g - 2] ?? missing()) : 0, ends[g - 1] ?? missing(), measurement, kernings)
         if (kerning > 0) {
@@ -1295,7 +1289,7 @@ export function getSegmentFit(
 // inside it and gives each of its letters an equal share (ComputeLigatureData,
 // gfxTextRun.cpp:238-322); here the first letter keeps the whole advance (ENGINE_FOLLOWUPS.md,
 // Emergency breaks inside a word).
-function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: Dense<number[]>, measurement: FontMeasurement, emojiCorrection: number): void {
+function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: Dense<number[]>, measurement: FontMeasurement, emojiCorrection: number): Effects<{ "advances[*]": "grow"; "advances[#]": "any"; fields: "any"; "@state": "any" }, void> {   // PAPER: annotation
   // Text measured under letter spacing has no optional ligature, and a context that can't
   // turn them off can't be asked.
   if (!measurement.state.shapesLetterSpaced || measurement.letterSpacing !== '0px') return
@@ -1321,10 +1315,11 @@ function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: De
 // otherwise without them, as the context shapes text under a letter spacing
 // (LETTER_SPACED_SHAPING). Asked of Canvas once per pair and font. A kerned pair, letters that
 // join, a mark on its base and a ligature the font requires measure the same, and aren't one.
-function isLigature(pair: string, measurement: FontMeasurement): boolean {
+function isLigature(pair: string, measurement: FontMeasurement): Effects<{ fields: "any" }, boolean> {   // PAPER: annotation
   let ligature = measurement.ligaturePairs.get(pair)
   if (ligature === undefined) {
-    const context = getContext(measurement)
+    getContext(measurement)
+    const context = measurement.state.context
     const width = getSegmentMetrics(pair, measurement).width
     context.letterSpacing = LETTER_SPACED_SHAPING
     ligature = context.measureText(pair).width !== width
@@ -1335,7 +1330,7 @@ function isLigature(pair: string, measurement: FontMeasurement): boolean {
 }
 
 // Whether a segment's advances add up to its width, within the rounding of Canvas's widths.
-function addUpTo(advances: readonly number[], width: number): boolean {
+function addUpTo(advances: readonly number[], width: number): Effects<{}, boolean> {   // PAPER: annotation
   let sum = 0
   for (let i = 0; i < advances.length; i++) sum += advances[i]!
   return Math.abs(sum - width) <= width * WORD_SUM_ROUNDING
@@ -1343,6 +1338,8 @@ function addUpTo(advances: readonly number[], width: number): boolean {
 
 // A segment's advances per grapheme: the differences of its prefixes' widths, or each
 // grapheme's width alone or, as a pair, after the one before it.
+/** @requires safeInteger(count) && 0 <= count
+ *  @ensures result.length === count */
 function measureFitAdvances(
   seg: string,
   ends: Int32Array,
@@ -1352,12 +1349,13 @@ function measureFitAdvances(
   measurement: FontMeasurement,
   emojiCorrection: number,
   followingSpaceWidth: number | null,
-): Dense<number[]> {
+): Effects<{ fields: "any"; "@state": "any" }, Dense<number[]>> {   // PAPER: annotation
   const prefixes = from === 'segment-prefixes'
   const pairs = from === 'pair-context'
   const advances: Dense<number[]> = []
   let previousStart = 0
   let previousWidth = 0
+  /** @invariant safeInteger(count) && safeInteger(i) && 0 <= i && i <= count && advances.length === i */
   for (let i = 0, start = 0; i < count; start = ends[i++] ?? missing()) {
     const end = ends[i]
     if (end === undefined) throw new RangeError('missing value')
@@ -1391,7 +1389,7 @@ function measureFitAdvances(
 // measurement of its own where the context shapes it as the page does: its widths,
 // prefixes and line-edge facts all come from that shaping. The context isn't touched
 // here: text that is all in the font's caches measures nothing (getContext).
-export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean): FontMeasurement {
+export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean): Effects<{ fields: "any"; "@state": "any" }, FontMeasurement> {   // PAPER: annotation
   // Measuring starts here, for a text and for each item of a rich-inline paragraph, with the
   // language the preparation resolved. After that language changes, start again with a new
   // context and empty caches; clearing the caches alone would re-measure with fonts resolved
@@ -1429,7 +1427,7 @@ export function getFontMeasurement(font: string, language: string | null, letter
 // another. A context that doesn't read the question's font back as written refuses nothing.
 // Only the context's `font` is written and read, no element and no style, and nothing is
 // measured. Asked once for each font measurement, never for a text.
-function contextTakesFont(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, font: string): boolean {
+function contextTakesFont(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, font: string): Effects<{ "context.font": "any" }, boolean> {   // PAPER: annotation
   context.font = '1px serif'
   context.font = font
   if (context.font !== '1px serif') return true
@@ -1443,7 +1441,7 @@ function contextTakesFont(context: CanvasRenderingContext2D | OffscreenCanvasRen
 // setting, whatever was looked up or prepared in between, and text that is all cached,
 // which measures nothing, sets nothing. What changes the context after that puts it back
 // before it returns (getHyphenText, getExtraSpacings, getFontSpaceKerning, isLigature).
-export function getContext(measurement: FontMeasurement): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+export function getContext(measurement: FontMeasurement): Effects<{ "measurement.state.*": "any"; "measurement.state.context.*": "any" }, CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D> {   // PAPER: annotation
   const state = measurement.state
   if (state.font !== measurement.canvasFont) state.context.font = state.font = measurement.canvasFont
   if (state.letterSpacing !== measurement.letterSpacing) state.context.letterSpacing = state.letterSpacing = measurement.letterSpacing
@@ -1452,7 +1450,7 @@ export function getContext(measurement: FontMeasurement): CanvasRenderingContext
 
 // A context's `lang` follows the page's, and preparation's can be setLocale()'s or Blink's
 // default locale instead.
-function createContext(language: string | null): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+function createContext(language: string | null): Effects<{}, CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D> {   // PAPER: annotation
   // jsdom and happy-dom have a document whose canvas gives no 2D context: getContext() returns null there.
   let context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
   if (typeof OffscreenCanvas !== 'undefined') context = new OffscreenCanvas(1, 1).getContext('2d')
@@ -1462,7 +1460,7 @@ function createContext(language: string | null): CanvasRenderingContext2D | Offs
   return context
 }
 
-function createMeasureState(language: string | null): MeasureState {
+function createMeasureState(language: string | null): Effects<{ fields: "any"; "@state": "any" }, MeasureState> {   // PAPER: annotation
   const context = createContext(language)
   const profile = getEngineProfile()
   const takesLetterSpacing = typeof context.letterSpacing === 'string'

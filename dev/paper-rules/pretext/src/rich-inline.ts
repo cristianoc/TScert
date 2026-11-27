@@ -19,6 +19,7 @@ import {
   ZERO_WIDTH_BREAK,
   ZERO_WIDTH_GLUE,
   type ParagraphItems,
+  type TextAnalysis,
   type WhiteSpaceMode,
 } from './analysis.js'
 import { buildLineTextFromRange, buildRangeText, getGraphemeStart, type PreparedSegments } from './line-text.js'
@@ -29,9 +30,10 @@ import {
   stepPreparedLineGeometryFromStart,
   walkPreparedLinesRaw,
   type ParagraphSegmentData,
+  type PreparedLineData,
 } from './line-break.js'
 import { getEngineProfile, getFontMeasurement, getPreparationLanguage, getSpaceWidth, readLetterSpacing, zeros, type EngineProfile } from './measurement.js'
-import { measureAnalysis, type ParagraphLists } from './prepare.js'
+import { measureAnalysis, measureParagraphAnalysis } from './prepare.js'
 
 // Helper for rich-text inline flow under `white-space: normal` or `pre-wrap`: one paragraph's text
 // broken across its items, as a browser lays out the text of an inline formatting context across
@@ -129,7 +131,19 @@ export type RichInlineStats = {
   maxLineWidth: number
 }
 
-/** @invariant this.data.segmentFlags.length === this.data.widths.length */
+/** @invariant this.data.segmentFlags.length === this.data.widths.length
+ *  @invariant this.data.breakableFitAdvances.length === this.data.widths.length
+ *  @invariant this.data.lineStartExtras === null || this.data.widths.length <= this.data.lineStartExtras.length
+ *  @invariant this.data.lineEndTrims === null || this.data.widths.length <= this.data.lineEndTrims.length
+ *  @invariant this.data.overflowLineEndTrims === null || this.data.widths.length <= this.data.overflowLineEndTrims.length
+ *  @invariant this.data.breakableLineStartExtras === null || this.data.widths.length <= this.data.breakableLineStartExtras.length
+ *  @invariant forall i in this.data.breakableFitAdvances: this.data.breakableFitAdvances[i] === null || 1 <= this.data.breakableFitAdvances[i].length
+ *  @invariant this.data.breakableLineStartExtras === null || forall i in this.data.breakableFitAdvances: this.data.breakableFitAdvances[i] === null || this.data.breakableLineStartExtras[i] === null || this.data.breakableFitAdvances[i].length <= this.data.breakableLineStartExtras[i].length
+ *  @invariant this.data.items === undefined || this.data.items.hyphenWidths === null || this.data.widths.length <= this.data.items.hyphenWidths.length
+ *  @invariant this.data.items === undefined || this.data.items.hyphenRooms === null || this.data.widths.length < this.data.items.hyphenRooms.length
+ *  @invariant this.data.items === undefined || this.data.items.itemEndHalts === null || this.data.widths.length <= this.data.items.itemEndHalts.length
+ *  @invariant this.data.items === undefined || this.data.items.openingEdges === null || this.data.widths.length <= this.data.items.openingEdges.length
+ */
 type InternalPreparedRichInline = {
   // The paragraph's handle, which the text walkers lay out. A paragraph of one text item that isn't
   // atomic and has no extraWidth is that text's own handle, as prepareWithSegments() makes it. Its
@@ -209,16 +223,15 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   const only = onlyIndex < 0 ? undefined : (items[onlyIndex] ?? missing())
   if (only !== undefined && only.text !== undefined && only.break !== 'never' && (only.extraWidth ?? 0) === 0) {
     const analysis = analyzeText(only.text, profile, whiteSpace, wordBreak, language)
+    const onlyLetterSpacing = readLetterSpacing(only.letterSpacing, profile)
     const segments: string[] = []
-    const measured = measureAnalysis(analysis, 0, analysis.flags.length, only.font, segments, readLetterSpacing(only.letterSpacing, profile), profile, language, true, null)
-    const data: PreparedSegments = { ...measured, segments }
-    const itemSegments: number[] = []
-    /** @invariant data.segmentFlags.length === data.widths.length && data.widths !== itemSegments */   // PAPER: annotation
-    for (let index = 0; index <= items.length; index++) itemSegments.push(index <= onlyIndex ? 0 : data.segmentFlags.length)
-    return findWholeLine({
+    const data = prepareSingleSegments(analysis, only.font, segments, onlyLetterSpacing, profile, language)
+    const itemSegments = buildOnlyItemSegments(items.length, onlyIndex, data.segmentFlags.length)
+    const onlyFlow: InternalPreparedRichInline = {
       data, onlyItem: onlyIndex, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems: null, gapSegments: null, plainWidths: false,
       sourceStarts: null, sourceEnds: null, sourceUnits: null, text: only.text,
-    })
+    }
+    return findWholeLine(onlyFlow)
   }
 
   // The paragraph's text: the items' texts joined, an atomic item or a box as one U+FFFC. An atomic
@@ -248,6 +261,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   let spacingsDiffer = false
   // Whether an item may make a line narrower: under a negative letter spacing or extraWidth.
   let mayNarrow = false
+  let atomicMeasures: (AtomicMeasure | null)[] | null = null
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!
     starts.push(source.length)
@@ -265,6 +279,10 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     atomic.push(isAtomic)
     if (isAtomic) {
       source += '￼'
+      const measured = measureAtomicItem(item, profile, wordBreak, language)
+      const measures = atomicMeasures ?? (atomicMeasures = new Array<AtomicMeasure | null>(items.length).fill(null))
+      if ((index & 0x7fffffff) !== index || index >= measures.length) throw new RangeError('index')
+      measures[index] = measured
     } else {
       source += item.text
       if (item.text !== '') {
@@ -287,11 +305,12 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // The paragraph's lists, which each item's measurement adds its segments to (measureAnalysis).
   const widths: Dense<number[]> = []
   const flags = new Uint8Array(count + padded)
-  const breakableFitAdvances: (number[] | null)[] = []
+  const breakableFitAdvances: Dense<(number[] | null)[]> = []
   const segments: string[] = []
   const sourceStarts: number[] = []
   const sourceEnds: number[] = []
-  let sourceUnits: (number[] | null)[] | null = null
+  const sourceUnitsMap = new Map<number, number[]>()
+  let hasSourceUnits = false
   const itemSegments: number[] = []
   // What only some segments have, each made whole at the first one that does: a zero or a null for
   // every segment the paragraph can have, `flags.length` of them, which is more than it has where
@@ -299,24 +318,25 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // Firefox 156 and Safari 27 prepare CJK styled paragraphs again up to 8% faster with the lists
   // made whole than with each filled by a call and a push a segment (RESEARCH.md, Keeping Work
   // Bounded, JavaScript Engines, under A paragraph's sparse lists made whole).
-  let breakableLineStartExtras: (number[] | null)[] | null = null
-  let lineStartExtras: number[] | null = null
-  let lineEndTrims: number[] | null = null
-  let overflowLineEndTrims: number[] | null = null
-  let itemEndHalts: number[] | null = null
+  const breakableLineStartExtrasMap = new Map<number, number[]>()
+  let hasBreakableLineStartExtras = false
+  let lineStartExtras: Dense<number[]> | null = null
+  let lineEndTrims: Dense<number[]> | null = null
+  let overflowLineEndTrims: Dense<number[]> | null = null
+  let itemEndHalts: Dense<number[]> | null = null
   // A line returns from a soft hyphen whose hyphen doesn't fit on a handle with soft-hyphen
   // contexts, which an item's measurement makes for text with one.
-  let discretionaryHyphenContexts: number[] | null = null
-  let insideExtras: number[] | null = null
-  let fillExtras: number[] | null = null
-  let openingEdges: number[] | null = null
+  let discretionaryHyphenContexts: Dense<number[]> | null = null
+  let insideExtras: Dense<number[]> | null = null
+  let fillExtras: Dense<number[]> | null = null
+  let openingEdges: Dense<number[]> | null = null
   // Each text item's hyphen width, tab stop advance and least tab advance, and whether two items
   // differ in one, in a paragraph whose text has what reads them: a soft hyphen or, preserved, a
   // tab (ParagraphSegmentData). Another paragraph keeps none, and its handle's own are 0.
   const readsItemFonts = source.includes('\u00AD') || (preserve && source.includes('\t'))
-  const hyphenWidths: number[] = zeros(readsItemFonts ? items.length : 0)
-  const tabStopAdvances: number[] = zeros(readsItemFonts ? items.length : 0)
-  const minimumTabAdvances: number[] = zeros(readsItemFonts ? items.length : 0)
+  const hyphenWidths: Dense<number[]> = zeros(readsItemFonts ? items.length : 0)
+  const tabStopAdvances: Dense<number[]> = zeros(readsItemFonts ? items.length : 0)
+  const minimumTabAdvances: Dense<number[]> = zeros(readsItemFonts ? items.length : 0)
   let firstTextItem = -1
   let fontsDiffer = false
   let simple = !analysis.hasUnbroken
@@ -329,18 +349,26 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // Whether the paragraph holds an object of width 0.
   let hasEmptyObject = false
 
-  /** @invariant 0 <= from && widths !== breakableFitAdvances */   // PAPER: annotation
+  /** @invariant safeInteger(from) && 0 <= from && from <= count && widths.length === breakableFitAdvances.length
+   *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
+   *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
+   *  @invariant lineStartExtras === null || flags.length <= lineStartExtras.length && lineStartExtras !== widths && lineStartExtras !== itemSegments && lineStartExtras !== breakableFitAdvances
+   *  @invariant lineEndTrims === null || flags.length <= lineEndTrims.length && lineEndTrims !== widths && lineEndTrims !== itemSegments && lineEndTrims !== breakableFitAdvances
+   *  @invariant overflowLineEndTrims === null || flags.length <= overflowLineEndTrims.length && overflowLineEndTrims !== widths && overflowLineEndTrims !== itemSegments && overflowLineEndTrims !== breakableFitAdvances
+   *  @invariant itemEndHalts === null || flags.length <= itemEndHalts.length && itemEndHalts !== widths && itemEndHalts !== itemSegments && itemEndHalts !== breakableFitAdvances
+   *  @invariant openingEdges === null || flags.length <= openingEdges.length && openingEdges !== widths && openingEdges !== itemSegments && openingEdges !== breakableFitAdvances
+   *  @invariant discretionaryHyphenContexts === null || discretionaryHyphenContexts !== widths && discretionaryHyphenContexts !== breakableFitAdvances
+   *  @invariant insideExtras === null || insideExtras !== widths && insideExtras !== breakableFitAdvances
+   *  @invariant fillExtras === null || fillExtras !== widths && fillExtras !== breakableFitAdvances
+   *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length */   // PAPER: annotation
   for (let from: SafeInt = 0; from < count;) {
     // The item this segment starts in, and the segments that start in it.
     const offset = offsets[(analysis.starts[from] ?? missing())]
     if (offset === undefined) throw new RangeError('missing value')
-    let index = itemSegments.length === 0 ? 0 : itemSegments.length - 1
-    while (index + 1 < starts.length && (starts[index + 1] ?? missing()) <= offset) index++
-    while (itemSegments.length <= index) itemSegments.push(widths.length)
+    const index = findItemIndex(starts, itemSegments.length === 0 ? 0 : itemSegments.length - 1, offset)
+    padItemSegments(itemSegments, index, widths.length)
     const itemEnd = index + 1 < starts.length ? (starts[index + 1] ?? missing()) : source.length
-    let to: SafeInt = from + 1
-    /** @invariant 0 <= from && from < to && to <= count */
-    while (to < count && (offsets[(analysis.starts[to] ?? missing())] ?? missing()) < itemEnd) to++
+    const to = findItemEnd(analysis, offsets, from, count, itemEnd)
     const item = items[index]
     if (item === undefined) throw new RangeError('missing value')
     const previousItemStart = itemStart
@@ -359,32 +387,24 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       if (item.text === undefined) {
         width = item.width
       } else {
-        const ownAnalysis = analyzeText(item.text, profile, 'normal', wordBreak, language)
-        const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, null, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null)
-        const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
-        if (normalizePreparedLineStart(own, start)) width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY) ?? missing()
-        width += item.extraWidth ?? 0
-        // The chip's text as a line of it paints it (buildLineTextFromRange).
-        for (let i = 0; i < ownAnalysis.texts.length; i++) {
-          const kind = (own.segmentFlags[i] ?? missing()) & KIND_BITS
-          const ownText = ownAnalysis.texts[i]!
-          if (kind !== SOFT_HYPHEN && kind !== HARD_BREAK && !((kind === ZERO_WIDTH_GLUE || kind === ZERO_WIDTH_BREAK) && ownText.charCodeAt(0) === 0x00AD)) text += ownText
-        }
-        while (isCollapsibleSpaceCode(item.text.charCodeAt(textStart))) textStart++
-        textEnd = item.text.length
-        while (textEnd > textStart && isCollapsibleSpaceCode(item.text.charCodeAt(textEnd - 1))) textEnd--
+        const measuredAtomic = atomicMeasures === null ? null : (atomicMeasures[index] ?? null)
+        if (measuredAtomic === null) throw new RangeError('atomic')
+        width = measuredAtomic.width
+        text = measuredAtomic.text
+        textStart = measuredAtomic.textStart
+        textEnd = measuredAtomic.textEnd
       }
       // Gecko places an object of width 0 otherwise than the simple walker does (walkPreparedComplexLines).
       if (width === 0) {
         simple = false
         hasEmptyObject = true
       }
-      flags[widths.length] = OBJECT
-      widths.push(width)
-      segments.push(text)
-      breakableFitAdvances.push(null)
-      sourceStarts.push(textStart)
-      sourceEnds.push(textEnd)
+      const objAt = widths.length
+      flags[objAt] = OBJECT
+      pushSegmentPair(widths, breakableFitAdvances, width)
+      pushString(segments, text)
+      pushNumber(sourceStarts, textStart)
+      pushNumber(sourceEnds, textEnd)
       from = to
       continue
     }
@@ -394,12 +414,12 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       // An item of only collapsible white space, as between two styled words: its one space, as
       // measureAnalysis() measures one.
       if (letterSpacing !== 0) simple = false
-      flags[widths.length] = SPACE | ((analysis.flags[from] ?? missing()) & (UNBROKEN | RETURNABLE)) | (letterSpacing !== 0 ? SPACED : 0)
-      widths.push(getSpaceWidth(getFontMeasurement(item.font, language, letterSpacing !== 0)) + (spacingsDiffer ? letterSpacing : 0))
-      segments.push(' ')
-      breakableFitAdvances.push(null)
-      sourceStarts.push(offset - (starts[index] ?? missing()))
-      sourceEnds.push(offset + 1 - (starts[index] ?? missing()))
+      const spaceAt = widths.length
+      flags[spaceAt] = SPACE | ((analysis.flags[from] ?? missing()) & (UNBROKEN | RETURNABLE)) | (letterSpacing !== 0 ? SPACED : 0)
+      pushSegmentPair(widths, breakableFitAdvances, getSpaceWidth(getFontMeasurement(item.font, language, letterSpacing !== 0)) + (spacingsDiffer ? letterSpacing : 0))
+      pushString(segments, ' ')
+      pushNumber(sourceStarts, offset - (starts[index] ?? missing()))
+      pushNumber(sourceEnds, offset + 1 - (starts[index] ?? missing()))
       from = to
       continue
     }
@@ -417,8 +437,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     const extraWidth = item.extraWidth ?? 0
     let first = to
     if (extraWidth !== 0) {
-      first = from
-      while (first < to && (((analysis.flags[first] ?? missing()) & KIND_BITS) === SOFT_HYPHEN || (first === from && ((analysis.flags[from] ?? missing()) & KIND_BITS) === SPACE))) first++
+      first = findFirstContent(analysis.flags, from, to)
       const firstKind = first < to ? (analysis.flags[first] ?? missing()) & KIND_BITS : TEXT
       if (firstKind === PRESERVED_SPACE || firstKind === TAB || firstKind === HARD_BREAK || (firstKind === ZERO_WIDTH_BREAK && first === from)) {
         const at = widths.length
@@ -449,35 +468,36 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         // trim is what the line doesn't fit: the white space after it stays on its line, as the line
         // keeps the opening it took.
         flags[at] = fit === 0 ? PRESERVED_SPACE : breaksBefore ? OBJECT : OBJECT | UNBROKEN
-        widths.push(extraWidth)
+        pushSegmentPair(widths, breakableFitAdvances, extraWidth)
         openingEdges ??= zeroList(flags.length)
         const openingEdgesStore = openingEdges
-        if ((at & 0x7fffffff) !== at || at > openingEdgesStore.length) throw new RangeError('index')
-        openingEdgesStore[at] = extraWidth
+        if ((at & 0x7fffffff) !== at || at >= openingEdgesStore.length) throw new RangeError('index')
+        setNumberAt(openingEdgesStore, at, extraWidth)
         if (!breaksBefore && !analysis.hasUnbroken) marksReturnable = true
         // Where the engine ends a line inside the preserved spaces before a padded hard break that
         // doesn't fit (hardBreakItemRetreat), those spaces get an advance each, as text a line can
         // end inside has.
         if (firstKind === HARD_BREAK && !breaksBefore && profile.hardBreakItemRetreat !== 'item' && ((flags[at - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && segments[at - 1] !== '') {
           const spaces = (segments[at - 1] ?? missing()).length
-          const advances: number[] = []
-          for (let g = 0; g < spaces; g++) advances.push((widths[at - 1] ?? missing()) / spaces)
-          const idx = at - 1
-          if ((idx & 0x7fffffff) !== idx || idx > breakableFitAdvances.length) throw new RangeError('index')
-          breakableFitAdvances[idx] = advances
+          if (spaces >= 1) {
+            const advances = equalAdvances(widths[at - 1] ?? missing(), spaces)
+            const idx = at - 1
+            if ((idx & 0x7fffffff) !== idx || idx >= breakableFitAdvances.length) throw new RangeError('index')
+            if (hasBreakableLineStartExtras) breakableLineStartExtrasMap.delete(idx)
+            setFitAt(breakableFitAdvances, idx, advances)
+          }
         }
         // The simple walkers take every boundary for a break and a line-end trim out of the line's width.
         simple = false
-        segments.push('')
-        breakableFitAdvances.push(null)
+        pushString(segments, '')
         // The edge comes before the item's segments, so before the space or soft hyphens that lead them.
-        sourceStarts.push(offset - (starts[index] ?? missing()))
-        sourceEnds.push(offset - (starts[index] ?? missing()))
+        pushNumber(sourceStarts, offset - (starts[index] ?? missing()))
+        pushNumber(sourceEnds, offset - (starts[index] ?? missing()))
         if (fit !== 0 && fit !== extraWidth) {
           lineEndTrims ??= zeroList(flags.length)
           const lineEndTrimsStore = lineEndTrims
-          if ((at & 0x7fffffff) !== at || at > lineEndTrimsStore.length) throw new RangeError('index')
-          lineEndTrimsStore[at] = extraWidth - fit
+          if ((at & 0x7fffffff) !== at || at >= lineEndTrimsStore.length) throw new RangeError('index')
+          setNumberAt(lineEndTrimsStore, at, extraWidth - fit)
         }
         first = from - 1
       }
@@ -488,51 +508,49 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     // at every preparation.
     if (to === from + 1 && analysis.texts[from] === item.text) {
       const textsStore = analysis.texts
-      if ((from & 0x7fffffff) !== from || from > textsStore.length) throw new RangeError('index')
-      textsStore[from] = item.text
+      if ((from & 0x7fffffff) !== from || from >= textsStore.length) throw new RangeError('index')
+      setStringAt(textsStore, from, item.text)
     }
     // The item's segments, measured in its font onto the end of the paragraph's lists; `sub` holds
     // what else measurement gives them, from the item's first segment.
     const itemAt = widths.length
     if (to > analysis.flags.length || to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('index')
-    const lists: ParagraphLists = { widths, segmentFlags: flags, breakableFitAdvances }
-    const sub = measureAnalysis(analysis, from, to, item.font, null, letterSpacing, profile, language, true, lists)
+    const sub = measureParagraphAnalysis(analysis, from, to, item.font, letterSpacing, profile, language, widths, flags, breakableFitAdvances, itemAt)
     simple &&= sub.simpleLineCountFastPath
-    if (readsItemFonts) {
-      // The gap before the hyphen is the letter spacing after the grapheme before it.
-      if ((index & 0x7fffffff) !== index || index > hyphenWidths.length) throw new RangeError('index')
-      hyphenWidths[index] = spacingsDiffer ? sub.discretionaryHyphenWidth - letterSpacing : sub.discretionaryHyphenWidth
-      if ((index & 0x7fffffff) !== index || index > tabStopAdvances.length) throw new RangeError('index')
-      tabStopAdvances[index] = sub.tabStopAdvance
-      if ((index & 0x7fffffff) !== index || index > minimumTabAdvances.length) throw new RangeError('index')
-      minimumTabAdvances[index] = sub.minimumTabAdvance
-      if (firstTextItem < 0) firstTextItem = index
-      else if (hyphenWidths[index] !== hyphenWidths[firstTextItem] || tabStopAdvances[index] !== tabStopAdvances[firstTextItem] || minimumTabAdvances[index] !== minimumTabAdvances[firstTextItem]) fontsDiffer = true
-    }
+    /** @invariant safeInteger(i) && safeInteger(from) && safeInteger(to) && safeInteger(itemAt) && 0 <= from && from <= i && i <= to && to <= count && 0 <= itemAt && widths.length === itemAt + (to - from) && breakableFitAdvances.length === widths.length
+     *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
+     *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
+     *  @invariant lineStartExtras === null || flags.length <= lineStartExtras.length && lineStartExtras !== widths && lineStartExtras !== itemSegments && lineStartExtras !== breakableFitAdvances
+     *  @invariant lineEndTrims === null || flags.length <= lineEndTrims.length && lineEndTrims !== widths && lineEndTrims !== itemSegments && lineEndTrims !== breakableFitAdvances
+     *  @invariant overflowLineEndTrims === null || flags.length <= overflowLineEndTrims.length && overflowLineEndTrims !== widths && overflowLineEndTrims !== itemSegments && overflowLineEndTrims !== breakableFitAdvances
+     *  @invariant itemEndHalts === null || flags.length <= itemEndHalts.length && itemEndHalts !== widths && itemEndHalts !== itemSegments && itemEndHalts !== breakableFitAdvances
+     *  @invariant openingEdges === null || flags.length <= openingEdges.length && openingEdges !== widths && openingEdges !== itemSegments && openingEdges !== breakableFitAdvances
+     *  @invariant discretionaryHyphenContexts === null || discretionaryHyphenContexts !== widths && discretionaryHyphenContexts !== breakableFitAdvances
+     *  @invariant insideExtras === null || insideExtras !== widths && insideExtras !== breakableFitAdvances
+     *  @invariant fillExtras === null || fillExtras !== widths && fillExtras !== breakableFitAdvances
+     *  @invariant forall k in breakableFitAdvances: breakableFitAdvances[k] === null || 1 <= breakableFitAdvances[k].length */   // PAPER: annotation
     for (let i = from; i < to; i++) {
       const s = i - from
       const at = itemAt + s
       const spaced = spacingsDiffer && ((flags[at] ?? missing()) & SPACED) !== 0
       const holdsExtra = i === first
       if (spaced || holdsExtra) {
-        let advances = breakableFitAdvances[at] ?? null
-        if (advances !== null) {
+        const origAdvances = breakableFitAdvances[at] ?? null
+        if (origAdvances !== null) {
           // The cached advances are shared by every occurrence of this text.
-          advances = advances.slice()
-          if ((at & 0x7fffffff) !== at || at > breakableFitAdvances.length) throw new RangeError('index')
-          breakableFitAdvances[at] = advances
-          if (spaced) for (let g = 0; g < advances.length; g++) advances[g] = advances[g]! + letterSpacing
-          if (holdsExtra) advances[0] = (advances[0] ?? missing()) + extraWidth
+          const advances = adjustRichAdvances(origAdvances, spaced, holdsExtra, letterSpacing, extraWidth)
+          if ((at & 0x7fffffff) !== at || at >= breakableFitAdvances.length) throw new RangeError('index')
+          setFitAt(breakableFitAdvances, at, advances)
         }
         if (spaced) {
           const widthsValue = (widths[at] ?? missing()) + letterSpacing
-          if ((at & 0x7fffffff) !== at || at > widths.length) throw new RangeError('index')
-          widths[at] = widthsValue
+          if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
+          setNumberAt(widths, at, widthsValue)
         }
         if (holdsExtra) {
           const widthsValue = (widths[at] ?? missing()) + extraWidth
-          if ((at & 0x7fffffff) !== at || at > widths.length) throw new RangeError('index')
-          widths[at] = widthsValue
+          if ((at & 0x7fffffff) !== at || at >= widths.length) throw new RangeError('index')
+          setNumberAt(widths, at, widthsValue)
         }
       }
       // No break comes before white space (UAX #14 LB7), so none inside a run of preserved spaces
@@ -547,41 +565,38 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       const sourceEnd = (offsets[normalizedEnd - 1] ?? missing()) + 1
       // Where the segment's text ends in the normalized text.
       let textEnd = normalizedEnd
-      sourceStarts.push((offsets[normalizedStart] ?? missing()) - (starts[index] ?? missing()))
+      pushNumber(sourceStarts, (offsets[normalizedStart] ?? missing()) - (starts[index] ?? missing()))
       if (sourceEnd > itemEnd) {
         // The Gecko analysis keeps the soft hyphens and bidi controls Firefox's text run drops with
         // the segment before them, across items: the segment's text here is its own item's part, and
         // the rest, which paints nothing, is in no fragment.
-        while ((offsets[textEnd - 1] ?? missing()) >= itemEnd) textEnd--
-        segments.push(analysis.normalized.slice(normalizedStart, textEnd))
-        sourceEnds.push(itemEnd - (starts[index] ?? missing()))
+        textEnd = trimTextEnd(offsets, textEnd, itemEnd)
+        pushString(segments, analysis.normalized.slice(normalizedStart, textEnd))
+        pushNumber(sourceEnds, itemEnd - (starts[index] ?? missing()))
       } else {
-        segments.push(analysis.texts[i] ?? missing())
+        pushString(segments, analysis.texts[i] ?? missing())
         // CRLF is one line feed, which ends with the item where the next item holds the line feed.
-        sourceEnds.push((preserve && sourceEnd < itemEnd && source.charCodeAt(sourceEnd - 1) === 0x0D && source.charCodeAt(sourceEnd) === 0x0A ? sourceEnd + 1 : sourceEnd) - (starts[index] ?? missing()))
+        pushNumber(sourceEnds, (preserve && sourceEnd < itemEnd && source.charCodeAt(sourceEnd - 1) === 0x0D && source.charCodeAt(sourceEnd) === 0x0A ? sourceEnd + 1 : sourceEnd) - (starts[index] ?? missing()))
       }
       const units = getSourceUnits(offsets, normalizedStart, textEnd, starts[index] ?? missing())
       if (units !== null) {
-        sourceUnits ??= new Array<number[] | null>(flags.length).fill(null)
-        const sourceUnitsStore = sourceUnits
-        if ((at & 0x7fffffff) !== at || at > sourceUnitsStore.length) throw new RangeError('index')
-        sourceUnitsStore[at] = units
+        hasSourceUnits = true
+        sourceUnitsMap.set(at, units)
       }
       const subStartExtras = sub.breakableLineStartExtras
-      if (subStartExtras !== null && subStartExtras[s] !== null) {
-        breakableLineStartExtras ??= new Array<number[] | null>(flags.length).fill(null)
-        const breakableLineStartExtrasStore = breakableLineStartExtras
-        const breakableLineStartExtrasValue = subStartExtras[s]
-        if (breakableLineStartExtrasValue === undefined) throw new RangeError('missing value')
-        if ((at & 0x7fffffff) !== at || at > breakableLineStartExtrasStore.length) throw new RangeError('index')
-        breakableLineStartExtrasStore[at] = breakableLineStartExtrasValue
+      if (subStartExtras !== null) {
+        const subStartExtra = subStartExtras[s] ?? null
+        if (subStartExtra !== null) {
+          hasBreakableLineStartExtras = true
+          breakableLineStartExtrasMap.set(at, subStartExtra)
+        }
       }
       const startExtra = (sub.lineStartExtras === null ? 0 : (sub.lineStartExtras[s] ?? missing())) + (i > first ? extraWidth : 0)
       if (startExtra !== 0) {
         lineStartExtras ??= zeroList(flags.length)
         const lineStartExtrasStore = lineStartExtras
-        if ((at & 0x7fffffff) !== at || at > lineStartExtrasStore.length) throw new RangeError('index')
-        lineStartExtrasStore[at] = startExtra
+        if ((at & 0x7fffffff) !== at || at >= lineStartExtrasStore.length) throw new RangeError('index')
+        setNumberAt(lineStartExtrasStore, at, startExtra)
       }
       if (sub.lineEndTrims !== null) {
         const endTrim = sub.lineEndTrims[s]
@@ -589,8 +604,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         if (endTrim !== 0) {
           lineEndTrims ??= zeroList(flags.length)
           const lineEndTrimsStore = lineEndTrims
-          if ((at & 0x7fffffff) !== at || at > lineEndTrimsStore.length) throw new RangeError('index')
-          lineEndTrimsStore[at] = endTrim
+          if ((at & 0x7fffffff) !== at || at >= lineEndTrimsStore.length) throw new RangeError('index')
+          setNumberAt(lineEndTrimsStore, at, endTrim)
         }
         // A closing mark that ends its item, halted at a line's end, stays halted where the line
         // goes on. Blink breaks an item's text that doesn't fit its line, and where the text fits
@@ -612,8 +627,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         if (endTrim !== 0 && i === to - 1 && to < count && extraWidth === 0 && !(analysis.texts[i] ?? missing()).endsWith('\u3000')) {
           itemEndHalts ??= zeroList(flags.length)
           const itemEndHaltsStore = itemEndHalts
-          if ((at & 0x7fffffff) !== at || at > itemEndHaltsStore.length) throw new RangeError('index')
-          itemEndHaltsStore[at] = endTrim
+          if ((at & 0x7fffffff) !== at || at >= itemEndHaltsStore.length) throw new RangeError('index')
+          setNumberAt(itemEndHaltsStore, at, endTrim)
           simple = false
         }
       }
@@ -623,8 +638,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         if (retryTrim !== 0) {
           overflowLineEndTrims ??= zeroList(flags.length)
           const overflowLineEndTrimsStore = overflowLineEndTrims
-          if ((at & 0x7fffffff) !== at || at > overflowLineEndTrimsStore.length) throw new RangeError('index')
-          overflowLineEndTrimsStore[at] = retryTrim
+          if ((at & 0x7fffffff) !== at || at >= overflowLineEndTrimsStore.length) throw new RangeError('index')
+          setNumberAt(overflowLineEndTrimsStore, at, retryTrim)
         }
         // Where no break comes after the mark, as before a period or a no-break space that starts
         // the next item, Blink halts it only on a line it lays out again with a break after every
@@ -635,8 +650,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         if (retryTrim !== 0 && i === to - 1 && to < count && extraWidth === 0) {
           itemEndHalts ??= zeroList(flags.length)
           const itemEndHaltsStore = itemEndHalts
-          if ((at & 0x7fffffff) !== at || at > itemEndHaltsStore.length) throw new RangeError('index')
-          itemEndHaltsStore[at] = retryTrim
+          if ((at & 0x7fffffff) !== at || at >= itemEndHaltsStore.length) throw new RangeError('index')
+          setNumberAt(itemEndHaltsStore, at, retryTrim)
           simple = false
         }
       }
@@ -646,27 +661,47 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         const discretionaryHyphenContextsStore = discretionaryHyphenContexts
         const discretionaryHyphenContextsValue = subContexts[s]
         if (discretionaryHyphenContextsValue === undefined) throw new RangeError('missing value')
-        if ((at & 0x7fffffff) !== at || at > discretionaryHyphenContextsStore.length) throw new RangeError('index')
-        discretionaryHyphenContextsStore[at] = discretionaryHyphenContextsValue
+        if ((at & 0x7fffffff) !== at || at >= discretionaryHyphenContextsStore.length) throw new RangeError('index')
+        setNumberAt(discretionaryHyphenContextsStore, at, discretionaryHyphenContextsValue)
       }
       if (i >= first && first < to) {
         insideExtras ??= zeroList(flags.length)
         const insideExtrasStore = insideExtras
-        if ((at & 0x7fffffff) !== at || at > insideExtrasStore.length) throw new RangeError('index')
-        insideExtrasStore[at] = extraWidth
+        if ((at & 0x7fffffff) !== at || at >= insideExtrasStore.length) throw new RangeError('index')
+        setNumberAt(insideExtrasStore, at, extraWidth)
       }
       if (i > first && first < to) {
         fillExtras ??= zeroList(flags.length)
         const fillExtrasStore = fillExtras
-        if ((at & 0x7fffffff) !== at || at > fillExtrasStore.length) throw new RangeError('index')
-        fillExtrasStore[at] = extraWidth
+        if ((at & 0x7fffffff) !== at || at >= fillExtrasStore.length) throw new RangeError('index')
+        setNumberAt(fillExtrasStore, at, extraWidth)
       }
+    }
+    if (readsItemFonts) {
+      // The gap before the hyphen is the letter spacing after the grapheme before it.
+      if ((index & 0x7fffffff) !== index || index >= hyphenWidths.length) throw new RangeError('index')
+      setNumberAt(hyphenWidths, index, spacingsDiffer ? sub.discretionaryHyphenWidth - letterSpacing : sub.discretionaryHyphenWidth)
+      if ((index & 0x7fffffff) !== index || index >= tabStopAdvances.length) throw new RangeError('index')
+      setNumberAt(tabStopAdvances, index, sub.tabStopAdvance)
+      if ((index & 0x7fffffff) !== index || index >= minimumTabAdvances.length) throw new RangeError('index')
+      setNumberAt(minimumTabAdvances, index, sub.minimumTabAdvance)
+      if (firstTextItem < 0) firstTextItem = index
+      else if (hyphenWidths[index] !== hyphenWidths[firstTextItem] || tabStopAdvances[index] !== tabStopAdvances[firstTextItem] || minimumTabAdvances[index] !== minimumTabAdvances[firstTextItem]) fontsDiffer = true
     }
     from = to
   }
   const segmentCount = widths.length
-  while (itemSegments.length <= items.length) itemSegments.push(segmentCount)
+  /** @invariant safeInteger(segmentCount) && widths.length === segmentCount && breakableFitAdvances.length === segmentCount && widths !== itemSegments && widths !== breakableFitAdvances
+   *  @invariant lineStartExtras === null || flags.length <= lineStartExtras.length && lineStartExtras !== itemSegments
+   *  @invariant lineEndTrims === null || flags.length <= lineEndTrims.length && lineEndTrims !== itemSegments
+   *  @invariant overflowLineEndTrims === null || flags.length <= overflowLineEndTrims.length && overflowLineEndTrims !== itemSegments
+   *  @invariant itemEndHalts === null || flags.length <= itemEndHalts.length && itemEndHalts !== itemSegments
+   *  @invariant openingEdges === null || flags.length <= openingEdges.length && openingEdges !== itemSegments
+   *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length */   // PAPER: annotation
+  while (itemSegments.length <= items.length) pushNumber(itemSegments, segmentCount)
   if (segmentCount > flags.length) throw new RangeError('index')
+  const sourceUnits = hasSourceUnits ? materializeIndexedMap(sourceUnitsMap, flags.length) : null
+  const breakableLineStartExtras = hasBreakableLineStartExtras ? checkBreakableLineStartExtras(breakableFitAdvances, breakableLineStartExtrasMap, segmentCount) : null
   const segmentFlags = segmentCount === flags.length ? flags : flags.subarray(0, segmentCount)
   // A paragraph whose lines return from an unfit hyphen marks every break the scan gives before
   // text, so its walk records each as the line's latest break (pendingBreakSegmentIndex in
@@ -674,52 +709,74 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // still decide is where the Gecko profile ends a line that an object of width 0 sticks out of
   // (ENGINE_FOLLOWUPS.md, Rich-inline item edges).
   if (marksReturnable || (discretionaryHyphenContexts !== null && !analysis.hasUnbroken)) {
-    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount && widths.length === segmentCount && breakableFitAdvances.length === segmentCount && segmentCount <= flags.length
+     *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
+     *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
+     *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
+     *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
+     *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+     *  @invariant breakableLineStartExtras === null || segmentCount <= breakableLineStartExtras.length
+     *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+     *  @invariant breakableLineStartExtras === null || forall i in breakableFitAdvances: breakableFitAdvances[i] === null || breakableLineStartExtras[i] === null || breakableFitAdvances[i].length <= breakableLineStartExtras[i].length */   // PAPER: annotation
     for (let i = 0; i < segmentCount; i++) if (((segmentFlags[i] ?? missing()) & UNBROKEN) === 0) segmentFlags[i] = (segmentFlags[i] ?? missing()) | RETURNABLE
   }
 
   const segmentItems = new Int32Array(segmentCount)
   const gapSegments = new Uint8Array(segmentCount)
-  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount && segmentItems.length === segmentCount && widths.length === segmentCount && breakableFitAdvances.length === segmentCount
+   *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
+   *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
+   *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
+   *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
+   *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+   *  @invariant breakableLineStartExtras === null || segmentCount <= breakableLineStartExtras.length
+   *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+   *  @invariant breakableLineStartExtras === null || forall i in breakableFitAdvances: breakableFitAdvances[i] === null || breakableLineStartExtras[i] === null || breakableFitAdvances[i].length <= breakableLineStartExtras[i].length */   // PAPER: annotation
   for (let index = 0; index < items.length; index++) {
     const firstSegment = itemSegments[index]
     if (firstSegment === undefined) throw new RangeError('missing value')
     const end = itemSegments[index + 1]
     if (end === undefined) throw new RangeError('missing value')
-    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount && segmentItems.length === segmentCount && widths.length === segmentCount && breakableFitAdvances.length === segmentCount
+     *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
+     *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
+     *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
+     *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
+     *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+     *  @invariant breakableLineStartExtras === null || segmentCount <= breakableLineStartExtras.length
+     *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+     *  @invariant breakableLineStartExtras === null || forall i in breakableFitAdvances: breakableFitAdvances[i] === null || breakableLineStartExtras[i] === null || breakableFitAdvances[i].length <= breakableLineStartExtras[i].length */   // PAPER: annotation
     for (let i = firstSegment; i < end; i++) {
       segmentItems[i] = index
       if ((i === firstSegment || i === end - 1) && ((segmentFlags[i] ?? missing()) & KIND_BITS) === SPACE && (segments[i] ?? missing()).length === 1) gapSegments[i] = 1
     }
   }
 
-  let segmentHyphenWidths: number[] | null = null
-  let segmentTabStopAdvances: number[] | null = null
-  let segmentMinimumTabAdvances: number[] | null = null
-  if (fontsDiffer) {
-    segmentHyphenWidths = []
-    segmentTabStopAdvances = []
-    segmentMinimumTabAdvances = []
-    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
-    for (let i = 0; i < segmentCount; i++) {
-      const index = segmentItems[i]
-      if (index === undefined) throw new RangeError('missing value')
-      segmentHyphenWidths.push(hyphenWidths[index] ?? missing())
-      segmentTabStopAdvances.push(tabStopAdvances[index] ?? missing())
-      segmentMinimumTabAdvances.push(minimumTabAdvances[index] ?? missing())
-    }
-  }
+  const segmentHyphenWidths = fontsDiffer ? buildSegmentNumbers(hyphenWidths, segmentItems) : null
+  const segmentTabStopAdvances = fontsDiffer ? buildSegmentNumbers(tabStopAdvances, segmentItems) : null
+  const segmentMinimumTabAdvances = fontsDiffer ? buildSegmentNumbers(minimumTabAdvances, segmentItems) : null
+  const hyphenRooms = discretionaryHyphenContexts !== null && profile.unfitHyphenRetreat === 'reduced-width' ? getHyphenRooms(hyphenWidths, itemSegments, segmentItems) : null
   const segmentData: ParagraphSegmentData = {
     hyphenWidths: segmentHyphenWidths, tabStopAdvances: segmentTabStopAdvances, minimumTabAdvances: segmentMinimumTabAdvances,
     itemEndHalts,
-    hyphenRooms: discretionaryHyphenContexts !== null && profile.unfitHyphenRetreat === 'reduced-width' ? getHyphenRooms(hyphenWidths, itemSegments, segmentItems) : null,
+    hyphenRooms,
     insideExtras, fillExtras, openingEdges,
     emptyObjectSpaces: null, emptyObjectReturns: null, hangEnds: null,
   }
   // Each item is a text frame: a zero-width space after preserved spaces of its own item ends
   // the run of them that hangs (ParagraphSegmentData, hangEnds).
   if (preserve && profile.hangsSpacesPerTextFrame && source.includes('\u200B')) {
-    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+    /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount && widths.length === segmentCount && breakableFitAdvances.length === segmentCount
+     *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
+     *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
+     *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
+     *  @invariant breakableLineStartExtras === null || segmentCount <= breakableLineStartExtras.length
+     *  @invariant segmentData.hyphenWidths === null || segmentCount <= segmentData.hyphenWidths.length
+     *  @invariant segmentData.hyphenRooms === null || segmentCount < segmentData.hyphenRooms.length
+     *  @invariant segmentData.itemEndHalts === null || segmentCount <= segmentData.itemEndHalts.length
+     *  @invariant segmentData.openingEdges === null || segmentCount <= segmentData.openingEdges.length
+     *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+     *  @invariant breakableLineStartExtras === null || forall i in breakableFitAdvances: breakableFitAdvances[i] === null || breakableLineStartExtras[i] === null || breakableFitAdvances[i].length <= breakableLineStartExtras[i].length */   // PAPER: annotation
     for (let i = 1; i < segmentCount; i++) {
       if (((segmentFlags[i] ?? missing()) & (KIND_BITS | DROPPED)) === ZERO_WIDTH_BREAK && ((segmentFlags[i - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && segmentItems[i] === segmentItems[i - 1]) {
         ;(segmentData.hangEnds ??= new Uint8Array(segmentCount))[i] = 1
@@ -728,7 +785,17 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   }
 
   let onlyItem = -1
-  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount */   // PAPER: annotation
+  /** @invariant safeInteger(segmentCount) && segmentFlags.length === segmentCount && widths.length === segmentCount && breakableFitAdvances.length === segmentCount
+   *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
+   *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
+   *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
+   *  @invariant breakableLineStartExtras === null || segmentCount <= breakableLineStartExtras.length
+   *  @invariant segmentData.hyphenWidths === null || segmentCount <= segmentData.hyphenWidths.length
+   *  @invariant segmentData.hyphenRooms === null || segmentCount < segmentData.hyphenRooms.length
+   *  @invariant segmentData.itemEndHalts === null || segmentCount <= segmentData.itemEndHalts.length
+   *  @invariant segmentData.openingEdges === null || segmentCount <= segmentData.openingEdges.length
+   *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+   *  @invariant breakableLineStartExtras === null || forall i in breakableFitAdvances: breakableFitAdvances[i] === null || breakableLineStartExtras[i] === null || breakableFitAdvances[i].length <= breakableLineStartExtras[i].length */   // PAPER: annotation
   for (let index = 0; index < items.length && !paddedOrObject; index++) {
     if (itemSegments[index] === itemSegments[index + 1]) continue
     if (onlyItem >= 0) {
@@ -776,11 +843,38 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
 // a soft hyphen of that item: for one inside an earlier item Blink asks only that the line fit
 // (:4138-4158), and this leaves room for that item's hyphen (ENGINE_FOLLOWUPS.md, Rich-inline item
 // edges).
-function getHyphenRooms(hyphenWidths: number[], itemSegments: number[], segmentItems: Int32Array): number[] {
+/** @ensures result.length === segmentItems.length */
+function buildSegmentNumbers(table: number[], segmentItems: Int32Array): Modifies<{}, Fresh<number[]>> {   // PAPER: annotation
+  const out: number[] = []
+  const n = segmentItems.length
+  let i = 0
+  /** @invariant safeInteger(i) && safeInteger(n) && 0 <= i && i <= n && n === segmentItems.length && out.length === i */
+  for (; i < n; i++) {
+    const index = segmentItems[i]
+    if (index === undefined) throw new RangeError('missing value')
+    const v = table[index]
+    if (v === undefined) throw new RangeError('missing value')
+    out.push(v)
+  }
+  return out
+}
+
+/** @ensures segmentItems.length < result.length */
+function getHyphenRooms(hyphenWidths: number[], itemSegments: number[], segmentItems: Int32Array): Modifies<{}, Fresh<number[]>> {   // PAPER: annotation
   const rooms: number[] = []
-  for (let i = 0; i < segmentItems.length; i++) {
-    const index = segmentItems[i]!
-    rooms.push(i === itemSegments[index] ? 0 : (hyphenWidths[index] ?? missing()))
+  const n = segmentItems.length
+  let i = 0
+  /** @invariant safeInteger(i) && safeInteger(n) && 0 <= i && i <= n && n === segmentItems.length && rooms.length === i */
+  for (; i < n; i++) {
+    const index = segmentItems[i]
+    if (index === undefined) throw new RangeError('missing value')
+    if (i === itemSegments[index]) {
+      rooms.push(0)
+    } else {
+      const w = hyphenWidths[index]
+      if (w === undefined) throw new RangeError('missing value')
+      rooms.push(w)
+    }
   }
   rooms.push(0)
   return rooms
@@ -953,15 +1047,257 @@ function fitsWhole(flow: InternalPreparedRichInline, maxWidth: number): Effects<
   return flow.wholeWidth !== null && flow.wholeWidth <= maxWidth + getEngineProfile().lineFitEpsilon
 }
 
-// `count` zeros, where a paragraph's list of numbers starts: a copy of one list of zeros, which
-// grows to the longest asked for, up to 1024; a longer list is pushed. A copy is one allocation,
-// where zeros pushed one at a time regrow the list as it fills: a list of 127 costs 18 ns copied
-// and 141 pushed in V8's shell, 44 and 293 in SpiderMonkey's, 59 and 204 in JavaScriptCore's.
-const ZEROS: number[] = []
-function zeroList(count: number): number[] {
-  if (count > 1024) return zeros(count)
-  while (ZEROS.length < count) ZEROS.push(0)
-  return ZEROS.slice(0, count)
+type AtomicMeasure = {
+  width: number
+  text: string
+  textStart: number
+  textEnd: number
+}
+
+/** @requires safeInteger(segmentCount) && 0 <= segmentCount && breakableFitAdvances.length === segmentCount
+ *  @ensures result.length === segmentCount
+ *  @ensures forall k in breakableFitAdvances: breakableFitAdvances[k] === null || result[k] === null || breakableFitAdvances[k].length <= result[k].length */
+function checkBreakableLineStartExtras(
+  breakableFitAdvances: Dense<(number[] | null)[]>,
+  extras: Map<number, number[]>,
+  segmentCount: number,
+): Effects<{}, Dense<(number[] | null)[]>> {   // PAPER: annotation
+  const res: Dense<(number[] | null)[]> = new Array<number[] | null>(segmentCount).fill(null)
+  /** @invariant safeInteger(i) && safeInteger(segmentCount) && 0 <= i && i <= segmentCount && breakableFitAdvances.length === segmentCount && res.length === segmentCount && res !== breakableFitAdvances
+   *  @invariant forall k in breakableFitAdvances: breakableFitAdvances[k] === null || res[k] === null || breakableFitAdvances[k].length <= res[k].length */
+  for (let i = 0; i < segmentCount; i++) {
+    const fit = breakableFitAdvances[i]
+    if (fit === undefined) throw new RangeError('extras')
+    const ext = extras.get(i) ?? null
+    if (fit === null) {
+      res[i] = null
+    } else if (ext === null) {
+      res[i] = null
+    } else {
+      if (fit.length > ext.length) throw new RangeError('extras')
+      res[i] = ext
+    }
+  }
+  return res
+}
+
+function materializeIndexedMap(map: Map<number, number[]>, count: number): Effects<{}, (number[] | null)[]> {   // PAPER: annotation
+  const out: (number[] | null)[] = []
+  for (let i = 0; i < count; i++) out.push(map.get(i) ?? null)
+  return out
+}
+
+function buildOnlyItemSegments(itemCount: number, onlyIndex: number, segmentCount: number): Modifies<{}, Fresh<number[]>> {   // PAPER: annotation
+  const itemSegments: number[] = []
+  for (let index = 0; index <= itemCount; index++) itemSegments.push(index <= onlyIndex ? 0 : segmentCount)
+  return itemSegments
+}
+
+/** @requires segments.length === 0 */
+function prepareSingleSegments(
+  analysis: TextAnalysis,
+  font: string,
+  segments: string[],
+  letterSpacing: number,
+  profile: EngineProfile,
+  language: string | null,
+): PreparedSegments {
+  const from = 0
+  const to = analysis.flags.length
+  if (to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('analysis')
+  if (segments.length !== 0) throw new RangeError('segments')
+  const prepared = measureAnalysis(analysis, from, to, font, segments, letterSpacing, profile, language, true, null, 0)
+  const widths = prepared.widths
+  const segmentFlags = prepared.segmentFlags
+  const breakableFitAdvances = prepared.breakableFitAdvances
+  const breakableLineStartExtras = prepared.breakableLineStartExtras
+  const lineStartExtras = prepared.lineStartExtras
+  const lineEndTrims = prepared.lineEndTrims
+  const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const result: PreparedSegments = {   // PAPER: explicit fields so items is absent for PreparedLineData invariant
+    widths,
+    segmentFlags,
+    simpleLineWalkFastPath: prepared.simpleLineWalkFastPath,
+    simpleLineCountFastPath: prepared.simpleLineCountFastPath,
+    breakableFitAdvances,
+    breakableLineStartExtras,
+    lineStartExtras,
+    lineEndTrims,
+    overflowLineEndTrims,
+    letterSpacing: prepared.letterSpacing,
+    discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
+    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    tabStopAdvance: prepared.tabStopAdvance,
+    minimumTabAdvance: prepared.minimumTabAdvance,
+    segments,
+  }
+  if (result.items !== undefined) throw new RangeError('items')
+  return result
+}
+
+function prepareSingleLineData(
+  analysis: TextAnalysis,
+  font: string,
+  letterSpacing: number,
+  profile: EngineProfile,
+  language: string | null,
+): PreparedLineData {
+  const from = 0
+  const to = analysis.flags.length
+  if (to > analysis.starts.length || to > analysis.texts.length) throw new RangeError('analysis')
+  const prepared = measureAnalysis(analysis, from, to, font, null, letterSpacing, profile, language, false, null, 0)
+  const widths = prepared.widths
+  const segmentFlags = prepared.segmentFlags
+  const breakableFitAdvances = prepared.breakableFitAdvances
+  const breakableLineStartExtras = prepared.breakableLineStartExtras
+  const lineStartExtras = prepared.lineStartExtras
+  const lineEndTrims = prepared.lineEndTrims
+  const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const result: PreparedLineData = {   // PAPER: explicit fields so items is absent for PreparedLineData invariant
+    widths,
+    segmentFlags,
+    simpleLineWalkFastPath: prepared.simpleLineWalkFastPath,
+    simpleLineCountFastPath: prepared.simpleLineCountFastPath,
+    breakableFitAdvances,
+    breakableLineStartExtras,
+    lineStartExtras,
+    lineEndTrims,
+    overflowLineEndTrims,
+    letterSpacing: prepared.letterSpacing,
+    discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
+    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    tabStopAdvance: prepared.tabStopAdvance,
+    minimumTabAdvance: prepared.minimumTabAdvance,
+  }
+  if (result.items !== undefined) throw new RangeError('items')
+  return result
+}
+
+function measurePreparedWidth(data: PreparedLineData): number {
+  const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
+  if (normalizePreparedLineStart(data, start)) return stepPreparedLineGeometryFromStart(data, start, Number.POSITIVE_INFINITY) ?? missing()
+  return 0
+}
+
+function measureAtomicItem(item: RichInlineItem, profile: EngineProfile, wordBreak: WordBreakMode, language: string | null): AtomicMeasure {
+  let width = 0
+  let text = ''
+  let textStart = 0
+  const ownAnalysis = analyzeText(item.text, profile, 'normal', wordBreak, language)
+  const ownLetterSpacing = readLetterSpacing(item.letterSpacing, profile)
+  const ownData = prepareSingleLineData(ownAnalysis, item.font, ownLetterSpacing, profile, language)
+  width = measurePreparedWidth(ownData)
+  width += item.extraWidth ?? 0
+  // The chip's text as a line of it paints it (buildLineTextFromRange).
+  for (let i = 0; i < ownAnalysis.texts.length; i++) {
+    const kind = (ownData.segmentFlags[i] ?? missing()) & KIND_BITS
+    const ownText = ownAnalysis.texts[i]!
+    if (kind !== SOFT_HYPHEN && kind !== HARD_BREAK && !((kind === ZERO_WIDTH_GLUE || kind === ZERO_WIDTH_BREAK) && ownText.charCodeAt(0) === 0x00AD)) text += ownText
+  }
+  while (isCollapsibleSpaceCode(item.text.charCodeAt(textStart))) textStart++
+  let textEnd = item.text.length
+  while (textEnd > textStart && isCollapsibleSpaceCode(item.text.charCodeAt(textEnd - 1))) textEnd--
+  return { width, text, textStart, textEnd }
+}
+
+function findItemIndex(starts: number[], index: number, offset: number): Effects<{}, number> {   // PAPER: annotation
+  while (index + 1 < starts.length && (starts[index + 1] ?? missing()) <= offset) index++
+  return index
+}
+
+function padItemSegments(itemSegments: number[], index: number, value: number): Effects<{ "itemSegments[*]": "extend" }, void> {   // PAPER: annotation
+  while (itemSegments.length <= index) itemSegments.push(value)
+}
+
+/** @requires safeInteger(from) && safeInteger(count) && 0 <= from && from < count
+ *  @ensures safeInteger(result) && from < result && result <= count */
+function findItemEnd(analysis: TextAnalysis, offsets: Int32Array, from: number, count: number, itemEnd: number): Effects<{}, number> {   // PAPER: annotation
+  let to = from + 1
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(count) && 0 <= from && from < to && to <= count */
+  while (to < count && (offsets[(analysis.starts[to] ?? missing())] ?? missing()) < itemEnd) to++
+  return to
+}
+
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+ *  @ensures safeInteger(result) && from <= result && result <= to */
+function findFirstContent(flags: number[], from: number, to: number): Effects<{}, number> {   // PAPER: annotation
+  let first = from
+  /** @invariant safeInteger(from) && safeInteger(first) && safeInteger(to) && 0 <= from && from <= first && first <= to */
+  while (first < to && (((flags[first] ?? missing()) & KIND_BITS) === SOFT_HYPHEN || (first === from && ((flags[from] ?? missing()) & KIND_BITS) === SPACE))) first++
+  return first
+}
+
+/** @requires safeInteger(spaces) && 1 <= spaces
+ *  @ensures 1 <= result.length && result.length === spaces */
+function equalAdvances(width: number, spaces: number): Effects<{}, number[]> {   // PAPER: annotation
+  const advances: number[] = []
+  let g = 0
+  /** @invariant safeInteger(g) && safeInteger(spaces) && 0 <= g && g <= spaces && 1 <= spaces && advances.length === g */
+  for (; g < spaces; g++) advances.push(width / spaces)
+  return advances
+}
+
+/** @requires 1 <= advances.length
+ *  @ensures 1 <= result.length && result.length === advances.length */
+function adjustRichAdvances(advances: number[], spaced: boolean, holdsExtra: boolean, letterSpacing: number, extraWidth: number): Effects<{}, Dense<number[]>> {   // PAPER: annotation
+  const len = advances.length
+  const copy: Dense<number[]> = []
+  let g = 0
+  /** @invariant safeInteger(g) && safeInteger(len) && 0 <= g && g <= len && len === advances.length && copy.length === g */
+  for (; g < len; g++) {
+    const v = advances[g]
+    if (v === undefined) throw new RangeError('missing value')
+    copy.push(v + (spaced ? letterSpacing : 0) + (holdsExtra && g === 0 ? extraWidth : 0))
+  }
+  return copy
+}
+
+function trimTextEnd(offsets: Int32Array, textEnd: number, itemEnd: number): Effects<{}, number> {   // PAPER: annotation
+  while ((offsets[textEnd - 1] ?? missing()) >= itemEnd) textEnd--
+  return textEnd
+}
+
+function setNumberAt(arr: Dense<number[]>, idx: number, value: number): Modifies<{ values: "any" }, Effects<{ "arr[#]": "any" }, void>> {   // PAPER: annotation
+  if ((idx & 0x7fffffff) !== idx || idx >= arr.length) throw new RangeError('index')
+  arr[idx] = value
+}
+
+function setStringAt(arr: string[], idx: number, value: string): Effects<{ "arr[*]": "grow"; "arr[#]": "any" }, void> {   // PAPER: annotation
+  if ((idx & 0x7fffffff) !== idx || idx >= arr.length) throw new RangeError('index')
+  arr[idx] = value
+}
+
+/** @requires safeInteger(idx) && 0 <= idx && idx < arr.length && 1 <= value.length
+ *  @requires forall i in arr: arr[i] === null || 1 <= arr[i].length
+ *  @ensures forall i in arr: arr[i] === null || 1 <= arr[i].length */
+function setFitAt(arr: Dense<(number[] | null)[]>, idx: number, value: number[]): Modifies<{ values: "any" }, Effects<{ "arr[#]": "any" }, void>> {   // PAPER: annotation
+  if ((idx & 0x7fffffff) !== idx || idx >= arr.length || value.length < 1) throw new RangeError('index')
+  arr[idx] = value
+}
+
+/** @requires widths.length === breakableFitAdvances.length && widths !== breakableFitAdvances
+ *  @requires forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+ *  @ensures widths.length === breakableFitAdvances.length
+ *  @ensures forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length */
+function pushSegmentPair(widths: Dense<number[]>, breakableFitAdvances: Dense<(number[] | null)[]>, value: number): Effects<{ "widths[*]": "extend"; "breakableFitAdvances[*]": "extend" }, void> {   // PAPER: annotation
+  if (widths.length !== breakableFitAdvances.length) throw new RangeError('length')
+  widths.push(value)
+  const nil: number[] | null = null
+  breakableFitAdvances.push(nil)
+}
+
+function pushNumber(arr: number[], value: number): Effects<{ "arr[*]": "extend" }, void> {   // PAPER: annotation
+  arr.push(value)
+}
+
+function pushString(arr: string[], value: string): Effects<{ "arr[*]": "extend" }, void> {   // PAPER: annotation
+  arr.push(value)
+}
+
+/** @requires safeInteger(count) && 0 <= count
+ *  @ensures result.length === count */
+function zeroList(count: number): Modifies<{}, Fresh<Dense<number[]>>> {   // PAPER: annotation
+  return zeros(count)
 }
 
 // How much of a padded item's extraWidth a line fits where it takes the item's opening, the
@@ -983,7 +1319,7 @@ function zeroList(count: number): number[] {
 // space (nextWrapOpportunity, InlineFormattingUtils.cpp:470-475, 530-538), so it fits the end
 // edge too of an item of white space that ends there. Gecko fits a frame's whole width, its
 // cloned end edge too (CanPlaceFrame, nsLineLayout.cpp:1217-1270).
-function getOpeningFit(flags: number[], from: number, to: number, extraWidth: number, afterTextSpaces: boolean, profile: EngineProfile): number {
+function getOpeningFit(flags: number[], from: number, to: number, extraWidth: number, afterTextSpaces: boolean, profile: EngineProfile): Effects<{}, number> {   // PAPER: annotation
   const fit = profile.paddedOpeningFit
   const firstKind = (flags[from] ?? missing()) & KIND_BITS
   const opensWithWhiteSpace = firstKind === PRESERVED_SPACE || (firstKind === TAB && profile.hangTabs)

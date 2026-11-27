@@ -25,7 +25,17 @@ A semantics gives the paper's notions their meaning:
 - `Mod`, `modEff M`, `ModDisjoint M Φ s`: a confined module-state region
   `M.@state`, its effect `{ M.@state : any; else : keep }`, and the
   condition that `M.@state` is disjoint from every constrained entry of `Φ`
-  and permitted by `Φ`'s default.
+  and permitted by `Φ`'s default;
+- `fieldsEff`, `FieldsDisjoint Φ s`: the class effect
+  `{ fields : any; else : keep }` covering non-spine object fields
+  (`Role.field`), and the condition that every constrained entry of `Φ` covers
+  no field location (e.g., array spines, element cells, and element spines)
+  and `Φ`'s default permits it;
+- `PlainCellsDisj E Φ s`: `E` mutates element cells of a plain array whose
+  spine is apart from the plain arrays constrained by `Φ` at `s`;
+- `ElemLenExtend Φ P`: `Φ` keeps an outer array's structure while bounding
+  its element spines by at most `extend`, and `P` is a monotone lower-bound
+  predicate on those element spines' lengths.
 -/
 
 namespace Verification.Paper.EffectLanguage
@@ -47,6 +57,10 @@ structure Semantics where
   RenOk : Ren → Eff → Prop
   modEff : Mod → Eff
   ModDisjoint : Mod → Eff → St → Prop
+  fieldsEff : Eff
+  FieldsDisjoint : Eff → St → Prop
+  PlainCellsDisj : Eff → Eff → St → Prop
+  ElemLenExtend : Eff → (St → Prop) → Prop
 
 namespace Semantics
 
@@ -115,6 +129,26 @@ def CallbackInvRule (S : Semantics) : Prop :=
     S.Steps Φ_own Φ_cb s₀ s →
     P s
 
+/-- **Fields-Disj** (non-spine object fields class `"fields"`, `Role.field`):
+the class effect `{ fields : any; else : keep }` lies within every effect
+whose constrained entries cover no field location (array spines, element cells,
+element spines) and whose default permits it. -/
+def FieldsDisjRule (S : Semantics) : Prop :=
+  ∀ Φ s₀, S.FieldsDisjoint Φ s₀ → S.Within S.fieldsEff Φ s₀
+
+/-- **Plain-Cells-Disj** (type-disjoint plain-array element cells): mutating
+element cells of a plain array whose spine is apart from every plain array
+constrained by `Φ` (with `else : any`) lies within `Φ`. -/
+def PlainCellsDisjRule (S : Semantics) : Prop :=
+  ∀ E Φ s₀, S.PlainCellsDisj E Φ s₀ → S.Within E Φ s₀
+
+/-- **Elem-Len-Extend** (element-length lower-bound preservation under
+`extend`): when an effect keeps an outer array's path, spine, and element
+cells and bounds its element spines by at most `extend`, every monotone
+lower-bound predicate on each element's spine length is preserved. -/
+def ElemLenExtendRule (S : Semantics) : Prop :=
+  ∀ Φ P, S.ElemLenExtend Φ P → S.Preserves Φ P
+
 /-- The rules the experimental mode applies. -/
 structure PaperRules (S : Semantics) : Prop where
   bound : BoundRule S
@@ -123,5 +157,8 @@ structure PaperRules (S : Semantics) : Prop where
   inst : InstRule S
   confined : ConfinedRule S
   callbackInv : CallbackInvRule S
+  fieldsDisj : FieldsDisjRule S
+  plainCellsDisj : PlainCellsDisjRule S
+  elemLenExtend : ElemLenExtendRule S
 
 end Verification.Paper.EffectLanguage

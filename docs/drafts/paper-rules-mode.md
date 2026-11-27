@@ -183,6 +183,20 @@ the rules run first in a prototype, which reuses the whole pass:
   and nothing about the reach of a parameter after a store, which
   `"p.**"` needs. This decision is outside Lean.
 
+- **Module interfaces under the paper's rules.** When an imported module's
+  exports rely on the paper's rules (leaving an export unestablished under the
+  ordinary interface pass), `dev/paper-rules.mts` runs
+  `paper-rules-prototype --module-interface` with each member module's checked
+  side file (refusing any module carrying `paperAssume`), establishing its
+  exports under `layerOf` so importers receive its verified contracts and
+  postconditions.
+- **Class region keys in `Effects<P, T>`.** Besides parameter-rooted paths and
+  `"@state"`, `Effects<P, T>` accepts `"fields"` (named non-spine object fields,
+  `Role.field`, disjoint from array spines, array element cells, element spines,
+  and typed-array views) and `"views"` (typed-array view contents, `Role.view`),
+  and `dev/paper-annotations.mts` tracks fresh allocations through `new Array(n).fill(v)`,
+  conditional fresh/path expressions, and pass-through/fresh-field helper returns.
+
 `node dev/paper-rules.mts dev/paper-rules/walk.ts --project dev/paper-rules`
 prints, on the walk of the paper:
 

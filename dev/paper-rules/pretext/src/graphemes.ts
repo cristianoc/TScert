@@ -63,11 +63,16 @@ export function isBidiControl(cp: number): Effects<{}, boolean> {   // PAPER: an
 // The number of grapheme clusters in text[start, end), read as if the text began at `start`
 // and ended at `end`. Unless `ends` is null, writes where each cluster ends to it from index
 // 0; it needs room for end - start values.
+/** @requires safeInteger(start) && safeInteger(end) && 0 <= start && start <= end && end <= text.length
+ *  @ensures safeInteger(result) && 0 <= result && result <= end - start */
 export function findGraphemeEnds(table: GraphemeTable, text: string, start: number, end: number, ends: Int32Array | null): Effects<{ "@state": "any"; "ends[*]": "grow"; "ends[#]": "any" }, number> {   // PAPER: annotation
   const { rules, transitions, skipped } = graphemeRules[table] ?? (graphemeRules[table] = parseGraphemeRules(table))
   const catCount = rules.catCount
+  if (start >= end) return 0   // PAPER: empty range returns 0
   let state = START_STATE
   let count = 0
+  /** @invariant safeInteger(start) && safeInteger(end) && safeInteger(i) && safeInteger(count) && 0 <= start && start <= i && i <= end && end <= text.length && 0 <= count && count <= i - start
+   *  @invariant i <= start || count < i - start */
   for (let i = start; i < end;) {
     let c = text.charCodeAt(i)
     let next = i + 1
@@ -83,7 +88,7 @@ export function findGraphemeEnds(table: GraphemeTable, text: string, start: numb
     // The start state takes every code point without CLUSTER_END, so none is set at `start`.
     const transition = transitions[state * catCount + category]
     if (transition === undefined) throw new RangeError('missing value')
-    if ((transition & CLUSTER_END) !== 0) {
+    if (i > start && (transition & CLUSTER_END) !== 0) {   // PAPER: none is set at start
       if (ends !== null) ends[count] = i
       count++
     }

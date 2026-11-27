@@ -69,6 +69,17 @@ export type PreparedLineBreakData = {
 // walkers' loop invariants state over their local copies; and the lists of the optional
 // `items`, from a condition over which the pass learns no fact.
 /** @invariant this.segmentFlags.length === this.widths.length
+ *  @invariant this.breakableFitAdvances.length === this.widths.length
+ *  @invariant this.lineStartExtras === null || this.widths.length <= this.lineStartExtras.length
+ *  @invariant this.lineEndTrims === null || this.widths.length <= this.lineEndTrims.length
+ *  @invariant this.overflowLineEndTrims === null || this.widths.length <= this.overflowLineEndTrims.length
+ *  @invariant this.breakableLineStartExtras === null || this.widths.length <= this.breakableLineStartExtras.length
+ *  @invariant forall i in this.breakableFitAdvances: this.breakableFitAdvances[i] === null || 1 <= this.breakableFitAdvances[i].length
+ *  @invariant this.breakableLineStartExtras === null || forall i in this.breakableFitAdvances: this.breakableFitAdvances[i] === null || this.breakableLineStartExtras[i] === null || this.breakableFitAdvances[i].length <= this.breakableLineStartExtras[i].length
+ *  @invariant this.items === undefined || this.items.hyphenWidths === null || this.widths.length <= this.items.hyphenWidths.length
+ *  @invariant this.items === undefined || this.items.hyphenRooms === null || this.widths.length < this.items.hyphenRooms.length
+ *  @invariant this.items === undefined || this.items.itemEndHalts === null || this.widths.length <= this.items.itemEndHalts.length
+ *  @invariant this.items === undefined || this.items.openingEdges === null || this.widths.length <= this.items.openingEdges.length
  */
 export type PreparedLineData = PreparedLineBreakData & { items?: ParagraphSegmentData }
 
@@ -128,11 +139,6 @@ type InternalLineVisitor<E extends Footprint> = (   // PAPER
   endSegmentIndex: number,
   endGraphemeIndex: number,
 ) => Modifies<E, void>   // PAPER
-
-// PAPER: the prototype's unsafe assume (dev/paper-rules/README.md): the prototype checks
-// `paperAssume(fact, "#N");` as `if (!(fact)) throw "#N";`; the ordinary verifier reads a call
-// that changes nothing.
-function paperAssume(_fact: boolean, _issue: string): Modifies<{}, void> {}   // PAPER
 
 function breaksAfterKind(kind: number): Modifies<{}, boolean> {   // PAPER: annotation
   return (1 << kind & BREAK_AFTER_KINDS) !== 0
@@ -578,16 +584,13 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
   let lastLineWidth: number | null = null
   /** @invariant safeInteger(cursor.segmentIndex) && safeInteger(segmentCount) && 0 <= cursor.segmentIndex && cursor.segmentIndex < segmentCount && segmentFlags.length === segmentCount && widths.length === segmentCount
    *  @invariant safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
-   *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */   // PAPER: annotation
+   *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
+   *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
+   *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
+   *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
+   *  @invariant openingEdges === null || segmentCount <= openingEdges.length */   // PAPER: annotation
   while (true) {
     const breakableFitAdvances = prepared.breakableFitAdvances   // PAPER: keep read link from prepared inside the loop
-    if (lineStartExtras !== null) paperAssume(segmentCount <= lineStartExtras.length, "#356")   // PAPER: unsafe assume until #356
-    if (lineEndTrims !== null) paperAssume(segmentCount <= lineEndTrims.length, "#356")   // PAPER: unsafe assume until #356
-    if (overflowLineEndTrims !== null) paperAssume(segmentCount <= overflowLineEndTrims.length, "#356")   // PAPER: unsafe assume until #356
-    if (hyphenWidths !== null) paperAssume(segmentCount <= hyphenWidths.length, "#356")   // PAPER: unsafe assume until #356
-    if (hyphenRooms !== null) paperAssume(segmentCount < hyphenRooms.length, "#356")   // PAPER: unsafe assume until #356
-    if (itemEndHalts !== null) paperAssume(segmentCount <= itemEndHalts.length, "#356")   // PAPER: unsafe assume until #356
-    if (openingEdges !== null) paperAssume(segmentCount <= openingEdges.length, "#356")   // PAPER: unsafe assume until #356
     const lineStartSegmentIndex = cursor.segmentIndex
     const lineStartGraphemeIndex = cursor.graphemeIndex
     let lineW = 0
@@ -653,9 +656,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
          *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
          *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
          *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(endGraphemeIndex) && endGraphemeIndex === 0 && safeInteger(fitBreakSegmentIndex)
-         *  @invariant lineStartExtras === null || segmentCount <= lineStartExtras.length
-         *  @invariant lineEndTrims === null || segmentCount <= lineEndTrims.length
-         *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
          *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
          *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
          *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
@@ -1032,7 +1032,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
                   const spacing = (beforeFlags & SPACED) !== 0 ? letterSpacing : 0
                   if (rawBeforeAdvances !== null && (prevIdx > lineStartSegmentIndex || rawBeforeAdvances.length - 1 > lineStartGraphemeIndex)) {
                     const beforeCount = rawBeforeAdvances.length
-                    paperAssume(1 <= beforeCount, "#356")   // PAPER: unsafe assume until #356
                     endSegmentIndex = prevIdx
                     endGraphemeIndex = beforeCount - 1
                     endWidth = lineW - (rawBeforeAdvances[endGraphemeIndex]!) - spacing   // PAPER: guard removed
@@ -1117,7 +1116,6 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
             if (!hasContent) {
               hasContent = true
               const startExtras = prepared.breakableLineStartExtras?.[i] ?? null
-              if (startExtras !== null) paperAssume(fitCount <= startExtras.length, "#356")   // PAPER: unsafe assume until #356
               lineW = startExtras === null ? baseGw : baseGw + (startExtras[g]!)   // PAPER: guard removed
               // A line that starts inside a padded rich-inline item, or fills its first
               // segment, pays the item's extraWidth (ParagraphSegmentData).
@@ -1219,9 +1217,6 @@ function stepPreparedSimpleLineGeometry(
   // A negative width lays out as 0, as in the complex walker.
   const fitLimit = Math.max(0, maxWidth) + engineProfile.lineFitEpsilon
   const start = cursor.segmentIndex
-  if (lineStartExtras !== null) paperAssume(widths.length <= lineStartExtras.length, "#356")   // PAPER: unsafe assume until #356
-  if (lineEndTrims !== null) paperAssume(widths.length <= lineEndTrims.length, "#356")   // PAPER: unsafe assume until #356
-  if (overflowLineEndTrims !== null) paperAssume(widths.length <= overflowLineEndTrims.length, "#356")   // PAPER: unsafe assume until #356
 
   // The first segment of the line, or the rest of one a line ended inside. One that
   // overflows and can break fills the line grapheme by grapheme.
@@ -1242,7 +1237,6 @@ function stepPreparedSimpleLineGeometry(
     const fitAdvances = startAdvances
     const startExtras = prepared.breakableLineStartExtras?.[start] ?? null
     let g = cursor.graphemeIndex + 1
-    if (startExtras !== null) paperAssume(fitAdvances.length <= startExtras.length, "#356")   // PAPER: unsafe assume until #356
     lineW = startExtras === null ? (fitAdvances[g - 1]!) : (fitAdvances[g - 1]!) + (startExtras[g - 1]!)   // PAPER: guard removed
     // A line that starts inside a padded rich-inline item, or fills its first segment, pays
     // the item's extraWidth (ParagraphSegmentData).

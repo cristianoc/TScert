@@ -339,6 +339,7 @@ function extendCluster(g: Glyphs, i: number): void {
 // reads the word alone (intl/lwbrk/Segmenter.cpp:174-187). Below U+0300 only CR and LF share a
 // cluster, which the generator checks, and words hold neither, so a word of such units has a
 // cluster at every unit. `ends` has room for the word's clusters.
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= text.length */
 function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: number, graphemeTable: GraphemeTable, ends: Int32Array): void {
   let ch0 = text.charCodeAt(from)
   if (to - from > 1 && isSurrogatePair(ch0, text.charCodeAt(from + 1))) ch0 = combine(ch0, text.charCodeAt(from + 1))
@@ -365,6 +366,7 @@ function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: numbe
 function splitAndInitTextRun(g: Glyphs, text: string, graphemeTable: GraphemeTable, ends: Int32Array): void {
   const end = text.length
   let wordStart = 0
+  /** @invariant safeInteger(wordStart) && safeInteger(i) && safeInteger(end) && 0 <= wordStart && wordStart <= i && i <= end && end === text.length */
   for (let i = 0; i < end; i++) {
     const ch = text.charCodeAt(i)
     const boundary = (ch === 0x20 || ch === 0xa0) && !(i + 1 < end && isClusterExtender(text.charCodeAt(i + 1)))
