@@ -2125,7 +2125,7 @@ below it:
 ```math
 \%\mathsf{ByteLength}\%:(\mathit{View})\Rightarrow_{\emptyset}^{\mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
 \qquad
-\%\mathsf{ByteAt}\%:(\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}\mathtt{number}\mid\mathtt{undefined}
+\%\mathsf{ByteAt}\%:(\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathsf{ensures}\ 0=\mathtt{undefined}\lor(\mathrm{int}(3)\land 0\le 3<\mathrm{view}(2))}\mathtt{number}\mid\mathtt{undefined}
 \ \land\ (\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
 ```
 

@@ -179,6 +179,7 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (live : Std.HashSet Nat)
         if a.cond.isSome || commonSet.contains a then [] else match a.fact with
         | .either .. => []
         | .guarded s [] t B =>
+            if HeapKnowledge.impossibleFact B then [] else
             let cls := HeapLinks.aliasesOf amP s
             nullish.filterMap fun (z, g) =>
               if cls.contains z then

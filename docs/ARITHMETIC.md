@@ -1165,10 +1165,13 @@ so a cast into the handle states no fact, and a boundary requiring the
 invariant proves it.
 
 **Boundary obligations.** An annotation **names** `R` where it is a reference
-to `R` without type arguments, a reference to an alias whose equation names
-it, an intersection with a part naming it, or a union each of whose arms
-names it; an optional type, a union with an arm naming none, and a generic
-reference name none. The invariant is a contract of the boundaries of
+to `R` without type arguments, a reference to a type alias (with or without
+type arguments) whose instantiated equation names it, an intersection with a
+part naming it, or a union each of whose arms names it; an optional type, a
+union with an arm naming none, and a generic record or interface reference
+name none (`type-invariant-wrapper-alias`, negative
+`invalid-type-invariant-wrapper-alias` run under Node). The invariant is a
+contract of the boundaries of
 function declarations of the module, elaborated by the front end to the facts
 of [preconditions](#preconditions) and [postconditions](#postconditions):
 

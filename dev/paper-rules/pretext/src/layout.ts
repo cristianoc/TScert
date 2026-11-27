@@ -113,8 +113,6 @@ function prepareInternal(
   // PAPER: workaround (call-ensures-arg-locals): `from` and `to` must be locals so `measureAnalysis`'s `@ensures` (`to - from`) substitutes at the call site
   const from = 0
   const to = analysis.flags.length
-  // PAPER: workaround (callee-spine-framing): re-establish `segments.length === 0` after `analyzeText` (whose unannotated transitive callees such as `getGeckoLineBreaks` / `removeItemsSkippableSegmentBreaks` infer `spines: "grow"` and clobber `segments.length`, failing `measureAnalysis`'s `@requires` with `node-typing claim`)
-  if (segments !== null && segments.length !== 0) throw new RangeError('segments')
   const prepared = measureAnalysis(analysis, from, to, font, segments, letterSpacing, engineProfile, language, true, null, 0)
   // PAPER: workaround (object-literal-field-locals): copy fields into locals and rebuild object explicitly so `PreparedLineData` invariant sees local length/forall facts (direct return, `{ ...prepared }`, and inline `prepared.<field>` all fail `binding-annotation` / `ensures`)
   const widths = prepared.widths

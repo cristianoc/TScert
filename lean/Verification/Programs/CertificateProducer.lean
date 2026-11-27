@@ -2106,7 +2106,7 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
   let existingGuards : List (Nat × HeapKnowledge.GuardTag) :=
     (keepFirst {} (projections.flatMap fun p => p.indices.filterMap fun a =>
       if a.cond.isSome then none else match a.fact with
-      | .guarded g [] t _ => some (g, t)
+      | .guarded g [] t body => if HeapKnowledge.impossibleFact body then none else some (g, t)
       | _ => none)).2.toList
   let restated := (projections.zip projAliases).flatMap fun (p, amP) => p.indices.flatMap fun a =>
     if a.cond.isSome then [] else match a.fact with
@@ -2124,7 +2124,7 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
             ({ fact := .guarded z [] g (.element z x idx) } : HeapKnowledge.IndexAtom)
     | .every .. | .apart .. =>
       a :: existingGuards.map fun (g, t) => ({ fact := .guarded g [] t a.fact } : HeapKnowledge.IndexAtom)
-    | .guarded _ [] _ (.every ..) | .guarded _ [] _ (.apart ..) => [a]
+    | .atIndex .. | .guarded _ [] _ (.every ..) | .guarded _ [] _ (.apart ..) => [a]
     | _ => []
   let kSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList k.indices
   let raw := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices) ++ restated

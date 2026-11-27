@@ -3640,4 +3640,31 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-dense-write-same-elem-type-clobbers"),
     "(() => { const xs = [1]; return String(Number.isNaN(clobberAndRead(xs, xs, [42], 0))); })()"),
     "true", "invalid-dense-write-same-elem-type-clobbers: aliased Dense<number[]> write clobbers targets[0] to 0 and reads out[-1]/NaN");
+  assert.deepEqual(runPlain(ofKind("disjunctive-element-nonnull", ["positive"]),
+    "(() => { const h = { widths: [10, 20], advances: [[3, 4], null] }; return [disjunctiveRead(h, { segmentIndex: 0, graphemeIndex: 1 }, false), disjunctiveRead(h, { segmentIndex: 0, graphemeIndex: 0 }, true), disjunctiveRead(h, { segmentIndex: 1, graphemeIndex: 0 }, true), mergedAtIndexNonNull(h, { segmentIndex: 0, graphemeIndex: 1 }, 0, false), mergedAtIndexNonNull(h, { segmentIndex: 1, graphemeIndex: 0 }, 0, true), atIndexImpliesBounds(h, 0, 1), atIndexImpliesBounds(h, 2, 0)]; })()"),
+    [2, 2, 0, 3, 2, 10, 0], "disjunctive-element-nonnull: safe disjunctive non-null read, merged atIndex non-null, and atIndex upper bound");
+  assert.throws(() => runExample(negative("invalid-disjunctive-element-nonnull"),
+    "missingDisjunctNonNull({ advances: [null] }, 0, true)"), /TypeError/,
+    "invalid-disjunctive-element-nonnull: flag=true with null element throws TypeError on startAdvances!.length");
+  assert.throws(() => runExample(negative("invalid-merged-atindex-nonnull"),
+    "missingMergeBranchNonNull({ advances: [null] }, 0, false, true)"), /TypeError/,
+    "invalid-merged-atindex-nonnull: unchecked else-if branch with null element throws TypeError on advances[i]!.length");
+  assert.deepEqual(runPlain(ofKind("merge-array-length-alias", ["positive"]),
+    "[copyOnCond([10, 20], true, 1)[1], copyOnCond([10, 20], false, 1)[1], chainedCopies([1, 2], true, true), copyViewOnCond(new Uint8Array([3, 4]), true, 0)[0], pickSameLengthString('ab', 'xy', true, 1)]"),
+    [21, 20, [3, 3], 3, 121], "merge-array-length-alias: preserved array/view/string lengths across conditional reassignments");
+  assert.equal(runExample(negative("invalid-merge-array-length-alias"),
+    "String(Number.isNaN(badShrinkingMerge([10, 20], true, 0)))"),
+    "true", "invalid-merge-array-length-alias: shrinking branch breaks length equality after merge and reads undefined/NaN");
+  assert.deepEqual(runPlain(ofKind("typed-array-read-defined", ["positive"]),
+    "[writeOnDefinedUint8(new Uint8Array([5, 9]), [0, 0], 1), readOnCoalescedInt32(new Int32Array([3, 7]), [10, 20], 0), readOnDefinedFloat64(new Float64Array([1.5]), [2.5], 0), readOnDefinedFloat64(new Float64Array([1.5]), [2.5], -1)]"),
+    [10, 13, 4, 0], "typed-array-read-defined: defined typed-array reads narrow index bounds");
+  assert.equal(runExample(negative("invalid-array-read-defined"),
+    "(() => { const xs = [10]; xs[-1] = 99; return String(Number.isNaN(badArrayReadDefined(xs, [20], -1))); })()"),
+    "true", "invalid-array-read-defined: plain Array with own property at -1 passes xs[-1] !== undefined and reads ys[-1]/NaN");
+  assert.equal(runPlain(ofKind("type-invariant-wrapper-alias", ["positive"]),
+    "roundTripTaggedPair(3, 4)"),
+    14, "type-invariant-wrapper-alias: wrapped EqualPair invariant holds across producer and consumer");
+  assert.equal(runExample(negative("invalid-type-invariant-wrapper-alias"),
+    "(() => { const p = badTaggedPair(); return String(Number.isNaN(p.xs[1] + p.ys[1])); })()"),
+    "true", "invalid-type-invariant-wrapper-alias: badTaggedPair returns mismatched lengths reading ys[1]/NaN");
 }

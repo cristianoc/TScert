@@ -198,7 +198,7 @@ function resolvePaperInterfaces(artifacts: string, project: string | undefined):
             encoding: "utf8",
             maxBuffer: 64 * 1024 * 1024,
             stdio: ["ignore", "pipe", process.env.PAPER_TRACE ? "inherit" : "ignore"],
-            timeout: stepTimeoutMs,
+            timeout: 300_000,
           });
           const parsedOut = parseCanonical(stdout);
           if (parsedOut !== null && isCanonicalObject(parsedOut) && isCanonicalArray(parsedOut.modules)) {

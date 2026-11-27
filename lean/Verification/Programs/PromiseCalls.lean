@@ -148,20 +148,45 @@ refinement reads it at; a parameter, scheme or meet row keeps its type. -/
 def intRefinable (G : NormalGraph ι) (A : Ty ι) : Bool :=
   G.plainTy A && !(PositiveRules.expand G A).all IndexWrites.intClause
 
-/-- **A context refined by integer facts**: each slot the atoms `as` state a
-safe integer whose type `intRefinable` refines, at the `int` label. -/
-def intRefine (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : List (Ty ι) :=
-  match intLabel G with
-  | some L => Γ.mapIdx fun i A => if HeapKnowledge.intSlot as i && intRefinable G A then [L] else A
-  | none => Γ
+/-- Whether a tag fact refines `A`: a plain type not already answering `tag` with `q`. -/
+def tagRefinable (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Bool :=
+  G.plainTy A && !(PositiveRules.expand G A).all fun c => tagClause tag c == some q
 
-/-- Whether `Δ` is `Γ` refined by integer facts: as long, each slot its type
-in `Γ` or the `int` label at a slot the atoms `as` state a safe integer. -/
+/-- One slot's type refined by the safe-integer and nullish-exclusion facts
+`as` establish for slot `i`. -/
+def slotRefine (G : NormalGraph ι) (as : List HeapKnowledge.IndexAtom) (i : Nat) (A : Ty ι) : Ty ι :=
+  let A0 := match intLabel G with
+    | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
+    | none => A
+  let A1 := if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
+    BranchRefinement.tagSlice G A0 .isNul false else A0
+  if tagRefinable G A1 .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef then
+    BranchRefinement.tagSlice G A1 .isUndef false else A1
+
+/-- **A context refined by integer and nullish-exclusion facts**: each slot
+refined by `slotRefine`. -/
+def intRefine (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : List (Ty ι) :=
+  Γ.mapIdx (slotRefine G as)
+
+/-- Whether `D` is `A` refined by some subset of the integer and
+nullish-exclusion facts `as` establish for slot `i`. -/
+def slotRefines [DecidableEq ι] (G : NormalGraph ι) (as : List HeapKnowledge.IndexAtom) (i : Nat) (A D : Ty ι) : Bool :=
+  if D == A then true
+  else if (match intLabel G with | some L => D == [L] && HeapKnowledge.intSlot as i | none => false) then true
+  else
+    let sN := BranchRefinement.tagSlice G A .isNul false
+    (D == sN && HeapKnowledge.slotGuardTag as i .notNull) ||
+    (D == BranchRefinement.tagSlice G A .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef) ||
+    (D == BranchRefinement.tagSlice G sN .isUndef false &&
+      HeapKnowledge.slotGuardTag as i .notNull && HeapKnowledge.slotGuardTag as i .notUndef)
+
+/-- Whether `Δ` is `Γ` refined by integer and nullish-exclusion facts: as long,
+each slot its type in `Γ` or a proved refinement of it in `as`. -/
 def intRefines [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : Bool :=
   Δ.length == Γ.length && (List.range Δ.length).all fun i =>
-    Δ[i]? == Γ[i]? || match intLabel G, Δ[i]? with
-      | some L, some D => D == [L] && HeapKnowledge.intSlot as i
-      | _, _ => false
+    match Γ[i]?, Δ[i]? with
+    | some A, some D => slotRefines G as i A D
+    | _, _ => false
 
 theorem intLabel_meaning {G : NormalGraph ι} {L : ι} (hL : intLabel G = some L) {n W b}
     (hb : SafeIntegers.safeIntOfBits b ≠ none) : meaning G [L] n W (.num b) := by
@@ -185,26 +210,62 @@ theorem intSlot_meaning {G : NormalGraph ι} {L : ι} (hL : intLabel G = some L)
     exact intLabel_meaning hL (by simpa [HeapKnowledge.intValue, Option.isSome_iff_ne_none] using hv)
   | _ => rw [hρ] at hv; simp [HeapKnowledge.intValue] at hv
 
+private theorem tagHolds_isNul_of_ne {v : Val} (h : v ≠ .nul) : tagHolds .isNul v = false := by
+  cases v <;> simp_all [tagHolds]
+
+private theorem tagHolds_isUndef_of_ne {v : Val} (h : v ≠ .undef) : tagHolds .isUndef v = false := by
+  cases v <;> simp_all [tagHolds]
+
+private theorem slotRefine_meaning {G : NormalGraph ι} {as bs : List HeapKnowledge.IndexAtom}
+    {i : Nat} {A : Ty ι} {ρ : Env} {h : Heap} {n W}
+    (hint : HeapKnowledge.intSlot as i = true → HeapKnowledge.intSlot bs i = true)
+    (htag : ∀ t, HeapKnowledge.slotGuardTag as i t = true → HeapKnowledge.slotGuardTag bs i t = true)
+    (hA : meaning G A n W (ρ i)) (hk : HeapKnowledge.IndexHolds ε bs ρ h) :
+    meaning G (slotRefine G as i A) n W (ρ i) := by
+  unfold slotRefine
+  dsimp only
+  have hA0 : meaning G (match intLabel G with
+      | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
+      | none => A) n W (ρ i) := by
+    cases hL : intLabel G with
+    | none => exact hA
+    | some L =>
+      dsimp only
+      split
+      · rename_i hc
+        exact intSlot_meaning hL hk (hint (Bool.and_eq_true_iff.mp hc).2)
+      · exact hA
+  generalize (match intLabel G with
+      | some L => if intRefinable G A && HeapKnowledge.intSlot as i then [L] else A
+      | none => A) = A0 at hA0 ⊢
+  have hA1 : meaning G (if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
+      BranchRefinement.tagSlice G A0 .isNul false else A0) n W (ρ i) := by
+    split
+    · rename_i hc
+      have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notNull (Bool.and_eq_true_iff.mp hc).2)
+      exact BranchRefinement.tagSlice_sound hA0 (.inl (tagHolds_isNul_of_ne hne))
+    · exact hA0
+  generalize (if tagRefinable G A0 .isNul false && HeapKnowledge.slotGuardTag as i .notNull then
+      BranchRefinement.tagSlice G A0 .isNul false else A0) = A1 at hA1 ⊢
+  split
+  · rename_i hc
+    have hne := HeapKnowledge.slotGuardTag_sound hk (htag .notUndef (Bool.and_eq_true_iff.mp hc).2)
+    exact BranchRefinement.tagSlice_sound hA1 (.inl (tagHolds_isUndef_of_ne hne))
+  · exact hA1
+
 /-- **The refined context types the environment** where the atoms hold. -/
 theorem envOk_intRefine {G : NormalGraph ι} {Γ : List (Ty ι)} {as : List HeapKnowledge.IndexAtom}
     {ρ : Env} {h : Heap} {n W} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.IndexHolds ε as ρ h) :
     EnvOk G (intRefine G Γ as) ρ n W := by
-  unfold intRefine
-  split
-  · rename_i L hL
-    refine ⟨he.1, fun i A hA => ?_⟩
-    rw [List.getElem?_mapIdx] at hA
-    cases hB : Γ[i]? with
-    | none => rw [hB] at hA; cases hA
-    | some B =>
-      rw [hB] at hA
-      simp only [Option.map_some, Option.some.injEq] at hA
-      subst hA
-      split
-      · rename_i hc
-        exact intSlot_meaning hL hk (Bool.and_eq_true_iff.mp hc).1
-      · exact he.2 i B hB
-  · exact he
+  refine ⟨he.1, fun i A hA => ?_⟩
+  rw [intRefine, List.getElem?_mapIdx] at hA
+  cases hB : Γ[i]? with
+  | none => rw [hB] at hA; cases hA
+  | some B =>
+    rw [hB] at hA
+    simp only [Option.map_some, Option.some.injEq] at hA
+    subst hA
+    exact slotRefine_meaning id (fun _ h => h) (he.2 i B hB) hk
 
 /-- **A context the check accepts as refined types the environment** where
 the atoms hold. -/
@@ -212,31 +273,59 @@ theorem envOk_intRefines [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty
     {ρ : Env} {h : Heap} {n W} (hr : intRefines G Γ Δ as = true) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.IndexHolds ε as ρ h) : EnvOk G Δ ρ n W := by
   simp only [intRefines, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at hr
-  refine ⟨he.1, fun i A hA => ?_⟩
-  have hi : i < Δ.length := (List.getElem?_eq_some_iff.mp hA).1
+  refine ⟨he.1, fun i D hD => ?_⟩
+  have hi : i < Δ.length := (List.getElem?_eq_some_iff.mp hD).1
+  have hΓ : i < Γ.length := hr.1 ▸ hi
+  have hA : Γ[i]? = some Γ[i] := List.getElem?_eq_getElem hΓ
   have hc := hr.2 i hi
-  rcases Bool.or_eq_true_iff.mp hc with hc | hc
-  · rw [beq_iff_eq, hA] at hc
-    exact he.2 i A hc.symm
-  · split at hc
-    · rename_i L D hL hD
-      rw [hA] at hD
-      cases hD
-      simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      rw [hc.1]
-      exact intSlot_meaning hL hk hc.2
-    · cases hc
+  rw [hA, hD] at hc
+  dsimp only at hc
+  have hm := he.2 i _ hA
+  have htags : ∀ {A : Ty ι}, meaning G A n W (ρ i) →
+      (D == BranchRefinement.tagSlice G A .isNul false && HeapKnowledge.slotGuardTag as i .notNull ||
+       D == BranchRefinement.tagSlice G A .isUndef false && HeapKnowledge.slotGuardTag as i .notUndef ||
+       D == BranchRefinement.tagSlice G (BranchRefinement.tagSlice G A .isNul false) .isUndef false &&
+         HeapKnowledge.slotGuardTag as i .notNull && HeapKnowledge.slotGuardTag as i .notUndef) = true →
+      meaning G D n W (ρ i) := by
+    intro A hA ht
+    simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at ht
+    rcases ht with (⟨hEq, hnN⟩ | ⟨hEq, hnU⟩) | ⟨⟨hEq, hnN⟩, hnU⟩
+    · subst hEq
+      exact BranchRefinement.tagSlice_sound hA (.inl (tagHolds_isNul_of_ne (HeapKnowledge.slotGuardTag_sound hk hnN)))
+    · subst hEq
+      exact BranchRefinement.tagSlice_sound hA (.inl (tagHolds_isUndef_of_ne (HeapKnowledge.slotGuardTag_sound hk hnU)))
+    · subst hEq
+      exact BranchRefinement.tagSlice_sound
+        (BranchRefinement.tagSlice_sound hA (.inl (tagHolds_isNul_of_ne (HeapKnowledge.slotGuardTag_sound hk hnN))))
+        (.inl (tagHolds_isUndef_of_ne (HeapKnowledge.slotGuardTag_sound hk hnU)))
+  unfold slotRefines at hc
+  by_cases hEq : (D == Γ[i]) = true
+  · rw [beq_iff_eq.mp hEq]; exact hm
+  · simp only [hEq] at hc
+    cases hLb : intLabel G with
+    | none =>
+      rw [hLb] at hc
+      simp only [Bool.false_eq_true, ite_false] at hc
+      exact htags hm hc
+    | some L =>
+      rw [hLb] at hc
+      by_cases hL : (D == [L] && HeapKnowledge.intSlot as i) = true
+      · simp only [Bool.and_eq_true, beq_iff_eq] at hL
+        rw [hL.1]
+        exact intSlot_meaning hLb hk hL.2
+      · simp only [hL] at hc
+        exact htags hm hc
 
-/-- The unconditional atoms that state a slot a safe integer, as `intSlot`
-reads them. -/
+/-- The unconditional atoms that state a slot a safe integer or guard tag, as
+`intSlot` and `slotGuardTag` read them. -/
 def intAtoms (as : List HeapKnowledge.IndexAtom) : List HeapKnowledge.IndexAtom :=
-  as.filter fun a => a.cond.isNone && match a.fact with
+  as.filter fun a => a.cond.isNone && (match a.fact with
     | .int _ | .length _ _ | .linear _ => true
-    | _ => false
+    | f => HeapKnowledge.atomMayHaveGuardTag f)
 
-/-- Knowledge `k` with the atoms of `k₀` stating safe integers: a writing
-step's facts over every location, with the integer facts its context was
-refined by (`checkedStep`). -/
+/-- Knowledge `k` with the atoms of `k₀` stating safe integers or slot guard
+tags: a writing step's facts over every location, with the facts its context
+was refined by (`checkedStep`). -/
 def withInts (k k₀ : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   { k with indices := k.indices ++ intAtoms k₀.indices }
 
@@ -253,13 +342,36 @@ theorem intSlot_intAtoms (as : List HeapKnowledge.IndexAtom) (i : Nat) :
     obtain ⟨-, h2⟩ := h
     split at h2 <;> simp_all
 
-theorem intSlot_withInts (k k₀ : HeapKnowledge.Knowledge) (i : Nat)
-    (h : HeapKnowledge.intSlot k₀.indices i = true) : HeapKnowledge.intSlot (withInts k k₀).indices i = true := by
-  simp only [withInts, HeapKnowledge.intSlot, List.any_append, Bool.or_eq_true] at h ⊢
-  right
-  have := intSlot_intAtoms k₀.indices i
-  simp only [HeapKnowledge.intSlot] at this
-  rw [this]; exact h
+theorem slotGuardTag_intAtoms (as : List HeapKnowledge.IndexAtom) (i : Nat) (t : HeapKnowledge.GuardTag) :
+    HeapKnowledge.slotGuardTag (intAtoms as) i t = HeapKnowledge.slotGuardTag as i t := by
+  unfold HeapKnowledge.slotGuardTag intAtoms
+  rw [Bool.eq_iff_iff, List.any_eq_true, List.any_eq_true]
+  constructor
+  · rintro ⟨a, ha, h⟩; exact ⟨a, (List.mem_filter.mp ha).1, h⟩
+  · rintro ⟨a, ha, h⟩
+    refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, h⟩
+    simp only [Bool.and_eq_true] at h ⊢
+    refine ⟨h.1, ?_⟩
+    have hmay := HeapKnowledge.atomMayHaveGuardTag_of_has h.2
+    cases hf : a.fact <;> simp only [hf] at hmay ⊢ <;> first | rfl | exact hmay
+
+theorem intSlot_withInts (k k₀ : HeapKnowledge.Knowledge) (i : Nat) :
+    (HeapKnowledge.intSlot k₀.indices i = true → HeapKnowledge.intSlot (withInts k k₀).indices i = true) ∧
+    (∀ t, HeapKnowledge.slotGuardTag k₀.indices i t = true →
+      HeapKnowledge.slotGuardTag (withInts k k₀).indices i t = true) := by
+  constructor
+  · intro h
+    simp only [withInts, HeapKnowledge.intSlot, List.any_append, Bool.or_eq_true] at h ⊢
+    right
+    have := intSlot_intAtoms k₀.indices i
+    simp only [HeapKnowledge.intSlot] at this
+    rw [this]; exact h
+  · intro t h
+    simp only [withInts, HeapKnowledge.slotGuardTag, List.any_append, Bool.or_eq_true] at h ⊢
+    right
+    have := slotGuardTag_intAtoms k₀.indices i t
+    simp only [HeapKnowledge.slotGuardTag] at this
+    rw [this]; exact h
 
 theorem holds_withInts {k k₀ : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
     (hk : HeapKnowledge.Holds k ε ρ h) (hk₀ : HeapKnowledge.Holds k₀ ε ρ h) :
@@ -274,36 +386,34 @@ theorem holds_of_withInts {k k₀ : HeapKnowledge.Knowledge} {ρ : Env} {h : Hea
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1,
     fun a ha hc => hk.2.2.2.2.2 a (List.mem_append_left _ ha) hc⟩
 
-/-- **A context refined by the integer facts of `as` types the environment
-wherever atoms `bs` stating each of them hold.** -/
+/-- **A context refined by the integer and tag facts of `as` types the
+environment wherever atoms `bs` stating each of them hold.** -/
 theorem envOk_intRefine_of {G : NormalGraph ι} {Γ : List (Ty ι)} {as bs : List HeapKnowledge.IndexAtom}
-    {ρ : Env} {h : Heap} {n W} (hsub : ∀ i, HeapKnowledge.intSlot as i = true → HeapKnowledge.intSlot bs i = true)
+    {ρ : Env} {h : Heap} {n W}
+    (hsub : ∀ i, (HeapKnowledge.intSlot as i = true → HeapKnowledge.intSlot bs i = true) ∧
+      (∀ t, HeapKnowledge.slotGuardTag as i t = true → HeapKnowledge.slotGuardTag bs i t = true))
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.IndexHolds ε bs ρ h) :
     EnvOk G (intRefine G Γ as) ρ n W := by
-  unfold intRefine
-  split
-  · rename_i L hL
-    refine ⟨he.1, fun i A hA => ?_⟩
-    rw [List.getElem?_mapIdx] at hA
-    cases hB : Γ[i]? with
-    | none => rw [hB] at hA; cases hA
-    | some B =>
-      rw [hB] at hA
-      simp only [Option.map_some, Option.some.injEq] at hA
-      subst hA
-      split
-      · rename_i hc
-        exact intSlot_meaning hL hk (hsub i (Bool.and_eq_true_iff.mp hc).1)
-      · exact he.2 i B hB
-  · exact he
+  refine ⟨he.1, fun i A hA => ?_⟩
+  rw [intRefine, List.getElem?_mapIdx] at hA
+  cases hB : Γ[i]? with
+  | none => rw [hB] at hA; cases hA
+  | some B =>
+    rw [hB] at hA
+    simp only [Option.map_some, Option.some.injEq] at hA
+    subst hA
+    exact slotRefine_meaning (hsub i).1 (hsub i).2 (he.2 i B hB) hk
 
 theorem intRefines_self [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
     intRefines G Γ Γ as = true := by
-  simp [intRefines]
+  simp only [intRefines, beq_self_eq_true, Bool.true_and, List.all_eq_true, List.mem_range]
+  intro i hi
+  rw [List.getElem?_eq_getElem hi]
+  simp [slotRefines]
 
 theorem intRefine_length (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
     (intRefine G Γ as).length = Γ.length := by
-  unfold intRefine; split <;> simp
+  simp [intRefine]
 
 /-- The implications a state establishes on an edge, in its own slots: the
 entry's, and, where the result is pushed into slot 0, the result's
@@ -2598,13 +2708,75 @@ theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck
     decide (claim p = j) && requiresTree G images k codes sums p
   | _ => false
 
+/-- The inner result type of a call derivation, past an outer coercion. -/
+def innerCallType (p : Evidence ι) : Ty ι := match p with
+  | .node _ (.sub _) [q] => (claim q).type
+  | _ => (claim p).type
+
+/-- Nullish exclusions the selected signature's own result type guarantees on
+slot `0` (the call's result), kept when an outer coercion widens that type. -/
+def callResultGuardAtoms (G : NormalGraph ι) (p : Evidence ι) : List HeapKnowledge.IndexAtom :=
+  let R := innerCallType p
+  if !G.plainTy R then [] else
+  let cs := PositiveRules.expand G R
+  (if cs.all (fun c => tagClause .isNul c == some false) then
+    [{ fact := .guarded 0 [] .notNull (.linear (.le [] (-1))) }] else []) ++
+  (if cs.all (fun c => tagClause .isUndef c == some false) then
+    [{ fact := .guarded 0 [] .notUndef (.linear (.le [] (-1))) }] else [])
+
+omit [DecidableEq ι] in
+theorem callResultGuardAtoms_holds {G : NormalGraph ι} {p : Evidence ι} {ρ : Env} {h : Heap} {n W v}
+    (hv : meaning G (innerCallType p) n W v) :
+    HeapKnowledge.IndexHolds ε (callResultGuardAtoms G p) (push v ρ) h := by
+  intro a ha _
+  unfold callResultGuardAtoms at ha
+  by_cases hp : G.plainTy (innerCallType p) = true
+  · simp only [hp, Bool.not_true, Bool.false_eq_true, ite_false] at ha
+    rcases List.mem_append.mp ha with ha | ha
+    · by_cases hcs : (PositiveRules.expand G (innerCallType p)).all (fun c => tagClause .isNul c == some false) = true
+      · simp only [hcs, ite_true, List.mem_singleton] at ha; subst ha
+        refine ⟨v, rfl, .inl ?_⟩
+        intro hEq; subst hEq
+        have hans : Answers G (innerCallType p) .isNul false :=
+          ⟨hp, fun c hc => beq_iff_eq.mp (List.all_eq_true.mp hcs c hc)⟩
+        have := answers_sound hans hv
+        simp [tagHolds] at this
+      · simp only [hcs] at ha; cases ha
+    · by_cases hcs : (PositiveRules.expand G (innerCallType p)).all (fun c => tagClause .isUndef c == some false) = true
+      · simp only [hcs, ite_true, List.mem_singleton] at ha; subst ha
+        refine ⟨v, rfl, .inl ?_⟩
+        intro hEq; subst hEq
+        have hans : Answers G (innerCallType p) .isUndef false :=
+          ⟨hp, fun c hc => beq_iff_eq.mp (List.all_eq_true.mp hcs c hc)⟩
+        have := answers_sound hans hv
+        simp [tagHolds] at this
+      · simp only [hcs] at ha; cases ha
+  · have hpf : G.plainTy (innerCallType p) = false := Bool.eq_false_iff.mpr hp
+    simp only [hpf, Bool.not_false, ite_true] at ha; cases ha
+
+private theorem safePost_withVal {Ξ T U : Fam} {Q R : Post}
+    (hsub : ∀ k W v, T k W v → U k W v)
+    (hpost : ∀ k W h v, T k W v → Q h v → R h v) :
+    ∀ {n W h t}, SafePost Ξ T Q n W h t → SafePost Ξ U R n W h t
+  | 0, _, _, _, hs => hs
+  | _ + 1, _, _, _, ⟨href, hstep⟩ =>
+    ⟨href, match hstep with
+      | .inl (.inl ⟨hv, ht, hq⟩) => .inl (.inl ⟨hv, hsub _ _ _ ht, hpost _ _ _ _ ht hq⟩)
+      | .inl (.inr hth) => .inl (.inr hth)
+      | .inr ⟨W', h', t', hx, ha, st, hh, hs⟩ =>
+        .inr ⟨W', h', t', hx, ha, st, hh, safePost_withVal hsub hpost hs⟩⟩
+
 /-- The knowledge after a call at a precondition: every fact where its
-signature keeps the heap, else those no call changes. -/
-def requiresOutput (e : HeapExpressionRules.StepEvidence ι) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+signature keeps the heap, else those no call changes, together with any nullish
+exclusions the selected signature's own result type guarantees on slot `0`. -/
+def requiresOutput (G : NormalGraph ι) (e : HeapExpressionRules.StepEvidence ι) (k : HeapKnowledge.Knowledge) :
+    HeapKnowledge.Knowledge :=
   match e with
-  | .ordinary p => match ExpressionEffects.selectedEffect p with
-    | some eff => promiseOutput eff k
-    | none => HeapExpressionRules.ordinaryOutput k
+  | .ordinary p =>
+    let base := match ExpressionEffects.selectedEffect p with
+      | some eff => promiseOutput eff k
+      | none => HeapExpressionRules.ordinaryOutput k
+    { base with indices := base.indices ++ callResultGuardAtoms G p }
   | _ => HeapExpressionRules.ordinaryOutput k
 
 theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
@@ -2615,19 +2787,56 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' v => HeapKnowledge.Holds (requiresOutput e k) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+      (fun h' v => HeapKnowledge.Holds (requiresOutput G e k) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold requiresCall at hc
   split at hc
   · rename_i p
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨rfl, hc⟩ := hc
-    obtain ⟨eff, hsel, hs⟩ := requiresTree_sound hcodes hsums p hc
-    have hs := hs he hk hw hh href
-    refine consequence (fun _ _ _ hv => hv) (fun h' v hp => ?_) hs
-    simp only [requiresOutput, hsel]
-    exact promiseOutput_holds hk
-      (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
-      (Effect.callPost_within hp)
+    have hfin : ∀ {eff : Effect} {R : Ty ι} (hsel : ExpressionEffects.selectedEffect p = some eff)
+        (hR : innerCallType p = R) (hsub : ∀ k' W' v', meaning G R k' W' v' → meaning G (claim p).type k' W' v'),
+        SafePost (excOf G) (meaning G R)
+          (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
+            (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
+          (instantiate 0 ρ (claim p).term) →
+        SafePost (excOf G) (meaning G (claim p).type)
+          (fun h' v => HeapKnowledge.Holds (requiresOutput G (.ordinary p) k) ε (push v ρ) h') n W h
+          (instantiate 0 ρ (claim p).term) := by
+      intro eff R hsel hR hsub hs
+      refine safePost_withVal hsub (fun k' W' h' v hv hp => ?_) hs
+      simp only [requiresOutput, hsel]
+      have hpo := promiseOutput_holds (v := v) hk
+        (Footprints.intrinsicClasses_ok hh (ExpressionEffects.callEnv_rootsOk_of_refs href))
+        (Effect.callPost_within hp)
+      exact ⟨hpo.1, hpo.2.1, hpo.2.2.1, hpo.2.2.2.1, hpo.2.2.2.2.1,
+        fun a ha hc => (List.mem_append.mp ha).elim (hpo.2.2.2.2.2 a · hc)
+          (callResultGuardAtoms_holds (hR ▸ hv) a · hc)⟩
+    by_cases hs : ∃ j0 c q, p = .node j0 (.sub c) [q]
+    · obtain ⟨j0, c, q, rfl⟩ := hs
+      simp only [requiresTree, Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨hctx, hterm, hsub⟩, hc⟩ := hc
+      obtain ⟨eff, hsel⟩ := requiresApp_selected q hc
+      have ih := requiresApp_sound hcodes hsums q hc hsel (ρ := ρ) (n := n) (W := W) (h := h)
+        (by rw [hctx]; exact he) hk hw hh (by simp only [claim] at href; rw [hterm]; exact href)
+      rw [hterm] at ih
+      exact hfin (by simpa [ExpressionEffects.selectedEffect] using hsel) rfl
+        (fun k' W' v' hv => PositiveCertificates.acceptedUsing hsub k' W' v' hv) ih
+    · have happ : requiresApp G images k codes sums p = true := by
+        obtain ⟨j0, r, ps⟩ := p
+        cases r <;> try (simpa [requiresTree] using hc)
+        rcases ps with _ | ⟨q, _ | ⟨q', qs⟩⟩
+        · simpa [requiresTree] using hc
+        · exact absurd ⟨j0, _, q, rfl⟩ hs
+        · simpa [requiresTree] using hc
+      obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
+      have hR : innerCallType p = (claim p).type := by
+        obtain ⟨j0, r, ps⟩ := p
+        cases r <;> try rfl
+        rcases ps with _ | ⟨q, _ | ⟨q', qs⟩⟩
+        · rfl
+        · exact absurd ⟨j0, _, q, rfl⟩ hs
+        · rfl
+      exact hfin hsel hR (fun _ _ _ hv => hv) (requiresApp_sound hcodes hsums p happ hsel he hk hw hh href)
   · cases hc
 
 /-! ### A call stating a postcondition (PROGRAM-TYPING.md, "Reads below the length")
@@ -7458,10 +7667,10 @@ receiver's elements are checked against the entry's atoms
 @[nospecialize] def Checker.requiringCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums =>
-    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
+    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput G e k)
     else base.run j k e codes sums
   select := fun j k e codes sums =>
-    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
+    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput G e k)
     else base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ

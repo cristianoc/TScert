@@ -734,6 +734,238 @@ def intSlot (as : List IndexAtom) (s : Nat) : Bool :=
     | .linear F => F.vars.contains (.value s)
     | _ => false
 
+/-- Whether an index fact is syntactically unsatisfiable (`0 ≤ d` with `d < 0`,
+`0 ≠ 0`, or a disjunction of unsatisfiable facts). -/
+def impossibleFact : IndexFact → Bool
+  | .linear (.le [] d) => decide (d < 0)
+  | .linear (.ne [] 0) => true
+  | .either a b => impossibleFact a && impossibleFact b
+  | _ => false
+
+theorem impossibleFact_sound {F : IndexFact} {ρ : Env} {h : Heap}
+    (hi : impossibleFact F = true) : ¬ F.HoldsAt ε ρ h := by
+  induction F with
+  | linear L =>
+    cases L with
+    | le fs d =>
+      cases fs with
+      | nil =>
+        simp only [impossibleFact, decide_eq_true_eq] at hi
+        intro hF; have := hF.2; simp [Linear.Fact.Holds, Linear.Form.eval] at this; omega
+      | cons _ _ => simp [impossibleFact] at hi
+    | ne fs d =>
+      cases fs with
+      | nil =>
+        cases d with
+        | ofNat n =>
+          cases n with
+          | zero => intro hF; have := hF.2; simp [Linear.Fact.Holds, Linear.Form.eval] at this
+          | succ _ => cases hi
+        | negSucc _ => cases hi
+      | cons _ _ => cases hi
+  | either a b iha ihb =>
+    simp only [impossibleFact, Bool.and_eq_true] at hi
+    intro hF; exact hF.elim (iha hi.1) (ihb hi.2)
+  | _ => cases hi
+
+/-- The slot guard tags an unconditional index fact directly witnesses: an
+impossible-body guard (`guarded s [] g B` with `impossibleFact B`) witnesses `g`
+on slot `s`, and any fact whose satisfaction requires slot `s` to denote a number,
+string, array, typed array, or object witnesses `.notNull` and `.notUndef`. -/
+def atomGuardTags : IndexFact → List (Nat × GuardTag)
+  | .guarded s [] g B => if impossibleFact B then [(s, g)] else []
+  | .linear F => (F.vars.filter (!·.atEntry)).flatMap fun tm => [(tm.slot, .notNull), (tm.slot, .notUndef)]
+  | .length x _ | .bound x _ _ | .int x | .index x | .pastSafe x
+  | .fieldRead _ x _ | .every x _ _ _ _ | .atIndex x _ _ _ _ | .element _ x _ =>
+    [(x, .notNull), (x, .notUndef)]
+  | _ => []
+
+/-- Allocation-free membership check for `atomGuardTags`. -/
+def atomHasGuardTag : IndexFact → Nat → GuardTag → Bool
+  | .guarded x [] g B, s, t => x == s && g == t && impossibleFact B
+  | .linear F, s, .notNull | .linear F, s, .notUndef =>
+    F.vars.any fun tm => !tm.atEntry && tm.slot == s
+  | .length x _, s, .notNull | .length x _, s, .notUndef
+  | .bound x _ _, s, .notNull | .bound x _ _, s, .notUndef
+  | .int x, s, .notNull | .int x, s, .notUndef
+  | .index x, s, .notNull | .index x, s, .notUndef
+  | .pastSafe x, s, .notNull | .pastSafe x, s, .notUndef
+  | .fieldRead _ x _, s, .notNull | .fieldRead _ x _, s, .notUndef
+  | .every x _ _ _ _, s, .notNull | .every x _ _ _ _, s, .notUndef
+  | .atIndex x _ _ _ _, s, .notNull | .atIndex x _ _ _ _, s, .notUndef
+  | .element _ x _, s, .notNull | .element _ x _, s, .notUndef => x == s
+  | _, _, _ => false
+
+/-- Whether an index fact can witness a guard tag for any slot (an O(1)
+filter for `PromiseCalls.intAtoms`). -/
+def atomMayHaveGuardTag : IndexFact → Bool
+  | .guarded _ [] _ B => impossibleFact B
+  | .linear _ | .length _ _ | .bound _ _ _ | .int _ | .index _ | .pastSafe _
+  | .fieldRead _ _ _ | .every _ _ _ _ _ | .atIndex _ _ _ _ _ | .element _ _ _ => true
+  | _ => false
+
+theorem atomMayHaveGuardTag_of_has {F : IndexFact} {s : Nat} {t : GuardTag}
+    (h : atomHasGuardTag F s t = true) : atomMayHaveGuardTag F = true := by
+  cases F with
+  | guarded x p g B =>
+    cases p with
+    | nil =>
+      simp only [atomHasGuardTag, Bool.and_eq_true] at h
+      exact h.2
+    | cons _ _ => simp [atomHasGuardTag] at h
+  | linear _ | length _ _ | bound _ _ _ | int _ | index _ | pastSafe _
+  | fieldRead _ _ _ | every _ _ _ _ _ | atIndex _ _ _ _ _ | element _ _ _ => rfl
+  | either _ _ | apart _ _ _ _ | spineApart _ _ _ _ | elemSpineApart _ _ _ _ | same _ _ =>
+    simp [atomHasGuardTag] at h
+
+/-- Whether an unconditional atom in `as` witnesses `t.holds (ρ s)`. -/
+def slotGuardTag (as : List IndexAtom) (s : Nat) (t : GuardTag) : Bool :=
+  as.any fun a => a.cond.isNone && atomHasGuardTag a.fact s t
+
+private theorem termAt_ne_nullish {ρ : Env} {h : Heap} {t : Term}
+    (hs : (termAt ρ h t).isSome) : ρ t.slot ≠ .nul ∧ ρ t.slot ≠ .undef := by
+  unfold termAt at hs
+  cases hp : t.path with
+  | nil =>
+    rw [hp] at hs
+    simp only [readPath, Option.bind_some] at hs
+    cases hk : t.kind <;> cases hv : ρ t.slot <;>
+      simp [hk, hv, kindValue, intValue, lengthOf, Footprints.spineOf, Footprints.fieldsOf,
+        viewLengthOf, strLengthOf, bitMaskOf] at hs ⊢
+  | cons f rest =>
+    rw [hp] at hs
+    cases hv : ρ t.slot <;> simp [hv, readPath] at hs ⊢
+
+private theorem readPath_elementsOf_ne_nullish {h : Heap} {v w : Val} {p : List String} {st : Nat}
+    (hp : readPath h v p = some w) (he : elementsOf w = some st) : v ≠ .nul ∧ v ≠ .undef := by
+  cases p with
+  | nil =>
+    simp only [readPath, Option.some.injEq] at hp; subst hp
+    cases v <;> simp [elementsOf] at he ⊢
+  | cons f rest =>
+    cases v <;> simp [readPath] at hp ⊢
+
+theorem atomGuardTags_sound {F : IndexFact} {s : Nat} {t : GuardTag} {ρ : Env} {h : Heap}
+    (hF : F.HoldsAt ε ρ h) (hm : (s, t) ∈ atomGuardTags F) : t.holds (ρ s) := by
+  cases F with
+  | guarded x p g B =>
+    cases p with
+    | nil =>
+      simp only [atomGuardTags] at hm
+      split at hm
+      · rename_i himp
+        simp only [List.mem_singleton, Prod.mk.injEq] at hm
+        obtain ⟨rfl, rfl⟩ := hm
+        obtain ⟨v, hv, hor⟩ := hF
+        simp only [readGuard, Option.some.injEq] at hv; subst hv
+        exact hor.elim id fun hB => (impossibleFact_sound himp hB).elim
+      · cases hm
+    | cons _ _ => simp [atomGuardTags] at hm
+  | linear L =>
+    simp only [atomGuardTags, List.mem_flatMap, List.mem_filter, Bool.not_eq_true',
+      List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨tm, ⟨htm, hat⟩, ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩⟩ := hm
+    · have htv := hF.1 tm htm
+      simp only [termValue, hat, Bool.false_eq_true, ite_false] at htv
+      exact (termAt_ne_nullish htv).1
+    · have htv := hF.1 tm htm
+      simp only [termValue, hat, Bool.false_eq_true, ite_false] at htv
+      exact (termAt_ne_nullish htv).2
+  | length x n =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨_, _, hsp, -⟩ := hF
+    have hne : ρ x ≠ .nul ∧ ρ x ≠ .undef := by
+      cases hv : ρ x <;> simp [hv, Footprints.spineOf, Footprints.fieldsOf] at hsp ⊢
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | bound x k st =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨_, _, _, _, hsp, -⟩ := hF
+    have hne : ρ x ≠ .nul ∧ ρ x ≠ .undef := by
+      cases hv : ρ x <;> simp [hv, Footprints.spineOf, Footprints.fieldsOf] at hsp ⊢
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | int x =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    have hne : ρ x ≠ .nul ∧ ρ x ≠ .undef := by
+      cases hv : ρ x <;> simp [hv, IndexFact.HoldsAt, intValue] at hF ⊢
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | index x =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨_, _, hv, -⟩ := hF
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp [GuardTag.holds, hv]
+  | pastSafe x =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp [GuardTag.holds, IndexFact.HoldsAt] at hF ⊢ <;> simp [hF]
+  | fieldRead v o fld =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    have hne : ρ o ≠ .nul ∧ ρ o ≠ .undef := by
+      cases hv : ρ o <;> simp [hv, IndexFact.HoldsAt, readPath] at hF ⊢
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | every x p start stop body =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨w, st, _, _, _, hp, he, -⟩ := hF
+    have hne := readPath_elementsOf_ne_nullish hp he
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | atIndex x p idx g body =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨w, st, _, _, hp, he, -⟩ := hF
+    have hne := readPath_elementsOf_ne_nullish hp he
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | element v x idx =>
+    simp only [atomGuardTags, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+    obtain ⟨st, _, _, he, -⟩ := hF
+    have hne := readPath_elementsOf_ne_nullish (h := h) (p := []) rfl he
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hne.1
+    · exact hne.2
+  | either _ _ | apart _ _ _ _ | spineApart _ _ _ _ | elemSpineApart _ _ _ _ | same _ _ =>
+    simp [atomGuardTags] at hm
+
+theorem atomHasGuardTag_mem {F : IndexFact} {s : Nat} {t : GuardTag}
+    (hm : atomHasGuardTag F s t = true) : (s, t) ∈ atomGuardTags F := by
+  cases F with
+  | guarded x p g B =>
+    cases p with
+    | nil =>
+      simp only [atomHasGuardTag, Bool.and_eq_true, beq_iff_eq] at hm
+      obtain ⟨⟨rfl, rfl⟩, himp⟩ := hm
+      simp [atomGuardTags, himp]
+    | cons _ _ => simp [atomHasGuardTag] at hm
+  | linear L =>
+    cases t with
+    | notNull | notUndef =>
+      simp only [atomHasGuardTag, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hm
+      obtain ⟨tm, htm, hat, rfl⟩ := hm
+      simp only [atomGuardTags, List.mem_flatMap, List.mem_filter, List.mem_cons, List.not_mem_nil, or_false]
+      exact ⟨tm, ⟨htm, hat⟩, by simp⟩
+    | _ => simp [atomHasGuardTag] at hm
+  | length x _ | bound x _ _ | int x | index x | pastSafe x
+  | fieldRead _ x _ | every x _ _ _ _ | atIndex x _ _ _ _ | element _ x _ =>
+    cases t with
+    | notNull | notUndef =>
+      simp only [atomHasGuardTag, beq_iff_eq] at hm
+      subst hm; simp [atomGuardTags]
+    | _ => simp [atomHasGuardTag] at hm
+  | either _ _ | apart _ _ _ _ | spineApart _ _ _ _ | elemSpineApart _ _ _ _ | same _ _ =>
+    simp [atomHasGuardTag] at hm
+
+theorem slotGuardTag_sound {as : List IndexAtom} {s : Nat} {t : GuardTag} {ρ : Env} {h : Heap}
+    (ha : IndexHolds ε as ρ h) (ht : slotGuardTag as s t = true) : t.holds (ρ s) := by
+  simp only [slotGuardTag, List.any_eq_true, Bool.and_eq_true, Option.isNone_iff_eq_none] at ht
+  obtain ⟨a, haa, hcond, hm⟩ := ht
+  exact atomGuardTags_sound (ha a haa fun b hb => by rw [hcond] at hb; cases hb) (atomHasGuardTag_mem hm)
+
 /-- Whether an unconditional atom states that a term denotes an integer: a
 linear fact names it; a slot's value, where an atom states the slot a safe
 integer (`intSlot`); a slot's length, where a length atom names it. -/
@@ -4230,102 +4462,217 @@ def boundBefore (a b : Bound) : Bool :=
 local instance : LT Bound := ⟨fun a b => boundBefore a b = true⟩
 local instance : DecidableRel (α := Bound) (· < ·) := fun a b => inferInstanceAs (Decidable (boundBefore a b = true))
 
-/-- Whether a lifted body clause `lbody` follows from a lifted source body
-clause `lbody'` and the ambient linear facts of `as` (under `lt`). -/
-def bodyClauseEntails (lt : Term → Term) (as : List IndexAtom) (lbody' lbody : LinearClause Bound) : Bool :=
-  lbody' == lbody || match lbody', lbody with
-  | .atom F', .atom F =>
-    F.vars.all (fun v => F'.vars.contains v || match v with
-      | .index => true
-      | .free t => bridgedDefined lt as t
-      | _ => false) &&
-    Linear.entailsWith (F' :: (bridgeFacts lt (linearRaw as)).map (renameFact Bound.free))
-      ((bridgeFacts lt (rangesRaw as)).map (renameFact Bound.free)) F
-  | _, _ => false
+/-- Whether a bound variable requires the indexed element itself to be present
+and non-nullish (a number, string, array, typed array, or object). -/
+def boundRequiresNonNullish : Bound → Bool
+  | .elem | .project _ _ => true
+  | _ => false
 
-theorem bodyClauseEntails_sound {lt : Term → Term} {as : List IndexAtom} {lbody' lbody : LinearClause Bound}
-    {elemLs : List (Option Nat)} {i : Nat} {ρ : Env} {h : Heap}
-    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t) (ha : IndexHolds ε as ρ h)
-    (he : bodyClauseEntails lt as lbody' lbody = true)
-    (h' : lbody'.HoldsAt (boundValue ε ρ h elemLs i)) :
-    lbody.HoldsAt (boundValue ε ρ h elemLs i) := by
-  unfold bodyClauseEntails at he
-  rcases Bool.or_eq_true_iff.mp he with hsyn | hlin
-  · exact (beq_iff_eq.mp hsyn) ▸ h'
-  · cases lbody' with
-    | either _ _ => simp at hlin
-    | atom F' =>
-      cases lbody with
-      | either _ _ => simp at hlin
-      | atom F =>
-        simp only [Bool.and_eq_true, List.all_eq_true] at hlin
-        obtain ⟨hdef, hent⟩ := hlin
-        have hbf : ∀ G ∈ (bridgeFacts lt (linearRaw as)).map (renameFact Bound.free),
-            G.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := by
-          intro G hG
-          obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
-          exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
-            cases hy; rfl).mpr (bridgeFacts_holds hlt (linearRaw_holds ha) G0 hG0)
-        have hbr : ∀ G ∈ (bridgeFacts lt (rangesRaw as)).map (renameFact Bound.free),
-            G.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := by
-          intro G hG
-          obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
-          exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
-            cases hy; rfl).mpr (bridgeFacts_holds hlt (rangesRaw_holds ha) G0 hG0)
-        refine ⟨fun v hv => ?_, Linear.entailsWith_sound hent (fun G hG => ?_) hbr⟩
-        · rcases Bool.or_eq_true_iff.mp (hdef v hv) with hmem | hkind
-          · exact h'.1 v (List.contains_iff_mem.mp hmem)
-          · cases v with
-            | index => rfl
-            | free t => exact bridgedDefined_sound hlt ha hkind
-            | elem | offset _ | project _ _ | parallel _ _ _ _ _ => cases hkind
-        · rcases List.mem_cons.mp hG with rfl | hG
-          · exact h'.2
-          · exact hbf G hG
+/-- Whether every disjunct of a linear body clause references a bound requiring
+the indexed element itself to be present and non-nullish. -/
+def clauseRequiresNonNullish : LinearClause Bound → Bool
+  | .atom F => F.vars.any boundRequiresNonNullish
+  | .either A B => clauseRequiresNonNullish A && clauseRequiresNonNullish B
 
-/-- Whether two index shifts denote the same integer under bridged linear facts. -/
-def entailsShiftEq (lt : Term → Term) (as : List IndexAtom) (a b : IndexShift) : Bool :=
-  let la := a.terms.map fun (t, c) => (lt t, c)
-  let lb := b.terms.map fun (t, c) => (lt t, c)
-  (la == lb && a.offset == b.offset) ||
-    (la.all (fun p => bridgedDefined lt as p.1) &&
-     lb.all (fun p => bridgedDefined lt as p.1) &&
-     Linear.entailsWith (bridgeFacts lt (linearRaw as)) (bridgeFacts lt (rangesRaw as))
-       (.le (la ++ lb.map fun p => (p.1, -p.2)) (b.offset - a.offset)) &&
-     Linear.entailsWith (bridgeFacts lt (linearRaw as)) (bridgeFacts lt (rangesRaw as))
-       (.le (lb ++ la.map fun p => (p.1, -p.2)) (a.offset - b.offset)))
+private theorem clauseRequiresNonNullish_sound {elemLs : List (Option Nat)} {i : Nat} {ρ : Env} {h : Heap}
+    {C : LinearClause Bound} (hreq : clauseRequiresNonNullish C = true)
+    (hC : C.HoldsAt (boundValue ε ρ h elemLs i)) :
+    ∃ l v, elemLs[i]? = some (some l) ∧ h[l]? = some v ∧ v ≠ .nul ∧ v ≠ .undef := by
+  induction C with
+  | atom F =>
+    simp only [clauseRequiresNonNullish, List.any_eq_true] at hreq
+    obtain ⟨b, hb, hbn⟩ := hreq
+    have hsome := hC.1 b hb
+    cases b with
+    | elem =>
+      simp only [boundValue, elementInt] at hsome
+      cases hli : elemLs[i]? with
+      | none => simp [hli] at hsome
+      | some o =>
+        cases o with
+        | none => simp [hli] at hsome
+        | some l =>
+          simp only [hli] at hsome
+          cases hvl : h[l]? with
+          | none => simp [hvl] at hsome
+          | some v =>
+            simp only [hvl, Option.bind_some] at hsome
+            exact ⟨l, v, rfl, hvl, by cases v <;> simp [intValue] at hsome ⊢⟩
+    | project k p =>
+      simp only [boundValue] at hsome
+      cases hli : elemLs[i]? with
+      | none => simp [hli] at hsome
+      | some o =>
+        cases o with
+        | none => simp [hli] at hsome
+        | some l =>
+          simp only [hli] at hsome
+          cases hvl : h[l]? with
+          | none => simp [hvl] at hsome
+          | some v =>
+            simp only [hvl, Option.bind_some, termValue, Bool.false_eq_true, ite_false] at hsome
+            exact ⟨l, v, rfl, hvl, termAt_ne_nullish (ρ := fun _ => v) (t := Term.now k 0 p) hsome⟩
+    | _ => simp [boundRequiresNonNullish] at hbn
+  | either A B ihA ihB =>
+    simp only [clauseRequiresNonNullish, Bool.and_eq_true] at hreq
+    exact hC.elim (ihA hreq.1) (ihB hreq.2)
 
-private theorem eval_form_append_hk {V : Type} (v : V → Int) (F G : Linear.Form V) :
-    Linear.Form.eval v (F ++ G) = Linear.Form.eval v F + Linear.Form.eval v G := by
+private theorem eval_form_append_hk {V : Term → Int} (F G : Linear.Form Term) :
+    Linear.Form.eval V (F ++ G) = Linear.Form.eval V F + Linear.Form.eval V G := by
   induction F with
   | nil => simp [Linear.Form.eval]
-  | cons p t ih => simp only [List.cons_append, Linear.Form.eval, ih]; omega
+  | cons p ps ih => simp only [List.cons_append, Linear.Form.eval, ih]; omega
 
-private theorem eval_form_neg_hk {V : Type} (v : V → Int) (F : Linear.Form V) :
-    Linear.Form.eval v (F.map fun p => (p.1, -p.2)) = -(Linear.Form.eval v F) := by
+private theorem eval_form_neg_hk {V : Term → Int} (F : Linear.Form Term) :
+    Linear.Form.eval V (F.map fun p => (p.1, -p.2)) = -Linear.Form.eval V F := by
   induction F with
   | nil => simp [Linear.Form.eval]
-  | cons p t ih =>
-    simp only [List.map_cons, Linear.Form.eval, ih]
-    have : -p.2 * v p.1 = -(p.2 * v p.1) := Int.neg_mul p.2 (v p.1)
-    omega
+  | cons p ps ih => simp only [List.map_cons, Linear.Form.eval, ih, Int.neg_mul]; omega
 
 private theorem eval_form_lt {lt : Term → Term} {ρ : Env} {h : Heap}
     (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t) (F : Linear.Form Term) :
-    ((F.map fun (t, c) => (lt t, c)).all fun p => (termValue ε ρ h p.1).isSome) =
+    ((F.map fun p => (lt p.1, p.2)).all fun p => (termValue ε ρ h p.1).isSome) =
       (F.all fun p => (termValue ε ρ h p.1).isSome) ∧
-    Linear.Form.eval (termValuation ε ρ h) (F.map fun (t, c) => (lt t, c)) =
+    Linear.Form.eval (termValuation ε ρ h) (F.map fun p => (lt p.1, p.2)) =
       Linear.Form.eval (termValuation ε ρ h) F := by
   induction F with
-  | nil => simp [Linear.Form.eval]
-  | cons hd tl ih =>
-    simp only [List.map_cons, List.all_cons, Linear.Form.eval, termValuation, hlt hd.1, ih.1, ih.2, and_self]
+  | nil => exact ⟨rfl, rfl⟩
+  | cons p ps ih =>
+    simp only [List.map_cons, List.all_cons, Linear.Form.eval, termValuation, hlt, ih.1, ih.2, and_self]
 
-theorem entailsShiftEq_sound {lt : Term → Term} {as : List IndexAtom} {a b : IndexShift} {ρ : Env} {h : Heap}
-    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t) (ha : IndexHolds ε as ρ h)
-    (heq : entailsShiftEq lt as a b = true) {i : Nat} :
+/-- Linear upper bounds `idx < s.p.length` implied by unconditional `atIndex`
+atoms whose array's `.length` term is defined in `defSet`. -/
+def atIndexBounds (lt : Term → Term) (defSet : Std.HashSet Term) (as : List IndexAtom) :
+    List (Linear.Fact Term) :=
+  as.filterMap fun a =>
+    if a.cond.isNone then
+      match a.fact with
+      | .atIndex s p idx _ _ =>
+        let llen := lt (.now .length s p)
+        if defSet.contains llen then
+          let lidx := idx.terms.map fun (t, c) => (lt t, c)
+          some (.le (lidx ++ [(llen, -1)]) (-1 - idx.offset))
+        else none
+      | _ => none
+    else none
+
+theorem atIndexBounds_holds {lt : Term → Term} {defSet : Std.HashSet Term}
+    {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hD : ∀ t, defSet.contains t = true → (termValue ε ρ h t).isSome)
+    (ha : IndexHolds ε as ρ h) :
+    ∀ F ∈ atIndexBounds lt defSet as, F.Holds (termValuation ε ρ h) := by
+  intro F hF
+  obtain ⟨a, haa, hm⟩ := List.mem_filterMap.mp hF
+  split at hm
+  · rename_i hnone
+    have hat := ha a haa fun c hc => by rw [Option.isNone_iff_eq_none.mp hnone] at hc; cases hc
+    cases hfa : a.fact with
+    | atIndex s p idx guard body =>
+      rw [hfa] at hm hat
+      dsimp only at hm
+      split at hm
+      · rename_i hdef
+        simp only [Option.some.injEq] at hm; subst hm
+        obtain ⟨w, sto, elemLs, i, hw, hsto, hls, hi, hltLen, _⟩ := hat
+        obtain ⟨zl, hzl⟩ := Option.isSome_iff_exists.mp (hD _ hdef)
+        have hzl0 : termValue ε ρ h (.now .length s p) = some zl := (hlt (.now .length s p)).symm.trans hzl
+        simp only [termValue, termAt, Bool.false_eq_true, ite_false, hw, Option.bind_some, kindValue] at hzl0
+        obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_spine hzl0
+        have hstEq : sto = s0 := Option.some.inj (hsto.symm.trans (elementsOf_spine hs0))
+        subst hstEq
+        rw [hls0] at hls
+        simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls
+        subst hls
+        simp only [IndexShift.eval] at hi
+        split at hi
+        · split at hi
+          · rename_i hge0
+            simp only [Option.some.injEq] at hi
+            have hiInt : (i : Int) = Linear.Form.eval (termValuation ε ρ h) idx.terms + idx.offset := by
+              rw [← hi]; omega
+            simp only [Linear.Fact.Holds, eval_form_append_hk, (eval_form_lt hlt idx.terms).2,
+              Linear.Form.eval, termValuation, hzl, Option.getD_some]
+            omega
+          · cases hi
+        · cases hi
+      · cases hm
+    | _ => rw [hfa] at hm; cases hm
+  · cases hm
+
+/-- Incrementally extend a precomputed bridged `Linear.Known Term` (`K0`, valid for
+the first `baseLen` atoms) with any linear/range/atIndex-bound facts in `as.drop baseLen`. -/
+def extendBridgedKnown (lt : Term → Term) (baseLen : Nat) (D0 : Thunk (Std.HashSet Term))
+    (K0 : Thunk (Linear.Known Term)) (as : List IndexAtom) : Linear.Known Term :=
+  let extra := as.drop baseLen
+  if extra.isEmpty then K0.get
+  else
+    let fs := bridgeFacts lt (linearRaw extra)
+    let rs := bridgeFacts lt (rangesRaw extra)
+    let bs := atIndexBounds lt D0.get extra
+    if fs.isEmpty && rs.isEmpty && bs.isEmpty then K0.get
+    else (fs ++ rs ++ bs).foldl Linear.Known.add K0.get
+
+theorem extendBridgedKnown_holds {lt : Term → Term} {baseLen : Nat}
+    {D0 : Thunk (Std.HashSet Term)} {K0 : Thunk (Linear.Known Term)}
+    {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hD0 : ∀ t, D0.get.contains t = true → (termValue ε ρ h t).isSome)
+    (hK0 : K0.get.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) :
+    (extendBridgedKnown lt baseLen D0 K0 as).Holds (termValuation ε ρ h) := by
+  unfold extendBridgedKnown
+  dsimp only
+  split
+  · exact hK0
+  · split
+    · exact hK0
+    · intro G hG
+      have hdrop : IndexHolds ε (as.drop baseLen) ρ h :=
+        fun a hmem hc => ha a (List.mem_of_mem_drop hmem) hc
+      rcases Linear.Known.mem_foldl_add hG with hG | hG
+      · exact hK0 G hG
+      · rcases List.mem_append.mp hG with hG | hG
+        · rcases List.mem_append.mp hG with hG | hG
+          · exact bridgeFacts_holds hlt (linearRaw_holds hdrop) G hG
+          · exact bridgeFacts_holds hlt (rangesRaw_holds hdrop) G hG
+        · exact atIndexBounds_holds hlt hD0 hdrop G hG
+
+/-- Check bridged definedness using a precomputed `defSet` (`D0`, valid for the
+first `baseLen` atoms) plus the small suffix `as.drop baseLen`. -/
+def extendBridgedDef (lt : Term → Term) (baseLen : Nat) (D0 : Thunk (Std.HashSet Term))
+    (as : List IndexAtom) (t : Term) : Bool :=
+  D0.get.contains t || bridgedDefined lt (as.drop baseLen) t
+
+theorem extendBridgedDef_sound {lt : Term → Term} {baseLen : Nat} {D0 : Thunk (Std.HashSet Term)}
+    {as : List IndexAtom} {t : Term} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hD0 : ∀ t, D0.get.contains t = true → (termValue ε ρ h t).isSome)
+    (ha : IndexHolds ε as ρ h) (hd : extendBridgedDef lt baseLen D0 as t = true) :
+    (termValue ε ρ h t).isSome := by
+  rcases Bool.or_eq_true_iff.mp hd with h1 | h2
+  · exact hD0 t h1
+  · exact bridgedDefined_sound hlt (fun a hmem hc => ha a (List.mem_of_mem_drop hmem) hc) h2
+
+/-- Whether two index shifts denote the same integer under a precomputed
+definedness predicate `defFn` and lazy `Linear.Known Term` `K`. -/
+def entailsShiftEqIn (lt : Term → Term) (defFn : Term → Bool) (K : Thunk (Linear.Known Term))
+    (a b : IndexShift) : Bool :=
+  let la := a.terms.map fun (t, c) => (lt t, c)
+  let lb := b.terms.map fun (t, c) => (lt t, c)
+  (la == lb && a.offset == b.offset) ||
+    (la.all (fun p => defFn p.1) &&
+     lb.all (fun p => defFn p.1) &&
+     K.get.entails (.le (la ++ lb.map fun p => (p.1, -p.2)) (b.offset - a.offset)) &&
+     K.get.entails (.le (lb ++ la.map fun p => (p.1, -p.2)) (a.offset - b.offset)))
+
+theorem entailsShiftEqIn_sound {lt : Term → Term} {defFn : Term → Bool} {K : Thunk (Linear.Known Term)}
+    {a b : IndexShift} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hD : ∀ t, defFn t = true → (termValue ε ρ h t).isSome)
+    (hK : K.get.Holds (termValuation ε ρ h))
+    (heq : entailsShiftEqIn lt defFn K a b = true) {i : Nat} :
     a.eval ε ρ h i = b.eval ε ρ h i := by
-  unfold entailsShiftEq at heq
+  unfold entailsShiftEqIn at heq
   have haL := eval_form_lt hlt a.terms
   have hbL := eval_form_lt hlt b.terms
   rcases Bool.or_eq_true_iff.mp heq with hsyn | hlin
@@ -4336,38 +4683,168 @@ theorem entailsShiftEq_sound {lt : Term → Term} {as : List IndexAtom} {a b : I
     obtain ⟨⟨⟨hda, hdb⟩, h1⟩, h2⟩ := hlin
     have hda' : (a.terms.all fun p => (termValue ε ρ h p.1).isSome) = true := by
       rw [← haL.1]
-      exact List.all_eq_true.mpr fun p hp => bridgedDefined_sound hlt ha (hda p hp)
+      exact List.all_eq_true.mpr fun p hp => hD p.1 (hda p hp)
     have hdb' : (b.terms.all fun p => (termValue ε ρ h p.1).isSome) = true := by
       rw [← hbL.1]
-      exact List.all_eq_true.mpr fun p hp => bridgedDefined_sound hlt ha (hdb p hp)
-    have f1 := Linear.entailsWith_sound h1 (bridgeFacts_holds hlt (linearRaw_holds ha))
-      (bridgeFacts_holds hlt (rangesRaw_holds ha))
-    have f2 := Linear.entailsWith_sound h2 (bridgeFacts_holds hlt (linearRaw_holds ha))
-      (bridgeFacts_holds hlt (rangesRaw_holds ha))
+      exact List.all_eq_true.mpr fun p hp => hD p.1 (hdb p hp)
+    have f1 := Linear.Known.entails_sound hK h1
+    have f2 := Linear.Known.entails_sound hK h2
     simp only [Linear.Fact.Holds, eval_form_append_hk, eval_form_neg_hk, haL.2, hbL.2] at f1 f2
     have hsum : (i : Int) + Linear.Form.eval (termValuation ε ρ h) a.terms + a.offset =
         (i : Int) + Linear.Form.eval (termValuation ε ρ h) b.terms + b.offset := by omega
     simp only [IndexShift.eval, hda', hdb', ite_true, hsum]
 
-/-- Whether a quantified body clause, read at one index, gives an `atIndex`
-fact with guard `guard` and (lifted) body `lbody`: a linear clause entailing
-`lbody`, a chain of guards on the element itself, each with tag `guard`,
-ending in a clause that entails `lbody` or one that cannot hold, or a
-disjunction both of whose arms give it. -/
-def everyBodyGivesAtIndex (lt : Term → Term) (as : List IndexAtom) (guard : Option GuardTag)
-    (lbody : LinearClause Bound) : BodyClause → Bool
-  | .clause F' => bodyClauseEntails lt as (renameClause (liftBound lt) F') lbody
-  | .guarded (.self []) g inner =>
-    guard == some g && (impossibleBody inner || everyBodyGivesAtIndex lt as guard lbody inner)
-  | .guarded .. => false
-  | .either A B => everyBodyGivesAtIndex lt as guard lbody A && everyBodyGivesAtIndex lt as guard lbody B
+/-- Whether a linear fact is refuted by `K` after lifting its terms by `lt`. -/
+def linearArmRefuted (lt : Term → Term) (K : Linear.Known Term) : IndexFact → Bool
+  | .linear (.le form d) =>
+    let lform := form.map fun (t, c) => (lt t, c)
+    K.entails (.le (lform.map fun (t, c) => (t, -c)) (-d - 1))
+  | .linear (.ne form d) =>
+    let lform := form.map fun (t, c) => (lt t, c)
+    K.entails (.le lform d) && K.entails (.le (lform.map fun (t, c) => (t, -c)) (-d))
+  | _ => false
 
-theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {ρ : Env} {h : Heap}
-    {ls : List (Option Nat)} {i : Nat} {guard : Option GuardTag} {body : LinearClause Bound}
-    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t) (ha : IndexHolds ε as ρ h)
+theorem linearArmRefuted_sound {lt : Term → Term} {K : Linear.Known Term} {F : IndexFact} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hK : K.Holds (termValuation ε ρ h))
+    (href : linearArmRefuted lt K F = true) (hF : F.HoldsAt ε ρ h) : False := by
+  cases F with
+  | linear L =>
+    cases L with
+    | le form d =>
+      simp only [linearArmRefuted] at href
+      have hneg := Linear.Known.entails_sound hK href
+      simp only [Linear.Fact.Holds, eval_form_neg_hk, (eval_form_lt hlt form).2] at hneg
+      have hpos : Linear.Form.eval (termValuation ε ρ h) form ≤ d := hF.2
+      omega
+    | ne form d =>
+      simp only [linearArmRefuted, Bool.and_eq_true] at href
+      have h1 := Linear.Known.entails_sound hK href.1
+      have h2 := Linear.Known.entails_sound hK href.2
+      simp only [Linear.Fact.Holds, eval_form_neg_hk, (eval_form_lt hlt form).2] at h1 h2
+      have hne : Linear.Form.eval (termValuation ε ρ h) form ≠ d := hF.2
+      omega
+  | _ => simp [linearArmRefuted] at href
+
+/-- Whether a fact can participate in `atIndexFollowsIn` (`atIndex`, `guarded`,
+`every`, `element`). Used to avoid running linear refutation on unrelated
+disjunctions such as `pastSafe` or pure-linear `either` atoms. -/
+def isAtIndexRelated : IndexFact → Bool
+  | .atIndex .. | .guarded .. | .every .. | .element .. => true
+  | _ => false
+
+/-- Surviving `atIndex`-related arms of unconditional disjunctions in `as` whose
+other arm is linearly refuted by `K` (after lifting terms by `lt`). -/
+def releaseLinearEithers (lt : Term → Term) (K : Thunk (Linear.Known Term)) (as : List IndexAtom) :
+    List IndexAtom :=
+  if !as.any (fun a => a.cond.isNone && match a.fact with
+      | .either (.linear _) B => isAtIndexRelated B
+      | .either A (.linear _) => isAtIndexRelated A
+      | _ => false) then []
+  else
+    let k := K.get
+    as.flatMap fun a =>
+      if a.cond.isNone then
+        match a.fact with
+        | .either A B =>
+          (if isAtIndexRelated B && linearArmRefuted lt k A then [{ fact := B }] else []) ++
+          (if isAtIndexRelated A && linearArmRefuted lt k B then [{ fact := A }] else [])
+        | _ => []
+      else []
+
+theorem releaseLinearEithers_holds {lt : Term → Term} {K : Thunk (Linear.Known Term)}
+    {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hK : K.get.Holds (termValuation ε ρ h))
+    (ha : IndexHolds ε as ρ h) : IndexHolds ε (releaseLinearEithers lt K as) ρ h := by
+  intro b hb _
+  unfold releaseLinearEithers at hb
+  dsimp only at hb
+  split at hb
+  · cases hb
+  · obtain ⟨a, haa, hm⟩ := List.mem_flatMap.mp hb
+    split at hm
+    · rename_i hnone
+      have hat := ha a haa fun c hc => by rw [Option.isNone_iff_eq_none.mp hnone] at hc; cases hc
+      cases hfa : a.fact with
+      | either A B =>
+        rw [hfa] at hm hat
+        rcases List.mem_append.mp hm with h1 | h2
+        · split at h1
+          · rename_i href
+            simp only [List.mem_singleton] at h1; subst h1
+            exact hat.resolve_left (linearArmRefuted_sound hlt hK (Bool.and_eq_true_iff.mp href).2)
+          · cases h1
+        · split at h2
+          · rename_i href
+            simp only [List.mem_singleton] at h2; subst h2
+            exact hat.resolve_right (linearArmRefuted_sound hlt hK (Bool.and_eq_true_iff.mp href).2)
+          · cases h2
+      | _ => rw [hfa] at hm; cases hm
+    · cases hm
+
+/-- Whether a lifted body clause `lbody` follows from a lifted source body
+clause `lbody'`, using a precomputed `Linear.Known Bound` (`bK`) and definedness
+predicate (`defFn`). -/
+def bodyClauseEntailsIn (defFn : Term → Bool) (bK : Thunk (Linear.Known Bound))
+    (lbody' lbody : LinearClause Bound) : Bool :=
+  lbody' == lbody || match lbody', lbody with
+  | .atom F', .atom F =>
+    F.vars.all (fun v => F'.vars.contains v || match v with
+      | .index => true
+      | .free t => defFn t
+      | _ => false) &&
+    (bK.get.add F').entails F
+  | _, _ => false
+
+theorem bodyClauseEntailsIn_sound {defFn : Term → Bool} {bK : Thunk (Linear.Known Bound)}
+    {lbody' lbody : LinearClause Bound} {elemLs : List (Option Nat)} {i : Nat} {ρ : Env} {h : Heap}
+    (hD : ∀ t, defFn t = true → (termValue ε ρ h t).isSome)
+    (hbK : bK.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0))
+    (he : bodyClauseEntailsIn defFn bK lbody' lbody = true)
+    (h' : lbody'.HoldsAt (boundValue ε ρ h elemLs i)) :
+    lbody.HoldsAt (boundValue ε ρ h elemLs i) := by
+  unfold bodyClauseEntailsIn at he
+  rcases Bool.or_eq_true_iff.mp he with hsyn | hlin
+  · exact (beq_iff_eq.mp hsyn) ▸ h'
+  · cases lbody' with
+    | either _ _ => simp at hlin
+    | atom F' =>
+      cases lbody with
+      | either _ _ => simp at hlin
+      | atom F =>
+        simp only [Bool.and_eq_true, List.all_eq_true] at hlin
+        obtain ⟨hdef, hent⟩ := hlin
+        have hadd : (bK.get.add F').Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := by
+          intro G hG
+          rcases Linear.Known.mem_foldl_add (l := [F']) (K := bK.get) hG with hG | hG
+          · exact hbK G hG
+          · simp only [List.mem_singleton] at hG; subst hG; exact h'.2
+        refine ⟨fun v hv => ?_, Linear.Known.entails_sound hadd hent⟩
+        rcases Bool.or_eq_true_iff.mp (hdef v hv) with hmem | hkind
+        · exact h'.1 v (List.contains_iff_mem.mp hmem)
+        · cases v with
+          | index => rfl
+          | free t => exact hD t hkind
+          | elem | offset _ | project _ _ | parallel _ _ _ _ _ => cases hkind
+
+/-- Whether a quantified body clause, read at one index, gives an `atIndex`
+fact with guard `guard` and lifted body `lbody`, using `bodyClauseEntailsIn`. -/
+def everyBodyGivesAtIndexIn (lt : Term → Term) (defFn : Term → Bool) (bK : Thunk (Linear.Known Bound))
+    (guard : Option GuardTag) (lbody : LinearClause Bound) : BodyClause → Bool
+  | .clause F' => bodyClauseEntailsIn defFn bK (renameClause (liftBound lt) F') lbody
+  | .guarded (.self []) g inner =>
+    guard == some g && (impossibleBody inner || everyBodyGivesAtIndexIn lt defFn bK guard lbody inner)
+  | .guarded .. => false
+  | .either A B => everyBodyGivesAtIndexIn lt defFn bK guard lbody A && everyBodyGivesAtIndexIn lt defFn bK guard lbody B
+
+theorem everyBodyGivesAtIndexIn_sound {lt : Term → Term} {defFn : Term → Bool} {bK : Thunk (Linear.Known Bound)}
+    {ρ : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat} {guard : Option GuardTag} {body : LinearClause Bound}
+    (hD : ∀ t, defFn t = true → (termValue ε ρ h t).isSome)
+    (hbK : bK.get.Holds (fun x => (boundValue ε ρ h ls i x).getD 0))
     (hlift : ∀ C : LinearClause Bound,
       (renameClause (liftBound lt) C).HoldsAt (boundValue ε ρ h ls i) ↔ C.HoldsAt (boundValue ε ρ h ls i)) :
-    ∀ {B : BodyClause}, everyBodyGivesAtIndex lt as guard (renameClause (liftBound lt) body) B = true →
+    ∀ {B : BodyClause}, everyBodyGivesAtIndexIn lt defFn bK guard (renameClause (liftBound lt) body) B = true →
       B.HoldsAt ε ρ h ls i →
       match guard with
       | some g => (∃ l v, ls[i]? = some (some l) ∧ h[l]? = some v ∧ g.holds v) ∨
@@ -4377,21 +4854,21 @@ theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {
   induction B with
   | clause F' =>
     intro hf hB
-    simp only [everyBodyGivesAtIndex] at hf
+    simp only [everyBodyGivesAtIndexIn] at hf
     have hb : body.HoldsAt (boundValue ε ρ h ls i) :=
-      (hlift body).mp (bodyClauseEntails_sound hlt ha hf ((hlift F').mpr hB))
+      (hlift body).mp (bodyClauseEntailsIn_sound hD hbK hf ((hlift F').mpr hB))
     cases guard with
     | none => exact hb
     | some _ => exact .inr (.inr hb)
   | guarded tgt g inner ih =>
     intro hf hB
     cases tgt with
-    | parallel _ _ _ _ => simp [everyBodyGivesAtIndex] at hf
+    | parallel _ _ _ _ => simp [everyBodyGivesAtIndexIn] at hf
     | self ep =>
       cases ep with
-      | cons _ _ => simp [everyBodyGivesAtIndex] at hf
+      | cons _ _ => simp [everyBodyGivesAtIndexIn] at hf
       | nil =>
-        simp only [everyBodyGivesAtIndex, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hf
+        simp only [everyBodyGivesAtIndexIn, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hf
         obtain ⟨rfl, hcase⟩ := hf
         rcases hB with ⟨v, hv, hgv⟩ | ⟨-, hinner⟩
         · simp only [ElemTarget.read] at hv
@@ -4406,69 +4883,130 @@ theorem everyBodyGivesAtIndex_sound {lt : Term → Term} {as : List IndexAtom} {
           · exact ih hmatch hinner
   | either A B ihA ihB =>
     intro hf hB
-    simp only [everyBodyGivesAtIndex, Bool.and_eq_true] at hf
+    simp only [everyBodyGivesAtIndexIn, Bool.and_eq_true] at hf
     exact hB.elim (ihA hf.1) (ihB hf.2)
 
-/-- Whether an indexed-element fact `atIndex s p idx guard body` follows from
-the source atoms `as`: by matching an existing `atIndex` (at a shared array
-site, equal index, compatible guard and entailed body), by introducing from a
-checked element read `element r x j` whose read value satisfies the body (or
-its guard), or by specializing a quantified `every` over the same array at a
-known in-bounds index. -/
-def atIndexFollows (M : Nat → List Nat) (ls : HeapLinks.Links)
+/-- Incrementally extend a precomputed `Linear.Known Bound` (`bK0`, valid for the
+first `baseLen` atoms) with any bridged linear/range facts in `as.drop baseLen`. -/
+def extendBoundKnown (lt : Term → Term) (baseLen : Nat) (bK0 : Thunk (Linear.Known Bound))
+    (as : List IndexAtom) : Linear.Known Bound :=
+  let extra := as.drop baseLen
+  if extra.isEmpty then bK0.get
+  else
+    let fs := (bridgeFacts lt (linearRaw extra)).map (renameFact Bound.free)
+    let rs := (bridgeFacts lt (rangesRaw extra)).map (renameFact Bound.free)
+    if fs.isEmpty && rs.isEmpty then bK0.get
+    else (fs ++ rs).foldl Linear.Known.add bK0.get
+
+theorem extendBoundKnown_holds {lt : Term → Term} {baseLen : Nat} {bK0 : Thunk (Linear.Known Bound)}
+    {as : List IndexAtom} {elemLs : List (Option Nat)} {i : Nat} {ρ : Env} {h : Heap}
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
+    (hbK0 : bK0.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0)) (ha : IndexHolds ε as ρ h) :
+    (extendBoundKnown lt baseLen bK0 as).Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := by
+  unfold extendBoundKnown
+  dsimp only
+  split
+  · exact hbK0
+  · split
+    · exact hbK0
+    · intro G hG
+      have hdrop : IndexHolds ε (as.drop baseLen) ρ h :=
+        fun a hmem hc => ha a (List.mem_of_mem_drop hmem) hc
+      rcases Linear.Known.mem_foldl_add hG with hG | hG
+      · exact hbK0 G hG
+      · rcases List.mem_append.mp hG with hG | hG
+        · obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+          exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+            cases hy; rfl).mpr (bridgeFacts_holds hlt (linearRaw_holds hdrop) G0 hG0)
+        · obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+          exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+            cases hy; rfl).mpr (bridgeFacts_holds hlt (rangesRaw_holds hdrop) G0 hG0)
+
+/-- Whether an `atIndex` fact follows from the atoms of `as`, reusing a
+precomputed bridged `Linear.Known Term` (`K0`), `Linear.Known Bound` (`bK0`),
+and definedness set (`D0`) for the first `baseLen` atoms of `as`, extending
+incrementally for suffix atoms and checking cheap site and guard compatibility
+before any linear query. -/
+def atIndexFollowsIn (M : Nat → List Nat) (ls : HeapLinks.Links)
     (lt : Term → Term) (lg ld : Nat → List String → Nat × List String)
-    (tags : Nat → List String → GuardTag → Bool) (as : List IndexAtom) : IndexFact → Bool
+    (tags : Nat → List String → GuardTag → Bool)
+    (baseLen : Nat) (D0 : Thunk (Std.HashSet Term)) (K0 : Thunk (Linear.Known Term))
+    (bK0 : Thunk (Linear.Known Bound))
+    (base0 : List IndexAtom → IndexFact → Bool) (as : List IndexAtom) : IndexFact → Bool
   | .atIndex s p idx guard body =>
     let S := pathSites M ls s p
     let lbody := renameClause (liftBound lt) body
+    let defFn := extendBridgedDef lt baseLen D0 as
+    let K := Thunk.mk fun _ => extendBridgedKnown lt baseLen D0 K0 as
+    let bK := Thunk.mk fun _ => extendBoundKnown lt baseLen bK0 as
     as.any fun a => a.cond.isNone && match a.fact with
       | .atIndex s' p' idx' guard' body' =>
-        sitesMeet M S (pathSites M ls s' p') && (guard' == guard || guard'.isNone) &&
-          entailsShiftEq lt as idx' idx && bodyClauseEntails lt as (renameClause (liftBound lt) body') lbody
+        let guardNonNull := guard'.isNone && (guard == some .notNull || guard == some .notUndef) &&
+          clauseRequiresNonNullish body'
+        let guardCompat := guard' == guard || guard'.isNone
+        (guardNonNull || guardCompat) &&
+          sitesMeet M S (pathSites M ls s' p') &&
+          entailsShiftEqIn lt defFn K idx' idx &&
+          (guardNonNull || bodyClauseEntailsIn defFn bK (renameClause (liftBound lt) body') lbody)
       | .element r x jIdx =>
         match jIdx.asSlot? with
         | none => false
         | some j =>
-          sitesMeet M S (pathSites M ls x []) && entailsShiftEq lt as (.ofSlot j) idx &&
+          sitesMeet M S (pathSites M ls x []) && entailsShiftEqIn lt defFn K (.ofSlot j) idx &&
             match body.mapVars (instBoundAt r j) with
             | some inst =>
-              guardEntails lt lg ld tags (baseFollows M ls) as
-                (match guard with | some g => .guarded r [] g inst.toIndexFact | none => inst.toIndexFact)
+              let target := match guard with | some g => .guarded r [] g inst.toIndexFact | none => inst.toIndexFact
+              let subCache : GuardLinearCache :=
+                GuardLinearCache.mk K (Thunk.mk fun _ => bridgedDefinedSetExtend lt D0.get (as.drop baseLen)) none none
+              guardEntailsIn lt lg ld tags base0 (some subCache) as target
             | none => false
       | .every s' p' start stop everyBody =>
-        let lidx := idx.terms.map fun (t, c) => (lt t, c)
-        let lstart : IndexBound := { start with base := start.base.map lt }
-        let lstop : IndexBound := { stop with base := stop.base.map lt }
-        let llen := lt (.now .length s' p')
-        let bf := bridgeFacts lt (linearRaw as)
-        let br := bridgeFacts lt (rangesRaw as)
         sitesMeet M S (pathSites M ls s' p') &&
-          lidx.all (fun q => bridgedDefined lt as q.1) && bridgedDefined lt as llen &&
-          Linear.entailsWith bf br (.le (lidx.map fun q => (q.1, -q.2)) idx.offset) &&
-          Linear.entailsWith bf br (.le (lstart.form ++ lidx.map fun q => (q.1, -q.2)) (idx.offset - start.offset)) &&
-          Linear.entailsWith bf br (.le (lidx ++ lstop.form.map fun q => (q.1, -q.2)) (stop.offset - idx.offset - 1)) &&
-          Linear.entailsWith bf br (.le (lidx ++ [(llen, -1)]) (-1 - idx.offset)) &&
-          everyBody.any (everyBodyGivesAtIndex lt as guard lbody)
+          let lidx := idx.terms.map fun (t, c) => (lt t, c)
+          let lstart : IndexBound := { start with base := start.base.map lt }
+          let lstop : IndexBound := { stop with base := stop.base.map lt }
+          let llen := lt (.now .length s' p')
+          lidx.all (fun q => defFn q.1) && defFn llen &&
+            K.get.entails (.le (lidx.map fun q => (q.1, -q.2)) idx.offset) &&
+            K.get.entails (.le (lstart.form ++ lidx.map fun q => (q.1, -q.2)) (idx.offset - start.offset)) &&
+            K.get.entails (.le (lidx ++ lstop.form.map fun q => (q.1, -q.2)) (stop.offset - idx.offset - 1)) &&
+            K.get.entails (.le (lidx ++ [(llen, -1)]) (-1 - idx.offset)) &&
+            everyBody.any (everyBodyGivesAtIndexIn lt defFn bK guard lbody)
       | _ => false
   | _ => false
 
-theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
+theorem atIndexFollowsIn_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
     {lt : Term → Term} {lg ld : Nat → List String → Nat × List String}
-    {tags : Nat → List String → GuardTag → Bool} {as : List IndexAtom} {F : IndexFact} {ρ : Env} {h : Heap}
+    {tags : Nat → List String → GuardTag → Bool}
+    {baseLen : Nat} {D0 : Thunk (Std.HashSet Term)} {K0 : Thunk (Linear.Known Term)}
+    {bK0 : Thunk (Linear.Known Bound)}
+    {base0 : List IndexAtom → IndexFact → Bool} {as : List IndexAtom} {F : IndexFact} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
     (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
     (hlg : ∀ s p, readGuard h (ρ (lg s p).1) (lg s p).2 = readGuard h (ρ s) p)
     (hld : ∀ s p, readGuard h (ρ (ld s p).1) (ld s p).2 = readGuard h (ρ s) p)
     (htags : ∀ s p t, tags s p t = true → ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v)
-    (hf : atIndexFollows M ls lt lg ld tags as F = true) (ha : IndexHolds ε as ρ h) :
+    (hD0 : ∀ t, D0.get.contains t = true → (termValue ε ρ h t).isSome)
+    (hK0 : K0.get.Holds (termValuation ε ρ h))
+    (hbK0 : ∀ elemLs i, bK0.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0))
+    (hbase0 : ∀ as' G, base0 as' G = true → IndexHolds ε as' ρ h → G.HoldsAt ε ρ h)
+    (hf : atIndexFollowsIn M ls lt lg ld tags baseLen D0 K0 bK0 base0 as F = true) (ha : IndexHolds ε as ρ h) :
     F.HoldsAt ε ρ h := by
   cases F with
   | atIndex s p idx guard body =>
-    simp only [atIndexFollows] at hf
+    simp only [atIndexFollowsIn] at hf
     obtain ⟨a, haa, hm⟩ := List.any_eq_true.mp hf
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
     obtain ⟨hcond, hm⟩ := hm
     have hat := ha a haa fun b hb => by rw [hcond] at hb; cases hb
+    have hK : (Thunk.mk fun _ => extendBridgedKnown lt baseLen D0 K0 as).get.Holds (termValuation ε ρ h) :=
+      extendBridgedKnown_holds hlt hD0 hK0 ha
+    have hD : ∀ t, extendBridgedDef lt baseLen D0 as t = true → (termValue ε ρ h t).isSome :=
+      fun t hd => extendBridgedDef_sound hlt hD0 ha hd
+    have hbK : ∀ (elemLs : List (Option Nat)) (i : Nat),
+        (Thunk.mk fun _ => extendBoundKnown lt baseLen bK0 as).get.Holds
+          (fun x => (boundValue ε ρ h elemLs i x).getD 0) := fun elemLs i =>
+      extendBoundKnown_holds hlt (hbK0 elemLs i) ha
     have hliftBody : ∀ (elemLs : List (Option Nat)) (i : Nat) (C : LinearClause Bound),
         (renameClause (liftBound lt) C).HoldsAt (boundValue ε ρ h elemLs i) ↔
           C.HoldsAt (boundValue ε ρ h elemLs i) := fun elemLs i C =>
@@ -4480,23 +5018,41 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
     cases hfa : a.fact with
     | atIndex s' p' idx' guard' body' =>
       rw [hfa] at hm hat
-      simp only [Bool.and_eq_true] at hm
-      obtain ⟨⟨⟨hsites, hguard⟩, hidxEq⟩, hbodyEq⟩ := hm
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at hm
+      obtain ⟨⟨⟨hguardAny, hsites⟩, hidxEq⟩, hbodyOrNN⟩ := hm
       obtain ⟨w, sto, elemLs, i, hw, hsto, hls, hi, hltLen, hrest⟩ := hat
       have hw' : readPath h (ρ s) p = some w := (sitesMeet_read hM hl hsites).trans hw
-      have hi' : idx.eval ε ρ h 0 = some i := (entailsShiftEq_sound hlt ha hidxEq).symm.trans hi
-      have hbodyImp : body'.HoldsAt (boundValue ε ρ h elemLs i) → body.HoldsAt (boundValue ε ρ h elemLs i) := fun hB =>
-        (hliftBody elemLs i body).mp (bodyClauseEntails_sound hlt ha hbodyEq ((hliftBody elemLs i body').mpr hB))
+      have hi' : idx.eval ε ρ h 0 = some i := (entailsShiftEqIn_sound hlt hD hK hidxEq).symm.trans hi
       refine ⟨w, sto, elemLs, i, hw', hsto, hls, hi', hltLen, ?_⟩
-      cases guard' with
-      | none =>
-        cases guard with
-        | none => exact hbodyImp hrest
-        | some _ => exact .inr (.inr (hbodyImp hrest))
-      | some tg =>
-        simp only [Bool.or_eq_true, beq_iff_eq, Option.isNone_some, Bool.false_eq_true, or_false] at hguard
-        subst hguard
-        exact hrest.imp id (Or.imp id hbodyImp)
+      rcases hbodyOrNN with ⟨⟨hgnone, hg⟩, hreq⟩ | hbodyEq
+      · cases guard' with
+        | some _ => simp at hgnone
+        | none =>
+          obtain ⟨l, v, hli, hvl, hnn, hnu⟩ := clauseRequiresNonNullish_sound hreq hrest
+          simp only [beq_iff_eq] at hg
+          rcases hg with rfl | rfl
+          · exact .inl ⟨l, v, hli, hvl, hnn⟩
+          · exact .inl ⟨l, v, hli, hvl, hnu⟩
+      · have hbodyImp : body'.HoldsAt (boundValue ε ρ h elemLs i) → body.HoldsAt (boundValue ε ρ h elemLs i) := fun hB =>
+          (hliftBody elemLs i body).mp (bodyClauseEntailsIn_sound hD (hbK elemLs i) hbodyEq ((hliftBody elemLs i body').mpr hB))
+        rcases hguardAny with ⟨⟨hgnone, hg⟩, hreq⟩ | hguard
+        · cases guard' with
+          | some _ => simp at hgnone
+          | none =>
+            obtain ⟨l, v, hli, hvl, hnn, hnu⟩ := clauseRequiresNonNullish_sound hreq hrest
+            simp only [beq_iff_eq] at hg
+            rcases hg with rfl | rfl
+            · exact .inl ⟨l, v, hli, hvl, hnn⟩
+            · exact .inl ⟨l, v, hli, hvl, hnu⟩
+        · cases guard' with
+          | none =>
+            cases guard with
+            | none => exact hbodyImp hrest
+            | some _ => exact .inr (.inr (hbodyImp hrest))
+          | some tg =>
+            simp only [beq_iff_eq, Option.isNone_some, Bool.false_eq_true, or_false] at hguard
+            subst hguard
+            exact hrest.imp id (Or.imp id hbodyImp)
     | element r x jIdx =>
       rw [hfa] at hm hat
       cases hjs : jIdx.asSlot? with
@@ -4511,10 +5067,17 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
       have hjOf : (IndexShift.ofSlot j).eval ε ρ h 0 = some i :=
         (IndexShift.eval_ofSlot (ε := ε) (ρ := ρ) (h := h) (k := j) (i := i)).mpr
           ((IndexShift.eval_asSlot? hjs).mp hj)
-      have hi' : idx.eval ε ρ h 0 = some i := (entailsShiftEq_sound hlt ha hidxEq).symm.trans hjOf
+      have hi' : idx.eval ε ρ h 0 = some i := (entailsShiftEqIn_sound hlt hD hK hidxEq).symm.trans hjOf
       split at hinst
       · rename_i inst hmap
-        have hg := guardEntails_sound hlt hlg hld htags (fun as F hb ha => baseFollows_sound hM hl hb ha) _ as hinst ha
+        have hdrop : IndexHolds ε (as.drop baseLen) ρ h :=
+          fun b hmem hc => ha b (List.mem_of_mem_drop hmem) hc
+        have hsubValid : ∀ c, some (GuardLinearCache.mk (Thunk.mk fun _ => extendBridgedKnown lt baseLen D0 K0 as)
+            (Thunk.mk fun _ => bridgedDefinedSetExtend lt D0.get (as.drop baseLen)) none none) = some c →
+            c.Valid ε ρ h := by
+          intro c hc; cases hc
+          exact ⟨hK, bridgedDefinedSetExtend_sound hlt hD0 hdrop, fun _ h => by simp at h, fun _ h => by simp at h⟩
+        have hg := guardEntailsIn_sound hlt hlg hld htags hbase0 _ _ as hsubValid hinst ha
         have hval : ∀ C : LinearClause Term, body.mapVars (instBoundAt r j) = some C →
             C.toIndexFact.HoldsAt ε ρ h → body.HoldsAt (boundValue ε ρ h elemLs i) := by
           intro C hC hCh
@@ -4564,21 +5127,19 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
     | every s' p' start stop everyBody =>
       rw [hfa] at hm hat
       simp only [Bool.and_eq_true, List.all_eq_true] at hm
-      obtain ⟨⟨⟨⟨⟨⟨⟨hsites, hdi⟩, hdl⟩, hge0⟩, hgeStart⟩, hltStop⟩, hltLenF⟩, hmem⟩ := hm
+      obtain ⟨hsites, ⟨⟨⟨⟨⟨⟨hdi, hdl⟩, hge0⟩, hgeStart⟩, hltStop⟩, hltLenF⟩, hmem⟩⟩ := hm
       obtain ⟨w, sto, elemLs, m0, n, hw, hsto, hls, hm0, hn, hall⟩ := hat
       have hw' : readPath h (ρ s) p = some w := (sitesMeet_read hM hl hsites).trans hw
       have haL := eval_form_lt hlt idx.terms
       have hidxDef : (idx.terms.all fun p => (termValue ε ρ h p.1).isSome) = true := by
         rw [← haL.1]
-        exact List.all_eq_true.mpr fun p hp => bridgedDefined_sound hlt ha (hdi p hp)
-      obtain ⟨zl, hzl⟩ := Option.isSome_iff_exists.mp (bridgedDefined_sound hlt ha hdl)
+        exact List.all_eq_true.mpr fun p hp => hD p.1 (hdi p hp)
+      obtain ⟨zl, hzl⟩ := Option.isSome_iff_exists.mp (hD _ hdl)
       have hzl0 : termValue ε ρ h (.now .length s' p') = some zl := (hlt (.now .length s' p')).symm.trans hzl
-      have hbf := bridgeFacts_holds hlt (linearRaw_holds ha)
-      have hbr := bridgeFacts_holds hlt (rangesRaw_holds ha)
-      have f0 := Linear.entailsWith_sound hge0 hbf hbr
-      have fLo := Linear.entailsWith_sound hgeStart hbf hbr
-      have f1 := Linear.entailsWith_sound hltStop hbf hbr
-      have f2 := Linear.entailsWith_sound hltLenF hbf hbr
+      have f0 := Linear.Known.entails_sound hK hge0
+      have fLo := Linear.Known.entails_sound hK hgeStart
+      have f1 := Linear.Known.entails_sound hK hltStop
+      have f2 := Linear.Known.entails_sound hK hltLenF
       have hliftEval : ∀ (b : IndexBound) (z : Int), b.eval ε ρ h = some z →
           ({ b with base := b.base.map lt } : IndexBound).eval ε ρ h = some z := by
         intro b z hb
@@ -4598,7 +5159,6 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
         simp only [IndexShift.eval, hidxDef, ite_true, Int.natCast_zero, Int.zero_add]
         have hpos : (0 : Int) ≤ Linear.Form.eval (termValuation ε ρ h) idx.terms + idx.offset := by omega
         simp only [hpos, ↓reduceIte, zi]
-      -- Extract `zl = elemLs.length` from `lengthOf h w = some zl`.
       simp only [termValue, termAt, Bool.false_eq_true, ite_false, hw, Option.bind_some, kindValue] at hzl0
       obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_spine hzl0
       have hstEq : sto = s0 := Option.some.inj (hsto.symm.trans (elementsOf_spine hs0))
@@ -4610,9 +5170,9 @@ theorem atIndexFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links}
       obtain ⟨B', hB', hFeq⟩ := List.any_eq_true.mp hmem
       have hBi := hall zi.toNat (by omega) (by omega) B' hB'
       refine ⟨w, sto, ls0, zi.toNat, hw', hsto, by rw [hls0]; rfl, hzi0, by omega, ?_⟩
-      exact everyBodyGivesAtIndex_sound hlt ha (hliftBody ls0 zi.toNat) hFeq hBi
+      exact everyBodyGivesAtIndexIn_sound hD (hbK ls0 zi.toNat) (hliftBody ls0 zi.toNat) hFeq hBi
     | _ => rw [hfa] at hm; simp at hm
-  | _ => simp [atIndexFollows] at hf
+  | _ => simp [atIndexFollowsIn] at hf
 
 /-- Precomputed complementary guard pairs `(s, p, t, pos, neg)` in `as` where
 both `t` (positive) and `t.complement` appear as unconditional guards at the
@@ -4682,6 +5242,7 @@ structure GuardPrep where
   aug : List IndexAtom
   compPairs : Thunk (List (Nat × List String × GuardTag × List IndexAtom × List IndexAtom))
   known : Thunk (Linear.Known Term)
+  boundKnown : Thunk (Linear.Known Bound)
   defSet : Thunk (Std.HashSet Term)
   cache : Thunk GuardLinearCache
   rawKnown : Thunk (Linear.Known Term)
@@ -4709,8 +5270,11 @@ def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag �
     then (releaseGuarded tags ld a).filter (!a.contains ·) else []
   let aug := a ++ past ++ guarded
   let compPairs := Thunk.mk fun _ => compGuardPairs lg aug
-  let known := Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw aug)) (bridgeFacts lt (rangesRaw aug))
   let defSet := Thunk.mk fun _ => bridgedDefinedSet lt aug
+  let known := Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw aug) ++ atIndexBounds lt defSet.get aug) (bridgeFacts lt (rangesRaw aug))
+  let boundKnown := Thunk.mk fun _ => Linear.Known.build
+    ((bridgeFacts lt (linearRaw aug)).map (renameFact Bound.free))
+    ((bridgeFacts lt (rangesRaw aug)).map (renameFact Bound.free))
   let cache := Thunk.mk fun _ => GuardLinearCache.build lt lg known defSet aug
   let rawKnown := Thunk.mk fun _ => knownOf aug
   let unsat := Thunk.mk fun _ => known.get.entails (.le [] (-1)) || pastClash aug
@@ -4718,7 +5282,7 @@ def guardPrep (ls : HeapLinks.Links) (tags : Nat → List String → GuardTag �
     | .either _ (.pastSafe _) => false
     | .either _ _ => true
     | _ => false
-  { lt, lg, ld, aug, compPairs, known, defSet, cache, rawKnown, unsat, eithers }
+  { lt, lg, ld, aug, compPairs, known, boundKnown, defSet, cache, rawKnown, unsat, eithers }
 
 /-- Complementary-guard elimination using the precomputed deduplicated pairs
 `compGuardPairs lg as`: every value read at the guard's path fails either `t`
@@ -4818,8 +5382,16 @@ def guardFollowsWith (gp : GuardPrep) (M : Nat → List Nat) (m : PointClaims.Ma
   | .guarded .. | .either .. | .linear .. | .atIndex .. | .spineApart .. =>
     match t.fact.mapM (fun y => some (pickSlot M m a y)) with
     | some F =>
-      let base := fun as F => baseFollowsIn M ls gp.aug.length gp.rawKnown as F || atIndexFollows M ls gp.lt gp.lg gp.ld tags as F
-      let check := guardEntails gp.lt gp.lg gp.ld tags base
+      let base0 := baseFollowsIn M ls gp.aug.length gp.rawKnown
+      let base := fun as F => base0 as F || atIndexFollowsIn M ls gp.lt gp.lg gp.ld tags gp.aug.length gp.defSet gp.known gp.boundKnown base0 as F
+      let check := fun as F =>
+        let cache : GuardLinearCache :=
+          if as.length == gp.aug.length then gp.cache.get
+          else GuardLinearCache.mk
+            (Thunk.mk fun _ => extendBridgedKnown gp.lt gp.aug.length gp.defSet gp.known as)
+            (Thunk.mk fun _ => bridgedDefinedSetExtend gp.lt gp.defSet.get (as.drop gp.aug.length))
+            none none
+        guardEntailsIn gp.lt gp.lg gp.ld tags base (some cache) as F
       let eithers :=
         let all := gp.eithers.get
         if all.isEmpty then [] else
@@ -4838,7 +5410,7 @@ def guardFollowsWith (gp : GuardPrep) (M : Nat → List Nat) (m : PointClaims.Ma
 into the source's slots (`pickSlot`), entailed by the source's atoms with its
 terms and guard paths restated by the source's read links (`lowerTermAll`,
 `liftTerm`, `liftGuard`), a fact of any other kind by the source's atoms
-(`baseFollows`, `atIndexFollows`). -/
+(`baseFollows`, `atIndexFollowsIn`). -/
 def guardFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLinks.Links)
     (tags : Nat → List String → GuardTag → Bool) (a : List IndexAtom) (t : IndexAtom)
     (useExtra : Bool := true) : Bool :=
@@ -4884,15 +5456,53 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
           readGuard h (ρ s) p := lowerGuardMap_eq hl hr _
       have haug := guardPrep_aug_holds hl htags ha
       have hrawK : (guardPrep ls tags a).rawKnown.get.Holds (termValuation ε ρ h) := knownOf_holds haug
-      have hbase : ∀ as F, (baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown as F || atIndexFollows M ls (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags as F) = true →
-          IndexHolds ε as ρ h → F.HoldsAt ε ρ h := fun as F hb ha' =>
-        (Bool.or_eq_true_iff.mp hb).elim (fun h1 => baseFollowsIn_sound hM hl hrawK h1 ha')
-          (fun h2 => atIndexFollows_sound hM hl hlt hlg hld htags h2 ha')
-      have hKgp : (guardPrep ls tags a).known.get.Holds (termValuation ε ρ h) :=
-        Linear.Known.build_holds (bridgeFacts_holds hlt (linearRaw_holds haug)) (bridgeFacts_holds hlt (rangesRaw_holds haug))
       have hDgp : ∀ t, (guardPrep ls tags a).defSet.get.contains t = true → (termValue ε ρ h t).isSome :=
         bridgedDefinedSet_sound hlt haug
-      have hcheck := fun as F => guardEntails_sound hlt hlg hld htags hbase F as
+      have hKgp : (guardPrep ls tags a).known.get.Holds (termValuation ε ρ h) :=
+        Linear.Known.build_holds
+          (fun G hG => (List.mem_append.mp hG).elim (bridgeFacts_holds hlt (linearRaw_holds haug) G) (atIndexBounds_holds hlt hDgp haug G))
+          (bridgeFacts_holds hlt (rangesRaw_holds haug))
+      have hbKgp : ∀ (elemLs : List (Option Nat)) (i : Nat),
+          (guardPrep ls tags a).boundKnown.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := fun elemLs i =>
+        Linear.Known.build_holds
+          (fun G hG => by
+            obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+            exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+              cases hy; rfl).mpr (bridgeFacts_holds hlt (linearRaw_holds haug) G0 hG0))
+          (fun G hG => by
+            obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+            exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+              cases hy; rfl).mpr (bridgeFacts_holds hlt (rangesRaw_holds haug) G0 hG0))
+      have hbase0 : ∀ as F, baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown as F = true →
+          IndexHolds ε as ρ h → F.HoldsAt ε ρ h :=
+        fun as F h1 ha' => baseFollowsIn_sound hM hl hrawK h1 ha'
+      have hbase : ∀ as F, (baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown as F ||
+          atIndexFollowsIn M ls (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags
+            (guardPrep ls tags a).aug.length (guardPrep ls tags a).defSet (guardPrep ls tags a).known (guardPrep ls tags a).boundKnown
+            (baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown) as F) = true →
+          IndexHolds ε as ρ h → F.HoldsAt ε ρ h := fun as F hb ha' =>
+        (Bool.or_eq_true_iff.mp hb).elim (fun h1 => hbase0 as F h1 ha')
+          (fun h2 => atIndexFollowsIn_sound hM hl hlt hlg hld htags hDgp hKgp hbKgp hbase0 h2 ha')
+      have hcheck : ∀ as F,
+          guardEntailsIn (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags
+            (fun as F => baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown as F ||
+              atIndexFollowsIn M ls (guardPrep ls tags a).lt (guardPrep ls tags a).lg (guardPrep ls tags a).ld tags
+                (guardPrep ls tags a).aug.length (guardPrep ls tags a).defSet (guardPrep ls tags a).known (guardPrep ls tags a).boundKnown
+                (baseFollowsIn M ls (guardPrep ls tags a).aug.length (guardPrep ls tags a).rawKnown) as F)
+            (some (if as.length == (guardPrep ls tags a).aug.length then (guardPrep ls tags a).cache.get
+              else GuardLinearCache.mk
+                (Thunk.mk fun _ => extendBridgedKnown (guardPrep ls tags a).lt (guardPrep ls tags a).aug.length (guardPrep ls tags a).defSet (guardPrep ls tags a).known as)
+                (Thunk.mk fun _ => bridgedDefinedSetExtend (guardPrep ls tags a).lt (guardPrep ls tags a).defSet.get (as.drop (guardPrep ls tags a).aug.length))
+                none none)) as F = true →
+          IndexHolds ε as ρ h → F.HoldsAt ε ρ h := fun as F hF ha' => by
+        refine guardEntailsIn_sound hlt hlg hld htags hbase F _ as (fun c hc => ?_) hF ha'
+        cases hc
+        split
+        · exact GuardLinearCache.build_valid hlt hlg hKgp hDgp haug
+        · have hdrop : IndexHolds ε (as.drop (guardPrep ls tags a).aug.length) ρ h :=
+            fun b hmem hc' => ha' b (List.mem_of_mem_drop hmem) hc'
+          exact ⟨extendBridgedKnown_holds hlt hDgp hKgp ha', bridgedDefinedSetExtend_sound hlt hDgp hdrop,
+            fun _ h => by simp at h, fun _ h => by simp at h⟩
       have hF' : F.HoldsAt ε ρ h := by
         rcases Bool.or_eq_true_iff.mp hf with hf | hpeel
         · rcases Bool.or_eq_true_iff.mp hf with hf | hcomp
@@ -5030,6 +5640,7 @@ structure GuardTagTable where
   rep : Std.HashMap Nat Nat
   valByRep : Std.HashMap Nat (List ValueSets.ValueSet)
   cellByRep : Std.HashMap (Nat × String) (List ValueSets.ValueSet)
+  tagByRep : Std.HashMap Nat (List GuardTag) := {}
 
 def GuardTagTable.ofKnowledge (k : Knowledge) : GuardTagTable :=
   let rep := HeapLinks.repMap (HeapLinks.classes k.links)
@@ -5043,11 +5654,19 @@ def GuardTagTable.ofKnowledge (k : Knowledge) : GuardTagTable :=
         let key := (HeapLinks.repOf rep f.slot, g)
         m.insert key (f.contents :: m.getD key [])
       | .sym _ => m) {}
-  { rep, valByRep, cellByRep }
+  let tagByRep : Std.HashMap Nat (List GuardTag) :=
+    k.indices.foldl (fun m a =>
+      if a.cond.isNone then
+        (atomGuardTags a.fact).foldl (fun m' p =>
+          let key := HeapLinks.repOf rep p.1
+          m'.insert key (p.2 :: m'.getD key [])) m
+      else m) {}
+  { rep, valByRep, cellByRep, tagByRep }
 
 def GuardTagTable.check (gt : GuardTagTable) (s : Nat) (p : List String) (t : GuardTag) : Bool :=
   match p with
-  | [] => (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (onlyTag · t)
+  | [] => (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (onlyTag · t) ||
+      (gt.tagByRep.getD (HeapLinks.repOf gt.rep s) []).contains t
   | [g] =>
     (gt.cellByRep.getD (HeapLinks.repOf gt.rep s, g) []).any (onlyTag · t) ||
     (t.holdsUndef && (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (·.omitsKey (.str g)))
@@ -5099,19 +5718,94 @@ theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Ho
   | [], ht =>
     unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
     dsimp only at ht
-    rw [Std.HashMap.getD_eq_getD_getElem?] at ht
-    cases hm : (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
-        let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
-        m.insert key (f.contents :: m.getD key [])) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
-    | none => rw [hm] at ht; simp at ht
-    | some vs =>
-      rw [hm] at ht
-      obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
-      obtain ⟨f, hf, heq, rfl⟩ := hvalMap hm hc
-      have hv := hk.2.1 f hf
-      have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-      rw [hfs] at hv
-      exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
+    rcases Bool.or_eq_true_iff.mp ht with ht | ht
+    · rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+      cases hm : (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
+          let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
+          m.insert key (f.contents :: m.getD key [])) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
+      | none => rw [hm] at ht; simp at ht
+      | some vs =>
+        rw [hm] at ht
+        obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
+        obtain ⟨f, hf, heq, rfl⟩ := hvalMap hm hc
+        have hv := hk.2.1 f hf
+        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+        rw [hfs] at hv
+        exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
+    · have htagMap : ∀ {rs : Nat} {ts : List GuardTag} {tg : GuardTag},
+          (k.indices.foldl (fun (m : Std.HashMap Nat (List GuardTag)) a =>
+            if a.cond.isNone then
+              (atomGuardTags a.fact).foldl (fun m' p =>
+                let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p.1
+                m'.insert key (p.2 :: m'.getD key [])) m
+            else m) {})[rs]? = some ts →
+          tg ∈ ts → ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧ tg.holds (ρ x) := by
+        have hinner : ∀ (ps : List (Nat × GuardTag)) (m : Std.HashMap Nat (List GuardTag)),
+            (∀ p ∈ ps, p.2.holds (ρ p.1)) →
+            (∀ {rs ts tg}, m[rs]? = some ts → tg ∈ ts →
+              ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧ tg.holds (ρ x)) →
+            ∀ {rs ts tg}, (ps.foldl (fun (m' : Std.HashMap Nat (List GuardTag)) p =>
+              let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p.1
+              m'.insert key (p.2 :: m'.getD key [])) m)[rs]? = some ts →
+              tg ∈ ts → ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧ tg.holds (ρ x) := by
+          intro ps
+          induction ps with
+          | nil => intro m _ hm rs ts tg h htg; exact hm h htg
+          | cons p0 ps ih =>
+            intro m hp hm
+            apply ih _ (fun p hpm => hp p (List.mem_cons_of_mem _ hpm))
+            intro rs ts tg h htg
+            rw [Std.HashMap.getElem?_insert] at h
+            split at h
+            · rename_i heq
+              simp only [Option.some.injEq] at h; subst h
+              have heq : HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p0.1 = rs := by simpa using heq
+              rcases List.mem_cons.mp htg with rfl | htg
+              · exact ⟨p0.1, heq, hp p0 (List.mem_cons_self ..)⟩
+              · rw [Std.HashMap.getD_eq_getD_getElem?] at htg
+                cases hm0 : m[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p0.1]? with
+                | none => rw [hm0] at htg; cases htg
+                | some ts0 => rw [hm0] at htg; rw [heq] at hm0; exact hm hm0 htg
+            · exact hm h htg
+        have houter : ∀ (xs : List IndexAtom) (m : Std.HashMap Nat (List GuardTag)),
+            (∀ a ∈ xs, a ∈ k.indices) →
+            (∀ {rs ts tg}, m[rs]? = some ts → tg ∈ ts →
+              ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧ tg.holds (ρ x)) →
+            ∀ {rs ts tg}, (xs.foldl (fun (m : Std.HashMap Nat (List GuardTag)) a =>
+              if a.cond.isNone then
+                (atomGuardTags a.fact).foldl (fun m' p =>
+                  let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p.1
+                  m'.insert key (p.2 :: m'.getD key [])) m
+              else m) m)[rs]? = some ts →
+              tg ∈ ts → ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧ tg.holds (ρ x) := by
+          intro xs
+          induction xs with
+          | nil => intro m _ hm rs ts tg h htg; exact hm h htg
+          | cons a0 xs ih =>
+            intro m hsub hm
+            dsimp only [List.foldl_cons]
+            apply ih _ (fun a ha => hsub a (List.mem_cons_of_mem _ ha))
+            by_cases hcond : a0.cond.isNone = true
+            · simp only [hcond, ite_true]
+              have hnone : a0.cond = none := Option.isNone_iff_eq_none.mp hcond
+              exact hinner _ m (fun p hp => atomGuardTags_sound
+                (hk.2.2.2.2.2 a0 (hsub a0 (List.mem_cons_self ..)) (fun b hb => by rw [hnone] at hb; cases hb)) hp) hm
+            · simp only [hcond]; exact hm
+        exact fun {rs ts tg} => houter k.indices {} (fun _ h => h) (by intro rs ts tg h; simp at h)
+      rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+      cases hm : (k.indices.foldl (fun (m : Std.HashMap Nat (List GuardTag)) a =>
+          if a.cond.isNone then
+            (atomGuardTags a.fact).foldl (fun m' p =>
+              let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) p.1
+              m'.insert key (p.2 :: m'.getD key [])) m
+          else m) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
+      | none => rw [hm] at ht; simp at ht
+      | some ts =>
+        rw [hm] at ht
+        obtain ⟨x, heq, htx⟩ := htagMap hm (List.contains_iff_mem.mp ht)
+        have hxs : ρ x = ρ s := by rw [← hr x, heq, hr]
+        rw [hxs] at htx
+        exact ⟨ρ s, rfl, htx⟩
   | [g], ht =>
     unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
     dsimp only at ht
@@ -5567,11 +6261,28 @@ def indicesFilter (k : Knowledge) (cs : List IndexAtom) (useCases : Bool := true
     | .either _ (.pastSafe _) => false
     | .either _ _ => true
     | _ => false
-  let base := baseFollowsFast M ls a'.length a'UncondByTag rawK
+  let bK' := Thunk.mk fun _ => Linear.Known.build
+    ((bridgeFacts lt (linearRaw a')).map (renameFact Bound.free))
+    ((bridgeFacts lt (rangesRaw a')).map (renameFact Bound.free))
+  let base0 := baseFollowsFast M ls a'.length a'UncondByTag rawK
+  let aRel := Thunk.mk fun _ => a' ++ releaseLinearEithers lt K' a'
+  let KRel := Thunk.mk fun _ => extendBridgedKnown lt a'.length defSet K' aRel.get
+  let defRel := Thunk.mk fun _ => bridgedDefinedSetExtend lt defSet.get (aRel.get.drop a'.length)
+  let bKRel := Thunk.mk fun _ => extendBoundKnown lt a'.length bK' aRel.get
+  let baseTop := fun as F =>
+    base0 as F || atIndexFollowsIn M ls lt lg ld tags aRel.get.length defRel KRel bKRel base0 as F
   let check := fun (as : List IndexAtom) (F : IndexFact) =>
-    guardEntailsIn lt lg ld tags base none as F
+    let cache : GuardLinearCache :=
+      if as.length == a'.length then topCache.get
+      else GuardLinearCache.mk
+        (Thunk.mk fun _ => extendBridgedKnown lt a'.length defSet K' as)
+        (Thunk.mk fun _ => bridgedDefinedSetExtend lt defSet.get (as.drop a'.length))
+        none none
+    guardEntailsIn lt lg ld tags base0 (some cache) as F
   let checkTop := fun (F : IndexFact) =>
-    guardEntailsIn lt lg ld tags base (some topCache.get) a' F
+    guardEntailsIn lt lg ld tags base0 (some topCache.get) a' F
+  let checkAtIndex := fun (F : IndexFact) =>
+    guardEntailsIn lt lg ld tags baseTop (some topCache.get) aRel.get F
   let solveF := fun (F : IndexFact) =>
     checkTop F || unsat.get ||
       (useCases &&
@@ -5594,6 +6305,10 @@ def indicesFilter (k : Knowledge) (cs : List IndexAtom) (useCases : Bool := true
     | .guarded .. | .either .. | .linear .. =>
       match t.fact.mapM (fun y => some (pickS y)) with
       | some F => solveF F
+      | none => false
+    | .atIndex .. =>
+      match t.fact.mapM (fun y => some (pickS y)) with
+      | some F => checkAtIndex F || unsat.get
       | none => false
     | _ => false
   cs.filter fun t => directHit t || indexHit t || guardBodyHit t ||
@@ -5662,21 +6377,81 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
         · have hs' := List.mem_filter.mp (bucketBy_mem hs)
           have hnone : s.cond = none := Option.isNone_iff_eq_none.mp hs'.2
           exact ha' s hs'.1 fun c hc => by rw [hnone] at hc; cases hc
+      let K'Thunk : Thunk (Linear.Known Term) := Thunk.mk fun _ =>
+        Linear.Known.build (bridgeFacts lt (linearRaw (k.indices ++ releasePast k.indices)))
+          (bridgeFacts lt (rangesRaw (k.indices ++ releasePast k.indices)))
+      let defSetThunk : Thunk (Std.HashSet Term) := Thunk.mk fun _ =>
+        bridgedDefinedSet lt (k.indices ++ releasePast k.indices)
+      let topCacheThunk : Thunk GuardLinearCache := Thunk.mk fun _ =>
+        GuardLinearCache.build lt lg K'Thunk defSetThunk (k.indices ++ releasePast k.indices)
+      let base0Fn : List IndexAtom → IndexFact → Bool :=
+        baseFollowsFast (HeapLinks.aliasesOf (HeapLinks.aliasesMap k.links)) k.links (k.indices ++ releasePast k.indices).length
+          (if (k.indices ++ releasePast k.indices).length == k.indices.length
+            then Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) (k.indices.filter fun s => s.cond.isNone)
+            else Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) ((k.indices ++ releasePast k.indices).filter fun s => s.cond.isNone))
+          (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices))
+      let bK'Thunk : Thunk (Linear.Known Bound) := Thunk.mk fun _ =>
+        Linear.Known.build ((bridgeFacts lt (linearRaw (k.indices ++ releasePast k.indices))).map (renameFact Bound.free))
+          ((bridgeFacts lt (rangesRaw (k.indices ++ releasePast k.indices))).map (renameFact Bound.free))
+      let aRelThunk : Thunk (List IndexAtom) := Thunk.mk fun _ =>
+        (k.indices ++ releasePast k.indices) ++ releaseLinearEithers lt K'Thunk (k.indices ++ releasePast k.indices)
+      let KRelThunk : Thunk (Linear.Known Term) := Thunk.mk fun _ =>
+        extendBridgedKnown lt (k.indices ++ releasePast k.indices).length defSetThunk K'Thunk aRelThunk.get
+      let defRelThunk : Thunk (Std.HashSet Term) := Thunk.mk fun _ =>
+        bridgedDefinedSetExtend lt defSetThunk.get (aRelThunk.get.drop (k.indices ++ releasePast k.indices).length)
+      let bKRelThunk : Thunk (Linear.Known Bound) := Thunk.mk fun _ =>
+        extendBoundKnown lt (k.indices ++ releasePast k.indices).length bK'Thunk aRelThunk.get
+      let baseTopFn : List IndexAtom → IndexFact → Bool := fun as F =>
+        base0Fn as F ||
+        atIndexFollowsIn (HeapLinks.aliasesOf (HeapLinks.aliasesMap k.links)) k.links lt lg ld
+          (GuardTagTable.ofKnowledge k).check aRelThunk.get.length defRelThunk KRelThunk bKRelThunk base0Fn as F
+      have haRel : IndexHolds ε aRelThunk.get ρ h := fun b hb hc =>
+        (List.mem_append.mp hb).elim (fun hb => ha' b hb hc)
+          (fun hb => releaseLinearEithers_holds (K := K'Thunk) hlt hK' ha' b hb hc)
+      have hKRel : KRelThunk.get.Holds (termValuation ε ρ h) :=
+        extendBridgedKnown_holds (D0 := defSetThunk) (K0 := K'Thunk) hlt hD' hK' haRel
+      have hdefRel : ∀ t, defRelThunk.get.contains t = true → (termValue ε ρ h t).isSome :=
+        bridgedDefinedSetExtend_sound hlt hD' (fun b hmem hc => haRel b (List.mem_of_mem_drop hmem) hc)
+      have hbK' : ∀ (elemLs : List (Option Nat)) (i : Nat),
+          bK'Thunk.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := fun elemLs i =>
+        Linear.Known.build_holds
+          (fun G hG => by
+            obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+            exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+              cases hy; rfl).mpr (bridgeFacts_holds hlt (linearRaw_holds ha') G0 hG0))
+          (fun G hG => by
+            obtain ⟨G0, hG0, rfl⟩ := List.mem_map.mp hG
+            exact (Linear.Fact.holds_mapVars (renameFact_mapVars Bound.free G0) fun x _ y hy => by
+              cases hy; rfl).mpr (bridgeFacts_holds hlt (rangesRaw_holds ha') G0 hG0))
+      have hbKRel : ∀ (elemLs : List (Option Nat)) (i : Nat),
+          bKRelThunk.get.Holds (fun x => (boundValue ε ρ h elemLs i x).getD 0) := fun elemLs i =>
+        extendBoundKnown_holds (bK0 := bK'Thunk) hlt (hbK' elemLs i) haRel
+      have hbase0 : ∀ as F, base0Fn as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h :=
+        fun _ _ hb ha0 => baseFollowsFast_sound hM hl hTag' hrawK hb ha0
+      have hbaseTop : ∀ as F, baseTopFn as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h := fun as F hb ha0 =>
+        (Bool.or_eq_true_iff.mp hb).elim
+          (fun h1 => hbase0 as F h1 ha0)
+          (fun h2 => atIndexFollowsIn_sound (D0 := defRelThunk) (K0 := KRelThunk) (bK0 := bKRelThunk)
+            hM hl hlt hlg hld htags hdefRel hKRel hbKRel hbase0 h2 ha0)
+      have checkAtIndex_sound : ∀ (F : IndexFact),
+          (guardEntailsIn lt lg ld (GuardTagTable.ofKnowledge k).check baseTopFn
+            (some topCacheThunk.get) aRelThunk.get F ||
+          (Thunk.mk fun _ => K'Thunk.get.entails (.le [] (-1)) || pastClash (k.indices ++ releasePast k.indices)).get) = true →
+          F.HoldsAt ε ρ h := by
+        intro F hok
+        rcases Bool.or_eq_true_iff.mp hok with htop | huns
+        · exact guardEntailsIn_sound hlt hlg hld htags hbaseTop F _ _
+            (fun c hc => by cases hc; exact GuardLinearCache.build_valid hlt hlg hK' hD' ha') htop haRel
+        · rcases Bool.or_eq_true_iff.mp huns with hle | hpc
+          · have bad := Linear.Known.entails_sound hK' hle
+            simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+          · exact (pastClash_sound hpc ha').elim
       have solveF_sound : ∀ (F : IndexFact),
           (guardEntailsIn lt lg ld
-            (GuardTagTable.ofKnowledge k).check (baseFollowsFast (HeapLinks.aliasesOf (HeapLinks.aliasesMap k.links)) k.links (k.indices ++ releasePast k.indices).length
-              (if (k.indices ++ releasePast k.indices).length == k.indices.length
-                then Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) (k.indices.filter fun s => s.cond.isNone)
-                else Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) ((k.indices ++ releasePast k.indices).filter fun s => s.cond.isNone))
-              (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices)))
-            (some (Thunk.mk fun _ => GuardLinearCache.build lt lg
-              (Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw (k.indices ++ releasePast k.indices)))
-                (bridgeFacts lt (rangesRaw (k.indices ++ releasePast k.indices))))
-              (Thunk.mk fun _ => bridgedDefinedSet lt (k.indices ++ releasePast k.indices))
-              (k.indices ++ releasePast k.indices)).get)
+            (GuardTagTable.ofKnowledge k).check base0Fn
+            (some topCacheThunk.get)
             (k.indices ++ releasePast k.indices) F ||
-          (Thunk.mk fun _ => (Thunk.mk fun _ => Linear.Known.build (bridgeFacts lt (linearRaw (k.indices ++ releasePast k.indices)))
-              (bridgeFacts lt (rangesRaw (k.indices ++ releasePast k.indices)))).get.entails (.le [] (-1)) || pastClash (k.indices ++ releasePast k.indices)).get ||
+          (Thunk.mk fun _ => K'Thunk.get.entails (.le [] (-1)) || pastClash (k.indices ++ releasePast k.indices)).get ||
           (useCases &&
             let all := (Thunk.mk fun _ => (k.indices ++ releasePast k.indices).filter fun x => x.cond.isNone && match x.fact with
               | .either _ (.pastSafe _) => false
@@ -5685,18 +6460,20 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
             if all.isEmpty then false else
             let fs := F.slots
             let es := if fs.isEmpty then all else all.filter fun x => x.fact.slots.any fs.contains
-            !es.isEmpty && caseEntailsAux (fun as G => guardEntailsIn lt lg ld
-              (GuardTagTable.ofKnowledge k).check (baseFollowsFast (HeapLinks.aliasesOf (HeapLinks.aliasesMap k.links)) k.links (k.indices ++ releasePast k.indices).length
-                (if (k.indices ++ releasePast k.indices).length == k.indices.length
-                  then Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) (k.indices.filter fun s => s.cond.isNone)
-                  else Thunk.mk fun _ => bucketBy (fun s => s.fact.ctorTag) ((k.indices ++ releasePast k.indices).filter fun s => s.cond.isNone))
-                (if (k.indices ++ releasePast k.indices).length == k.indices.length then Thunk.mk (fun _ => knownOf k.indices) else Thunk.mk fun _ => knownOf (k.indices ++ releasePast k.indices))) none as G)
+            !es.isEmpty && caseEntailsAux (fun as G =>
+              let cache : GuardLinearCache :=
+                if as.length == (k.indices ++ releasePast k.indices).length then topCacheThunk.get
+                else GuardLinearCache.mk
+                  (Thunk.mk fun _ => extendBridgedKnown lt (k.indices ++ releasePast k.indices).length defSetThunk K'Thunk as)
+                  (Thunk.mk fun _ => bridgedDefinedSetExtend lt defSetThunk.get (as.drop (k.indices ++ releasePast k.indices).length))
+                  none none
+              guardEntailsIn lt lg ld (GuardTagTable.ofKnowledge k).check base0Fn (some cache) as G)
               8 (k.indices ++ releasePast k.indices) es F)) = true →
           F.HoldsAt ε ρ h := by
         intro F hok
         rcases Bool.or_eq_true_iff.mp hok with hok | haux
         · rcases Bool.or_eq_true_iff.mp hok with htop | huns
-          · exact guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha0 => baseFollowsFast_sound hM hl hTag' hrawK hb ha0) F _ _
+          · exact guardEntailsIn_sound hlt hlg hld htags hbase0 F _ _
               (fun c hc => by cases hc; exact GuardLinearCache.build_valid hlt hlg hK' hD' ha') htop ha'
           · rcases Bool.or_eq_true_iff.mp huns with hle | hpc
             · have bad := Linear.Known.entails_sound hK' hle
@@ -5706,12 +6483,19 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
           dsimp only at haux
           split at haux
           · cases haux
-          · exact caseEntailsAux_sound
-              (fun as G hG ha0 => guardEntailsIn_sound hlt hlg hld htags (fun _ _ hb ha1 => baseFollowsFast_sound hM hl hTag' hrawK hb ha1) G none as (fun _ h => by cases h) hG ha0)
+          · refine caseEntailsAux_sound
+              (fun as G hG ha0 => guardEntailsIn_sound hlt hlg hld htags hbase0 G _ as (fun c hc => ?_) hG ha0)
               8 _ _ F (fun _ h => by
                 split at h
                 · exact (List.mem_filter.mp h).1
                 · exact (List.mem_filter.mp (List.mem_filter.mp h).1).1) (Bool.and_eq_true_iff.mp haux).2 ha'
+            cases hc
+            split
+            · exact GuardLinearCache.build_valid hlt hlg hK' hD' ha'
+            · have hdrop : IndexHolds ε (as.drop (k.indices ++ releasePast k.indices).length) ρ h :=
+                fun b hmem hc' => ha0 b (List.mem_of_mem_drop hmem) hc'
+              exact ⟨extendBridgedKnown_holds hlt hD' hK' ha0, bridgedDefinedSetExtend_sound hlt hD' hdrop,
+                fun _ h => by simp at h, fun _ h => by simp at h⟩
       simp only [Bool.and_eq_true] at hgf
       obtain ⟨-, hgf⟩ := hgf
       cases htf : t.fact with
@@ -5720,6 +6504,12 @@ theorem indicesFilter_holds {k : Knowledge} {cs : List IndexAtom} {useCases : Bo
         split at hgf
         · rename_i F hF
           exact (IndexFact.holdsAt_mapM hF fun s _ y hy => by cases hy; exact pick_eq hM s).mp (solveF_sound F hgf)
+        · cases hgf
+      | atIndex _ _ _ _ _ =>
+        rw [htf] at hgf; dsimp only at hgf
+        split at hgf
+        · rename_i F hF
+          exact (IndexFact.holdsAt_mapM hF fun s _ y hy => by cases hy; exact pick_eq hM s).mp (checkAtIndex_sound F hgf)
         · cases hgf
       | _ => rw [htf] at hgf; cases hgf
     rcases Bool.or_eq_true_iff.mp hpred with hpred | hlin
@@ -7790,17 +8580,117 @@ theorem strEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : 
         simp only [Linear.Form.eval, termValuation, htv, Option.getD_some, h0]; omega
   · cases ha
 
+/-- Guard tags an observation establishes of the observed value. -/
+def observedGuardTags : BranchRefinement.Observation → List GuardTag
+  | .tag .isNul false => [.notNull]
+  | .tag .isNul true => [.null]
+  | .tag .isUndef false => [.notUndef]
+  | .tag .isUndef true => [.undef]
+  | .tag .isNullish false => [.notNull, .notUndef]
+  | .tag .truthy true => [.notNull, .notUndef, .notFls]
+  | .tag (.boolEq true) true | .boolean true => [.tru]
+  | .tag (.boolEq false) true | .boolean false => [.fls]
+  | .tag (.boolEq true) false => [.notTru]
+  | .tag (.boolEq false) false => [.notFls]
+  | _ => []
+
+theorem observedGuardTags_holds {o : BranchRefinement.Observation} {v : Val} {g : GuardTag}
+    (ho : o.holds v) (hg : g ∈ observedGuardTags o) : g.holds v := by
+  cases o with
+  | boolean q =>
+    cases q <;> simp only [observedGuardTags, List.mem_singleton] at hg <;> subst hg <;>
+      simpa [BranchRefinement.Observation.holds, GuardTag.holds] using ho
+  | tag tag q =>
+    cases tag with
+    | boolEq b =>
+      cases b <;> cases q <;> simp only [observedGuardTags, List.mem_singleton] at hg <;> subst hg <;>
+        cases v <;> simp_all [BranchRefinement.Observation.holds, tagHolds, protoFree, GuardTag.holds]
+    | _ =>
+      cases q <;> simp only [observedGuardTags, List.mem_cons, List.not_mem_nil, or_false] at hg
+      all_goals rcases hg with rfl | rfl | rfl <;>
+        cases v <;> simp_all [BranchRefinement.Observation.holds, tagHolds, protoFree, GuardTag.holds]
+
+/-- Index atoms an observation adds for nullish/tag checks: for each element
+read `element r x idx` whose result aliases the observed slot, `atIndex x [] idx
+(some g) false` so the element's tag survives dropping the temporary `r`; and for
+explicit nullish exclusions (`!== null`, `!== undefined`, `!= null`), an
+impossible-body slot guard `guarded x [] g false` on each alias `x`. -/
+def tagGuardIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) (o : BranchRefinement.Observation) :
+    List IndexAtom :=
+  let gs := observedGuardTags o
+  if gs.isEmpty then [] else
+  let cls := HeapLinks.aliases ls slot
+  let elemTags := as.flatMap fun a => if a.cond.isNone then match a.fact with
+    | .element r x idx =>
+      if cls.contains r then
+        gs.map fun g => ({ fact := .atIndex x [] idx (some g) (.atom (.le [] (-1))) } : IndexAtom)
+      else []
+    | _ => []
+    else []
+  let slotTags := match o with
+    | .tag .isNul false | .tag .isUndef false | .tag .isNullish false =>
+      cls.flatMap fun x => gs.map fun g => ({ fact := .guarded x [] g (.linear (.le [] (-1))) } : IndexAtom)
+    | _ => []
+  elemTags ++ slotTags
+
+theorem tagGuardIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat}
+    {o : BranchRefinement.Observation} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    (he : IndexHolds ε as ρ h) (ho : o.holds (ρ slot)) :
+    IndexHolds ε (tagGuardIndices ls as slot o) ρ h := by
+  intro a ha _
+  unfold tagGuardIndices at ha
+  by_cases hgs : (observedGuardTags o).isEmpty = true
+  · simp only [hgs, ite_true] at ha; cases ha
+  · simp only [hgs] at ha
+    rcases List.mem_append.mp ha with ha | ha
+    · obtain ⟨b, hba, ha⟩ := List.mem_flatMap.mp ha
+      by_cases hcond : b.cond.isNone = true
+      · simp only [hcond, ite_true] at ha
+        have hnone : b.cond = none := Option.isNone_iff_eq_none.mp hcond
+        have hbh := he b hba fun c hc => by rw [hnone] at hc; cases hc
+        cases hfb : b.fact with
+        | element r x idx =>
+          rw [hfb] at ha hbh
+          by_cases hcls : (HeapLinks.aliases ls slot).contains r = true
+          · simp only [hcls, ite_true] at ha
+            obtain ⟨g, hg, rfl⟩ := List.mem_map.mp ha
+            obtain ⟨sto, elemLs, i, hsto, hls, hi, hlt, hpres, hhole⟩ := hbh
+            have hrr : ρ r = ρ slot := HeapLinks.aliases_eq hl (List.contains_iff_mem.mp hcls)
+            have hgv : g.holds (ρ r) := hrr ▸ observedGuardTags_holds ho hg
+            refine ⟨ρ x, sto, elemLs, i, rfl, hsto, hls, hi, hlt, ?_⟩
+            cases hli : elemLs[i]? with
+            | none => exact absurd (List.getElem?_eq_none_iff.mp hli) (by omega)
+            | some opt =>
+              cases opt with
+              | some l => exact .inl ⟨l, ρ r, rfl, hpres l hli, hgv⟩
+              | none => exact .inr (.inl ⟨rfl, hhole hli ▸ hgv⟩)
+          · simp only [hcls] at ha; cases ha
+        | _ => rw [hfb] at ha; cases ha
+      · simp only [hcond] at ha; cases ha
+    · have hslot : a ∈ (HeapLinks.aliases ls slot).flatMap fun x =>
+          (observedGuardTags o).map fun g => ({ fact := .guarded x [] g (.linear (.le [] (-1))) } : IndexAtom) := by
+        cases o with
+        | boolean _ => cases ha
+        | tag tag q =>
+          cases tag <;> cases q <;> first | exact ha | cases ha
+      obtain ⟨x, hx, ha⟩ := List.mem_flatMap.mp hslot
+      obtain ⟨g, hg, rfl⟩ := List.mem_map.mp ha
+      have hxs : ρ x = ρ slot := HeapLinks.aliases_eq hl hx
+      exact ⟨ρ x, rfl, .inl (hxs ▸ observedGuardTags_holds ho hg)⟩
+
 def observeCore (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Knowledge
   | .boolean q => observeBoolean k slot q
   | .tag t q => if t == .truthy then promoteTruthy (observeTag k slot t q) slot q else observeTag k slot t q
 
 /-- An observation's knowledge, with the bodies of the guards it eliminates
-(`unguardIndices`), numeric literal equalities (`numEqIndices`), and string
-equality/truthiness length bounds (`strEqIndices`). -/
+(`unguardIndices`), numeric literal equalities (`numEqIndices`), string
+equality/truthiness length bounds (`strEqIndices`), and element/slot tag guards
+(`tagGuardIndices`). -/
 def observe (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Knowledge :=
   let k' := observeCore k slot o
   { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o ++
-      numEqIndices k'.links k'.indices slot o ++ strEqIndices k'.links k'.indices slot o }
+      numEqIndices k'.links k'.indices slot o ++ strEqIndices k'.links k'.indices slot o ++
+      tagGuardIndices k'.links k'.indices slot o }
 
 theorem observeCore_holds {k slot o ρ h} (hk : Holds k ε ρ h)
     (ho : o.holds (ρ slot)) : Holds (observeCore k slot o) ε ρ h := by
@@ -7826,10 +8716,12 @@ theorem observe_holds {k slot o ρ h} (hk : Holds k ε ρ h)
   rcases List.mem_append.mp ha with ha | ha
   · rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
-      · exact hk'.2.2.2.2.2 a ha
-      · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
-    · exact numEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
-  · exact strEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+      · rcases List.mem_append.mp ha with ha | ha
+        · exact hk'.2.2.2.2.2 a ha
+        · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+      · exact numEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+    · exact strEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+  · exact tagGuardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
 
 /-- A finite predicate vocabulary exactly interprets supported primitive clauses. -/
 def primitive : List (Clause (Ty ι)) → Option (List Atom)
@@ -10210,9 +11102,9 @@ theorem typeLinearFacts_holds {O : TypeOracle} {slots : List Nat} {cands : List 
 /-- Whether a fact is contradicted by `K` or by the per-slot type oracle `O`. -/
 def contradictsInOracle (O : TypeOracle) (K : Linear.Known Term) : IndexFact → Bool
   | .linear L =>
-    contradictsIn K (.linear L) ||
-    L.vars.any fun t =>
-      !t.atEntry && t.kind == .value && t.path.isEmpty && O.excludesInt t.slot
+    (L.vars.any fun t =>
+      !t.atEntry && t.kind == .value && t.path.isEmpty && O.excludesInt t.slot) ||
+    contradictsIn K (.linear L)
   | .int s => O.excludesInt s
   | .pastSafe s => O.excludesPastSafe s
   | .guarded s [] tag B => O.excludesGuard s tag && contradictsInOracle O K B
@@ -10225,7 +11117,6 @@ theorem contradictsInOracle_sound {O : TypeOracle} {K : Linear.Known Term} {ρ :
   | .linear L, hc, hF => by
     simp only [contradictsInOracle, Bool.or_eq_true] at hc
     rcases hc with hc | hc
-    · exact contradictsIn_sound hK hc hF
     · obtain ⟨t, ht, hbad⟩ := List.any_eq_true.mp hc
       simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hbad
       obtain ⟨⟨⟨hat, hkind⟩, hpath⟩, hty⟩ := hbad
@@ -10237,6 +11128,7 @@ theorem contradictsInOracle_sound {O : TypeOracle} {K : Linear.Known Term} {ρ :
         rfl
       rw [htv, hO.int t.slot hty] at his
       cases his
+    · exact contradictsIn_sound hK hc hF
   | .int s, hc, hF => by
     simp only [contradictsInOracle] at hc
     simp only [IndexFact.HoldsAt, hO.int s hc] at hF
@@ -10687,7 +11579,9 @@ def withElementsAfterOracle (O : TypeOracle) (recheck : Bool) (baseIndices baseL
       let hasEither := added.any fun a => a.cond.isNone && match a.fact with
         | .either .. => true | _ => false
       let k1 := if hasLin || hasElem then unguardedInstances (elementInstances k) else k
-      if recheck || hasLin || hasEither || k1.indices.length > k.indices.length then
+      let k1HasLinOrEither := (k1.indices.drop k.indices.length).any fun a => a.cond.isNone && match a.fact with
+        | .linear .. | .length .. | .bound .. | .int .. | .either .. => true | _ => false
+      if recheck || hasLin || hasEither || k1HasLinOrEither then
         releaseEithersStepOracle O k1
       else k1
 
@@ -10731,7 +11625,18 @@ theorem withElementsAfter_holds {baseIndices baseLinks : Nat} {k : Knowledge} {�
 
 @[nospecialize] def withElementsAfterTyped (G : NormalGraph ι) (Γ : List (Ty ι))
     (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
-  withElementsAfterOracle (typeOracleOf G Γ) true baseIndices baseLinks k
+  let O := typeOracleOf G Γ
+  let cls0 := HeapLinks.aliases k.links 0
+  let recheck :=
+    cls0.any (fun s => (O.finiteInts s).isSome || O.excludesPastSafe s) ||
+    k.indices.any fun a => a.cond.isNone && match a.fact with
+      | .either (.guarded ..) _ | .either _ (.guarded ..) => true
+      | .either A B =>
+        (A.slots ++ B.slots).any fun s =>
+          (O.finiteInts s).isSome || O.excludesPastSafe s ||
+          (cls0.contains s && O.excludesInt s)
+      | _ => false
+  withElementsAfterOracle O recheck baseIndices baseLinks k
 
 theorem withElementsAfterTyped_holds {G : NormalGraph ι} {Γ : List (Ty ι)}
     {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}

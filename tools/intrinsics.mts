@@ -808,8 +808,16 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         effect: footprintEffect(emptyFootprint, { pre: [{ int: { slot: 2 } }, le([[value(2), -1]], 0),
           le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1)],
         ensures: [...stored, { element: { value: 0, array: 2, index: { terms: [[value(3), 1]], offset: 0 } } }] }) });
+      // By ECMA-262 TypedArrayGetElement, a read that returns a value other than
+      // `undefined` read a valid integer index `0 <= k < view(b)` (a safe integer).
+      const whenDefined = (body: IndexFact): IndexFact => ({ guarded: { slot: 0, path: [], tag: "undefined", body } });
       return { typeParams: [], type: { k: "intersection", span, parts: [
-        { ...fn([views, atom("number")], either(atom("number"), atom("undefined"))), effect: emptyEffect },
+        { ...fn([views, atom("number")], either(atom("number"), atom("undefined"))),
+          effect: footprintEffect(emptyFootprint, { ensures: [
+            whenDefined({ int: { slot: 3 } }),
+            whenDefined(le([[value(3), -1]], 0)),
+            whenDefined(le([[value(3), 1], [{ kind: "view", slot: 2, path: [] }, -1]], -1)),
+          ] }) },
         ...viewKinds.flatMap(({ type, range }): TypeTerm[] => range === null ? [] :
           [bounded(type, [{ int: { slot: 0 } }, le([[value(0), -1]], -range[0]), le([[value(0), 1]], range[1])])]),
         bounded(views, []),

@@ -2460,9 +2460,10 @@ type NamedInvariant = { declaration: DeclarationIdentity; clauses: readonly stri
 /** The type invariants a type names (ARITHMETIC.md, "Type
  * invariants"): a reference without type arguments to a declaration stating
  * one (`Gate.invariants`), with those its definition's equation names in
- * turn; every part's of an intersection; those every arm of a union names.
- * A generic reference and every other type name none. The refusal's message
- * where a named declaration's representation is no record type. */
+ * turn; a generic type alias followed to its instantiated equation; every
+ * part's of an intersection; those every arm of a union names. A generic
+ * record or interface reference and every other type name none. The refusal's
+ * message where a named declaration's representation is no record type. */
 function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvariant[] | string {
   const records = gate.namedRecords();
   if (records === null || depth > 16) return [];
@@ -2488,7 +2489,18 @@ function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvar
     const [first, ...rest] = arms;
     return (first ?? []).filter(n => rest.every(arm => arm.some(m => key(m) === key(n))));
   }
-  if (t.k !== "reference" || t.args.length > 0) return [];
+  if (t.k !== "reference") return [];
+  if (t.args.length > 0) {
+    // Follow a generic type alias to its instantiated equation (e.g. wrapper
+    // aliases such as `Effects<P, T> = T` or `Fresh<T> = T`).
+    try {
+      const meaning = aliasMeaning(t, records, (): never => { throw new UnresolvedField(); });
+      return meaning === "record" ? [] : invariantsNamed(gate, meaning, depth + 1);
+    } catch (e) {
+      if (e instanceof UnresolvedField) return [];
+      throw e;
+    }
+  }
   const target = t.reference.target;
   const reference = (id: DeclarationIdentity): TypeTerm =>
     ({ k: "reference", reference: { name: id.name, span: t.span, arguments: [], target: id }, args: [], span: t.span });

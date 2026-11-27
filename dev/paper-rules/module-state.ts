@@ -158,3 +158,25 @@ interface Box { log: number[]; appendChild(n: number): void }
 export function callUserAppendChild(b: Box): Effects<{ "@state": "any" }, void> {
   b.appendChild(1);
 }
+
+// Negative 10 (confinement violation): exported stateful `RegExp` is not module-private,
+// so mutating its `lastIndex` via `replace` is not confined to `@state`.
+export const exportedRe = /a/g;
+export function matchExportedRe(s: string): Effects<{ "@state": "any" }, string> {
+  return s.replace(exportedRe, "b");
+}
+
+// Negative 11 (unsafe / non-string receiver): user-defined `.replace` on an object
+// is not `String.prototype.replace`, so `@state` must be refused.
+interface Replacer { replace(re: RegExp, s: string): string }
+export function callUserReplace(r: Replacer): Effects<{ "@state": "any" }, string> {
+  return r.replace(/a/, "b");
+}
+
+// Negative 12 (unsafe / shadowed typed array type): a local `type Uint16Array = number[]`
+// shadows the built-in typed array, so writing an element is not covered by `views: "grow"`.
+type Uint16Array = number[];
+function getFakeTyped(xs: Uint16Array): Effects<{ else: "keep" }, Uint16Array> { return xs; }
+export function writeShadowedTyped(xs: Uint16Array): Effects<{ views: "grow" }, void> {
+  getFakeTyped(xs)[0] = 1;
+}
