@@ -5890,21 +5890,122 @@ theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he
       · exact linearFacts_holds he G hG
       · exact condFacts_holds he hcv G hG
 
+/-- Eliminate dropped slots from linear arms of unconditional `.either` facts
+whose opposite arm names no dropped slot, using the unconditional linear facts
+of `as` connected to the dropped terms. -/
+def eliminateEithers (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
+  let hasDrop (t : Term) : Bool := t.slots.any drop.contains
+  let armDropped (X other : IndexFact) : Bool := match X with
+    | .linear F => F.vars.any hasDrop && !other.slots.any drop.contains
+    | _ => false
+  let hasDroppedEither := as.any fun a => a.cond.isNone && match a.fact with
+    | .either A B => armDropped A B || armDropped B A
+    | _ => false
+  if !hasDroppedEither then [] else
+  let lin := linearFacts as
+  let linSet := Std.HashSet.ofList lin
+  let elimArm (F : Linear.Fact Term) : List (Linear.Fact Term) :=
+    let used := (F.vars.filter hasDrop).eraseDups
+    if used.isEmpty then [] else
+    let rel := Linear.relevantTo lin used
+    (Linear.eliminateAll (F :: rel) used).filter fun G =>
+      !linSet.contains G && G.vars.all fun t => !hasDrop t && termDefined as t
+  as.flatMap fun a => match a with
+    | ⟨.either A B, none, _⟩ =>
+      (match A with
+        | .linear F =>
+          if F.vars.any hasDrop && !B.slots.any drop.contains then
+            (elimArm F).map fun G => { fact := .either (.linear G) B }
+          else []
+        | _ => []) ++
+      (match B with
+        | .linear F =>
+          if F.vars.any hasDrop && !A.slots.any drop.contains then
+            (elimArm F).map fun G => { fact := .either A (.linear G) }
+          else []
+        | _ => [])
+    | _ => []
+
+theorem eliminateEithers_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (eliminateEithers drop as) ρ h := by
+  intro a ha _
+  unfold eliminateEithers at ha
+  dsimp only at ha
+  split at ha
+  · cases ha
+  · obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp ha
+    cases b with
+    | mk bf bc bn =>
+      cases bc with
+      | some _ => cases bf <;> simp at hm
+      | none =>
+        have hbf := he _ hb (fun _ hc => by cases hc)
+        cases bf with
+        | either A B =>
+          rcases List.mem_append.mp hm with hm | hm
+          · cases A with
+            | linear F =>
+              simp only at hm
+              split at hm
+              · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hm
+                split at hG
+                · cases hG
+                · obtain ⟨hGe, hGk⟩ := List.mem_filter.mp hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hGk
+                  rcases hbf with hF | hB
+                  · left
+                    refine ⟨fun t ht => termDefined_sound he (hGk.2 t ht).2, ?_⟩
+                    refine Linear.eliminateAll_sound (fun M hM => ?_) G hGe
+                    rcases List.mem_cons.mp hM with rfl | hM
+                    · exact hF.2
+                    · exact linearFacts_holds he M (Linear.relevantTo_mem hM)
+                  · exact .inr hB
+              · cases hm
+            | _ => cases hm
+          · cases B with
+            | linear F =>
+              simp only at hm
+              split at hm
+              · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hm
+                split at hG
+                · cases hG
+                · obtain ⟨hGe, hGk⟩ := List.mem_filter.mp hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hGk
+                  rcases hbf with hA | hF
+                  · exact .inl hA
+                  · right
+                    refine ⟨fun t ht => termDefined_sound he (hGk.2 t ht).2, ?_⟩
+                    refine Linear.eliminateAll_sound (fun M hM => ?_) G hGe
+                    rcases List.mem_cons.mp hM with rfl | hM
+                    · exact hF.2
+                    · exact linearFacts_holds he M (Linear.relevantTo_mem hM)
+              · cases hm
+            | _ => cases hm
+        | _ => simp at hm
+
 /-- The atoms with the terms of the slots of `drop` eliminated
-(`eliminateLinear`), after the sum rule's disjunctions it decides are released
-(`releasePast`). -/
+(`eliminateLinear` and `eliminateEithers`), after the sum rule's disjunctions
+it decides are released (`releasePast`). -/
 def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
-  eliminateLinear drop (as ++ if drop.any (fun d => as.any fun a => a.fact == .pastSafe d ||
-    match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else [])
+  let base := as ++ if drop.any (fun d => as.any fun a => a.fact == .pastSafe d ||
+    match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else []
+  eliminateLinear drop base ++ eliminateEithers drop base
 
 theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
-    IndexHolds ε (eliminateIndices drop as) ρ h :=
-  eliminateLinear_holds fun a ha hc => by
+    IndexHolds ε (eliminateIndices drop as) ρ h := by
+  have hbase : IndexHolds ε (as ++ if drop.any (fun d => as.any fun a => a.fact == .pastSafe d ||
+      match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else []) ρ h := by
+    intro a ha hc
     rcases List.mem_append.mp ha with ha | ha
     · exact he a ha hc
     · split at ha
       · exact releasePast_holds he a ha hc
       · cases ha
+  intro a ha hc
+  unfold eliminateIndices at ha
+  rcases List.mem_append.mp ha with ha | ha
+  · exact eliminateLinear_holds hbase a ha hc
+  · exact eliminateEithers_holds hbase a ha hc
 
 /-- The linear facts, each with its terms defined, an atom's fact states: a
 linear fact itself, and a length atom `length(x, n)` as the equality of `n`'s
@@ -9845,40 +9946,460 @@ theorem releaseTypedGuarded_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ :
   | ⟨.apart _ _ _ _, _, _⟩, _, _ | ⟨.spineApart _ _ _ _, _, _⟩, _, _ | ⟨.elemSpineApart _ _ _ _, _, _⟩, _, _ | ⟨.same _ _, _, _⟩, _, _ =>
     fun b hb _ => by simp [releaseTypedGuarded] at hb
 
-/-- Knowledge with every unconditional guarded fact whose guard slot's type
-in `Γ` excludes the guard tag released. -/
-@[nospecialize] def unguardedByTypes (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Knowledge :=
-  if !k.indices.any (fun a => a.cond.isNone && match a.fact with | .guarded _ [] _ _ => true | _ => false) then k else
-  let u := (k.indices.flatMap (releaseTypedGuarded G Γ)).eraseDups.filter (!k.indices.contains ·)
-  if u.isEmpty then k else { k with indices := k.indices ++ u }
+/-- Whether a clause holds no safe integer. -/
+def clauseExcludesInt : Clause (Ty ι) → Bool
+  | .numLit b => (SafeIntegers.safeIntOfBits b).isNone
+  | .numIn bs => bs.all fun b => (SafeIntegers.safeIntOfBits b).isNone
+  | c => tagClause .isNum c == some false
 
-theorem unguardedByTypes_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) : Holds (unguardedByTypes G Γ k) ε ρ h := by
-  unfold unguardedByTypes
-  split
-  · exact hk
-  · dsimp only
-    split
-    · exact hk
-    · refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
-      rcases List.mem_append.mp ha with ha | ha
-      · exact hk.2.2.2.2.2 a ha hc
-      · have ha' := List.mem_eraseDups.mp (List.mem_filter.mp ha).1
-        obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp ha'
-        cases hbc : b.cond with
-        | none => exact releaseTypedGuarded_holds he b hbc (hk.2.2.2.2.2 b hb (by rw [hbc]; intro _ hc'; cases hc')) a hm hc
-        | some _ => cases b with | mk bf bc bn => simp only at hbc; subst hbc; cases bf <;> simp [releaseTypedGuarded] at hm
+/-- Whether a plain type holds no safe integer. -/
+@[nospecialize] def typeExcludesInt (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all clauseExcludesInt
 
-/-- Release every unconditional `.either` in `eithers` whose opposite linear arm
-is contradicted by `K`, checking each distinct linear arm once. -/
-def releaseEithersIn (K : Linear.Known Term) (eithers : List IndexAtom) : List IndexAtom :=
-  let linearArms := (eithers.flatMap fun a => match a.fact with
-    | .either A B =>
-      (match A with | .linear _ => [A] | _ => []) ++
-      (match B with | .linear _ => [B] | _ => [])
+theorem clauseExcludesInt_sound {G : NormalGraph ι} {c : Clause (Ty ι)} {n : Nat} {W : WorldT n} {v : Val}
+    (hc : clauseExcludesInt c = true) (hv : clauseSem G c n W v) : (intValue v).isSome = false := by
+  have h1 := hv.1
+  cases c with
+  | numLit b =>
+    simp only [clauseExcludesInt, Option.isNone_iff_eq_none] at hc
+    have : v = .num b := by simpa [semWithArgs] using h1
+    subst this; simp [intValue, hc]
+  | numIn bs =>
+    simp only [clauseExcludesInt, List.all_eq_true, Option.isNone_iff_eq_none] at hc
+    obtain ⟨b, hb, rfl⟩ : ∃ b ∈ bs, v = .num b := by simpa [semWithArgs] using h1
+    simp [intValue, hc b hb]
+  | _ =>
+    have hq := tagClause_sound (beq_iff_eq.mp (by simpa [clauseExcludesInt] using hc)) h1
+    cases v <;> simp_all [tagHolds, intValue]
+
+theorem typeExcludesInt_sound {G : NormalGraph ι} {A : Ty ι} {v : Val} {n : Nat} {W : WorldT n}
+    (hex : typeExcludesInt G A = true) (hv : meaning G A n W v) : (intValue v).isSome = false := by
+  simp only [typeExcludesInt, Bool.and_eq_true, List.all_eq_true] at hex
+  obtain ⟨c, hcm, hsem⟩ := (expand_sem G A hex.1 n W v).mp hv
+  exact clauseExcludesInt_sound (hex.2 c hcm) hsem
+
+/-- Whether a clause excludes the double `2^53` (`pastSafeBits`). -/
+def clauseExcludesPastSafe : Clause (Ty ι) → Bool
+  | .int => true
+  | .numLit b => b != SafeIntegers.pastSafeBits
+  | .numIn bs => bs.all (· != SafeIntegers.pastSafeBits)
+  | c => tagClause .isNum c == some false
+
+/-- Whether a plain type excludes the double `2^53` (`pastSafeBits`). -/
+@[nospecialize] def typeExcludesPastSafe (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all clauseExcludesPastSafe
+
+theorem clauseExcludesPastSafe_sound {G : NormalGraph ι} {c : Clause (Ty ι)} {n : Nat} {W : WorldT n} {v : Val}
+    (hc : clauseExcludesPastSafe c = true) (hv : clauseSem G c n W v) : v ≠ .num SafeIntegers.pastSafeBits := by
+  have h1 := hv.1
+  cases c with
+  | int =>
+    obtain ⟨b, rfl, hb⟩ : ∃ b, v = .num b ∧ SafeIntegers.safeIntOfBits b ≠ none := by
+      simpa [semWithArgs, PositiveNormalization.intT] using h1
+    intro heq; injection heq with hbe; subst hbe
+    exact hb SafeIntegers.safeIntOfBits_pastSafe
+  | numLit b =>
+    simp only [clauseExcludesPastSafe, bne_iff_ne] at hc
+    have : v = .num b := by simpa [semWithArgs] using h1
+    subst this; intro heq; injection heq with hbe; exact hc hbe
+  | numIn bs =>
+    simp only [clauseExcludesPastSafe, List.all_eq_true, bne_iff_ne] at hc
+    obtain ⟨b, hb, rfl⟩ : ∃ b ∈ bs, v = .num b := by simpa [semWithArgs] using h1
+    intro heq; injection heq with hbe; exact hc b hb hbe
+  | _ =>
+    have hq := tagClause_sound (beq_iff_eq.mp (by simpa [clauseExcludesPastSafe] using hc)) h1
+    cases v <;> simp_all [tagHolds]
+
+theorem typeExcludesPastSafe_sound {G : NormalGraph ι} {A : Ty ι} {v : Val} {n : Nat} {W : WorldT n}
+    (hex : typeExcludesPastSafe G A = true) (hv : meaning G A n W v) : v ≠ .num SafeIntegers.pastSafeBits := by
+  simp only [typeExcludesPastSafe, Bool.and_eq_true, List.all_eq_true] at hex
+  obtain ⟨c, hcm, hsem⟩ := (expand_sem G A hex.1 n W v).mp hv
+  exact clauseExcludesPastSafe_sound (hex.2 c hcm) hsem
+
+/-- The finite list of safe integers a numeric literal or tag-set clause holds. -/
+def clauseFiniteInts : Clause (Ty ι) → Option (List Int)
+  | .numLit b => (SafeIntegers.safeIntOfBits b).map fun i => [i]
+  | .numIn bs => bs.mapM SafeIntegers.safeIntOfBits
+  | _ => none
+
+/-- The finite list of safe integers a plain type of numeric literals holds. -/
+@[nospecialize] def typeFiniteInts (G : NormalGraph ι) (A : Ty ι) : Option (List Int) :=
+  if G.plainTy A then ((expand G A).mapM clauseFiniteInts).map List.flatten else none
+
+private theorem mapM_safeIntOfBits_mem : ∀ {bs : List UInt64} {is : List Int} {b : UInt64},
+    bs.mapM SafeIntegers.safeIntOfBits = some is → b ∈ bs → ∃ i ∈ is, SafeIntegers.safeIntOfBits b = some i
+  | [], _, _, _, hb => by cases hb
+  | x :: xs, is, b, hm, hb => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨i, hi, rest, hrest, rfl⟩ := hm
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ⟨i, List.mem_cons_self, hi⟩
+    · obtain ⟨j, hj, hbj⟩ := mapM_safeIntOfBits_mem hrest hb
+      exact ⟨j, List.mem_cons_of_mem _ hj, hbj⟩
+
+private theorem mapM_clauseFiniteInts_mem : ∀ {cs : List (Clause (Ty ι))} {iss : List (List Int)} {c : Clause (Ty ι)},
+    cs.mapM clauseFiniteInts = some iss → c ∈ cs → ∃ is ∈ iss, clauseFiniteInts c = some is
+  | [], _, _, _, hc => by cases hc
+  | x :: xs, iss, c, hm, hc => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨is0, his0, rest, hrest, rfl⟩ := hm
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact ⟨is0, List.mem_cons_self, his0⟩
+    · obtain ⟨is', his', hci⟩ := mapM_clauseFiniteInts_mem hrest hc
+      exact ⟨is', List.mem_cons_of_mem _ his', hci⟩
+
+theorem typeFiniteInts_sound {G : NormalGraph ι} {A : Ty ι} {S : List Int} {v : Val} {n : Nat} {W : WorldT n}
+    (hf : typeFiniteInts G A = some S) (hv : meaning G A n W v) : ∃ i ∈ S, intValue v = some i := by
+  unfold typeFiniteInts at hf
+  split at hf
+  · rename_i hp
+    obtain ⟨iss, hiss, rfl⟩ := Option.map_eq_some_iff.mp hf
+    obtain ⟨c, hcm, hsem⟩ := (expand_sem G A hp n W v).mp hv
+    obtain ⟨is, his, hci⟩ := mapM_clauseFiniteInts_mem hiss hcm
+    cases c with
+    | numLit b =>
+      simp only [clauseFiniteInts, Option.map_eq_some_iff] at hci
+      obtain ⟨i, hi, rfl⟩ := hci
+      have : v = .num b := by simpa [semWithArgs] using hsem.1
+      subst this
+      exact ⟨i, List.mem_flatten.mpr ⟨[i], his, List.mem_singleton_self i⟩,
+        intValue_num (SafeIntegers.safeIntOfBits_sound hi)⟩
+    | numIn bs =>
+      simp only [clauseFiniteInts] at hci
+      obtain ⟨b, hb, rfl⟩ : ∃ b ∈ bs, v = .num b := by simpa [semWithArgs] using hsem.1
+      obtain ⟨i, hi, hbi⟩ := mapM_safeIntOfBits_mem hci hb
+      exact ⟨i, List.mem_flatten.mpr ⟨is, his, hi⟩,
+        intValue_num (SafeIntegers.safeIntOfBits_sound hbi)⟩
+    | _ => simp [clauseFiniteInts] at hci
+  · cases hf
+
+private theorem foldl_min_le : ∀ (l : List Int) (init x : Int), (x = init ∨ x ∈ l) → l.foldl min init ≤ x
+  | [], init, x, hx => by
+    rcases hx with rfl | hx
+    · exact Int.le_refl _
+    · cases hx
+  | y :: ys, init, x, hx => by
+    simp only [List.foldl_cons]
+    rcases hx with rfl | hx
+    · exact Int.le_trans (foldl_min_le ys (min x y) (min x y) (.inl rfl)) (Int.min_le_left x y)
+    · rcases List.mem_cons.mp hx with rfl | hx
+      · exact Int.le_trans (foldl_min_le ys (min init x) (min init x) (.inl rfl)) (Int.min_le_right init x)
+      · exact foldl_min_le ys (min init y) x (.inr hx)
+
+private theorem le_foldl_max : ∀ (l : List Int) (init x : Int), (x = init ∨ x ∈ l) → x ≤ l.foldl max init
+  | [], init, x, hx => by
+    rcases hx with rfl | hx
+    · exact Int.le_refl _
+    · cases hx
+  | y :: ys, init, x, hx => by
+    simp only [List.foldl_cons]
+    rcases hx with rfl | hx
+    · exact Int.le_trans (Int.le_max_left x y) (le_foldl_max ys (max x y) (max x y) (.inl rfl))
+    · rcases List.mem_cons.mp hx with rfl | hx
+      · exact Int.le_trans (Int.le_max_right init x) (le_foldl_max ys (max init x) (max init x) (.inl rfl))
+      · exact le_foldl_max ys (max init y) x (.inr hx)
+
+/-- Per-slot type facts extracted from `(G, Γ)` for refuting `.either` arms,
+factored out of `G` so graph reassignment checks stay definitional without
+unfolding linear or hash-set operations. -/
+structure TypeOracle where
+  excludesInt : Nat → Bool
+  excludesPastSafe : Nat → Bool
+  excludesGuard : Nat → GuardTag → Bool
+  finiteInts : Nat → Option (List Int)
+
+/-- Soundness of a `TypeOracle` at an environment `ρ`. -/
+structure TypeOracleOk (O : TypeOracle) (ρ : Env) : Prop where
+  int : ∀ s, O.excludesInt s = true → (intValue (ρ s)).isSome = false
+  pastSafe : ∀ s, O.excludesPastSafe s = true → ρ s ≠ .num SafeIntegers.pastSafeBits
+  guard : ∀ s tag, O.excludesGuard s tag = true → ¬ tag.holds (ρ s)
+  finite : ∀ s S, O.finiteInts s = some S → ∃ i ∈ S, intValue (ρ s) = some i
+
+@[nospecialize] def typeOracleOf (G : NormalGraph ι) (Γ : List (Ty ι)) : TypeOracle where
+  excludesInt s := (Γ[s]?).any (typeExcludesInt G)
+  excludesPastSafe s := (Γ[s]?).any (typeExcludesPastSafe G)
+  excludesGuard s tag := (Γ[s]?).any (typeExcludes G · tag)
+  finiteInts s := (Γ[s]?).bind (typeFiniteInts G)
+
+theorem typeOracleOf_ok {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat} {W : WorldT n}
+    (he : EnvOk G Γ ρ n W) : TypeOracleOk (typeOracleOf G Γ) ρ where
+  int s hs := by
+    simp only [typeOracleOf] at hs
+    cases hA : Γ[s]? with
+    | none => simp [hA] at hs
+    | some A => rw [hA, Option.any_some] at hs; exact typeExcludesInt_sound hs (he.2 s A hA)
+  pastSafe s hs := by
+    simp only [typeOracleOf] at hs
+    cases hA : Γ[s]? with
+    | none => simp [hA] at hs
+    | some A => rw [hA, Option.any_some] at hs; exact typeExcludesPastSafe_sound hs (he.2 s A hA)
+  guard s tag hs := by
+    simp only [typeOracleOf] at hs
+    cases hA : Γ[s]? with
+    | none => simp [hA] at hs
+    | some A => rw [hA, Option.any_some] at hs; exact typeExcludes_ne hs (he.2 s A hA)
+  finite s S hs := by
+    simp only [typeOracleOf] at hs
+    cases hA : Γ[s]? with
+    | none => simp [hA] at hs
+    | some A => rw [hA, Option.bind_some] at hs; exact typeFiniteInts_sound hs (he.2 s A hA)
+
+/-- Linear facts implied by finite safe-integer literal types in `O` for `slots`:
+bounds `lo ≤ s ≤ hi` (or `0 ≤ -1` when uninhabited), plus disequalities `s ≠ k`
+for each candidate value `k ∈ cands` excluded by `O.finiteInts s`. -/
+def typeLinearFacts (O : TypeOracle) (slots : List Nat) (cands : List Int) : List (Linear.Fact Term) :=
+  slots.flatMap fun s => match O.finiteInts s with
+    | none => []
+    | some [] => [.le [] (-1)]
+    | some (i0 :: rest) =>
+      let lo := rest.foldl min i0
+      let hi := rest.foldl max i0
+      let S := i0 :: rest
+      [.le [(.value s, 1)] hi, .le [(.value s, -1)] (-lo)] ++
+        cands.filterMap fun k => if !S.contains k then some (.ne [(.value s, 1)] k) else none
+
+theorem typeLinearFacts_holds {O : TypeOracle} {slots : List Nat} {cands : List Int}
+    {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) :
+    ∀ F ∈ typeLinearFacts O slots cands, F.Holds (termValuation ε ρ h) := by
+  intro F hF
+  obtain ⟨s, -, hF⟩ := List.mem_flatMap.mp hF
+  cases hS : O.finiteInts s with
+  | none => simp [hS] at hF
+  | some S =>
+    simp only [hS] at hF
+    obtain ⟨i, hi, hiv⟩ := hO.finite s S hS
+    cases S with
+    | nil => cases hi
+    | cons i0 rest =>
+      simp only at hF
+      have hval : termValuation ε ρ h (.value s) = i := by simp [termValuation, termValue_value, hiv]
+      rcases List.mem_append.mp hF with hF | hF
+      · simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+        rcases hF with rfl | rfl
+        · have hhi := le_foldl_max rest i0 i (List.mem_cons.mp hi)
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, hval]; omega
+        · have hlo := foldl_min_le rest i0 i (List.mem_cons.mp hi)
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, hval]; omega
+      · obtain ⟨k, -, hk⟩ := List.mem_filterMap.mp hF
+        split at hk
+        · rename_i hnot
+          simp only [Option.some.injEq] at hk; subst hk
+          have hne : i ≠ k := fun heq => by
+            subst heq
+            simp only [Bool.not_eq_true'] at hnot
+            exact Bool.false_ne_true (hnot ▸ List.contains_iff_mem.mpr hi)
+          show Linear.Form.eval _ _ ≠ _
+          simp only [Linear.Form.eval, hval]; omega
+        · cases hk
+
+/-- Whether a fact is contradicted by `K` or by the per-slot type oracle `O`. -/
+def contradictsInOracle (O : TypeOracle) (K : Linear.Known Term) : IndexFact → Bool
+  | .linear L =>
+    contradictsIn K (.linear L) ||
+    L.vars.any fun t =>
+      !t.atEntry && t.kind == .value && t.path.isEmpty && O.excludesInt t.slot
+  | .int s => O.excludesInt s
+  | .pastSafe s => O.excludesPastSafe s
+  | .guarded s [] tag B => O.excludesGuard s tag && contradictsInOracle O K B
+  | .either A B => contradictsInOracle O K A && contradictsInOracle O K B
+  | _ => false
+
+theorem contradictsInOracle_sound {O : TypeOracle} {K : Linear.Known Term} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hK : K.Holds (termValuation ε ρ h)) :
+    ∀ {F : IndexFact}, contradictsInOracle O K F = true → F.HoldsAt ε ρ h → False
+  | .linear L, hc, hF => by
+    simp only [contradictsInOracle, Bool.or_eq_true] at hc
+    rcases hc with hc | hc
+    · exact contradictsIn_sound hK hc hF
+    · obtain ⟨t, ht, hbad⟩ := List.any_eq_true.mp hc
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hbad
+      obtain ⟨⟨⟨hat, hkind⟩, hpath⟩, hty⟩ := hbad
+      have his := hF.1 t ht
+      have htv : termValue ε ρ h t = intValue (ρ t.slot) := by
+        obtain ⟨k, s, p, a⟩ := t
+        simp only at hat hkind hpath
+        subst hat; subst hkind; subst hpath
+        rfl
+      rw [htv, hO.int t.slot hty] at his
+      cases his
+  | .int s, hc, hF => by
+    simp only [contradictsInOracle] at hc
+    simp only [IndexFact.HoldsAt, hO.int s hc] at hF
+    cases hF
+  | .pastSafe s, hc, hF => by
+    simp only [contradictsInOracle] at hc
+    exact hO.pastSafe s hc hF
+  | .guarded s [] tag B, hc, hF => by
+    simp only [contradictsInOracle, Bool.and_eq_true] at hc
+    obtain ⟨v, hv, hor⟩ := hF
+    simp only [readGuard, Option.some.injEq] at hv
+    have hne : ¬ tag.holds v := hv ▸ hO.guard s tag hc.1
+    exact contradictsInOracle_sound hO hK hc.2 (hor.resolve_left hne)
+  | .either A B, hc, hF => by
+    simp only [contradictsInOracle, Bool.and_eq_true] at hc
+    rcases hF with hA | hB
+    · exact contradictsInOracle_sound hO hK hc.1 hA
+    · exact contradictsInOracle_sound hO hK hc.2 hB
+  | .guarded _ (_ :: _) _ _, hc, _ | .index _, hc, _ | .length _ _, hc, _ | .bound _ _ _, hc, _
+  | .element _ _ _, hc, _ | .fieldRead _ _ _, hc, _ | .every _ _ _ _ _, hc, _
+  | .atIndex _ _ _ _ _, hc, _ | .apart _ _ _ _, hc, _ | .spineApart _ _ _ _, hc, _
+  | .elemSpineApart _ _ _ _, hc, _ | .same _ _, hc, _ => by
+    simp [contradictsInOracle] at hc
+
+/-- Whether a conjunction of two or more linear arms contradicts `K`, checked
+over the facts of `K` connected to the arms' variables. -/
+def armsContradict (K : Linear.Known Term) (arms : List (Linear.Fact Term)) : Bool :=
+  match arms with
+  | [] | [_] => false
+  | _ =>
+    let near := Linear.relevantTo K.facts.toList (arms.flatMap Linear.Fact.vars)
+    Linear.entails (near ++ arms) (.le [] (-1))
+
+theorem armsContradict_sound {K : Linear.Known Term} {arms : List (Linear.Fact Term)} {v : Term → Int}
+    (hK : K.Holds v) (hc : armsContradict K arms = true) (ha : ∀ L ∈ arms, L.Holds v) : False := by
+  cases arms with
+  | nil => simp [armsContradict] at hc
+  | cons a rest =>
+    cases rest with
+    | nil => simp [armsContradict] at hc
+    | cons b more =>
+      simp only [armsContradict] at hc
+      have hbot := Linear.entails_sound hc (v := v) (fun F hF => by
+        rcases List.mem_append.mp hF with hF | hF
+        · exact hK F (Array.mem_toList_iff.mp (Linear.relevantTo_mem hF))
+        · exact ha F hF)
+      simp only [Linear.Fact.Holds, Linear.Form.eval] at hbot
+      omega
+
+/-- Whether a single-variable linear fact on bare slot `s` holds when `s` has value `val`. -/
+def singleVarHolds (s : Nat) (val : Int) : Linear.Fact Term → Bool
+  | .le [(t, c)] d => if !t.atEntry && t.kind == .value && t.path.isEmpty && t.slot == s then decide (c * val ≤ d) else true
+  | .ne [(t, c)] d => if !t.atEntry && t.kind == .value && t.path.isEmpty && t.slot == s then decide (c * val ≠ d) else true
+  | _ => true
+
+theorem singleVarHolds_sound {s : Nat} {val : Int} {L : Linear.Fact Term} {ρ : Env} {h : Heap}
+    (hv : intValue (ρ s) = some val) (hL : L.Holds (termValuation ε ρ h)) : singleVarHolds s val L = true := by
+  cases L with
+  | le f d =>
+    cases f with
+    | nil => rfl
+    | cons p rest =>
+      cases rest with
+      | cons _ _ => rfl
+      | nil =>
+        obtain ⟨t, c⟩ := p
+        simp only [singleVarHolds]
+        split
+        · rename_i ht
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at ht
+          obtain ⟨⟨⟨hat, hkind⟩, hpath⟩, hslot⟩ := ht
+          have htv : termValuation ε ρ h t = val := by
+            obtain ⟨k, s', p', a'⟩ := t
+            simp only at hat hkind hpath hslot
+            subst hat; subst hkind; subst hpath; subst hslot
+            show (intValue (ρ s')).getD 0 = val
+            simp [hv]
+          simp only [Linear.Fact.Holds, Linear.Form.eval, htv] at hL
+          simp only [decide_eq_true_eq]; omega
+        · rfl
+  | ne f d =>
+    cases f with
+    | nil => rfl
+    | cons p rest =>
+      cases rest with
+      | cons _ _ => rfl
+      | nil =>
+        obtain ⟨t, c⟩ := p
+        simp only [singleVarHolds]
+        split
+        · rename_i ht
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at ht
+          obtain ⟨⟨⟨hat, hkind⟩, hpath⟩, hslot⟩ := ht
+          have htv : termValuation ε ρ h t = val := by
+            obtain ⟨k, s', p', a'⟩ := t
+            simp only at hat hkind hpath hslot
+            subst hat; subst hkind; subst hpath; subst hslot
+            show (intValue (ρ s')).getD 0 = val
+            simp [hv]
+          simp only [Linear.Fact.Holds, Linear.Form.eval, htv] at hL
+          simp only [decide_eq_true_eq]; omega
+        · rfl
+
+/-- Whether some slot mentioned in `arms` has a finite safe-integer type in `O`
+none of whose members satisfies the single-slot linear constraints in `arms`. -/
+def finiteIntsContradict (O : TypeOracle) (arms : List (Linear.Fact Term)) : Bool :=
+  let slots := (arms.flatMap fun L => L.vars.filterMap fun t =>
+    if !t.atEntry && t.kind == .value && t.path.isEmpty then some t.slot else none).eraseDups
+  slots.any fun s => match O.finiteInts s with
+    | none => false
+    | some S => S.all fun val => !(arms.all (singleVarHolds s val))
+
+theorem finiteIntsContradict_sound {O : TypeOracle} {arms : List (Linear.Fact Term)}
+    {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) (hc : finiteIntsContradict O arms = true)
+    (ha : ∀ L ∈ arms, L.Holds (termValuation ε ρ h)) : False := by
+  unfold finiteIntsContradict at hc
+  obtain ⟨s, -, hs⟩ := List.any_eq_true.mp hc
+  cases hS : O.finiteInts s with
+  | none => simp [hS] at hs
+  | some S =>
+    simp only [hS] at hs
+    obtain ⟨val, hvalS, hval⟩ := hO.finite s S hS
+    have hbad := List.all_eq_true.mp hs val hvalS
+    have hgood : arms.all (singleVarHolds s val) = true :=
+      List.all_eq_true.mpr fun L hL => singleVarHolds_sound hval (ha L hL)
+    rw [hgood] at hbad; cases hbad
+
+/-- The `(target, linearArm)` pairs extracted from unconditional `.either` atoms. -/
+def eitherLinearPairs (eithers : List IndexAtom) : List (IndexFact × Linear.Fact Term) :=
+  eithers.flatMap fun a => match a with
+    | ⟨.either A B, none, _⟩ =>
+      (match A with | .linear L => [(B, L)] | _ => []) ++
+      (match B with | .linear L => [(A, L)] | _ => [])
+    | _ => []
+
+theorem eitherLinearPairs_holds {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as)
+    {P : IndexFact} {L : Linear.Fact Term} (hp : (P, L) ∈ eitherLinearPairs eithers)
+    (hnotP : ¬ P.HoldsAt ε ρ h) : L.Holds (termValuation ε ρ h) := by
+  obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp hp
+  cases b with
+  | mk bf bc bn =>
+    cases bc with
+    | some _ => cases bf <;> simp at hm
+    | none =>
+      cases bf with
+      | either A B =>
+        have hor := ha _ (hsub _ hb) (fun _ hc => by cases hc)
+        rcases List.mem_append.mp hm with hm | hm
+        · cases A with
+          | linear L' =>
+            simp only [List.mem_singleton, Prod.mk.injEq] at hm
+            obtain ⟨rfl, rfl⟩ := hm
+            exact (hor.resolve_right hnotP).2
+          | _ => cases hm
+        · cases B with
+          | linear L' =>
+            simp only [List.mem_singleton, Prod.mk.injEq] at hm
+            obtain ⟨rfl, rfl⟩ := hm
+            exact (hor.resolve_left hnotP).2
+          | _ => cases hm
+      | _ => simp at hm
+
+/-- Candidate integer values named by single-slot linear arms in `eithers`,
+for generating targeted disequalities from finite literal types in `Γ`. -/
+def eitherCandInts (eithers : List IndexAtom) : List Int :=
+  let ofFact : IndexFact → List Int
+    | .linear (.le [(t, c)] d) | .linear (.ne [(t, c)] d) =>
+      if !t.atEntry && t.kind == .value && t.path.isEmpty && c != 0 && d % c == 0 then [d / c] else []
+    | _ => []
+  (eithers.flatMap fun a => match a.fact with
+    | .either A B => ofFact A ++ ofFact B
     | _ => []).eraseDups
-  if linearArms.isEmpty then [] else
-  let contra := linearArms.filter (contradictsIn K)
+
+/-- Release every unconditional `.either` in `eithers` whose opposite arm lies in `contra`. -/
+private def releaseByContra (contra : List IndexFact) (eithers : List IndexAtom) : List IndexAtom :=
   if contra.isEmpty then [] else
   eithers.flatMap fun a => match a with
     | ⟨.either A B, none, _⟩ =>
@@ -9886,39 +10407,155 @@ def releaseEithersIn (K : Linear.Known Term) (eithers : List IndexAtom) : List I
       (if contra.contains A then [{ fact := B }] else [])
     | _ => []
 
+private theorem releaseByContra_holds {contra : List IndexFact} {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (hcontra : ∀ F ∈ contra, ¬ F.HoldsAt ε ρ h) (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
+    IndexHolds ε (releaseByContra contra eithers) ρ h := by
+  intro a hm _
+  unfold releaseByContra at hm
+  split at hm
+  · cases hm
+  · obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp hm
+    cases b with
+    | mk bf bc bn =>
+      cases bc with
+      | some _ => cases bf <;> simp at hm
+      | none =>
+        cases bf with
+        | either A B =>
+          have hor := ha _ (hsub _ hb) (fun _ hc => by cases hc)
+          rcases List.mem_append.mp hm with hm | hm
+          · split at hm
+            · rename_i hc
+              simp only [List.mem_singleton] at hm; subst hm
+              exact hor.resolve_right (hcontra B (List.contains_iff_mem.mp hc))
+            · cases hm
+          · split at hm
+            · rename_i hc
+              simp only [List.mem_singleton] at hm; subst hm
+              exact hor.resolve_left (hcontra A (List.contains_iff_mem.mp hc))
+            · cases hm
+        | _ => simp at hm
+
+/-- Release every surviving arm `P` not already in `skip` whose linear opposite
+arms in `eithers` jointly satisfy `refutes`. -/
+private def releaseGrouped (skip : List IndexAtom) (refutes : List (Linear.Fact Term) → Bool)
+    (eithers : List IndexAtom) : List IndexAtom :=
+  let pairs := eitherLinearPairs eithers
+  let targets := (pairs.map Prod.fst).eraseDups
+  targets.filterMap fun P =>
+    if skip.any (fun a => a.fact == P) then none else
+    let arms := pairs.filterMap fun (Q, L) => if Q == P then some L else none
+    if refutes arms then some { fact := P } else none
+
+private theorem releaseGrouped_holds {skip : List IndexAtom} {refutes : List (Linear.Fact Term) → Bool}
+    {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (href : ∀ arms, refutes arms = true → (∀ L ∈ arms, L.Holds (termValuation ε ρ h)) → False)
+    (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
+    IndexHolds ε (releaseGrouped skip refutes eithers) ρ h := by
+  intro a hm _
+  unfold releaseGrouped at hm
+  dsimp only at hm
+  obtain ⟨P, -, hm⟩ := List.mem_filterMap.mp hm
+  split at hm
+  · cases hm
+  · split at hm
+    · rename_i hct
+      simp only [Option.some.injEq] at hm; subst hm
+      exact Classical.byContradiction fun hnotP =>
+        href _ hct fun L hL => by
+          obtain ⟨⟨Q, L'⟩, hqp, hfm⟩ := List.mem_filterMap.mp hL
+          split at hfm
+          · rename_i hq
+            simp only [beq_iff_eq] at hq; subst hq
+            simp only [Option.some.injEq] at hfm; subst hfm
+            exact eitherLinearPairs_holds ha hsub hqp hnotP
+          · cases hfm
+    · cases hm
+
+/-- Release every unconditional `.either` in `eithers` whose opposite linear arm
+(or conjunction of linear opposite arms sharing the same surviving arm) is
+contradicted by `K`. -/
+def releaseEithersIn (K : Linear.Known Term) (eithers : List IndexAtom) : List IndexAtom :=
+  let linearArms := (eithers.flatMap fun a => match a.fact with
+    | .either A B =>
+      (match A with | .linear _ => [A] | _ => []) ++
+      (match B with | .linear _ => [B] | _ => [])
+    | _ => []).eraseDups
+  let contra := if linearArms.isEmpty then [] else linearArms.filter (contradictsIn K)
+  let single := releaseByContra contra eithers
+  single ++ releaseGrouped single (armsContradict K) eithers
+
 theorem releaseEithersIn_holds {K : Linear.Known Term} {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
     (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
     IndexHolds ε (releaseEithersIn K eithers) ρ h := by
-  unfold releaseEithersIn
+  intro a hm hc
+  unfold releaseEithersIn at hm
+  dsimp only at hm
+  rcases List.mem_append.mp hm with hm | hm
+  · refine releaseByContra_holds (fun F hF => ?_) ha hsub a hm hc
+    split at hF
+    · cases hF
+    · exact fun hhold => contradictsIn_sound hK (List.mem_filter.mp hF).2 hhold
+  · exact releaseGrouped_holds (fun _ hct harms => armsContradict_sound hK hct harms) ha hsub a hm hc
+
+/-- Linear knowledge augmented with finite literal-type bounds and disequalities
+from `O` over the slots relevant to `eithers` and `K`. -/
+def withTypeLinear (O : TypeOracle) (K : Linear.Known Term) (eithers : List IndexAtom) : Linear.Known Term :=
+  let eSlots := (eithers.flatMap fun a => a.fact.slots).eraseDups
+  let kSlots := (K.facts.toList.flatMap fun F => F.vars.filterMap fun t =>
+    if !t.atEntry && t.kind == .value && t.path.isEmpty then some t.slot else none).eraseDups
+  let slots := (eSlots ++ kSlots).eraseDups
+  let singletons := slots.filterMap fun s => match O.finiteInts s with
+    | some [i] => some i
+    | _ => none
+  let cands := (eitherCandInts eithers ++ singletons).eraseDups
+  let tFacts := typeLinearFacts O slots cands
+  if tFacts.isEmpty then K else tFacts.foldl Linear.Known.add K
+
+theorem withTypeLinear_holds {O : TypeOracle} {K : Linear.Known Term}
+    {eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hK : K.Holds (termValuation ε ρ h)) :
+    (withTypeLinear O K eithers).Holds (termValuation ε ρ h) := by
+  unfold withTypeLinear
   dsimp only
   split
-  · intro _ hm; cases hm
-  · split
-    · intro _ hm; cases hm
-    · intro a hm _
-      obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp hm
-      cases b with
-      | mk bf bc bn =>
-        cases bc with
-        | some _ => cases bf <;> simp at hm
-        | none =>
-          cases bf with
-          | either A B =>
-            have hor := ha _ (hsub _ hb) (fun _ hc => by cases hc)
-            rcases List.mem_append.mp hm with hm | hm
-            · split at hm
-              · rename_i hc
-                simp only [List.mem_singleton] at hm; subst hm
-                have hct := (List.mem_filter.mp (List.contains_iff_mem.mp hc)).2
-                exact hor.resolve_right (fun hB => contradictsIn_sound hK hct hB)
-              · cases hm
-            · split at hm
-              · rename_i hc
-                simp only [List.mem_singleton] at hm; subst hm
-                have hct := (List.mem_filter.mp (List.contains_iff_mem.mp hc)).2
-                exact hor.resolve_left (fun hA => contradictsIn_sound hK hct hA)
-              · cases hm
-          | _ => simp at hm
+  · exact hK
+  · intro F hF
+    rcases Linear.Known.mem_foldl_add hF with hF | hF
+    · exact hK F hF
+    · exact typeLinearFacts_holds hO F hF
+
+/-- Release every unconditional `.either` in `eithers` whose opposite arm (or
+conjunction of linear opposite arms sharing the same surviving arm) is
+contradicted by `K` together with the type oracle `O`. -/
+def releaseEithersInOracle (O : TypeOracle) (K : Linear.Known Term) (eithers : List IndexAtom) : List IndexAtom :=
+  let Kt := withTypeLinear O K eithers
+  let arms := (eithers.flatMap fun a => match a.fact with
+    | .either A B => [A, B]
+    | _ => []).eraseDups
+  let contra := if arms.isEmpty then [] else arms.filter (contradictsInOracle O Kt)
+  let single := releaseByContra contra eithers
+  single ++ releaseGrouped single (fun pArms => armsContradict Kt pArms || finiteIntsContradict O pArms) eithers
+
+theorem releaseEithersInOracle_holds {O : TypeOracle} {K : Linear.Known Term}
+    {as eithers : List IndexAtom} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hK : K.Holds (termValuation ε ρ h))
+    (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ eithers, b ∈ as) :
+    IndexHolds ε (releaseEithersInOracle O K eithers) ρ h := by
+  intro a hm hc
+  unfold releaseEithersInOracle at hm
+  dsimp only at hm
+  have hKt := withTypeLinear_holds (eithers := eithers) hO hK
+  generalize withTypeLinear O K eithers = Kt at hKt hm
+  rcases List.mem_append.mp hm with hm | hm
+  · refine releaseByContra_holds (fun F hF => ?_) ha hsub a hm hc
+    split at hF
+    · cases hF
+    · exact fun hhold => contradictsInOracle_sound hO hKt (List.mem_filter.mp hF).2 hhold
+  · refine releaseGrouped_holds (fun _ hct harms => ?_) ha hsub a hm hc
+    rcases Bool.or_eq_true_iff.mp hct with hct | hct
+    · exact armsContradict_sound hKt hct harms
+    · exact finiteIntsContradict_sound hO hct harms
 
 def releaseEithersStep (k : Knowledge) : Knowledge :=
   let kSet := Std.HashSet.ofList k.indices
@@ -9968,12 +10605,111 @@ theorem releaseEithersStep_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Hol
         · exact elementInstances_holds hk1
         · exact hk1
 
+/-- Release every unconditional `.either` in `k` whose opposite arm (or
+conjunction of linear opposite arms sharing the same surviving arm) is
+contradicted by `k`'s linear facts together with the type oracle `O`. -/
+def releaseEithersStepOracle (O : TypeOracle) (k : Knowledge) : Knowledge :=
+  if !k.indices.any (fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false) then k else
+  let kSet := Std.HashSet.ofList k.indices
+  let eithers := k.indices.filter fun a => a.cond.isNone && match a.fact with
+    | .either A B => !kSet.contains { fact := A } && !kSet.contains { fact := B }
+    | _ => false
+  if eithers.isEmpty then k else
+  let K := Linear.Known.build (linearRaw k.indices) []
+  let released := releaseEithersInOracle O K eithers
+  if released.isEmpty then k else
+  let lowered := dedupNew kSet (released ++ lowerAtoms k.links released)
+  if lowered.isEmpty then k else
+  let k1 := { k with indices := k.indices ++ lowered }
+  if lowered.any (fun a => a.cond.isNone && match a.fact with | .atIndex .. | .every .. => true | _ => false) then
+    elementInstances k1
+  else k1
+
+theorem releaseEithersStepOracle_holds {O : TypeOracle} {k : Knowledge}
+    {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
+    Holds (releaseEithersStepOracle O k) ε ρ h := by
+  unfold releaseEithersStepOracle
+  split
+  · exact hk
+  · dsimp only
+    split
+    · exact hk
+    · have hrel : IndexHolds ε (releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) [])
+          (k.indices.filter fun a => a.cond.isNone && match a.fact with
+            | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
+            | _ => false)) ρ h :=
+        releaseEithersInOracle_holds hO (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp))
+          hk.2.2.2.2.2 fun _ hb => (List.mem_filter.mp hb).1
+      generalize releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) [])
+          (k.indices.filter fun a => a.cond.isNone && match a.fact with
+            | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
+            | _ => false) = released at hrel ⊢
+      split
+      · exact hk
+      · split
+        · exact hk
+        · have hk1 : Holds { k with indices := k.indices ++ dedupNew (Std.HashSet.ofList k.indices) (released ++ lowerAtoms k.links released) } ε ρ h := by
+            refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+            rcases List.mem_append.mp ha with ha | ha
+            · exact hk.2.2.2.2.2 a ha hc
+            · have ha' := dedupNew_sub ha
+              rcases List.mem_append.mp ha' with ha' | ha'
+              · exact hrel a ha' hc
+              · exact lowerAtoms_holds hk.2.2.1 hrel a ha' hc
+          split
+          · exact elementInstances_holds hk1
+          · exact hk1
+
+@[nospecialize] def releaseEithersStepTyped (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Knowledge :=
+  releaseEithersStepOracle (typeOracleOf G Γ) k
+
+theorem releaseEithersStepTyped_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) :
+    Holds (releaseEithersStepTyped G Γ k) ε ρ h :=
+  releaseEithersStepOracle_holds (typeOracleOf_ok he) hk
+
+/-- Knowledge with every unconditional guarded fact whose guard slot's type
+in `Γ` excludes the guard tag released, and every unconditional `.either`
+whose opposite arm is contradicted by `Γ` and linear facts released. -/
+@[nospecialize] def unguardedByTypes (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Knowledge :=
+  let k1 :=
+    if !k.indices.any (fun a => a.cond.isNone && match a.fact with | .guarded _ [] _ _ => true | _ => false) then k else
+    let u := (k.indices.flatMap (releaseTypedGuarded G Γ)).eraseDups.filter (!k.indices.contains ·)
+    if u.isEmpty then k else { k with indices := k.indices ++ u }
+  releaseEithersStepTyped G Γ k1
+
+theorem unguardedByTypes_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) : Holds (unguardedByTypes G Γ k) ε ρ h := by
+  unfold unguardedByTypes
+  refine releaseEithersStepTyped_holds he ?_
+  dsimp only
+  split
+  · exact hk
+  · split
+    · exact hk
+    · refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+      rcases List.mem_append.mp ha with ha | ha
+      · exact hk.2.2.2.2.2 a ha hc
+      · have ha' := List.mem_eraseDups.mp (List.mem_filter.mp ha).1
+        obtain ⟨b, hb, hm⟩ := List.mem_flatMap.mp ha'
+        cases hbc : b.cond with
+        | none => exact releaseTypedGuarded_holds he b hbc (hk.2.2.2.2.2 b hb (by rw [hbc]; intro _ hc'; cases hc')) a hm hc
+        | some _ => cases b with | mk bf bc bn => simp only at hbc; subst hbc; cases bf <;> simp [releaseTypedGuarded] at hm
+
 def withElements (k : Knowledge) : Knowledge :=
   releaseEithersStep (unguardedInstances (elementInstances k))
 
 theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
     Holds (withElements k) ε ρ h :=
   releaseEithersStep_holds (unguardedInstances_holds (elementInstances_holds hk))
+
+def withElementsOracle (O : TypeOracle) (k : Knowledge) : Knowledge :=
+  releaseEithersStepOracle O (unguardedInstances (elementInstances k))
+
+theorem withElementsOracle_holds {O : TypeOracle} {k : Knowledge}
+    {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
+    Holds (withElementsOracle O k) ε ρ h :=
+  releaseEithersStepOracle_holds hO (unguardedInstances_holds (elementInstances_holds hk))
 
 /-- Incremental element instantiation and either-release when `k` extends a
 knowledge whose index/link counts were `baseIndices` and `baseLinks`. -/
@@ -10019,5 +10755,53 @@ theorem withElementsAfter_holds {baseIndices baseLinks : Nat} {k : Knowledge} {�
       split
       · exact releaseEithersStep_holds hk1
       · exact hk1
+
+/-- Incremental element instantiation and typed either-release when `k` extends
+a knowledge whose index/link counts were `baseIndices` and `baseLinks`. -/
+def withElementsAfterOracle (O : TypeOracle) (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
+  if k.links.length > baseLinks then withElementsOracle O k
+  else
+    let k := unguardedInstances k
+    if k.indices.length ≤ baseIndices then releaseEithersStepOracle O k
+    else
+      let added := k.indices.drop baseIndices
+      let hasLin := added.any fun a => a.cond.isNone && match a.fact with
+        | .linear .. | .length .. | .bound .. | .int .. => true | _ => false
+      let hasElem := added.any fun a => a.cond.isNone && match a.fact with
+        | .element .. | .every .. | .atIndex .. => true | _ => false
+      let k1 := if hasLin || hasElem then unguardedInstances (elementInstances k) else k
+      releaseEithersStepOracle O k1
+
+theorem withElementsAfterOracle_holds {O : TypeOracle}
+    {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
+    Holds (withElementsAfterOracle O baseIndices baseLinks k) ε ρ h := by
+  unfold withElementsAfterOracle
+  split
+  · exact withElementsOracle_holds hO hk
+  · have hku := unguardedInstances_holds hk
+    generalize unguardedInstances k = ku at hku ⊢
+    dsimp only
+    split
+    · exact releaseEithersStepOracle_holds hO hku
+    · have hk1 : Holds (if ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+            | .linear .. | .length .. | .bound .. | .int .. => true | _ => false) ||
+          ((ku.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+            | .element .. | .every .. | .atIndex .. => true | _ => false)
+        then unguardedInstances (elementInstances ku) else ku) ε ρ h := by
+        split
+        · exact unguardedInstances_holds (elementInstances_holds hku)
+        · exact hku
+      exact releaseEithersStepOracle_holds hO hk1
+
+@[nospecialize] def withElementsAfterTyped (G : NormalGraph ι) (Γ : List (Ty ι))
+    (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
+  withElementsAfterOracle (typeOracleOf G Γ) baseIndices baseLinks k
+
+theorem withElementsAfterTyped_holds {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {baseIndices baseLinks : Nat} {k : Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) :
+    Holds (withElementsAfterTyped G Γ baseIndices baseLinks k) ε ρ h :=
+  withElementsAfterOracle_holds (typeOracleOf_ok he) hk
 
 end Verification.HeapKnowledge

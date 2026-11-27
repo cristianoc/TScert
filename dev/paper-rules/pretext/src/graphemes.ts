@@ -68,11 +68,11 @@ export function isBidiControl(cp: number): Effects<{}, boolean> {   // PAPER: an
 export function findGraphemeEnds(table: GraphemeTable, text: string, start: number, end: number, ends: Int32Array | null): Effects<{ "@state": "any"; "ends[*]": "grow"; "ends[#]": "any" }, number> {   // PAPER: annotation
   const { rules, transitions, skipped } = graphemeRules[table] ?? (graphemeRules[table] = parseGraphemeRules(table))
   const catCount = rules.catCount
-  if (start >= end) return 0   // PAPER: workaround (disequality-disjunct): verifier does not refute `state === 1` disjunct from `state !== START_STATE` after loop, so empty range must exit before loop
   let state = START_STATE
   let count = 0
-  /** @invariant safeInteger(start) && safeInteger(end) && safeInteger(i) && safeInteger(count) && 0 <= start && start <= i && i <= end && end <= text.length && 0 <= count && count <= i - start
-   *  @invariant i <= start || count < i - start */
+  /** @invariant safeInteger(start) && safeInteger(end) && safeInteger(i) && safeInteger(count) && safeInteger(state) && 0 <= start && start <= i && i <= end && end <= text.length && 0 <= count && count <= i - start
+   *  @invariant i <= start || count < i - start
+   *  @invariant state === 1 || count < i - start */
   for (let i = start; i < end;) {
     let c = text.charCodeAt(i)
     let next = i + 1

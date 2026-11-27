@@ -2373,19 +2373,21 @@ def bitMaskAtoms (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .arith .bitAnd a b =>
     if operandIn Γ a && operandIn Γ b then
       let masks := masksOf k.indices
-      (match a, operandConst k b with
+      ⟨.int 0, none, false⟩ ::
+      ((match a, operandConst k b with
        | .var x, some c => bitAndSideAtoms masks x c
        | _, _ => []) ++
       (match operandConst k a, b with
        | some c, .var y => bitAndSideAtoms masks y c
-       | _, _ => [])
+       | _, _ => []))
     else []
   | .arith .bitOr a b =>
     if operandIn Γ a && operandIn Γ b then
       let masks := masksOf k.indices
-      bitOrBoundAtoms k a b ++
+      ⟨.int 0, none, false⟩ ::
+      (bitOrBoundAtoms k a b ++
       (match a with | .var x => bitOrSideAtoms k masks x b | _ => []) ++
-      (match b with | .var y => bitOrSideAtoms k masks y a | _ => [])
+      (match b with | .var y => bitOrSideAtoms k masks y a | _ => []))
     else []
   | _ => []
 
@@ -2450,37 +2452,38 @@ private theorem bitAndSideAtoms_holds {masks : List Nat} {x : Nat} {c : Int}
         exact termEqAtoms_holds hbm_0 hbm_x atom hma hcd
     · exact indexHolds_nil _ _
 
+private theorem intOr_int32 {a b : Int} (h1 : -2 ^ 31 ≤ a ∧ a < 2 ^ 31) (h2 : -2 ^ 31 ≤ b ∧ b < 2 ^ 31) :
+    -2 ^ 31 ≤ intOr a b ∧ intOr a b < 2 ^ 31 := by
+  cases a with
+  | ofNat x =>
+    have hx : x < 2 ^ 31 := Int.ofNat_lt.mp h1.2
+    cases b with
+    | ofNat y =>
+      have hy : y < 2 ^ 31 := Int.ofNat_lt.mp h2.2
+      have := Nat.or_lt_two_pow hx hy
+      simp only [intOr, Int.ofNat_eq_natCast]; omega
+    | negSucc y =>
+      have hy : y < 2 ^ 31 := by omega
+      have : y ^^^ (x &&& y) < 2 ^ 31 :=
+        Nat.xor_lt_two_pow hy (Nat.lt_of_le_of_lt Nat.and_le_right hy)
+      simp only [intOr]; omega
+  | negSucc x =>
+    have hx : x < 2 ^ 31 := by omega
+    cases b with
+    | ofNat y =>
+      have : x ^^^ (x &&& y) < 2 ^ 31 :=
+        Nat.xor_lt_two_pow hx (Nat.lt_of_le_of_lt Nat.and_le_left hx)
+      simp only [intOr]; omega
+    | negSucc y =>
+      have : x &&& y < 2 ^ 31 := Nat.lt_of_le_of_lt Nat.and_le_left hx
+      simp only [intOr]; omega
+
 private theorem bitOrSideAtoms_holds {k : Knowledge} {masks : List Nat} {x : Nat} {other : Tm}
     {bx by_ : UInt64} {ρ : Env} {h : Heap}
     (hk : Holds k ε ρ h) (hmasks : ∀ m ∈ masks, m < 2 ^ 31)
     (hx : ρ x = .num bx) (ho : instantiate 0 ρ other = .num by_) :
     IndexHolds ε (bitOrSideAtoms k masks x other) (push (.num (arithBits .bitOr bx by_)) ρ) h := by
-  have h1 := SafeIntegers.toInt32_range bx
-  have h2 := SafeIntegers.toInt32_range by_
-  have hr_or : -2 ^ 31 ≤ intOr (toInt32 bx) (toInt32 by_) ∧ intOr (toInt32 bx) (toInt32 by_) < 2 ^ 31 := by
-    cases hx32 : toInt32 bx with
-    | ofNat a =>
-      have ha : a < 2 ^ 31 := Int.ofNat_lt.mp (by simpa [hx32] using h1.2)
-      cases hy32 : toInt32 by_ with
-      | ofNat b =>
-        have hb : b < 2 ^ 31 := Int.ofNat_lt.mp (by simpa [hy32] using h2.2)
-        have := Nat.or_lt_two_pow ha hb
-        simp only [intOr, Int.ofNat_eq_natCast]; omega
-      | negSucc b =>
-        have hb : b < 2 ^ 31 := by rw [hy32] at h2; omega
-        have : b ^^^ (a &&& b) < 2 ^ 31 :=
-          Nat.xor_lt_two_pow hb (Nat.lt_of_le_of_lt Nat.and_le_right hb)
-        simp only [intOr]; omega
-    | negSucc a =>
-      have ha : a < 2 ^ 31 := by rw [hx32] at h1; omega
-      cases hy32 : toInt32 by_ with
-      | ofNat b =>
-        have : a ^^^ (a &&& b) < 2 ^ 31 :=
-          Nat.xor_lt_two_pow ha (Nat.lt_of_le_of_lt Nat.and_le_left ha)
-        simp only [intOr]; omega
-      | negSucc b =>
-        have : a &&& b < 2 ^ 31 := Nat.lt_of_le_of_lt Nat.and_le_left ha
-        simp only [intOr]; omega
+  have hr_or := intOr_int32 (SafeIntegers.toInt32_range bx) (SafeIntegers.toInt32_range by_)
   have hsafe_u : SafeIntegers.SafeInt (arithBits .bitOr bx by_) (intOr (toInt32 bx) (toInt32 by_)) := by
     simp only [arithBits]
     exact SafeIntegers.safeInt_int32Bits (by omega)
@@ -2654,32 +2657,38 @@ theorem bitMaskAtoms_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
           (arith_run (operandIn_value hval hin.1) (operandIn_value hval hin.2) hs)
         obtain ⟨-, rfl, hu⟩ := hq
         obtain ⟨bx, by_, hbx, hby, rfl⟩ := binop_bitAnd hu
-        refine indexHolds_cat ?_ ?_
-        · cases a with
-          | var x =>
-            cases hoc : operandConst k b with
+        intro atom hma hcd
+        rcases List.mem_cons.mp hma with rfl | hma
+        · have hr := ArithmeticRules.intAnd_int32 (SafeIntegers.toInt32_range bx) (SafeIntegers.toInt32_range by_)
+          have hsafe : SafeIntegers.SafeInt (arithBits .bitAnd bx by_) (intAnd (toInt32 bx) (toInt32 by_)) := by
+            simp only [arithBits]; exact SafeIntegers.safeInt_int32Bits (by omega)
+          simp [IndexFact.HoldsAt, push, intValue_num hsafe]
+        · refine (indexHolds_cat ?_ ?_) atom hma hcd
+          · cases a with
+            | var x =>
+              cases hoc : operandConst k b with
+              | none => exact indexHolds_nil _ _
+              | some c =>
+                obtain ⟨bc, hbc, hsc⟩ := operandConst_sound hoc hk
+                rw [hby] at hbc; cases hbc
+                exact bitAndSideAtoms_holds (fun _ h => masksOf_lt h) (by simpa [instantiate] using hbx) hsc
+            | _ => exact indexHolds_nil _ _
+          · cases hoc : operandConst k a with
             | none => exact indexHolds_nil _ _
             | some c =>
-              obtain ⟨bc, hbc, hsc⟩ := operandConst_sound hoc hk
-              rw [hby] at hbc; cases hbc
-              exact bitAndSideAtoms_holds (fun _ h => masksOf_lt h) (by simpa [instantiate] using hbx) hsc
-          | _ => exact indexHolds_nil _ _
-        · cases hoc : operandConst k a with
-          | none => exact indexHolds_nil _ _
-          | some c =>
-            cases b with
-            | var y =>
-              obtain ⟨bc, hbc, hsc⟩ := operandConst_sound hoc hk
-              rw [hbx] at hbc; cases hbc
-              have hcomm : arithBits .bitAnd bx by_ = arithBits .bitAnd by_ bx := by
-                simp only [arithBits]
-                have hcb : intAnd (toInt32 bx) (toInt32 by_) = intAnd (toInt32 by_) (toInt32 bx) := by
-                  cases toInt32 bx <;> cases toInt32 by_ <;>
-                    simp [intAnd, Nat.and_comm, Nat.or_comm]
-                rw [hcb]
-              rw [hcomm]
-              exact bitAndSideAtoms_holds (fun _ h => masksOf_lt h) (by simpa [instantiate] using hby) hsc
-            | _ => exact indexHolds_nil _ _
+              cases b with
+              | var y =>
+                obtain ⟨bc, hbc, hsc⟩ := operandConst_sound hoc hk
+                rw [hbx] at hbc; cases hbc
+                have hcomm : arithBits .bitAnd bx by_ = arithBits .bitAnd by_ bx := by
+                  simp only [arithBits]
+                  have hcb : intAnd (toInt32 bx) (toInt32 by_) = intAnd (toInt32 by_) (toInt32 bx) := by
+                    cases toInt32 bx <;> cases toInt32 by_ <;>
+                      simp [intAnd, Nat.and_comm, Nat.or_comm]
+                  rw [hcb]
+                rw [hcomm]
+                exact bitAndSideAtoms_holds (fun _ h => masksOf_lt h) (by simpa [instantiate] using hby) hsc
+              | _ => exact indexHolds_nil _ _
       · exact none_case
     | bitOr =>
       simp only [bitMaskAtoms]
@@ -2691,22 +2700,28 @@ theorem bitMaskAtoms_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
           (arith_run (operandIn_value hval hin.1) (operandIn_value hval hin.2) hs)
         obtain ⟨-, rfl, hu⟩ := hq
         obtain ⟨bx, by_, hbx, hby, rfl⟩ := binop_bitOr hu
-        refine indexHolds_cat (indexHolds_cat (bitOrBoundAtoms_holds hk hbx hby) ?_) ?_
-        · cases a with
-          | var x =>
-            exact bitOrSideAtoms_holds hk (fun _ h => masksOf_lt h) (by simpa [instantiate] using hbx) hby
-          | _ => exact indexHolds_nil _ _
-        · cases b with
-          | var y =>
-            have hcomm : arithBits .bitOr bx by_ = arithBits .bitOr by_ bx := by
-              simp only [arithBits]
-              have hcb : intOr (toInt32 bx) (toInt32 by_) = intOr (toInt32 by_) (toInt32 bx) := by
-                cases toInt32 bx <;> cases toInt32 by_ <;>
-                  simp [intOr, Nat.and_comm, Nat.or_comm]
-              rw [hcb]
-            rw [hcomm]
-            exact bitOrSideAtoms_holds hk (fun _ h => masksOf_lt h) (by simpa [instantiate] using hby) hbx
-          | _ => exact indexHolds_nil _ _
+        intro atom hma hcd
+        rcases List.mem_cons.mp hma with rfl | hma
+        · have hr := intOr_int32 (SafeIntegers.toInt32_range bx) (SafeIntegers.toInt32_range by_)
+          have hsafe : SafeIntegers.SafeInt (arithBits .bitOr bx by_) (intOr (toInt32 bx) (toInt32 by_)) := by
+            simp only [arithBits]; exact SafeIntegers.safeInt_int32Bits (by omega)
+          simp [IndexFact.HoldsAt, push, intValue_num hsafe]
+        · refine (indexHolds_cat (indexHolds_cat (bitOrBoundAtoms_holds hk hbx hby) ?_) ?_) atom hma hcd
+          · cases a with
+            | var x =>
+              exact bitOrSideAtoms_holds hk (fun _ h => masksOf_lt h) (by simpa [instantiate] using hbx) hby
+            | _ => exact indexHolds_nil _ _
+          · cases b with
+            | var y =>
+              have hcomm : arithBits .bitOr bx by_ = arithBits .bitOr by_ bx := by
+                simp only [arithBits]
+                have hcb : intOr (toInt32 bx) (toInt32 by_) = intOr (toInt32 by_) (toInt32 bx) := by
+                  cases toInt32 bx <;> cases toInt32 by_ <;>
+                    simp [intOr, Nat.and_comm, Nat.or_comm]
+                rw [hcb]
+              rw [hcomm]
+              exact bitOrSideAtoms_holds hk (fun _ h => masksOf_lt h) (by simpa [instantiate] using hby) hbx
+            | _ => exact indexHolds_nil _ _
       · exact none_case
     | _ => exact none_case
   | _ => exact none_case

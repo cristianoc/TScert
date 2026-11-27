@@ -409,13 +409,69 @@ theorem releasePast_named {as : List IndexAtom} {b : IndexAtom} (hb : b ∈ rele
     · cases hm
   · cases hm
 
+theorem eliminateEithers_named {D : List Nat} {as : List IndexAtom} {b : IndexAtom} (hb : b ∈ eliminateEithers D as)
+    {x : Nat} (hx : x ∈ (Atom.index b).names) : NamedIn as x := by
+  unfold eliminateEithers at hb
+  dsimp only at hb
+  split at hb
+  · cases hb
+  · obtain ⟨a, ha, hm⟩ := List.mem_flatMap.mp hb
+    cases a with
+    | mk af ac an =>
+      cases ac with
+      | some _ => cases af <;> simp at hm
+      | none =>
+        cases af with
+        | either A B =>
+          rcases List.mem_append.mp hm with hm | hm
+          · cases A with
+            | linear F =>
+              simp only at hm
+              split at hm
+              · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hm
+                split at hG
+                · cases hG
+                · obtain ⟨-, hGk⟩ := List.mem_filter.mp hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hGk
+                  simp only [Atom.names, IndexFact.slots, Option.toList_none, List.append_nil, List.mem_append,
+                    List.mem_flatMap] at hx
+                  rcases hx with ⟨t, ht, hxt⟩ | hxB
+                  · exact termDefined_named (hGk.2 t ht).2 x hxt
+                  · exact namedIn_of_slots ha (by simp [IndexFact.slots, hxB])
+              · cases hm
+            | _ => cases hm
+          · cases B with
+            | linear F =>
+              simp only at hm
+              split at hm
+              · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hm
+                split at hG
+                · cases hG
+                · obtain ⟨-, hGk⟩ := List.mem_filter.mp hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hGk
+                  simp only [Atom.names, IndexFact.slots, Option.toList_none, List.append_nil, List.mem_append,
+                    List.mem_flatMap] at hx
+                  rcases hx with hxA | ⟨t, ht, hxt⟩
+                  · exact namedIn_of_slots ha (by simp [IndexFact.slots, hxA])
+                  · exact termDefined_named (hGk.2 t ht).2 x hxt
+              · cases hm
+            | _ => cases hm
+        | _ => simp at hm
+
 /-- **The elimination names what its input names** (`eliminateIndices`). -/
 theorem eliminateIndices_named {D : List Nat} {as : List IndexAtom} {b : IndexAtom} (hb : b ∈ eliminateIndices D as)
     {x : Nat} (hx : x ∈ (Atom.index b).names) : NamedIn as x := by
-  rcases namedIn_append.mp (eliminateLinear_named hb hx) with h | ⟨a, ha, hx⟩
+  unfold eliminateIndices at hb
+  dsimp only at hb
+  have hbase : NamedIn (as ++ if D.any (fun d => as.any fun a => a.fact == .pastSafe d ||
+      match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else []) x := by
+    rcases List.mem_append.mp hb with hb | hb
+    · exact eliminateLinear_named hb hx
+    · exact eliminateEithers_named hb hx
+  rcases namedIn_append.mp hbase with h | ⟨a, ha, hxa⟩
   · exact h
   · split at ha
-    · exact releasePast_named ha hx
+    · exact releasePast_named ha hxa
     · cases ha
 
 theorem atomLinear_slots {f : IndexFact} {F : Linear.Fact Term} (hF : F ∈ atomLinear f) :
