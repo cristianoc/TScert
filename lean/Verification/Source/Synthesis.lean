@@ -278,6 +278,13 @@ structure Walk where
   made with their own keys exactly (`closure_offers.ml`, `tails`;
   `prepare_constructor`). -/
   exactAt : List Span := []
+  /-- Outer literal spans to keep exact when `exprCall` retries a misfit actual
+  of a resolution-qualified generic call. -/
+  exactMisfits : List Span := []
+  /-- Nested field paths of the object literal currently being walked that must
+  be allocated as open records (no own-key bound), because a later write assigns
+  the field or a later use expects a mutable open field there. -/
+  openPaths : List (List PropKey) := []
   /-- Each class value walked, by its constructor's span: a later class value
   whose code is that constructor (`Fragment.decodeBindings`) takes its
   construct signatures. -/
@@ -1512,7 +1519,10 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
     -- `unionVar`, and binds each host's member, `bindMember`).
     let one (m' : MethodMembers.Sig (Ty Tree)) : Option (CallEffects.MethodArrow (Ty Tree)) :=
       match m'.calls, m'.rests, m'.schemes with
-      | [a], [], [] => if a.effect.promise.isNone then some a else none
+      | [a], rs, [] =>
+        if a.effect.promise.isNone &&
+            rs.all (fun r => r.arguments.1 == a.arguments && r.result == a.result && r.effect == a.effect)
+        then some a else none
       | _, _, _ => none
     match one m, ms.mapM one with
     | some a, some as =>
@@ -1520,6 +1530,7 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
         recordMember O fld
         return some { m with
           calls := [{ a with result := norm (a.result ++ as.flatMap (·.result)) }]
+          rests := []
           receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
       return none
     | _, _ => return none
@@ -2348,6 +2359,7 @@ partial def tailAllocs : Expr → List Span
         | _ => []
     last ss
   | e@(.alloc ..) | e@(.build ..) => [e.span]
+  | .ifBody _ _ a b => tailAllocs a ++ tailAllocs b
   | _ => []
 
 /-- A signature `s` binding more parameters than the literal the constant
@@ -3070,7 +3082,8 @@ end
 
 /-- Whole-value uses in the following statements of this block, as
 statement_analysis.ml:89-165. Nested control statements supply no hint. -/
-partial def useHints (env : Env) (n : String) (ss : List Stmt) (typed : Bool := true) (first : Bool := false) : W (List (Ty Tree)) := do
+partial def useHints (env : Env) (n : String) (ss : List Stmt) (typed : Bool := true)
+    (first : Bool := false) (nested : Bool := false) : W (List (Ty Tree)) := do
   let mut out := []
   for s in ss do
     let uses ← match s with
@@ -3084,11 +3097,143 @@ partial def useHints (env : Env) (n : String) (ss : List Stmt) (typed : Bool := 
         pure uses
       | .ret _ e => useIn env n e (← get).expected
       | .effect _ e => useIn env n e none
+      | .ite _ c a b =>
+        if nested then do
+          let u0 ← useIn env n c none
+          let u1 ← useHints env n a typed false true
+          let u2 ← useHints env n (b.getD []) typed false true
+          pure (u0 ++ u1.map some ++ u2.map some)
+        else pure (if first && s.freeNames.contains n then [none] else [])
+      | .loop _ c b u _ =>
+        if nested then do
+          let u0 ← useIn env n c none
+          let u1 ← useHints env n (b ++ u) typed false true
+          pure (u0 ++ u1.map some)
+        else pure (if first && s.freeNames.contains n then [none] else [])
+      | .block _ _ b =>
+        if nested then (·.map some) <$> useHints env n b typed false true
+        else pure (if first && s.freeNames.contains n then [none] else [])
+      | .forOf _ _ _ _ e b =>
+        if nested then do
+          let u0 ← useIn env n e none
+          let u1 ← useHints env n b typed false true
+          pure (u0 ++ u1.map some)
+        else pure (if first && s.freeNames.contains n then [none] else [])
+      | .tryStmt _ b h f =>
+        if nested then (·.map some) <$> useHints env n (b ++ (h.map (·.2)).getD [] ++ f.getD []) typed false true
+        else pure (if first && s.freeNames.contains n then [none] else [])
+      | .closing _ c b =>
+        if nested then (·.map some) <$> useHints env n (b ++ c) typed false true
+        else pure (if first && s.freeNames.contains n then [none] else [])
       | _ => pure (if first && s.freeNames.contains n then [none] else [])
     let found := if typed then (uses.filterMap id).take 1 else (uses.take 1).filterMap id
     if first && !uses.isEmpty then return found
     out := out ++ found
   return out
+
+mutual
+
+/-- Field paths written through any binding in `roots` within an expression. -/
+partial def writtenPathsExpr (roots : List String) (e : Expr) : List (List PropKey) :=
+  let own := match e with
+    | .write s fld recv _ => match memberPath (.read s fld recv) with
+      | some (r, path) => if roots.contains r && !path.isEmpty then [path] else []
+      | none => []
+    | _ => []
+  let sub := match e with
+    | .lit .. | .var .. => []
+    | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e
+    | .assign _ _ _ e | .nullishAssign _ _ _ e => writtenPathsExpr roots e
+    | .ctor _ e fs => writtenPathsExpr roots e ++ fs.flatMap (fun (_, x) => writtenPathsExpr roots x)
+    | .lambda _ _ _ _ ds _ _ _ _ _ _ body =>
+      ds.flatMap (fun (_, x) => writtenPathsExpr roots x) ++ writtenPathsExpr roots body
+    | .construct _ f args _ _ | .call _ f args _ _ | .invoke _ f args _ _ =>
+      writtenPathsExpr roots f ++ args.flatMap (writtenPathsExpr roots)
+    | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b | .singletonTest _ _ _ _ a b
+    | .write _ _ a b | .index _ _ a b | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+    | .comma _ a b | .inKeys _ a b | .withValue _ a b _ _ | .optional _ _ a b | .withObject _ _ a b =>
+      writtenPathsExpr roots a ++ writtenPathsExpr roots b
+    | .indexWrite _ _ a b c | .elemWrite _ a b c =>
+      writtenPathsExpr roots a ++ writtenPathsExpr roots b ++ writtenPathsExpr roots c
+    | .update _ _ a b _ => writtenPathsExpr roots a ++ b.toList.flatMap (writtenPathsExpr roots)
+    | .arrayAssign _ targets rest rhs =>
+      writtenPathsExpr roots rhs ++
+      targets.flatMap (fun q => writtenPathsExpr roots q.target ++ q.default_.toList.flatMap (writtenPathsExpr roots)) ++
+      rest.toList.flatMap (fun (_, _, q) => writtenPathsExpr roots q.target)
+    | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
+      writtenPathsExpr roots f ++ writtenPathsExpr roots r ++ args.flatMap (writtenPathsExpr roots)
+    | .applyWithReceiver _ f r list _ =>
+      writtenPathsExpr roots f ++ writtenPathsExpr roots r ++ list.toList.flatMap (writtenPathsExpr roots)
+    | .objectAssign _ t sources =>
+      writtenPathsExpr roots t ++ sources.flatMap (writtenPathsExpr roots)
+    | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.flatMap (writtenPathsExpr roots)
+    | .ifBody _ c a b => writtenPathsExpr roots c ++ writtenPathsExpr roots a ++ writtenPathsExpr roots b
+    | .block _ ss => writtenPathsStmts roots ss
+  own ++ sub
+
+/-- Field paths written through any binding in `roots` within a statement list,
+following simple local aliases `const y = x` / `let y = x`. -/
+partial def writtenPathsStmts (roots : List String) (ss : List Stmt) : List (List PropKey) :=
+  let rec go (rs : List String) : List Stmt → List (List PropKey)
+    | [] => []
+    | s :: rest =>
+      let (rs', here) := match s with
+        | .constants _ bs | .mutables _ bs =>
+          bs.foldl (fun (acc, ps) b =>
+            let ps' := ps ++ writtenPathsExpr acc b.init
+            let acc' := match b.init with
+              | .var _ m => if acc.contains m && !acc.contains b.name then b.name :: acc else acc
+              | _ => acc
+            (acc', ps')) (rs, [])
+        | .ret _ e | .effect _ e | .throw _ e => (rs, writtenPathsExpr rs e)
+        | .destructure _ p d e =>
+          (rs, (e :: d.toList ++ p.defaults).flatMap (writtenPathsExpr rs))
+        | .ite _ c a b => (rs, writtenPathsExpr rs c ++ go rs a ++ go rs (b.getD []))
+        | .loop _ c b u _ => (rs, writtenPathsExpr rs c ++ go rs (b ++ u))
+        | .block _ _ b => (rs, go rs b)
+        | .forOf _ _ _ _ e b => (rs, writtenPathsExpr rs e ++ go rs b)
+        | .tryStmt _ b h f => (rs, go rs (b ++ (h.map (·.2)).getD [] ++ f.getD []))
+        | .closing _ c b => (rs, go rs (b ++ c))
+        | .brk .. | .cont .. => (rs, [])
+      here ++ go rs' rest
+  go roots ss
+
+end
+
+/-- Field paths of `H` where a mutable property expects an open record (no
+own-key bound), so a nested literal allocated there must stay open to meet
+invariance. Readonly views are covariant and need not open their immediate
+record, though their own nested mutable fields are inspected. -/
+partial def mutableOpenPaths (G : PositiveGraphs.NormalGraph Tree) (H : Ty Tree) (fuel : Nat := 6) :
+    List (List PropKey) :=
+  if fuel == 0 then [] else
+  let isOpenRecord (F : Ty Tree) : Bool := F.any fun fl =>
+    match PositiveRules.expand G [fl] with
+    | [.refs _ [] _ _ _ [] _] => true
+    | _ => false
+  H.flatMap fun l =>
+    match PositiveRules.expand G [l] with
+    | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
+      let fromFs := fs.flatMap fun (k, role, F) =>
+        (if role == .field && isOpenRecord F then [[k]] else []) ++
+        (mutableOpenPaths G F (fuel - 1)).map (k :: ·)
+      let fromVs := vs.flatMap fun (k, V) =>
+        (mutableOpenPaths G V (fuel - 1)).map (k :: ·)
+      let fromOs := os.flatMap fun o =>
+        (if !o.readonly && o.role == .field && isOpenRecord o.type then [[o.key]] else []) ++
+        (mutableOpenPaths G o.type (fuel - 1)).map (o.key :: ·)
+      fromFs ++ fromVs ++ fromOs
+    | _ => []
+
+/-- Nested field paths of an unannotated binding's object literal that must be
+allocated open because later statements write them or pass the binding where a
+mutable open record is expected. -/
+def bindingOpenPaths (env : Env) (name : String) (ss : List Stmt) : W (List (List PropKey)) := do
+  let fromWrites := writtenPathsStmts [name] ss
+  let G ← StateT.lift graphNow
+  let uses ← useHints env name ss (nested := true)
+  let fromUses := uses.flatMap (mutableOpenPaths G ·)
+  return (fromWrites ++ fromUses).eraseDups
 
 /-- A declaration's construction hint and evolving contract registration. -/
 partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
@@ -3773,25 +3918,33 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let exp ← match exp with
       | some P => StateT.lift (recordContext P names es)
       | none => pure none
+    let savedOpen := (← get).openPaths
     let mut e1 := env
     let mut As : List (Option (Ty Tree)) := []
     for (k, y) in names.zip es do
       let D ← match exp with
         | some P => StateT.lift (fieldExpected P k)
         | none => pure none
+      let childOpen := savedOpen.filterMap fun
+        | k' :: rest => if k' == k then some rest else none
+        | [] => none
+      modify fun w => { w with openPaths := childOpen.filter (!·.isEmpty) }
       let (A, e') ← expr e1 y D
-      -- An ordinary nested allocation without a field context is made at
-      -- its own open record (expression_objects.ml:46-54, 83-97). Only the
+      modify fun w => { w with openPaths := savedOpen }
+      -- A nested literal keeps its own-key bound unless a later write or a
+      -- mutable-field use along this path requires an open record. Only the
       -- fresh child is retyped: an existing value's spine is unchanged.
       let A ← match D, y, A with
         | none, .alloc _ ks _, some A => do
-          if ks.contains SourceTypes.protoField || (← get).exactAt.contains y.span then pure (some A) else do
-          let G ← StateT.lift graphNow
-          match PositiveRules.expand G A with
-          | [.refs fs [] vs os ms _ st] =>
-            let B ← StateT.lift (prim (.refs fs [] vs os ms [] st))
-            record y (.ok B)
-          | _ => pure (some A)
+          if !childOpen.contains [] || ks.contains SourceTypes.protoField || (← get).exactAt.contains y.span then
+            pure (some A)
+          else do
+            let G ← StateT.lift graphNow
+            match PositiveRules.expand G A with
+            | [.refs fs [] vs os ms _ st] =>
+              let B ← StateT.lift (prim (.refs fs [] vs os ms [] st))
+              record y (.ok B)
+            | _ => pure (some A)
         | _, _, _ => pure A
       As := As ++ [A]
       e1 := e'
@@ -4428,13 +4581,14 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     | _ => ([], true)
   if w1.misfits.isEmpty || spread then return r
   let exps := (List.range args.length).map fun i => w1.misfits.lookup i
-  set { w0 with misfits := [] }
+  set { w0 with misfits := [], exactMisfits := [], exactAt := w1.exactMisfits ++ w0.exactAt }
   let r' ← exprCallAt env e exp exps
+  modify fun w => { w with exactAt := w0.exactAt }
   let w2 ← get
   let T ← StateT.lift table
   let admitted := w1.misfits.all fun (i, P) =>
     (args[i]?.bind fun x => (w2.exprs.get? x.span).bind (·.2.toOption)).any (within T · P)
-  if admitted then return r'
+  if r'.1.isSome && admitted then return r'
   set w1
   return r
 
@@ -5281,12 +5435,36 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
   callChanges inst receiverFresh
-  modify fun w => { w with misfits }
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
     if inst.effect.schema.normal.freshResult then
       if let some R ← StateT.lift (tryCatch (freshAt H inst.result) fun _ => pure none) then result := R
+  -- When a generic call's inferred result does not meet its expected type `H`,
+  -- an argument passed at a result or resolution-input binder can be re-walked
+  -- with the type `H` gives that binder (fitting nested literals to expected
+  -- mutable open fields while keeping outer resolution literals exact).
+  let mut exactMisfits : List Span := []
+  if misfits.isEmpty && !c.binders.isEmpty then
+    if let some H := hint then
+      let Tc ← StateT.lift table
+      if !within Tc result H then
+        let mut fromHint : List (Tree × Ty Tree × Bool) := []
+        for group in c.resolution do
+          let (some ib, some rb) := (c.binders[group.input]?, group.result.bind (c.binders[·]?)) | continue
+          if let some U ← StateT.lift (tryCatch (matchBinder rb a.result H (vars := env.vars) (siblings := c.binders)) fun _ => pure none) then
+            if !U.isEmpty then fromHint := (ib, U, true) :: fromHint
+        for b in c.binders do
+          if !hidden.contains b && !fromHint.any (·.1 == b) then
+            if let some U ← StateT.lift (tryCatch (matchBinder b a.result H (vars := env.vars) (siblings := c.binders)) fun _ => pure none) then
+              if !U.isEmpty then fromHint := (b, U, false) :: fromHint
+        for ((x, P), i) in (args.zip a.arguments).zipIdx do
+          if let [b] := P then
+            if let some (_, U, isRes) := fromHint.find? (·.1 == b) then
+              if !As[i]?.join.any (within Tc · U) then
+                misfits := misfits ++ [(i, U)]
+                if isRes then exactMisfits := exactMisfits ++ tailAllocs x
+  modify fun w => { w with misfits, exactMisfits }
   let own ← StateT.lift (calleeAtCall c σ inst rest (c.fixed.filter fits))
   return .ok (own, result)
 
@@ -6025,7 +6203,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       conditions := (bs.filter (fun b => implicationForm b.init || w.force.contains "implications")).map (fun b => (b.name, b.init)) ++
         w.conditions.filter fun (n, _) => !bs.any (·.name == n)
       allocated := (bs.filter fun b => match b.init with | .alloc .. | .arrayLit .. => true | _ => false).map (·.name) ++ w.allocated }
-    for b in bs do
+    for (b, idx) in bs.zipIdx do
       modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
       if let .var _ n := b.init then
         modify fun w => { w with holders := (b.name, n) :: w.holders }
@@ -6043,11 +6221,21 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           { w with freshClass := true, freshGeneric := generic }
       -- The initializer made at the annotation's type.
       modify fun w => { w with lastFresh := false }
+      let savedOpen := (← get).openPaths
+      let needsOpen := b.annot.isNone && written.isNone && match b.init with
+        | .alloc .. | .ifBody .. => true
+        | _ => false
+      if needsOpen then
+        let rest := bs.drop (idx + 1)
+        let after := (if rest.isEmpty then [] else [.constants p rest]) ++ (← get).following
+        let paths ← bindingOpenPaths env b.name after
+        modify fun w => { w with openPaths := paths }
       let (A, e1) ← match b.init with
         | .lambda _ _ _ _ _ _ _ _ stated _ _ _ =>
           if b.init.freeNames.contains b.name then recursiveConstant env b (b.annot.isSome || stated.isSome)
           else expr env b.init written
         | _ => expr env b.init written
+      if needsOpen then modify fun w => { w with openPaths := savedOpen }
       -- A module constant, unannotated, holding a literal of no type
       -- parameters, rest, defaults or guard whose result is written: also
       -- at its signature extended by a rest of `unknown`, its code
@@ -6110,7 +6298,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       consts := w.consts.filter (fun n => !bs.any (·.name == n))
       conditions := w.conditions.filter fun (n, _) => !bs.any (·.name == n) }
     modify fun w => { w with freshConsts := w.freshConsts.filter fun n => !bs.any (·.name == n) }
-    for b in bs do
+    for (b, idx) in bs.zipIdx do
       modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
@@ -6121,7 +6309,17 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let written ← declarationHint env b true written
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       -- The initializer made at the annotation's type.
+      let savedOpen := (← get).openPaths
+      let needsOpen := b.annot.isNone && written.isNone && match b.init with
+        | .alloc .. | .ifBody .. => true
+        | _ => false
+      if needsOpen then
+        let rest := bs.drop (idx + 1)
+        let after := (if rest.isEmpty then [] else [.mutables p rest]) ++ (← get).following
+        let paths ← bindingOpenPaths env b.name after
+        modify fun w => { w with openPaths := paths }
       let (A, e1) ← expr env b.init written
+      if needsOpen then modify fun w => { w with openPaths := savedOpen }
       env := e1
       let D ← match written, A with
         | some _, _ => pure written

@@ -1304,9 +1304,13 @@ control("forged declarations: unequal bound member effects", async (): Promise<v
   const host = must(ast.declarations.definitions.find((d) => d.declaration.name === "Countdown"), "Countdown");
   assert.ok(host.expression?.k === "object");
   const next = must(host.expression.fields.find((f) => f.name === "next"), "Countdown.next");
-  assert.ok(next.type.k === "function");
-  assert.deepEqual(next.type.effect, ordinaryEffect);
-  next.type.effect = emptyEffect;
+  const forms = next.type.k === "intersection" ? next.type.parts : [next.type];
+  assert.ok(forms.length > 0);
+  for (const form of forms) {
+    assert.ok(form.k === "function");
+    assert.deepEqual(form.effect, ordinaryEffect);
+    form.effect = emptyEffect;
+  }
   refused(pass(forged(artifacts, "unequal-bound-member-effects", ast)), "total@1704", "unequal member effects");
   say("unequal bound member effects: refused at the bound call's unit");
 });

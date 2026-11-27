@@ -668,9 +668,13 @@ read has a result the expected type does not admit, the expected type's
 instance where it binds every binder and admits the actuals. A call whose
 signature states a fresh result is made at the first expected array whose
 elements admit the result's.
-An uncontextualized object literal nested directly in a fresh field is
-made at its own open record, unless its own keys are required exact or
-it carries a prototype.
+An uncontextualized object literal nested directly in a fresh field
+keeps its exact own-key bound, unless a following write assigns that
+field or a following use expects a mutable open record there (and
+neither exact keys nor a prototype link are required); a generic call
+whose inferred result misses its expected type retries a result- or
+resolution-binder actual at the expected type's contract for that
+binder, keeping outer resolution literals exact.
 A spread nested inside a fresh call actual receives the expected record
 fields recursively; each spread operand that is a literal receives the
 optional fields of that context, and each resulting copy is checked
