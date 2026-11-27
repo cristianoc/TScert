@@ -9,7 +9,7 @@ import type { Ast, ModuleAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
 import { effectText } from "./type-graph.mts";
-import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type AliasHook, type RecordHook } from "./type-term.mts";
+import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type AliasHook, type MappedTransform, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
 type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
@@ -31,6 +31,7 @@ export const definitionKey = (id: DeclarationIdentity): Modifies<{}, string> =>
 export type NamedRecords = {
   definition(id: DeclarationIdentity, fail: Fail): Modifies<{ values: "any"; spines: "grow" }, TypeDefinition | undefined>;
   record(id: DeclarationIdentity): Modifies<{}, boolean>;
+  transform?(id: string): Modifies<{ values: "any"; spines: "grow" }, MappedTransform | undefined>;
 };
 
 const PREFIX = "a mapped type's value names its key, over a named type";
@@ -205,12 +206,14 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
  * is refused. The refusal callback throws with the source location. */
 export function settleDocument(document: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
     record: (id: DeclarationIdentity) => Modifies<{}, boolean>,
-    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; spines: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
+    refused: (where: string, error: unknown) => never,
+    transform?: (id: string) => Modifies<{ values: "any"; spines: "grow" }, MappedTransform | undefined>): Modifies<{ values: "any"; spines: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
   const byKey = new Map(document.definitions.map(d => [definitionKey(d.declaration), d] as const));
   const settled = new Map<string, TypeDefinition>();
   const settling = new Set<string>();
   const records: NamedRecords = {
     record,
+    ...(transform ? { transform } : {}),
     definition: (id, fail) => {
       const key = definitionKey(id);
       if (settling.has(key)) return fail(`${PREFIX} whose shape is read while its own definition is settled: ${id.module}#${id.name}`);
@@ -246,17 +249,24 @@ export function settleDocument(document: { definitions: TypeDefinition[]; values
  * modifiers. */
 export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
     refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
-  const go = (t: TypeTerm): TypeTerm => {
+  const go = (t: TypeTerm, depth: number = 0): TypeTerm => {
     const deferred = deferredOf(t);
-    if (!deferred) return mapTypeParts(t, go);
-    const object = go(deferred.identity.object);
-    const key = go(deferred.key);
+    if (!deferred) return mapTypeParts(t, part => go(part, depth));
+    if (depth > 32) return refused(where, Error("deferred mapped type settling exceeded depth limit of 32"));
+    const object = go(deferred.identity.object, depth + 1);
+    const key = go(deferred.key, depth + 1);
+    const constant = deferred.identity.constant ? go(deferred.identity.constant, depth + 1) : undefined;
     const fail: Fail = message => { throw Error(`${message} in ${where}`); };
     const record: RecordHook = (reference, failed) => recordShape(reference, records, failed);
     const alias: AliasHook = (reference, failed) => aliasMeaning(reference, records, failed);
     try {
-      return expandMapped({ key, value: object, optional: false, readonly: false,
-        identity: { ...deferred.identity, object } }, t.span, fail, record, alias);
+      const transform = deferred.transformId !== undefined
+        ? (records.transform?.(deferred.transformId) ?? fail(`a deferred mapped transform ${deferred.transformId} has no registered evaluator`))
+        : undefined;
+      const expanded = expandMapped({ key, value: object, optional: false, readonly: false,
+        identity: { ...deferred.identity, object, ...(constant ? { constant } : {}), ...(transform ? { transform } : {}) } },
+        t.span, fail, record, alias);
+      return go(expanded, depth + 1);
     } catch (error) {
       return refused(where, error);
     }

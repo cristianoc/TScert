@@ -1987,9 +1987,21 @@ over a record written in place (`mapped-named-required-undefined`); the
 refusals are `mapped-named-conflict-refused`,
 `mapped-named-call-refused`, `mapped-named-call-refused-value-import`,
 `mapped-named-method-refused`, `mapped-named-cycle-refused` and
-`mapped-named-class-refused`. The front end reads $`\mathsf{shape}`$ from
-the declaration document once it is complete (`named-record.mts`); a mapped
-type the declaration graph reads before then is expanded when its
+`mapped-named-class-refused`. A homomorphic mapped type over $`X`$ whose value transforms $`X[P]`$ (by a
+conditional type or an alias application) or holds a constant $`C`$
+independent of $`P`$ expands over $`\mathsf{shape}(X)`$ in the same way,
+applying the transform or constant to each field and index signature while
+combining modifiers by $`m\triangleleft m_i`$:
+
+```math
+\frac{\mathsf{shape}(X)=\{k_1^{m_1}\colon T_1;\ \ldots;\ k_n^{m_n}\colon T_n;\ \iota_1^{r_1}\colon U_1;\ \ldots\}\quad(\mathtt{?}\notin m\ \text{or no index})}
+     {⟦\{[P\ \mathtt{in}\ \mathtt{keyof}\ X]^m\colon V(X[P])\}⟧=\{k_1^{m\,\triangleleft\,m_1}\colon V(T_1);\ \ldots;\ \iota_1^{m\,\triangleleft\,r_1}\colon V(U_1);\ \ldots\}}\ \textsf{mapped-transform}
+```
+
+with $`V(T)=C`$ for a constant value (`mapped-transform-conditional`,
+`callsite-instantiation-service`). The front end reads $`\mathsf{shape}`$
+from the declaration document once it is complete (`named-record.mts`); a
+mapped type the declaration graph reads before then is expanded when its
 collection ends, and a document holding one unexpanded is refused.
 
 An interface's `extends` clauses are the meet of
@@ -2742,6 +2754,38 @@ optional and rest positions. Each position retains its complete annotation,
 including a callback's `Modifies` effect. The enclosing function's result
 and effect do not qualify the parameters it supplies.
 
+A conditional type matching a generic class, interface or alias reference
+$`\sigma\ \mathtt{extends}\ R\langle\mathtt{infer}\ A_1,\ldots,\mathtt{infer}\ A_n\rangle\ \mathtt{?}\ B_t\ \mathtt{:}\ B_f`$
+is evaluated directly on the settled term $`⟦\sigma⟧`$ by declaration
+identity (following type aliases and declared bases to $`R`$). A member
+matching $`R\langle\vec T\rangle`$ binds $`A_i:=T_i`$ and reads $`B_t`$; in
+non-distributive position, `never` takes $`B_t`$ with each $`A_i`$ bound to
+$`R`$'s declared constraint. A member provably disjoint from $`R`$
+(a primitive, or a distinct class or record without matching declaration
+identity when $`R`$ is a class or nominal brand) takes $`B_f`$. A member
+whose structural overlap with $`R`$ is ambiguous is refused without trusting
+TypeScript's `extends` check (`mapped-transform-conditional`,
+`invalid-conditional-infer-ambiguous`).
+
+An ambient or imported generic function—or a generic method on an external
+interface that no client class implements—whose signature or parameter bounds
+carry a computed or mapped form over its type parameters is instantiated in
+the front end at each call site. The call site's ground type arguments come
+from explicit type arguments where written, or from TypeScript's resolved
+call signature as an untrusted proposal. Both the instantiated parameter
+bounds $`\beta_i[\vec X:=\vec U]`$ and the instantiated signature
+$`\tau[\vec X:=\vec U]`$ expand into settled terms, and every instantiated
+bound is emitted as a concrete obligation checked by the verifier alongside
+the call actuals (`callsite-instantiation-service`,
+`callsite-instantiation-value-import`,
+`invalid-callsite-instantiation-bad-input-bound`,
+`invalid-callsite-instantiation-explicit-bad-bound`,
+`invalid-callsite-instantiation-bad-output-bound`,
+`invalid-callsite-instantiation-input-mismatch`,
+`invalid-callsite-instantiation-follower-typo`). Reading such a generic
+function as a first-class value outside a direct call is refused
+(`invalid-callsite-instantiation-first-class-value`).
+
 A guard's result is its Boolean, which TypeScript computes as a union of
 literals (`returntype-guard`); a generic function's `typeof` is refused, as
 its instantiation at its bounds states a value type no reader states. An indexed access of a method is refused
@@ -2962,9 +3006,12 @@ is every class value: `ReturnType`'s bound `(...args: any) => any` is every
 function, and `ConstructorParameters`' every class
 (`function-wildcard-parameter`, `invalid-function-wildcard-call`).
 
-Refused, each a limit of the mechanism: an argument computed over a binder,
-`B<T["k"]>` in a generic body, which has no term there; `infer U` at a
-bounded position, whose implied constraint is not modelled; a narrowing other
+Applications written in `infer` patterns, naming `infer` binders or
+computed-bound type parameters, or applying a computed-bound declaration to
+open binders emit their concrete bound obligations at each concrete
+instantiation instead of uninstantiated. Refused, each a limit of the
+mechanism: an argument computed over an ordinary binder, `B<T["k"]>` in a
+generic body, which has no term there; a narrowing other
 than a naked check type's, as of a wrapped check type `[T] extends [X]` or an
 extends type with `infer`; a generic signature whose bound names another of
 its binders, which a scheme does not represent; an obligation whose
