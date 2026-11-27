@@ -159,3 +159,36 @@ for f in dev/paper-rules/pretext/src/*.ts; do git -C ~/GitHub/pretext show 0dafe
 
 `pretext/expected.json` records the ordinary and the prototype's verdict of
 every function of the copy.
+
+### Bounds bug and boundary check repros
+
+```bash
+node dev/pretext-bug-repros.mts
+```
+
+[`dev/pretext-bug-repros.mts`](../pretext-bug-repros.mts) loads `line-text.ts`,
+`line-break.ts`, `layout.ts`, and `rich-inline.ts` directly from
+`pretext/src/` under Node and checks two groups separately:
+
+- **Upstream bounds bugs (`// bounds bug:`):**
+  - `line-text.ts` (`getGraphemeStart`): materializing a line range kept from a
+    longer text past a shorter segment's last grapheme. The upstream expression
+    (`ends[graphemeIndex - 1]!`, mirrored over the `Int32Array` from
+    `getGraphemeEnds`) returns `undefined`, which slices the full segment in
+    `buildRangeText` and yields `NaN` source offsets in
+    `materializeRichInlineLineRange`; the fixed functions return `ends.length`,
+    `""`, and finite end offsets.
+  - `measurement.ts` (`getCanvasFont`, unexported; exercised via extracted
+    upstream and fixed mirrors): when `families` has fewer entries than
+    `genericKeywords`, the upstream expression inserts `"undefined"` as a CSS
+    font family name; the fixed expression keeps the generic keyword.
+- **Public API cursor boundary checks (`// boundary check:`, #365):**
+  - `layout.ts` (`stepNextLine`, via `layoutNextLineRange` and `layoutNextLine`)
+    and `rich-inline.ts` (`layoutNextRichInlineLineRange`): pragmatic runtime
+    checks validating caller-supplied cursors (negative, non-integer,
+    `graphemeIndex >= advances.length`, or `graphemeIndex > 0` on `null`
+    advances) at the public streaming API boundaries. Pretext-produced cursors
+    satisfy these invariants; calling `normalizePreparedLineStart` and
+    `stepPreparedLineGeometryFromStart` directly without the check yields `NaN`
+    width on an out-of-range caller `graphemeIndex`, whereas the guarded public
+    APIs throw `RangeError`.
