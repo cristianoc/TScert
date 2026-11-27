@@ -645,16 +645,18 @@ theorem typesElemSpinesApart_reassign (Γ : List (List ι)) (x y : Nat) (q : Lis
   rw [pathTys_reassign]
   cases Γ[x]? <;> cases HeapExpressionRules.pathTys G Γ y q <;> rfl
 
+theorem typesPathCellsApart_reassign (Γ : List (List ι)) (x : Nat) (p : List String) (y : Nat) (q : List String) :
+    HeapExpressionRules.typesPathCellsApart (reassign G η) Γ x p y q =
+      HeapExpressionRules.typesPathCellsApart G Γ x p y q := by
+  unfold HeapExpressionRules.typesPathCellsApart
+  rw [pathTys_reassign, pathTys_reassign]
+  cases HeapExpressionRules.pathTys G Γ x p <;> cases HeapExpressionRules.pathTys G Γ y q <;> rfl
+
 theorem typeSpineQuery_reassign (Γ : List (List ι)) :
     HeapExpressionRules.typeSpineQuery (reassign G η) Γ = HeapExpressionRules.typeSpineQuery G Γ := by
   unfold HeapExpressionRules.typeSpineQuery
   congr 1; funext r s
-  cases Footprints.spineSite r <;> cases Footprints.spineSite s <;>
-    try (cases Footprints.selectedSpineSite s <;> (try cases s) <;>
-      simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]) <;>
-    try (cases Footprints.selectedSpineSite r <;> (try cases r) <;>
-      simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]) <;>
-    simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign]
+  simp [typesPathSpinesApart_reassign, typesElemSpinesApart_reassign, typesPathCellsApart_reassign]
 
 theorem callQuery_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) :
     PromiseCalls.callQuery (reassign G η) Γ k = PromiseCalls.callQuery G Γ k := by
@@ -998,6 +1000,23 @@ theorem boundedWriteCheck_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge
 theorem keepsLengths_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (a i : Nat) :
     IndexWrites.keepsLengths (reassign G η) j k a i = IndexWrites.keepsLengths G j k a i := rfl
 
+theorem keepsDenseSpine_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (a i : Nat) :
+    IndexWrites.keepsDenseSpine (reassign G η) j k a i = IndexWrites.keepsDenseSpine G j k a i := rfl
+
+theorem writeFrameAtoms_reassign (Γ : List (List ι)) (stable : Nat → String → Bool)
+    (k : HeapKnowledge.Knowledge) (a : Nat) (dense : Bool) :
+    IndexWrites.writeFrameAtoms (reassign G η) Γ stable k a dense =
+      IndexWrites.writeFrameAtoms G Γ stable k a dense := by
+  unfold IndexWrites.writeFrameAtoms
+  rw [arrayPathOf_reassign, typeSpineQuery_reassign]
+
+theorem writeFrameLinks_reassign (Γ : List (List ι)) (stable : Nat → String → Bool)
+    (k : HeapKnowledge.Knowledge) (a : Nat) (dense : Bool) :
+    IndexWrites.writeFrameLinks (reassign G η) Γ stable k a dense =
+      IndexWrites.writeFrameLinks G Γ stable k a dense := by
+  unfold IndexWrites.writeFrameLinks
+  rw [arrayPathOf_reassign, typeSpineQuery_reassign]
+
 omit [DecidableEq ι] in
 theorem writeAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a : Nat) :
     IndexWrites.writeAtoms (reassign G η) Γ k a = IndexWrites.writeAtoms G Γ k a := rfl
@@ -1027,8 +1046,9 @@ theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.boundedWrites]
   split
-  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign, growOutput_reassign,
-      stableFirst_reassign, atLengthAtoms_reassign, overwriteAtoms_reassign, denseAppendAtoms_reassign, valuesAt_reassign]
+  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, keepsDenseSpine_reassign, writeAtoms_reassign,
+      growOutput_reassign, stableFirst_reassign, writeFrameAtoms_reassign, writeFrameLinks_reassign,
+      atLengthAtoms_reassign, overwriteAtoms_reassign, denseAppendAtoms_reassign, valuesAt_reassign]
   · simp only [CheckResult.map]
     rw [indexing_value_reassign, growOutput_reassign]
 

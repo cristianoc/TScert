@@ -100,6 +100,13 @@ structure Unit where
   /-- Spans of unannotated calls in the unit, so span matching never confuses
   an annotated call with an unannotated call at the same lowered term and width. -/
   unannotatedCalls : List (Nat × Nat) := []
+  /-- Spans of direct element writes `arr[i] = v` that must be certified as
+  in-bounds `Dense` writes (`ExpressionEffects.denseWriteStep`) for the unit's
+  stated `Effects<P, T>`. -/
+  denseWrites : List (Nat × Nat) := []
+  /-- Precomputed flag: true when some span in `denseWrites` has no matching
+  `.writeAt` site in `sites` (set once in `layerOf`). -/
+  missingDenseSite : Bool := false
   /-- The unit's unsafe assumes. -/
   assumes : List Assume := []
   /-- The unit's nodes as the pass gives them: expression, context width,
@@ -427,14 +434,27 @@ def isExactWriteCallee {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (Γ : L
     | _ => false
   | none => false
 
-/-- The layer's step: the ordinary checker's output, and at a call of a
-bounded callback parameter the facts the rules keep added to it. -/
+/-- Whether any required dense-write span in `u.denseWrites` has no lowered
+`.writeAt` site in `u.sites` (soundly refusing unmatched spans). -/
+def hasMissingDenseSite (u : Unit) : Bool :=
+  u.denseWrites.any fun sp =>
+    !u.sites.any fun (t, _, s) => s == some sp && match t with | .writeAt .. => true | _ => false
+
+/-- The layer's step: the ordinary checker's output, certifying any required
+in-bounds `Dense` writes (`u.denseWrites`) via `ExpressionEffects.denseWriteStep`,
+and at a call of a bounded callback parameter or annotated callee adding the
+facts the rules keep to it. -/
 def run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) (j : Sequent ι) (k : Knowledge) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) : CheckResult ι Knowledge :=
+  if u.missingDenseSite then failure else
   let r := base.run j k e codes sums
   if base.normal j k e codes sums == .empty then r else
   match j.term with
+  | .writeAt .. =>
+    let isDenseSite := !u.denseWrites.isEmpty && u.sites.any fun (t, w, sp) =>
+      t == j.term && w == j.context.length && sp.any (u.denseWrites.contains ·)
+    if isDenseSite && !ExpressionEffects.denseWriteStep G j.context k j.term then failure else r
   | .invoke (.var s) _ args =>
     let d := j.context.length
     -- The callee is the parameter's slot or a copy of it (an alias link).
@@ -474,18 +494,22 @@ axiom paperKeptFactsSurvive {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {i
         n W h (instantiate 0 ρ j.term)
 
 /-- The layer's step is the ordinary checker's at every term but a call of
-a slot. -/
+a slot or a write, when every dense-write span matches a site. -/
 theorem run_eq_base {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} (u : Unit)
     (base : Checker G images) {j : Sequent ι} {k e codes sums}
-    (h : (base.normal j k e codes sums == .empty) = true ∨ ∀ s t args, j.term ≠ .invoke (.var s) t args) :
+    (hmiss : u.missingDenseSite = false)
+    (h : (base.normal j k e codes sums == .empty) = true ∨
+      ((∀ s t args, j.term ≠ .invoke (.var s) t args) ∧ (∀ f o v, j.term ≠ .writeAt f o v))) :
     run u base j k e codes sums = base.run j k e codes sums := by
   unfold run
+  simp only [hmiss, Bool.false_eq_true, ↓reduceIte]
   split
   · rfl
   · rename_i hne
-    have hnot := h.resolve_left hne
+    have ⟨hnotI, hnotW⟩ := h.resolve_left hne
     split
-    · rename_i s t args heq; exact absurd heq (hnot s t args)
+    · rename_i f o v heq; exact absurd heq (hnotW f o v)
+    · rename_i s t args heq; exact absurd heq (hnotI s t args)
     · rfl
 
 /-- The layer: a checker whose `run` is the rules' step, and whose normal
@@ -496,24 +520,30 @@ def layer {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
   run := run u base
   sound := paperKeptFactsSurvive u base
   normal := fun j k e codes sums =>
-    if base.normal j k e codes sums == .empty then base.normal j k e codes sums
+    if u.missingDenseSite then Footprints.Closed.top
+    else if base.normal j k e codes sums == .empty then base.normal j k e codes sums
     else match j.term with
-      | .invoke (.var _) _ _ => Footprints.Closed.top
+      | .invoke (.var _) _ _ | .writeAt .. => Footprints.Closed.top
       | _ => base.normal j k e codes sums
   normal_sound := by
     intro j k e out codes sums hrun hc hs ε ρ n W h henv hk hW hok hrefs hn
     split at hn
-    · rename_i hemp
-      have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) (.inl hemp)
-      rw [heq] at hrun
-      exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
-    · split at hn
-      · exact absurd hn Footprints.Closed.top_ne_empty
-      · rename_i hnot
-        have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums)
-          (.inr fun s t args hj => hnot s t args hj)
+    · exact absurd hn Footprints.Closed.top_ne_empty
+    · rename_i hmiss
+      have hmiss' : u.missingDenseSite = false := by cases h : u.missingDenseSite <;> simp_all
+      split at hn
+      · rename_i hemp
+        have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) hmiss' (.inl hemp)
         rw [heq] at hrun
         exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
+      · split at hn
+        · exact absurd hn Footprints.Closed.top_ne_empty
+        · exact absurd hn Footprints.Closed.top_ne_empty
+        · rename_i hnotI hnotW
+          have heq := run_eq_base u base (j := j) (k := k) (e := e) (codes := codes) (sums := sums) hmiss'
+            (.inr ⟨fun s t args hj => hnotI s t args hj, fun f o v hj => hnotW f o v hj⟩)
+          rw [heq] at hrun
+          exact base.normal_sound hrun hc hs henv hk hW hok hrefs hn
 
 /-! ## The side file -/
 
@@ -604,8 +634,19 @@ def unitsOf (side : Json) : Except String (Std.HashMap String Unit) := do
       match paramEff params (← ep.getObjVal? "bound") with
       | some pe => bounds := bounds ++ [{ callback := index, entries := pe.entries, otherwise := pe.otherwise : Bound }]
       | none => readable := false
-    if readable && !bounds.isEmpty then
-      out := out.insert name { namePos := namePositions.get? name, bounds, params := params.length }
+    let denseWrites ← match info.getObjVal? "denseWrites" with
+      | .ok dw =>
+        let arr ← dw.getArr?
+        arr.toList.mapM fun sp => do
+          pure (← (← sp.getArrVal? 0).getNat?, ← (← sp.getArrVal? 1).getNat?)
+      | .error _ => pure []
+    if (readable && !bounds.isEmpty) || !denseWrites.isEmpty then
+      out := out.insert name {
+        namePos := namePositions.get? name,
+        bounds := if readable then bounds else [],
+        denseWrites,
+        params := params.length
+      }
   -- Each caller's calls with instances within their bounds and the
   -- callee's own effect read, by source span.
   let calls ← (← side.getObjVal? "calls").getArr?
@@ -762,7 +803,9 @@ scoped callback invariant facts (`Callback-Inv`) for non-escaping inline
 callbacks. -/
 def layerOf (units : Std.HashMap String HeapExpressionRules.PaperRules.Unit) : SinglePass.PassLayer where
   checker := fun name inputs sites _ _ _ _ _ _ base => match units.get? name with
-    | some u => HeapExpressionRules.PaperRules.layer { u with inputs, sites } base
+    | some u =>
+      let u' := { u with inputs, sites }
+      HeapExpressionRules.PaperRules.layer { u' with missingDenseSite := HeapExpressionRules.PaperRules.hasMissingDenseSite u' } base
     | none => base
   wantsClosure := HeapExpressionRules.PaperRules.wantsClosure units
   closureFacts := HeapExpressionRules.PaperRules.closureFacts units

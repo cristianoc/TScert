@@ -115,9 +115,10 @@ theorem boundedWritesSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
     (Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.select j k e codes sums =
       (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.select j k e codes sums := by
   simp only [Checker.boundedWrites, indexingSelect_reassign, Parametricity.boundedWriteCheck_reassign,
-    Parametricity.keepsLengths_reassign, Parametricity.writeAtoms_reassign, Parametricity.growOutput_reassign,
-    Parametricity.stableFirst_reassign, Parametricity.atLengthAtoms_reassign, Parametricity.overwriteAtoms_reassign,
-    Parametricity.denseAppendAtoms_reassign]
+    Parametricity.keepsLengths_reassign, Parametricity.keepsDenseSpine_reassign, Parametricity.writeAtoms_reassign,
+    Parametricity.growOutput_reassign, Parametricity.stableFirst_reassign, Parametricity.writeFrameAtoms_reassign,
+    Parametricity.writeFrameLinks_reassign, Parametricity.atLengthAtoms_reassign,
+    Parametricity.overwriteAtoms_reassign, Parametricity.denseAppendAtoms_reassign, Parametricity.valuesAt_reassign]
   all_goals rfl
 
 /-- **The ordinary checker's `select` at a reassigned graph** is its

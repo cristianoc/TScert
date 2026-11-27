@@ -153,15 +153,22 @@ function resolvePaperInterfaces(artifacts: string, project: string | undefined):
       { limitMs: stepTimeoutMs, force: false, recorder: null },
     );
     const ordParsed = ordRun.status === 0 ? parseCanonical(ordRun.stdout) : null;
-    if (ordParsed !== null && !hasUnestablished(ordParsed, raw.names)) {
+    const baseDir = project !== undefined ? resolve(project) : process.cwd();
+    const depSides = members.map((loc) => {
+      const depPath = resolve(baseDir, loc);
+      return { loc, side: existsSync(depPath) ? annotations(depPath) : null };
+    });
+    const needsPaperCheck = depSides.some(({ side }) =>
+      side !== null && (side.refusals.length > 0 || side.calls.some((c) => !c.ok) || side.assumes.length > 0 ||
+        Object.values(side.functions).some((f) => (f.denseWrites?.length ?? 0) > 0)),
+    );
+    if (ordParsed !== null && !hasUnestablished(ordParsed, raw.names) && !needsPaperCheck) {
       stdout = ordRun.stdout;
       depKey = ordRun.record.key ?? "executed-without-replay";
     } else {
       const sideMap: Record<string, unknown> = {};
-      const baseDir = project !== undefined ? resolve(project) : process.cwd();
-      for (const loc of members) {
-        const depPath = resolve(baseDir, loc);
-        const depSide = annotations(depPath);
+      for (const { loc, side } of depSides) {
+        const depSide = side ?? annotations(resolve(baseDir, loc));
         if (depSide.refusals.length > 0 || depSide.calls.some((c) => !c.ok) || depSide.assumes.length > 0) {
           trace(`refused annotations for ${loc}`);
           return null;

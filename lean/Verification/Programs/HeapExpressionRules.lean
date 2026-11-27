@@ -2939,9 +2939,236 @@ theorem typesPathSpinesApart_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : L
         (hdis A hA B hB) huA hwB (Footprints.readPath_refs hh p (hρ x) hu)
         (Footprints.readPath_refs hh q (hρ y) hw) hsu hsw
 
+/-- All homogeneous element types of a single array reference clause (across all
+list clauses of its spine). Returns `none` if the clause is not a homogeneous
+array or its spine expands to non-homogeneous/empty clauses. -/
+@[nospecialize] def clauseArrayElemTypes (G : NormalGraph ι) :
+    PositiveNormalization.Clause (Ty ι) → Option (List (Ty ι))
+  | .refs fs [] vs _ _ _ _ =>
+    match ((Stored.views fs).lookup arraySpineKey).orElse fun _ => vs.lookup arraySpineKey with
+    | some S =>
+      let cs := expand G S
+      if cs.isEmpty then none
+      else cs.mapM fun
+        | .list ⟨[], [], some E, _, _⟩ [] => some E
+        | _ => none
+    | none => none
+  | _ => none
+
+/-- All homogeneous element types across every non-primitive clause of a plain
+type `R` (including unions of multiple array clauses and primitive types such as
+`Dense<T[]> | T[] | null`). Returns `some []` when `R` admits no object value. -/
+@[nospecialize] def arrayElemTypes (G : NormalGraph ι) (R : Ty ι) : Option (List (Ty ι)) :=
+  if !G.plainTy R then none
+  else (((expand G R).filter nonPrimitiveClause).mapM (clauseArrayElemTypes G)).map List.flatten
+
+/-- Whether two types cannot share any plain-array element cell: every
+non-primitive clause of `A` and every non-primitive clause of `B` is a
+homogeneous plain array (or empty for non-object types), and every pair of
+element types from `A` and `B` is disjoint (`BranchRefinement.typesDisjoint`). -/
+@[nospecialize] def tyArrayElemDisjoint [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Bool :=
+  match arrayElemTypes G A, arrayElemTypes G B with
+  | some Es₁, some Es₂ => Es₁.all fun E₁ => Es₂.all fun E₂ => BranchRefinement.typesDisjoint G E₁ E₂
+  | _, _ => false
+
+/-- Whether the types along paths `(x, p)` and `(y, q)` guarantee their
+plain-array element cells are disjoint (`typesPathCellsApart_sound`). -/
+@[nospecialize] def typesPathCellsApart [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (x : Nat) (p : List String) (y : Nat) (q : List String) : Bool :=
+  match pathTys G Γ x p, pathTys G Γ y q with
+  | some Ts, some Us => Ts.all fun A => Us.all fun B => tyArrayElemDisjoint G A B
+  | _, _ => false
+
+private theorem mapM_option_mem {α β : Type} {f : α → Option β} :
+    ∀ {xs : List α} {ys : List β}, xs.mapM f = some ys →
+      ∀ x ∈ xs, ∃ y ∈ ys, f x = some y
+  | [], _, h, _, hx => nomatch hx
+  | a :: xs, ys, h, x, hx => by
+    simp only [List.mapM_cons] at h
+    cases hfa : f a with
+    | none => simp [hfa] at h
+    | some b =>
+      cases hxs : xs.mapM f with
+      | none => simp [hfa, hxs] at h
+      | some rest =>
+        simp [hfa, hxs] at h
+        subst h
+        rcases List.mem_cons.mp hx with rfl | hx'
+        · exact ⟨b, List.mem_cons_self .., hfa⟩
+        · obtain ⟨y, hy, hfy⟩ := mapM_option_mem hxs x hx'
+          exact ⟨y, List.mem_cons_of_mem b hy, hfy⟩
+
+private theorem spineCells_mem_obj {h : Heap} {u : Val} {l : Nat}
+    (hm : (Footprints.spineCells h u).contains (some l) = true) :
+    ∃ fs0 cd oid, u = .objAt fs0 cd oid := by
+  cases u with
+  | objAt fs0 cd oid => exact ⟨fs0, cd, oid, rfl⟩
+  | _ =>
+    simp [Footprints.spineCells, Footprints.entriesAt, Footprints.fieldsOf, descriptorSpine] at hm
+
+private theorem clauseArrayElemTypes_cell_val {G : NormalGraph ι} {c0 : PositiveNormalization.Clause (Ty ι)}
+    {es : List (Ty ι)} {k nw l : Nat} {W : WorldT (nw + 4)} {h : Heap}
+    {fs0 : List (PropKey × Nat)} {cd : CallCode} {oid : Nat}
+    (hk : 2 ≤ k) (hkn : k ≤ nw + 4)
+    (hc : clauseArrayElemTypes G c0 = some es)
+    (hsem0 : clauseSem G c0 k (trunc k hkn W) (.objAt fs0 cd oid))
+    (hh : HeapOk (nw + 4) W h)
+    (hm : (Footprints.spineCells h (.objAt fs0 cd oid)).contains (some l) = true) :
+    ∃ E ∈ es, ∃ w, h[l]? = some w ∧ meaning G E 0 (trunc 0 (by omega) W) w := by
+  cases c0 with
+  | refs fs rest vs os ms ks st_keys =>
+    cases rest with
+    | cons _ _ => simp [clauseArrayElemTypes] at hc
+    | nil =>
+      simp only [clauseArrayElemTypes] at hc
+      split at hc
+      case h_2 => cases hc
+      rename_i S hS
+      split at hc
+      · cases hc
+      · rename_i hne
+        have hplainS : G.plainTy S = true := by
+          obtain ⟨cS, hcS⟩ := List.exists_mem_of_ne_nil _ (List.isEmpty_eq_false_iff.mp (Bool.eq_false_iff.mpr hne))
+          exact plain_of_mem_expand hcS
+        have hsem := hsem0.1
+        have hsp_ex : ∃ (flds : List (PropKey × Nat)) (l0 : Nat) (c : Ctr k) (oid' : Nat),
+            Tm.objAt fs0 cd oid = .objAt flds .absent oid' ∧ flds.lookup arraySpineKey = some l0 ∧
+            lookup (trunc k hkn W) l0 = some c ∧
+            (∀ (i : Nat) (hi : i < k) (W' : WorldT i) (v : Val), c i hi W' v → meaning G S i W' v) := by
+          cases hfs : (Stored.views fs).lookup arraySpineKey with
+          | some S' =>
+            rw [hfs] at hS; simp only [Option.orElse_some, Option.some.injEq] at hS; subst hS
+            obtain ⟨_, hm'⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hfs)
+            obtain ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩ :=
+              recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S', hm', rfl⟩) hsem.1.1
+            exact ⟨flds, l0, c, oid', hobj, hf, hlc, fun i hi W' v hv => (hag i hi W' v).mp hv⟩
+          | none =>
+            rw [hfs] at hS; simp only [Option.orElse_none] at hS
+            obtain ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩ :=
+              viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
+                (by simp [arraySpineKey, lengthKey]) hsem.2.1
+            exact ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩
+        obtain ⟨flds, l0, c, oid', hobj, hf, hlc, hag⟩ := hsp_ex
+        cases hobj
+        obtain ⟨c0, hW0, rfl⟩ := lookup_trunc_inv hkn W l0 c hlc
+        obtain ⟨v0, hv0, hvc⟩ := hh.1.2 l0 c0 hW0
+        have hsp : meaning G S (k - 1) (trunc (k - 1) (by omega) W) v0 :=
+          hag (k - 1) (by omega) (trunc (k - 1) (by omega) W) v0 (hvc (k - 1) (by omega))
+        obtain ⟨cS, hcS_mem, hcS_sem⟩ := (expand_sem G S hplainS (k - 1) (trunc (k - 1) (by omega) W) v0).mp hsp
+        obtain ⟨E, hE_mem, hE_eq⟩ := mapM_option_mem hc cS hcS_mem
+        cases cS with
+        | list arr restS =>
+          cases restS with
+          | cons _ _ => simp at hE_eq
+          | nil =>
+            rcases arr with ⟨req, opt, restE, ro, pr⟩
+            cases req with
+            | cons _ _ => simp at hE_eq
+            | nil =>
+              cases opt with
+              | cons _ _ => simp at hE_eq
+              | nil =>
+                cases restE with
+                | none => simp at hE_eq
+                | some E' =>
+                  simp only [Option.some.injEq] at hE_eq
+                  subst hE_eq
+                  obtain ⟨ls, rfl, -, -, -, -, -, -, hrest, -⟩ := hcS_sem.1.1
+                  have hsc : Footprints.spineCells h (.objAt fs0 .absent oid) = ls := by
+                    simp [Footprints.spineCells, Footprints.entriesAt, Footprints.fieldsOf, descriptorSpine, hf, hv0, spineEntries]
+                  rw [hsc, List.contains_iff_mem] at hm
+                  obtain ⟨j, hj, hlj⟩ := List.getElem_of_mem hm
+                  obtain ⟨E'', c', hE'', hlk', hag'⟩ := hrest j l (by simp [tupleFams]) (by rw [List.getElem?_eq_getElem hj, hlj])
+                  simp only [tupleFams, Option.map_some, Option.some.injEq] at hE''; subst hE''
+                  obtain ⟨c0', hc0', rfl⟩ := lookup_trunc_inv (by omega) W l c' hlk'
+                  obtain ⟨w, hw, hwc⟩ := hh.1.2 l c0' hc0'
+                  exact ⟨E', hE_mem, w, hw, (hag' 0 (by omega) (trunc 0 (by omega) W) w).1 (hwc 0 (by omega))⟩
+        | _ => simp at hE_eq
+  | _ => simp [clauseArrayElemTypes] at hc
+
+private theorem arrayElemTypes_cell_val {G : NormalGraph ι} {R : Ty ι} {Es : List (Ty ι)}
+    {k nw l : Nat} {W : WorldT (nw + 4)} {h : Heap} {u : Val}
+    (hk : 2 ≤ k) (hkn : k ≤ nw + 4)
+    (hc : arrayElemTypes G R = some Es) (hu : meaning G R k (trunc k hkn W) u)
+    (hh : HeapOk (nw + 4) W h)
+    (hm : (Footprints.spineCells h u).contains (some l) = true) :
+    ∃ E ∈ Es, ∃ w, h[l]? = some w ∧ meaning G E 0 (trunc 0 (by omega) W) w := by
+  obtain ⟨fs0, cd, oid, rfl⟩ := spineCells_mem_obj hm
+  unfold arrayElemTypes at hc
+  split at hc
+  · cases hc
+  · rename_i hp
+    have hplain : G.plainTy R = true := by cases hR : G.plainTy R <;> simp_all
+    simp only [Option.map_eq_some_iff] at hc
+    obtain ⟨Ess, hmap, rfl⟩ := hc
+    obtain ⟨c0, hc0_mem, hc0_sem⟩ := (expand_sem G R hplain k (trunc k hkn W) _).mp hu
+    have hc0_filt : c0 ∈ (expand G R).filter nonPrimitiveClause :=
+      List.mem_filter.mpr ⟨hc0_mem, clauseSem_nonPrimitive_of_obj hc0_sem⟩
+    obtain ⟨es, hes_mem, hce⟩ := mapM_option_mem hmap c0 hc0_filt
+    obtain ⟨E, hE_mem, w, hw, hmE⟩ := clauseArrayElemTypes_cell_val hk hkn hce hc0_sem hh hm
+    exact ⟨E, List.mem_flatten.mpr ⟨es, hes_mem, hE_mem⟩, w, hw, hmE⟩
+
+theorem typesPathCellsApart_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {ρ : Env} {nw : Nat} {W : WorldT (nw + 4)} {h : Heap}
+    (he : EnvOk G Γ ρ (nw + 4) W) (hh : HeapOk (nw + 4) W h)
+    {x y l : Nat} {p q : List String} {u w : Val}
+    (hp : p.length ≤ 2) (hq : q.length ≤ 2)
+    (hdis : typesPathCellsApart G Γ x p y q = true)
+    (hu : HeapKnowledge.readPath h (ρ x) p = some u)
+    (hw : HeapKnowledge.readPath h (ρ y) q = some w)
+    (hmu : (Footprints.spineCells h u).contains (some l) = true)
+    (hmw : (Footprints.spineCells h w).contains (some l) = true) : False := by
+  unfold typesPathCellsApart at hdis
+  cases hT : pathTys G Γ x p with
+  | none => rw [hT] at hdis; cases hdis
+  | some Ts =>
+    rw [hT] at hdis
+    cases hU : pathTys G Γ y q with
+    | none => rw [hU] at hdis; cases hdis
+    | some Us =>
+      rw [hU] at hdis
+      simp only [List.all_eq_true] at hdis
+      obtain ⟨A, hA, huA⟩ := pathTys_sound he hh (by omega) hT hu
+      obtain ⟨B, hB, hwB⟩ := pathTys_sound he hh (by omega) hU hw
+      have hab := hdis A hA B hB
+      unfold tyArrayElemDisjoint at hab
+      split at hab
+      · rename_i Es₁ Es₂ hE₁ hE₂
+        simp only [List.all_eq_true] at hab
+        obtain ⟨E₁, hE₁_mem, v₁, hv₁, hm₁⟩ := arrayElemTypes_cell_val (by omega) (Nat.sub_le _ _) hE₁ huA hh hmu
+        obtain ⟨E₂, hE₂_mem, v₂, hv₂, hm₂⟩ := arrayElemTypes_cell_val (by omega) (Nat.sub_le _ _) hE₂ hwB hh hmw
+        rw [hv₁] at hv₂; cases hv₂
+        exact BranchRefinement.typesDisjoint_sound (hab E₁ hE₁_mem E₂ hE₂_mem) hm₁ hm₂
+      · cases hab
+
+/-- The path `(x, p)` of an element-cell region (`cells` or `pathCells`). -/
+def cellSite : Footprints.Region → Option (Nat × List String)
+  | .cells x => some (x, [])
+  | .pathCells x p => some (x, p)
+  | _ => none
+
+private theorem cellSite_mem {r : Footprints.Region} {x : Nat} {p : List String}
+    {ρ : Env} {h : Heap} {l : Nat}
+    (hs : cellSite r = some (x, p)) (hm : r.mem ρ h l = true) :
+    ∃ u, HeapKnowledge.readPath h (ρ x) p = some u ∧ (Footprints.spineCells h u).contains (some l) = true := by
+  cases r with
+  | cells y =>
+    simp only [cellSite, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨rfl, rfl⟩ := hs
+    exact ⟨ρ y, rfl, hm⟩
+  | pathCells y q =>
+    simp only [cellSite, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨rfl, rfl⟩ := hs
+    simp only [Footprints.Region.mem] at hm
+    cases hr : HeapKnowledge.readPath h (ρ y) q with
+    | none => rw [hr] at hm; cases hm
+    | some u => rw [hr] at hm; exact ⟨u, rfl, hm⟩
+  | _ => simp [cellSite] at hs
+
 /-- The separation query from type-disjoint array spines at paths of depth at
-most 2, and bare array element spines against array spines of depth at most 2,
-sound at any world of budget ≥ 4 (`typeSpineQuery_sound`). -/
+most 2, bare array element spines against array spines of depth at most 2, and
+type-disjoint plain-array element cells at paths of depth at most 2, sound at
+any world of budget ≥ 4 (`typeSpineQuery_sound`). -/
 @[nospecialize] def typeSpineQuery [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) :
     Footprints.SepQuery :=
   ⟨fun r s =>
@@ -2949,6 +3176,8 @@ sound at any world of budget ≥ 4 (`typeSpineQuery_sound`). -/
       decide (a.2.length ≤ 2) && decide (b.2.length ≤ 2) && typesPathSpinesApart G Γ a.1 a.2 b.1 b.2
     let elemPair := fun (x : Nat) (b : Nat × List String) =>
       decide (b.2.length ≤ 2) && typesElemSpinesApart G Γ x b.1 b.2
+    let cellPair := fun (a b : Nat × List String) =>
+      decide (a.2.length ≤ 2) && decide (b.2.length ≤ 2) && typesPathCellsApart G Γ a.1 a.2 b.1 b.2
     match Footprints.spineSite r, Footprints.spineSite s with
     | some x, some y => pair x y
     | some x, none => match Footprints.selectedSpineSite s with
@@ -2961,7 +3190,9 @@ sound at any world of budget ≥ 4 (`typeSpineQuery_sound`). -/
       | none => match r with
         | .elemSpines x [] => elemPair x y
         | _ => false
-    | none, none => false⟩
+    | none, none => match cellSite r, cellSite s with
+      | some a, some b => cellPair a b
+      | _, _ => false⟩
 
 theorem typeSpineQuery_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {ρ : Env} {nw : Nat} {W : WorldT (nw + 4)} {h : Heap}
@@ -3003,7 +3234,13 @@ theorem typeSpineQuery_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (T
         obtain ⟨w, hw, hwl⟩ := Footprints.spineSite_mem hy hs
         exact typesElemSpinesApart_sound he hh hρ hd.1 hd.2 hr hw hwl
       · cases hd
-  · cases hd
+  · split at hd
+    · rename_i a b ha hb
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hd
+      obtain ⟨u, hu, hmu⟩ := cellSite_mem ha hr
+      obtain ⟨w, hw, hmw⟩ := cellSite_mem hb hs
+      exact typesPathCellsApart_sound he hh hd.1.1 hd.1.2 hd.2 hu hw hmu hmw
+    · cases hd
 
 /-- **A stable field's location holds its value at every exit of a run**
 (`stable-first`), normal or thrown: the assertion that each first field

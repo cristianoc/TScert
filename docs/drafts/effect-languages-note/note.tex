@@ -975,6 +975,8 @@ write \code{x[i] = a} carries effect $\{\vw:\grow\}$ because
 \\
 \inferrule*[left=Elem-Write]{x\text{ plain array}}{K;C\vdash_m \code{x[i] = a}:\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}}
 \and
+\inferrule*[left=Dense-Elem-Write]{x:\code{Dense<}T\code{[]>}\quad K\vdash 0\le i < x.\code{length}}{K;C\vdash_m \code{x[i] = a}:\{x.\kw{cells}:\any\}}
+\\
 \inferrule*[left=Push]{x\text{ plain array}}{K;C\vdash_m \code{x.push(a)}:\{x.\kw{spine}:\extend\}}
 \\
 \inferrule*[left=Alloc]{ }{K;C\vdash_m \code{y = \{f: a\}}:\{\}\qquad K;C\vdash_m \code{y = [a]}:\{\}}
@@ -986,6 +988,9 @@ write \code{x[i] = a} carries effect $\{\vw:\grow\}$ because
 \status{Verified in Lean by \lean{fieldWriteFrame} and
 \lean{fieldWriteStep\_sound}, \lean{ExpressionEffects.scalarWrite\_sound},
 \lean{elemWriteFrame} and \lean{elemWriteStep\_sound},
+\lean{ExpressionEffects.elem\_var\_write\_dense\_core} and
+\lean{IndexWrites.boundedWriteFrame\_sound} (with
+\lean{IndexWrites.denseWriteFootprint}),
 \lean{receiverExtendFrame} (under \lean{ReceiverAppends}), and
 \lean{alloc\_post}. Native contracts are audited specifications
 (\emph{Footprints}~\cite{fp}).}

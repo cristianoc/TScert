@@ -355,12 +355,6 @@ function getJoinedNarrowing(analysis: TextAnalysis, analysisIndex: number, to: n
   return apart - together > lineFitEpsilon ? apart - together : 0
 }
 
-// PAPER: workaround (dense-write effect framing): direct arr[idx] = val classifies as arr[*]: grow in paper-annotations; wrap with Effects<{ "arr[#]": "any" }>
-function setNumberAt(arr: Dense<number[]>, idx: number, value: number): Modifies<{ values: "any" }, Effects<{ "arr[#]": "any" }, void>> {   // PAPER: annotation
-  if ((idx & 0x7fffffff) !== idx || idx >= arr.length) throw new RangeError('index')
-  arr[idx] = value
-}
-
 // PAPER: workaround (lazy null-prefix + disjunctive branch split): allocate null prefix by push and split on advances[idx] === null to establish shifted quantified invariant
 /** @requires safeInteger(base) && safeInteger(count) && 0 <= base && 0 <= count && base + count <= advances.length
  *  @ensures result.length === count
@@ -737,8 +731,7 @@ function measureAnalysisInto(
             if (spaceBefore && kerning.before !== 0 &&
               !(((flags[mi - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && (mi === from + 1 || ((flags[mi - 2] ?? missing()) & KIND_BITS) === HARD_BREAK)) &&
               spaceSharesScriptRun(own, starts[mi]! - ownStart, starts[mi]! - ownStart + text.length)) {
-              const idx = at - 1
-              setNumberAt(widths, idx, (widths[idx] ?? missing()) + kerning.before)
+              widths[at - 1] = (widths[at - 1] ?? missing()) + kerning.before
             }
           }
         }
@@ -806,7 +799,7 @@ function measureAnalysisInto(
     if (kind !== TEXT && kind !== SPACE && kind !== ZERO_WIDTH_BREAK) simpleKinds = false
     if (kind !== TEXT && kind !== SOFT_HYPHEN) previousJoinablePiece = null
     segmentFlags[at] = (segment & ~ONE_CLUSTER) | (hasLetterSpacing && spacingGraphemeCount > 0 ? SPACED : 0)
-    setNumberAt(widths, at, addInternalLetterSpacing(width, spacingGraphemeCount, letterSpacing))
+    widths[at] = addInternalLetterSpacing(width, spacingGraphemeCount, letterSpacing)
     // PAPER: workaround (parallel push ordering): defer getSegmentFit out of switch and branch on breakableLineStartExtras === null so breakableFitAdvances.push and breakableLineStartExtras.push stay paired
     if (fitTextMetrics !== null) {
       const fitMode: BreakableFitMode = letterSpacing !== 0 ? 'segment-prefixes'
@@ -879,7 +872,7 @@ function measureAnalysisInto(
         simpleKinds = false
       }
       discretionaryHyphenContexts ??= zeros(to - from)   // PAPER: workaround (dense-write pre-allocation): allocate full to - from zeros so discretionaryHyphenContexts writes are in-bounds overwrites
-      setNumberAt(discretionaryHyphenContexts, s, returnFitsEachSideAlone ? 0 : getJoinedNarrowing(analysis, mi, to, previousJoinablePiece, previousJoinableMetrics, fontMeasurement, emojiCorrection, engineProfile.lineFitEpsilon))
+      discretionaryHyphenContexts[s] = returnFitsEachSideAlone ? 0 : getJoinedNarrowing(analysis, mi, to, previousJoinablePiece, previousJoinableMetrics, fontMeasurement, emojiCorrection, engineProfile.lineFitEpsilon)
     }
   }
 
@@ -896,17 +889,16 @@ function measureAnalysisInto(
     hanKerning = getHanKerningTrims(fontMeasurement, analysis, from, to)
     const trims = hanKerning.widthTrims
     if (trims !== null) {
-      /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && 0 <= from && from <= to && 0 <= base && base <= 4294967295 && widths.length - base === to - from && breakableFitAdvances.length === widths.length && widths !== breakableFitAdvances
+      /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= to && 0 <= base && base <= 4294967295 && 0 <= i && widths.length - base === to - from && breakableFitAdvances.length === widths.length && widths !== breakableFitAdvances
+       *  @invariant trims === null || i <= trims.length && trims.length <= to - from
        *  @invariant hanKerning.lineStartExtras === null || to - from <= hanKerning.lineStartExtras.length
        *  @invariant hanKerning.lineEndTrims === null || to - from <= hanKerning.lineEndTrims.length
        *  @invariant hanKerning.overflowLineEndTrims === null || to - from <= hanKerning.overflowLineEndTrims.length
        *  @invariant breakableLineStartExtras === null || breakableLineStartExtras.length === to - from && breakableLineStartExtras !== widths
-       *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
+       *  @invariant forall j in breakableFitAdvances: breakableFitAdvances[j] === null || 1 <= breakableFitAdvances[j].length
        *  @invariant breakableLineStartExtras === null || forall k in breakableLineStartExtras: breakableFitAdvances[base + k] === null || breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= breakableLineStartExtras[k].length */
       for (let i = 0; i < trims.length; i++) {
-        const idx = base + i
-        const widthsValue = (widths[idx] ?? missing()) - trims[i]!
-        setNumberAt(widths, idx, widthsValue)
+        widths[base + i] = (widths[base + i] ?? missing()) - trims[i]!
       }
     }
   }
@@ -956,39 +948,32 @@ function measureAnalysisInto(
 // its kana takes the same in its advances (getSegmentFit). `widths` holds segments [from, to)
 // of the analysis from `base`, a rich-inline item's in its paragraph's, and `extras` holds
 // them from index 0; a kana that starts an item takes no kerning with the item before it.
-/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+/** @requires safeInteger(from) && safeInteger(to) && safeInteger(base) && 0 <= from && from <= to && 0 <= base && base + (to - from) <= widths.length
  *  @requires extras === null || to - from <= extras.length
  *  @ensures result === null || to - from <= result.length */
 function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>, base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ "extras[#]": "any"; "widths[#]": "any"; fields: "any"; views: "grow" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= i && i <= to && 0 <= base && base + (to - from) <= widths.length
    *  @invariant extras === null || to - from <= extras.length */
   for (let i = from; i < to; i++) {
     if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT) continue
     const start = starts[i]
     if (start === undefined) throw new RangeError('missing value')
     const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
-    const at = base + i - from
-    /** @invariant safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+    const at = base + (i - from)
+    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && safeInteger(at) && 0 <= from && from <= i && i < to && 0 <= base && base + (to - from) <= widths.length && at === base + (i - from)
      *  @invariant extras === null || to - from <= extras.length */
     for (let k = i > from ? start : start + 1; k < end; k++) {
       const kerning = getKanaKerning(normalized, start, k, measurement, kernings)
       if (kerning === 0) continue
       if (k > start) {
-        const widthsValue = (widths[at] ?? missing()) + kerning
-        setNumberAt(widths, at, widthsValue)
-      } else if (kerning > 0) {
-        const idx = at - 1
-        const widthsValue = (widths[idx] ?? missing()) + kerning
-        setNumberAt(widths, idx, widthsValue)
-      } else {
-        const widthsValue = (widths[at] ?? missing()) + kerning
-        setNumberAt(widths, at, widthsValue)
+        widths[at] = (widths[at] ?? missing()) + kerning
+      } else if (kerning > 0 && i > from) {
+        widths[at - 1] = (widths[at - 1] ?? missing()) + kerning
+      } else if (kerning < 0) {
+        widths[at] = (widths[at] ?? missing()) + kerning
         extras ??= zeros(to - from)
-        const idx = i - from
-        const extrasStore = extras
-        const extrasValue = (extrasStore[idx] ?? missing()) - kerning
-        setNumberAt(extrasStore, idx, extrasValue)
+        extras[i - from] = (extras[i - from] ?? missing()) - kerning
       }
     }
   }
@@ -1025,7 +1010,7 @@ function addIdeographicSpaceHangs(
   to: number,
 ): Effects<{ "trims[#]": "any"; fields: "any" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to
    *  @invariant trims === null || to - from <= trims.length */
   for (let i = from; i < to; i++) {
     const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
@@ -1041,10 +1026,7 @@ function addIdeographicSpaceHangs(
     const hang = getSegmentMetrics(run, measurement).width + run.length * letterSpacing - (afterSoftHyphen ? hyphenWidth : 0)
     if (hang <= 0) continue
     trims ??= zeros(to - from)
-    const idx = i - from
-    const trimsStore = trims
-    const trimsValue = (trimsStore[idx] ?? missing()) + hang
-    setNumberAt(trimsStore, idx, trimsValue)
+    trims[i - from] = (trims[i - from] ?? missing()) + hang
   }
   return trims
 }

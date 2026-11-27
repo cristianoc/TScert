@@ -634,6 +634,66 @@ theorem IndexFact.keepsUnderCtx_sound {k : Knowledge} {c : ReadContext} {Φ : Fo
     intro gs hgs hkeep hF
     exact hleaf _ gs hgs hkeep hF
 
+/-- Guarded survival check combining each guarded separation query with an
+additional sound query `extraQ` (such as `typeSpineQuery`). -/
+def _root_.Verification.HeapKnowledge.IndexFact.keepsUnderCtxWith (ctx : KeepsUnderCtx)
+    (extraQ : SepQuery) (c : ReadContext) (Φ : Footprint) (gs : List (Nat × GuardTag)) : IndexFact → Bool
+  | .guarded s [] t B => B.keepsUnderCtxWith ctx extraQ c Φ ((s, t) :: gs)
+  | F =>
+    if F.keeps (ctx.baseQ.or extraQ) c Φ then true
+    else match ctx.queryByGs[gs]? with
+      | some tq => F.keeps (tq.get.or extraQ) c Φ
+      | none => false
+
+theorem IndexFact.keepsUnderCtxWith_sound {k : Knowledge} {extraQ : SepQuery} {c : ReadContext}
+    {Φ : Footprint} {ρ : Env} {h h' : Heap} {n : Nat} {W : WorldT n}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ)
+    (hex : extraQ.Sound ρ h) (hp : Post Φ ρ h h') (hc : c.Holds ρ h h') :
+    ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      (∀ g ∈ gs, ¬g.2.holds (ρ g.1)) →
+      F.keepsUnderCtxWith (KeepsUnderCtx.ofKnowledge k) extraQ c Φ gs = true →
+      F.HoldsAt ε ρ h → F.HoldsAt ε ρ h' := by
+  have hbase : ((KeepsUnderCtx.ofKnowledge k).baseQ.or extraQ).Sound ρ h :=
+    SepQuery.or_sound (keepsUnderCtx_query_sound hk hok hρ (by simp)) hex
+  have hleaf : ∀ (F : IndexFact) (gs : List (Nat × GuardTag)),
+      (∀ g ∈ gs, ¬g.2.holds (ρ g.1)) →
+      (if F.keeps ((KeepsUnderCtx.ofKnowledge k).baseQ.or extraQ) c Φ then true
+       else match (KeepsUnderCtx.ofKnowledge k).queryByGs[gs]? with
+         | some tq => F.keeps (tq.get.or extraQ) c Φ
+         | none => false) = true →
+      F.HoldsAt ε ρ h → F.HoldsAt ε ρ h' := by
+    intro F gs hgs hkeep hF
+    split at hkeep
+    · rename_i hb
+      exact IndexFact.keeps_sound hb hbase hp hc hF
+    · split at hkeep
+      · rename_i tq htq
+        exact IndexFact.keeps_sound hkeep (SepQuery.or_sound (queryByGs_sound hk hok hρ hgs htq) hex) hp hc hF
+      · cases hkeep
+  intro F
+  induction F with
+  | guarded s p t B ih =>
+    cases p with
+    | nil =>
+      intro gs hgs hkeep hF
+      obtain ⟨v, hv, hor⟩ := hF
+      simp only [readGuard, Option.some.injEq] at hv
+      subst hv
+      refine ⟨ρ s, rfl, ?_⟩
+      by_cases ht : t.holds (ρ s)
+      · exact .inl ht
+      · refine .inr (ih ((s, t) :: gs) ?_ hkeep (hor.resolve_left ht))
+        intro g hg
+        rcases List.mem_cons.mp hg with rfl | hg
+        · exact ht
+        · exact hgs g hg
+    | cons _ _ =>
+      intro gs hgs hkeep hF
+      exact hleaf _ gs hgs hkeep hF
+  | _ =>
+    intro gs hgs hkeep hF
+    exact hleaf _ gs hgs hkeep hF
+
 end Verification.Footprints
 
 namespace Verification.Footprints

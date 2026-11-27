@@ -4482,15 +4482,34 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   · exact hq.2 _ hm hcd
 
 /-- The output of a write, with the facts it keeps one push deeper. -/
+def addUniqueAtoms (base : List IndexAtom) : List IndexAtom → List IndexAtom
+  | [] => base
+  | a :: xs => addUniqueAtoms (if base.contains a then base else a :: base) xs
+
+private theorem addUniqueAtoms_holds {ε ρ h} :
+    ∀ {base xs : List IndexAtom}, IndexHolds ε base ρ h → IndexHolds ε xs ρ h →
+      IndexHolds ε (addUniqueAtoms base xs) ρ h
+  | _, [], hb, _ => hb
+  | base, a :: xs, hb, hx => by
+    unfold addUniqueAtoms
+    have hxs : IndexHolds ε xs ρ h := fun b hm hc => hx b (List.mem_cons_of_mem a hm) hc
+    split
+    · exact addUniqueAtoms_holds hb hxs
+    · refine addUniqueAtoms_holds (fun b hm hc => ?_) hxs
+      rcases List.mem_cons.mp hm with rfl | hm
+      · exact hx b (List.mem_cons_self ..) hc
+      · exact hb b hm hc
+
 def withWritten (out : Knowledge) (kept : List IndexAtom) : Knowledge :=
-  { out with indices := out.indices ++ shiftIndices kept }
+  { out with indices := addUniqueAtoms out.indices (shiftIndices kept) }
 
 theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom} {ρ n W h t}
     (hk : SafePost Ξ T (fun h' _ => IndexHolds ε kept ρ h') n W h t)
     (ho : SafePost Ξ T (fun h' u => Holds out ε (push u ρ) h') n W h t) :
     SafePost Ξ T (fun h' u => Holds (withWritten out kept) ε (push u ρ) h') n W h t :=
   weaken (fun _ u hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, hq.1.2.2.2.1, hq.1.2.2.2.2.1,
-    indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
+    addUniqueAtoms_holds hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩)
+    (safePost_and ho hk)
 
 /-- **An element write's change** (`weak-update`'s effect): at any index, it
 sets the spine location to an array spine and at most one element location
@@ -4697,21 +4716,42 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
 def writeFootprint (a : Nat) : Footprints.Footprint :=
   [(.field a arraySpineKey, .grow), (.cells a, .any)]
 
+/-- The footprint of an in-bounds element write to a `Dense` array at slot `a`:
+only `a`'s element cells may change; every spine and every other location is
+untouched. -/
+def denseWriteFootprint (a : Nat) : Footprints.Footprint :=
+  [(.cells a, .any)]
+
+/-- Whether a checked write at slot `a` and index `i` leaves `a`'s spine
+untouched: `i < a.length` and `a` is a `Dense` array. -/
+@[nospecialize] def keepsDenseSpine [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
+    (k : Knowledge) (a i : Nat) : Bool :=
+  bounded k a i true && match j.context[a]? with
+    | some R => ExpressionEffects.spineFieldEveryDense G (expand G R) arraySpineKey
+    | none => false
+
 /-- The heap-reading index atoms of `k` kept by an element write at slot `a`
-under the tolerant frame (`Footprints.IndexFact.keeps`). -/
-def writeFrameAtoms (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : List IndexAtom :=
-  let c : Footprints.ReadContext := .ofFirst stable
-  let Φ := writeFootprint a
+under the tolerant frame (`Footprints.IndexFact.keepsUnderCtxWith`), combining
+knowledge separation with `typeSpineQuery` (including type-disjoint element
+cells) and using `denseWriteFootprint` when `dense = true`. -/
+@[nospecialize] def writeFrameAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) (dense : Bool) : List IndexAtom :=
+  let c : Footprints.ReadContext :=
+    { (Footprints.ReadContext.ofFirst stable) with arrayPath := HeapExpressionRules.arrayPathOf G Γ }
+  let Φ := if dense then denseWriteFootprint a else writeFootprint a
   let ctx := Footprints.KeepsUnderCtx.ofKnowledge k
+  let typeQ := HeapExpressionRules.typeSpineQuery G Γ
   k.indices.filter fun atom => !atom.fact.envOnly &&
-    atom.fact.keepsUnderCtx ctx k c Φ []
+    atom.fact.keepsUnderCtxWith ctx typeQ c Φ []
 
 /-- The read links of `k` kept by an element write at slot `a` under the
 tolerant frame (`Footprints.FactKind.link`), shifted past the step's result. -/
-def writeFrameLinks (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) : HeapLinks.Links :=
-  let q := Footprints.knowledgeQuery k
-  let c : Footprints.ReadContext := .ofFirst stable
-  let Φ := writeFootprint a
+@[nospecialize] def writeFrameLinks [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (stable : Nat → String → Bool) (k : Knowledge) (a : Nat) (dense : Bool) : HeapLinks.Links :=
+  let q := (Footprints.knowledgeQuery k).or (HeapExpressionRules.typeSpineQuery G Γ)
+  let c : Footprints.ReadContext :=
+    { (Footprints.ReadContext.ofFirst stable) with arrayPath := HeapExpressionRules.arrayPathOf G Γ }
+  let Φ := if dense then denseWriteFootprint a else writeFootprint a
   (k.links.filter fun g => !g.alias && Footprints.respects q
     ((Footprints.FactKind.link g).supportIn c) Φ).map
     fun g => { g with cell := g.cell + 1, value := g.value + 1 }
@@ -4727,6 +4767,133 @@ theorem withLinks_sound {Ξ T : Fam} {out : Knowledge} {ls : HeapLinks.Links} {�
   weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2.1, fun g hg =>
     (List.mem_append.mp hg).elim (hq.1.2.2.1 g) (fun hg => hq.2 g (List.mem_filter.mp hg).1),
     hq.1.2.2.2⟩) (safePost_and ho hl)
+
+/-- An element write `.writeAt … (.setElem (.readAt …) …)` takes three small
+steps before reaching a value, so any postcondition holds vacuously for `n < 4`. -/
+private theorem elementWrite_budget4 {Ξ T : Fam} {Q : Post} {n : Nat} {W : WorldT n} {h : Heap}
+    {flds : List (PropKey × Nat)} {cd : CallCode} {oid : Nat} {b : UInt64} {value : Val}
+    (hn : n < 4) (hv : isVal value = true)
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T Q n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value)) := by
+  cases n with
+  | zero => exact hs
+  | succ n1 =>
+    obtain ⟨hrf1, h1⟩ := hs
+    refine ⟨hrf1, ?_⟩
+    rcases h1 with (⟨hval, -⟩ | hr) | ⟨U1, h', t1, hx1, hu1, st1, hh1, hs1⟩
+    · simp [isVal] at hval
+    · exact .inl (.inr hr)
+    · refine .inr ⟨U1, h', t1, hx1, hu1, st1, hh1, ?_⟩
+      cases st1 with
+      | writeC1 s => exact absurd s (value_no_step rfl)
+      | writeField hv' _ _ => simp [isVal] at hv'
+      | writeC2 _ st1' =>
+        cases st1' with
+        | setC1 s =>
+          cases s with
+          | readC s' => exact absurd s' (value_no_step rfl)
+          | readField _ | readProto _ _ _ | readMissing _ _ =>
+            cases n1 with
+            | zero => exact hs1
+            | succ n2 =>
+              obtain ⟨hrf2, h2⟩ := hs1
+              refine ⟨hrf2, ?_⟩
+              rcases h2 with (⟨hval, -⟩ | hr) | ⟨U2, h2', t2, hx2, hu2, st2, hh2, hs2⟩
+              · simp [isVal] at hval
+              · exact .inl (.inr hr)
+              · refine .inr ⟨U2, h2', t2, hx2, hu2, st2, hh2, ?_⟩
+                cases st2 with
+                | writeC1 s => exact absurd s (value_no_step rfl)
+                | writeField hv' _ _ => simp [isVal] at hv'
+                | writeC2 _ _ =>
+                  cases n2 with
+                  | zero => exact hs2
+                  | succ n3 =>
+                    obtain ⟨hrf3, h3⟩ := hs2
+                    refine ⟨hrf3, ?_⟩
+                    rcases h3 with (⟨hval, -⟩ | hr) | ⟨U3, h3', t3, hx3, hu3, st3, hh3, hs3⟩
+                    · simp [isVal] at hval
+                    · exact .inl (.inr hr)
+                    · refine .inr ⟨U3, h3', t3, hx3, hu3, st3, hh3, ?_⟩
+                      cases n3 with
+                      | zero => exact hs3
+                      | succ _ => omega
+        | setC2 _ s => exact absurd s (value_no_step rfl)
+        | setC3 _ _ s => exact absurd s (value_no_step hv)
+
+/-- An in-bounds element write on a `Dense` array at slot `a` satisfies
+`Footprints.Post (denseWriteFootprint a)`. -/
+private theorem denseElementWrite_footprint_post [DecidableEq ι] {Ξ T : Fam}
+    {G : NormalGraph ι} {Γ : List (Ty ι)} {R : Ty ι} {a : Nat} {ρ : Env}
+    {nw : Nat} {W : WorldT (nw + 4)} {h : Heap}
+    {flds : List (PropKey × Nat)} {cd : CallCode} {oid target idx0 : Nat}
+    {xs : List (Option Nat)} {b : UInt64} {value : Val}
+    (ha : Γ[a]? = some R)
+    (hdense : ExpressionEffects.spineFieldEveryDense G (expand G R) arraySpineKey = true)
+    (he : EnvOk G Γ ρ (nw + 4) W) (hh : HeapOk (nw + 4) W h)
+    (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arraySpineKey = some target)
+    (hxs : h[target]? = some (.arr xs)) (hidx : indexOfBits b = some idx0) (hlt : idx0 < xs.length)
+    (hv : isVal value = true)
+    (hs : Safe Ξ T (nw + 4) W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T (fun h' _ => Footprints.Post (denseWriteFootprint a) ρ h h') (nw + 4) W h
+      (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value)) := by
+  have htl : target < h.length := (List.getElem?_eq_some_iff.mp hxs).1
+  apply elementWrite_post hfield hxs hv _ _ hs
+  · intro cell hc
+    have hcm : some cell ∈ xs := by
+      unfold elemLoc at hc
+      rw [hidx] at hc
+      simp only [Option.bind_some] at hc
+      cases hl : xs[idx0]? with
+      | none => simp [hl] at hc
+      | some o =>
+        simp only [hl, Option.bind_some] at hc
+        cases hc
+        exact List.mem_of_getElem? hl
+    refine ⟨by simp, fun l v hv' => ?_⟩
+    have hlt' : l < h.length := (List.getElem?_eq_some_iff.mp hv').1
+    by_cases hltTarget : l = target
+    · subst hltTarget
+      rw [hxs] at hv'; cases hv'
+      exact ⟨.arr xs, by rw [List.getElem?_set_self (by simpa using htl)], .inl rfl⟩
+    · by_cases hlc : l = cell
+      · subst hlc
+        refine ⟨value, ?_, .inr ⟨(.cells a, .any), by simp [denseWriteFootprint], ?_, trivial⟩⟩
+        · rw [List.getElem?_set_ne (Ne.symm hltTarget), List.getElem?_set_self hlt']
+        · simp [Footprints.Region.mem, Footprints.spineCells, Footprints.fieldsOf, Footprints.entriesAt,
+            spineEntries, hobj, hfield, hxs, hcm]
+      · refine ⟨v, ?_, .inl rfl⟩
+        rw [List.getElem?_set_ne (Ne.symm hltTarget), List.getElem?_set_ne (Ne.symm hlc)]
+        exact hv'
+  · intro i hi hnone
+    rw [hidx] at hi; cases hi
+    obtain ⟨B, _, L, hmem, hevery, hbag⟩ := ExpressionEffects.spineFieldEveryDense_sound hdense (he.2 a R ha)
+    obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
+    obtain ⟨flds1, fl', cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+    cases hproj
+    rw [hobj] at hl0; cases hl0
+    rw [hfield] at hfd; cases hfd
+    obtain ⟨u0, hu0, hcu⟩ := hh.1.2 target cfl hlookup
+    rw [hxs] at hu0; cases hu0
+    have hmL : meaning G L 1 (trunc 1 (by omega) W) (.arr xs) :=
+      (hagree 1 (by omega) _ _).mp (hcu 1 (by omega))
+    unfold ExpressionEffects.spineTyEveryDense at hevery
+    split at hevery
+    case h_2 => contradiction
+    rename_i A ro hexp
+    have hlist := (represents_raw (show Represents G L (.list ⟨[], [], some A, ro, .dense⟩ []) from hexp) 1 _ _ hmL).1
+    obtain ⟨ls', heq, hpres, -⟩ := hlist
+    cases heq
+    have hnd : none ∉ xs := hpres 0 (by omega)
+    have hget : xs[idx0]? = some (xs[idx0]'hlt) := List.getElem?_eq_getElem hlt
+    cases hval : xs[idx0]'hlt with
+    | none => exact False.elim (hnd (List.mem_of_getElem? (by rw [hget, hval])))
+    | some l => simp [elemLoc, hidx, hget, hval] at hnone
 
 /-- An element write on slot `a` satisfies `Footprints.Post (writeFootprint a)`. -/
 theorem elementWrite_footprint_post {Ξ T : Fam} {a : Nat} {ρ : Env} {n W h}
@@ -4787,15 +4954,19 @@ theorem elementWrite_footprint_post {Ξ T : Fam} {a : Nat} {ρ : Env} {n W h}
       exact hv'
 
 /-- A checked write at array slot `a` keeps both `writeFrameAtoms` and
-`writeFrameLinks` via the tolerant frame (`Footprints.Post (writeFootprint a)`). -/
+`writeFrameLinks` via the tolerant frame, using `denseWriteFootprint` when
+`keepsDenseSpine` holds and combining knowledge separation with `typeSpineQuery`. -/
 theorem boundedWriteFrame_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : RootsOk W ρ) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' u => IndexHolds ε (writeFrameAtoms (HeapExpressionRules.stableFirst G j.context) k a) ρ h' ∧
-        HeapLinks.Holds (writeFrameLinks (HeapExpressionRules.stableFirst G j.context) k a) (push u ρ) h')
+      (fun h' u =>
+        IndexHolds ε (writeFrameAtoms G j.context (HeapExpressionRules.stableFirst G j.context) k a
+          (keepsDenseSpine G j k a i)) ρ h' ∧
+        HeapLinks.Holds (writeFrameLinks G j.context (HeapExpressionRules.stableFirst G j.context) k a
+          (keepsDenseSpine G j k a i)) (push u ρ) h')
       n W h (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh href
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
@@ -4815,25 +4986,56 @@ theorem boundedWriteFrame_sound [DecidableEq ι] {G : NormalGraph ι} {images : 
   rw [boundedSlots_eq hslots] at hs ⊢
   have hsafe := HeapObservations.erase hs
   simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
-  have hpost := HeapExpressionRules.stableFirst_frame he hw hh
-    (elementWrite_footprint_post hoi hfl hl hval hsafe)
-  refine weaken (fun h' u hq => ?_) hpost
-  obtain ⟨hp, hst⟩ := hq
-  have hqsound := Footprints.knowledgeQuery_sound hk hh hρ
-  have hctx := Footprints.ReadContext.ofFirst_holds hst
-  refine ⟨fun atom hm hcd => ?_, fun g hg => ?_⟩
-  · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp hm
-    simp only [Bool.and_eq_true] at hkeep
-    exact Footprints.IndexFact.keepsUnderCtx_sound hk hh hρ hp hctx atom.fact [] (by simp) hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
-  · obtain ⟨g0, hg0, rfl⟩ := List.mem_map.mp hg
-    obtain ⟨hgm, hr⟩ := List.mem_filter.mp hg0
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hr
-    have hF : (Footprints.FactKind.link g0).Holds ρ h := fun g' hg' => by
-      rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g0 hgm
-    have hres := Footprints.frame_step (D := Footprints.heaps) (m := 0)
-      (Footprints.FactKind.supportsIn (.ofFirst (HeapExpressionRules.stableFirst G j.context)) (.link g0))
-      hr.2 hqsound hp trivial hctx hF g0 (List.mem_singleton_self _)
-    simpa [push] using hres
+  by_cases hn4 : n < 4
+  · exact elementWrite_budget4 hn4 hval hsafe
+  · obtain ⟨nw, rfl⟩ : ∃ nw, n = nw + 4 := ⟨n - 4, by omega⟩
+    let dense := keepsDenseSpine G j k a i
+    have hfp : SafePost (excOf G) (meaning G j.type)
+        (fun h' _ => Footprints.Post (if dense then denseWriteFootprint a else writeFootprint a) ρ h h')
+        (nw + 4) W h
+        (.writeAt arraySpineKey (.objAt flds cd oid)
+          (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) (ρ v))) := by
+      cases hdn : dense with
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        exact elementWrite_footprint_post hoi hfl hl hval hsafe
+      | true =>
+        simp only [↓reduceIte]
+        have hdn' : keepsDenseSpine G j k a i = true := hdn
+        simp only [keepsDenseSpine, Bool.and_eq_true] at hdn'
+        obtain ⟨hbdStrict, hspDense⟩ := hdn'
+        split at hspDense
+        case h_2 => cases hspDense
+        rename_i R hRa
+        obtain ⟨s', ls', b', idx', hs0', hl', hb', hidx', hlt'⟩ := bounded_sound hbdStrict hk
+        rw [hs0] at hs0'; cases hs0'
+        rw [hl] at hl'; cases hl'
+        rw [hb] at hb'; cases hb'
+        exact denseElementWrite_footprint_post hRa hspDense he hh hoi hfl hl hidx' (by simp at hlt'; omega) hval hsafe
+    have hpost := HeapExpressionRules.stableFirst_frame he hw hh hfp
+    refine weaken (fun h' u hq => ?_) hpost
+    obtain ⟨hp, hst⟩ := hq
+    have htypeQ := HeapExpressionRules.typeSpineQuery_sound he hh hρ
+    have hqsound := Footprints.SepQuery.or_sound (Footprints.knowledgeQuery_sound hk hh hρ) htypeQ
+    have hctx : ({ (Footprints.ReadContext.ofFirst (HeapExpressionRules.stableFirst G j.context)) with
+        arrayPath := HeapExpressionRules.arrayPathOf G j.context } : Footprints.ReadContext).Holds ρ h h' :=
+      ⟨(Footprints.ReadContext.ofFirst_holds hst).1, HeapExpressionRules.arrayPathOf_sound he hh hρ⟩
+    refine ⟨fun atom hm hcd => ?_, fun g hg => ?_⟩
+    · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp hm
+      simp only [Bool.and_eq_true] at hkeep
+      exact Footprints.IndexFact.keepsUnderCtxWith_sound hk hh hρ htypeQ hp hctx atom.fact [] (by simp)
+        hkeep.2 (hk.2.2.2.2.2 atom ha hcd)
+    · obtain ⟨g0, hg0, rfl⟩ := List.mem_map.mp hg
+      obtain ⟨hgm, hr⟩ := List.mem_filter.mp hg0
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hr
+      have hF : (Footprints.FactKind.link g0).Holds ρ h := fun g' hg' => by
+        rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g0 hgm
+      have hres := Footprints.frame_step (D := Footprints.heaps) (m := 0)
+        (Footprints.FactKind.supportsIn
+          { (Footprints.ReadContext.ofFirst (HeapExpressionRules.stableFirst G j.context)) with
+            arrayPath := HeapExpressionRules.arrayPathOf G j.context } (.link g0))
+        hr.2 hqsound hp trivial hctx hF g0 (List.mem_singleton_self _)
+      simpa [push] using hres
 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
@@ -9840,25 +10042,27 @@ every other step is `base`'s. -/
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
+        let dense := IndexWrites.keepsDenseSpine G j k a i
         pure (IndexWrites.withLinks (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
-          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms (stableFirst G j.context) k a ++
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms G j.context (stableFirst G j.context) k a dense ++
             IndexWrites.atLengthAtoms G j k a i ++ IndexWrites.overwriteAtoms G j.context k a i v ++
             IndexWrites.denseAppendAtoms G j.context k a i v))
           (IndexWrites.writtenCells k (valuesAt G j.context k v)))
-          (IndexWrites.writeFrameLinks (stableFirst G j.context) k a))
+          (IndexWrites.writeFrameLinks G j.context (stableFirst G j.context) k a dense))
       else failure
     | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
+        let dense := IndexWrites.keepsDenseSpine G j k a i
         pure (IndexWrites.withLinks (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
-          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms (stableFirst G j.context) k a ++
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.writeFrameAtoms G j.context (stableFirst G j.context) k a dense ++
             IndexWrites.atLengthAtoms G j k a i ++ IndexWrites.overwriteAtoms G j.context k a i v ++
             IndexWrites.denseAppendAtoms G j.context k a i v))
           (IndexWrites.writtenCells k (valuesAt G j.context k v)))
-          (IndexWrites.writeFrameLinks (stableFirst G j.context) k a))
+          (IndexWrites.writeFrameLinks G j.context (stableFirst G j.context) k a dense))
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by

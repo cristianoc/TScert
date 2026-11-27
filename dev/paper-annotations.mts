@@ -61,6 +61,10 @@ interface FunctionInfo {
    * `Effects<{ "@state": "any" }, T>`), used to frame calls to it via rule
    * Confined. */
   stated?: Effect;
+  /** Source spans of direct element writes `arr[i] = v` whose spine change was
+   * omitted from the stated-effect check and must be certified in-bounds on a
+   * `Dense` array (`ExpressionEffects.denseWriteStep`) by the verifier pass. */
+  denseWrites?: [number, number][];
   /** Bounded callback parameters verified never to escape this function's
    * dynamic extent (rule Callback-Inv). */
   nonEscaping?: string[];
@@ -1769,26 +1773,41 @@ function statedEffect(decl: ts.FunctionDeclaration): { effect: Effect; checkBody
   return null;
 }
 
-/** Cache of verified `Effects<P, T>` function declarations (`null` = ok, string = refusal). */
-const verifiedEffects = new Map<ts.FunctionDeclaration, string | null>();
+/** Cache of verified `Effects<P, T>` function declarations (`error: null` = ok). */
+const verifiedEffects = new Map<ts.FunctionDeclaration, { error: string | null; denseWrites: [number, number][] }>();
 const verifyingEffects = new Set<ts.FunctionDeclaration>();
 
-/** Verify a function declaration's body against its stated `Effects<P, T>`. */
-function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect, ordKeepsSpines: boolean = false): string | null {
+/** Verify a function declaration's body against its stated `Effects<P, T>`,
+ * returning any refusal reason together with element-write spans that the
+ * Lean pass must certify as in-bounds `Dense` writes (`denseWriteStep`). */
+function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect, ordKeepsSpines: boolean = false): { error: string | null; denseWrites: [number, number][] } {
   const cached = verifiedEffects.get(decl);
   if (cached !== undefined) return cached;
-  if (verifyingEffects.has(decl)) return null; // coinductive assumption for recursive self/mutual calls
+  if (verifyingEffects.has(decl)) return { error: null, denseWrites: [] }; // coinductive assumption for recursive self/mutual calls
   verifyingEffects.add(decl);
-  const actual = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) });
+  const elemWrites: { spineKey: string; span: [number, number] }[] = [];
+  const actual = closureEffect(decl, true, { owner: decl, names: boundedParams(decl) }, elemWrites);
   verifyingEffects.delete(decl);
   // A `TypedArray` parameter's element/spine writes (`p[*]`, `p[#]`) are covered by `"views": "grow"` when stated.
   const hasViews = stated.entries.some(([k, d]) => k === "views" && le("grow", d));
   const typedParams = hasViews
     ? new Set(decl.parameters.flatMap((p) => ts.isIdentifier(p.name) && isTypedArrayType(p.type) ? [p.name.text] : []))
     : new Set<string>();
+  const denseWrites: [number, number][] = [];
+  const extraEntries: [string, Change][] = [];
+  for (const ew of elemWrites) {
+    if (ordKeepsSpines) continue;
+    const loc = locOf(ew.spineKey);
+    if (loc !== null && loc.path.length === 0 && loc.kind === "spine" && typedParams.has(loc.root)) {
+      extraEntries.push(["views", "grow"]);
+      continue;
+    }
+    if (effectWithin({ entries: [[ew.spineKey, "grow"]], else: "keep" }, stated) === null) continue;
+    denseWrites.push(ew.span);
+  }
   const normalized = typeof actual === "string" ? actual : {
     ...actual,
-    entries: actual.entries.flatMap(([k, c]): [string, Change][] => {
+    entries: [...actual.entries, ...extraEntries].flatMap(([k, c]): [string, Change][] => {
       const loc = locOf(k);
       if (loc !== null && loc.path.length === 0 && (loc.kind === "spine" || loc.kind === "cells") && typedParams.has(loc.root))
         return [["views", "grow"]];
@@ -1797,7 +1816,8 @@ function verifyStatedEffect(decl: ts.FunctionDeclaration, stated: Effect, ordKee
       return [[k, c]];
     }),
   };
-  const res = typeof normalized === "string" ? normalized : effectWithin(normalized, stated);
+  const error = typeof normalized === "string" ? normalized : effectWithin(normalized, stated);
+  const res = { error, denseWrites: error === null ? denseWrites : [] };
   verifiedEffects.set(decl, res);
   return res;
 }
@@ -2021,7 +2041,12 @@ function isBlockFreshVar(id: ts.Identifier, declNode: ts.Node, at: ts.Node): boo
   return false;
 }
 
-function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noSkip): Effect | string {
+function closureEffect(
+  fn: FnNode,
+  paramRoots: boolean = false,
+  skip: Skip = noSkip,
+  elemWrites?: { spineKey: string; span: [number, number] }[],
+): Effect | string {
   if (fn.body === undefined) return "has no body";
   const sf = fn.getSourceFile();
   const confined = moduleConfinement(sf);
@@ -2121,7 +2146,12 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
       const name = ts.isPropertyAccessExpression(t) ? t.name.text
         : arg !== undefined && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) ? arg.text : null;
       if (name === null) {
-        entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]);
+        if (elemWrites !== undefined && ts.isBinaryExpression(at) && at.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+          elemWrites.push({ spineKey: keyOf(base, "[*]"), span: [at.getStart(sf), at.getEnd()] });
+          entries.push([keyOf(base, "[#]"), "any"]);
+        } else {
+          entries.push([keyOf(base, "[*]"), "grow"], [keyOf(base, "[#]"), "any"]);
+        }
         return undefined;
       }
       // Field-Write is a rule for a field of an object; a named member of an
@@ -2352,7 +2382,7 @@ function closureEffect(fn: FnNode, paramRoots: boolean = false, skip: Skip = noS
           }
           const st = decl === undefined ? null : statedEffect(decl);
           if (decl !== undefined && st !== null && st.checkBody) {
-            const why = verifyStatedEffect(decl, st.effect, st.ordKeepsSpines === true);
+            const { error: why } = verifyStatedEffect(decl, st.effect, st.ordKeepsSpines === true);
             if (why !== null) return fail(n, `calls ${callee.text} whose stated Effects failed verification (${why})`);
           }
           // A call of a function with effect parameters whose instances are the
@@ -2774,9 +2804,10 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     // module confinement obligations (`OwnerConfined`).
     const st = statedEffect(s);
     let stated: Effect | undefined;
+    let denseWrites: [number, number][] = [];
     if (st !== null && st.checkBody && refusal === undefined) {
-      const why = verifyStatedEffect(s, st.effect, st.ordKeepsSpines === true);
-      if (why !== null) refusal = `stated Effects verification failed: ${why}`;
+      const verified = verifyStatedEffect(s, st.effect, st.ordKeepsSpines === true);
+      if (verified.error !== null) refusal = `stated Effects verification failed: ${verified.error}`;
       else {
         const reach: Record<string, AccJson> = {};
         for (const [k] of st.effect.entries) {
@@ -2787,6 +2818,7 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
         }
         if (Object.keys(reach).length > 0) st.effect.reach = reach;
         stated = st.effect;
+        denseWrites = verified.denseWrites;
       }
     }
     const own = effectVars(s).length === 0 ? undefined : closureEffect(s, true, { owner: s, names: boundedParams(s) });
@@ -2815,6 +2847,7 @@ function functionInfos(tree: ts.SourceFile): { functions: Record<string, Functio
     };
     if (own !== undefined) info.own = own;
     if (stated !== undefined) info.stated = stated;
+    if (denseWrites.length > 0) info.denseWrites = denseWrites;
     if (nonEscaping.length > 0) info.nonEscaping = nonEscaping;
     if (refusal !== undefined) info.refusal = refusal;
     if (unread !== undefined) info.unread = unread;

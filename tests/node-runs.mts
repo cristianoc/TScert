@@ -3637,4 +3637,7 @@ for (const [file, call] of [
   assert.deepEqual(runPlain(negative("invalid-object-literal-inherited-key"),
     "(() => { const r = makePlainWithEmptyWidths(); return [typeof r.toString, r.toString === undefined, r.widths.length]; })()"),
     ["function", false, 0], "invalid-object-literal-inherited-key: plain object literal inherits Object.prototype.toString, violating this.toString === undefined || this.widths.length >= 1");
+  assert.equal(runExample(negative("invalid-dense-write-same-elem-type-clobbers"),
+    "(() => { const xs = [1]; return String(Number.isNaN(clobberAndRead(xs, xs, [42], 0))); })()"),
+    "true", "invalid-dense-write-same-elem-type-clobbers: aliased Dense<number[]> write clobbers targets[0] to 0 and reads out[-1]/NaN");
 }

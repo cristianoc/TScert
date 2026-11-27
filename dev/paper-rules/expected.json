@@ -262,5 +262,17 @@
       "callViaAlias": "refused",
       "init": "accepted"
     }
+  },
+  "dense-writes.ts": {
+    "ordinary": "unverified",
+    "units": {
+      "zeros": "accepted",
+      "writeDenseInBounds": "accepted",
+      "writeDenseNullable": "accepted",
+      "callerPreservesLengths": "accepted",
+      "writeDenseAppend": "refused",
+      "writeNonDenseInBounds": "refused",
+      "writeDenseAtLength": "refused"
+    }
   }
 }
