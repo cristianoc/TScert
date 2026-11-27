@@ -109,6 +109,11 @@ any exception), with a first line `error: `.
 `--file-worker 8` prepares the file as `--verify-interface-stage 8` does
 (`RequestCli.prepareUnitsFile`: the fragment and interfaces decoded, the
 file's claims and front lowered), or refuses as it does, before any line.
+With `TSCERT_TRACE_PROPOSALS` set, each checked group emits its unit identity
+and ordered proposal answers on standard error. A named empty answer is
+JSON null. A proposed callable reports the normal and exceptional bounds,
+the returned footprint and the return alias.
+
 It then prints its preparation line, and reads
 request lines from standard input until it ends; for each it checks the
 units it names, one after another, each by the check

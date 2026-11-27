@@ -133,9 +133,6 @@ def Front.elaborateSome {ω : Type} (fr : Front) (wanted : Std.HashSet Nat) (ret
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
-/-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceElaboration.ClassSummary × Footprints.Closed × Option Nat × Nat))
-
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/
 structure FilePlans where
@@ -148,12 +145,6 @@ structure FilePlans where
   store, where the planning lowered them (`fragmentPlansCore`'s
   `interfaceSlots`): a module's interface types. -/
   slots : List (String × Ty (EquationStore.CheckedLabel F.equations F.primitive)) := []
-  /-- What the proposals made while planning established of each function
-  (`PassProposals.proposeOne`), by the digest of the inputs its runs read
-  (`PassProposals.inputDigest`): its footprint, throw bound, returned
-  function's footprint and transfers, or `none` where they establish
-  nothing. A later planning reads an entry only for the same inputs. -/
-  proposed : ProposalMemo := {}
   /-- Non-recursive functions whose own proposal run (`PassProposals.proposeOne`)
   refused at an open plan (`none`), with no forced proposals or stand-ins. -/
   proposalRefused : List String := []

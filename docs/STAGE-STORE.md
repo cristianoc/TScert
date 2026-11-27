@@ -732,23 +732,17 @@ Its preparation line is a function of `P`. A unit's line is
 `check(P, i)` (`PreparedFile.check`): unit `i`'s group planned in its own
 check (`PreparedFile.plan`: the plans of that group alone, its import reads,
 proposals and elaboration, over `P`'s front), then the group checked. The
-planning reads the proposals of the groups `i`'s group reaches outside
-itself, each computed by that group's own planning, callees first
-(`PreparedFile.known`). A group's proposals are a function of the file and
-of the group: they read only the proposals of the groups below it, and a
-member of a group of two or more functions reads the others at their
-written effect or `top` (`PassProposals.proposeOne`). The worker keeps each
-group's plans and proposals once computed (`PreparedFile.plans`,
-`PreparedFile.proposals`); a later unit reads them, the values its own
-planning would compute. The verifier's other state carried from one unit's
-check to the next is measurement (the work table, the per-kind timings,
-which reach standard error only where profiling, never a line) and the
-memoized values of `P`'s thunks, which are `P`'s own values whichever check
-forces them. So every piece is a function of `W` and `p`, whichever units a
-process checked before it, in whichever order, in whichever worker; a
-restarted worker prepares from the same inputs and computes the same `P`.
-The control `worker order` (`tests/single-pass-controls.mts`) checks it: one file's
-units in two orders and through a resumed worker give the same bytes. The
+planning takes the effective interface demand of this selection and the
+ordered proposal values below the group (`PreparedFile.known`). A planning
+failure supplies the named empty proposals of the group's function members.
+`GroupContext.groupOperation` produces the answers and the verdict from the
+same plan. A worker keeps the answers and can retain the plan until its
+verdict is requested. Initialization typings are shared at the same ordered
+qualified effects and stand-in inputs. At each qualified front, the worker keeps proposal answers by member index
+and complete ordered stand-ins across group requests and both proposal rounds. A restarted
+worker reconstructs these values from W. The `worker order` control compares
+the answers and complete lines in fresh processes, in reverse order and
+across a partial worker run followed by resumption. The
 key is coarser than one naming only what a unit reads: any change of the
 file or of its inputs misses every piece. A unit whose planning or check is
 slow costs its own limit: the work of one unit lies in its own piece.
