@@ -3130,12 +3130,13 @@ def topoOrder (nodes : Array Node) (reached isHead : Array Bool) (indeg : Array 
 /-- **The slots an edge into a loop head reads** at the head's slots: those
 its given invariant `req` states facts of, the tests and targets of its
 given implications, and the slots its given state holds the promised input
-or an input's entry value at (`headExit` checks these on the edge; the
-head's state is its given state, over fresh names). -/
+or an input's entry value at, and the slots it states fresh (`headExit`
+checks these on the edge; the head's state is its given state, over fresh
+names). -/
 def headReads (req : Option Knowledge) (implies : List (PromiseCalls.Implication ι)) (args : List Nat)
-    (inputs : List (Nat × Nat)) : List Nat :=
+    (inputs : List (Nat × Nat)) (fresh : List Nat) : List Nat :=
   ((req.map fun g => (atomsOf g).flatMap Atom.names).getD []) ++ implies.flatMap (fun y => [y.test, y.target]) ++
-    args ++ inputs.map (·.1)
+    args ++ inputs.map (·.1) ++ fresh
 
 /-- **The slots each node reads or a later node reads** (liveness over the
 walk's graph), at each label below `nodes.size` the start reaches, at the
@@ -3157,8 +3158,8 @@ reverse topological order (`topoOrder`) computes it. -/
 def liveSlots (nodes : Array Node) (claimed : Array (PointClaim ι)) (reached isHead : Array Bool)
     (indeg : Array Nat) (stated «given» : Array (Option Knowledge))
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
-    (givenInputs : Array (List (Nat × Nat))) (regional : Bool) (startNames : List Nat) :
-    Array LiveSlots := Id.run do
+    (givenInputs : Array (List (Nat × Nat))) (givenFresh : Array (List Nat)) (regional : Bool)
+    (startNames : List Nat) : Array LiveSlots := Id.run do
   let n := nodes.size
   let all : Array LiveSlots := Array.replicate n {}
   if regional then return all
@@ -3180,7 +3181,7 @@ def liveSlots (nodes : Array Node) (claimed : Array (PointClaim ι)) (reached is
         if t.label ≥ n then none
         else if isHead[t.label]! then
           some (headReads «given»[t.label]! ((givenImplies[t.label]?).getD []) ((givenArgs[t.label]?).getD [])
-            ((givenInputs[t.label]?).getD []))
+            ((givenInputs[t.label]?).getD []) ((givenFresh[t.label]?).getD []))
         else (live[t.label]!).map (·.toList)
       match acc, target?, claimed[t.label]? with
       | some a, some L, some tc =>
@@ -3339,7 +3340,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
         ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
         isHead reached startEntered stated given merging deadArr startNames argName grading framed
-        (liveSlots nodes claimed reached isHead indeg stated given givenImplies givenArgs givenInputs regional.isSome
+        (liveSlots nodes claimed reached isHead indeg stated given givenImplies givenArgs givenInputs givenFresh regional.isSome
           startNames) givenFresh,
       setupState n answers counts trace indeg queue startWidth)
 

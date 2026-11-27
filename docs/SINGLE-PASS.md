@@ -109,7 +109,7 @@ reverse topological order over the graph without the edges into loop heads
 those its written assertion states facts of; across an exit, the source
 slots the mapping reads for the target's slots read (into a loop head, the
 slots its given state, implications, promised input and inputs' entry
-values name, `headReads`), the slots whose type the edge changes, and an
+values name, and the slots it states fresh, `headReads`), the slots whose type the edge changes, and an
 observed result. Every slot counts as read at a node with a handler, at a
 construction, at a term whose reads are not listed, and under spine
 regions. An edge into a node other than a loop head drops the names its
