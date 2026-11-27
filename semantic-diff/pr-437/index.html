@@ -1,0 +1,467 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-437"><code>51623d162bca5ea53a494aaa93b98968d0a1aee4..pr-437</code></a><ul><li>4 commits, units 17 verified</li><li>changes: 2 Definition, 2 Rule, 1 Proposal, 2 Tooling, 1 Trust, 1 Lowering, 1 Check, 1 Control</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span> <span class="chip">tools</span> <span class="chip">dev</span> <span class="chip">docs</span></li><li>new trust: <span class="trust">%ByteAt% unbounded signature guarded postconditions under existing ECMA-262 TypedArrayGetElement contract</span></li></ul></li></ul></section>
+<h2 id="g-pr-437"><code>51623d162bca5ea53a494aaa93b98968d0a1aee4..pr-437</code></h2><article class="card" id="c-f1bbe14bf"><header><div><div class="sha">f1bbe14bf · Cristiano Calcagno · Nov 27, 16:39</div><h3>Prove disjunctive and merged element non-nullability and remove line-break.ts guards</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>pipeline/examples/disjunctive-element-nonnull.ts#disjunctiveRead</span><span>pipeline/examples/disjunctive-element-nonnull.ts#mergedAtIndexNonNull</span><span>pipeline/examples/disjunctive-element-nonnull.ts#atIndexImpliesBounds</span><span>pipeline/examples/invalid-disjunctive-element-nonnull.ts#missingDisjunctNonNull</span><span>pipeline/examples/invalid-merged-atindex-nonnull.ts#missingMergeBranchNonNull</span><span>dev/paper-rules/pretext/src/line-break.ts#getTerminalLetterSpacing</span><span>dev/paper-rules/pretext/src/line-break.ts#normalizePreparedLineStart</span><span>dev/paper-rules/pretext/src/line-break.ts#countPreparedLines</span><span>dev/paper-rules/pretext/src/line-break.ts#countSteppedLines</span><span>dev/paper-rules/pretext/src/line-break.ts#staysAfterObject</span><span>dev/paper-rules/pretext/src/line-break.ts#returnsFromUnfitHyphen</span><span>dev/paper-rules/pretext/src/line-break.ts#walkPreparedComplexLines</span><span>dev/paper-rules/pretext/src/line-break.ts#stepPreparedSimpleLineGeometry</span></div>
+<h4 class="change">Why</h4><div class="prose"><p><code>dev/paper-rules/pretext/src/line-break.ts</code> retained 15 runtime <code>throw</code> guards and 27 <code>?? missing()</code> fallback reads under <code>noUncheckedIndexedAccess</code>. Removing the provable guards exposed four general gaps in the single pass: 1. A bounded read of <code>(T | null)[]</code> coerced to <code>T | null | undefined</code> dropped the signature's <code>!== undefined</code> guarantee, and synthesis proposed <code>nonNullish</code> on the inner read rather than <code>T | null</code> with <code>null</code> stripped by the outer <code>!</code> cast. 2. Disjunctive branches (<code>cursor.graphemeIndex &gt; 0 || (overflow &amp;&amp; startAdvances !== null)</code>) did not refine a slot's type from proved non-nullish facts across merges or record <code>!== null</code> / <code>!== undefined</code> on aliased array-element reads. 3. Merging an unguarded indexed-element fact whose body requires a non-nullish element with branches checking <code>arr[i] !== null</code> dropped the shared non-nullability fact at the merge. 4. An indexed-element fact over an array whose length is defined did not expose its implicit <code>index &lt; array.length</code> upper bound to linear entailment, blocking <code>getTerminalLetterSpacing</code>'s <code>@requires</code>.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">Lean semantics: proved guard tags and indexed-element bounds</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">slotGuardTag</span>(<var>k</var>, <var>s</var>, <var>g</var>) <span class="m-text">holds when an unconditional atom</span> <span class="m-text">in</span> <var>k</var> <span class="m-text">proves value</span></span></div><div class="row"><span><span class="m-text">slot</span> <var>s</var> <span class="m-text">satisfies guard</span> <span class="m-text">tag</span> <var>g</var> <span class="m-text">(by a guard with an unsatisfiable body, or by</span></span></div><div class="row"><span><span class="m-text">a non-nullish witness such as a linear, length, bound, integer, index, or</span></span></div><div class="row"><span><span class="m-text">indexed-element fact</span>).</span></div><div class="row"><span><span class="m-op">atIndexBounds</span>(<span class="m-op">lt</span>, <var>D</var>, <span class="m-text">as) emits idx</span> &lt; <var>s</var>.<var>p</var>.<span class="m-text">length for every unconditional</span></span></div><div class="row"><span><span class="m-text">indexed-element fact over a path whose length term is defined</span> <span class="m-text">in</span> <var>D</var>.</span></div><div class="row"><span><span class="m-op">releaseLinearEithers</span>(<span class="m-op">lt</span>, <var>K</var>, <span class="m-text">as) emits the surviving arm of every</span></span></div><div class="row"><span><span class="m-text">unconditional disjunction whose other arm is linearly refuted by</span> <var>K</var>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">single pass: slot tag refinement and call-result guards</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Step and edge contexts refined slots only for integer facts, call outputs</span></span></div><div class="row"><span><span class="m-text">dropped</span> <code class="m-code">!== <span class="tk-k">undefined</span></code> / <code class="m-code">!== <span class="tk-k">null</span></code> <span class="m-text">when a subsumption coercion widened</span></span></div><div class="row"><span><span class="m-text">the signature's result type, and merge filtering ignored indexed-element</span></span></div><div class="row"><span><span class="m-text">entailment</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Step and edge contexts also slice slots by proved <code class="m-code">notNull</code> and</span> <code class="m-code">notUndef</code></span></div><div class="row"><span><span class="m-text">tags; call outputs retain</span> <code class="m-code">notNull</code> / <code class="m-code">notUndef</code> <span class="m-text">tags guaranteed by the</span></span></div><div class="row"><span><span class="m-text">selected signature's result type; observation records non-nullish guard</span></span></div><div class="row"><span><span class="m-text">facts on slots and aliased element reads; merge filtering checks cached</span></span></div><div class="row"><span><span class="m-text">indexed-element entailment over linearly released disjunctions, while</span></span></div><div class="row"><span><span class="m-text">excluding pure tag assertions from guarded-fact wrapping</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">synthesis: non-null assertion on bounded element reads</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">e!</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-op">nonNullish</span><span class="m-text">(A) on</span> <var>e</var></span><span class="note">(when e is a call, invoke, or element read)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">e!</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-op">nonNullish</span><span class="m-text">(A) on</span> <var>e</var>   <span class="m-text">(when a signature of</span> <var>e</var> <span class="m-text">returns within</span> <span class="m-op">nonNullish</span>(<var>A</var>))</span></div></div><div class="map"><code class="src">e!</code><div class="result"><span class="to">⇒</span><span class="tgt"><span class="m-op">slice</span><span class="m-text">(A, isUndef</span>, <span class="m-lit">false</span>) <span class="m-op">on</span> <var>e</var></span><span class="note">(otherwise, when a signature returns within that, leaving <code>null</code> narrowing to the outer <code>!</code> cast obligation)</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>disjunctive-element-nonnull</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">disjunctive non-null narrowing, merged element non-nullability, and indexed-element length upper bound</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { segmentIndex: number; graphemeIndex: number };
+<span class="tk-k">type</span> <span class="tk-t">Handle</span> = {
+  widths: number[];
+  advances: (number[] | <span class="tk-k">null</span>)[];
+};
+
+<span class="tk-c">/**
+ * @requires safeInteger(c.segmentIndex) &amp;&amp; 0 &lt;= c.segmentIndex &amp;&amp; c.segmentIndex &lt; h.advances.length
+ * @requires safeInteger(c.graphemeIndex) &amp;&amp; 0 &lt;= c.graphemeIndex
+ * @requires c.graphemeIndex === 0 || (h.advances[c.segmentIndex] !== null &amp;&amp; c.graphemeIndex &lt; h.advances[c.segmentIndex].length)
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> disjunctiveRead(
+  h: <span class="tk-t">Handle</span>,
+  c: <span class="tk-t">Cursor</span>,
+  overflow: boolean,
+): number {
+  <span class="tk-k">const</span> startAdvances: number[] | <span class="tk-k">null</span> | <span class="tk-k">undefined</span> = h.advances[c.segmentIndex];
+  <span class="tk-k">if</span> (c.graphemeIndex &gt; <span class="tk-n">0</span> || (overflow &amp;&amp; startAdvances !== <span class="tk-k">null</span>)) {
+    <span class="tk-k">const</span> fit = startAdvances!;
+    <span class="tk-k">return</span> fit.length;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-c">/**
+ * @requires h.advances.length === h.widths.length
+ * @requires safeInteger(c.segmentIndex) &amp;&amp; 0 &lt;= c.segmentIndex &amp;&amp; c.segmentIndex &lt; h.widths.length
+ * @requires safeInteger(c.graphemeIndex) &amp;&amp; 0 &lt;= c.graphemeIndex
+ * @requires c.graphemeIndex === 0 || (h.advances[c.segmentIndex] !== null &amp;&amp; c.graphemeIndex &lt; h.advances[c.segmentIndex].length)
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; h.widths.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> mergedAtIndexNonNull(
+  h: <span class="tk-t">Handle</span>,
+  c: <span class="tk-t">Cursor</span>,
+  i: number,
+  overflow: boolean,
+): number {
+  <span class="tk-k">const</span> advances = h.advances;
+  <span class="tk-k">let</span> start = <span class="tk-n">0</span>;
+  <span class="tk-k">if</span> (i === c.segmentIndex &amp;&amp; c.graphemeIndex &gt; <span class="tk-n">0</span>) {
+    start = c.graphemeIndex;
+  } <span class="tk-k">else</span> <span class="tk-k">if</span> (overflow &amp;&amp; advances[i] !== <span class="tk-k">null</span>) {
+    start = <span class="tk-n">0</span>;
+  } <span class="tk-k">else</span> {
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">const</span> fit = advances[i]!;
+  <span class="tk-k">return</span> start + fit.length;
+}
+
+<span class="tk-c">/**
+ * @requires h.advances.length === h.widths.length
+ * @requires safeInteger(endSeg) &amp;&amp; 0 &lt;= endSeg &amp;&amp; endSeg &lt;= h.widths.length
+ * @requires safeInteger(endGraph) &amp;&amp; 0 &lt;= endGraph
+ * @requires endGraph === 0 || endSeg &lt; h.widths.length
+ */</span>
+<span class="tk-k">function</span> readIfInside(h: <span class="tk-t">Handle</span>, endSeg: number, endGraph: number): number {
+  <span class="tk-k">if</span> (endGraph &gt; <span class="tk-n">0</span>) <span class="tk-k">return</span> h.widths[endSeg]!;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-c">/**
+ * @requires h.advances.length === h.widths.length
+ * @requires safeInteger(endSeg) &amp;&amp; 0 &lt;= endSeg &amp;&amp; endSeg &lt;= h.widths.length
+ * @requires safeInteger(endGraph) &amp;&amp; 0 &lt;= endGraph
+ * @requires endGraph === 0 || (h.advances[endSeg] !== null &amp;&amp; endGraph &lt; h.advances[endSeg].length)
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> atIndexImpliesBounds(
+  h: <span class="tk-t">Handle</span>,
+  endSeg: number,
+  endGraph: number,
+): number {
+  <span class="tk-k">return</span> readIfInside(h, endSeg, endGraph);
+}</pre></details></li><li><code>invalid-disjunctive-element-nonnull  negative</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">unchecked disjunct leaves <code>startAdvances!</code> nullable (TypeError under Node)</span></li><li><details><summary><code>invalid-merged-atindex-nonnull</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">unchecked merge branch leaves <code>advances[i]!</code> nullable (TypeError under Node)</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Handle</span> = { advances: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; h.advances.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missingMergeBranchNonNull(
+  h: <span class="tk-t">Handle</span>,
+  i: number,
+  a: boolean,
+  b: boolean,
+): number {
+  <span class="tk-k">const</span> advances = h.advances;
+  <span class="tk-k">let</span> start = <span class="tk-n">0</span>;
+  <span class="tk-k">if</span> (a &amp;&amp; advances[i] !== <span class="tk-k">null</span>) {
+    start = <span class="tk-n">1</span>;
+  } <span class="tk-k">else</span> <span class="tk-k">if</span> (b) {
+    <span class="tk-c">// Missing `advances[i] !== null` on this branch: when a is false, b is true,</span>
+    <span class="tk-c">// and advances[i] is null, `advances[i]!.length` throws TypeError.</span>
+    start = <span class="tk-n">2</span>;
+  } <span class="tk-k">else</span> {
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">const</span> fit = advances[i]!;
+  <span class="tk-k">return</span> start + fit.length;
+}</pre></details></li><li><details><summary><code>bounds-pattern-pointwise-refused</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refusal moves from inner <code>extras[i]</code> node-typing to outer <code>extras[i]!</code> cast claim</span></summary><pre class="code"><span class="tk-c">// Bounds pattern P12: a pointwise relation of two arrays.</span>
+<span class="tk-c">// Fact: forall k &lt; fits.length: extras[k] === null || extras[k].length === fits[k].length.</span>
+<span class="tk-c">// Pretext: line-break.ts countPreparedLines, walkPreparedComplexLines,</span>
+<span class="tk-c">// stepPreparedSimpleLineGeometry; rich-inline.ts getPartWidth; analysis.ts</span>
+<span class="tk-c">// getWebKitParagraphBreaks (5 sites).</span>
+<span class="tk-c">// Gap: a quantified clause reads one array's element; one relating two</span>
+<span class="tk-c">// arrays at one index is refused at the source.</span>
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; fits.length &amp;&amp; fits.length === extras.length
+ * @requires forall k in fits: extras[k] === null || extras[k].length === fits[k].length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(fits: number[][], extras: (number[] | <span class="tk-k">null</span>)[], i: number): number {
+  <span class="tk-k">const</span> advances = fits[i]!;
+  <span class="tk-k">const</span> e = <mark>extras[i]!</mark>;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> g = <span class="tk-n">0</span>; g &lt; advances.length; g++) s += advances[g]! + (e === <span class="tk-k">null</span> ? <span class="tk-n">0</span> : e[g]!);
+  <span class="tk-k">return</span> s;
+}</pre></details></li></ul>
+<h4 class="change">Example</h4><pre class="code"><span class="ln"><span class="tk-c">// dev/paper-rules/pretext/src/line-break.ts (13 throws &amp; 18 ?? missing() removed):</span></span><span class="ln"><span class="tk-k">if</span> (cursor.graphemeIndex &gt; <span class="tk-n">0</span> || (startW - startTrim &gt; fitLimit &amp;&amp; startAdvances !== <span class="tk-k">null</span>)) {</span><span class="ln">  <span class="tk-k">const</span> fitAdvances = startAdvances!</span><span class="ln">}</span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every semantic addition is proved in Lean with zero <code>sorry</code> and zero new axioms: <code>impossibleFact_sound</code>, <code>atomGuardTags_sound</code>, <code>slotGuardTag_sound</code>, <code>clauseRequiresNonNullish_sound</code>, <code>GuardTagTable.check_sound</code>, <code>observedGuardTags_holds</code>, <code>tagGuardIndices_holds</code>, <code>atIndexBounds_holds</code>, <code>extendBridgedKnown_holds</code>, <code>extendBoundKnown_holds</code>, <code>entailsShiftEqIn_sound</code>, <code>linearArmRefuted_sound</code>, <code>releaseLinearEithers_holds</code>, <code>bodyClauseEntailsIn_sound</code>, <code>everyBodyGivesAtIndexIn_sound</code>, <code>atIndexFollowsIn_sound</code>, <code>indicesFilter_holds</code>, <code>envOk_intRefine</code>, <code>callResultGuardAtoms_holds</code>, and <code>requiresCall_sound</code>. The synthesis change is an untrusted proposal checked by the proved cast obligation. <code>mode8Accepted_sound</code> is untouched.</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">missingDisjunctNonNull({ advances: [<span class="tk-k">null</span>] }, <span class="tk-n">0</span>, <span class="tk-k">true</span>);</span><span class="ln"><span class="tk-c">// Node throws: TypeError: Cannot read properties of null (reading 'length')</span></span><span class="ln">missingMergeBranchNonNull({ advances: [<span class="tk-k">null</span>] }, <span class="tk-n">0</span>, <span class="tk-k">false</span>, <span class="tk-k">true</span>);</span><span class="ln"><span class="tk-c">// Node throws: TypeError: Cannot read properties of null (reading 'length')</span></span></pre>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>(cd lean &amp;&amp; lake build verifier paper-rules-prototype Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck)</code>: 1039/1039 jobs, 0 warnings, 0 sorry, 0 project axioms. - <code>node tests/axiom-check-imports.mts</code>, <code>node tests/prototype-isolation.mts</code>, <code>node tests/docs.mts</code>, <code>node tests/node-runs.mts</code>: all pass. - <code>(cd dev/paper-rules/pretext &amp;&amp; npx tsc --noEmit)</code>, <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>, Prettier on touched repo TS files: all pass. - <code>node pipeline/run-cases.mts disjunctive-element-nonnull merged-atindex-nonnull indexed-element-length</code>: 5/5 as expected. - <code>node pipeline/run-cases.mts bounds-pattern-pointwise non-null nonnull cast- null-</code>: 13/13 as expected; <code>bounds-pattern dense-write same-guard-multi-fact</code>: 58/58 after updating <code>bounds-pattern-pointwise-refused</code> span to <code>[771,781)</code> cast claim. - <code>node dev/paper-rules.mts --project dev/paper-rules/pretext dev/paper-rules/pretext/src/line-break.ts</code>: 17/17 units accepted, 0 paperAssume; no exported signatures of <code>line-break.ts</code> changed.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>HeapKnowledge.impossibleFact_sound · HeapKnowledge.atomGuardTags_sound · HeapKnowledge.slotGuardTag_sound · HeapKnowledge.clauseRequiresNonNullish_sound · HeapKnowledge.GuardTagTable.check_sound · HeapKnowledge.observedGuardTags_holds · HeapKnowledge.tagGuardIndices_holds · HeapKnowledge.atIndexBounds_holds · HeapKnowledge.extendBridgedKnown_holds · HeapKnowledge.extendBoundKnown_holds · HeapKnowledge.entailsShiftEqIn_sound · HeapKnowledge.linearArmRefuted_sound · HeapKnowledge.releaseLinearEithers_holds · HeapKnowledge.bodyClauseEntailsIn_sound · HeapKnowledge.everyBodyGivesAtIndexIn_sound · HeapKnowledge.atIndexFollowsIn_sound · HeapKnowledge.indicesFilter_holds · PromiseCalls.envOk_intRefine · PromiseCalls.callResultGuardAtoms_holds · PromiseCalls.requiresCall_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>line-break.ts runtime throws 15 -&gt; 2 (13 removed · only emptyObjectSpaces and Math.ceil/Math.min float guard remain), ?? missing() occurrences 27 -&gt; 9 (18 removed), 17/17 units accepted with 0 paperAssume</dd><dt>Tests</dt><dd><span class="test pos">disjunctive-element-nonnull</span> <span class="test neg">invalid-disjunctive-element-nonnull</span> <span class="test neg">invalid-merged-atindex-nonnull</span></dd></dl>
+<details><summary>10 files changed, 1784 insertions(+), 230 deletions(-)</summary><pre class="code"> dev/paper-rules/pretext/src/line-break.ts          |   98 +-
+ .../Verification/Programs/CertificateProducer.lean |    4 +-
+ lean/Verification/Programs/PromiseCalls.lean       |  396 ++++--
+ lean/Verification/Semantics/HeapKnowledge.lean     | 1348 ++++++++++++++++++--
+ lean/Verification/Source/Synthesis.lean            |   36 +-
+ pipeline/cases.mts                                 |    7 +-
+ pipeline/examples/disjunctive-element-nonnull.ts   |   74 ++
+ .../invalid-disjunctive-element-nonnull.ts         |   17 +
+ .../examples/invalid-merged-atindex-nonnull.ts     |   25 +
+ tests/node-runs.mts                                |    9 +</pre></details>
+</article>
+<article class="card" id="c-0f62d01e0"><header><div><div class="sha">0f62d01e0 · Cristiano Calcagno · Nov 27, 15:03</div><h3>Preserve defined root term kinds across branch merges and trim Pretext prepare.ts guards</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>At a branch merge (<code>SinglePass.mergeState</code>), when a slot's predecessors hold different names and take a fresh merge name <code>φ</code>, <code>mergeEqAtoms</code> emitted an alias link <code>φ = x</code> and linear equalities only for <code>Term.value</code> (via <code>Store.integral</code>). An unmodified branch renaming an array, typed array, or string <code>x</code> to <code>φ</code> did not state <code>φ.length = x.length</code> in its <code>variants</code>, so the merge lost length equality across conditional reassignment (such as <code>fitAdvances = copy</code> in <code>adjustFitAdvances</code> of <code>dev/paper-rules/pretext/src/prepare.ts</code>). In addition, <code>prepare.ts</code> carried runtime <code>throw new RangeError(...)</code> checks and <code>?? missing()</code> fallbacks that are provably unnecessary from caller preconditions and loop bounds.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Lean single-pass merge equalities: Store.definedKinds and mergeEqAtoms</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Store</span>.integral</code> <span class="m-text">returned a <code class="m-code"><span class="tk-t">Bool</span></code> checking whether an unconditional fact</span> <span class="m-text">in</span></span></div><div class="row"><span><code class="m-code">s.about x</code> <span class="m-text">witnessed <code class="m-code">intValue (η x)</code> as defined, and</span> <code class="m-code">mergeEqAtoms</code></span></div><div class="row"><span><span class="m-text">emitted linear equalities only for</span> <code class="m-code"><span class="tk-t">HeapKnowledge</span>.<span class="tk-t">Term</span>.value</code>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Store</span>.definedKinds</code> <span class="m-text">returns every <code class="m-code"><span class="tk-t">HeapKnowledge</span>.<span class="tk-t">Term</span>.<span class="tk-t">Kind</span></code> witnessed as</span></span></div><div class="row"><span><span class="m-text">defined on <code class="m-code">x</code> by an unconditional fact in <code class="m-code">s.about x</code> (<code class="m-code">.value</code> from</span></span></div><div class="row"><span><code class="m-code">int</code>, <code class="m-code">index</code>, <code class="m-code">length</code>, <span class="m-text">or <code class="m-code">bound</code>; <code class="m-code">.length</code> from <code class="m-code">length</code>; and</span> <code class="m-code">t.kind</code></span></div><div class="row"><span><span class="m-text">for every current empty-path term <code class="m-code">t</code> on <code class="m-code">x</code> in any linear fact</span>).</span></div><div class="row"><span><code class="m-code">mergeEqAtoms</code> <span class="m-text">emits the alias link plus both linear inequalities</span></span></div><div class="row"><span><code class="m-code">k(φ) - k(x) ≤ <span class="tk-n">0</span></code> <span class="m-text">and <code class="m-code">k(x) - k(φ) ≤ <span class="tk-n">0</span></code> for each</span> <code class="m-code">k ∈ s.definedKinds x</code>.</span></div><div class="row"><span><code class="m-code"><span class="tk-t">TolerantFramesMerge</span>.lean</code> <span class="m-text">proves</span> <code class="m-code">definedKinds_some</code>, <code class="m-code">mergeEqAtoms_holds</code>,</span></div><div class="row"><span><span class="m-text">and <code class="m-code">mergeEqual_holds</code>; <code class="m-code"><span class="tk-t">TolerantFramesMergeBelow</span>.lean</code> updates</span></span></div><div class="row"><span><code class="m-code">mergeEqAtoms_names</code> <span class="m-text">over</span> <code class="m-code">kinds</code>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">Pretext prepare.ts runtime guard removal</span></h4><pre class="code"><span class="ln">Removed 6 runtime `RangeError` throws and 21 `?? missing()` fallbacks in</span><span class="ln">`dev/paper-rules/pretext/src/prepare.ts` without changing any exported</span><span class="ln">signatures:</span><span class="ln">- `adjustFitAdvances`: removed the `fitAdvances.length !== len` throw, its</span><span class="ln">  branch-merge workaround comment, the `idx` bounds throw, and one</span><span class="ln">  `?? missing()` under caller-satisfied `@requires 1 &lt;= advances.length`.</span><span class="ln">- `readScriptRuns`: removed the `k` bounds throw with</span><span class="ln">  `@invariant safeInteger(k) &amp;&amp; k &lt; scriptOpenBrackets.length`.</span><span class="ln">- `getFollowingSpaceTail`, `getJoinedNarrowing`, `addKanaKerning`, and</span><span class="ln">  `addIdeographicSpaceHangs`: added caller-satisfied length preconditions</span><span class="ln">  and loop invariants, removing 3 `undefined` throws and 14 `?? missing()`</span><span class="ln">  reads.</span><span class="ln">- `needsComplexTextPath`, `getUnspacedGraphemes`, and `measureAnalysisInto`:</span><span class="ln">  removed 6 in-bounds `?? missing()` reads.</span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>merge-array-length-alias</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">arrays, Uint8Array views, and strings keep length equality across conditional alias reassignments</span></summary><pre class="code"><span class="tk-c">// Branch merges emit linear equalities for every defined root term kind</span>
+<span class="tk-c">// (`Store.definedKinds`): array `.length`, typed-array `.view`, and string</span>
+<span class="tk-c">// `.strLength`, so an unmodified alias branch keeps `ys.length === xs.length`</span>
+<span class="tk-c">// across conditional reassignment.</span>
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length
+ *  @ensures result.length === xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copyOnCond(
+  xs: <span class="tk-t">Dense</span>&lt;number[]&gt;,
+  cond: boolean,
+  i: number,
+): <span class="tk-t">Dense</span>&lt;number[]&gt; {
+  <span class="tk-k">let</span> ys: <span class="tk-t">Dense</span>&lt;number[]&gt; = xs;
+  <span class="tk-k">if</span> (cond) {
+    <span class="tk-k">const</span> copy = ys.slice();
+    copy[i] = copy[i]! + <span class="tk-n">1</span>;
+    ys = copy;
+  }
+  <span class="tk-k">return</span> ys;
+}
+
+<span class="tk-c">/** @requires 1 &lt;= xs.length
+ *  @ensures result.length === xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> chainedCopies(
+  xs: <span class="tk-t">Dense</span>&lt;number[]&gt;,
+  c1: boolean,
+  c2: boolean,
+): <span class="tk-t">Dense</span>&lt;number[]&gt; {
+  <span class="tk-k">let</span> ys: <span class="tk-t">Dense</span>&lt;number[]&gt; = xs;
+  <span class="tk-k">if</span> (c1) {
+    <span class="tk-k">const</span> copy = ys.slice();
+    copy[copy.length - <span class="tk-n">1</span>] = copy[copy.length - <span class="tk-n">1</span>]! + <span class="tk-n">1</span>;
+    ys = copy;
+  }
+  <span class="tk-k">if</span> (c2) {
+    <span class="tk-k">const</span> copy = ys.slice();
+    copy[<span class="tk-n">0</span>] = copy[<span class="tk-n">0</span>]! + <span class="tk-n">2</span>;
+    ys = copy;
+  }
+  <span class="tk-k">return</span> ys;
+}
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length
+ *  @ensures result.length === xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copyViewOnCond(
+  xs: <span class="tk-t">Uint8Array</span>,
+  cond: boolean,
+  i: number,
+): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">let</span> ys = xs;
+  <span class="tk-k">if</span> (cond) {
+    <span class="tk-k">const</span> copy = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(xs.length);
+    copy[i] = xs[i]!;
+    ys = copy;
+  }
+  <span class="tk-k">return</span> ys;
+}
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; text.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pickSameLengthString(
+  text: string,
+  other: string,
+  cond: boolean,
+  i: number,
+): number {
+  <span class="tk-k">let</span> s = text;
+  <span class="tk-k">if</span> (cond &amp;&amp; other.length === text.length) {
+    s = other;
+  }
+  <span class="tk-k">return</span> s.codePointAt(i)!;
+}</pre></details></li><li><details><summary><code>invalid-merge-array-length-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">shrinking branch (<code>ys = []</code>) breaks length equality after merge and reads undefined/NaN under Node</span></summary><pre class="code"><span class="tk-c">// Unsafe neighbour of `merge-array-length-alias`: the modified branch shrinks</span>
+<span class="tk-c">// `ys` to an empty array, so `ys[i]` reads `undefined` at `number` and</span>
+<span class="tk-c">// `ys[i]! + 1` returns `NaN` under Node.</span>
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> badShrinkingMerge(
+  xs: <span class="tk-t">Dense</span>&lt;number[]&gt;,
+  cond: boolean,
+  i: number,
+): number {
+  <span class="tk-k">let</span> ys: <span class="tk-t">Dense</span>&lt;number[]&gt; = xs;
+  <span class="tk-k">if</span> (cond) {
+    ys = [];
+  }
+  <span class="tk-k">return</span> ys[i]! + <span class="tk-n">1</span>;
+}</pre></details></li><li><code>dev/paper-rules/pretext/src/prepare.ts</code> <span class="was">paper-rules 26/26</span> <span class="arrow">→</span> <span class="now">26/26</span> <span class="why">6 runtime throws and 21 ?? missing() guards removed; all 26 units accepted (0 paperAssume)</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>Verification.TolerantFrames.definedKinds_some</code> proves that every kind returned by <code>Store.definedKinds s x</code> has <code>(HeapKnowledge.kindValue h k (η x)).isSome</code> whenever <code>StoreOk ε s η h</code> holds. <code>mergeEqAtoms_holds</code> and <code>mergeEqual_holds</code> prove every emitted linear equality holds under the extended predecessor valuation, and <code>TolerantFramesMergeMirror.mergeState_state</code> remains proved by <code>rfl</code>. <code>mode8Accepted_sound</code> is untouched, and both <code>Verification.Tests.AxiomCheck</code> and <code>Verification.Paper.TolerantFrames.Tests.AxiomCheck</code> build with 0 warnings, 0 <code>sorry</code>, and 0 project axioms.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>(cd lean &amp;&amp; lake build verifier paper-rules-prototype Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck)</code>: 1039/1039 jobs, 0 warnings. - <code>node tests/axiom-check-imports.mts</code>, <code>node tests/prototype-isolation.mts</code>, <code>node tests/docs.mts</code>, <code>node tests/node-runs.mts</code>: pass. - <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code> and <code>(cd dev/paper-rules/pretext &amp;&amp; npx tsc --noEmit)</code>: pass. - Prettier <code>--check</code> on <code>pipeline/examples/merge-array-length-alias.ts</code> and <code>pipeline/examples/invalid-merge-array-length-alias.ts</code>: pass. - <code>node pipeline/run-cases.mts merge-array-length</code>, <code>native-slice</code>, <code>array-slice-copy</code>: all cases as expected. - <code>node dev/paper-rules.mts --project dev/paper-rules/pretext dev/paper-rules/pretext/src/prepare.ts</code>: 26/26 units accepted, 0 <code>paperAssume</code>.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Verification.SinglePass.Store.definedKinds · Verification.TolerantFrames.definedKinds_some · Verification.TolerantFrames.mergeEqAtoms · Verification.TolerantFrames.mergeEqAtoms_holds · Verification.TolerantFrames.mergeEqual · Verification.TolerantFrames.mergeEqual_holds · Verification.TolerantFrames.mergeEqAtoms_names</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">merge-array-length-alias</span> <span class="test neg">invalid-merge-array-length-alias</span></dd></dl>
+<details><summary>8 files changed, 273 insertions(+), 136 deletions(-)</summary><pre class="code"> dev/paper-rules/pretext/src/prepare.ts             |  73 +++++----
+ lean/Verification/Programs/SinglePass.lean         |  43 ++---
+ .../Verification/Programs/TolerantFramesMerge.lean | 174 +++++++++++++--------
+ .../Programs/TolerantFramesMergeBelow.lean         |  23 ++-
+ pipeline/cases.mts                                 |   3 +
+ .../examples/invalid-merge-array-length-alias.ts   |  16 ++
+ pipeline/examples/merge-array-length-alias.ts      |  71 +++++++++
+ tests/node-runs.mts                                |   6 +</pre></details>
+</article>
+<article class="card" id="c-e40ad2edb"><header><div><div class="sha">e40ad2edb · Cristiano Calcagno · Nov 27, 15:37</div><h3>Remove 23 provable runtime throws across measurement.ts, layout.ts, and rich-inline.ts</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>measurement.ts</code>, <code>layout.ts</code>, and <code>rich-inline.ts</code> retained 23 provable runtime throws (<code>RangeError('index')</code>, <code>RangeError('segments')</code>, and <code>RangeError('missing value')</code>) plus 40 provable <code>?? missing()</code> checks: 1. <code>measurement.ts</code> guarded dense writes and <code>ends</code> reads whose bounds already follow from <code>findGraphemeEnds</code>'s <code>@ensures</code> and existing loop invariants. 2. <code>layout.ts:prepareInternal</code> re-checked <code>segments.length === 0</code> after <code>analyzeText</code> because <code>analyzeText</code> and its transitive callees lacked checked <code>Effects&lt;...&gt;</code> annotations. 3. <code>rich-inline.ts</code> guarded <code>atomicMeasures[index] = measured</code>, <code>spaces[first] = space</code> (after a defined <code>Uint8Array</code> read), and 11 in-bounds reads (<code>analysis.starts</code>, <code>sub.lineEndTrims</code>, <code>sub.overflowLineEndTrims</code>, <code>itemSegments</code>, <code>segmentItems</code>, <code>items</code>, <code>advances</code>).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">%ByteAt% defined-read index bounds</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>The unbounded signature of <code>%ByteAt%</code> (<code>tools/intrinsics.mts</code>) stated <code>emptyEffect</code> without relating a defined result (<code>!== undefined</code>) to index validity.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Under the existing ECMA-262 <code>sec-typedarray-exotic-objects-get-p-receiver, sec-typedarraygetelement</code> contract, <code>%ByteAt%</code>'s unbounded signature states three guarded postconditions (<code>result === undefined || safeInteger(k)</code>, <code>0 &lt;= k</code>, <code>k &lt; view(b)</code>), matching ECMA-262 <code>TypedArrayGetElement</code> (which never reads prototypes and returns <code>undefined</code> outside <code>[0, view(b))</code>).</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">generic wrapper alias unfolding in invariantsNamed</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">invariantsNamed</code> (<code class="m-code">tools/fragment-statements.mts</code>) <span class="m-text">returned <code class="m-code">[]</code> for any</span></span></div><div class="cond"><span class="tgt"><span class="m-text">generic type reference (<code class="m-code">t.args.length &gt; <span class="tk-n">0</span></code>), dropping</span> <code class="m-code">@invariant</code><var>s</var> <span class="m-op">on</span></span></div><div class="cond"><span class="tgt"><span class="m-text">functions returning wrapper aliases such as</span> <code class="m-code"><span class="tk-t">Effects</span>&lt;<span class="tk-t">P</span>, <span class="tk-t">PreparedLineData</span>&gt;</code>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">invariantsNamed</code> <span class="m-text">unfolds generic type aliases via <code class="m-code">aliasMeaning</code> and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">collects invariants of the instantiated equation (leaving generic records</span></span></div><div class="cond"><span class="tgt"><span class="m-text">empty), so <code class="m-code">prepareSingleLineData</code> retains</span> <code class="m-code"><span class="tk-t">PreparedLineData</span></code>'<var>s</var> <code class="m-code">@invariant</code></span></div><div class="cond"><span class="tgt"><span class="m-text">when annotated with</span> <code class="m-code"><span class="tk-t">Effects</span>&lt;...&gt;</code>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">prototype stated-effect checker for analyzeText callees</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>dev/paper-annotations.mts</code> did not recognize numeric property accesses in <code>isNumericExpr</code>, <code>new Intl.Segmenter(...)</code> / <code>Intl.Segmenter.prototype.segment</code>, stateless-regex <code>s.split(re)</code> / string-replacement <code>s.replace(re, &quot;...&quot;)</code>, or <code>views: &quot;grow&quot;</code> fallback for non-fresh TypedArray element writes.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Added these general cases in <code>dev/paper-annotations.mts</code>, matching the reviewed host contracts in <code>tools/library-types.mts</code> and <code>tools/host-operations.mts</code>, so <code>analyzeText</code> and its callees in <code>analysis.ts</code>, <code>gecko-line-breaks.ts</code>, and <code>line-breaks.ts</code> check cleanly with spine-preserving <code>Effects&lt;...&gt;</code>.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">Pretext throw and missing() removals</span></h4><pre class="code"><span class="ln">- `measurement.ts`: removed 9 throws (`getExtraSpacings`, `getSegmentFit`</span><span class="ln">  x3, `countLigaturesOnFirstLetter` x3, `measureFitAdvances` x2) and 15</span><span class="ln">  `?? missing()`.</span><span class="ln">- `layout.ts`: removed 1 throw (`prepareInternal` `segments.length !== 0`</span><span class="ln">  check after `analyzeText`).</span><span class="ln">- `analysis.ts`, `gecko-line-breaks.ts`, `line-breaks.ts`: added checked</span><span class="ln">  `Effects&lt;...&gt;` on `analyzeText` and its transitive callees; removed 3</span><span class="ln">  `?? missing()` in `analysis.ts`.</span><span class="ln">- `rich-inline.ts`: removed 13 throws (`prepareRichInline` x6 including</span><span class="ln">  `atomicMeasures[index]`, `buildSegmentNumbers` x1, `getHyphenRooms` x1,</span><span class="ln">  `setEmptyObjectFacts` x4 including `spaces[first]`, `adjustRichAdvances`</span><span class="ln">  x1) and 22 `?? missing()`; preserved all real boundary checks and</span><span class="ln">  plain-array guards (`getPartWidth`, `materializeRichInlineLineRange`,</span><span class="ln">  `createLine`).</span></pre>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">typed-array-read-defined and type-invariant-wrapper-alias</span></h4><div class="control"><p>- <code>typed-array-read-defined</code> (positive) and <code>invalid-array-read-defined</code> (negative, verified under Node: plain <code>Array</code> with own <code>-1</code> property reads <code>undefined</code>/<code>NaN</code> from a parallel array). - <code>type-invariant-wrapper-alias</code> (positive) and <code>invalid-type-invariant-wrapper-alias</code> (negative, verified under Node).</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>(cd lean &amp;&amp; lake build verifier paper-rules-prototype Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck)</code>: 1039/1039, 0 warnings/sorry/axioms. - <code>tools</code> <code>tsc</code>, <code>dev/paper-rules/pretext</code> <code>tsc</code>, <code>tests/axiom-check-imports.mts</code>, <code>tests/prototype-isolation.mts</code>, <code>tests/json-field-names.mts</code>, <code>tests/docs.mts</code>, <code>tools/unchecked.mts</code>, <code>tests/node-runs.mts</code>, Prettier: all pass. - <code>node pipeline/run-cases.mts typed-array type-invariant</code> (44/44) and <code>typed-array-read-defined array-read-defined type-invariant-wrapper-alias</code> (4/4): all as expected. - <code>node dev/paper-rules.mts --check dev/paper-rules/expected.json</code>: all expectations met. - <code>node dev/paper-rules.mts --project dev/paper-rules/pretext</code> on <code>measurement.ts</code> (48/48, ordinary verified), <code>line-breaks.ts</code> (33/33, ordinary verified), <code>gecko-line-breaks.ts</code> (29/29, ordinary verified), <code>analysis.ts</code> (19/19, ordinary verified), <code>layout.ts</code> (18/18), <code>rich-inline.ts</code> (35/35), <code>prepare.ts</code> (26/26): all accepted, 0 <code>paperAssume</code>.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">dev</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>none</dd><dt>Trust</dt><dd><span class="trust">%ByteAt% unbounded signature guarded postconditions under existing ECMA-262 TypedArrayGetElement contract</span></dd><dt>Measured</dt><dd>23 runtime throws and 40 missing() calls removed across measurement.ts (9/15), layout.ts (1/0), analysis.ts (0/3), rich-inline.ts (13/22) · all Pretext modules accepted with 0 paperAssume</dd><dt>Tests</dt><dd><span class="test pos">typed-array-read-defined</span> <span class="test pos">invalid-array-read-defined</span> <span class="test pos">type-invariant-wrapper-alias</span> <span class="test pos">invalid-type-invariant-wrapper-alias</span></dd></dl>
+<details><summary>15 files changed, 347 insertions(+), 178 deletions(-)</summary><pre class="code"> dev/paper-annotations.mts                          |  56 ++++++++++-
+ dev/paper-rules/pretext/src/analysis.ts            |  49 ++++++----
+ dev/paper-rules/pretext/src/gecko-line-breaks.ts   |  59 ++++++------
+ dev/paper-rules/pretext/src/layout.ts              |   2 -
+ dev/paper-rules/pretext/src/line-breaks.ts         |  48 ++++-----
+ dev/paper-rules/pretext/src/measurement.ts         |  63 +++++-------
+ dev/paper-rules/pretext/src/rich-inline.ts         | 107 ++++++++++-----------
+ pipeline/cases.mts                                 |   6 ++
+ pipeline/examples/invalid-array-read-defined.ts    |  15 +++
+ .../invalid-type-invariant-wrapper-alias.ts        |  15 +++
+ pipeline/examples/type-invariant-wrapper-alias.ts  |  30 ++++++
+ pipeline/examples/typed-array-read-defined.ts      |  40 ++++++++
+ tests/node-runs.mts                                |  12 +++
+ tools/fragment-statements.mts                      |  13 ++-
+ tools/intrinsics.mts                               |  10 +-</pre></details>
+<div class="sha">with Antigravity</div>
+</article>
+<article class="card" id="c-388ef7473"><header><div><div class="sha">388ef7473 · Cristiano Calcagno · Nov 27, 19:27</div><h3>Address Wave 3 review findings and trim HeapKnowledge hot paths</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>dev/paper-rules/module-state.ts#matchExportedRe</span><span>dev/paper-rules/module-state.ts#callUserReplace</span><span>dev/paper-rules/module-state.ts#writeShadowedTyped</span><span>dev/paper-rules/pretext/src/line-break.ts#walkPreparedComplexLines</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Independent review of Wave 3 flagged two must-fix issues and three should-fix items, and running the full Pretext suite exposed hot-path overhead in <code>HeapKnowledge</code> and <code>PromiseCalls</code> plus a redundant disjunctive loop-invariant conjunct in <code>line-break.ts</code>: 1. <code>dev/paper-annotations.mts</code> accepted <code>null | undefined</code> in <code>isTypedArrayType</code>, missed <code>ClassDeclaration</code> / <code>ModuleDeclaration</code> / <code>EnumDeclaration</code> in <code>declIn</code> (allowing shadowed <code>Intl</code> or typed arrays), accepted non-string receivers on <code>.split</code> / <code>.match</code> / <code>.replace</code>, and did not verify confinement on module <code>const</code> regexes. 2. <code>docs/SOURCE-CONTRACTS.md</code>, <code>docs/PROGRAM-TYPING.md</code>, <code>docs/ARITHMETIC.md</code>, and <code>tools/fragment-statements.mts</code> lagged behind Wave 3's <code>%ByteAt%</code> guarded signature and generic type-alias unfolding. 3. The five new negative pipeline cases in <code>pipeline/cases.mts</code> had unpinned refusal spans, <code>HeapKnowledge.lean</code> retained dead uncached <code>atIndexFollows</code> helpers, and <code>WORK.md</code> needed the current Pretext counts. 4. Profiling <code>src/line-break.ts</code> showed unnecessary list allocations in <code>slotGuardTag</code> / <code>slotRefine</code>, eager <code>releaseLinearEithers</code> on unrelated disjunctions, <code>meet tagged</code> wrapping impossible-body tag guards, redundant <code>releaseEithersStepOracle</code> runs on non-linear edges, and a redundant <code>lineEndSegmentIndex &lt; segmentCount</code> disjunct in <code>walkPreparedComplexLines</code>'s loop invariants (already derived by <code>atIndexBounds</code>).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">prototype annotation checks and Lean hot-path filtering</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">isTypedArrayType</code> <span class="m-text">accepted nullish-only unions and unshadowed names</span>,</span></div><div class="row"><span><code class="m-code">declIn</code> <span class="m-text">missed class</span>/<span class="m-text">module</span>/<span class="m-text">enum declarations</span>, <code class="m-code">.split</code>/<code class="m-code">.match</code>/<code class="m-code">.replace</code></span></div><div class="row"><span><span class="m-text">did not check string receivers or regex confinement</span>, <code class="m-code">slotGuardTag</code></span></div><div class="row"><span><span class="m-text">allocated tag lists before checking</span> <code class="m-code">tagRefinable</code>, <code class="m-code">releaseLinearEithers</code></span></div><div class="row"><span><span class="m-text">ran on unrelated disjunctions, <code class="m-code">meet tagged</code> wrapped impossible-body</span> <span class="m-text">tag</span></span></div><div class="row"><span><span class="m-text">guards, and <code class="m-code">withElementsAfterTyped</code> unconditionally re-ran</span></span></div><div class="row"><span><code class="m-code">releaseEithersStepOracle</code>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">isTypedArrayType</code> <span class="m-text">requires a non-nullish unshadowed typed array</span>, <code class="m-code">declIn</code></span></div><div class="row"><span><span class="m-text">records class</span>/<span class="m-text">module</span>/<span class="m-text">enum bindings</span>, <code class="m-code">.split</code>/<code class="m-code">.match</code>/<code class="m-code">.replace</code> <span class="m-text">require</span></span></div><div class="row"><span><code class="m-code">isStringExpr</code> <span class="m-text">receivers and confined module regexes, <code class="m-code">slotGuardTag</code> uses</span></span></div><div class="row"><span><span class="m-text">zero-allocation <code class="m-code">atomHasGuardTag</code> after</span> <code class="m-code">tagRefinable</code>, <code class="m-code">releaseLinearEithers</code></span></div><div class="row"><span><span class="m-text">and <code class="m-code">indicesFilter</code> scope linear refutation to</span> <code class="m-code">atIndex</code>-<span class="m-text">related facts</span>,</span></div><div class="row"><span><code class="m-code">meet tagged</code> <span class="m-text">skips <code class="m-code">impossibleFact</code> guards, and</span> <code class="m-code">withElementsAfterTyped</code></span></div><div class="row"><span><span class="m-text">only sets <code class="m-code">recheck</code> when oracle-relevant disjunctions are present</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>dev/paper-rules/module-state.ts#matchExportedRe</code> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">exported stateful RegExp is not confined to <code>@state</code></span></li><li><code>dev/paper-rules/module-state.ts#callUserReplace</code> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">user-defined <code>.replace</code> on non-string receiver is refused</span></li><li><code>dev/paper-rules/module-state.ts#writeShadowedTyped</code> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">shadowed <code>type Uint16Array = number[]</code> is not covered by <code>views: &quot;grow&quot;</code></span></li><li><details><summary><code>invalid-disjunctive-element-nonnull</code> <span class="kind negative">negative</span> <span class="why">negative  pinned refusal pinned to <code>[412,426)</code> cast claim</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Handle</span> = { advances: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; h.advances.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missingDisjunctNonNull(
+  h: <span class="tk-t">Handle</span>,
+  i: number,
+  flag: boolean,
+): number {
+  <span class="tk-k">const</span> startAdvances: number[] | <span class="tk-k">null</span> | <span class="tk-k">undefined</span> = h.advances[i];
+  <span class="tk-k">if</span> (flag || startAdvances !== <span class="tk-k">null</span>) {
+    <span class="tk-c">// Unsafe when flag is true and h.advances[i] is null: throws TypeError.</span>
+    <span class="tk-k">return</span> <mark>startAdvances!</mark>.length;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-merged-atindex-nonnull</code> <span class="kind negative">negative</span> <span class="why">negative  pinned refusal pinned to <code>[558,570)</code> cast claim</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Handle</span> = { advances: (number[] | <span class="tk-k">null</span>)[] };
+
+<span class="tk-c">/**
+ * @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; h.advances.length
+ */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missingMergeBranchNonNull(
+  h: <span class="tk-t">Handle</span>,
+  i: number,
+  a: boolean,
+  b: boolean,
+): number {
+  <span class="tk-k">const</span> advances = h.advances;
+  <span class="tk-k">let</span> start = <span class="tk-n">0</span>;
+  <span class="tk-k">if</span> (a &amp;&amp; advances[i] !== <span class="tk-k">null</span>) {
+    start = <span class="tk-n">1</span>;
+  } <span class="tk-k">else</span> <span class="tk-k">if</span> (b) {
+    <span class="tk-c">// Missing `advances[i] !== null` on this branch: when a is false, b is true,</span>
+    <span class="tk-c">// and advances[i] is null, `advances[i]!.length` throws TypeError.</span>
+    start = <span class="tk-n">2</span>;
+  } <span class="tk-k">else</span> {
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">const</span> fit = <mark>advances[i]!</mark>;
+  <span class="tk-k">return</span> start + fit.length;
+}</pre></details></li><li><details><summary><code>invalid-merge-array-length-alias</code> <span class="kind negative">negative</span> <span class="why">negative  pinned refusal pinned to <code>[425,430)</code> node-typing claim</span></summary><pre class="code"><span class="tk-c">// Unsafe neighbour of `merge-array-length-alias`: the modified branch shrinks</span>
+<span class="tk-c">// `ys` to an empty array, so `ys[i]` reads `undefined` at `number` and</span>
+<span class="tk-c">// `ys[i]! + 1` returns `NaN` under Node.</span>
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> badShrinkingMerge(
+  xs: <span class="tk-t">Dense</span>&lt;number[]&gt;,
+  cond: boolean,
+  i: number,
+): number {
+  <span class="tk-k">let</span> ys: <span class="tk-t">Dense</span>&lt;number[]&gt; = xs;
+  <span class="tk-k">if</span> (cond) {
+    ys = [];
+  }
+  <span class="tk-k">return</span> <mark>ys[i]</mark>! + <span class="tk-n">1</span>;
+}</pre></details></li><li><details><summary><code>invalid-array-read-defined</code> <span class="kind negative">negative</span> <span class="why">negative  pinned refusal pinned to <code>[504,509)</code> node-typing claim</span></summary><pre class="code"><span class="tk-c">// Negative control: an ordinary Array read `xs[k] !== undefined` does NOT imply</span>
+<span class="tk-c">// `0 &lt;= k &lt; xs.length`, because a plain JS Array can hold an own property at a</span>
+<span class="tk-c">// non-index numeric key (e.g. `-1`), where a parallel array `ys[k]` reads</span>
+<span class="tk-c">// `undefined` (observed `NaN` under Node).</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> badArrayReadDefined(
+  xs: number[],
+  ys: number[],
+  k: number,
+): number {
+  <span class="tk-k">if</span> (ys.length !== xs.length) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> v = xs[k];
+  <span class="tk-k">if</span> (v === <span class="tk-k">undefined</span>) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing&quot;</span>);
+  <span class="tk-k">return</span> v + <mark>ys[k]</mark>!;
+}</pre></details></li><li><details><summary><code>invalid-type-invariant-wrapper-alias</code> <span class="kind negative">negative</span> <span class="why">negative  pinned refusal pinned to <code>[442,465)</code> ensures refusal</span></summary><pre class="code"><span class="tk-c">// Negative control: unfolding a transparent generic wrapper alias in</span>
+<span class="tk-c">// `invariantsNamed` still requires the producer to establish the wrapped type's</span>
+<span class="tk-c">// `@invariant`; returning mismatched lengths is refused and yields `NaN` under Node.</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Tagged</span>&lt;_Tag, <span class="tk-t">T</span>&gt; = <span class="tk-t">T</span>;
+
+<span class="tk-c">/** @invariant this.xs.length === this.ys.length */</span>
+<span class="tk-k">type</span> <span class="tk-t">EqualPair</span> = {
+  xs: number[];
+  ys: number[];
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> badTaggedPair(): <span class="tk-t">Tagged</span>&lt;<span class="tk-s">&quot;pair&quot;</span>, <span class="tk-t">EqualPair</span>&gt; {
+  <span class="tk-k">return</span> <mark>{ xs: [<span class="tk-n">1</span>, <span class="tk-n">2</span>], ys: [<span class="tk-n">1</span>] }</mark>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>All Lean cleanups and optimizations are proved with zero <code>sorry</code> and zero new axioms (<code>atomHasGuardTag_mem</code>, <code>atomMayHaveGuardTag_of_has</code>, <code>slotGuardTag_sound</code>, <code>releaseLinearEithers_holds</code>, <code>indicesFilter_holds</code>, <code>contradictsInOracle_sound</code>, <code>withElementsAfterOracle_holds</code>, <code>withElementsAfterTyped_holds</code>, <code>slotRefine_meaning</code>, <code>envOk_intRefines</code>, <code>slotGuardTag_intAtoms</code>). <code>mode8Accepted_sound</code> is untouched. Prototype annotation checks are strictly tightened and covered by new negative controls in <code>dev/paper-rules/module-state.ts</code>.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>(cd lean &amp;&amp; lake build verifier paper-rules-prototype Verification.Tests.AxiomCheck Verification.Paper.TolerantFrames.Tests.AxiomCheck)</code>: 1039/1039 jobs, 0 warnings, 0 sorry, 0 project axioms. - <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>, <code>(cd dev/paper-rules &amp;&amp; npx tsc --noEmit)</code>, <code>(cd dev/paper-rules/pretext &amp;&amp; npx tsc --noEmit)</code>, <code>node tests/axiom-check-imports.mts</code>, <code>node tests/prototype-isolation.mts</code>, <code>node tests/json-field-names.mts</code>, <code>node tests/docs.mts</code>, <code>node tools/unchecked.mts</code>, <code>node tests/node-runs.mts</code>, Prettier: all pass. - <code>node pipeline/run-cases.mts disjunctive-element-nonnull merged-atindex-nonnull merge-array-length typed-array-read-defined array-read-defined type-invariant-wrapper-alias bounds-pattern-pointwise either finite oracle</code>: 24/24 as expected. - <code>node dev/paper-rules.mts --check dev/paper-rules/expected.json</code>: all expectations met. - <code>node dev/paper-rules.mts --check dev/paper-rules/pretext/expected.json</code>: all expectations met (96/96 units accepted, 0 paperAssume, 0 ordinary timeouts).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>HeapKnowledge.atomHasGuardTag_mem · HeapKnowledge.atomMayHaveGuardTag_of_has · HeapKnowledge.slotGuardTag_sound · HeapKnowledge.releaseLinearEithers_holds · HeapKnowledge.indicesFilter_holds · HeapKnowledge.contradictsInOracle_sound · HeapKnowledge.withElementsAfterOracle_holds · HeapKnowledge.withElementsAfterTyped_holds · PromiseCalls.envOk_intRefine · PromiseCalls.envOk_intRefines · PromiseCalls.slotGuardTag_intAtoms</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>dev/paper-rules/pretext/expected.json 96/96 accepted with 0 paperAssume and 0 ordinary timeouts · Pretext src/ runtime throws 102 -&gt; 60 (-42), ?? missing() occurrences 301 -&gt; 222 (-79), workarounds 44 -&gt; 41 (-3)</dd><dt>Tests</dt><dd><span class="test neg">module-state#matchExportedRe</span> <span class="test neg">module-state#callUserReplace</span> <span class="test neg">module-state#writeShadowedTyped</span></dd></dl>
+<details><summary>15 files changed, 422 insertions(+), 525 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ dev/paper-annotations.mts                          | 229 ++++++--
+ dev/paper-rules.mts                                |   2 +-
+ dev/paper-rules/expected.json                      |   4 +
+ dev/paper-rules/module-state.ts                    |  22 +
+ dev/paper-rules/pretext/src/line-break.ts          |   6 +-
+ docs/ARITHMETIC.md                                 |  11 +-
+ docs/PROGRAM-TYPING.md                             |   2 +-
+ docs/SOURCE-CONTRACTS.md                           |  12 +-
+ lean/Verification/Programs/PromiseCalls.lean       |  49 +-
+ lean/Verification/Programs/SinglePass.lean         |   1 +
+ .../Programs/TolerantFramesMergeMirror.lean        |   1 +
+ lean/Verification/Semantics/HeapKnowledge.lean     | 589 ++++++---------------
+ pipeline/cases.mts                                 |  10 +-
+ tools/fragment-statements.mts                      |   7 +-</pre></details>
+</article>
+</main></body></html>
