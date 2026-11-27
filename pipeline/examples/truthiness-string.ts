@@ -1,4 +1,4 @@
-// A falsy string is `""`, but `string` has no falsy singleton to narrow to.
+// A falsy string narrows to the singleton `""`.
 function falsyString(s: string): "" {
   if (!s) {
     return s;
