@@ -478,9 +478,10 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         // Where the engine ends a line inside the preserved spaces before a padded hard break that
         // doesn't fit (hardBreakItemRetreat), those spaces get an advance each, as text a line can
         // end inside has.
-        if (firstKind === HARD_BREAK && !breaksBefore && profile.hardBreakItemRetreat !== 'item' && ((flags[at - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE && segments[at - 1] !== '') {
-          const spaces = (segments[at - 1] ?? missing()).length
-          if (spaces >= 1) {   // PAPER: workaround (string non-emptiness): SinglePass does not derive s.length >= 1 from s !== ''
+        if (firstKind === HARD_BREAK && !breaksBefore && profile.hardBreakItemRetreat !== 'item' && ((flags[at - 1] ?? missing()) & KIND_BITS) === PRESERVED_SPACE) {
+          const prevSegment = segments[at - 1] ?? missing()
+          if (prevSegment !== '') {
+            const spaces = prevSegment.length
             const advances = equalAdvances(widths[at - 1] ?? missing(), spaces)
             const idx = at - 1
             if (hasBreakableLineStartExtras) breakableLineStartExtrasMap.delete(idx)

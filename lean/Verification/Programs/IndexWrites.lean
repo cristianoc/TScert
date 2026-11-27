@@ -488,6 +488,99 @@ theorem typeInt_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {a : Nat} {r : Op
     · cases hc
   · cases hc
 
+/-- Whether a clause holds bounded-length string literals alone: a string literal
+or tag set each of whose strings has UTF-16 length at most `maxStringLength`. -/
+def strLitClause {α : Type} : Clause α → Bool
+  | .strLit s => decide ((utf16Units s).length ≤ maxStringLength)
+  | .strIn ss => ss.all fun s => decide ((utf16Units s).length ≤ maxStringLength)
+  | _ => false
+
+/-- Whether a string-literal clause excludes the empty string `""`. -/
+def nonEmptyStrClause {α : Type} : Clause α → Bool
+  | .strLit s => s != ""
+  | .strIn ss => ss.all (· != "")
+  | _ => false
+
+/-- What a slot's type states of its string's UTF-16 length: where the type is
+plain and each of its clauses holds bounded-length string literals alone
+(`strLitClause`), its exact length at a single literal (`some (some L)`), or at
+a union of non-empty literals that its length is at least `1` (`some none`). -/
+@[nospecialize] def typeStrLen (G : NormalGraph ι) (Γ : List (Ty ι)) (a : Nat) : Option (Option Int) :=
+  match Γ[a]? with
+  | some S =>
+    if G.plainTy S then
+      let cs := expand G S
+      if cs.all strLitClause then
+        match cs with
+        | [.strLit s] => some (some ((utf16Units s).length : Int))
+        | _ => if cs.all nonEmptyStrClause then some none else none
+      else none
+    else none
+  | none => none
+
+theorem strLitClause_sound {G : NormalGraph ι} {c : Clause (List ι)} {n W v}
+    (hc : strLitClause c = true) (hv : clauseSem G c n W v) :
+    ∃ s, v = .str s ∧ (utf16Units s).length ≤ maxStringLength := by
+  replace hv := hv.1
+  cases c <;> simp only [strLitClause, reduceCtorEq] at hc
+  case strLit s =>
+    exact ⟨s, by simpa [semWithArgs] using hv, of_decide_eq_true hc⟩
+  case strIn ss =>
+    obtain ⟨s, hs, rfl⟩ : ∃ s ∈ ss, v = .str s := by simpa [semWithArgs] using hv
+    exact ⟨s, rfl, of_decide_eq_true (List.all_eq_true.mp hc s hs)⟩
+
+theorem nonEmptyStrClause_sound {G : NormalGraph ι} {c : Clause (List ι)} {n W s}
+    (hc : nonEmptyStrClause c = true) (hv : clauseSem G c n W (.str s)) : s ≠ "" := by
+  replace hv := hv.1
+  cases c <;> simp only [nonEmptyStrClause, reduceCtorEq] at hc
+  case strLit t =>
+    have hst : s = t := by simpa [semWithArgs] using hv
+    subst hst; exact bne_iff_ne.mp hc
+  case strIn ss =>
+    obtain ⟨t, ht, hst⟩ : ∃ t ∈ ss, Tm.str s = .str t := by simpa [semWithArgs] using hv
+    cases hst; exact bne_iff_ne.mp (List.all_eq_true.mp hc s ht)
+
+/-- **A slot's type states its string's UTF-16 length**: exact at a single
+string literal, and at least `1` at a union of non-empty string literals. -/
+theorem typeStrLen_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {a : Nat} {r : Option Int} {ρ n W}
+    (hc : typeStrLen G Γ a = some r) (he : EnvOk G Γ ρ n W) :
+    ∃ s, ρ a = .str s ∧ (utf16Units s).length ≤ maxStringLength ∧
+      match r with
+      | some L => ((utf16Units s).length : Int) = L
+      | none => 1 ≤ (utf16Units s).length := by
+  unfold typeStrLen at hc
+  split at hc
+  · rename_i S hS
+    split at hc
+    · rename_i hp
+      dsimp only at hc
+      split at hc
+      · rename_i hall
+        have hm := (expand_sem G S hp n W (ρ a)).mp (he.2 a S hS)
+        obtain ⟨c, hcm, hsem⟩ := hm
+        obtain ⟨s, hs, hmax⟩ := strLitClause_sound (List.all_eq_true.mp hall c hcm) hsem
+        split at hc
+        · rename_i s0 hx
+          cases hc
+          rw [hx] at hcm
+          simp only [List.mem_singleton] at hcm
+          subst hcm
+          have hseq : s = s0 := by
+            have := hsem.1
+            rw [hs] at this
+            simpa [semWithArgs] using this
+          subst hseq
+          exact ⟨s, hs, hmax, rfl⟩
+        · split at hc
+          · rename_i hne
+            cases hc
+            have hne' := nonEmptyStrClause_sound (List.all_eq_true.mp hne c hcm) (hs ▸ hsem)
+            exact ⟨s, hs, hmax, utf16Units_length_pos hne'⟩
+          · cases hc
+      · cases hc
+    · cases hc
+  · cases hc
+
 theorem stringSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
     (hc : stringSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ str, ρ s = .str str := by
   unfold stringSlot at hc
@@ -916,46 +1009,78 @@ theorem concatOperands_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {op a b x 
     exact ⟨hop, rfl, rfl, h.1.2, h.2⟩
   · contradiction
 
-/-- The integrality (and, at a singleton literal type, exact integer value)
-each of the slots `slots` has by its type (`typeInt`). -/
+/-- The integrality (and, at a singleton literal type, exact integer value) and
+string-literal length bounds each of the slots `slots` has by its type
+(`typeInt`, `typeStrLen`). -/
 def typeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (slots : List Nat) : List IndexAtom :=
-  slots.flatMap fun a => match typeInt G Γ a with
-    | none => []
-    | some none => [⟨.int a, none, false⟩]
-    | some (some i) =>
-      [⟨.int a, none, false⟩,
-       ⟨.linear (.le [(.value a, 1)] i), none, false⟩,
-       ⟨.linear (.le [(.value a, -1)] (-i)), none, false⟩]
+  slots.flatMap fun a =>
+    (match typeInt G Γ a with
+      | none => []
+      | some none => [⟨.int a, none, false⟩]
+      | some (some i) =>
+        [⟨.int a, none, false⟩,
+         ⟨.linear (.le [(.value a, 1)] i), none, false⟩,
+         ⟨.linear (.le [(.value a, -1)] (-i)), none, false⟩]) ++
+    (match typeStrLen G Γ a with
+      | none => []
+      | some none => [⟨.linear (.le [(.strLength a, -1)] (-1)), none, false⟩]
+      | some (some L) =>
+        [⟨.linear (.le [(.strLength a, 1)] L), none, false⟩,
+         ⟨.linear (.le [(.strLength a, -1)] (-L)), none, false⟩])
 
 theorem typeAtoms_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {slots : List Nat} {ρ n W h}
     (he : EnvOk G Γ ρ n W) : IndexHolds ε (typeAtoms G Γ slots) ρ h := by
   intro atom hat _
   obtain ⟨a, -, hm⟩ := List.mem_flatMap.mp hat
-  cases hr : typeInt G Γ a with
-  | none => rw [hr] at hm; cases hm
-  | some r =>
-    rw [hr] at hm
-    have hti := typeInt_sound hr he
-    cases r with
-    | none =>
-      simp only [List.mem_singleton] at hm
-      subst hm; exact hti.1
-    | some i =>
-      obtain ⟨b, hb, hsafe⟩ := hti.2 i rfl
-      have hiv : intValue (ρ a) = some i := by rw [hb]; exact intValue_num hsafe
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
-      rcases hm with rfl | rfl | rfl
-      · exact hti.1
-      · refine ⟨fun t ht => ?_, ?_⟩
-        · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
-          subst ht; simp [termValue_value, hiv]
-        · show Linear.Form.eval _ _ ≤ _
-          simp only [Linear.Form.eval, termValuation, termValue_value, hiv, Option.getD_some]; omega
-      · refine ⟨fun t ht => ?_, ?_⟩
-        · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
-          subst ht; simp [termValue_value, hiv]
-        · show Linear.Form.eval _ _ ≤ _
-          simp only [Linear.Form.eval, termValuation, termValue_value, hiv, Option.getD_some]; omega
+  rcases List.mem_append.mp hm with hm | hm
+  · cases hr : typeInt G Γ a with
+    | none => rw [hr] at hm; cases hm
+    | some r =>
+      rw [hr] at hm
+      have hti := typeInt_sound hr he
+      cases r with
+      | none =>
+        simp only [List.mem_singleton] at hm
+        subst hm; exact hti.1
+      | some i =>
+        obtain ⟨b, hb, hsafe⟩ := hti.2 i rfl
+        have hiv : intValue (ρ a) = some i := by rw [hb]; exact intValue_num hsafe
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
+        rcases hm with rfl | rfl | rfl
+        · exact hti.1
+        · refine ⟨fun t ht => ?_, ?_⟩
+          · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
+            subst ht; simp [termValue_value, hiv]
+          · show Linear.Form.eval _ _ ≤ _
+            simp only [Linear.Form.eval, termValuation, termValue_value, hiv, Option.getD_some]; omega
+        · refine ⟨fun t ht => ?_, ?_⟩
+          · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
+            subst ht; simp [termValue_value, hiv]
+          · show Linear.Form.eval _ _ ≤ _
+            simp only [Linear.Form.eval, termValuation, termValue_value, hiv, Option.getD_some]; omega
+  · cases hr : typeStrLen G Γ a with
+    | none => rw [hr] at hm; cases hm
+    | some r =>
+      rw [hr] at hm
+      obtain ⟨s, hs, hmax, hlen⟩ := typeStrLen_sound hr he
+      have htv : termValue ε ρ h (.strLength a) = some ((utf16Units s).length : Int) := by
+        simp [termValue_strLength, hs, strLengthOf, hmax]
+      cases r with
+      | none =>
+        simp only [List.mem_singleton] at hm
+        subst hm
+        refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+        show Linear.Form.eval _ _ ≤ _
+        simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+      | some L =>
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
+        rcases hm with rfl | rfl
+        · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+        · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
 
 /-- The knowledge a step reads: the facts over the slots it reads, with
 the integrality their types state (`typeAtoms`). -/
@@ -965,6 +1090,17 @@ def typedKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (slo
 theorem typedKnowledge_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {slots : List Nat} {ρ n W h}
     (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) : Holds (typedKnowledge G Γ k slots) ε ρ h :=
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, indexHolds_cat hk.2.2.2.2.2 (typeAtoms_holds he)⟩
+
+/-- Conditional string-length atoms of a string equality test on output slot
+`a` (result at slot `0`): exact length on the equal branch, and `1 ≤ strLength`
+on the unequal branch when comparing against `""`. -/
+def strEqAtoms (a : Nat) (s : String) (neg : Bool) : List IndexAtom :=
+  (if (utf16Units s).length ≤ maxStringLength then
+    let L : Int := (utf16Units s).length
+    [⟨.linear (.le [(.strLength a, 1)] L), some 0, neg⟩,
+     ⟨.linear (.le [(.strLength a, -1)] (-L)), some 0, neg⟩]
+  else []) ++
+  (if s == "" then [⟨.linear (.le [(.strLength a, -1)] (-1)), some 0, !neg⟩] else [])
 
 /-- The linear atoms a step on slots states of its result. -/
 def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
@@ -982,7 +1118,22 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     else if stringSlot G Γ s then
       [⟨.int 0, none, false⟩,
         ⟨.linear (.le [(.value 0, 1), (.strLength (s + 1), -1)] 0), none, false⟩,
-        ⟨.linear (.le [(.value 0, -1), (.strLength (s + 1), 1)] 0), none, false⟩]
+        ⟨.linear (.le [(.value 0, -1), (.strLength (s + 1), 1)] 0), none, false⟩] ++
+      (match HeapExpressionRules.valuesAt G Γ k s with
+       | some R =>
+         match R.singleStr with
+         | some t =>
+           let L : Int := (utf16Units t).length
+           [⟨.linear (.le [(.value 0, 1)] L), none, false⟩,
+            ⟨.linear (.le [(.value 0, -1)] (-L)), none, false⟩,
+            ⟨.linear (.le [(.strLength (s + 1), 1)] L), none, false⟩,
+            ⟨.linear (.le [(.strLength (s + 1), -1)] (-L)), none, false⟩]
+         | none =>
+           if !R.str.mem "" then
+             [⟨.linear (.le [(.value 0, -1)] (-1)), none, false⟩,
+              ⟨.linear (.le [(.strLength (s + 1), -1)] (-1)), none, false⟩]
+           else []
+       | none => [])
     else []
   | .arith op a b =>
     match concatOperands G Γ op a b with
@@ -1030,6 +1181,10 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
       | some i => (equalAtoms [(a, 1)] (-i)).map fun atom => { atom with negated := !atom.negated }
       | none => []
     else []
+  | .ite (.test (.strEq s) (.var a)) .tru .fls =>
+    if a < Γ.length && termDefined k.indices (.strLength a) then strEqAtoms (a + 1) s false else []
+  | .ite (.test (.strEq s) (.var a)) .fls .tru =>
+    if a < Γ.length && termDefined k.indices (.strLength a) then strEqAtoms (a + 1) s true else []
   | _ => []
 
 
@@ -1489,19 +1644,56 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
               (utf16Units str).length := by simp [termValuation, h0]
           have hv1 : termValuation ε (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
               (utf16Units str).length := by simp only [termValuation, hl, Option.getD_some]
-          intro atom hat _
-          simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
-          rcases hat with rfl | rfl | rfl
-          · show (intValue _).isSome; rw [h0]; rfl
-          all_goals
-            refine ⟨fun t ht => ?_, ?_⟩
-            · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
-                or_false] at ht
-              rcases ht with rfl | rfl
-              · rw [termValue_value, h0]; rfl
-              · rw [hl]; rfl
-            · show Linear.Form.eval _ _ ≤ _
-              simp only [Linear.Form.eval, hv0, hv1]; omega
+          refine indexHolds_cat ?_ ?_
+          · intro atom hat _
+            simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
+            rcases hat with rfl | rfl | rfl
+            · show (intValue _).isSome; rw [h0]; rfl
+            all_goals
+              refine ⟨fun t ht => ?_, ?_⟩
+              · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+                  or_false] at ht
+                rcases ht with rfl | rfl
+                · rw [termValue_value, h0]; rfl
+                · rw [hl]; rfl
+              · show Linear.Form.eval _ _ ≤ _
+                simp only [Linear.Form.eval, hv0, hv1]; omega
+          · cases hvs : HeapExpressionRules.valuesAt G Γ k s with
+            | none => dsimp only; exact indexHolds_nil _ _
+            | some R =>
+              dsimp only
+              have hmem : R.mem (.str str) = true := hstr ▸ HeapExpressionRules.valuesAt_sound hvs he hk
+              cases hsng : R.singleStr with
+              | some t =>
+                dsimp only
+                have hstEq : str = t := ValueSets.ValueSet.singleStr_eq hsng hmem
+                subst hstEq
+                intro atom hat _
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
+                rcases hat with rfl | rfl | rfl | rfl
+                · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [termValue_value, h0]; rfl, ?_⟩
+                  show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv0]; omega
+                · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [termValue_value, h0]; rfl, ?_⟩
+                  show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv0]; omega
+                · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [hl]; rfl, ?_⟩
+                  show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv1]; omega
+                · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [hl]; rfl, ?_⟩
+                  show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv1]; omega
+              | none =>
+                dsimp only
+                split
+                · rename_i hneEmpty
+                  have hnotMem : R.str.mem "" = false := by
+                    cases h : R.str.mem "" <;> simp_all
+                  have hpos := utf16Units_length_pos (ValueSets.ValueSet.str_ne_empty_of_not_mem hnotMem hmem)
+                  intro atom hat _
+                  simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
+                  rcases hat with rfl | rfl
+                  · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [termValue_value, h0]; rfl, ?_⟩
+                    show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv0]; omega
+                  · refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; rw [hl]; rfl, ?_⟩
+                    show Linear.Form.eval _ _ ≤ _; simp only [Linear.Form.eval, hv1]; omega
+                · exact indexHolds_nil _ _
         · exact none_case
     | _ => simp only [linearAtoms]; exact none_case
   | arith op a b =>
@@ -1706,6 +1898,110 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
                       simp [valueFact, valueForm, shiftForm, Linear.Form.scale, Linear.Fact.vars, IndexFact.HoldsAt, Linear.Fact.Holds, Linear.Form.eval, termValuation, termValue, termAt, Term.value, push]
                   exact hsame.mpr h0
                 · exact none_case
+              · exact none_case
+            | _ => simp only [linearAtoms]; exact none_case
+          | _ => simp only [linearAtoms]; exact none_case
+        | _ => simp only [linearAtoms]; exact none_case
+      | strEq s =>
+        cases arg with
+        | var a =>
+          have strEqCase : ∀ (neg : Bool) (b1 b2 : Tm),
+              b1 = (if neg then .fls else .tru) → b2 = (if neg then .tru else .fls) →
+              (a < Γ.length && termDefined k.indices (.strLength a)) = true →
+              SafePost Ξ T Q n W h (instantiate 0 ρ (.ite (.test (.strEq s) (.var a)) b1 b2)) →
+              SafePost Ξ T
+                (fun h' u => Q h' u ∧ IndexHolds ε (strEqAtoms (a + 1) s neg) (push u ρ) h')
+                n W h (instantiate 0 ρ (.ite (.test (.strEq s) (.var a)) b1 b2)) := by
+            intro neg b1 b2 hb1 hb2 hcond hs'
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+            have hsome := termDefined_sound hk.2.2.2.2.2 hcond.2
+            rw [termValue_strLength] at hsome
+            obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp hsome
+            have hstr : ∃ str, ρ a = .str str ∧ (utf16Units str).length ≤ maxStringLength := by
+              cases ha : ρ a with
+              | str str =>
+                rw [ha] at hm
+                simp only [strLengthOf] at hm
+                split at hm
+                · exact ⟨str, rfl, by assumption⟩
+                · cases hm
+              | _ => rw [ha] at hm; simp [strLengthOf] at hm
+            obtain ⟨str, hρa, hmax⟩ := hstr
+            subst hb1; subst hb2
+            have hb1v : isVal (if neg then Tm.fls else Tm.tru) = true := by cases neg <;> rfl
+            have hb2v : isVal (if neg then Tm.tru else Tm.fls) = true := by cases neg <;> rfl
+            have hinst1 : instantiate 0 ρ (if neg then Tm.fls else Tm.tru) = (if neg then Tm.fls else Tm.tru) := by
+              cases neg <;> rfl
+            have hinst2 : instantiate 0 ρ (if neg then Tm.tru else Tm.fls) = (if neg then Tm.tru else Tm.fls) := by
+              cases neg <;> rfl
+            simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hρa, hinst1, hinst2] at hs' ⊢
+            refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (testIte_run (by rfl) hb1v hb2v hs')
+            obtain ⟨-, rfl, rfl⟩ := hq
+            have htv : termValue ε (push (if tagHoldsIn h' (.strEq s) (.str str) then
+                (if neg then Tm.fls else Tm.tru) else (if neg then Tm.tru else Tm.fls)) ρ) h' (.strLength (a + 1)) =
+                some ((utf16Units str).length : Int) := by
+              simp [push, hρa, strLengthOf, hmax]
+            refine indexHolds_cat ?_ ?_
+            · split
+              · rename_i hsmax
+                intro atom hat hc
+                have hc0 := hc 0
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
+                rcases hat with rfl | rfl
+                · have hce : s = str := by
+                    have h0 := hc0 rfl
+                    simp only [push] at h0
+                    cases hst : (s == str) <;> cases neg <;> simp [tagHoldsIn, tagHolds, hst] at h0
+                    · exact beq_iff_eq.mp hst
+                    · exact beq_iff_eq.mp hst
+                  subst hce
+                  refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; simp [htv], ?_⟩
+                  show Linear.Form.eval _ _ ≤ _
+                  simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+                · have hce : s = str := by
+                    have h0 := hc0 rfl
+                    simp only [push] at h0
+                    cases hst : (s == str) <;> cases neg <;> simp [tagHoldsIn, tagHolds, hst] at h0
+                    · exact beq_iff_eq.mp hst
+                    · exact beq_iff_eq.mp hst
+                  subst hce
+                  refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; simp [htv], ?_⟩
+                  show Linear.Form.eval _ _ ≤ _
+                  simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+              · exact indexHolds_nil _ _
+            · split
+              · rename_i hse
+                have hseq : s = "" := beq_iff_eq.mp hse
+                subst hseq
+                intro atom hat hc
+                simp only [List.mem_singleton] at hat
+                subst hat
+                have h0 := hc 0 rfl
+                simp only [push] at h0
+                have hne : str ≠ "" := by
+                  cases hst : ("" == str) <;> cases neg <;> simp [tagHoldsIn, tagHolds, hst] at h0
+                  · intro heq; subst heq; simp at hst
+                  · intro heq; subst heq; simp at hst
+                have hpos := utf16Units_length_pos hne
+                refine ⟨fun u hu => by simp [Linear.Fact.vars] at hu; subst hu; simp [htv], ?_⟩
+                show Linear.Form.eval _ _ ≤ _
+                simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+              · exact indexHolds_nil _ _
+          cases t1 with
+          | tru =>
+            cases t2 with
+            | fls =>
+              simp only [linearAtoms]
+              split
+              · exact strEqCase false .tru .fls rfl rfl (by assumption) hs
+              · exact none_case
+            | _ => simp only [linearAtoms]; exact none_case
+          | fls =>
+            cases t2 with
+            | tru =>
+              simp only [linearAtoms]
+              split
+              · exact strEqCase true .fls .tru rfl rfl (by assumption) hs
               · exact none_case
             | _ => simp only [linearAtoms]; exact none_case
           | _ => simp only [linearAtoms]; exact none_case

@@ -514,6 +514,35 @@ theorem strLengthOf_range {v : Val} {n : Int} (hv : strLengthOf v = some n) :
     · cases hv
   · cases hv
 
+/-- A string has no UTF-16 code units if and only if it is the empty string `""`. -/
+theorem utf16Units_eq_nil_iff (s : String) : utf16Units s = [] ↔ s = "" := by
+  constructor
+  · intro h
+    apply String.toList_inj.mp
+    cases hl : s.toList with
+    | nil => rfl
+    | cons c cs =>
+      simp only [utf16Units, hl, List.flatMap_cons] at h
+      split at h <;> simp at h
+  · rintro rfl; rfl
+
+/-- Every non-empty string has at least one UTF-16 code unit. -/
+theorem utf16Units_length_pos {s : String} (h : s ≠ "") : 1 ≤ (utf16Units s).length := by
+  cases hu : utf16Units s with
+  | nil => exact absurd ((utf16Units_eq_nil_iff s).mp hu) h
+  | cons _ _ => simp
+
+/-- Every non-empty string whose length is within `maxStringLength` has positive
+`strLengthOf`. -/
+theorem strLengthOf_pos {s : String} {n : Int} (hv : strLengthOf (.str s) = some n) (hne : s ≠ "") :
+    1 ≤ n := by
+  simp only [strLengthOf] at hv
+  split at hv
+  · cases hv
+    have hp := utf16Units_length_pos hne
+    omega
+  · cases hv
+
 /-- The 32-bit masked integer `ToInt32(v) & m` of a numeric value, for a
 non-negative 32-bit mask `m < 2^31`. -/
 def bitMaskOf (m : Nat) : Val → Option Int

@@ -7561,15 +7561,145 @@ theorem numEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : 
     · cases ha
   · cases ha
 
+/-- **A string equality or truthiness observation's length facts**: where a slot
+in the tested class already has a defined `strLength` term in `as`, equality
+against a literal `s` fixes `strLength x = |s|` (on `true`), inequality against
+`""` or a truthy answer states `1 ≤ strLength x`, and a falsy answer states
+`strLength x = 0`. -/
+def strEqIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) :
+    BranchRefinement.Observation → List IndexAtom
+  | .tag (.strEq s) q =>
+    if q then
+      if (utf16Units s).length ≤ maxStringLength then
+        let L : Int := (utf16Units s).length
+        ((HeapLinks.aliases ls slot).filter fun x => termDefined as (.strLength x)).flatMap fun x =>
+          [⟨.linear (.le [(.strLength x, 1)] L), none, false⟩,
+           ⟨.linear (.le [(.strLength x, -1)] (-L)), none, false⟩]
+      else []
+    else if s == "" then
+      ((HeapLinks.aliases ls slot).filter fun x => termDefined as (.strLength x)).map fun x =>
+        ⟨.linear (.le [(.strLength x, -1)] (-1)), none, false⟩
+    else []
+  | .tag .truthy q =>
+    ((HeapLinks.aliases ls slot).filter fun x => termDefined as (.strLength x)).flatMap fun x =>
+      if q then [⟨.linear (.le [(.strLength x, -1)] (-1)), none, false⟩]
+      else [⟨.linear (.le [(.strLength x, 1)] 0), none, false⟩,
+            ⟨.linear (.le [(.strLength x, -1)] 0), none, false⟩]
+  | _ => []
+
+theorem strEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat}
+    {o : BranchRefinement.Observation} {ρ h} (hl : HeapLinks.Holds ls ρ h)
+    (he : IndexHolds ε as ρ h) (ho : o.holds (ρ slot)) : IndexHolds ε (strEqIndices ls as slot o) ρ h := by
+  have strOf : ∀ x, x ∈ HeapLinks.aliases ls slot → termDefined as (.strLength x) = true →
+      ∃ str, ρ x = .str str ∧ ρ slot = .str str ∧ (utf16Units str).length ≤ maxStringLength ∧
+        termValue ε ρ h (.strLength x) = some ((utf16Units str).length : Int) := by
+    intro x hxa hdef
+    have hρ : ρ x = ρ slot := HeapLinks.aliases_eq hl hxa
+    have hsome := termDefined_sound he hdef
+    rw [termValue_strLength] at hsome
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hsome
+    cases hx : ρ x with
+    | str str =>
+      rw [hx] at hn
+      simp only [strLengthOf] at hn
+      split at hn
+      · rename_i hmax
+        cases hn
+        exact ⟨str, rfl, hρ.symm.trans hx, hmax, by simp [termValue_strLength, hx, strLengthOf, hmax]⟩
+      · cases hn
+    | _ => rw [hx] at hn; simp [strLengthOf] at hn
+  intro a ha _
+  unfold strEqIndices at ha
+  split at ha
+  · rename_i s q
+    split at ha
+    · rename_i hq
+      subst hq
+      split at ha
+      · rename_i hmax
+        obtain ⟨x, hxm, ha⟩ := List.mem_flatMap.mp ha
+        obtain ⟨hxa, hdef⟩ := List.mem_filter.mp hxm
+        obtain ⟨str, _, hslot, _, htv⟩ := strOf x hxa hdef
+        rw [hslot] at ho
+        have htag : (s == str) = true := by
+          rcases ho with ho | ho
+          · simpa [tagHolds] using ho
+          · simp [protoFree] at ho
+        have hseq : str = s := (beq_iff_eq.mp htag).symm
+        subst hseq
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
+        rcases ha with rfl | rfl
+        · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+        · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+          show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+      · cases ha
+    · rename_i hq
+      have hqf : q = false := by cases q <;> simp_all
+      subst hqf
+      split at ha
+      · rename_i hse
+        have hseq : s = "" := beq_iff_eq.mp hse
+        subst hseq
+        obtain ⟨x, hxm, rfl⟩ := List.mem_map.mp ha
+        obtain ⟨hxa, hdef⟩ := List.mem_filter.mp hxm
+        obtain ⟨str, _, hslot, _, htv⟩ := strOf x hxa hdef
+        rw [hslot] at ho
+        have hne : str ≠ "" := by
+          rcases ho with ho | ho
+          · simp [tagHolds] at ho; exact ho
+          · simp [protoFree] at ho
+        have hpos := utf16Units_length_pos hne
+        refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+        show Linear.Form.eval _ _ ≤ _
+        simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+      · cases ha
+  · rename_i q
+    obtain ⟨x, hxm, ha⟩ := List.mem_flatMap.mp ha
+    obtain ⟨hxa, hdef⟩ := List.mem_filter.mp hxm
+    obtain ⟨str, _, hslot, _, htv⟩ := strOf x hxa hdef
+    rw [hslot] at ho
+    have htag : (str != "") = q := by
+      rcases ho with ho | ho
+      · simpa [tagHolds] using ho
+      · simp [protoFree] at ho
+    cases q with
+    | true =>
+      simp only [ite_true, List.mem_singleton] at ha
+      subst ha
+      have hne : str ≠ "" := bne_iff_ne.mp htag
+      have hpos := utf16Units_length_pos hne
+      refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+      show Linear.Form.eval _ _ ≤ _
+      simp only [Linear.Form.eval, termValuation, htv, Option.getD_some]; omega
+    | false =>
+      simp only [Bool.false_eq_true, ite_false, List.mem_cons, List.not_mem_nil, or_false] at ha
+      have hseq : str = "" := by
+        cases h : str == "" <;> simp_all [bne]
+      subst hseq
+      have h0 : (utf16Units "").length = 0 := rfl
+      rcases ha with rfl | rfl
+      · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+        show Linear.Form.eval _ _ ≤ _
+        simp only [Linear.Form.eval, termValuation, htv, Option.getD_some, h0]; omega
+      · refine ⟨fun t ht => by simp [Linear.Fact.vars] at ht; subst ht; simp [htv], ?_⟩
+        show Linear.Form.eval _ _ ≤ _
+        simp only [Linear.Form.eval, termValuation, htv, Option.getD_some, h0]; omega
+  · cases ha
+
 def observeCore (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Knowledge
   | .boolean q => observeBoolean k slot q
   | .tag t q => if t == .truthy then promoteTruthy (observeTag k slot t q) slot q else observeTag k slot t q
 
 /-- An observation's knowledge, with the bodies of the guards it eliminates
-(`unguardIndices`). -/
+(`unguardIndices`), numeric literal equalities (`numEqIndices`), and string
+equality/truthiness length bounds (`strEqIndices`). -/
 def observe (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Knowledge :=
   let k' := observeCore k slot o
-  { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o ++ numEqIndices k'.links k'.indices slot o }
+  { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o ++
+      numEqIndices k'.links k'.indices slot o ++ strEqIndices k'.links k'.indices slot o }
 
 theorem observeCore_holds {k slot o ρ h} (hk : Holds k ε ρ h)
     (ho : o.holds (ρ slot)) : Holds (observeCore k slot o) ε ρ h := by
@@ -7594,9 +7724,11 @@ theorem observe_holds {k slot o ρ h} (hk : Holds k ε ρ h)
   refine ⟨hk'.1, hk'.2.1, hk'.2.2.1, hk'.2.2.2.1, hk'.2.2.2.2.1, fun a ha => ?_⟩
   rcases List.mem_append.mp ha with ha | ha
   · rcases List.mem_append.mp ha with ha | ha
-    · exact hk'.2.2.2.2.2 a ha
-    · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
-  · exact numEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+    · rcases List.mem_append.mp ha with ha | ha
+      · exact hk'.2.2.2.2.2 a ha
+      · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+    · exact numEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+  · exact strEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
 
 /-- A finite predicate vocabulary exactly interprets supported primitive clauses. -/
 def primitive : List (Clause (Ty ι)) → Option (List Atom)
@@ -7825,14 +7957,17 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   match o, Γ[slot]? with
   | .tag tag q, some A =>
     match observedAtoms G A tag q with
-    | some R => ⟨linkFacts k slot (ValueSets.ofAtoms R) ++ out.cells, ⟨slot,ValueSets.ofAtoms R,valueField⟩ :: out.values,
+    | some R =>
+      let V := (ValueSets.ofAtoms R).meet (ValueSets.ofTag tag q)
+      ⟨linkFacts k slot V ++ out.cells, ⟨slot, V, valueField⟩ :: out.values,
         out.links, out.separation, out.elems, out.indices⟩
-    -- Otherwise the answer itself is a fact of every cell the value was
-    -- read from (a separate fact: all of a cell's facts hold). A slice of
-    -- objects a test leaves, `x` truthy where `x` is an object or undefined,
-    -- also has values neither null nor undefined.
+    -- Otherwise the answer itself is a fact of the slot and of every cell the
+    -- value was read from (a separate fact: all of a cell's facts hold). A
+    -- slice of objects a test leaves, `x` truthy where `x` is an object or
+    -- undefined, also has values neither null nor undefined.
     | none =>
-      let out : Knowledge := ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ out.cells, out.values, out.links,
+      let out : Knowledge := ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ out.cells,
+        ⟨slot, ValueSets.ofTag tag q, valueField⟩ :: out.values, out.links,
         out.separation, out.elems, out.indices⟩
       if G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false) then
@@ -7848,9 +7983,13 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
   unfold observeTyped
   split
   · rename_i tag q A hi
+    have htag : (ValueSets.ofTag tag q).mem (ρ slot) = true :=
+      ValueSets.ofTag_holds (meaning_value (he.2 slot A hi)).1 ho
     split
     · rename_i R hr
-      have hv := ValueSets.ofAtoms_holds (observedAtoms_sound hr (he.2 slot A hi) ho)
+      have hv : ((ValueSets.ofAtoms R).meet (ValueSets.ofTag tag q)).mem (ρ slot) = true := by
+        rw [ValueSets.ValueSet.mem_meet, ValueSets.ofAtoms_holds (observedAtoms_sound hr (he.2 slot A hi) ho), htag]
+        rfl
       refine ⟨?_, ?_, hout.2.2⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
@@ -7860,18 +7999,21 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         rcases List.mem_cons.mp hf with rfl | hf
         · exact hv
         · exact hout.2.1 f hf
-    · have htag : (ValueSets.ofTag tag q).mem (ρ slot) = true :=
-        ValueSets.ofTag_holds (meaning_value (he.2 slot A hi)).1 ho
-      have hout : Holds ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
-          (observe (withTypedLinks G Γ k) slot (.tag tag q)).values, (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
+    · have hout : Holds ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
+          ⟨slot, ValueSets.ofTag tag q, valueField⟩ :: (observe (withTypedLinks G Γ k) slot (.tag tag q)).values,
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).separation,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).elems,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).indices⟩ ε ρ h := by
-        refine ⟨?_, hout.2.1, hout.2.2⟩
-        intro f hf
-        rcases List.mem_append.mp hf with hf | hf
-        · exact linkFacts_holds hk htag f hf
-        · exact hout.1 f hf
+        refine ⟨?_, ?_, hout.2.2⟩
+        · intro f hf
+          rcases List.mem_append.mp hf with hf | hf
+          · exact linkFacts_holds hk htag f hf
+          · exact hout.1 f hf
+        · intro f hf
+          rcases List.mem_cons.mp hf with rfl | hf
+          · exact htag
+          · exact hout.2.1 f hf
       dsimp only
       by_cases hn : (G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false)) = true
