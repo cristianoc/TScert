@@ -1028,8 +1028,57 @@ function comparison(before: Census, after: Census): string {
     out.push(`${mode}: ` + coverageComparison(
       before.inventory.units.map((u) => ({ ...u, class: classify(u, outcomes(before, a, mode)) })),
       after.inventory.units.map((u) => ({ ...u, class: classify(u, outcomes(after, b, mode)) }))).trimEnd());
+  out.push(cpuComparison(before, after));
   out.push("before:", costReport(before.runs.values()).trimEnd(), "after:", costReport(after.runs.values()).trimEnd());
   return out.join("\n") + "\n";
+}
+
+/** The CPU of the stage executions a census ran, each measured once: a
+ * replay carries the stored execution's CPU, which an executed invocation of
+ * the same run already counts. */
+function executedCpu(c: Census): Map<string, { stage: StageName; file: string; cpuMs: number }> {
+  const out = new Map<string, { stage: StageName; file: string; cpuMs: number }>();
+  for (const run of c.runs.values())
+    for (const r of run.invocations) {
+      const cpuMs = r.execution === "executed" ? cost(r).cpuMs : null;
+      if (cpuMs !== null) out.set(r.key === null ? r.attempt : `${r.stage}:${r.key}`, { stage: r.stage, file: run.file, cpuMs });
+    }
+  return out;
+}
+
+/** The second census's executed CPU against the first's, at the first's
+ * machine speed. The machine factor is the CPU ratio of the executions both
+ * ran on the same input (same stage and key: the same work), or, where fewer
+ * than 100 are shared (a verifier change alters the keys), of each file's
+ * `module` stage, whose work is mostly the TypeScript compiler's. */
+function cpuComparison(before: Census, after: Census): string {
+  const [a, b] = [executedCpu(before), executedCpu(after)];
+  const total = (m: Map<string, { cpuMs: number }>): number => [...m.values()].reduce((s, x) => s + x.cpuMs, 0);
+  let shared = 0, sa = 0, sb = 0;
+  for (const [k, x] of a) {
+    const y = b.get(k);
+    if (y) { shared++; sa += x.cpuMs; sb += y.cpuMs; }
+  }
+  let basis = `${shared} executions on the same input`;
+  if (shared < 100) {
+    const byFile = (m: Map<string, { stage: StageName; file: string; cpuMs: number }>): Map<string, number> => {
+      const f = new Map<string, number>();
+      for (const x of m.values()) if (x.stage === "module") f.set(x.file, (f.get(x.file) ?? 0) + x.cpuMs);
+      return f;
+    };
+    const [fa, fb] = [byFile(a), byFile(b)];
+    sa = 0; sb = 0;
+    for (const [file, ms] of fa) {
+      const other = fb.get(file);
+      if (other !== undefined) { sa += ms; sb += other; }
+    }
+    basis = "each file's module stage";
+  }
+  const [ta, tb] = [total(a) / 1000, total(b) / 1000];
+  if (sa === 0 || ta === 0) return `cpu: executed ${ta.toFixed(0)} s → ${tb.toFixed(0)} s; no machine factor`;
+  const factor = sb / sa;
+  return `cpu: executed ${ta.toFixed(0)} s → ${tb.toFixed(0)} s; machine factor ${factor.toFixed(2)} (${basis}); ` +
+    `at the first machine's speed ${(tb / factor).toFixed(0)} s, ratio ${(tb / factor / ta).toFixed(2)}`;
 }
 
 /** The inventory of a census's files read from `sources` (the checkout or

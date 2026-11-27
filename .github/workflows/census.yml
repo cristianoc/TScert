@@ -5,10 +5,13 @@
 # - a page per census on the gh-pages branch, census/<commit>/, holding the
 #   movement and the full report, census/ showing the latest, and
 #   census/history.tsv a line per census;
-# - a comment on the pull request the pushed commit belongs to, with the
-#   movement: the counts before and after, the functions gained and lost;
 # - the census record, the next census's baseline, and the refusals ranking
 #   (census.mts refusals), artifacts of the run.
+# Main and single-pass comment on the pull request the pushed commit belongs
+# to, or on the commit where no pull request holds it, with the movement: the
+# counts before and after, the functions gained and lost, and the executed
+# CPU at the previous census's machine speed, mentioning the owner when
+# coverage is lost or that CPU rises by more than a quarter.
 # A pull request changing this workflow runs the census and writes its
 # report to the run's summary, publishing nothing.
 
@@ -121,7 +124,7 @@ jobs:
           {
             grep -m1 '^functions:' "$CENSUS/report.txt"
             grep -m1 -E '^ +[0-9.]+% +[0-9]+ of [0-9]+ statements' "$CENSUS/report.txt" | sed 's/^ *//'
-            grep -E '^(shallow verified|deep verified|  gained|  lost|own results changed|shallow: verified statement coverage)' \
+            grep -E '^(shallow verified|deep verified|  gained|  lost|own results changed|shallow: verified statement coverage|cpu:)' \
               "$CENSUS/movement.txt" || true
           } > "$CENSUS/headline.txt"
           {
@@ -183,18 +186,25 @@ jobs:
           done
           exit 1
 
-      - name: Comment on the pull request
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # The census's notice: on the pull request the pushed commit belongs to,
+      # or on the commit itself where no pull request holds it (a push to
+      # single-pass).
+      - name: Comment on the pull request or the commit
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/single-pass')
         env:
           # Posted as the repository's machine user where its token is set:
           # GitHub emails the owner a mention by a user, not by the workflow's
           # own bot (AGENTS.md, presentations).
           GH_TOKEN: ${{ secrets.TSCERT_BOT_TOKEN || github.token }}
         run: |
-          number=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" -q '.[0].number // empty')
-          if [ -z "$number" ]; then echo "no pull request holds ${GITHUB_SHA}"; exit 0; fi
           owner=${GITHUB_REPOSITORY%%/*}
           repo=${GITHUB_REPOSITORY#*/}
+          run="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            report="[the report](https://${owner}.github.io/${repo}/census/${GITHUB_SHA:0:9}/)"
+          else
+            report="[the run]($run)"
+          fi
           # A census that loses a function, shallow or deep, or whose
           # statement coverage falls, mentions the owner.
           mention=""
@@ -203,11 +213,23 @@ jobs:
               awk '{ n = 0; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%$/) v[++n] = $i + 0 } END { exit !(n >= 2 && v[2] < v[1]) }'; then
             mention="@${GITHUB_REPOSITORY_OWNER} coverage lost. "
           fi
+          # A census whose executed CPU, at the previous census's machine
+          # speed, rises by more than a quarter mentions the owner: runners
+          # differ in speed up to twofold, and the machine factor removes that.
+          if grep -m1 '^cpu:' "$CENSUS/movement.txt" | grep -oE 'ratio [0-9.]+' |
+              awk '{ up = $2 > 1.25 } END { exit !up }'; then
+            mention="${mention:-@${GITHUB_REPOSITORY_OWNER} }CPU up. "
+          fi
           {
-            echo "${mention}**Census** of \`main\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: [the report](https://${owner}.github.io/${repo}/census/${GITHUB_SHA:0:9}/)"
+            echo "${mention}**Census** of \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: ${report}"
             echo
             echo '```'
             cat "$CENSUS/headline.txt"
             echo '```'
           } > "$CENSUS/comment.md"
-          gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$CENSUS/comment.md"
+          number=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" -q '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$CENSUS/comment.md"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F "body=@$CENSUS/comment.md" --silent
+          fi
