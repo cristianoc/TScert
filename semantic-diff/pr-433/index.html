@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-433"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-433</code></a><ul><li>4 commits, units 10 verified</li><li>changes: 1 Typing, 3 Lowering, 3 Proposal</li><li>parts: <span class="chip">lean</span> <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">No new trust assumptions; untyped ambient .d.ts instance fields reuse classInstance's existing readonly unknown reading.</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-433"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-433</code></a><ul><li>5 commits, units 10 verified</li><li>changes: 1 Typing, 4 Lowering, 5 Proposal</li><li>parts: <span class="chip">lean</span> <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">No new trust assumptions; untyped ambient .d.ts instance fields reuse classInstance's existing readonly unknown reading.</span></li></ul></li></ul></section>
 <h2 id="g-pr-433"><code>5bafb58fd11f92c6f14de15df751e3e0ed9b4125..pr-433</code></h2><article class="card" id="c-2cf80fe26"><header><div><div class="sha">2cf80fe26 · Cristiano Calcagno · Nov 27, 09:08</div><h3>Extend concrete class methods and constructors to variadic arity; admit untyped ambient fields</h3></div><span class="pill ok">verified</span></header>
 <div class="units"><span>class-method-fewer-params.ts#passInstance</span><span>class-method-fewer-params.ts#passVariadic</span><span>class-method-fewer-params.ts#callDirect</span><span>class-method-fewer-params.ts#getNames</span><span>class-method-fewer-params.ts#getAdd</span><span>class-method-fewer-params.ts#registerResources</span><span>class-method-fewer-params.ts#passGeneric</span><span>class-method-fewer-params.ts#useSubs</span><span>ambient-dts-private-field-value-import.ts#serviceName</span><span>ambient-dts-private-field-value-import.ts#readUntyped</span></div>
 <h4 class="change">Why</h4><div class="prose"><p>Concrete non-ambient class methods and constructors without rest parameters discard extra arguments in JavaScript, just like module functions and unannotated constant closures, yet their contracts carried only their fixed signatures. Passing a class instance or constructor where an interface or constructor type binds more parameters (such as Skip's Resource.instantiate omitting context or a zero-arg Resource class passed as ResourceClass) was refused. Separately, tsc --declaration strips type annotations from private class fields in .d.ts files, causing the unannotated-declaration sweep to refuse any file importing such a class even though classInstance reads untyped ambient fields as readonly unknown.</p></div>
@@ -1330,5 +1330,66 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>nested-allocation-mutable-open, lake build verifier &amp; AxiomCheck, tsc, unchecked.mts, json-field-names.mts, docs.mts, axiom-check-imports.mts</dd></dl>
 <details><summary>2 files changed, 51 insertions(+), 12 deletions(-)</summary><pre class="code"> lean/Verification/Source/Synthesis.lean            | 42 +++++++++++++++-------
  .../examples/nested-allocation-mutable-open.ts     | 21 +++++++++++</pre></details>
+</article>
+<article class="card" id="c-264701fae"><header><div><div class="sha">264701fae · Cristiano Calcagno · Nov 27, 10:09</div><h3>Fix block-type capture forwarding, variadic union-callable arms, and open-path scan</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Three CI regressions appeared on the service-api-extensions branch: 1. <code>block-type-default-chain</code> failed at source because <code>instantiateAtScope</code> called <code>completeArguments</code> for instantiated application recording without passing the enclosing declaration's <code>captured</code> callback, causing block- scoped aliases that close over outer type parameters to throw. 2. <code>invalid-bind-union-host-arity</code> failed with an untyped fallback error instead of the union-callable arity refusal because <code>calleeOf</code> required <code>rests</code> to be empty on every arm, rejecting concrete class methods that now carry matching <code>...unknown[]</code> variadic extensions. 3. <code>blocker-compiler-api-token-subtype</code> timed out (60s) in synthesis because <code>stmt</code> ran <code>bindingOpenPaths</code> on every unannotated ternary binding (even with no nested object literal) and <code>mutableOpenPaths</code> recursively expanded all fields of wide recursive union contracts such as <code>Expr</code> up to depth 6.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">block-type capture forwarding in instantiateAtScope and recordInstantiatedApplication</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">instantiateAtScope</code> (<code class="m-code">scope.named</code> <span class="m-text">and <code class="m-code">evaluate</code>) and</span></span></div><div class="cond"><span class="tgt"><code class="m-code">recordInstantiatedApplication</code> (<code class="m-code">walkBody</code>) <span class="m-text">invoked</span> <code class="m-code">completeArguments</code></span></div><div class="cond"><span class="tgt"><span class="m-text">without passing a <code class="m-code">captured</code> lookup, and <code class="m-code">scope.named</code> recompleted</span></span></div><div class="cond"><span class="tgt"><span class="m-text">arguments even for declarations with no constraints or computed bounds</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">instantiateAtScope</code> <span class="m-text">shares its <code class="m-code">captured</code> callback with</span> <code class="m-code">outer</code>,</span></div><div class="cond"><span class="tgt"><code class="m-code">evaluate</code>, <span class="m-text">and <code class="m-code">scope.named</code>, guards <code class="m-code">scope.named</code> recording on</span></span></div><div class="cond"><span class="tgt"><span class="m-text">declarations with constraints or computed bounds, and <code class="m-code">walkBody</code> forwards</span></span></div><div class="cond"><span class="tgt"><code class="m-code">targetCaptured</code> <span class="m-op">to</span> <code class="m-code">completeArguments</code>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">variadic union-callable arms in calleeOf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>calleeOf</code> recognized a union of callables only when every arm had one fixed signature and zero rest signatures (<code>S.isEmpty</code>), falling through to an empty <code>Callee</code> when arms carried concrete-method <code>...unknown[]</code> rest extensions.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>calleeOf</code> accepts union-callable arms whose rest signatures all match the arm's single fixed signature (matching <code>memberFor</code>), restoring union- callable synthesis and its arity refusal diagnostic.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">path-guided open-record scan in Synthesis</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>stmt</code> invoked <code>bindingOpenPaths</code> on any unannotated <code>.alloc</code> or <code>.ifBody</code> binding, and <code>mutableOpenPaths</code> blindly traversed every field of every use type up to fuel 6.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>nestedAllocPaths</code> extracts only the field paths of nested <code>.alloc</code> expressions in the initializer (skipping bindings with none), and <code>isMutableOpenAt</code> follows only those candidate paths when inspecting use types in <code>bindingOpenPaths</code>.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>block-type-default-chain</code> <span class="kind positive">positive</span> <span class="why">unsupported -&gt; verified block-scoped default chain forwards captured type parameter</span></summary><pre class="code"><span class="tk-k">function</span> f&lt;<span class="tk-t">T</span>&gt;(x: <span class="tk-t">T</span>): <span class="tk-t">T</span>[] {
+  <span class="tk-k">type</span> <span class="tk-t">A</span> = <span class="tk-t">T</span>[];
+  <span class="tk-k">type</span> <span class="tk-t">B</span>&lt;<span class="tk-t">U</span> = <span class="tk-t">A</span>&gt; = <span class="tk-t">U</span>;
+  <span class="tk-k">const</span> b: <span class="tk-t">B</span> = [x];
+  <span class="tk-k">return</span> b;
+}</pre></details></li><li><details><summary><code>invalid-bind-union-host-arity</code> <span class="kind negative">negative</span> <span class="why">wrong failure -&gt; refused  union-callable arity refusal restored for concrete class methods</span></summary><pre class="code"><span class="tk-c">// One host of the union declares `next` with a required parameter: the</span>
+<span class="tk-c">// protocol calls it with none, so `start` is `undefined` and the loop's</span>
+<span class="tk-c">// first value is `undefined`, which TypeScript types as a number</span>
+<span class="tk-c">// (tests/node-runs.mts runs `first`, which returns `undefined`). The hosts'</span>
+<span class="tk-c">// members take different parameters: no one bound signature is either's.</span>
+<span class="tk-k">class</span> <span class="tk-t">Countdown</span> {
+  left: number;
+  <span class="tk-k">constructor</span>(left: number) {
+    <span class="tk-k">this</span>.left = left;
+  }
+  next(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">const</span> n = <span class="tk-k">this</span>.left;
+    <span class="tk-k">if</span> (n &lt;= <span class="tk-n">0</span>) <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+    <span class="tk-k">this</span>.left = n - <span class="tk-n">1</span>;
+    <span class="tk-k">return</span> { done: <span class="tk-k">false</span>, value: n };
+  }
+  <span class="tk-k">return</span>(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+  }
+  [<span class="tk-t">Symbol</span>.iterator](): <span class="tk-t">Countdown</span> {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">From</span> {
+  started: boolean;
+  <span class="tk-k">constructor</span>() {
+    <span class="tk-k">this</span>.started = <span class="tk-k">false</span>;
+  }
+  next(start: number): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">if</span> (<span class="tk-k">this</span>.started) <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+    <span class="tk-k">this</span>.started = <span class="tk-k">true</span>;
+    <span class="tk-k">return</span> { done: <span class="tk-k">false</span>, value: start };
+  }
+  <span class="tk-k">return</span>(): <span class="tk-t">IteratorResult</span>&lt;number, <span class="tk-k">undefined</span>&gt; {
+    <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+  }
+  [<span class="tk-t">Symbol</span>.iterator](): <span class="tk-t">From</span> {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(it: <span class="tk-t">Countdown</span> | <span class="tk-t">From</span>): number {
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> it) <span class="tk-k">return</span> v;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><code>blocker-compiler-api-token-subtype  gap</code> <span class="why">timeout -&gt; expected gap synthesis finishes immediately without exponential union traversal</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>tools/declaration-graph.mts</code> forwards the same <code>captured</code> mapping already used by <code>outer.named</code> when recording instantiated bound obligations. The <code>Synthesis.lean</code> changes affect only proposal synthesis (<code>calleeOf</code> and open-record path detection); Lean's verified checker independently checks all lowered obligations.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>block-type-default-chain, invalid-bind-union-host-arity, blocker-compiler-api-token-subtype, 315 targeted cases, lake build verifier &amp; AxiomCheck, ./test-all.sh (27/27), prettier</dd></dl>
+<details><summary>2 files changed, 74 insertions(+), 48 deletions(-)</summary><pre class="code"> lean/Verification/Source/Synthesis.lean | 99 +++++++++++++++++++--------------
+ tools/declaration-graph.mts             | 23 +++++---</pre></details>
 </article>
 </main></body></html>
