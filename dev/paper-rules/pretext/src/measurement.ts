@@ -697,8 +697,10 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Eff
   let extras: Dense<number[]> | null = null
   try {
     let before = 0
+    /** @invariant safeInteger(count) && safeInteger(i) && 0 <= i && i <= count && count <= ends.length
+     *  @invariant extras === null || extras.length === count */
     for (let i = 0; i < count; i++) {
-      const start = i === 0 ? 0 : (ends[i - 1] ?? missing())
+      const start = i === 0 ? 0 : ends[i - 1]!
       const text = seg.slice(prefixes ? 0 : start, ends[i])
       let glyphs = counts.get(text)
       if (glyphs === undefined) {
@@ -713,9 +715,7 @@ export function getExtraSpacings(seg: string, measurement: FontMeasurement): Eff
       before = glyphs
       if (extra === 0 && extras === null) continue
       extras ??= zeros(count)
-      const extrasStore = extras
-      if ((i & 0x7fffffff) !== i || i > extrasStore.length) throw new RangeError('index')
-      extrasStore[i] = extra
+      extras[i] = extra
     }
   } finally {
     if (context !== null) context.letterSpacing = measurement.letterSpacing
@@ -1195,7 +1195,8 @@ function countEmojiGlyphs(text: string, measurement: FontMeasurement): Effects<{
   const ends = new Int32Array(text.length)
   const graphemeCount = findGraphemeEnds(getEngineProfile().graphemeTable, text, 0, text.length, ends)
   let count = 0
-  for (let i = 0, start = 0; i < graphemeCount; start = ends[i++] ?? missing()) {
+  /** @invariant safeInteger(graphemeCount) && safeInteger(i) && 0 <= i && i <= graphemeCount && graphemeCount <= ends.length */
+  for (let i = 0, start = 0; i < graphemeCount; start = ends[i++]!) {
     const grapheme = text.slice(start, ends[i])
     if (!emojiGraphemeRe.test(grapheme)) continue
     for (const stretch of (grapheme.match(emojiStretchRe) ?? missing())) count += getEmojiGlyphs(stretch, measurement)
@@ -1255,9 +1256,9 @@ export function getSegmentFit(
       pairs = count > MAX_PREFIX_FIT_GRAPHEMES || addUpTo(advances, width)
       if (!pairs) advances = measureFitAdvances(seg, ends, count, 'segment-prefixes', metrics, measurement, emojiCorrection, followingSpaceWidth)
       lineStartExtras = [0]
-      /** @invariant safeInteger(count) && safeInteger(i) && 1 <= i && i <= count && advances.length === count
+      /** @invariant safeInteger(count) && safeInteger(i) && 1 <= i && i <= count && alone.length === count && advances.length === count
        *  @invariant lineStartExtras === null || lineStartExtras.length === i */
-      for (let i = 1; i < count; i++) lineStartExtras.push((alone[i] ?? missing()) - (advances[i] ?? missing()))
+      for (let i = 1; i < count; i++) lineStartExtras.push(alone[i]! - advances[i]!)
     }
   } else {
     // Past MAX_PREFIX_FIT_GRAPHEMES, prefixes give way to pairs.
@@ -1277,26 +1278,16 @@ export function getSegmentFit(
   if (profile.kernsAcrossCanvasWords && measurement.kanaKerning !== null && kanaPairRe.test(seg)) {
     const kernings = getFontKanaKerning(measurement)
     if (kernings !== null) {
-      /** @invariant safeInteger(count) && safeInteger(g) && 1 <= g && g <= count && 2 <= count && advances.length === count
+      /** @invariant safeInteger(count) && safeInteger(g) && 1 <= g && g <= count && 2 <= count && count <= ends.length && advances.length === count
        *  @invariant lineStartExtras === null || lineStartExtras.length === count */
       for (let g = 1; g < count; g++) {
-        const kerning = getKanaKerning(seg, pairs && g > 1 ? (ends[g - 2] ?? missing()) : 0, ends[g - 1] ?? missing(), measurement, kernings)
+        const kerning = getKanaKerning(seg, pairs && g > 1 ? ends[g - 2]! : 0, ends[g - 1]!, measurement, kernings)
         if (kerning > 0) {
-          const idx = g - 1
-          const advancesStore = advances
-          const advancesValue = (advancesStore[idx] ?? missing()) + kerning
-          if ((idx & 0x7fffffff) !== idx || idx > advancesStore.length) throw new RangeError('index')
-          advancesStore[idx] = advancesValue
+          advances[g - 1] = advances[g - 1]! + kerning
         } else if (kerning < 0) {
-          const advancesStore = advances
-          const advancesValue = (advancesStore[g] ?? missing()) + kerning
-          if ((g & 0x7fffffff) !== g || g > advancesStore.length) throw new RangeError('index')
-          advancesStore[g] = advancesValue
+          advances[g] = advances[g]! + kerning
           lineStartExtras ??= zeros(count)
-          const lineStartExtrasStore = lineStartExtras
-          const lineStartExtrasValue = (lineStartExtrasStore[g] ?? missing()) - kerning
-          if ((g & 0x7fffffff) !== g || g > lineStartExtrasStore.length) throw new RangeError('index')
-          lineStartExtrasStore[g] = lineStartExtrasValue
+          lineStartExtras[g] = lineStartExtras[g]! - kerning
         }
       }
     }
@@ -1313,22 +1304,19 @@ export function getSegmentFit(
 // inside it and gives each of its letters an equal share (ComputeLigatureData,
 // gfxTextRun.cpp:238-322); here the first letter keeps the whole advance (ENGINE_FOLLOWUPS.md,
 // Emergency breaks inside a word).
-function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: Dense<number[]>, measurement: FontMeasurement, emojiCorrection: number): Effects<{ "advances[*]": "grow"; "advances[#]": "any"; fields: "any"; "@state": "any" }, void> {   // PAPER: annotation
+/** @requires advances.length <= ends.length */
+function countLigaturesOnFirstLetter(seg: string, ends: Int32Array, advances: Dense<number[]>, measurement: FontMeasurement, emojiCorrection: number): Effects<{ "advances[#]": "any"; fields: "any"; "@state": "any" }, void> {   // PAPER: annotation
   // Text measured under letter spacing has no optional ligature, and a context that can't
   // turn them off can't be asked.
   if (!measurement.state.shapesLetterSpaced || measurement.letterSpacing !== '0px') return
   // The grapheme the ligature that holds the grapheme before this one starts with, or that grapheme.
   let first = 0
-  /** @invariant safeInteger(first) && safeInteger(i) && 0 <= first && first < i && 1 <= i */
+  /** @invariant safeInteger(first) && safeInteger(i) && 0 <= first && first < i && 1 <= i && advances.length <= ends.length */
   for (let i = 1; i < advances.length; i++) {
-    const start = ends[i - 1]
-    if (start === undefined) throw new RangeError('missing value')
+    const start = ends[i - 1]!
     const alone = getTextWidth(seg.slice(start, ends[i]), measurement, emojiCorrection)
-    if (Math.round(((advances[i] ?? missing()) - alone) * 60) !== 0 && isLigature(seg.slice(i === 1 ? 0 : (ends[i - 2] ?? missing()), ends[i]), measurement)) {
-      const advancesValue = (advances[first] ?? missing()) + (advances[i] ?? missing())
-      if ((first & 0x7fffffff) !== first || first > advances.length) throw new RangeError('index')
-      advances[first] = advancesValue
-      if ((i & 0x7fffffff) !== i || i > advances.length) throw new RangeError('index')
+    if (Math.round((advances[i]! - alone) * 60) !== 0 && isLigature(seg.slice(i === 1 ? 0 : ends[i - 2]!, ends[i]), measurement)) {
+      advances[first] = advances[first]! + advances[i]!
       advances[i] = 0
     } else {
       first = i
@@ -1362,7 +1350,7 @@ function addUpTo(advances: readonly number[], width: number): Effects<{}, boolea
 
 // A segment's advances per grapheme: the differences of its prefixes' widths, or each
 // grapheme's width alone or, as a pair, after the one before it.
-/** @requires safeInteger(count) && 0 <= count
+/** @requires safeInteger(count) && 1 <= count && count <= ends.length
  *  @ensures result.length === count */
 function measureFitAdvances(
   seg: string,
@@ -1379,10 +1367,9 @@ function measureFitAdvances(
   const advances: Dense<number[]> = []
   let previousStart = 0
   let previousWidth = 0
-  /** @invariant safeInteger(count) && safeInteger(i) && 0 <= i && i <= count && advances.length === i */
-  for (let i = 0, start = 0; i < count; start = ends[i++] ?? missing()) {
-    const end = ends[i]
-    if (end === undefined) throw new RangeError('missing value')
+  /** @invariant safeInteger(count) && safeInteger(i) && 0 <= i && i <= count && 1 <= count && count <= ends.length && advances.length === i */
+  for (let i = 0, start = 0; i < count; start = ends[i++]!) {
+    const end = ends[i]!
     if (prefixes) {
       // The whole segment is the last prefix; with a following space it was
       // measured together with that space.
@@ -1402,9 +1389,7 @@ function measureFitAdvances(
   // difference, which needs the segment measured alone too.
   if (followingSpaceWidth !== null && !prefixes) {
     const idx = count - 1
-    const advancesValue = (advances[idx] ?? missing()) + metrics.width - getSegmentMetrics(seg, measurement).width - followingSpaceWidth
-    if ((idx & 0x7fffffff) !== idx || idx > advances.length) throw new RangeError('index')
-    advances[idx] = advancesValue
+    advances[idx] = advances[idx]! + metrics.width - getSegmentMetrics(seg, measurement).width - followingSpaceWidth
   }
   return advances
 }

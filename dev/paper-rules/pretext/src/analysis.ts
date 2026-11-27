@@ -105,7 +105,7 @@ export type ParagraphItems = {
 const collapsibleWhitespaceRunRe = /[ \t\n\r\f]{2,}|[\t\n\r\f]/g
 const needsWhitespaceNormalizationRe = /[\t\n\r\f]| {2,}|^ | $/
 
-function isSegmentBreakRunSpace(code: number, scan: AnalysisProfile['lineBreakScan']): boolean {
+function isSegmentBreakRunSpace(code: number, scan: AnalysisProfile['lineBreakScan']): Effects<{}, boolean> {   // PAPER: annotation
   return code === 0x20 || code === 0x09 || code === 0x0A || (code === 0x0D && scan === 'blink')
 }
 
@@ -123,7 +123,7 @@ function isSegmentBreakRunSpace(code: number, scan: AnalysisProfile['lineBreakSc
 //   before a combining sequence tail. Text holding a ZWSP is 16-bit in Gecko.
 // Characters outside the run, such as FF, keep the ordinary collapse, or take no room in the
 // Gecko profile (analyzeText).
-export function removeSkippableSegmentBreaks(text: string, profile: AnalysisProfile, language: string | null = null): string {
+export function removeSkippableSegmentBreaks(text: string, profile: AnalysisProfile, language: string | null = null): Effects<{ "@state": "any" }, string> {   // PAPER: annotation
   const scan = profile.lineBreakScan
   if (scan === 'webkit' || !text.includes('\n')) return text
   const eastAsian = scan === 'gecko' && maybeEastAsianRe.test(text)
@@ -167,7 +167,7 @@ export function removeSkippableSegmentBreaks(text: string, profile: AnalysisProf
 // the controls stay.
 /** @requires 0 <= from
  * @ensures safeInteger(result) && 0 <= result && result <= text.length */
-function getTrailingCollapsibleStart(text: string, from: SafeInt, profile: AnalysisProfile): number {
+function getTrailingCollapsibleStart(text: string, from: SafeInt, profile: AnalysisProfile): Effects<{}, number> {   // PAPER: annotation
   let start: SafeInt = text.length
   /** @invariant 0 <= start && start <= text.length */
   for (let i = text.length - 1; i >= from; i--) {
@@ -183,7 +183,7 @@ const maybeEastAsianRe = /[\u1100-\uFFFF]/
 
 // Normal white space after the segment break transformation: each run of SPACE, TAB, LF,
 // CR and FF becomes one space, or nothing at either end.
-function collapseWhitespaceNormal(text: string): string {
+function collapseWhitespaceNormal(text: string): Effects<{ "@state": "any" }, string> {   // PAPER: annotation
   if (!needsWhitespaceNormalizationRe.test(text)) return text
 
   let normalized = text.replace(collapsibleWhitespaceRunRe, ' ')
@@ -196,7 +196,7 @@ function collapseWhitespaceNormal(text: string): string {
   return normalized
 }
 
-function normalizeWhitespacePreWrap(text: string): string {
+function normalizeWhitespacePreWrap(text: string): Effects<{}, string> {   // PAPER: annotation
   if (!/[\r\f]/.test(text)) return text
   return text
     .replace(/\r\n/g, '\n')
@@ -206,7 +206,7 @@ function normalizeWhitespacePreWrap(text: string): string {
 const combiningMarkRe = /\p{M}/u
 
 /** @ensures result >= 0 && result <= 15 */
-function classifySegmentBreakCode(code: number, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan']): SegmentKindCode {
+function classifySegmentBreakCode(code: number, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan']): Effects<{}, SegmentKindCode> {   // PAPER: annotation
   if (whiteSpace === 'pre-wrap') {
     if (code === 0x20) return PRESERVED_SPACE
     if (code === 0x09) return TAB
@@ -243,7 +243,7 @@ export function isCollapsibleSpaceCode(code: number): Effects<{}, boolean> {   /
 // paragraph, or after a lone CR the analysis took out, whose mark it took (RESEARCH.md,
 // Decisions Log, 2026-10-07).
 // Fills spaceSources, when given, in normal white space.
-function mapSourceLineBreaks(source: string, normalizedLength: number, sourceBreaks: Uint8Array, whiteSpace: WhiteSpaceMode, spaceSources: Uint16Array | null): Uint8Array {
+function mapSourceLineBreaks(source: string, normalizedLength: number, sourceBreaks: Uint8Array, whiteSpace: WhiteSpaceMode, spaceSources: Uint16Array | null): Effects<{ "spaceSources[*]": "grow"; "spaceSources[#]": "any" }, Uint8Array> {   // PAPER: annotation
   const breaks = new Uint8Array(normalizedLength + 1)
   let normalizedIndex = 0
   if (whiteSpace === 'pre-wrap') {
@@ -283,13 +283,13 @@ function mapSourceLineBreaks(source: string, normalizedLength: number, sourceBre
 // (DROPPED). One with only soft hyphens before it on its chunk stays a soft hyphen: no line ends
 // at a chunk's start, and a line's start leaves either out.
 /** @ensures result >= 0 && result <= 15 */
-function classifySegmentUnit(normalized: string, breaks: Uint8Array, i: number, code: number, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan']): SegmentKindCode {
+function classifySegmentUnit(normalized: string, breaks: Uint8Array, i: number, code: number, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan']): Effects<{}, SegmentKindCode> {   // PAPER: annotation
   if ((code === 0x2028 || code === 0x2029) && ((breaks[i + 1] ?? missing()) & FORCED_BREAK) !== 0) return HARD_BREAK
   if (code === 0x00AD && ((breaks[i + 1] ?? missing()) & SOFT_HYPHEN_BREAK) !== 0 && followsChunkContent(normalized, i)) return ZERO_WIDTH_BREAK
   return classifySegmentBreakCode(code, whiteSpace, scan)
 }
 
-function followsChunkContent(normalized: string, i: number): boolean {
+function followsChunkContent(normalized: string, i: number): Effects<{}, boolean> {   // PAPER: annotation
   let j = i - 1
   while (j >= 0 && normalized.charCodeAt(j) === 0x00AD) j--
   return j >= 0 && normalized.charCodeAt(j) !== 0x0A
@@ -297,14 +297,14 @@ function followsChunkContent(normalized: string, i: number): boolean {
 
 // Characters of these kinds share a segment when no break falls between them. Each
 // tab, hard break, ZWSP and NEL control stays its own segment.
-function gathersKind(kind: number): boolean {
+function gathersKind(kind: number): Effects<{}, boolean> {   // PAPER: annotation
   return kind === TEXT || kind === SPACE || kind === PRESERVED_SPACE || kind === SOFT_HYPHEN
 }
 
 // A control character that stays its own text segment, measured alone: the C0 and C1
 // controls that white-space normalization leaves as text, and the line and paragraph
 // separators where they don't end a line.
-function isControlSegmentCode(code: number): boolean {
+function isControlSegmentCode(code: number): Effects<{}, boolean> {   // PAPER: annotation
   return code < 0x20 || (code >= 0x7F && code <= 0x9F) || code === 0x2028 || code === 0x2029
 }
 
@@ -338,7 +338,7 @@ function isControlSegmentCode(code: number): boolean {
 // starts with one starts a text segment with the text after it, as a chunk does, after the break
 // the scan gives at the run, so its fragments keep the controls it starts with.
 /** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length */
-function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | null, breaks: Uint8Array, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan'], hangTabs: boolean, dropsBidiControl: boolean): TextAnalysis {
+function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | null, breaks: Uint8Array, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan'], hangTabs: boolean, dropsBidiControl: boolean): Effects<{ "breaks[*]": "grow"; "breaks[#]": "any" }, TextAnalysis> {   // PAPER: annotation
   const oneCluster = scan === 'gecko' ? ONE_CLUSTER : 0
   const starts: number[] = []
   // A plain array, which measurement copies into the prepared handle's bytes: a Uint8Array for
@@ -458,15 +458,22 @@ export function analyzeText(
   language: string | null = null,
   // The items of the rich-inline paragraph whose text this is, else null.
   paragraph: ParagraphItems | null = null,
-): TextAnalysis {
+): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, TextAnalysis> {   // PAPER: annotation
   const preserve = whiteSpace === 'pre-wrap'
   // Where each of a paragraph's items starts in the source the engine scans.
-  const scanStarts: number[] | null = paragraph === null ? null : []
+  let scanStarts: number[] | null = null
   // The source a text node's engine scans, after the segment break transformation.
-  let source = preserve ? text
-    : paragraph !== null && paragraph.ownSegmentBreaks ? removeItemsSkippableSegmentBreaks(text, paragraph.starts, profile, language, scanStarts ?? missing())
-    : removeSkippableSegmentBreaks(text, profile, language)
-  if (paragraph !== null && (scanStarts ?? missing()).length === 0) for (let k = 0; k < paragraph.starts.length; k++) (scanStarts ?? missing()).push(paragraph.starts[k]!)
+  let source: string
+  if (paragraph !== null) {
+    const freshStarts: number[] = []
+    source = preserve ? text
+      : paragraph.ownSegmentBreaks ? removeItemsSkippableSegmentBreaks(text, paragraph.starts, profile, language, freshStarts)
+      : removeSkippableSegmentBreaks(text, profile, language)
+    if (freshStarts.length === 0) for (let k = 0; k < paragraph.starts.length; k++) freshStarts.push(paragraph.starts[k]!)
+    scanStarts = freshStarts
+  } else {
+    source = preserve ? text : removeSkippableSegmentBreaks(text, profile, language)
+  }
   let normalized = preserve ? normalizeWhitespacePreWrap(text) : collapseWhitespaceNormal(source)
   const keepAll = wordBreak === 'keep-all'
   let breaks: Uint8Array
@@ -591,7 +598,7 @@ export function analyzeText(
 // A paragraph's text after each item's own segment break transformation, where the engine
 // transforms segment breaks in each text frame's text apart (ParagraphItems), and in
 // `resultStarts` where each item starts in it.
-function removeItemsSkippableSegmentBreaks(text: string, starts: number[], profile: AnalysisProfile, language: string | null, resultStarts: number[]): string {
+function removeItemsSkippableSegmentBreaks(text: string, starts: number[], profile: AnalysisProfile, language: string | null, resultStarts: number[]): Effects<{ "resultStarts[*]": "extend"; "@state": "any" }, string> {   // PAPER: annotation
   if (profile.lineBreakScan === 'webkit' || !text.includes('\n')) return text
   let result = ''
   // Where the text that isn't in `result` yet starts. Only an item that holds a line feed can
@@ -659,7 +666,7 @@ export function alignToSource(source: string, normalized: string, scan: Analysis
 // and CanBreakAfter, line_breaker.cc:1168-1263 in core/layout/inline), WebKit finds a soft wrap
 // opportunity on either side of one (InlineFormattingUtils.cpp:445-449), and Gecko records a break
 // after one and breaks before one that doesn't fit (nsLineLayout.cpp:1057-1068, 1339-1340).
-function markItemStarts(text: string, normalized: string, breaks: Uint8Array, paragraph: ParagraphItems, scan: AnalysisProfile['lineBreakScan']): void {
+function markItemStarts(text: string, normalized: string, breaks: Uint8Array, paragraph: ParagraphItems, scan: AnalysisProfile['lineBreakScan']): Effects<{ "paragraph.sourceOffsets": "any"; "breaks[*]": "grow"; "breaks[#]": "any" }, void> {   // PAPER: annotation
   const offsets = paragraph.sourceOffsets = alignToSource(text, normalized, scan)
   const { starts, atomic } = paragraph
   for (let k = 0, j = 0; k < starts.length; k++) {
@@ -687,7 +694,7 @@ function markItemStarts(text: string, normalized: string, breaks: Uint8Array, pa
 // WebKit's text alone), so a scan takes an item's own text and nothing is cut out of the source
 // before the scans.
 /** @ensures result.length === source.length + 1 */
-function getWebKitParagraphBreaks(source: string, paragraph: ParagraphItems, preserve: boolean, keepAll: boolean, language: string | null): Uint8Array {
+function getWebKitParagraphBreaks(source: string, paragraph: ParagraphItems, preserve: boolean, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const { items, starts, atomic } = paragraph
   const breaks = new Uint8Array(source.length + 1)
   let previous = -1

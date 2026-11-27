@@ -399,7 +399,11 @@ const NUMERIC_BINARY_OPS = new Set<ts.SyntaxKind>([
 function isNumericExpr(e: ts.Expression): boolean {
   const u = unwrapExpr(e);
   if (ts.isNumericLiteral(u)) return true;
-  if (ts.isPropertyAccessExpression(u) && u.name.text === "length") return true;
+  if (ts.isPropertyAccessExpression(u)) {
+    if (u.name.text === "length") return true;
+    const t = exprDeclaredType(u);
+    return t !== null && t.type.kind === ts.SyntaxKind.NumberKeyword;
+  }
   if (ts.isPrefixUnaryExpression(u)) return isNumericExpr(u.operand);
   if (ts.isBinaryExpression(u))
     return NUMERIC_BINARY_OPS.has(u.operatorToken.kind) || (isNumericExpr(u.left) && isNumericExpr(u.right));
@@ -1234,7 +1238,7 @@ function declaredNoArray(r: { root: string; path: string[] }, at: ts.Node): bool
 }
 const isArrayLiteral = (e: ts.Expression | undefined): boolean => e !== undefined && ts.isArrayLiteralExpression(unwrapExpr(e));
 
-type HostReceiverKind = "canvas2d" | "canvas" | "element" | "style" | "document";
+type HostReceiverKind = "canvas2d" | "canvas" | "element" | "style" | "document" | "segmenter";
 
 function hostKindOfType(node: ts.TypeNode | undefined, sf: ts.SourceFile, depth: number = 0): HostReceiverKind | null {
   if (node === undefined || depth > 8) return null;
@@ -1251,6 +1255,9 @@ function hostKindOfType(node: ts.TypeNode | undefined, sf: ts.SourceFile, depth:
     }
     return kind;
   }
+  if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) &&
+      ts.isIdentifier(node.typeName.left) && node.typeName.left.text === "Intl" &&
+      node.typeName.right.text === "Segmenter") return "segmenter";
   if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
     const name = node.typeName.text;
     if ((name === "Effects" || name === "Modifies") && node.typeArguments && node.typeArguments.length >= 2)
@@ -2172,6 +2179,13 @@ function closureEffect(
           entries.push(["fields", change]);
           return undefined;
         }
+        if (ts.isElementAccessExpression(t)) {
+          const recvType = exprDeclaredType(t.expression);
+          if (recvType !== null && isTypedArrayType(recvType.type)) {
+            entries.push(["views", "grow"]);
+            return undefined;
+          }
+        }
         return fail(at, "writes a location no key of the instance can name");
       }
       if (base.fresh) return undefined;
@@ -2234,7 +2248,10 @@ function closureEffect(
       const okArray = name === "Array" && n.arguments !== undefined && n.arguments.length === 1;
       const okTypedArray = isFreshTypedArrayAlloc(n);
       const okOffscreenCanvas = name === "OffscreenCanvas";
-      if (!okCollection && !okArray && !okTypedArray && !okOffscreenCanvas && (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))))
+      const okIntlSegmenter = ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) &&
+        c.expression.text === "Intl" && declOf("Intl", c.expression) === null &&
+        importedDecl("Intl", c.expression) === undefined && c.name.text === "Segmenter";
+      if (!okCollection && !okArray && !okTypedArray && !okOffscreenCanvas && !okIntlSegmenter && (gEntries.length === 0 || !gEntries.every((g) => g.effect !== undefined && keepsHeap(g.effect))))
         return fail(n, "constructs an object whose reviewed effect may change old storage");
     }
     else if (ts.isCallExpression(n)) {
@@ -2295,7 +2312,8 @@ function closureEffect(
           (callee.name.text === "measureText" && hostReceiverKind(callee.expression) === "canvas2d") ||
           (callee.name.text === "getContext" && hostReceiverKind(callee.expression) === "canvas") ||
           (callee.name.text === "getBoundingClientRect" && hostReceiverKind(callee.expression) === "element") ||
-          (callee.name.text === "createElement" && hostReceiverKind(callee.expression) === "document"))) {
+          (callee.name.text === "createElement" && hostReceiverKind(callee.expression) === "document") ||
+          (callee.name.text === "segment" && hostReceiverKind(callee.expression) === "segmenter"))) {
         // Host Canvas/DOM measurement and element creation on a statically-typed
         // host receiver allocate fresh host objects without mutating JS heap storage.
       } else if (ts.isPropertyAccessExpression(callee) && (
@@ -2352,11 +2370,20 @@ function closureEffect(
         // `TypedArray.prototype.subarray` allocates a view without mutating any heap location.
       } else if (ts.isPropertyAccessExpression(callee) && PURE_STRING_METHODS.has(callee.name.text)) {
         // Pure string methods (`charCodeAt`, `slice`, `includes`, etc.) mutate no heap location.
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "split" &&
+          n.arguments.length === 1 && n.arguments[0] !== undefined && isStatelessRegExp(n.arguments[0])) {
+        // `s.split(re)` with a stateless regex literal allocates a fresh `string[]` without mutating old storage.
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "match" &&
           n.arguments.length === 1 && n.arguments[0] !== undefined &&
           (isStatelessRegExp(n.arguments[0]) || isModuleConstRegExp(n.arguments[0]))) {
         // `s.match(re)` with a stateless regex is pure; with a module-private `const` regex updates its `lastIndex` (`@state`).
         if (!isStatelessRegExp(n.arguments[0])) entries.push(["@state", "any"]);
+      } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "replace" &&
+          n.arguments.length === 2 && n.arguments[0] !== undefined && n.arguments[1] !== undefined &&
+          (ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0])) || isModuleConstRegExp(n.arguments[0])) &&
+          ts.isStringLiteral(unwrapExpr(n.arguments[1]))) {
+        // `s.replace(re, "...")` with a fresh regex literal is pure; with a module-private `const` regex updates its `lastIndex` (`@state`).
+        if (!ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0]))) entries.push(["@state", "any"]);
       } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "replace" &&
           n.arguments.length === 2 && n.arguments[0] !== undefined && n.arguments[1] !== undefined &&
           ts.isRegularExpressionLiteral(unwrapExpr(n.arguments[0])) && isFn(unwrapExpr(n.arguments[1]))) {
@@ -2484,7 +2511,19 @@ function closureEffect(
             }
             if (arg !== undefined && isFreshAt(arg, n)) {
               const own = /^(?:\.[A-Za-z_$][\w$]*|\.\*|\[\*\]|\[#\])$/.test(restOf(k));
-              if (!own) return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
+              if (!own) {
+                const loc = locOf(k);
+                if (loc !== null && (loc.kind === "spine" || loc.kind === "cells") && loc.path.length === 1) {
+                  const argType = exprDeclaredType(arg);
+                  const fieldName = loc.path[0];
+                  const ft = argType === null || fieldName === undefined ? null : fieldTypeOfType(argType.type, argType.file, fieldName);
+                  if (ft !== null && isTypedArrayType(ft.type)) {
+                    entries.push(["views", "grow"]);
+                    continue;
+                  }
+                }
+                return fail(n, `passes to ${rootOf(k)} a fresh object whose held storage ${k} may change`);
+              }
               continue;
             }
             const base = arg === undefined ? null : resolve_(arg, fn, 0, paramRoots, freshVars);
@@ -2493,6 +2532,13 @@ function closureEffect(
               if (loc !== null && (loc.kind === "field" || loc.kind === "fields")) {
                 entries.push(["fields", c]);
                 continue;
+              }
+              if (loc !== null && (loc.kind === "spine" || loc.kind === "cells") && loc.path.length === 0 && arg !== undefined) {
+                const argType = exprDeclaredType(arg);
+                if (argType !== null && isTypedArrayType(argType.type)) {
+                  entries.push(["views", "grow"]);
+                  continue;
+                }
               }
               return fail(n, `passes to ${rootOf(k)} a value no key of the instance can name`);
             }

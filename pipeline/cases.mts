@@ -5269,4 +5269,10 @@ export const cases: Case[] = [
   positive("merge-array-length-alias", "branch merges emit linear equalities for all defined root term kinds (`Store.definedKinds`: array length, typed-array view length, string length), preserving `ys.length === xs.length` across conditional alias reassignments"),
   negative("invalid-merge-array-length-alias", "replacing an array alias with `[]` on one branch breaks `ys.length === xs.length` after the merge, reading `ys[i]` (`undefined`) and returning `NaN` (run under Node)",
     /source expression obligation|evidence search failed/i),
+  positive("typed-array-read-defined", "by ECMA-262 TypedArrayGetElement (`%ByteAt%`), a typed-array element read narrowed away from `undefined` establishes `safeInteger(k) && 0 <= k && k < view.length`"),
+  negative("invalid-array-read-defined", "an ordinary Array read `xs[k] !== undefined` does not establish `0 <= k < xs.length` because a plain Array can own a non-index numeric property like `-1`, reading `ys[-1]` (`undefined`) and returning `NaN` (run under Node)",
+    /source expression obligation|evidence search failed/i),
+  positive("type-invariant-wrapper-alias", "unfolding transparent generic wrapper aliases (`type Tagged<Tag, T> = T`) in `invariantsNamed` enforces and propagates `T`'s `@invariant`"),
+  negative("invalid-type-invariant-wrapper-alias", "returning mismatched lengths through a transparent generic wrapper alias (`Tagged<\"pair\", EqualPair>`) violates the wrapped `@invariant` and reads `undefined`/`NaN` under Node",
+    /source ensures refusal|does not establish/i),
 ];

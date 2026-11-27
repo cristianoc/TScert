@@ -57,8 +57,8 @@ import {
 
 const CH_SHY = 0x00ad
 
-const isSurrogatePair = (a: number, b: number) => (a & 0xfc00) === 0xd800 && (b & 0xfc00) === 0xdc00
-const combine = (a: number, b: number) => 0x10000 + ((a - 0xd800) << 10) + (b - 0xdc00)
+function isSurrogatePair(a: number, b: number): Effects<{}, boolean> { return (a & 0xfc00) === 0xd800 && (b & 0xfc00) === 0xdc00 }   // PAPER: annotation
+function combine(a: number, b: number): Effects<{}, number> { return 0x10000 + ((a - 0xd800) << 10) + (b - 0xdc00) }   // PAPER: annotation
 
 // East_Asian_Width H (2), F (3) or W (5), and 0 for any other value, which the first East Asian
 // segment break test unpacks (isEastAsianSegmentBreak).
@@ -67,36 +67,36 @@ let eastAsianWidths: ClassTable | null = null
 // --- Character classes ---
 
 // nsUnicodeProperties.h:202-207, nsUnicodeProperties.cpp:130-138
-function isClusterExtender(cp: number): boolean {
+function isClusterExtender(cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return cp >= 0x0300 && (hasProperty(cp, MARK) || cp === 0x200c || cp === 0x200d || (cp >= 0xff9e && cp <= 0xff9f) ||
     (cp >= 0x1f3fb && cp <= 0x1f3ff) || (cp >= 0xe0020 && cp <= 0xe007f))
 }
 
 // nsUnicodeProperties.h:211-214, nsUnicodeProperties.cpp:140-147
-function isClusterExtenderExcludingJoiners(cp: number): boolean {
+function isClusterExtenderExcludingJoiners(cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return cp >= 0x0300 && (hasProperty(cp, MARK) || (cp >= 0xff9e && cp <= 0xff9f) || (cp >= 0x1f3fb && cp <= 0x1f3ff) ||
     (cp >= 0xe0020 && cp <= 0xe007f))
 }
 
 // UnicodeProperties.h:205-218
-function isEastAsianWidthFHWExcludingEmoji(widths: ClassTable, cp: number): boolean {
+function isEastAsianWidthFHWExcludingEmoji(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const width = getClass(widths, cp)
   return width === 2 || width === 3 || (width === 5 && !hasProperty(cp, EMOJI))
 }
 
 // nsUnicharUtils.cpp:500-504
-function isSegmentBreakSkipChar(widths: ClassTable, cp: number): boolean {
+function isSegmentBreakSkipChar(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return isEastAsianWidthFHWExcludingEmoji(widths, cp) && !hasProperty(cp, HANGUL) && cp !== 0x20a9
 }
 
 // nsUnicharUtils.cpp:506-527, with UnicodeProperties.h:187-199
-function isEastAsianPunctuation(widths: ClassTable, cp: number): boolean {
+function isEastAsianPunctuation(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return getClass(widths, cp) !== 0 && ((hasProperty(cp, PUNCTUATION) && cp !== 0x20a9) || cp === 0xff5e || cp === 0x3000)
 }
 
 // gfxFontGroup::IsInvalidChar(char16_t), gfxTextRun.h:975-992. Below U+0100 it answers as
 // IsInvalidChar(uint8_t), gfxTextRun.h:971-973.
-function isInvalidChar(ch: number): boolean {
+function isInvalidChar(ch: number): Effects<{}, boolean> {   // PAPER: annotation
   if (ch >= 0x20 && ch < 0x7f) return false
   if (ch <= 0x9f) return true
   return ((ch & 0xff00) === 0x2000 && (ch === 0x200b || ch === 0x2028 || ch === 0x2029 || ch === 0x2060)) ||
@@ -112,15 +112,15 @@ function isInvalidChar(ch: number): boolean {
 type Transformed = { text: string, orig: Int32Array, skipped: Uint8Array, leftOut: Uint8Array | null, dropsBidiControl: boolean }
 
 // IsDiscardable, nsTextFrameUtils.cpp:32-49
-export function isDiscardable(ch: number, is8bit: boolean): boolean {
+export function isDiscardable(ch: number, is8bit: boolean): Effects<{}, boolean> {   // PAPER: annotation
   return ch === CH_SHY || (!is8bit && isBidiControl(ch))
 }
-const isSpaceOrTab = (ch: number) => ch === 0x20 || ch === 0x09
+function isSpaceOrTab(ch: number): Effects<{}, boolean> { return ch === 0x20 || ch === 0x09 }   // PAPER: annotation
 // IsSpaceOrTabOrSegmentBreak, nsTextFrameUtils.cpp:51-57: a white-space run's white space, which a CR or FF isn't.
-export const isSpaceOrTabOrSegmentBreak = (ch: number): Modifies<{}, boolean> => ch === 0x20 || ch === 0x09 || ch === 0x0a
+export function isSpaceOrTabOrSegmentBreak(ch: number): Effects<{}, boolean> { return ch === 0x20 || ch === 0x09 || ch === 0x0a }   // PAPER: annotation
 
 // IsSpaceCombiningSequenceTail(const char16_t*, int32_t), nsTextFrameUtils.cpp:24-30, on code units.
-export function isSpaceCombiningSequenceTail(text: string, from: number): boolean {
+export function isSpaceCombiningSequenceTail(text: string, from: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   for (let i = from; i < text.length; i++) {
     const ch = text.charCodeAt(i)
     if (isClusterExtenderExcludingJoiners(ch)) return true
@@ -130,7 +130,7 @@ export function isSpaceCombiningSequenceTail(text: string, from: number): boolea
 }
 
 // aLangIsJapaneseOrChinese, nsTextFrameUtils.cpp:273-285, which takes only `-` after the subtag.
-export function isJapaneseOrChinese(language: string | null): boolean {
+export function isJapaneseOrChinese(language: string | null): Effects<{}, boolean> {   // PAPER: annotation
   const breakLanguage = getBreakLanguage(language)
   return (breakLanguage === 'ja' || breakLanguage === 'zh') && (language ?? missing()).charCodeAt(2) !== 0x5f
 }
@@ -139,7 +139,7 @@ export function isJapaneseOrChinese(language: string | null): boolean {
 // nsTextFrameUtils.cpp:120-150): the code points before and after it, past default-ignorable
 // ones, both segment-break skip characters, or on a `ja` or `zh` page either one East Asian
 // punctuation. Only an interior run qualifies.
-export function isEastAsianSegmentBreak(text: string, start: number, end: number, japaneseOrChinese: boolean): boolean {
+export function isEastAsianSegmentBreak(text: string, start: number, end: number, japaneseOrChinese: boolean): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   if (start === 0 || end >= text.length) return false
   const widths = eastAsianWidths ??= unpackClasses('gecko/east_asian_width')
   let before: number
@@ -179,7 +179,7 @@ export function isEastAsianSegmentBreak(text: string, start: number, end: number
 // that frame. In 16px Arial at 56px Firefox fits `see this` of items `see`, ` \u00AD`,
 // ` this word` on a 55.15px line, and not of `see `, `\u00AD `, `this word`, whose text in one node
 // it fits.
-function transformText(input: string, is8bit: boolean, preserveWhiteSpace: boolean, frameStarts: number[] | null): Transformed {
+function transformText(input: string, is8bit: boolean, preserveWhiteSpace: boolean, frameStarts: number[] | null): Effects<{ "@state": "any" }, Transformed> {   // PAPER: annotation
   const len = input.length
   // The source index of each kept unit.
   const orig = new Int32Array(len)
@@ -306,7 +306,7 @@ function transformText(input: string, is8bit: boolean, preserveWhiteSpace: boole
 }
 
 // IsTrimmableSpace, nsTextFrame.cpp:921-942, in normal white space.
-function isTrimmableSpace(source: string, pos: number, is8bit: boolean): boolean {
+function isTrimmableSpace(source: string, pos: number, is8bit: boolean): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   switch (source.charCodeAt(pos)) {
     case 0x20: case 0x1680: return is8bit || !isSpaceCombiningSequenceTail(source, pos + 1)
     case 0x0a: case 0x09: case 0x0d: case 0x0c: return true
@@ -315,7 +315,7 @@ function isTrimmableSpace(source: string, pos: number, is8bit: boolean): boolean
 }
 
 // HasCompressedLeadingWhitespace, nsTextFrame.cpp:2869-2887
-function hasCompressedLeadingWhitespace(source: string, skipped: Uint8Array, is8bit: boolean, preserveWhiteSpace: boolean): boolean {
+function hasCompressedLeadingWhitespace(source: string, skipped: Uint8Array, is8bit: boolean, preserveWhiteSpace: boolean): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   if (preserveWhiteSpace || skipped[0] === 0) return false
   for (let k = 0; k < source.length && skipped[k] === 1; k++) if (isTrimmableSpace(source, k, is8bit)) return true
   return false
@@ -329,7 +329,7 @@ function hasCompressedLeadingWhitespace(source: string, skipped: Uint8Array, is8
 type Glyphs = { clusterStart: Uint8Array, isSpace: Uint8Array }
 
 // CompressedGlyph::MakeComplex(false, true), gfxFont.cpp:716
-function extendCluster(g: Glyphs, i: number): void {
+function extendCluster(g: Glyphs, i: number): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any" }, void> {   // PAPER: annotation
   g.clusterStart[i] = 0
   g.isSpace[i] = 0
 }
@@ -340,7 +340,7 @@ function extendCluster(g: Glyphs, i: number): void {
 // cluster, which the generator checks, and words hold neither, so a word of such units has a
 // cluster at every unit. `ends` has room for the word's clusters.
 /** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= text.length */
-function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: number, graphemeTable: GraphemeTable, ends: Int32Array): void {
+function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: number, graphemeTable: GraphemeTable, ends: Int32Array): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any"; "ends[*]": "grow"; "ends[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   let ch0 = text.charCodeAt(from)
   if (to - from > 1 && isSurrogatePair(ch0, text.charCodeAt(from + 1))) ch0 = combine(ch0, text.charCodeAt(from + 1))
   if (isClusterExtender(ch0)) extendCluster(g, from)
@@ -363,7 +363,7 @@ function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: numbe
 // IsBoundarySpace and SetupClusterBoundaries(uint8_t) (gfxFont.cpp:771-795) answer as the char16_t
 // versions, so 8-bit text and 8-bit words take the char16_t path, at any word length (:3569-3577,
 // :3817-3821).
-function splitAndInitTextRun(g: Glyphs, text: string, graphemeTable: GraphemeTable, ends: Int32Array): void {
+function splitAndInitTextRun(g: Glyphs, text: string, graphemeTable: GraphemeTable, ends: Int32Array): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any"; "ends[*]": "grow"; "ends[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const end = text.length
   let wordStart = 0
   /** @invariant safeInteger(wordStart) && safeInteger(i) && safeInteger(end) && 0 <= wordStart && wordStart <= i && i <= end && end === text.length */
@@ -385,7 +385,7 @@ type LineData = { readonly classes: ClassTable, readonly states: Uint8Array }
 let lineData: LineData | null = null
 
 // The Line_Break value, with error value 0 above U+10FFFF.
-function getLineBreakClass(line: LineData, c: number): number {
+function getLineBreakClass(line: LineData, c: number): Effects<{}, number> {   // PAPER: annotation
   return c > 0x10ffff ? 0 : getClass(line.classes, c)
 }
 
@@ -398,7 +398,7 @@ const BREAK = 253, NO_MATCH = 254, KEEP = 255, INTERMEDIATE = 120
 // LanguageIteratorUtf16 (complex/language.rs:17-45, 78-102) reads single code units: Thai, Lao,
 // Burmese, Khmer, or 0 for Unknown, and Chinese and Japanese, for which the LSTM segmenter has no
 // model (complex/mod.rs:161-180).
-function getComplexLanguage(u: number): number {
+function getComplexLanguage(u: number): Effects<{}, number> {   // PAPER: annotation
   if (u >= 0xe01 && u <= 0xe7f) return 1
   if (u >= 0xe80 && u <= 0xeff) return 2
   if ((u >= 0x1000 && u <= 0x109f) || (u >= 0xa9e0 && u <= 0xa9ff) || (u >= 0xaa60 && u <= 0xaa7f)) return 3
@@ -409,7 +409,7 @@ function getComplexLanguage(u: number): number {
 // complex_language_segment_utf16 (complex/mod.rs:135-156): splits a run of SA code units by
 // language, and Intl.Segmenter words supply boundaries inside each Thai, Lao, Burmese and Khmer
 // slice. Every slice reports its end; other languages report nothing else (:149-151).
-function segmentComplex(units: number[]): number[] {
+function segmentComplex(units: number[]): Effects<{ "@state": "any" }, number[]> {   // PAPER: annotation
   const result: number[] = []
   for (let i = 0; i < units.length;) {
     const language = getComplexLanguage(units[i]!)
@@ -427,14 +427,14 @@ function segmentComplex(units: number[]): number[] {
 }
 
 // KeepAll pairs (line.rs:901-907).
-function isKeepAllLetter(p: number): boolean {
+function isKeepAllLetter(p: number): Effects<{}, boolean> {   // PAPER: annotation
   return p === AI || p === AL || p === ID || p === NU || p === HY || p === H2 || p === H3 || p === JL ||
     p === JV || p === JT || p === CJ
 }
 
 // Utf16Indices::next (indices.rs:58-83): the code point at text[i], in a pair that ends before `end`,
 // or an unpaired surrogate as a code point of its own.
-function readCodePoint(text: string, i: number, end: number): number {
+function readCodePoint(text: string, i: number, end: number): Effects<{}, number> {   // PAPER: annotation
   const c = text.charCodeAt(i)
   if ((c & 0xfc00) === 0xd800 && i + 1 < end) {
     const next = text.charCodeAt(i + 1)
@@ -449,7 +449,7 @@ function readCodePoint(text: string, i: number, end: number): number {
 // Utf16Indices' front_offset and current_pos_data (:821-823): `pos` is the current code point's
 // offset in the word, `cp` its code point and `front` the next one's offset, and `pos` reaches
 // the word's length past its end.
-function markWordBreaks(line: LineData, text: string, start: number, end: number, keepAll: boolean, state: Uint8Array): void {
+function markWordBreaks(line: LineData, text: string, start: number, end: number, keepAll: boolean, state: Uint8Array): Effects<{ "state[*]": "grow"; "state[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const len = end - start
   const states = line.states
   let pos = 0
@@ -617,7 +617,7 @@ const NON_BREAKABLE_ASCII = new Uint8Array([
 // word's FlushCurrentWord from Reset (nsLineBreaker.cpp:134-226, 710-720). Each word of more than
 // ASCII letters goes to LineBreaker::ComputeBreakPositions (intl/lwbrk/LineBreaker.cpp:112-194),
 // which keeps the state before its first unit (AutoRestore, :342, :604; skipSet = 1, :200-206).
-function getBreakStates(line: LineData, text: string, is8bit: boolean, afterLeadingWhitespace: boolean, keepAll: boolean): Uint8Array {
+function getBreakStates(line: LineData, text: string, is8bit: boolean, afterLeadingWhitespace: boolean, keepAll: boolean): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const len = text.length
   const state = new Uint8Array(len)
   let afterBreakableSpace = afterLeadingWhitespace
@@ -663,7 +663,7 @@ export function getGeckoLineBreaks(
   graphemeTable: GraphemeTable,
   // Where each item of a rich-inline paragraph starts in the source, or null for one text (transformText).
   frameStarts: number[] | null = null,
-): GeckoLineBreaks {
+): Effects<{ views: "grow"; "@state": "any" }, GeckoLineBreaks> {   // PAPER: annotation
   const len = source.length
   const flags = new Uint8Array(len + 1)
   if (len === 0) return { breaks: flags, leftOut: null, dropsBidiControl: false }
@@ -677,7 +677,8 @@ export function getGeckoLineBreaks(
   // The text run is built before the break sinks are set up (nsTextFrame.cpp:2860-2864), in one
   // piece: Firefox splits it where the bidi level changes, which the scan leaves out (above).
   const g: Glyphs = { clusterStart: new Uint8Array(n).fill(1), isSpace: new Uint8Array(n) }
-  splitAndInitTextRun(g, tr.text, graphemeTable, new Int32Array(n))
+  const ends = new Int32Array(n)
+  splitAndInitTextRun(g, tr.text, graphemeTable, ends)
 
   const line = lineData ??= { classes: unpackClasses('gecko/line'), states: unpackTable(geckoLineBreakStatesPacked) }
   const state = getBreakStates(line, tr.text, is8bit, hasCompressedLeadingWhitespace(source, tr.skipped, is8bit, preserveWhiteSpace), keepAll)

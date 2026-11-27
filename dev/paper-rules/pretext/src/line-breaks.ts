@@ -63,7 +63,7 @@ type BreakLanguage = 'root' | 'ja' | 'ko' | 'zh'
 
 // The primary language subtag, ASCII case-insensitively, up to `-`, `_` or the
 // end. No allocation: preparation calls this once per text.
-export function getBreakLanguage(tag: string | null): BreakLanguage {
+export function getBreakLanguage(tag: string | null): Effects<{}, BreakLanguage> {   // PAPER: annotation
   if (tag === null || tag.length < 2) return 'root'
   if (tag.length > 2 && tag.charCodeAt(2) !== 0x2D && tag.charCodeAt(2) !== 0x5F) return 'root'
   const first = tag.charCodeAt(0) | 0x20
@@ -244,7 +244,7 @@ export function hasProperty(cp: number, property: number): Effects<{ "@state": "
 // Viet and Ahom runs), so other text prepares without Intl.Segmenter.
 let wordSegmenter: Intl.Segmenter | null = null
 
-export function getWordSegmenter(): Intl.Segmenter {
+export function getWordSegmenter(): Effects<{ "@state": "any" }, Intl.Segmenter> {   // PAPER: annotation
   return wordSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'word' })
 }
 
@@ -326,7 +326,7 @@ const NO_OVERRIDES: CategoryOverrides = { chars: [], categories: [] }
 // utext_next32() over UTF-16 (utext.cpp:272-308), with unpaired surrogates as code points. ICU
 // allocates the look-ahead slots uninitialized (rbbi.cpp:122-129) and never resets them between
 // calls, since the rules read a slot only after setting it; here they start at -1 for each text.
-export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Array, overrides: CategoryOverrides = NO_OVERRIDES): void {
+export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Array, overrides: CategoryOverrides = NO_OVERRIDES): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const rows = r.rows
   const width = r.rowWidth
   const dictionaryStart = r.dictCategoriesStart
@@ -414,11 +414,11 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
 // --- Line tables ---
 
 // Line_Break=SA for one code point: the line rules' dictionary categories.
-function isComplexContext(rules: BreakRules, c: number): boolean {
+function isComplexContext(rules: BreakRules, c: number): Effects<{}, boolean> {   // PAPER: annotation
   return getClass(rules.classes, c) >= rules.dictCategoriesStart
 }
 
-function markDictionaryWords(rules: BreakRules, text: string, start: number, end: number, flags: Uint8Array): void {
+function markDictionaryWords(rules: BreakRules, text: string, start: number, end: number, flags: Uint8Array): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   let runStart = -1
   for (let i = start; i <= end;) {
     let dictionary = false
@@ -468,14 +468,14 @@ const CAN_BREAK = 1
 const UNKNOWN = 2
 
 // tbi.h:203-205
-function isBlinkBreakableSpace(c: number): boolean {
+function isBlinkBreakableSpace(c: number): Effects<{}, boolean> {   // PAPER: annotation
   return c === SPACE || c === TAB || c === LF
 }
 
 // Context::ShouldBreakFast, tbi.cc:216-260, with soft hyphens enabled (hyphens: manual).
 // The pair table is Chromium's generated kFastLineBreakTable for U+0021..U+00FF
 // (gen.cc:422-551).
-function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: number): number {
+function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: number): Effects<{}, number> {   // PAPER: annotation
   if (last < 0x21 || ch < 0x21) return NO_BREAK
   if (last === 0x2d) {
     if (ch <= 0x7f) {
@@ -495,7 +495,7 @@ function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: 
 }
 
 // ShouldKeepAfterKeepAll, tbi.cc:157-165, per UTF-16 code unit.
-function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: number, ch: number): boolean {
+function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: number, ch: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const pre = hasProperty(last, MARK) ? lastLast : last
   return hasProperty(pre, LETTER_OR_NUMBER) && !isComplexContext(rules, pre) &&
     hasProperty(ch, LETTER_OR_NUMBER) && !isComplexContext(rules, ch)
@@ -519,7 +519,7 @@ function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: numbe
 // so preparation gives the scan that language from Intl for a page without one
 // (getPreparationLanguage in src/measurement.ts); navigator.language follows the accept
 // languages instead. Without a document the scan reads root.
-export function getBlinkLineBreaks(text: string, keepAll: boolean, language: string | null): Uint8Array {
+export function getBlinkLineBreaks(text: string, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const length = text.length
   const breaks = new Uint8Array(length + 1)
   if (length < 2) return breaks
@@ -569,22 +569,22 @@ type WebKitLineRules = { readonly rules: BreakRules, readonly overrides: Categor
 const webkitLineRules = new Map<string, WebKitLineRules>()
 
 // BP.h:125-139 with NoBreakSpaceBehavior::Normal.
-function isWebKitBreakableSpace(c: number): boolean {
+function isWebKitBreakableSpace(c: number): Effects<{}, boolean> {   // PAPER: annotation
   return c === SPACE || c === LF || c === TAB || c === LINE_SEPARATOR || c === PARAGRAPH_SEPARATOR
 }
 
-function isASCIIDigit(c: number): boolean {
+function isASCIIDigit(c: number): Effects<{}, boolean> {   // PAPER: annotation
   return c >= 0x30 && c <= 0x39
 }
 
-function isASCIIAlpha(c: number): boolean {
+function isASCIIAlpha(c: number): Effects<{}, boolean> {   // PAPER: annotation
   const lower = c | 0x20
   return lower >= 0x61 && lower <= 0x7a
 }
 
 // BP.h:330-539. The 0x3000..0x303F switch reads only the low five bits, so it answers for
 // 0x3020..0x303F too.
-function classify(c: number): number {
+function classify(c: number): Effects<{}, number> {   // PAPER: annotation
   switch (c >> 7) {
     case 0:
       switch (c >> 4) {
@@ -663,14 +663,14 @@ type Factory = {
   nextBoundary: Int32Array | null
 }
 
-function createFactory(text: string, line: WebKitLineRules): Factory {
+function createFactory(text: string, line: WebKitLineRules): Effects<{}, Factory> {   // PAPER: annotation
   return { text, secondToLast: 0, last: 0, priorLength: 0, line, nextBoundary: null }
 }
 
 // The first ICU boundary after `location`, or -1. `location` is -1 only with a prior
 // context; WebKit's unsigned arithmetic then lands on the last prior character
 // (TBIICU.h:136-142).
-function following(f: Factory, location: number): number {
+function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   let next = f.nextBoundary
   if (next === null) {
     const prior = f.priorLength === 2
@@ -679,10 +679,10 @@ function following(f: Factory, location: number): number {
     const text = prior + f.text
     const flags = new Uint8Array(text.length + 1)
     markRuleBoundaries(f.line.rules, text, flags, f.line.overrides)
-    next = new Int32Array(text.length + 2)
-    next[text.length + 1] = -1
-    for (let p = text.length; p >= 0; p--) next[p] = flags[p] === 1 ? p : (next[p + 1] ?? missing())
-    f.nextBoundary = next
+    const fresh = new Int32Array(text.length + 2)
+    fresh[text.length + 1] = -1
+    for (let p = text.length; p >= 0; p--) fresh[p] = flags[p] === 1 ? p : (fresh[p + 1] ?? missing())
+    next = f.nextBoundary = fresh
   }
   const o = location + f.priorLength + 1
   if (o >= next.length) return -1
@@ -694,7 +694,7 @@ function following(f: Factory, location: number): number {
 // BP.h:142-255 for LineBreakRules::Normal, WordBreakBehavior::Normal and
 // NoBreakSpaceBehavior::Normal. During the fast-forward over units where ICU agrees
 // (BP.h:241-249) the characters before are not read again.
-function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: number): number {
+function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   const s = f.text
   const length = s.length
   if (startPosition === 0 && f.priorLength === 0) {
@@ -758,7 +758,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
 
 // BP.h:258-274: keep-all breaks at spaces, before ZWSP and after U+3000, and with
 // punctuation breaks after any punctuation but the text's last character.
-function nextBreakableSpace(s: string, startPosition: number, punctuationBreaks: boolean): number {
+function nextBreakableSpace(s: string, startPosition: number, punctuationBreaks: boolean): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
   for (let i = startPosition; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (isWebKitBreakableSpace(c) || c === ZWSP) return i
@@ -774,7 +774,7 @@ function nextBreakableSpace(s: string, startPosition: number, punctuationBreaks:
 // under ICU's case: lowercase language, title-case script, uppercase region (uloc_getName).
 const appleQuoteRemapTable: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(appleQuoteRemaps))
 
-export function getWebKitLineRules(language: string | null): WebKitLineRules {
+export function getWebKitLineRules(language: string | null): Effects<{ "@state": "any" }, WebKitLineRules> {   // PAPER: annotation
   const locale = language ?? ''
   let line = webkitLineRules.get(locale)
   if (line !== undefined) return line
@@ -819,7 +819,7 @@ export function getWebKitLineBreaks(
   preserveNewlines: boolean,
   keepAll: boolean,
   language: string | null,
-): Uint8Array {
+): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const pairs = webkitPairs ??= unpackTable(webkitLinePairsPacked)
   const f = createFactory(source, getWebKitLineRules(language))
   const length = source.length
@@ -874,7 +874,7 @@ export function getWebKitLineBreaks(
 // (IIB:954-962), so no break comes before one, and wrapping is allowed next to a
 // white-space item (IFU:406-418), which a box's preserved spaces and tabs make
 // (IIB:963-992).
-export function getWebKitBreakBetweenItems(previous: string, next: string, keepAll: boolean, language: string | null): boolean {
+export function getWebKitBreakBetweenItems(previous: string, next: string, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const last = previous.charCodeAt(previous.length - 1)
   const first = next.charCodeAt(0)
   if (first === LF || first === LINE_SEPARATOR || first === PARAGRAPH_SEPARATOR) return false
