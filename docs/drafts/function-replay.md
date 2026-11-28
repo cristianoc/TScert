@@ -2,317 +2,180 @@
 
 ## The existing mechanism this extends
 
-The [stage store](../STAGE-STORE.md#worker-stages) publishes a preparation and
-one verdict per selected group of mutually dependent units. Let W be the
-worker identity, including the executable, controls, Fragment and interfaces.
-The runner and worker compute the following.
+Consider three exported functions in one module.
+
+```ts
+export function f0(x: number): number { return x + 1; }
+export function f1(x: number): number { return f0(x) + 1; }
+export function f2(x: number): number { return f1(x) + 1; }
+```
+
+The [file worker](../STAGE-STORE.md#worker-stages) publishes one preparation
+and one verdict per selected group of mutually dependent units. In the
+transitive projection at `5ac962a77`, the three groups' inputs contain one,
+two and three bodies respectively. The worker constructs a front for each
+input. Editing the literal in `f0` changes all three keys. The old
+`Front.indexed` computes reachability from each vertex of each prefix
+before comparing pairs to identify the strongly connected components.
+
+With direct dependencies, `f0` supplies its annotated slot and a named
+proposal to `f1`. The declaration of `f0` supplies the signature.
+The check of its definition establishes the proposed effect. The body of
+`f1` reads this slot and supplies its own result to `f2`. Changing the
+literal to 2 changes the proposal key and the check key of `f0`. Its
+proposal has the same value, so both callers find their original keys.
+Changing the effect of `f0` changes the input of `f1`. Propagation
+continues across each edge whose consumed value changes.
+
+For an intermediate cutoff, let `middle` push to a module array before
+calling `left`, and let `right` call `middle`. Adding a push to `left`
+changes the result consumed by `middle`. Its own published footprint
+already includes the push. The edit checks `left` and `middle`, and replays
+`right` and initialization.
 
 ```text
 invokeWorker(W):
-  lookup (W, null), then (W, unitId) for each selected group
-  on a miss: prepareUnitsFile validates the file and lowers its front
-  for each missing group i in callee order:
-    resolve the ordered named proposals below i
-    build relative slice G from those answers and the current preparation
-    hit: decode the stored proposals and verdict
-    miss: planSlice(G), check its members, publish proposals and verdict together
-    render the verdict at the current occurrences and publish (W, unitId)
-singlePass follows current verdicts and providers to decide verification
+  look up the preparation and selected physical verdicts under W
+  on a miss, validate the Fragment and prepare its units and dependency graph
+  visit the requested groups and unresolved dependencies in callee-first order
+  for each group:
+    project its members, read slots, initializer and environmental inputs
+    hash its relative program and the named results it consumes
+    if a finished check exists, use its verdict and proposals
+    if only a proposal is needed, compute or replay its result
+    if a check is needed, check its plan with its saved or freshly computed proposal
+    materialize the line in the current file and publish the physical verdict
+singlePass resolves the current verdicts of all dependencies and providers
 ```
-
-Consider this file with four groups, including initialization.
-
-```ts
-const limit = 1;
-function touch(xs: number[]) { xs.length; }
-function use(xs: number[]) { touch(xs); return limit; }
-function square(n: number) { return n * n; }
-```
-
-Changing the multiplication to addition changes W. The exact-W lookup misses
-for all four groups. With slice replay the worker prepares the edited
-file, obtains the proposal for `touch`, and constructs the input for each
-requested group. With equal binding, store and proposal inputs, `init`,
-`touch` and `use` replay. Only `square` has a changed program. If instead
-`touch` changes, its new proposal value flows into the input of `use`.
-The slice of `use` also contains the body of `touch` for the returned-callable
-round. Editing that body can therefore cost both checks with an unchanged
-proposal. A current refusal of `touch` prevents verification of `use` through
-the dependency traversal.
 
 ### What this duplicates
 
-Lean's front supplies SCC membership, ownership, bindings and import reads.
-Member elaboration and the frozen equation store determine the group program
-and its types. The proposal fold supplies effects, throw bounds, aliases and
-returned footprints. The group check supplies local verdicts. The store
-compares inputs and publishes results. The runner resolves current providers
-and dependencies. Recording observed reads would also require a query
-language, candidate validation and a proof that each validated trace
-reproduces execution.
-
-## Exact inputs and replay
-
-For an edited file, establish imported interfaces and run current fragment,
-declaration and symbol validation before requesting a group. In dependency
-order compute the canonical input G from the selected members and overloads,
-their ordered programs, claims and defaults, nested code, effective demand
-and force, binding types or errors, ownership answers, qualified imports,
-row agreement, unbound reads, equation inputs and search settings. Include
-ordered named proposal answers for the groups below. A present empty answer
-suppresses inference. An absent name permits it. Recursive rounds and the
-initialization-dependent returned-callable round belong to planning.
-
-The current planner's returned-callable round deserves a separate test.
-When initialization mentions a factory with a proposed result footprint,
-the second fold in `plansOnFront` starts with the first round's proposals
-as its prior and an empty list of known answers. In the example, replacing
-`touch` with a factory called by both initialization and `use` can make the
-planner walk the factory again while planning `use`. A first-round answer
-alone does not determine that second computation. The closed input must
-include its exact inputs or its answer at that prior, with current-file
-correspondence established for both rounds.
-
-Lookup hashes canonical JSON `{operation, implementation, slice}` with
-SHA-256. The operation distinguishes checking from proposal-only planning.
-The implementation contains the adapter, runtime, executable and its
-libraries, runner and stage environment. The slice digest is SHA-256 of
-`Slice.wire.compress` in UTF-8, including the complete relative Fragment
-and every explicit planning input. The driver validates finished entries
-and publishes each complete result under its claim as specified for
-[worker stages](../STAGE-STORE.md#worker-stages). On a
-miss execute check(G), returning its named proposals, member references,
-local verdict, dependencies, contracts and diagnostic sites. An unselected
-dependency can supply the proposal alone. A hit supplies the same proposal
-values to callers. Materialize every reference at its current occurrence and
-run current dependency closure in selection order. Keep identical-W replay,
-atomic finished entries and attempt-specific timeout observations. Charge
-projection and proposal-only execution to the requested part. A chain of n
-groups can contribute n(n−1)/2 lower-group answers in total. Measure bytes
-and CPU spent constructing those inputs alongside the checks saved.
-
-Use full stable symbol identities, including fresh and private declaration
-sites, until a checked correspondence preserves sharing and comparisons.
-Sites in other declarations require their own occurrence map. Preserve
-ordered search, freeze failures, builtins, prototypes, images and lookup
-absence. The search limit is 120. Inserting an unrelated declaration can
-supply a previously absent meet key in the intern index. Keeping the entire
-index is conservative. The riskiest assumption is that a sufficiently small
-projection of this index and of initialization bindings costs less than the
-walk it saves. Compare an unrelated insertion with one that supplies a
-missing meet and record the first differing field and projection CPU.
-
-## Soundness obligation
-
-Equal complete inputs to a deterministic closed operation give equal results.
-The store-backed worker executes the relative slice on a miss. Successful explicit import
-planning and an accepting group check give the premises of
-`Mode8Accepted.slice`. Its proof, `PassUnit.sliceVerdict_sound`, gives
-`PassUnitSafe` for the slice requests. Interpreting them in the current
-file requires the [source correspondence below](#group-local-lowering).
-A hit reuses the verdict and proposals produced by `planSlice` on
-the identical relative input under the same implementation. The same
-`sliceVerdict_sound` conclusion therefore holds for this slice. The current
-preparation supplies the occurrence map used to render the result.
-Module establishment uses `Mode8Accepted.freshModule`.
-Replay requires a finished result published by this operation and implementation
-at the exact input. Payload integrity, SHA-256 collision resistance, executable
-identity and the runner's association of a response with its request belong
-to the stage store's trust boundary. Projection, serialization and site transport belong to the source and driver correspondence boundary.
-
-## The worker's shadow check
-
-For a request for `use`, the worker obtains the current answers for its
-callees. `GroupProjection.Input.ofFile` assigns local numbers to members,
-possible proposal callees and the other function signatures. An ordered
-list of references reconstructs declaration order. The input includes the
-initializer, the file-wide ownership and initialization-order answers, and
-the complete validated equation store. Keeping the intern index determines
-absent keys as well as present ones. A second proposal round can elaborate
-a callee at a different prior using its program and this same store.
-
-A type term can occur verbatim inside an intern key. For example, moving
-the return annotation of a function returning a closure changes both its
-literal head's display name and its key. `GroupProjection.fileProgram`
-assigns source sites within each declaration interval and runs equation
-lowering at those coordinates. Declaration identities retain their module,
-name and declaration span. Opaque refusal and elaboration text requires the physical operation.
-
-`GroupContext.groupOperation_eq` identifies the ordinary group operation's
-plan, proposals and verdict with the current file's interface planner and
-group check at its supplied planning front. This equality includes planning
-refusals. The whole-file comparison uses that operation.
-`Synthesis.walkUnit_bindings_congr` identifies the module inputs of one
-synthesis walk as the ordered actions for its explicit and implicit reads.
-The equality covers the walk's resulting equation store as well as its
-typing result.
-
-With `TSCERT_GROUP_SHADOW=projection`, `RequestCli.checkProjection` independently
-plans from the relative input. `CurrentGroupLine` witnesses agreement of
-its named proposals and materialized verdict with the ordinary operation.
-A discrepancy selects a second input retaining all bodies at physical
-sites. The worker writes the lexical group, ordered field digests, input
-and result digests, projection time and coordinate mode to stderr. An
-unselected dependency reports its proposal result alone.
-
-A theorem relating the relative input and site transport to the physical
-file would discharge part of the source-lowering correspondence obligation. The
-ordinary planner equation concerns one supplied front. Proposal settlement
-builds stand-ins from the file's declarations, initialization typing can
-grow the equation store, and freezing validates all heads. The shadow input
-retains signatures, the initializer and the full store at this boundary.
-`GroupProjection.lookup_filter_keys` proves that restricting the index to
-demanded keys preserves each positive and negative lookup in that set.
-`GroupProjection.rowOf_eq_of_heads` gives the corresponding equality for
-one row query, including the parts of a meet.
-`GroupProjection.withInitTypes_eq` proves that the grown store and the
-module binding answers reconstruct the typed front from its input at each
-prior.
+The front owns source bindings, edges and groups. The projection reads these
+tables. The proposal fold owns stand-ins and the rule for returned callables.
+Its exported values cross group boundaries. The existing member checker owns
+the verdict. The [stage store](../STAGE-STORE.md#worker-stages) owns key
+comparison, process claims and publication. The driver resolves refusals by
+one reverse traversal of the current dependency graph. When several paths
+to a refusal are shortest, the verdict's dependency order selects the path.
 
 ## Group-local lowering
 
-For `square` in the example, `GroupProjection.sliceProgram` selects
-`square` and its annotations. For `use` it also selects `touch` and the
-initializer defining `limit`. Selection follows module reads through the
-bodies and the defining statements until the names stop growing. A group
-checking initialization executes every initializer statement. The declaration
-document retains definitions reached through declaration identities, implicit
-lowering dependencies, written application obligations and symbol identities.
+`SliceIndex.layout` keeps the selected bodies, their same-name overloads,
+and signatures of the external groups supplying their slots. An external
+recursive group retains its ordered membership and leader. For example, a
+caller of the second member of a mutually recursive pair reads that
+member's signature and depends on the check named by the first member.
+`planSliceWithResult` checks the selected membership and direct dependency
+identities against the file preparation before running the checker.
 
-`RequestCli.planSlice` computes fresh
-claims, equation heads and a planning front on this program. The file supplies
-the ordered group's identities, interface demand, import answers, ownership
-and initialization order. For each selection the file supplies the proposal
-fold's callee-first order, including overloads, and the slice functions
-mentioned by initialization. Both belong to the slice key. Each round visits
-those functions in that order. The first round reads the named answers from
-lower groups and suppresses the group's own inference when `needsInterface`
-is false. If a mentioned function has a computed returned footprint, the
-second round takes the complete ordered first-round stand-ins as its prior
-and starts with empty known answers. Initialization typing uses the
-same whole-file mentions when checking whether a changed stand-in
-requires a fresh walk. A planned function in initialization's
-recursive group requires the whole initializer.
+A body that reads a module binding carries the initializer. For example,
+in `let n = 1; n = 2; const saved = n`, the statement assigning 2 binds
+no name, yet it precedes the read that initializes `saved`.
+`Front.withInitTypes` walks those statements in execution order. Its
+result supplies the binding types and can extend the equation store.
+The initializer's external function slots use their published answers.
+Group import discovery examines the executable slice and resolves its
+free import names against the physical module's declaration document.
+The input includes ownership, initialization order where applicable,
+declaration roots and reachable definitions, written application obligations,
+symbol identities, qualified import answers, row tables and unbound reads
+or their planning error. Local equation lowering rebuilds the store from
+this input. The declaration cache matches complete declaration JSON.
 
-The direct worker publishes the physical slice's verdict and proposals. The
-store-backed worker plans on the canonical relative slice and renders at
-current sites. For example, the refusal for an early binding includes the
-binding's initializer offset in its explanation. The physical group produces
-the entire refusal and its elaboration, including generated names.
+For a factory that returns a closure, a stand-in can carry the returned
+callable's footprint as well as the call's own normal and exceptional
+effects and its return alias. Initialization that calls the factory can
+bind the returned closure. The first proposal fold reads the known lower
+answers. A reachable initializer-mentioned proposal with a non-top returned
+footprint selects a second fold. Each group propagates that condition to
+its direct dependents. The fold elaborates local members at its first
+prior and uses the published answers for external slots in both rounds.
+A call back from such a callee to its caller would put both in the same
+strongly connected component. The local fold retains the member bodies
+and their first prior in that case.
+Typing the selected initializer uses the stand-ins its statements mention.
+Recursive settlement and this second fold are internal work of one
+proposal operation. A named empty answer suppresses inference for that
+slot. The worker-order control exercises a factory, its caller, the
+caller's caller and an initializer calling the factory.
 
-`DeclarationSites` ranks the annotation sites of each declaration and
-separates its coordinates from other rows and executable sites. References
-to the same declaration share an identity within its module and name.
-Symbol identities carry their physical spans across module interfaces.
-The occurrence map restores member contract identities before wire sorting.
-A shadowing declarator whose spelling occurs only in its local binding and
-identifier uses takes a function-local name. Each slice
-consumes its callees' published proposals. Declaration decoding and pack
-analysis share answers by complete declaration JSON. Equation heads and
-their references belong to each slice's store.
+## Exact inputs and replay
 
-With `TSCERT_GROUP_SHADOW=1` a separate whole-file proposal fold supplies
-the comparison. The worker reports both verdicts, proposal equality and agreement on the
-physical entry point, nodes, continuations, handlers and nested code of
-every member. A graph available on just one side, a different graph,
-a different accept/refuse outcome or different proposals stops the worker
-with a tool failure naming the unit.
-With `TSCERT_GROUP_SHADOW=replay` the worker also executes the closed `GroupProjection.Slice` at physical and
-relative positions. It reports the relative input when its named proposals
-and materialized verdict agree with the physical execution. Otherwise it
-reports the physical input. The ordered field digests measure potential reuse.
+The program uses source-relative member, dependency and occurrence
+identities. A declaration's annotation coordinates belong to its
+declaration identity. The worker restores the current physical contract
+sites and dependency IDs when rendering a verdict. Fuel, search controls,
+interface demand, forced proposals and the counting flag enter the key.
+The [wire protocol](../REQUEST-PROTOCOL.md) defines the two operations.
 
-The proof premise is a successful `GroupImports.plan` at these explicit
-inputs followed by successful `passGroupMode8` on the resulting group's
-prepared plans. This is the inner planner of `fragmentPlansFromInterfaces`.
-`PassUnit.sliceVerdict_sound` gives `PassUnitSafe` for those plans.
-The proof uses the same frozen-store invariant and graph theorem as
-`mode8Accepted_sound`. To interpret the result in the file, each slot must
-denote the same binding at a contract with the same meaning in both stores.
-This includes the entry assumptions, captured and returned callables and
-their effects, dependencies supplying those contracts, and nested code.
-The shadow check compares the ordered sibling names. From each member’s
-result, inputs and array builtins it numbers equation heads in order of
-discovery and compares their headers and ordinary templates at those numbers.
-For example, the result of `Pair<T>.push<U>` mentions `Pair<[T, U]>`. The
-template comparison visits the `Pair` declaration once. When the finite
-presentations differ or a scheme has resolution constraints, the worker
-proposes a map from the member’s roots and the builtins. The search bounds
-both the number of applications expanded and their syntax size. It checks
-the proposed map on the unrestricted graphs. An
-unsuccessful search leaves binding correspondence open.
-The source-lowering obligation includes nested contracts and assumptions
-on the entry heap and indices. The scope of
-the accepted verdict is specified in [what verified means](../DESIGN.md#what-verified-means).
+The first compact JSON line describes the program. Each subsequent line
+is an ordered named proposal consumed by it. The driver hashes each line
+and keys the operation on its name, implementation identity, program
+digest and result digests. Consequently the input identity of a callee
+can change while the digest read by its caller stays equal.
 
-The worker-order control contains a factory returning a closure, a function
-`use` returning `factory()`, and `outer` returning `use()`. Initialization
-calls `factory()` for effect. The file's returned-callable round infers a
-proposal for `outer`. Its returned closure preserves value, array and view
-regions on normal return. The slice of `outer` reads no initialization
-binding. Its input carries the mention of `factory` and the answers for
-`factory` and `use`. The second fold therefore establishes the returned
-closure's three preservation guarantees in the slice. Replacing the
-initializer call by a literal removes the demand. In that file `outer`
-publishes a named empty proposal.
+A check publishes its exported answers with its verdict. A standalone
+proposal publishes those answers and its settlement result or planning
+error. A subsequent check at that input supplies the saved settlement to
+the planner, checks the members and compares the exported proposals.
+The operations share a claim and repeat lookup after acquiring it.
+The worker caches answers by group for the life of a request stream.
+An unchanged physical file can replay all selected lines without starting
+a worker. An edited physical file incurs preparation, lookups and output
+proportional to the selection even when only one group needs checking.
 
-## Commit sequence and gates
+## Soundness obligation
 
-1. Give the generated Pretext project a stable directory keyed by its exact
-   config. Compare identical verdicts and stage counts on two unchanged runs.
-   On 2026-11-27 the unchanged analysis.ts rerun took 1.3 s with zero stages
-   executed, against 3.6 s with six executed.
-2. Factor group planning, proposal production and checking under W. Use
-   explicit demand and ordered lower answers, fresh or exactly memoized
-   inference, retained plans and shared initialization typing at equal inputs.
-   Compare complete proposals and verdict lines in fresh, reversed and resumed
-   workers, with failed planning, present empty answers, returned callables
-   and forced inference. Count cold initialization and proposal walks.
-   `GroupContext.groupOperation` supplies the verdict and its proposals from
-   one plan. A worker retains the qualified front and its initialization
-   typings, including typings over changed stand-ins. Each retained changed
-   typing carries a Lean equality to the fresh computation. Both proposal rounds of every group request share settlement
-   at the same qualified front, member index and complete ordered stand-ins.
-   The final group plan carries its provider identities into the verdict.
-3. Compute G and relative results in shadow mode. Prove current-file
-   correspondence and compare forced executions across a moved refusal,
-   an ownership escape in an uncalled body, fresh/private symbols, a changed
-   meet lookup and an SCC split. Compare a body edit, a leading comment,
-   an independent insertion, a changed callee effect and a changed captured
-   binding. Diff the four Pretext transitions by input field, preserving
-   annotations in the comment-only comparison. Count projection work separately.
-4. Enable fine lookup and atomic publication. Compare mixed hits, restart and
-   concurrent publication with forced execution on the edited snapshot.
-   Require zero group checks and proposal walks on the ordinary-comment
-   fixture and one group check on the independent-body edit. Report
-   preparation, proposal, verdict and projection costs separately.
+For the example, replaying the line for `f1` retains its dependency on
+`f0`. A refusal at the current `f0` prevents verification of `f1`
+and `f2`, even if their local checks replay. `ordinarySlots` interprets
+the stand-in at the written declaration. The defining member's
+`checkRequestResult` checks its contract, including the bound on its
+calls and the contract required of its returns by `resultWithFootprint`.
+An imported slot rests on its providers' checks.
 
-## Cold worker measurement
+`Mode8Accepted.slice` requires successful explicit import planning and
+an accepting `passGroupMode8` on those prepared requests.
+`PassUnit.sliceVerdict_sound` proves `PassUnitSafe` for that group.
+Under the store's integrity assumptions a hit identifies this same
+operation at the same input and implementation. SHA-256 integrity,
+the worker protocol, projection from the TypeScript fragment and transport
+back to source sites have the [existing correspondence obligations](../DESIGN.md#what-verified-means).
+The theorem's scope is the prepared group. Equivalence of its bindings
+and their meaning to those of the physical file is a source-correspondence
+obligation. The shadow modes compare plans, proposals and physical lines
+on concrete inputs.
 
-On 2026-11-27 the standalone worker-order Fragment had five groups. Its
-factory returns a closure, initialization and `use` call the factory,
-`outer` calls `use`, and `leaf` has no caller. Each column compares one
-fresh worker at `1b92d984e` with one using the factored operation, requesting
-all five groups. The complete verdict lines agree in each pair.
+## Cost and diagnostic scope
 
-| Work table count | Ordinary | Forced results |
-| --- | ---: | ---: |
-| Initialization typings | 13 → 6 | 14 → 7 |
-| Proposal member plans | 9 → 4 | 11 → 7 |
-| Main graph walks during proposal settling | 4 → 4 | 5 → 7 |
-| Nested code graph walks during proposal settling | 2 → 2 | 2 → 3 |
-| Group checks | 5 → 5 | 5 → 5 |
+On the numeric chain, preparation indexes name targets and computes the
+strongly connected components with Tarjan's algorithm. Every group has
+one body and at most one external slot. The scheduler visits each edge
+and group a bounded number of times, and each group has a bounded-size
+planning and checking problem. Thus group work is linear in the number
+of functions for this family, counting bounded-size names and numbers.
+In general the work also depends on the size of bodies, recursive groups,
+declaration environments, initializer inputs, and the checker's cost on
+each input.
 
-The invocation uses `TSCERT_PROFILE=1`, 4096 subtype rounds, depth 12,
-full selection and the worker request `{"units":null}`. The forced column
-adds `--force-proposals results`. Graph walk counts are the work table's
-`run:` records under proposal settling. In the forced returned-callable round for `outer`, its first proposal
-enters the stand-ins for `factory` and `use`. Earlier requests for those
-members supplied the ordinary effect for `outer`. At these different
-inputs the exact table executes the main and nested graphs of `factory`
-and the main graph of `use`. The old digest reused their answers.
+A change inside one function can also change a module input. Add
+`const values: number[] = [x]` to the numeric leaf in the three-function
+example. Its published proposal stays equal. The parser supplies the
+module's first `ArrayProto` declaration. `EquationLowering.lowerSource`
+reads its presence when constructing every slice's built-ins and excluded
+keys. All three groups execute. Replaying across that change would require
+establishing that the changed equation environment gives the same meaning
+to the caller's requests.
 
-This takes up C4's immutable group inputs, C10's sharing of planning and
-initialization, and C11's per-group keys and separation of proposal content
-from current establishment. The broader callable-interface and preparation
-work has its own [commit sequence](on-demand-processing.md#commit-order).
+Opaque refusals carry physical equation-head names. In Pretext's
+`prepare.ts` at `a6d353cf`, the refusal of `measureAnalysis` at
+`[38096,38112)` quotes a literal array at `[16039,16056)` in a frozen
+head. Relative serialization gives that head different coordinates.
+`PreparedFile.physicalVerdict` reconstructs the physical diagnostic
+environment, including transitive bodies, with published stand-ins fixed,
+and checks the refusing group there. It supplies diagnostic text only
+when both checks refuse. The stored relative result supplies its proposals
+to callers and avoids repeating settlement during relocation. A result whose acceptance or dependencies cannot
+be materialized requires a current physical check. Physical diagnostics
+therefore fall outside the one-check and bounded-input cost of an
+accepting chain.

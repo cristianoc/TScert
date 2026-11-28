@@ -259,17 +259,22 @@ def selectionClosure (ast : Json) (roots : List String) : List String := Id.run 
   let bound := init.flatMap Fragment.Stmt.bound
   let owned := bound ++ bound.map Fragment.selfBindingOf ++
     SourceClaimJson.genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
-  let initMentions := init.flatMap SourceElaboration.stmtNames
-  let mentions := fun (n : String) => if n == ":init" then initMentions else
-    (fns.filter (·.name == n)).flatMap fun f => f.body.flatMap SourceElaboration.stmtNames
-  let names := fns.map (·.name)
-  let mut set := roots.eraseDups
-  for _ in List.range (fns.length + 2) do
-    let ms := set.flatMap mentions
-    let next := (set ++ names.filter ms.contains ++ (if !init.isEmpty && ms.any owned.contains then [":init"] else [])).eraseDups
-    if next.length == set.length then break
-    set := next
-  return set
+  let edges := fns.foldl (fun (m : Std.HashMap String (List String)) f =>
+    m.insert f.name ((f.body.flatMap SourceElaboration.stmtNames) ++ m.getD f.name [])) {}
+  let known := edges.insert ":init" (init.flatMap SourceElaboration.stmtNames)
+  let bindings := Std.HashSet.ofList owned
+  let mut pending := roots
+  let mut seen := Std.HashSet.ofList roots
+  for _ in [:roots.length + known.size] do
+    let some name := pending.head? | break
+    pending := pending.tail
+    for n in known.getD name [] do
+      for dep in ((if edges.contains n then [n] else []) ++
+          (if !init.isEmpty && bindings.contains n then [":init"] else [])) do
+        unless seen.contains dep do
+          seen := seen.insert dep
+          pending := dep :: pending
+  return seen.toList
 
 /-- The given lines of a module's units, by their identity in the module:
 each line of a unit `module:<location>#<unit>`. -/
@@ -502,11 +507,73 @@ structure ShadowGroup where
 structure WorkerGroup extends PlannedGroup where
   shadow : Option (PlannedGroup × ShadowGroup × Thunk (Except String ShadowGroup)) := none
 
+/-- Names used at the slice boundary, indexed once on the validated front. -/
+structure SliceIndex where
+  units : Array (Fragment.Fn × List Fragment.TypeParam × Option (SourceClaimJson.Function EquationGraphs.Tree))
+  unitIds : Array String
+  ids : Std.HashSet String
+  functions : Std.HashMap String (List Nat)
+  selectors : Std.HashMap String (List Nat)
+  initMentions : Std.HashSet String
+  statements : Array Fragment.Stmt
+  bindings : Std.HashSet String
+
+def SliceIndex.ofFront (fr : SourceClaimJson.Front) : SliceIndex := Id.run do
+  let units := fr.units.toArray
+  let ids := units.map fun (f, _, c) => if c.isSome then "init" else s!"{f.name}@{f.namePos.1}"
+  let mut functions := {}
+  let mut selectors := {}
+  for ((fn, _, c), i) in units.zipIdx.reverse do
+    if c.isNone then functions := functions.insert fn.name (i :: functions.getD fn.name [])
+    let name := SourceClaimJson.memberName (ids.getD i "")
+    selectors := selectors.insert name (i :: selectors.getD name [])
+  return ⟨units, ids, .ofArray ids, functions, selectors, .ofList (fr.init.flatMap SourceElaboration.stmtNames),
+    fr.init.toArray, .ofList fr.initNames⟩
+
+/-- The same-name selection can include several overloads. Their bodies
+and the initializer typing their module reads form the executable
+part. A slot outside it brings its signatures and its group leader. -/
+structure SliceLayout where
+  bodies : List Nat
+  signatures : List Nat
+  statements : List Nat
+  reads : List String
+  externalGroups : List (List Nat)
+  answerGroups : List Nat
+  order : List Nat
+
+def SliceIndex.layout (x : SliceIndex) (fr : SourceClaimJson.Front) (i : Nat) : SliceLayout := Id.run do
+  let selected := ((x.selectors.getD (SourceClaimJson.memberName (x.unitIds.getD i "")) []).flatMap fr.group).eraseDups
+  let fnIndex := fun j => (x.units[j]?).any (·.2.2.isNone)
+  let bodies := selected.filter fnIndex
+  let bodyReads := bodies.flatMap fun j => (x.units[j]?.map fun (fn, _, _) => SourceElaboration.moduleReadNames fn.body).getD []
+  -- withInitTypes walks the initializer in order. An earlier statement can
+  -- affect a later binding even when that statement binds no name itself.
+  let whole := selected.any (fun j => !fnIndex j || (fr.edges j).any (!fnIndex ·)) || bodyReads.any x.bindings.contains
+  let statements := if whole then List.range x.statements.size else []
+  let reads := if whole then bodyReads ++ SourceElaboration.moduleReadNames fr.init else bodyReads
+  let needed := reads.flatMap (x.functions.getD · [])
+  let external := ((needed ++ selected.flatMap fr.edges).filter (!selected.contains ·)).map
+    (fun j => (fr.group j).headD j) |>.eraseDups
+  let groups := external.map fr.group
+  let signatures := groups.flatten.filter fnIndex
+  let names := (bodies ++ signatures).filterMap fun j => x.units[j]?.map (·.1.name)
+  -- Leaving a component cannot lead back to it. External answers are
+  -- already known; preserve depth-first overload order among selected bodies.
+  let active := Std.HashSet.ofList selected
+  let ordered := signatures ++ (SourceClaimJson.PassProposals.postorder active.size
+    (fun j => (fr.edges j).filter active.contains) selected.reverse).filter fnIndex
+  let groups := groups.map fun g => g.filter (fun j => fnIndex j || !statements.isEmpty)
+  return ⟨bodies, signatures, statements, (reads ++ names).eraseDups, groups.filter (!·.isEmpty), external, ordered⟩
+
 /-- File selection, shared preparation and the results retained by this worker. -/
 structure PreparedFile extends GroupContext where
+  index : SliceIndex
+  layouts : Array (Thunk SliceLayout)
   relativeFront : Thunk (Except String (Json × Json × EquationLowering.SourceLowering × SourceClaimJson.Front × GroupProjection.Sites))
   sourceLowering : EquationLowering.SourceLowering
   definitions : EquationLowering.DefinitionCache
+  declarations : Thunk (Except String GroupProjection.DeclarationIndex)
   declarationSites : Thunk GroupProjection.DeclarationSites
   replayDetails : Bool
   sliceShadow : Bool
@@ -521,6 +588,7 @@ structure PreparedFile extends GroupContext where
   interfaceDemand : Std.HashSet Nat
   quiet : Bool
   t0 : Nat
+  returned : IO.Ref (Std.HashSet Nat)
   proposals : IO.Ref (Std.HashMap Nat GroupAnswers)
   plans : IO.Ref (Std.HashMap Nat WorkerGroup)
 
@@ -528,7 +596,7 @@ structure PreparedFile extends GroupContext where
 dependency graph. Every reachable group is queued once. An incomplete walk
 conservatively demands every group. -/
 def demandedInterfaces (fr : SourceClaimJson.Front) (wanted : List Nat) : Std.HashSet Nat := Id.run do
-  let mut pending := wanted.eraseDups
+  let mut pending := wanted
   let mut seen : Std.HashSet Nat := pending.foldl (·.insert ·) {}
   let mut demand : Std.HashSet Nat := {}
   for _ in List.range (fr.units.length + 1) do
@@ -606,12 +674,15 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     let size := fun (p : String) => do
       try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
     emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
+  let returned ← IO.mkRef {}
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
   let fronts ← IO.mkRef []
   return prepared.map fun (est, tables, front, a, sourceLowering, definitions) =>
-    { ast := a, sourceLowering, definitions, reportGroups := ["1", "projection", "replay"].contains (shadow.getD ""),
+    let index := SliceIndex.ofFront front.2
+    { ast := a, index, layouts := (List.range index.units.size).toArray.map (fun i => Thunk.mk fun _ => index.layout front.2 i), sourceLowering, definitions, reportGroups := ["1", "projection", "replay"].contains (shadow.getD ""),
       sliceShadow := shadow != some "projection", replayDetails := shadow == some "replay", fileAnswers, counting,
+      declarations := Thunk.mk fun _ => GroupProjection.DeclarationIndex.of (a.getObjValD "declarations")
       declarationSites := Thunk.mk fun _ => GroupProjection.DeclarationSites.of a
       relativeFront := Thunk.mk fun _ => do
         let (ast, sites) := GroupProjection.fileProgram (a.setObjVal! "modules" (.arr #[]))
@@ -622,7 +693,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
         return (ast, claims, source, fr, sites)
       imports := Thunk.mk fun _ => scope.get.map (SourceClaimJson.planImportsIn a), fileKey, budget, est, tables, front, fronts, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, quiet, t0, proposals, plans }
+      givenLines, fuel, quiet, t0, returned, proposals, plans }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -689,22 +760,11 @@ private def groupFields (g : GroupProjection.Input) : Thunk (List (String × Str
 
 /-- Postorder on the graph of groups. Each edge names its target's leader. -/
 private def orderedGroups (fr : SourceClaimJson.Front) (roots : List Nat)
-    (visited : Std.HashSet Nat) : List Nat := Id.run do
-  let mut reverseOrder : List Nat := []
-  let mut seen := visited
-  let mut stack := roots.map (·, false)
-  for _ in [:(4 * fr.units.length * (fr.units.length + 1) + 4)] do
-    match stack with
-    | [] => break
-    | (g, true) :: rest => stack := rest; reverseOrder := g :: reverseOrder
-    | (g, false) :: rest =>
-      if seen.contains g then stack := rest
-      else
-        seen := seen.insert g
-        let edges := (fr.group g).flatMap fr.edges
-        stack := (edges.map (fun j => ((fr.group j).head?.getD j, false))).filter (!seen.contains ·.1)
-          |>.append ((g, true) :: rest)
-  return reverseOrder.reverse
+    (visited : Std.HashSet Nat) (answered : Nat → Bool := fun _ => false) : List Nat :=
+  SourceClaimJson.PassProposals.postorder fr.groupTable.size
+    (fun g => fr.dependencies (fr.group g)) roots (fun g => visited.contains g || answered g)
+
+private def PreparedFile.unitId (p : PreparedFile) (i : Nat) : String := p.index.unitIds.getD i ""
 
 /-- The lower groups in the order their proposals enter this group's input. -/
 def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat :=
@@ -812,43 +872,84 @@ private def memberBindings (file localPlan : PlannedGroup) (members : List Strin
     return rowsAgree G lhs H rhs pairs fuel || rowsAgree H rhs G lhs (pairs.map Prod.swap) fuel
 
 
+private def PreparedFile.layout (p : PreparedFile) (i : Nat) : SliceLayout :=
+  match p.layouts[i]? with
+  | some l => l.get
+  | none => p.index.layout p.fr i
+
+private def PreparedFile.inheritedReturn (p : PreparedFile) (i : Nat) : IO Bool := do
+  let returned ← p.returned.get
+  return (p.fr.dependencies (p.fr.group i)).any returned.contains
+
+private def PreparedFile.recordAnswers (p : PreparedFile) (i : Nat) (answers : GroupAnswers) : IO Unit := do
+  p.proposals.modify (·.insert i answers)
+  if (← p.inheritedReturn i) || answers.any (fun (name, answer) =>
+      p.index.initMentions.contains name && answer.any (·.resultFootprint != .top)) then
+    p.returned.modify (·.insert i)
+
 def PreparedFile.sliceInput (p : PreparedFile) (i : Nat) (demand : Bool) (below : GroupAnswers)
-    (imports : Except String SourceClaimJson.GroupImports) : Except String GroupProjection.Slice := do
+    (returnedBelow : Bool) : Except String GroupProjection.Slice := do
   let members := p.fr.group i
-  let selected := (p.fr.selected (some [SourceClaimJson.memberName (p.fr.unitId i)])).flatMap p.fr.group
-  let order := (SourceClaimJson.PassProposals.calleesFirst p.fr selected).filter (!p.fr.isInitialization ·)
-  let consumers := p.fr.init.flatMap SourceElaboration.stmtNames
-  let ast ← GroupProjection.sliceProgram p.ast p.fr i order
-  let (imports, est, tables) := GroupProjection.groupEnvironment (selected.flatMap p.fr.captureNames)
-    imports p.est p.tables
-  let fs ← ast.getObjValAs? (Array Json) "functions"
-  let names := fs.map (·.getObjValD "name")
-  let resultConsumers := consumers.filter (fun n => names.contains (.str n)) |>.eraseDups.mergeSort (· ≤ ·)
-  return ⟨order.map p.fr.unitId, resultConsumers, ast, members.map p.fr.unitId, p.fr.moduleOwned, p.fr.initOrder, demand,
-    below.filter (fun (n, _) => names.contains (.str n)), imports, est, tables, p.force, p.fuel, p.budget, p.counting⟩
+  let layout := p.layout i
+  let ast ← GroupProjection.sliceProgram p.ast (← p.declarations.get) layout.bodies layout.signatures layout.statements layout.reads
+  -- Slot resolution sees the original declaration document, including
+  -- ambiguous bindings. Only this group's executable code can read a slot.
+  let imports := p.imports.get.bind fun ctx =>
+    let code := Thunk.mk fun _ => SourceClaimJson.decodeImporter ast
+    SourceClaimJson.groupImports (.ok { ctx with code }) p.ast (some [SourceClaimJson.memberName (p.unitId i)]) {} p.est
+  let (imports, est, tables) := GroupProjection.groupEnvironment layout.reads imports p.est p.tables
+  let id := (p.index.unitIds.getD · "")
+  let names := (layout.bodies ++ layout.signatures).filterMap fun j => p.index.units[j]?.map (·.1.name)
+  let consumers := (names.filter p.index.initMentions.contains).eraseDups
+  return ⟨layout.externalGroups.map (·.map id), (p.fr.dependencies members).map id, returnedBelow,
+    layout.order.map id, consumers, ast, members.map id, p.fr.moduleOwned,
+    if members.any (fun j => p.unitId j == "init") then p.fr.initOrder else none, demand,
+    below.filter (fun (n, _) => names.contains n), imports, est, tables, p.force, p.fuel, p.budget, p.counting⟩
 
 /-- Plan and check with the slice as the only input. Every call builds its
 own equation store, including the stores at the two proposal priors. -/
-def planSlice (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache := ∅) : Except String PlannedGroup := do
+private abbrev ProposalResult := List SourceClaimJson.StandIn
+
+private def planSliceWithResult (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache)
+    (resolved : Option ProposalResult) (fixed : Bool := false) : Except String (PlannedGroup × ProposalResult) := do
   let key ← s.ast.getObjValAs? String "file"
-  let claims ← SourceClaimJson.fragmentClaims s.ast key {} s.force
-  let source ← SourceClaimJson.lowerEquationFront s.ast claims s.budget definitions
-  let raw ← SourceClaimJson.fileFrontFrom s.ast
+  let claims ← SinglePass.work "slice: claims" key fun _ => SourceClaimJson.fragmentClaims s.ast key {} s.force
+  let source ← SinglePass.work "slice: lower equations" key fun _ => SourceClaimJson.lowerEquationFront s.ast claims s.budget definitions
+  let raw ← SinglePass.work "slice: build front" key fun _ => SourceClaimJson.fileFrontFrom s.ast
     (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront s.ast key source) [] (lenient := true)
   let fr := { raw with moduleOwned := s.owned, initOrder := s.initOrder }
   let some leader := s.members.head? | throw "empty slice group"
   let some i := (List.range fr.units.length).find? (fr.unitId · == leader) | throw "missing slice leader"
   unless (fr.group i).map fr.unitId == s.members do throw "slice changes group membership"
+  let indices := Std.HashMap.ofList ((List.range fr.units.length).map fun j => (fr.unitId j, j))
+  let indexOf := fun (id : String) => match indices.get? id with
+    | some j => Except.ok j
+    | none => .error s!"missing slice unit {id}"
+  let mut groups := fr.groupTable
+  for external in s.externalGroups do
+    let group ← external.mapM indexOf
+    unless external.all (!s.members.contains ·) do throw "external group includes a checked member"
+    for j in group do groups := groups.setIfInBounds j group
+  let fr := { fr with groupTable := groups }
+  unless (fr.dependencies (fr.group i)).map fr.unitId == s.dependencies do throw "slice changes group dependencies"
   let context : GroupContext := {
     ast := s.ast, fileKey := key, budget := s.budget, est := s.established, tables := s.tables,
     force := s.force, front := (claims, fr), givenLines := {}, fuel := s.fuel }
-  let indices := (List.range fr.units.length).map fun j => (fr.unitId j, j)
-  let order ← s.proposalOrder.mapM fun id => do
-    let some j := indices.lookup id | throw s!"missing proposal member {id}"
-    return j
+  let order ← s.proposalOrder.mapM indexOf
+  let own := (fr.group i).filterMap fun j => fr.units[j]?.map (·.1.name)
+  let known := match resolved with
+    | none => s.below
+    | some computed => order.filterMap fun j => do
+      let (f, _, none) ← fr.units[j]? | none
+      return (f.name, computed.find? (·.name == f.name))
+  let below := if fixed || resolved.isSome then known else known.filter fun (n, _) => !own.contains n
   let inputs := s.imports.map fun reads =>
-    (reads, { claims, raw := fr, proposalInputs := some (order, s.resultConsumers), qualified := reads.qualified : SourceClaimJson.PlanningFront s.force })
-  return (context.groupOperation i s.demand s.below inputs).1
+    (reads, { claims, raw := fr, proposalInputs := some ⟨order, s.resultConsumers, below, s.inheritedReturn⟩, qualified := reads.qualified : SourceClaimJson.PlanningFront s.force })
+  let (group, updated) := context.groupOperation i s.demand known inputs
+  return (group, (updated.map (·.rounds.result)).getD [])
+
+def planSlice (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache := ∅) : Except String PlannedGroup :=
+  (planSliceWithResult s definitions none).map Prod.fst
 
 /-- Measure reuse of the relative input by executing it and materializing its verdict. -/
 private def replayFields (p : PreparedFile) (physical : GroupProjection.Slice)
@@ -870,8 +971,8 @@ the two independent folds. Keep the slice verdict for the worker's reply. -/
 private def PreparedFile.reportSlice (p : PreparedFile) (i : Nat)
     (slice : Except String GroupProjection.Slice) (group ordinary : PlannedGroup) : IO GroupVerdict := do
   let start ← IO.monoNanosNow
-  let unit := p.fr.unitId i
-  let members := (p.fr.group i).map p.fr.unitId
+  let unit := p.unitId i
+  let members := (p.fr.group i).map p.unitId
   let mut unavailable := #[]
   for member in members do
     let a := memberGraph ordinary member
@@ -893,7 +994,7 @@ private def PreparedFile.reportSlice (p : PreparedFile) (i : Nat)
     let physical ← IO.ofExcept slice
     IO.lazyPure fun _ => replayFields p physical group verdict.line
   else pure []
-  let id := (p.fr.group i).filterMap fun j => (p.fr.units[j]?).map fun (f, _, _) => p.fr.lexicalId f
+  let id := (p.fr.group i).filterMap fun j => (p.index.units[j]?).map fun (f, _, _) => p.fr.lexicalId f
   let elapsed := (← IO.monoNanosNow) - start
   IO.eprintln ("group-slice " ++ (Json.mkObj ([("unit", toJson unit), ("group", toJson id),
     ("graphs", toJson graphs), ("unavailableMembers", toJson unavailable), ("bindings", toJson bindings), ("verdict", toJson verdict.line),
@@ -903,14 +1004,15 @@ private def PreparedFile.reportSlice (p : PreparedFile) (i : Nat)
 
 /-- Supply this group's current import reads and their shared front. -/
 def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : GroupAnswers) : IO WorkerGroup := do
-  let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
-  let reads ← IO.lazyPure fun _ => SourceClaimJson.groupImports p.imports.get p.ast names {} p.est
-  let slice := Thunk.mk fun _ => p.sliceInput i demand below reads
+  let names := some [SourceClaimJson.memberName (p.unitId i)]
+  let returnedBelow ← p.inheritedReturn i
+  let slice := Thunk.mk fun _ => p.sliceInput i demand below returnedBelow
   let localPlan := Thunk.mk fun _ =>
     match slice.get >>= (planSlice · p.definitions) with
     | .ok g => g
     | .error reason => ⟨.error reason, p.emptyAnswers i, p.groupVerdict i (.error reason)⟩
   if !p.reportGroups then return { localPlan.get with }
+  let reads ← IO.lazyPure fun _ => SourceClaimJson.groupImports p.imports.get p.ast names {} p.est
   let fileAnswers ← p.fileAnswers.get
   let fileBelow := (groupsBelow p.fr i).flatMap fun j => fileAnswers.getD j []
   let inputs ← match reads with
@@ -932,7 +1034,7 @@ def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : Grou
     let (g, sites) := GroupProjection.Input.ofFile ast claims store fr i demand fileBelow reads
       p.est p.tables p.force p.fuel p.budget p.counting
     return (g, sites.inFile fileSites)
-  let id := (p.fr.group i).filterMap fun j => (p.fr.units[j]?).map fun (f, _, _) => p.fr.lexicalId f
+  let id := (p.fr.group i).filterMap fun j => (p.index.units[j]?).map fun (f, _, _) => p.fr.lexicalId f
   let exact := Thunk.mk fun _ => do
     let (g, sites) ← input true
     projectedPlan g sites (groupFields g) id 0 group.answers
@@ -948,7 +1050,7 @@ def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : Grou
         match projectedPlan g sites fields id elapsed group.answers with
         | .ok result => .ok result
         | .error _ => exact.get)
-  if !p.units.contains i then localGroup.report (p.fr.unitId i) answers.val none
+  if !p.units.contains i then localGroup.report (p.unitId i) answers.val none
   return { localPlan.get with shadow := some (group, localGroup, Thunk.mk fun _ => exact.get.map Prod.fst) }
 
 /-- Whether this worker may consume a group's inferred interface: from
@@ -956,10 +1058,11 @@ another selected group, recursive members, or an explicit effect contract.
 Module-interface publication uses its own planner and still infers its rows. -/
 def PreparedFile.needsInterface (p : PreparedFile) (i : Nat) : Bool :=
   let group := p.fr.group i
-  let own := group.filterMap fun j => (p.fr.units[j]?).map (·.1.name)
+  let own := group.filterMap fun j => (p.index.units[j]?).map (·.1.name)
   !p.force.isEmpty || p.interfaceDemand.contains i ||
-    group.any (fun j => (p.fr.mentions j).any own.contains ||
-      ((p.fr.units[j]?).any fun (f, _, _) => f.stated.isSome))
+    group.any (fun j => (p.index.units[j]?).any fun (fn, _, init) =>
+      (if init.isSome then p.fr.init else fn.body).any (fun st => (SourceElaboration.stmtNames st).any own.contains) ||
+        fn.stated.isSome)
 
 /-- Every lower group has answered when its caller is planned. A named
 empty answer and a group with no function answers are both completed reads. -/
@@ -967,28 +1070,50 @@ def PreparedFile.lowerAnswers (p : PreparedFile) (groups : List Nat) : IO GroupA
   let answers ← p.proposals.get
   let values ← groups.mapM fun g => match answers.get? g with
     | some value => pure value
-    | none => throw (IO.userError s!"file worker: missing proposals for {p.fr.unitId g}")
+    | none => throw (IO.userError s!"file worker: missing proposals for {p.unitId g}")
   return values.flatten
 
-/-- **The proposals unit `i`'s planning reads**: for each group `i`'s group
-reaches outside itself (`groupsBelow`, callees first), its members'
-proposals as that group's own planning gives them (`PreparedFile.plan`,
-`FilePlans.groupProposals`), each group's computed once in the worker and
-kept (`PreparedFile.proposals`). A group's proposals are a function of the
-file and of the group: they read only the proposals of the groups below
-it, and a member of a group of two or more functions reads the others at
-their written effect or `top` (`PassProposals.proposeOne`), so they do not
-depend on the units checked before. -/
+/-- Diagnostic text includes the names and numbering of the physical equation
+store. Reconstruct that store with the published slot answers fixed in both
+rounds. The group's own check produces the located diagnostic. -/
+private def PreparedFile.physicalVerdict (p : PreparedFile) (i : Nat) (own : GroupAnswers) : IO GroupVerdict := do
+  let id := p.unitId i
+  let members := p.fr.group i
+  let selected := (p.fr.selected (some [SourceClaimJson.memberName id])).flatMap p.fr.group
+  let order := (SourceClaimJson.PassProposals.calleesFirst p.fr selected).filter (!p.fr.isInitialization ·)
+  let below ← p.lowerAnswers (groupsBelow p.fr i)
+  let result ← IO.lazyPure fun _ => do
+    let ast ← GroupProjection.diagnosticProgram p.ast p.fr i order
+    let reads := SourceClaimJson.groupImports p.imports.get p.ast (some [SourceClaimJson.memberName id]) {} p.est
+    let (imports, est, tables) := GroupProjection.groupEnvironment (selected.flatMap p.fr.captureNames) reads p.est p.tables
+    let slice : GroupProjection.Slice := {
+      externalGroups := [], dependencies := (p.fr.dependencies members).map p.unitId, inheritedReturn := false,
+      proposalOrder := order.map p.unitId, resultConsumers := p.index.initMentions.toList,
+      ast, members := members.map p.unitId, owned := p.fr.moduleOwned, initOrder := p.fr.initOrder,
+      demand := true, below := below ++ own, imports, established := est, tables, force := p.force,
+      fuel := p.fuel, budget := p.budget, counting := p.counting }
+    let (g, _) ← planSliceWithResult slice p.definitions none true
+    return g
+  match result with
+  | .error reason => return p.groupVerdict i (.error reason) p.counting
+  | .ok g => return SinglePass.work "slice: physical" id fun _ => g.verdict p.counting
+
+/-- Resolve each outstanding dependency once, stopping the walk at a
+published answer. Planning consumes the slots selected by the group's
+members and their initializer. A recursive member reads its peers at
+their written effects or top during settlement (`PassProposals.proposeOne`). -/
 def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option SourceClaimJson.StandIn)) := do
   let fr := p.fr
-  let below := groupsBelow fr i
+  let deps := fr.dependencies (fr.group i)
+  let answered ← p.proposals.get
+  let below := orderedGroups fr deps {} answered.contains
   for g in below do
     if (← p.proposals.get).contains g then continue
-    let known ← p.lowerAnswers (groupsBelow fr g)
+    let known ← p.lowerAnswers (p.layout g).answerGroups
     let group ← p.plan g (p.needsInterface g) known
-    if p.units.contains g then p.plans.modify (·.insert g group)
-    p.proposals.modify (·.insert g group.answers)
-  p.lowerAnswers below
+    p.plans.modify (·.insert g group)
+    p.recordAnswers g group.answers
+  p.lowerAnswers (p.layout i).answerGroups
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
@@ -999,8 +1124,7 @@ its group's first elaboration refusal; and its refusal. A function of the
 prepared file and `i`. -/
 def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option String) := do
   let emit := fun (s : String) => if p.quiet then pure () else IO.eprintln s
-  let fr := p.fr
-  let unit := fr.unitId i
+  let unit := p.unitId i
   let s0 ← IO.monoNanosNow
   let p0 ← SinglePass.passNanos.get
   let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
@@ -1015,7 +1139,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
     | none => do
       let below ← p.known i
       let group ← p.plan i (p.needsInterface i) below
-      p.proposals.modify (·.insert i group.answers)
+      p.recordAnswers i group.answers
       pure group
   if (← IO.getEnv "TSCERT_TRACE_PROPOSALS").isSome then
     let footprint := fun (f : Footprints.Closed) => Json.mkObj
@@ -1036,6 +1160,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       if raw then
         if let .error reason := observed then IO.eprintln reason
   let result ← IO.lazyPure fun _ => group.verdict counting
+  let result ← if result.refusal.isSome && !(p.layout i).signatures.isEmpty then do
+      let located ← p.physicalVerdict i group.answers
+      pure (if located.refusal.isSome then located else result)
+    else pure result
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -1075,29 +1203,49 @@ private def sliceLookup (operation : String) : IO Json := do
 /-- The stored value is a function of the operation and the slice.
 The definition cache reads each entry by its complete declaration JSON. -/
 private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
-    (definitions : EquationLowering.DefinitionCache) : Json := Id.run do
-  let (answers, line) := match planSlice slice definitions with
-    | .ok g => (g.answers, if check then some (g.verdict slice.counting).line else none)
+    (definitions : EquationLowering.DefinitionCache) (resume : Option (Except String ProposalResult)) : Json := Id.run do
+  let planned : Except String (PlannedGroup × ProposalResult) := do
+    let prior ← resume.mapM id
+    let (g, result) ← planSliceWithResult slice definitions prior
+    let _ ← g.planned
+    return (g, result)
+  let (answers, line, resolution) := match planned with
+    | .ok (g, computed) =>
+      (g.answers, if check then some (g.verdict slice.counting).line else none, Json.mkObj
+        [("computed", GroupProjection.answersWire (computed.map fun (s : SourceClaimJson.StandIn) => (s.name, some s)))])
     | .error reason =>
       let empty := (slice.members.filter (· != "init")).map fun (id : String) =>
         (String.intercalate "@" (id.splitOn "@").dropLast, none)
       (empty, if check then some (WorkerWire.verdictLine (slice.members.headD "")
-        slice.members (.error reason) (some reason) []) else none)
+        slice.members (.error reason) (some reason) []) else none, Json.mkObj [("error", toJson reason)])
   return Json.mkObj [("operation", toJson (if check then "check-slice" else "propose-slice")),
-    ("members", toJson slice.members), ("answers", GroupProjection.answersWire answers), ("line", toJson line)]
+    ("members", toJson slice.members), ("answers", GroupProjection.answersWire answers), ("line", toJson line),
+    ("resolution", resolution)]
+
+private def decodeResolution (j : Json) : Except String (Except String ProposalResult) := do
+  if let .ok msg := j.getObjValAs? String "error" then
+    fieldsExactly j ["error"]
+    return .error msg
+  fieldsExactly j ["computed"]
+  let entries ← GroupProjection.decodeAnswers (← j.getObjVal? "computed")
+  let computed ← entries.mapM fun (name, answer) => do
+    let some s := answer | throw "missing resolved stand-in"
+    unless s.name == name do throw "wrong resolved stand-in"
+    return s
+  return .ok computed
 
 private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjection.Slice)
-    (sites : GroupProjection.Sites) (operation : String) (payload : Json) :
+    (sites : GroupProjection.Sites) (operation : String) (payload : Json) (render := true) :
     Except String (Option (Option String × GroupAnswers)) := do
-  let unit := p.fr.unitId i
-  let members := (p.fr.group i).map p.fr.unitId
-  fieldsExactly payload ["operation", "members", "answers", "line"]
+  let unit := p.unitId i
+  let members := (p.fr.group i).map p.unitId
+  fieldsExactly payload ["operation", "members", "answers", "line", "resolution"]
   unless (← payload.getObjValAs? String "operation") == operation &&
       (← payload.getObjValAs? (List String) "members") == slice.members do throw "wrong slice result"
   let answers ← GroupProjection.decodeAnswers (← payload.getObjVal? "answers")
   let names := answers.map Prod.fst
   let synchronous := (p.fr.group i).filterMap fun j => do
-    let (f, _, none) ← p.fr.units[j]? | none
+    let (f, _, none) ← p.index.units[j]? | none
     if f.async then none else some f.name
   unless (names == synchronous || names == (p.emptyAnswers i).map Prod.fst) &&
       answers.all (fun (n,v) => v.all (·.name == n)) do throw "wrong slice proposal members"
@@ -1107,6 +1255,7 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
   let raw ← Json.parse l
   unless (← raw.getObjValAs? String "unit") == slice.members.headD "" &&
       (← raw.getObjValAs? (List String) "members") == slice.members do throw "wrong relative slice members"
+  unless render do return some (none, answers)
   let .ok current := sites.materialize l | return none
   let j ← Json.parse current
   unless (← j.getObjValAs? String "unit") == unit &&
@@ -1115,7 +1264,7 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
     for dep in ← raw.getObjValAs? (List String) "depends" do
       if dep.startsWith "module:" || dep == "init" then continue
       let id := sites.unit dep true
-      unless (p.fr.units.zipIdx.any fun (_,j) => p.fr.unitId j == id) && sites.unit id false == dep do
+      unless p.index.ids.contains id && sites.unit id false == dep do
         return none
   return some (some current, answers)
 
@@ -1123,12 +1272,12 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
 reply channel. The occurrence map belongs to this worker's preparation. -/
 private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
     (check : Bool) : IO (Option String × GroupAnswers) := do
-  let unit := p.fr.unitId i
+  let unit := p.unitId i
+  let returnedBelow ← p.inheritedReturn i
   let projected ← IO.lazyPure fun _ => SinglePass.work "slice: project" unit fun _ => do
-    let reads := SourceClaimJson.groupImports p.imports.get p.ast (some [SourceClaimJson.memberName unit]) {} p.est
-    let physical ← p.sliceInput i (p.needsInterface i) below reads
+    let physical ← p.sliceInput i (p.needsInterface i) below returnedBelow
     let (slice, sites) := physical.relative p.declarationSites.get
-    return (slice, sites, slice.wire.compress)
+    return (slice, sites, slice.wire)
   let .ok (slice, sites, input) := projected | do
     let group ← p.plan i (p.needsInterface i) below
     return (if check then some (group.verdict p.counting).line else none, group.answers)
@@ -1140,31 +1289,47 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
       printFlushed "slice-skip"
       pure ("propose-slice", ← sliceLookup "propose-slice")
     else pure ("check-slice", full)
-  let payload ← if !stored.isNull then pure stored else
+  let (operation, stored) := if operation == "propose-slice" && (stored.getObjVal? "checked").isOk then
+    ("check-slice", stored.getObjValD "checked") else (operation, stored)
+  let resume := operation == "check-slice" && (stored.getObjVal? "resume").isOk
+  let stored := if resume then stored.getObjValD "resume" else stored
+  let resolution ← if resume then do
+      let _ ← IO.ofExcept (readSliceResult p i slice sites "propose-slice" stored)
+      pure (some (← IO.ofExcept (decodeResolution (stored.getObjValD "resolution"))))
+    else pure none
+  let fresh := stored.isNull || resume
+  let payload ← if !fresh then pure stored else
     IO.lazyPure fun _ => SinglePass.work "slice: execute" unit fun _ =>
-      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions
+      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions resolution
+  if resume && payload.getObjValD "answers" != stored.getObjValD "answers" then
+    throw (IO.userError "the resumed plan changed its proposal")
   let result ← IO.ofExcept (← IO.lazyPure fun _ =>
-    SinglePass.work (if stored.isNull then "slice: render" else "slice: replay") unit fun _ =>
-      readSliceResult p i slice sites operation payload)
+    SinglePass.work (if fresh then "slice: render" else "slice: replay") unit fun _ =>
+      readSliceResult p i slice sites operation payload check)
   if let some rendered := result then
-    printFlushed (if stored.isNull then "slice-result " ++ payload.compress else "slice-hit")
+    printFlushed (if fresh then "slice-result " ++ payload.compress else "slice-hit")
     return rendered
   -- The diagnostic producer owns its text and any positions embedded in it.
   -- Run it in physical coordinates, with the same resolved callees.
-  printFlushed "slice-physical"
-  let group ← p.plan i (p.needsInterface i) below
-  let line ← IO.lazyPure fun _ => SinglePass.work "slice: physical" unit fun _ =>
-    if check then some (group.verdict p.counting).line else none
-  return (line, group.answers)
+  printFlushed (if fresh then "slice-result-physical " ++ payload.compress else "slice-physical")
+  let answers ← IO.ofExcept (GroupProjection.decodeAnswers (payload.getObjValD "answers"))
+  let located ← p.physicalVerdict i answers
+  let relative ← IO.ofExcept (payload.getObjValAs? String "line" >>= Json.parse)
+  unless (relative.getObjVal? "refusal").isOk && located.refusal.isSome do
+    let group ← p.plan i (p.needsInterface i) below
+    return (some (group.verdict p.counting).line, group.answers)
+  return (some located.line, answers)
 
 private def checkWithStore (p : PreparedFile) (i : Nat)
     (lines : IO.Ref (Std.HashMap Nat String)) : IO String := do
-  for g in groupsBelow p.fr i ++ [i] do
+  let answered ← p.proposals.get
+  let deps := p.fr.dependencies (p.fr.group i)
+  for g in orderedGroups p.fr deps {} answered.contains ++ [i] do
     if g == i then
       if (← lines.get).contains g then continue
     else if (← p.proposals.get).contains g then continue
-    let (line, answers) ← resolveSlice p g (← p.lowerAnswers (groupsBelow p.fr g)) (g == i)
-    p.proposals.modify (·.insert g answers)
+    let (line, answers) ← resolveSlice p g (← p.lowerAnswers (p.layout g).answerGroups) (g == i)
+    p.recordAnswers g answers
     if let some line := line then lines.modify (·.insert g line)
   let some line := (← lines.get).get? i | throw (IO.userError "missing requested slice verdict")
   return line
@@ -1224,8 +1389,9 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
   | .ok p =>
     let units := p.units
     let fr := p.fr
+    let byId := Std.HashMap.ofList (units.map fun j => (p.unitId j, j))
     writeWorkNow start
-    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules)
+    printFlushed (WorkerWire.preparedLine (units.map fun i => (p.unitId i, (fr.group i).map p.unitId)) p.modules)
     let stdin ← IO.getStdin
     let store := (← IO.getEnv "TSCERT_SLICE_DRIVER") == some "1"
     let lines ← IO.mkRef {}
@@ -1237,12 +1403,12 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
       | .ok requested =>
         let chosen ← match requested with
           | none => pure units
-          | some ids => ids.mapM fun id => match units.find? (fr.unitId · == id) with
+          | some ids => ids.mapM fun id => match byId.get? id with
             | some i => pure i
             | none => throw (IO.userError s!"file worker: {id} is no unit the selection checks")
         let order := if store then SinglePass.work "slice: schedule" (SourceClaimJson.fileItem p.ast)
           (fun _ => requestedOrder fr chosen) else chosen
-        if store then printFlushed ("slice-order " ++ (toJson (order.map fr.unitId)).compress)
+        if store then printFlushed ("slice-order " ++ (toJson (order.map p.unitId)).compress)
         for i in order do
           let line ← if store then checkWithStore p i lines else Prod.fst <$> p.check i
           writeWorkNow start

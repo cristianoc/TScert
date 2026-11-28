@@ -303,7 +303,7 @@ theorem step_units_safe
       (inferred := given.isEmpty)
       (fragmentPlansCore_overStore hplan))
   refine ⟨l, ?_, hid, ?_⟩
-  · simp only [Front.selected, List.filter_eq_self.mpr (fun _ _ => rfl)]; exact hl
+  · simp only [Front.selected]; exact hl
   · have h2 := congrArg Prod.snd hcheck
     dsimp only at h2
     exact passGroupMode8_safe hrun hkeep hover h2

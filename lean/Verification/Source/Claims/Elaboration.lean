@@ -1,3 +1,4 @@
+import Lean.Util.SCC
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.Sites
 import Verification.Source.Claims.Plans
@@ -117,11 +118,13 @@ def sameCodeOverloads (functionJsons : Array Json) : Except String Unit := do
   let named := functionJsons.toList.filterMap fun f => (f.getObjValAs? String "name").toOption.map (·, f)
   let names (j : Json) : List Json :=
     ((j.getObjValAs? (Array Json) "params").toOption.getD #[]).toList.map (·.getObjValD "name")
+  let mut first : Std.HashMap String Json := {}
   for (name, f) in named do
-    if let some (_, g) := named.find? (·.1 == name) then
+    if let some g := first.get? name then
       if ["body", "typeParams", "completion", "strict"].any (fun k => g.getObjValD k != f.getObjValD k) ||
           names g != names f then
         throw s!"the units of {name} are no overloads of one declaration's code"
+    else first := first.insert name f
 
 /-- A module function's slot from its units' signatures (`moduleArrow`), one
 unit's or, for a declaration with overloads, every overload's: one function
@@ -281,10 +284,22 @@ def Front.groupOf (fr : Front) (reaches : Array (List Nat)) (i : Nat) : List Nat
     j == i || ((reaches.getD i []).contains j && (reaches.getD j []).contains i)
 
 /-- The front with each unit's edges and group computed once. -/
-def Front.indexed (fr : Front) : Front :=
-  let fr := { fr with edgeTable := (List.range fr.units.length).toArray.map fr.edgesOf }
-  let reaches := (List.range fr.units.length).toArray.map fr.reach
-  { fr with groupTable := (List.range fr.units.length).toArray.map (fr.groupOf reaches) }
+def Front.indexed (fr : Front) : Front := Id.run do
+  let mut targets : Std.HashMap String (List Nat) := {}
+  for ((f, _, c), i) in fr.units.zipIdx do
+    for name in (if c.isSome then fr.initNames else [f.name]) do
+      targets := targets.insert name (i :: targets.getD name [])
+  let edges := fr.units.zipIdx.toArray.map fun ((fn, _, c), i) =>
+    let mentions := (if c.isSome then fr.init else fn.body).flatMap stmtNames
+    let found := mentions.foldl (fun seen name =>
+      (targets.getD name []).foldl (·.insert ·) seen) ({} : Std.HashSet Nat)
+    ((found.erase i).toList.mergeSort (· ≤ ·))
+  let vertices := List.range edges.size
+  let mut groups := Array.replicate edges.size []
+  for component in Lean.SCC.scc vertices (edges.getD · []) do
+    let group := component.mergeSort (· ≤ ·)
+    for i in group do groups := groups.setIfInBounds i group
+  return { fr with edgeTable := edges, groupTable := groups }
 
 /-- A unit's group (`groupOf`), as `indexed` computed it. -/
 def Front.group (fr : Front) (i : Nat) : List Nat := fr.groupTable.getD i []
@@ -308,8 +323,11 @@ overload, each its code at that overload's signature (SOURCE-ELABORATION.md,
 every overload. -/
 def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragment.Fn) (names : List String) :
     List (SourceElaboration.ModuleValue Tree) :=
-  let claimOf (g : Fragment.Fn) : Option (Function Tree) :=
-    d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos
+  let claims := d.functions.foldr (fun c (m : Std.HashMap (String × Span) (Function Tree)) =>
+    m.insert (c.name, c.namePos) c) {}
+  let overloads := ordinary.foldr (fun g (m : Std.HashMap String (List Fragment.Fn)) =>
+    m.insert g.name (g :: m.getD g.name [])) {}
+  let claimOf (g : Fragment.Fn) := claims.get? (g.name, g.namePos)
   let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
     return { g with ret := ← resultWithFootprint d.types g.ret (((claimOf g).map (·.resultFootprint)).getD .top) }
   -- A statement with spine regions is certified by its unit's regional
@@ -324,7 +342,7 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
       let fresh := u.stated.any (·.fresh : EffectJson.StatedEffect → Bool)
       moduleArrow r ((c.map (·.footprint)).getD .top) ((c.map (·.onThrow)).getD false) fresh [] retAlias
   names.filterMap fun name => do
-    let units := ordinary.filter (·.name == name)
+    let units := overloads.getD name []
     let g ← units.head?
     some (name, g.namePos, (do overloadSlot (← units.mapM slotOf)).map .written)
 
@@ -388,7 +406,7 @@ def fileFrontFrom (ast : Json) (prepared : Thunk (Except String Prepared))
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
-  if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
+  if !SourceElaboration.distinct (fs.map (fun f => (f.name,f.namePos))) then throw "duplicate source function identities"
   let init ← Fragment.decodeInit ast
   -- A module whose only code is its initialization is checked through that
   -- unit alone; a module with neither runs nothing and states no claim.
@@ -399,8 +417,10 @@ def fileFrontFrom (ast : Json) (prepared : Thunk (Except String Prepared))
   -- Imported values join them at the types their declarations state.
   sameCodeOverloads functionJsons
   let ordinary := (all.filter (·.2.isEmpty)).map (·.1)
+  let (_, names) := ordinary.foldl (fun (st : Std.HashSet String × List String) f =>
+    if st.1.contains f.name then st else (st.1.insert f.name, f.name :: st.2)) ({}, [])
   let moduleFunctions : List (SourceElaboration.ModuleValue Tree) :=
-    ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
+    ordinarySlots d ordinary names.reverse ++
     (imported.map fun (name, span, U) =>
       -- An import with a body, read at no entry, at the ordinary effect
       -- (`ordinaryImport`); a declaration-only import at its declaration.

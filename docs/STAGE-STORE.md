@@ -737,29 +737,29 @@ its named proposals. A caller of `touch` reads those proposals when building
 its own input. The driver returns the materialized verdicts in selection order.
 
 The second key is SHA-256 of the canonical JSON object
-`{operation, implementation, slice}`. The operation is `check-slice` or
-`propose-slice`. The implementation contains W's adapter code identity,
-Node runtime identity, executable and library identity, runner identity
-and stage environment. The slice is SHA-256 of the exact UTF-8 bytes of
-`GroupProjection.Slice.wire.compress`. These bytes encode the entire
-relative Fragment, the ordered members, proposal order, initializer
-consumers, ownership, initialization order, interface demand, named
-lower-group answers, import reads or their error, established interfaces
-and row tables, forced proposals, fuel, search budget and counting flag.
+`{operation, implementation, slice, proposals}`. The operation is
+`check-slice` or `propose-slice`. The implementation contains W's adapter
+code identity, Node runtime identity, executable and library identity,
+runner identity and stage environment. The slice is the SHA-256 digest
+of the first compact JSON line of `GroupProjection.Slice.wire`, the relative
+program and its environment. The proposals are SHA-256 digests of the
+following lines, one for each consumed named result in order.
 
-`RequestCli.planSlice` consumes this input. Its declaration cache substitutes
-a previously decoded definition only at equal declaration JSON. A completed
-check entry holds the operation, relative members, named proposals and
-relative verdict together. A proposal-only entry has a null verdict.
-The worker takes proposals from a completed check when an unrequested
-dependency has one, and otherwise requests the proposal operation.
+A check entry holds the operation, relative members, named proposals,
+settlement result and relative verdict. A proposal-only entry has a null
+verdict. Both operations share a claim. A completed check supplies the
+proposals to an unrequested dependency. A completed proposal supplies the
+settlement when a check is requested. The check validates its exported
+answers before publication.
 The preparation numbers annotation sites within each carried declaration and
 keeps the inverse map for member contract identities. It renders those reads
 at their current declarations and sorts them in the wire order. The worker
 checks a group at physical sites when projection or materialization fails.
 Refusal and elaboration strings contain opaque diagnostic text, including
 generated names, so these lines use the physical check and the exact W entry.
-The relative operation releases its claim before the physical check starts.
+The relative operation publishes its answers and releases its claim before
+the physical check starts. Its refusal can supply those same proposals to a
+caller. An edited file that hits this entry executes the physical diagnostic.
 Each check has the stage time limit. The W measurement covers both checks,
 and the only response after a requested physical check is its verdict.
 

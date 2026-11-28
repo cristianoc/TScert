@@ -409,8 +409,9 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const lines: string[] = prepared.established.map((u) =>
     JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], elaboration: null, contracts: [] }));
   const log: string[] = [];
+  const selectedUnits = new Map(prepared.selected.map(u => [u.unit, u]));
   for (const part of checked.parts) {
-    const unit = prepared.selected.find((u) => u.unit === part.part);
+    const unit = part.part === null ? undefined : selectedUnits.get(part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
     if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
       // A unit over its limit: its own refusal.
@@ -436,52 +437,43 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const decoded = lines.map(decodeVerdictLine);
   const elaboration = decoded.map((l) => l.elaboration).find((e) => e !== null) ?? null;
   // The contracts each of the file's units' checks read, as its line records them.
-  const contractReads: UnitContracts[] = decoded.filter((l, i) => !l.unit.startsWith("module:") &&
-    decoded.findIndex((m) => m.unit === l.unit) === i).map((l) => ({ unit: l.unit, reads: [...l.contracts] }));
+  const firstLines = new Map<string, ReturnType<typeof decodeVerdictLine>>();
+  for (const line of decoded) if (!firstLines.has(line.unit)) firstLines.set(line.unit, line);
+  const verdicts = [...firstLines.values()];
+  const contractReads: UnitContracts[] = verdicts.filter(l => !l.unit.startsWith("module:"))
+    .map(l => ({ unit: l.unit, reads: [...l.contracts] }));
   const refusal = elaboration === null ? null : `reject: ${elaboration}`;
-  const strings = (value: unknown): string[] => {
-    if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
-      throw Error("tool failure: the single pass printed a unit without its members or dependencies");
-    return value;
-  };
-  const verdicts = lines.map((line) => {
-    const value: unknown = JSON.parse(line);
-    const unit = field(value, "unit"), reason = field(value, "refusal");
-    if (typeof unit !== "string") throw Error("tool failure: the single pass printed a verdict without its unit");
-    const accepted = field(value, "accepted") === true;
-    if (!accepted && typeof reason !== "string")
-      throw Error("tool failure: the single pass printed a verdict without its refusal");
-    return { unit, members: strings(field(value, "members")), accepted,
-      depends: accepted ? strings(field(value, "depends")) : [],
-      refusal: typeof reason === "string" ? reason : "" };
-  }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
-  // A unit's dependencies are decided by what it reaches through them, so a
-  // cycle of units is decided together: a unit refused of its own, or one
-  // with no verdict, the file's or a module's, refuses every unit reaching
-  // it, by the first dependency on a shortest path to it; otherwise it is
-  // verified.
-  const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
-  const ownRefused = (u: string): boolean => {
-    const w = byUnit.get(u);
-    return w === undefined || !w.accepted;
-  };
-  type Reach = { root: string; via: string } | { verified: true };
-  const reach = (unit: string): Reach => {
-    const via = new Map<string, string>([[unit, unit]]);
-    const queue = [unit];
-    for (let k = 0; k < queue.length; k++) {
-      const u = queue[k] ?? "";
-      const w = byUnit.get(u);
-      if (u !== unit && ownRefused(u)) return { root: u, via: via.get(u) ?? u };
-      if (w === undefined) continue;
-      for (const d of w.depends) {
-        if (via.has(d)) continue;
-        via.set(d, u === unit ? d : (via.get(u) ?? d));
-        queue.push(d);
-      }
+  // Reverse breadth-first search gives the shortest distance to an absent
+  // or refused verdict. In increasing distance, each caller takes the first
+  // dependency on a shortest path, preserving the wire's tie-breaking order.
+  const callers = new Map<string, string[]>();
+  for (const v of verdicts) if ("accepted" in v) {
+    for (const dep of v.depends) {
+      const users = callers.get(dep);
+      if (users === undefined) callers.set(dep, [v.unit]);
+      else users.push(v.unit);
     }
-    return { verified: true };
-  };
+  }
+  const queue = [...verdicts.filter(v => "refusal" in v).map(v => v.unit),
+    ...[...callers.keys()].filter(u => !firstLines.has(u))];
+  const distance = new Map(queue.map(u => [u, 0]));
+  for (let i = 0; i < queue.length; i++) {
+    const u = queue[i] ?? "";
+    const next = (distance.get(u) ?? 0) + 1;
+    for (const caller of callers.get(u) ?? []) if (!distance.has(caller)) {
+      distance.set(caller, next);
+      queue.push(caller);
+    }
+  }
+  const refusedThrough = new Map<string, { root: string; via: string }>();
+  for (const unit of queue) {
+    const v = firstLines.get(unit);
+    if (v === undefined || !("accepted" in v)) continue;
+    const next = (distance.get(unit) ?? 0) - 1;
+    const via = v.depends.find(d => distance.get(d) === next);
+    if (via === undefined) throw Error("a dependency path has no next unit");
+    refusedThrough.set(unit, { via, root: refusedThrough.get(via)?.root ?? via });
+  }
   // A refusal whose record has a source-named summary (`presentObligation`):
   // that summary as an `obligation:` line, after the refusal's first line
   // and any `obligation:` line the pass states.
@@ -499,18 +491,19 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
   const results: UnitResult[] = verdicts.filter((v) => !v.unit.startsWith("module:"))
     .sort((a, b) => place(a.unit) - place(b.unit)).map((v): UnitResult => {
-      if (ownRefused(v.unit))
-        return { unit: v.unit, members: v.members, status: refusalStatus(`reject: ${described(v.refusal)}`),
+      if ("refusal" in v)
+        return { unit: v.unit, members: [...v.members], status: refusalStatus(`reject: ${described(v.refusal)}`),
           phase: "search", detail: `reject: ${described(v.refusal)}`, depends: [] };
-      const r = reach(v.unit);
-      if ("verified" in r)
-        return { unit: v.unit, members: v.members, status: "verified", phase: "check",
+      const r = refusedThrough.get(v.unit);
+      if (r === undefined)
+        return { unit: v.unit, members: [...v.members], status: "verified", phase: "check",
           detail: "",
-          depends: v.depends };
+          depends: [...v.depends] };
       // A unit open by a dependency: the dependency on its path, then the
       // refusal of the unit refused of its own that the path reaches.
-      const detail = `reject: a unit it depends on is refused: ${r.via}\n${byUnit.has(r.root) ? described(byUnit.get(r.root)?.refusal ?? "") : `${r.root}: no verdict`}`;
-      return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
+      const root = firstLines.get(r.root);
+      const detail = `reject: a unit it depends on is refused: ${r.via}\n${root && "refusal" in root ? described(root.refusal) : `${r.root}: no verdict`}`;
+      return { unit: v.unit, members: [...v.members], status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });
   const first = results.find((u) => u.status !== "verified");
   if (first === undefined && refusal === null)

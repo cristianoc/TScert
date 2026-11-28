@@ -155,18 +155,26 @@ def tagDeclarations (document : Json) (tags : List Nat) : Except String Unit := 
       if namesPromiseLike expression then
         throw "the native Promise contract names PromiseLike: its callbacks' results resolve as native promises only"
 
-/-- The tree with the value at `path` (`/functions/0/params/0/type`) set. -/
-partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
-  match path with
-  | [] => v
-  | k :: rest => match j with
-    | .arr xs => match k.toNat? with
-      | some i => if h : i < xs.size then .arr (xs.set i (setPath xs[i] rest v)) else j
-      | none => j
-    | .obj _ => match j.getObjVal? k with
-      | .ok c => j.setObjVal! k (setPath c rest v)
-      | .error _ => j
-    | _ => j
+/-- Apply ordered replacements, rebuilding an array once for its children.
+A replacement at the node discards all preceding edits beneath it. -/
+private partial def setPaths (j : Json) (changes : List (List String × Json)) : Json := Id.run do
+  let mut base := j
+  let mut children : Std.HashMap String (List (List String × Json)) := {}
+  for (path, value) in changes do
+    match path with
+    | [] => base := value; children := {}
+    | key :: rest =>
+      let key := if base matches .arr _ then (key.toNat?.map toString).getD key else key
+      children := children.insert key ((rest, value) :: children.getD key [])
+  if children.isEmpty then return base
+  match base with
+  | .arr xs => return .arr (xs.mapIdx fun i child => match children.get? (toString i) with
+      | some edits => setPaths child edits.reverse
+      | none => child)
+  | .obj fields => return .obj (children.fold (fun obj key edits => match fields.get? key with
+      | some child => obj.insert key (setPaths child edits.reverse)
+      | none => obj) fields)
+  | _ => return base
 
 /-- A generic value's type at `θ`: its binders read as `θ` gives them, a
 signature by its parts, so that the instances a unit's calls name conjoin
@@ -261,10 +269,11 @@ def prepareEquationFront (ast : Json) (fileKey : String) (L : SourceLowering) : 
   let d ← decodeDocument L.store L.claims
   checkIdentity d ast fileKey
   let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
-  let ast := L.annotations.foldl (fun j (path, U) =>
-    setPath j ((path.splitOn "/").drop 1) (match L.arrays.lookup path with
+  let arrays := Std.HashMap.ofList L.arrays.reverse
+  let ast := setPaths ast (L.annotations.map fun (path, U) =>
+    ((path.splitOn "/").drop 1, match arrays.get? path with
       | some a => arrayClaim a
-      | none => graphClaim U)) ast
+      | none => graphClaim U))
   let ast := ast.setObjVal! "declarations" emptyDeclarations
   let imported := L.values
   let instantiate (g : GenericValue) (closed : Option (Footprints.Closed × Bool))
