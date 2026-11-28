@@ -22,7 +22,6 @@
 // Canvas once per font: in `cc` HanKerning halts exactly one of the two, so a character's trim
 // is 2 W(c) - W(cc), and the types of dots, colons, semicolons and quotes follow their ink
 // bounds under the page's Han script (han_kerning.cc:47-168, 400-535).
-import { missing } from './checked.js'
 import { KIND_BITS, TEXT, UNBROKEN, type TextAnalysis } from './analysis.js'
 import { hasProperty, PUNCTUATION } from './line-breaks.js'
 import { getContext, getSegmentMetrics, zeros, type FontMeasurement } from './measurement.js'
@@ -123,6 +122,17 @@ function getTrim(data: HanKerningFontData, c: number, measurement: FontMeasureme
   return trim
 }
 
+// A group has one type only when its glyphs share the advance and the type (han_kerning.cc:88-135).
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from < to && to <= glyphs.length */
+function glyphGroup(glyphs: Dense<{ advance: number; type: number }[]>, from: number, to: number): Effects<{}, number> {   // PAPER: annotation
+  const first = glyphs[from]!
+  for (let i = from + 1; i < to; i++) {
+    const g = glyphs[i]!
+    if (g.advance !== first.advance || g.type !== first.type) return OTHER
+  }
+  return first.type
+}
+
 // HanKerning::FontData (han_kerning.cc:400-535); null where the font that draws 「 has no halt.
 function getFontData(measurement: FontMeasurement): Effects<{ fields: "any" }, HanKerningFontData | null> {   // PAPER: annotation
   if (measurement.hanKerning !== undefined) return measurement.hanKerning
@@ -133,18 +143,22 @@ function getFontData(measurement: FontMeasurement): Effects<{ fields: "any" }, H
   }
   const hanWidth = getSegmentMetrics('\u4E2D', measurement).width
   const ctx = getContext(measurement)
-  const glyphs = [0x3001, 0x3002, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B, 0x201C, 0x2018, 0x201D, 0x2019].map(c => getTypeFromBounds(ctx, c, hanWidth))
-  // A group has one type only when its glyphs share the advance and the type (han_kerning.cc:88-135).
-  const group = (from: number, to: number): number => {
-    for (let i = from + 1; i < to; i++) {
-      if ((glyphs[i] ?? missing()).advance !== (glyphs[from] ?? missing()).advance || (glyphs[i] ?? missing()).type !== (glyphs[from] ?? missing()).type) return OTHER
-    }
-    return (glyphs[from] ?? missing()).type
-  }
-  data.typeForDot = group(0, 4)
-  data.typeForColon = (glyphs[4] ?? missing()).type
-  data.typeForSemicolon = (glyphs[5] ?? missing()).type
-  data.quoteFullwidth = group(6, 8) === OPEN && group(8, 10) === CLOSE
+  const glyphs: Dense<{ advance: number; type: number }[]> = [
+    getTypeFromBounds(ctx, 0x3001, hanWidth),
+    getTypeFromBounds(ctx, 0x3002, hanWidth),
+    getTypeFromBounds(ctx, 0xFF0C, hanWidth),
+    getTypeFromBounds(ctx, 0xFF0E, hanWidth),
+    getTypeFromBounds(ctx, 0xFF1A, hanWidth),
+    getTypeFromBounds(ctx, 0xFF1B, hanWidth),
+    getTypeFromBounds(ctx, 0x201C, hanWidth),
+    getTypeFromBounds(ctx, 0x2018, hanWidth),
+    getTypeFromBounds(ctx, 0x201D, hanWidth),
+    getTypeFromBounds(ctx, 0x2019, hanWidth),
+  ]
+  data.typeForDot = glyphGroup(glyphs, 0, 4)
+  data.typeForColon = glyphs[4]!.type
+  data.typeForSemicolon = glyphs[5]!.type
+  data.quoteFullwidth = glyphGroup(glyphs, 6, 8) === OPEN && glyphGroup(glyphs, 8, 10) === CLOSE
   measurement.hanKerning = data
   return data
 }
@@ -201,10 +215,10 @@ export type HanKerningTrims = {
 // of marks an item start splits halts as in one text, each mark by its own item's font.
 /** @requires safeInteger(idx) && 0 <= idx && idx < trims.length */
 function addWidthTrim(trims: Dense<number[]>, idx: number, trim: number): Effects<{ "trims[#]": "any" }, void> {   // PAPER: workaround (nested-closure-effect): top-level helper because nested closure capturing trim array fails stated Effects check
-  trims[idx] = (trims[idx] ?? missing()) + trim
+  trims[idx] = trims[idx]! + trim
 }
 
-/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= analysis.flags.length
  *  @ensures result.widthTrims === null || result.widthTrims.length <= to - from
  *  @ensures result.lineStartExtras === null || to - from <= result.lineStartExtras.length
  *  @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
@@ -219,7 +233,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
   if (data === null) return { widthTrims, lineStartExtras, lineEndTrims, overflowLineEndTrims }
   const { flags, starts, normalized } = analysis
   const count = flags.length
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && safeInteger(count) && 0 <= from && from <= i && i <= to && to <= count && count === flags.length && starts.length === count
    *  @invariant widthTrims === null || widthTrims.length === to - from
    *  @invariant lineStartExtras === null || to - from <= lineStartExtras.length
    *  @invariant lineEndTrims === null || to - from <= lineEndTrims.length
@@ -228,10 +242,9 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
    *  @invariant widthTrims === null || lineEndTrims === null || widthTrims !== lineEndTrims
    *  @invariant widthTrims === null || overflowLineEndTrims === null || widthTrims !== overflowLineEndTrims */
   for (let i = from; i < to; i++) {
-    if (((flags[i] ?? missing()) & KIND_BITS) !== TEXT) continue
-    const start = starts[i]
-    if (start === undefined) throw new RangeError('missing value')
-    const end = i + 1 < count ? (starts[i + 1] ?? missing()) : normalized.length
+    if ((flags[i]! & KIND_BITS) !== TEXT) continue
+    const start = starts[i]!
+    const end = i + 1 < count ? starts[i + 1]! : normalized.length
     const first = normalized.charCodeAt(start)
     if (i > 0 && maybeHanKerns(first) && haltedSide(getCharType(data, normalized, start - 1), getCharType(data, normalized, start)) === 1) {
       const trim = getTrim(data, first, measurement)
@@ -240,7 +253,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
       widthTrims ??= zeros(to - from)
       addWidthTrim(widthTrims, i - from, trim)
     }
-    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i < to
+    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && safeInteger(count) && 0 <= from && from <= i && i < to && to <= count && count === flags.length && starts.length === count
      *  @invariant widthTrims === null || widthTrims.length === to - from
      *  @invariant lineStartExtras === null || to - from <= lineStartExtras.length
      *  @invariant lineEndTrims === null || to - from <= lineEndTrims.length
@@ -273,7 +286,7 @@ export function getHanKerningTrims(measurement: FontMeasurement, analysis: TextA
     const lastType = getStaticCharType(normalized, end - 1)
     if ((lastType !== CLOSE && lastType !== CLOSE_QUOTE) || getCharType(data, normalized, end - 1) !== CLOSE) continue
     // A break directly after the segment: text after a break, or the end of the text.
-    if (atEnd || (((flags[i + 1] ?? missing()) & KIND_BITS) === TEXT && ((flags[i + 1] ?? missing()) & UNBROKEN) === 0)) {
+    if (atEnd || ((flags[i + 1]! & KIND_BITS) === TEXT && (flags[i + 1]! & UNBROKEN) === 0)) {
       lineEndTrims ??= zeros(to - from)
       lineEndTrims[i - from] = getTrim(data, last, measurement)
     } else {

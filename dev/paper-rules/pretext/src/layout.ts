@@ -122,6 +122,7 @@ function prepareInternal(
   const lineStartExtras = prepared.lineStartExtras
   const lineEndTrims = prepared.lineEndTrims
   const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const discretionaryHyphenContexts = prepared.discretionaryHyphenContexts
   const result: PreparedText = {
     widths,
     segmentFlags,
@@ -134,7 +135,7 @@ function prepareInternal(
     overflowLineEndTrims,
     letterSpacing: prepared.letterSpacing,
     discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
-    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    discretionaryHyphenContexts,
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
   }
