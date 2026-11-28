@@ -1,4 +1,3 @@
-import { missing } from './checked.js'
 import {
   CONTROL,
   DROPPED,
@@ -76,10 +75,17 @@ export type PreparedLineBreakData = {
  *  @invariant this.breakableLineStartExtras === null || this.widths.length <= this.breakableLineStartExtras.length
  *  @invariant forall i in this.breakableFitAdvances: this.breakableFitAdvances[i] === null || 1 <= this.breakableFitAdvances[i].length
  *  @invariant this.breakableLineStartExtras === null || forall i in this.breakableFitAdvances: this.breakableFitAdvances[i] === null || this.breakableLineStartExtras[i] === null || this.breakableFitAdvances[i].length <= this.breakableLineStartExtras[i].length
+ *  @invariant this.discretionaryHyphenContexts === null || this.widths.length <= this.discretionaryHyphenContexts.length
  *  @invariant this.items === undefined || this.items.hyphenWidths === null || this.widths.length <= this.items.hyphenWidths.length
+ *  @invariant this.items === undefined || this.items.tabStopAdvances === null || this.widths.length <= this.items.tabStopAdvances.length
+ *  @invariant this.items === undefined || this.items.minimumTabAdvances === null || this.widths.length <= this.items.minimumTabAdvances.length
  *  @invariant this.items === undefined || this.items.hyphenRooms === null || this.widths.length < this.items.hyphenRooms.length
  *  @invariant this.items === undefined || this.items.itemEndHalts === null || this.widths.length <= this.items.itemEndHalts.length
+ *  @invariant this.items === undefined || this.items.insideExtras === null || this.widths.length <= this.items.insideExtras.length
+ *  @invariant this.items === undefined || this.items.fillExtras === null || this.widths.length <= this.items.fillExtras.length
  *  @invariant this.items === undefined || this.items.openingEdges === null || this.widths.length <= this.items.openingEdges.length
+ *  @invariant this.items === undefined || this.items.emptyObjectSpaces === null || this.widths.length <= this.items.emptyObjectSpaces.length
+ *  @invariant this.items === undefined || this.items.emptyObjectReturns === null || this.widths.length <= this.items.emptyObjectReturns.length
  */
 export type PreparedLineData = PreparedLineBreakData & { items?: ParagraphSegmentData }
 
@@ -220,11 +226,15 @@ function getTabAdvance(position: number, tabStopAdvance: number, minimumAdvance:
 // (lineStartExtras): the other half is the end edge, which follows the item's text on the line.
 // Where the paragraph's items differ in letter spacing, a tab's width holds the gap after it, as
 // every segment's holds its own (src/rich-inline.ts); else it is 0.
+/** @requires safeInteger(index) && 0 <= index && index < prepared.widths.length
+ *  @requires items.tabStopAdvances === null || prepared.widths.length <= items.tabStopAdvances.length
+ *  @requires items.minimumTabAdvances === null || prepared.widths.length <= items.minimumTabAdvances.length
+ *  @requires items.insideExtras === null || prepared.widths.length <= items.insideExtras.length */
 export function getItemTabAdvance(prepared: PreparedLineData, items: ParagraphSegmentData, index: number, lineWidth: number, appUnits: boolean): Modifies<{}, number> {   // PAPER: annotation
-  const stopAdvance = items.tabStopAdvances === null ? prepared.tabStopAdvance : (items.tabStopAdvances[index] ?? missing())
-  const minimumAdvance = items.minimumTabAdvances === null ? prepared.minimumTabAdvance : (items.minimumTabAdvances[index] ?? missing())
-  const endEdge = items.insideExtras === null ? 0 : (items.insideExtras[index] ?? missing()) / 2
-  return getTabAdvance(lineWidth - endEdge, stopAdvance, minimumAdvance, appUnits) + (prepared.widths[index] ?? missing())
+  const stopAdvance = items.tabStopAdvances === null ? prepared.tabStopAdvance : (items.tabStopAdvances[index]!)   // PAPER: guard removed
+  const minimumAdvance = items.minimumTabAdvances === null ? prepared.minimumTabAdvance : (items.minimumTabAdvances[index]!)   // PAPER: guard removed
+  const endEdge = items.insideExtras === null ? 0 : (items.insideExtras[index]!) / 2   // PAPER: guard removed
+  return getTabAdvance(lineWidth - endEdge, stopAdvance, minimumAdvance, appUnits) + (prepared.widths[index]!)   // PAPER: guard removed
 }
 
 // PAPER: annotation
@@ -510,7 +520,7 @@ function returnsFromUnfitHyphen(
   const overflow = breakWidth - fitLimit
   let narrowing = 0
   const last = endKeepsJoin ? softHyphenIndex : softHyphenIndex - 1
-  if (discretionaryHyphenContexts !== null) for (let i = lineStartSegmentIndex; i <= last; i++) narrowing += (discretionaryHyphenContexts[i] ?? missing())
+  if (discretionaryHyphenContexts !== null) for (let i = lineStartSegmentIndex; i <= last; i++) narrowing += (discretionaryHyphenContexts[i]!)   // PAPER: guard removed
   return narrowing < overflow
 }
 
@@ -606,7 +616,11 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
    *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
    *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
    *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
-   *  @invariant openingEdges === null || segmentCount <= openingEdges.length */   // PAPER: annotation
+   *  @invariant insideExtras === null || segmentCount <= insideExtras.length
+   *  @invariant fillExtras === null || segmentCount <= fillExtras.length
+   *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+   *  @invariant emptyObjectSpaces === null || segmentCount <= emptyObjectSpaces.length
+   *  @invariant emptyObjectReturns === null || segmentCount <= emptyObjectReturns.length */   // PAPER: annotation
   while (true) {
     const lineStartSegmentIndex = cursor.segmentIndex
     const lineStartGraphemeIndex = cursor.graphemeIndex
@@ -676,7 +690,11 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
          *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
          *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
          *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
-         *  @invariant openingEdges === null || segmentCount <= openingEdges.length */   // PAPER: annotation
+         *  @invariant insideExtras === null || segmentCount <= insideExtras.length
+         *  @invariant fillExtras === null || segmentCount <= fillExtras.length
+         *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+         *  @invariant emptyObjectSpaces === null || segmentCount <= emptyObjectSpaces.length
+         *  @invariant emptyObjectReturns === null || segmentCount <= emptyObjectReturns.length */   // PAPER: annotation
         for (let i = lineStartSegmentIndex; ; i++) {
           if (i >= segmentCount) {
             consumedEndSegmentIndex = segmentCount
@@ -861,11 +879,10 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
               // space (nsTextFrame.cpp:11443-11456), and where a break comes before the object
               // and what follows it sends the line back there (ParagraphSegmentData).
               let placesEmptyObject = false
-              if (emptyObjectSpaces !== null && kind === OBJECT && w === 0 && newFitW > fitLimit) {
+              if (emptyObjectSpaces !== null && emptyObjectReturns !== null && kind === OBJECT && w === 0 && newFitW > fitLimit) {
                 const contentW = hangEndSegmentIndex === i ? hangStartWidth : lineW
-                const space = emptyObjectSpaces[i]
-                if (space === undefined) throw new RangeError('missing value')
-                placesEmptyObject = contentW <= fitLimit || !((space >= 0 && contentW - space > fitLimit) || (emptyObjectReturns ?? missing())[i] === 1)
+                const space = emptyObjectSpaces[i]!   // PAPER: guard removed
+                placesEmptyObject = contentW <= fitLimit || !((space >= 0 && contentW - space > fitLimit) || emptyObjectReturns[i] === 1)   // PAPER: guard removed
               }
               // No engine lets content make a line narrower (findWholeLine in src/rich-inline.ts),
               // so a segment of less than no advance, as a letter under a letter spacing more
@@ -1120,8 +1137,11 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
               lineW = startExtras === null ? baseGw : baseGw + (startExtras[g]!)   // PAPER: guard removed
               // A line that starts inside a padded rich-inline item, or fills its first
               // segment, pays the item's extraWidth (ParagraphSegmentData).
-              const extra = g > 0 ? insideExtras : fillExtras
-              if (extra !== null) lineW += extra[i] ?? missing()
+              if (g > 0) {
+                if (insideExtras !== null) lineW += insideExtras[i]!   // PAPER: guard removed
+              } else if (fillExtras !== null) {
+                lineW += fillExtras[i]!   // PAPER: guard removed
+              }
               if (g + 1 === fitCount) {
                 lineEndSegmentIndex = i + 1
                 lineEndGraphemeIndex = 0
@@ -1244,8 +1264,11 @@ function stepPreparedSimpleLineGeometry(
     // the item's extraWidth (ParagraphSegmentData).
     const items = prepared.items
     if (items !== undefined) {
-      const extra = g > 1 ? items.insideExtras : items.fillExtras
-      if (extra !== null) lineW += extra[start] ?? missing()
+      if (g > 1) {
+        if (items.insideExtras !== null) lineW += items.insideExtras[start]!   // PAPER: guard removed
+      } else if (items.fillExtras !== null) {
+        lineW += items.fillExtras[start]!   // PAPER: guard removed
+      }
     }
     /** @invariant safeInteger(g) && 0 <= g
      *  @invariant lineEndTrims === null || widths.length <= lineEndTrims.length

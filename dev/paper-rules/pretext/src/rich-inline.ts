@@ -139,12 +139,21 @@ export type RichInlineStats = {
  *  @invariant this.data.breakableLineStartExtras === null || this.data.widths.length <= this.data.breakableLineStartExtras.length
  *  @invariant forall i in this.data.breakableFitAdvances: this.data.breakableFitAdvances[i] === null || 1 <= this.data.breakableFitAdvances[i].length
  *  @invariant this.data.breakableLineStartExtras === null || forall i in this.data.breakableFitAdvances: this.data.breakableFitAdvances[i] === null || this.data.breakableLineStartExtras[i] === null || this.data.breakableFitAdvances[i].length <= this.data.breakableLineStartExtras[i].length
+ *  @invariant safeInteger(this.onlyItem)
+ *  @invariant this.data.items !== undefined || this.onlyItem >= 0
+ *  @invariant this.segmentItems !== null || this.onlyItem >= 0
+ *  @invariant this.gapSegments !== null || this.onlyItem >= 0
+ *  @invariant this.data.discretionaryHyphenContexts === null || this.data.widths.length <= this.data.discretionaryHyphenContexts.length
  *  @invariant this.data.items === undefined || this.data.items.hyphenWidths === null || this.data.widths.length <= this.data.items.hyphenWidths.length
+ *  @invariant this.data.items === undefined || this.data.items.tabStopAdvances === null || this.data.widths.length <= this.data.items.tabStopAdvances.length
+ *  @invariant this.data.items === undefined || this.data.items.minimumTabAdvances === null || this.data.widths.length <= this.data.items.minimumTabAdvances.length
  *  @invariant this.data.items === undefined || this.data.items.hyphenRooms === null || this.data.widths.length < this.data.items.hyphenRooms.length
  *  @invariant this.data.items === undefined || this.data.items.itemEndHalts === null || this.data.widths.length <= this.data.items.itemEndHalts.length
  *  @invariant this.data.items === undefined || this.data.items.insideExtras === null || this.data.widths.length <= this.data.items.insideExtras.length
  *  @invariant this.data.items === undefined || this.data.items.fillExtras === null || this.data.widths.length <= this.data.items.fillExtras.length
  *  @invariant this.data.items === undefined || this.data.items.openingEdges === null || this.data.widths.length <= this.data.items.openingEdges.length
+ *  @invariant this.data.items === undefined || this.data.items.emptyObjectSpaces === null || this.data.widths.length <= this.data.items.emptyObjectSpaces.length
+ *  @invariant this.data.items === undefined || this.data.items.emptyObjectReturns === null || this.data.widths.length <= this.data.items.emptyObjectReturns.length
  *  @invariant this.data.segments.length === this.data.widths.length
  *  @invariant 1 <= this.itemSegments.length
  *  @invariant this.segmentItems === null || this.segmentItems.length === this.data.widths.length
@@ -277,6 +286,13 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     padItemSegments(itemSegments, onlyIndex, 0, null)
     padItemSegments(itemSegments, itemCount, singleSegCount, null)
     const data = prepareSingleSegments(analysis, singleSegCount, only.font, readLetterSpacing(only.letterSpacing, profile), profile, language)
+    // PAPER: workaround (optional-field guarded discharge): split on data.items === undefined before constructing the handle so SinglePass discharges `data.items !== undefined || onlyItem >= 0`
+    if (data.items === undefined) {
+      return findWholeLine({
+        data, onlyItem: onlyIndex, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems: null, gapSegments: null, plainWidths: false,
+        sourceStarts: null, sourceEnds: null, sourceUnits: null, text: only.text,
+      })
+    }
     return findWholeLine({
       data, onlyItem: onlyIndex, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems: null, gapSegments: null, plainWidths: false,
       sourceStarts: null, sourceEnds: null, sourceUnits: null, text: only.text,
@@ -1508,6 +1524,7 @@ function createOnlyItemLine(
 // another loop or a search: a search for the item, or a call or a loop inside one for a width it
 // rarely needs, cost Firefox a third to a half of a walk's time, and a loop inside for each
 // fragment's widths 9% on items of one segment (RESEARCH.md, Rich Inline As One Paragraph).
+/** @requires safeInteger(flow.onlyItem) && flow.onlyItem < 0 */
 function createLine(
   flow: InternalPreparedRichInline,
   width: number,
@@ -1518,14 +1535,9 @@ function createLine(
 ): Effects<{ "@state": "any" }, RichInlineLineRange> {   // PAPER: annotation
   const { data, itemSegments } = flow
   const { widths, segmentFlags, lineStartExtras, letterSpacing } = data
-  const items = data.items
-  if (items === undefined) throw new RangeError('missing value')   // PAPER: workaround (guarded linear refutation): SinglePass slotGuardTag does not refute linear body B in `guarded s p g B` via linear oracle
-  const rawSegmentItems = flow.segmentItems
-  if (rawSegmentItems === null) throw new RangeError('missing value')
-  const segmentItems: Int32Array = rawSegmentItems
-  const rawGapSegments = flow.gapSegments
-  if (rawGapSegments === null) throw new RangeError('missing value')
-  const gapSegments: Uint8Array = rawGapSegments
+  const items = data.items!
+  const segmentItems: Int32Array = flow.segmentItems!
+  const gapSegments: Uint8Array = flow.gapSegments!
   const itemCount = itemSegments.length - 1
   let endItemIndex: number
   if (endSegmentIndex >= widths.length) {
