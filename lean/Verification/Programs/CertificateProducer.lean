@@ -2306,7 +2306,7 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
     (keepFirst {} (projections.flatMap fun p => p.indices.filterMap fun a =>
       if a.cond.isSome then none else match a.fact with
       | .guarded g [] t body => if HeapKnowledge.impossibleFact body then none else some (g, t)
-      | _ => none)).2.toList.filter fun (g, t) => projTags.any fun tg => tg.check g [] t
+      | _ => none)).2.toList
   let restated := (projections.zip projAliases).flatMap fun (p, amP) => p.indices.flatMap fun a =>
     if a.cond.isSome then [] else match a.fact with
     | .spineApart x q y r =>
