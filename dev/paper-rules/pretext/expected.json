@@ -3,6 +3,7 @@
     "ordinary": "unverified",
     "units": {
       "breaksAfterKind": "accepted",
+      "skipZeroWidthBreaks": "accepted",
       "isDiscretionaryLineEnd": "accepted",
       "consumesAtLineStart": "accepted",
       "getTabAdvance": "accepted",

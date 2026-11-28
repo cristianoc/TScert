@@ -142,9 +142,9 @@ export type RichInlineStats = {
  *  @invariant this.data.items === undefined || this.data.items.hyphenWidths === null || this.data.widths.length <= this.data.items.hyphenWidths.length
  *  @invariant this.data.items === undefined || this.data.items.hyphenRooms === null || this.data.widths.length < this.data.items.hyphenRooms.length
  *  @invariant this.data.items === undefined || this.data.items.itemEndHalts === null || this.data.widths.length <= this.data.items.itemEndHalts.length
- *  @invariant this.data.items === undefined || this.data.items.openingEdges === null || this.data.widths.length <= this.data.items.openingEdges.length
  *  @invariant this.data.items === undefined || this.data.items.insideExtras === null || this.data.widths.length <= this.data.items.insideExtras.length
  *  @invariant this.data.items === undefined || this.data.items.fillExtras === null || this.data.widths.length <= this.data.items.fillExtras.length
+ *  @invariant this.data.items === undefined || this.data.items.openingEdges === null || this.data.widths.length <= this.data.items.openingEdges.length
  *  @invariant 1 <= this.itemSegments.length
  *  @invariant this.segmentItems === null || this.segmentItems.length === this.data.widths.length
  *  @invariant this.gapSegments === null || this.gapSegments.length === this.data.widths.length
@@ -585,6 +585,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
      *  @invariant sub.lineStartExtras === null || to - from <= sub.lineStartExtras.length
      *  @invariant sub.lineEndTrims === null || to - from <= sub.lineEndTrims.length
      *  @invariant sub.overflowLineEndTrims === null || to - from <= sub.overflowLineEndTrims.length
+     *  @invariant sub.discretionaryHyphenContexts === null || to - from <= sub.discretionaryHyphenContexts.length
      *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== starts && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
      *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== starts && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
      *  @invariant itemSegments !== segments && itemSegments !== sourceStarts && itemSegments !== sourceEnds && itemSegments !== starts && itemSegments !== hyphenWidths && itemSegments !== tabStopAdvances && itemSegments !== minimumTabAdvances
@@ -708,9 +709,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       const subContexts = sub.discretionaryHyphenContexts
       if (subContexts !== null) {
         discretionaryHyphenContexts ??= zeroList(flags.length)
-        const discretionaryHyphenContextsValue = subContexts[s]
-        if (discretionaryHyphenContextsValue === undefined) throw new RangeError('missing value')
-        discretionaryHyphenContexts[at] = discretionaryHyphenContextsValue
+        discretionaryHyphenContexts[at] = subContexts[s]!
       }
       if (i >= first && first < to) {
         insideExtras ??= zeroList(flags.length)
@@ -755,6 +754,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
    *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
    *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
    *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+   *  @invariant discretionaryHyphenContexts === null || segmentCount <= discretionaryHyphenContexts.length
    *  @invariant insideExtras === null || segmentCount <= insideExtras.length
    *  @invariant fillExtras === null || segmentCount <= fillExtras.length
    *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length */   // PAPER: annotation
@@ -792,6 +792,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
    *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
    *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
    *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+   *  @invariant discretionaryHyphenContexts === null || segmentCount <= discretionaryHyphenContexts.length
    *  @invariant insideExtras === null || segmentCount <= insideExtras.length
    *  @invariant fillExtras === null || segmentCount <= fillExtras.length
    *  @invariant forall j in breakableFitAdvances: breakableFitAdvances[j] === null || 1 <= breakableFitAdvances[j].length */   // PAPER: annotation
@@ -820,6 +821,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
    *  @invariant overflowLineEndTrims === null || segmentCount <= overflowLineEndTrims.length
    *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
    *  @invariant openingEdges === null || segmentCount <= openingEdges.length
+   *  @invariant discretionaryHyphenContexts === null || segmentCount <= discretionaryHyphenContexts.length
    *  @invariant insideExtras === null || segmentCount <= insideExtras.length
    *  @invariant fillExtras === null || segmentCount <= fillExtras.length
    *  @invariant forall j in breakableFitAdvances: breakableFitAdvances[j] === null || 1 <= breakableFitAdvances[j].length
@@ -837,12 +839,20 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   const hyphenRooms = readsItemFonts && discretionaryHyphenContexts !== null && profile.unfitHyphenRetreat === 'reduced-width' ? getHyphenRooms(hyphenWidths, itemSegments, segmentItems) : null
   const sourceUnits = hasSourceUnits ? materializeIndexedMap(sourceUnitsMap, flags.length) : null
   const breakableLineStartExtras = hasBreakableLineStartExtras ? checkBreakableLineStartExtras(breakableFitAdvances, breakableLineStartExtrasMap, segmentCount) : null
+  const paragraphLetterSpacing = spacingsDiffer || sharedSpacing === null ? 0 : sharedSpacing
+  let emptyObjectSpaces: Dense<number[]> | null = null
+  let emptyObjectReturns: Uint8Array | null = null
+  if (hasEmptyObject && profile.emptyAtomicAlwaysFits) {
+    const emptyFacts = setEmptyObjectFacts(segmentFlags, widths, segments, paragraphLetterSpacing, items, itemSegments, segmentItems, source, starts)
+    emptyObjectSpaces = emptyFacts.spaces
+    emptyObjectReturns = emptyFacts.returns
+  }
   const segmentData: ParagraphSegmentData = {
     hyphenWidths: segmentHyphenWidths, tabStopAdvances: segmentTabStopAdvances, minimumTabAdvances: segmentMinimumTabAdvances,
     itemEndHalts,
     hyphenRooms,
     insideExtras, fillExtras, openingEdges,
-    emptyObjectSpaces: null, emptyObjectReturns: null, hangEnds,
+    emptyObjectSpaces, emptyObjectReturns, hangEnds,
   }
   // The properties measureAnalysis() gives a text's handle, in its order, then the paragraph's own.
   const data: PreparedSegments = {
@@ -851,7 +861,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     simpleLineWalkFastPath: simple,
     simpleLineCountFastPath: false,
     breakableFitAdvances,
-    letterSpacing: spacingsDiffer || sharedSpacing === null ? 0 : sharedSpacing,
+    letterSpacing: paragraphLetterSpacing,
     discretionaryHyphenWidth: firstHyphenWidth,
     discretionaryHyphenContexts,
     breakableLineStartExtras,
@@ -862,11 +872,6 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     minimumTabAdvance: firstMinimumTabAdvance,
     items: segmentData,
     segments,
-  }
-  if (hasEmptyObject && profile.emptyAtomicAlwaysFits) {
-    const emptyFacts = setEmptyObjectFacts(data, items, itemSegments, segmentItems, source, starts)
-    segmentData.emptyObjectSpaces = emptyFacts.spaces
-    segmentData.emptyObjectReturns = emptyFacts.returns
   }
   const flow: InternalPreparedRichInline = {
     data, onlyItem, wholeWidth: null, wholeStart: 0, wholeEnd: 0, itemSegments, segmentItems, gapSegments,
@@ -928,9 +933,9 @@ function getHyphenRooms(hyphenWidths: Dense<number[]>, itemSegments: Dense<numbe
 
 // A soft hyphen, as a segment of any kind: Gecko drops soft hyphens from a text frame's text
 // (IsDiscardable, nsTextFrameUtils.cpp:32-49).
-function isSoftHyphenSegment(data: PreparedSegments, i: number): Modifies<{}, boolean> {   // PAPER: annotation
-  const kind = (data.segmentFlags[i] ?? missing()) & KIND_BITS
-  return kind === SOFT_HYPHEN || ((kind === ZERO_WIDTH_BREAK || kind === ZERO_WIDTH_GLUE) && (data.segments[i] ?? missing()).charCodeAt(0) === 0x00AD)
+function isSoftHyphenSegment(segmentFlags: Uint8Array, segments: readonly string[], i: number): Modifies<{}, boolean> {   // PAPER: annotation
+  const kind = (segmentFlags[i] ?? missing()) & KIND_BITS
+  return kind === SOFT_HYPHEN || ((kind === ZERO_WIDTH_BREAK || kind === ZERO_WIDTH_GLUE) && (segments[i] ?? missing()).charCodeAt(0) === 0x00AD)
 }
 
 // What a line reads of the text around each object of width 0 where the engine places one though
@@ -971,17 +976,19 @@ function isSoftHyphenSegment(data: PreparedSegments, i: number): Modifies<{}, bo
 //   hyphens, it is that frame's width.
 type EmptyObjectFacts = { spaces: Dense<number[]>; returns: Uint8Array }
 
-/** @requires 0 < items.length && starts.length === items.length && items.length < itemSegments.length
- *  @ensures data.widths.length <= result.spaces.length && data.widths.length <= result.returns.length */
+/** @requires segmentFlags.length === widths.length && 0 < items.length && starts.length === items.length && items.length < itemSegments.length
+ *  @ensures widths.length <= result.spaces.length && widths.length <= result.returns.length */
 function setEmptyObjectFacts(
-  data: PreparedSegments,
+  segmentFlags: Uint8Array,
+  widths: Dense<number[]>,
+  segments: readonly string[],
+  letterSpacing: number,
   items: Array<RichInlineItem | RichInlineBox>,
   itemSegments: Dense<number[]>,
   segmentItems: Int32Array,
   source: string,
   starts: Dense<number[]>,
 ): Effects<{}, EmptyObjectFacts> {   // PAPER: annotation
-  const { segmentFlags, widths, letterSpacing } = data
   const count = segmentFlags.length
   // PAPER: workaround (Fresh return effect erasure): Fresh<Dense<number[]>> from zeros(count) is not erased as local allocation in Effects postcondition check
   const spaces: Dense<number[]> = []
@@ -1001,7 +1008,7 @@ function setEmptyObjectFacts(
   // Whether what follows an object keeps it on its line, for an object right before the item at
   // hand, from the paragraph's end back.
   let keeps = true
-  /** @invariant safeInteger(index) && -1 <= index && index < items.length && items.length < itemSegments.length && spaces.length === segmentFlags.length && segmentFlags.length === widths.length && widths.length === data.widths.length && returns.length === widths.length && spaces !== widths && spaces !== data.widths && spaces !== itemSegments */
+  /** @invariant safeInteger(index) && -1 <= index && index < items.length && items.length < itemSegments.length && spaces.length === segmentFlags.length && segmentFlags.length === widths.length && returns.length === widths.length && spaces !== widths && spaces !== itemSegments */
   for (let index = items.length - 1; index >= 0; index--) {
     const first = itemSegments[index]!
     const end = itemSegments[index + 1]!
@@ -1014,8 +1021,8 @@ function setEmptyObjectFacts(
         continue
       }
       let before = first - 1
-      /** @invariant safeInteger(first) && 0 <= first && first < spaces.length && spaces.length === segmentFlags.length && segmentFlags.length === widths.length && widths.length === data.widths.length && returns.length === widths.length && spaces !== widths && spaces !== data.widths && spaces !== itemSegments */
-      while (before >= 0 && isSoftHyphenSegment(data, before)) before--
+      /** @invariant safeInteger(first) && 0 <= first && first < spaces.length && spaces.length === segmentFlags.length && segmentFlags.length === widths.length && returns.length === widths.length && spaces !== widths && spaces !== itemSegments */
+      while (before >= 0 && isSoftHyphenSegment(segmentFlags, segments, before)) before--
       const beforeKind = before < 0 ? TEXT : (segmentFlags[before] ?? missing()) & KIND_BITS
       let space = -1
       if (beforeKind === SPACE) space = segmentItems[before] === segmentItems[first - 1] ? (widths[before] ?? missing()) + (((segmentFlags[before] ?? missing()) & SPACED) !== 0 ? letterSpacing : 0) : 0
@@ -1030,7 +1037,7 @@ function setEmptyObjectFacts(
     let holdsSpace = false
     let establishesLine = false
     for (let i = first; i < end; i++) {
-      if (isSoftHyphenSegment(data, i)) continue
+      if (isSoftHyphenSegment(segmentFlags, segments, i)) continue
       softHyphens = false
       if (((segmentFlags[i] ?? missing()) & KIND_BITS) === SPACE) holdsSpace = true
       else establishesLine = true
@@ -1038,7 +1045,7 @@ function setEmptyObjectFacts(
     if (softHyphens) continue
     if ((item.extraWidth ?? 0) > 0 || (holdsSpace && !establishesLine)) keeps = false
     else if (kind === SPACE) keeps = true
-    else keeps = (kind === ZERO_WIDTH_BREAK && !isSoftHyphenSegment(data, first)) || kind === HARD_BREAK || kind === PRESERVED_SPACE
+    else keeps = (kind === ZERO_WIDTH_BREAK && !isSoftHyphenSegment(segmentFlags, segments, first)) || kind === HARD_BREAK || kind === PRESERVED_SPACE
   }
   return { spaces, returns }
 }
@@ -1164,6 +1171,7 @@ function prepareSingleSegments(
   const lineStartExtras = prepared.lineStartExtras
   const lineEndTrims = prepared.lineEndTrims
   const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const discretionaryHyphenContexts = prepared.discretionaryHyphenContexts
   return {
     widths,
     segmentFlags,
@@ -1176,7 +1184,7 @@ function prepareSingleSegments(
     overflowLineEndTrims,
     letterSpacing: prepared.letterSpacing,
     discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
-    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    discretionaryHyphenContexts,
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
     segments,
@@ -1203,6 +1211,7 @@ function prepareSingleLineData(
   const lineStartExtras = prepared.lineStartExtras
   const lineEndTrims = prepared.lineEndTrims
   const overflowLineEndTrims = prepared.overflowLineEndTrims
+  const discretionaryHyphenContexts = prepared.discretionaryHyphenContexts
   return {
     widths,
     segmentFlags,
@@ -1215,7 +1224,7 @@ function prepareSingleLineData(
     overflowLineEndTrims,
     letterSpacing: prepared.letterSpacing,
     discretionaryHyphenWidth: prepared.discretionaryHyphenWidth,
-    discretionaryHyphenContexts: prepared.discretionaryHyphenContexts,
+    discretionaryHyphenContexts,
     tabStopAdvance: prepared.tabStopAdvance,
     minimumTabAdvance: prepared.minimumTabAdvance,
   }

@@ -144,6 +144,15 @@ function breaksAfterKind(kind: number): Modifies<{}, boolean> {   // PAPER: anno
   return (1 << kind & BREAK_AFTER_KINDS) !== 0
 }
 
+// PAPER: workaround (SinglePass CFG scaling): extracted from walkPreparedComplexLines to avoid nested-loop Houdini candidates over 40+ outer locals
+/** @requires safeInteger(index) && safeInteger(segmentCount) && 0 <= index && index <= segmentCount && segmentCount <= segmentFlags.length
+ *  @ensures safeInteger(result) && 0 <= result && result <= segmentCount */
+function skipZeroWidthBreaks(segmentFlags: Uint8Array, segmentCount: number, index: number): Modifies<{}, number> {   // PAPER: annotation
+  /** @invariant safeInteger(index) && safeInteger(segmentCount) && 0 <= index && index <= segmentCount && segmentCount <= segmentFlags.length */
+  while (index < segmentCount && ((segmentFlags[index]!) & KIND_BITS) === ZERO_WIDTH_BREAK) index++   // PAPER: guard removed
+  return index
+}
+
 // A line ends at a chosen soft hyphen, and paints its hyphen, where the line's end
 // cursor is the start of the segment after one. A soft hyphen that ends the text is
 // consumed with its line and chosen by no wrap, so the cursor at the text's end
@@ -655,7 +664,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
         // break, or at the end of the text.
         let consumedEndSegmentIndex: number
         /** @invariant safeInteger(i) && safeInteger(segmentCount) && safeInteger(lineStartSegmentIndex) && 0 <= lineStartSegmentIndex && lineStartSegmentIndex <= i && i <= segmentCount && lineStartSegmentIndex < segmentCount
-         *  @invariant widths.length === segmentCount && safeInteger(lineStartGraphemeIndex) && 0 <= lineStartGraphemeIndex
+         *  @invariant segmentFlags.length === segmentCount && widths.length === segmentCount && safeInteger(lineStartGraphemeIndex) && 0 <= lineStartGraphemeIndex
          *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
          *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
          *  @invariant safeInteger(hangEndSegmentIndex) && hangEndSegmentIndex <= segmentCount && safeInteger(pendingBreakSegmentIndex) && pendingBreakSegmentIndex <= segmentCount
@@ -664,6 +673,9 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
          *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
          *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
          *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(endGraphemeIndex) && endGraphemeIndex === 0 && safeInteger(fitBreakSegmentIndex) && fitBreakSegmentIndex <= segmentCount
+         *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
+         *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
+         *  @invariant itemEndHalts === null || segmentCount <= itemEndHalts.length
          *  @invariant openingEdges === null || segmentCount <= openingEdges.length */   // PAPER: annotation
         for (let i = lineStartSegmentIndex; ; i++) {
           if (i >= segmentCount) {
@@ -922,14 +934,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
                   lineW += advance
                   endSegmentIndex = i + 1
                   if (kind === ZERO_WIDTH_BREAK) {
-                    /** @invariant safeInteger(segmentCount) && safeInteger(endSegmentIndex) && 0 <= endSegmentIndex && endSegmentIndex <= segmentCount && widths.length === segmentCount
-                     *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
-                     *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
-                     *  @invariant safeInteger(lineEndSegmentIndex) && 0 <= lineEndSegmentIndex && lineEndSegmentIndex <= segmentCount
-                     *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-                     *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
-                     *  @invariant openingEdges === null || segmentCount <= openingEdges.length */   // PAPER: annotation
-                    while (endSegmentIndex < segmentCount && ((segmentFlags[endSegmentIndex]!) & KIND_BITS) === ZERO_WIDTH_BREAK) endSegmentIndex++   // PAPER: guard removed
+                    endSegmentIndex = skipZeroWidthBreaks(segmentFlags, segmentCount, endSegmentIndex)
                   }
                   endGraphemeIndex = 0
                   break decided
