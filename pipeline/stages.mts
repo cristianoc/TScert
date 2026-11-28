@@ -16,14 +16,14 @@
 //   node pipeline/stages.mts evict    one eviction pass within TSCERT_STORE_BUDGET, its summary printed
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
-import { bindProcess, canonical, codeFailure, deliver, digestFile, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, startProcess, text, workRole,
+import { bindProcess, canonical, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, startProcess, text, workRole,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -333,8 +333,22 @@ const workerPollMs = 5;
  * killing it. */
 const lostMs = 3_000;
 
-/** A part's description, whose canonical text its key is the digest of:
- * the worker's own description and the part, null for the preparation. */
+/** Lean writes one compact JSON value per line. The first is the group's program.
+ * Each remaining line is a named result consumed in proposal order. */
+function sliceDigests(path: string): { slice: string; proposals: string[] } {
+  const bytes = readFileSync(path);
+  const digests: string[] = [];
+  let offset = 0;
+  for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, offset)) {
+    digests.push(sha256(bytes.subarray(offset, end)));
+    offset = end + 1;
+  }
+  digests.push(sha256(bytes.subarray(offset)));
+  const slice = digests.shift();
+  if (slice === undefined) throw Error("missing slice program digest");
+  return { slice, proposals: digests };
+}
+/** The worker manifest and part ID identify each physical result. */
 const partInput = (manifest: Canonical, part: string | null): string => canonical({ worker: manifest, part });
 
 /** The difference of two of a verifier's work tables (`RequestCli.writeWork`):
@@ -602,15 +616,23 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         if (["slice-lookup check-slice", "slice-lookup propose-slice", "slice-lookup probe-check-slice"].includes(line)) {
           if (slice !== null) throw Error("overlapping slice operations");
           const probe = line === "slice-lookup probe-check-slice";
-          const input = canonical({ operation: probe ? "check-slice" : line.slice("slice-lookup ".length), implementation: bound.sliceImplementation,
-            slice: digestFile(join(directory, "slice-input")) });
+          const proposal = line !== "slice-lookup check-slice";
+          const digests = sliceDigests(join(directory, "slice-input"));
+          const describe = (operation: string): string =>
+            canonical({ operation, implementation: bound.sliceImplementation, ...digests });
+          const checkInput = describe("check-slice");
+          const proposalInput = describe("propose-slice");
+          const input = proposal && !probe ? proposalInput : checkInput;
           const key = sha256(input);
           const started = performance.now();
           const active = ineligible === null ? replaying : null;
           let found = forced ? null : active?.finished(call.stage, key, input);
           if (active && !forced && !found && !probe) {
+            // Both operations compute the same proposal. One claim covers
+            // the pair, including the lookup after the preceding publication.
+            const claimKey = sha256(checkInput);
             for (;;) {
-              const owner = active.claim(call.stage, key);
+              const owner = active.claim(call.stage, claimKey);
               if (owner !== "held") claim.release = owner;
               found = active.finished(call.stage, key, input);
               if (found || claim.release) break;
@@ -620,10 +642,15 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
               claimMs += performance.now() - waiting;
             }
           }
-          if (found && found.result.exitStatus !== 0) throw Error("invalid stored slice exit status");
-          slice = { input, key, hit: !!found, probe, proposal: line !== "slice-lookup check-slice", started };
+          const otherInput = proposal ? checkInput : proposalInput;
+          const other = !found && active && !forced && !probe
+            ? active.finished(call.stage, sha256(otherInput), otherInput) : null;
+          if ((found ?? other)?.result.exitStatus) throw Error("invalid stored slice exit status");
+          const checked = proposal && !!other;
+          slice = { input, key, hit: !!found || checked, probe, proposal, started };
           const tmp = join(directory, "slice-reply.tmp");
-          writeFileSync(tmp, found ? found.result.stdout : "null");
+          const reply = other ? `{"${checked ? "checked" : "resume"}":${text(other.result.stdout)}}` : "null";
+          writeFileSync(tmp, found ? found.result.stdout : reply);
           renameSync(tmp, join(directory, "slice-reply"));
           return;
         }
@@ -632,29 +659,23 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
           slice = null;
           return;
         }
-        if (slice && line === "slice-physical") {
-          if (slice.proposal) slices.proposalsExecuted++;
-          else {
-            // The relative operation is complete. Its physical fallback is
-            // one further check with the same limit. The enclosing W record
-            // measures both, and only the final verdict may follow.
-            slices.executed++;
-            physicalStart = performance.now();
-          }
-          claim.release?.();
-          claim.release = null;
-          slice = null;
-          return;
-        }
-        if (!slice || (slice.hit ? line !== "slice-hit" : !line.startsWith("slice-result ")))
+        const freshPhysical = line.startsWith("slice-result-physical ");
+        const physical = freshPhysical || line === "slice-physical";
+        if (!slice || (physical ? slice.proposal || (freshPhysical && slice.hit)
+          : slice.hit ? line !== "slice-hit" : !line.startsWith("slice-result ")))
           throw Error("unexpected slice response");
-        if (!slice.hit && replaying && ineligible === null) {
+        if (!slice.hit && (!physical || freshPhysical) && replaying && ineligible === null) {
           replaying.publishFinished(call.stage, slice.key, { input: slice.input, exitStatus: 0,
-            stdout: Buffer.from(line.slice("slice-result ".length)), stderr: Buffer.alloc(0), outputs: [],
+            stdout: Buffer.from(line.slice(line.indexOf(" ") + 1)), stderr: Buffer.alloc(0), outputs: [],
             measurement: { attempt: randomUUID(), elapsedMs: performance.now() - slice.started,
               limitMs: options.limitMs, cpu: { unavailable: "included in the worker part" } } });
         }
-        if (slice.proposal) {
+        if (physical) {
+          // The published result supplies its proposals. The physical
+          // diagnostic has its own time limit within this file's part.
+          physicalStart = performance.now();
+          slices.executed++;
+        } else if (slice.proposal) {
           if (slice.hit) slices.proposalsReplayed++;
           else slices.proposalsExecuted++;
         } else if (slice.hit) slices.replayed++;

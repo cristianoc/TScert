@@ -154,14 +154,19 @@ in the worker's private execution directory.
 
 - The worker writes the complete relative input to `slice-input` and flushes
   `slice-lookup check-slice` or `slice-lookup propose-slice`.
-- The driver hashes those bytes and atomically renames a complete reply to
+- The driver hashes the program line and each consumed result line and atomically renames a complete reply to
   `slice-reply`. JSON null requests execution. A hit supplies the stored
-  object with fields `operation`, `members`, `answers` and `line`.
+  object with fields `operation`, `members`, `answers`, `resolution` and `line`.
+  The resolution holds the ordered computed stand-ins or a planning error.
+  A check that finds a standalone proposal receives `{"resume":object}`.
+  A proposal lookup that finds a completed check receives `{"checked":object}`.
   The worker consumes and removes the reply before proceeding.
 - A miss produces `slice-result <JSON object>` after the proposals and
   verdict are available. A validated hit produces `slice-hit`. The
   worker materializes source coordinates locally in both cases.
-- `slice-physical` releases the lookup claim. The worker computes this group
+- `slice-result-physical <JSON object>` publishes the relative result before
+  a physical check. A hit requiring physical diagnostics emits
+  `slice-physical`. Both release the lookup claim. The worker computes this group
   at its physical positions when the occurrence map cannot render its result.
   Its line and proposals belong to the current file.
 - An unrequested dependency first probes with `slice-lookup probe-check-slice`.

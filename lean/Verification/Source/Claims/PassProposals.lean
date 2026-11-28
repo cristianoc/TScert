@@ -543,6 +543,8 @@ abbrev RoundAnswers := Std.HashMap Nat (List (List StandIn × Option Established
 structure RoundState (σ : Type) where
   answers : RoundAnswers := {}
   planning : σ
+  /-- The ordered final stand-ins used to plan the checked members. -/
+  result : List StandIn := []
 
 /-- **One function's proposal by the pass** (function `i`, of name and
 position `f`): its member planned by `planOf` with each function `found`
@@ -630,22 +632,27 @@ function's footprint keep/keep. -/
     let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
     { name := f.name, summary := got.summary, resultFootprint := R, returnAlias := got.returnAlias }
 
-/-- The functions a wanted unit reaches, callees first: each after every
-function it reaches outside its group (a depth-first walk of `Front.edges`). -/
-def calleesFirst (fr : Front) (wanted : List Nat) : List Nat := Id.run do
-  let mut order : List Nat := []
+/-- Postorder over a finite graph with at most `size` vertices and
+`size²` edges. A completed dependency terminates that path. -/
+def postorder (size : Nat) (edges : Nat → List Nat) (roots : List Nat)
+    (completed : Nat → Bool := fun _ => false) : List Nat := Id.run do
+  let mut order := []
   let mut seen : Std.HashSet Nat := {}
-  let mut stack : List (Nat × Bool) := wanted.reverse.map (·, false)
-  for _ in List.range (4 * fr.units.length * (fr.units.length + 1) + 4) do
+  let mut stack := roots.map (·, false)
+  for _ in [:roots.length + size * (size + 1) + 1] do
     match stack with
     | [] => break
-    | (i, true) :: rest => stack := rest; order := order ++ [i]
+    | (i, true) :: rest => stack := rest; order := i :: order
     | (i, false) :: rest =>
-      if seen.contains i then stack := rest
+      if seen.contains i || completed i then stack := rest
       else
         seen := seen.insert i
-        stack := (fr.edges i).filter (!seen.contains ·) |>.map (·, false) |>.append ((i, true) :: rest)
-  return order
+        stack := ((edges i).map (·, false)) ++ (i, true) :: rest
+  return order.reverse
+
+/-- The functions a wanted unit reaches, callees first. -/
+def calleesFirst (fr : Front) (wanted : List Nat) : List Nat :=
+  postorder fr.edgeTable.size fr.edges wanted.reverse
 
 /-- **The declarations' proposals by the pass**: each function a wanted
 unit reaches, callees first (`calleesFirst`; async functions `top` by the

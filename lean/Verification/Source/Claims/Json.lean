@@ -117,9 +117,14 @@ def memberName (member : String) : String :=
 /-- The units of a file a selection names: each group with a member it
 names, or every group. -/
 def Front.selected (fr : Front) (names : Option (List String)) : List Nat :=
-  fr.leaders.filter fun i => match names with
-    | none => true
-    | some ns => (fr.group i).any fun j => ns.contains (memberName (fr.unitId j))
+  match names with
+  | none => fr.leaders
+  | some ns =>
+    let wanted := Std.HashSet.ofList ns
+    let units := fr.units.toArray
+    fr.leaders.filter fun i => (fr.group i).any fun j =>
+      (units[j]?).any fun (f, _, c) =>
+        wanted.contains (memberName (if c.isSome then "init" else s!"{f.name}@{f.namePos.1}"))
 
 /-- `elaborateMember` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/

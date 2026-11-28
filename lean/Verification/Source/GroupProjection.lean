@@ -237,35 +237,80 @@ private partial def identities (term : Json) (seen : Std.HashSet Json) : Std.Has
   | .arr terms => terms.foldl (fun acc child => identities child acc) seen
   | _ => seen
 
-/-- Restrict the declaration document before assigning equation head numbers.
-Written application obligations and the document's canonical symbol identities
-survive the restriction. Definitions keep their original relative order. -/
-private def sliceDeclarations (document code : Json) (names : List String) : Except String Json := do
-  let bindingRead := fun (row : Json) =>
-    ((row.getObjValD "binding").getObjValAs? String "local").toOption.any names.contains
-  let roots := (← arr document "roots").filter bindingRead
-  let values := (← arr document "values").filter bindingRead
-  let defs ← arr document "definitions"
-  let mut needed := identities (.arr #[code, .arr roots, .arr values, ← field document "applications"]) {}
-  for row in defs do
-    let id := row.getObjValD "declaration"
-    if ImplicitDependency.all.any (·.selects id) then needed := needed.insert id
-  let mut expanded : Std.HashSet Json := {}
-  for _ in [:defs.size + 1] do
-    let fresh := defs.filter fun row =>
-      let id := row.getObjValD "declaration"
-      needed.contains id && !expanded.contains id
-    if fresh.isEmpty then break
-    for row in fresh do
-      expanded := expanded.insert (row.getObjValD "declaration")
-      needed := identities row needed
-  return document.setObjVal! "roots" (.arr roots) |>.setObjVal! "values" (.arr values)
-    |>.setObjVal! "definitions" (.arr (defs.filter fun row => needed.contains (row.getObjValD "declaration")))
+/-- Positions preserve document order in the selected rows, including
+multiple bindings of one name and multiple definitions of an identity. -/
+structure DeclarationIndex where
+  document : Json
+  roots : Std.HashMap String (List (Nat × Json))
+  values : Std.HashMap String (List (Nat × Json))
+  definitions : Std.HashMap Json (List (Nat × Json))
+  references : Std.HashMap Json (List Json)
+  required : Std.HashSet Json
 
-/-- Close the group's executable source over module reads. A group containing
-initialization executes the entire initializer. Other groups retain the
-statements defining the bindings they read, transitively. -/
-def sliceProgram (ast : Json) (fr : Front) (i : Nat) (order : List Nat) : Except String Json := do
+def DeclarationIndex.of (document : Json) : Except String DeclarationIndex := do
+  let bindings := fun (rows : Array Json) => Id.run do
+    let mut index : Std.HashMap String (List (Nat × Json)) := {}
+    for (row, i) in rows.zipIdx do
+      if let .ok name := (row.getObjValD "binding").getObjValAs? String "local" then
+        index := index.insert name ((i, row) :: index.getD name [])
+    return index
+  let roots := bindings (← arr document "roots")
+  let values := bindings (← arr document "values")
+  let mut required := identities (← field document "applications") {}
+  let mut definitions := {}
+  let mut references := {}
+  for (row, i) in (← arr document "definitions").zipIdx do
+    let id := row.getObjValD "declaration"
+    definitions := definitions.insert id ((i, row) :: definitions.getD id [])
+    references := references.insert id ((identities row {}).toList ++ references.getD id [])
+    if ImplicitDependency.all.any (·.selects id) then required := required.insert id
+  return ⟨document, roots, values, definitions, references, required⟩
+
+/-- The definitions reached by this code, the selected bindings and the
+document's implicit reads. Each reached definition contributes its own
+references once. Written application obligations and symbol identities
+survive the restriction. -/
+def DeclarationIndex.slice (index : DeclarationIndex) (code : Json) (names : List String) : Json := Id.run do
+  let ordered := fun (rows : List (Nat × Json)) =>
+    Json.arr ((rows.mergeSort (fun a b => a.1 ≤ b.1)).map Prod.snd).toArray
+  let names := (Std.HashSet.ofList names).toList
+  let roots := ordered (names.flatMap (index.roots.getD · []))
+  let values := ordered (names.flatMap (index.values.getD · []))
+  let initial := identities (.arr #[code, roots, values]) index.required
+  let mut seen := initial
+  let mut definitions := []
+  -- Only identities in the index have outgoing edges.
+  let mut active := initial.toList.filter index.definitions.contains
+  for _ in [:index.definitions.size] do
+    let some id := active.head? | break
+    active := active.tail
+    definitions := index.definitions.getD id [] ++ definitions
+    for child in index.references.getD id [] do
+      if !seen.contains child && index.definitions.contains child then
+        seen := seen.insert child
+        active := child :: active
+  return index.document.setObjVal! "roots" roots |>.setObjVal! "values" values
+    |>.setObjVal! "definitions" (ordered definitions)
+
+/-- Member bodies, external signatures and the initializer statements that
+type the module bindings read by the members. Local indices follow file order. -/
+def sliceProgram (ast : Json) (index : DeclarationIndex) (bodies signatures statements : List Nat) (reads : List String) : Except String Json := do
+  let functions ← arr ast "functions"
+  let init ← arr ast "init"
+  let fs ← ((bodies ++ signatures).eraseDups.mergeSort (· ≤ ·)).mapM fun j => do
+    let some fn := functions[j]? | throw "missing function declaration"
+    return if bodies.contains j then fn else fn.setObjVal! "body" (.arr #[])
+  let ss ← statements.mapM fun j => do
+    let some stmt := init[j]? | throw "missing initializer statement"
+    return stmt
+  let code := Json.arr #[.arr fs.toArray, .arr ss.toArray]
+  let declarations := index.slice code reads
+  return ast.setObjVal! "functions" (.arr fs.toArray) |>.setObjVal! "init" (.arr ss.toArray)
+    |>.setObjVal! "declarations" declarations |>.setObjVal! "modules" (.arr #[])
+
+/-- Reconstruct the transitive program used to produce physical diagnostics.
+The declaration, function and statement order determines equation head names. -/
+def diagnosticProgram (ast : Json) (fr : Front) (i : Nat) (order : List Nat) : Except String Json := do
   let functions ← arr ast "functions"
   let init ← arr ast "init"
   let members := fr.group i
@@ -285,7 +330,8 @@ def sliceProgram (ast : Json) (fr : Front) (i : Nat) (order : List Nat) : Except
   let fs := functions.filter fun f => (f.getObjValAs? String "name").toOption.any names.contains
   let ss := (init.zip fr.init.toArray).filterMap fun (raw, stmt) =>
     if wholeInit || stmt.bound.any names.contains then some raw else none
-  let declarations ← sliceDeclarations (← field ast "declarations") (.arr #[.arr fs, .arr ss]) names
+  let index ← DeclarationIndex.of (← field ast "declarations")
+  let declarations := index.slice (.arr #[.arr fs, .arr ss]) names
   return ast.setObjVal! "functions" (.arr fs) |>.setObjVal! "init" (.arr ss)
     |>.setObjVal! "declarations" declarations |>.setObjVal! "modules" (.arr #[])
 
@@ -467,6 +513,9 @@ def Input.fields (g : Input) : List (String × Json) :=
 /-- Raw program and explicit whole-file answers for one independent lowering.
 The member list identifies the group even when the slice renumbers the units. -/
 structure Slice where
+  externalGroups : List (List String)
+  dependencies : List String
+  inheritedReturn : Bool
   proposalOrder : List String
   resultConsumers : List String
   ast : Json
@@ -585,6 +634,8 @@ def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
       if k == "definitions" then defs := defs.push normalized
   for fn in (ast.getObjValAs? (Array Json) "functions").toOption.getD #[] do
     replacements := replacements.insert fn (relativeLocals (subst fn))
+    let signature := fn.setObjVal! "body" (.arr #[])
+    replacements := replacements.insert signature (relativeLocals (subst signature))
   for k in ["init", "applications"] do
     let source := if k == "init" then ast else doc
     for row in (source.getObjValAs? (Array Json) k).toOption.getD #[] do
@@ -601,28 +652,33 @@ def Slice.relative (s : Slice) (decls : DeclarationSites) : Slice × Sites := Id
   let (ast, sites) := fileProgram ast 2
   let sites := { sites with declarations := decls.physicalIds }
   let ast := ast.setObjVal! "file" "group.ts" |>.setObjVal! "sourceSha256" (toJson (String.ofList (List.replicate 64 '0')))
-  return ({ s with ast, members := s.members.map (sites.unit · false), proposalOrder := s.proposalOrder.map (sites.unit · false) }, sites)
+  return ({ s with ast
+                   externalGroups := s.externalGroups.map (·.map (sites.unit · false))
+                   dependencies := s.dependencies.map (sites.unit · false), members := s.members.map (sites.unit · false), proposalOrder := s.proposalOrder.map (sites.unit · false) }, sites)
 
 /-- The complete input of the stored operation, including the entire slice
 Fragment. Field hashes in the shadow report are for comparisons only. -/
-def Slice.wire (s : Slice) : Json :=
-  let ⟨order, consumers, ast, members, owned, initOrder, demand, below, imports, est, tables,
+def Slice.wire (s : Slice) : String :=
+  let ⟨externalGroups, dependencies, inheritedReturn, order, consumers, ast, members, owned, initOrder, demand, below, imports, est, tables,
     force, fuel, budget, counting⟩ := s
-  Json.mkObj ([("ast", ast), ("group", toJson members), ("owned", toJson owned), ("initOrder", toJson initOrder),
+  let program := Json.mkObj ([("ast", ast), ("externalGroups", toJson externalGroups), ("dependencies", toJson dependencies),
+    ("inheritedReturn", toJson inheritedReturn), ("group", toJson members), ("owned", toJson owned), ("initOrder", toJson initOrder),
     ("demand", toJson demand), ("resultConsumers", toJson consumers), ("proposalOrder", toJson order),
-    ("below", answersWire below), ("controls", toJson (force, fuel, budget.rounds, budget.select, budget.rerun, counting))] ++
+    ("controls", toJson (force, fuel, budget.rounds, budget.select, budget.rerun, counting))] ++
     importFields imports est tables)
+  String.intercalate "\n" (program.compress :: below.map (fun answer => (answersWire [answer]).compress))
 
 /-- Splitting the functions by membership for diagnostics retains their
 interleaving and every other input field, including errors and controls. -/
 def Slice.fields (s : Slice) : List (String × Json) :=
-  let ⟨proposalOrder, resultConsumers, ast, members, owned, initOrder, demand, below, imports, est, tables, force, fuel, budget, counting⟩ := s
+  let ⟨externalGroups, dependencies, inheritedReturn, proposalOrder, resultConsumers, ast, members, owned, initOrder, demand, below, imports, est, tables, force, fuel, budget, counting⟩ := s
   let fs := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
   let member := fun (f : Json) =>
     let name := (f.getObjValAs? String "name").toOption.getD ""
     let pos := (f.getObjValAs? (Nat × Nat) "namePos").toOption.getD (0,0)
     members.contains s!"{name}@{pos.1}"
-  [("members", toJson (fs.filter member)), ("callees", toJson (fs.filter (!member ·))),
+  [("externalGroups", toJson externalGroups), ("dependencies", toJson dependencies), ("inheritedReturn", toJson inheritedReturn),
+   ("members", toJson (fs.filter member)), ("callees", toJson (fs.filter (!member ·))),
    ("order", toJson (fs.map member)), ("init", ast.getObjValD "init"),
    ("declarations", ast.getObjValD "declarations"), ("omittedMentions", ast.getObjValD "omittedMentions"),
    ("file", ast.getObjValD "file"), ("sourceSha256", ast.getObjValD "sourceSha256"),

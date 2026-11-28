@@ -626,6 +626,15 @@ structure TypedInitialization (fr : Front) (force : List String) where
   typed : Front
   correct : typed = (fr.withStandIns inputs).withInitTypes force
 
+/-- The selected operation's proposal order and the initializer reads.
+In the returned-callable round each external group supplies its checked
+slot at the same proposal it exported to the first round. -/
+structure ProposalInputs where
+  order : List Nat
+  consumers : List String
+  below : List (String × Option StandIn)
+  inheritedReturn : Bool
+
 /-- A worker's lowered front, with its shared initialization at one ordered
 vector of qualified imports. Both components are determined by the lowered front
 and the same force settings as the planner. -/
@@ -636,7 +645,7 @@ structure PlanningFront (force : List String) where
   base : Thunk (Front × Thunk Front) := Thunk.mk fun _ => initializationFront (raw.withQualified qualified) force
   base_eq : base.get = initializationFront (raw.withQualified qualified) force := by rfl
   /-- Whole-file callee order in local indices and the initializer’s demand for their results. -/
-  proposalInputs : Option (List Nat × List String) := none
+  proposalInputs : Option ProposalInputs := none
   rounds : PassProposals.RoundState (List (TypedInitialization base.get.1 force)) := { planning := [] }
 
 /-- Elaborate and check proposals over this qualified front. Each retained
@@ -646,10 +655,10 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
     (qualified : List (String × QualifiedEffect)) (depends : List (String × List String))
     (closure proposed interfaceSlots : Bool) (known : List (String × Option StandIn))
     (cached : PassProposals.RoundState (List (TypedInitialization fr force)))
-    (proposalInputs : Option (List Nat × List String) := none) :
+    (proposalInputs : Option ProposalInputs := none) :
     Except String (FilePlans × PassProposals.RoundState (List (TypedInitialization fr force))) := do
   let consumers := match proposalInputs with
-    | some (_, names) => names
+    | some inputs => inputs.consumers
     | none => fr.init.flatMap stmtNames
   let initReads := Std.HashSet.ofList consumers
   let initWith (sis : List StandIn) : StateM (List (TypedInitialization fr force)) Front := do
@@ -683,31 +692,25 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
   -- (`PassProposals.proposals`); the claims and the front again where any
   -- is found.
   let order := match proposalInputs with
-    | some (indices, _) => indices
+    | some inputs => inputs.order
     | none => PassProposals.calleesFirst fr (wantedOf fr names)
-  let (computed, refused, rounds) := if force.contains "callees" || force.contains "throws" then ([], [], cached) else
+  let fold (prior : List StandIn) (answers : List (String × Option StandIn))
+      (state : PassProposals.RoundState (List (TypedInitialization fr force))) :
+      List StandIn × List String × PassProposals.RoundState (List (TypedInitialization fr force)) :=
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      let (out, rounds) := (PassProposals.proposals fr order standIns force [] planOf known).run cached
+      let (out, rounds) : List (String × Option StandIn) × PassProposals.RoundState _ :=
+        (PassProposals.proposals fr order standIns force prior planOf answers).run state
       let computed := out.filterMap (·.2) |>.filter fun s =>
         s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
       let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
-        out.filterMap fun (n, o) => if o.isNone && !known.any (·.1 == n) then some n else none
+        out.filterMap fun (n, o) => if o.isNone && !answers.any (·.1 == n) then some n else none
       (computed, refused, rounds)
-  -- Where the initialization calls a function proposed a returned
-  -- function's footprint, the module values it types hold such functions:
-  -- the proposals once more, every function not yet proposed again read
-  -- at its first proposal.
-  let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
-  let (computed, refused, rounds) := if returning.isEmpty || !consumers.any returning.contains then
-    (computed, refused, rounds) else
-    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
-      let (out, rounds) := (PassProposals.proposals fr order standIns force computed planOf []).run rounds
-      let computed := out.filterMap (·.2) |>.filter fun s =>
-        s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
-      let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
-        out.filterMap fun (n, o) => if o.isNone then some n else none
-      (computed, refused, rounds)
+  let (computed, refused, rounds) : List StandIn × List String × PassProposals.RoundState _ :=
+    if force.contains "callees" || force.contains "throws" then ([], [], cached) else
+    let (first, refused, rounds) := fold [] known cached
+    if proposalInputs.any (·.inheritedReturn) || first.any (fun s => s.resultFootprint != .top && initReads.contains s.name) then
+        SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ => fold first ((proposalInputs.map (·.below)).getD []) rounds
+    else (first, refused, rounds)
   let claims := if computed.isEmpty then claims else withStandIns claims computed
   let (fr, cached) := SinglePass.timedKind "lower: initialization's walk" fun _ => (initWith computed).run rounds.planning
   -- With `proposed`, the selected functions whose footprint is more than
@@ -732,7 +735,7 @@ def plansOnFront (ast claims : Json) (fr : Front) (frInit : Thunk Front)
     SinglePass.work "prepare: plans over the store" (fileItem ast) fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
-  return (⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, refused⟩, { rounds with planning := cached })
+  return (⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, refused⟩, { rounds with planning := cached, result := computed })
 
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared

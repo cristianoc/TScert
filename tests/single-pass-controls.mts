@@ -316,6 +316,7 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         return v;
       }), "moved Fragment");
       const beforeStore = process.env.TSCERT_STAGE_STORE;
+      const beforeProfile = process.env.TSCERT_PROFILE;
       const store = new Store(join(work, "slice-store"));
       try {
         process.env.TSCERT_STAGE_STORE = store.root;
@@ -405,8 +406,62 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         const movedRead = check();
         assert.equal(movedRead.slices.replayed, 1);
         assert.deepEqual(movedRead.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+
+        const chain = (literal: string): Ast => ({ ...ast, init: [], functions: [
+          fn("left", 10, number, { k: "lit", pos: [14, 15], lit: { a: "numberlit", v: literal } }),
+          fn("middle", 30, number, callAt("left", 34)),
+          fn("right", 50, number, callAt("middle", 54)),
+        ] });
+        writeFileSync(fragment, JSON.stringify(chain("1")));
+        process.env.TSCERT_STAGE_STORE = join(work, "proposal-first");
+        const profile = join(work, "resumed-checks");
+        process.env.TSCERT_PROFILE = profile;
+        const root = invokeWorker(verifierCall(verifierBuild, args, { TSCERT_SLICE_DRIVER: "1" }),
+          { ...fileWorkerProtocol, parts: () => ["right@50"], request: () => JSON.stringify({ units: ["right@50"] }) }, { limitMs: 60_000, force: false, recorder: null });
+        assert.equal(root.slices.proposalsExecuted, 2, "the two callees supply only proposals");
+        assert.equal(root.slices.executed, 1);
+        const completed = check();
+        for (const part of completed.parts.filter(p => p.execution === "executed")) {
+          const timings = readFileSync(join(profile, "work", part.record.attempt + ".jsonl"), "utf8");
+          assert.doesNotMatch(timings, /"kind":"propose: member plans"/, "checking a saved proposal never settles it again");
+        }
+        assert.deepEqual(completed.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        assert.equal(completed.slices.executed, 2, "each callee checks at its saved proposal");
+        writeFileSync(fragment, JSON.stringify(chain("2")));
+        const edited = check();
+        assert.equal(edited.slices.executed, 1, "only the edited callee checks");
+        assert.equal(edited.slices.replayed, 2, "its equal stand-in cuts off both callers");
+        assert.deepEqual(edited.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+
+        // The written footprint is equal even when the definition fails
+        // its return claim. The replayed caller retains that dependency.
+        const declared = (e: Expr): Ast => ({ ...ast, init: [], functions: [
+          { ...fn("left", 10, number, e), stated: emptyEffect.exits },
+          ...chain("1").functions.slice(1),
+        ] });
+        writeFileSync(fragment, JSON.stringify(declared({ k: "lit", pos: [14, 15], lit: { a: "numberlit", v: "1" } })));
+        check();
+        const wrong = declared({ k: "lit", pos: [14, 15], lit: { a: "stringlit", v: "wrong" } });
+        writeFileSync(fragment, JSON.stringify(wrong));
+        const refused = check();
+        assert.equal(refused.slices.executed, 1);
+        assert.equal(refused.slices.replayed, 2);
+        const [left, middle] = refused.parts.map(p => decodeVerdictLine(p.stdout.trimEnd()));
+        assert.ok(left && "refusal" in left);
+        assert.ok(middle && "accepted" in middle && middle.depends.includes("left@10"));
+        writeFileSync(fragment, moveSites(wrong));
+        const movedRefusal = check();
+        assert.equal(movedRefusal.slices.executed, 1);
+        assert.equal(movedRefusal.slices.replayed, 2);
+        const physical = must(movedRefusal.parts[0], "the relocated refusal");
+        const workTable = readFileSync(join(profile, "work", physical.record.attempt + ".jsonl"), "utf8");
+        assert.doesNotMatch(workTable, /"kind":"slice: execute"/, "the relative refusal and its proposal replay");
+        assert.match(workTable, /"kind":"slice: physical"/);
+        assert.deepEqual(movedRefusal.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
       } finally {
         writeFileSync(fragment, JSON.stringify(ast));
+        if (beforeProfile === undefined) delete process.env.TSCERT_PROFILE;
+        else process.env.TSCERT_PROFILE = beforeProfile;
         if (beforeStore === undefined) delete process.env.TSCERT_STAGE_STORE;
         else process.env.TSCERT_STAGE_STORE = beforeStore;
       }
@@ -425,9 +480,7 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.equal(resumed.preparation.execution, "replayed");
         assert.deepEqual(resumed.parts.map(p => p.execution), units.map(u => half.includes(u) ? "replayed" : "executed"));
         assert.deepEqual(resumed.parts.map(p => p.stdout.trimEnd()), all.lines);
-        if (storeDriver && variant === "failed plan") {
-          assert.ok(resumed.slices.proposalsExecuted > 0, "a physical refusal supplies no relative check entry");
-        } else if (storeDriver) {
+        if (storeDriver) {
           assert.equal(resumed.slices.proposalsExecuted, 0);
           assert.ok(resumed.slices.proposalsReplayed > 0, "the restarted worker reads the checked callee's proposals");
         }
