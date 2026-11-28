@@ -164,7 +164,9 @@ export function verifyByUnits(fragment: string, key: string, names: string, opti
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  if (!process.env.TSCERT_GROUP_SHADOW && !environment.TSCERT_PASS_REFUSALS &&
+  const diagnosticEnv = process.env.TSCERT_COMPARE || process.env.TSCERT_NODE || process.env.TSCERT_REPEAT ||
+    process.env.TSCERT_OBSERVE || process.env.TSCERT_TRACE_PROPOSALS;
+  if (!process.env.TSCERT_GROUP_SHADOW && !environment.TSCERT_PASS_REFUSALS && !diagnosticEnv &&
       process.env.TSCERT_GROUP_REPLAY !== "0") environment.TSCERT_SLICE_DRIVER = "1";
   let interfaces: PreparedInterfaces;
   try {
