@@ -137,8 +137,13 @@ export const OPENING_BRACKET_SHIFT = 14
 
 // Every code point's class, unpacked when a text first asks for a script.
 let scriptClasses: ClassTable | null = null
+/** @requires safeInteger(c) && 0 <= c && c <= 0x10ffff */
 function getScriptFacts(c: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
-  return scriptClassFacts[getClass(scriptClasses ??= unpackClasses('chromium/script'), c)] ?? missing()
+  let classes = scriptClasses
+  if (classes === null || classes.index.length !== 0x1100) {
+    classes = scriptClasses = unpackClasses('chromium/script')
+  }
+  return scriptClassFacts[getClass(classes, c)] ?? missing()
 }
 
 // The facts of the character at text[i], with the scripts it has there, as Blink reads them
@@ -339,7 +344,10 @@ function getFollowingSpaceTail(analysis: TextAnalysis, analysisIndex: number, to
   const nextKind = flags[next]! & KIND_BITS
   // A collapsed space's first source character: WebKit looks at the source after a text item.
   const spaceStart = starts[next]!
-  if ((nextKind !== SPACE && nextKind !== PRESERVED_SPACE) || (spaceSources === null ? normalized.charCodeAt(spaceStart) : (spaceSources[spaceStart] ?? missing())) !== 0x20) return null
+  if (nextKind !== SPACE && nextKind !== PRESERVED_SPACE) return null
+  if (spaceSources === null
+    ? normalized.charCodeAt(spaceStart) !== 0x20
+    : (!Number.isSafeInteger(spaceStart) || spaceStart < 0 || spaceStart >= spaceSources.length || spaceSources[spaceStart]! !== 0x20)) return null
   return normalized.slice(starts[analysisIndex + 1], spaceStart)
 }
 

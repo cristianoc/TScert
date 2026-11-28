@@ -363,10 +363,13 @@ function isControlSegmentCode(code: number): Effects<{}, boolean> {   // PAPER: 
 // starts with one starts a text segment with the text after it, as a chunk does, after the break
 // the scan gives at the run, so its fragments keep the controls it starts with.
 /** @requires normalized.length < breaks.length
+ *  @requires 0 <= sourceOffsets.length
  *  @requires spaceSources === null || spaceSources.length === normalized.length
  *  @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length
- *  @ensures result.normalized.length === normalized.length */
-function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | null, breaks: Uint8Array, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan'], hangTabs: boolean, dropsBidiControl: boolean): Effects<{ "breaks[*]": "grow"; "breaks[#]": "any" }, TextAnalysis> {   // PAPER: annotation
+ *  @ensures result.normalized.length === normalized.length
+ *  @ensures result.sourceOffsets.length === sourceOffsets.length
+ *  @ensures forall k in result.starts: safeInteger(result.starts[k]) && 0 <= result.starts[k] && k <= result.starts[k] && result.starts[k] < result.normalized.length */
+function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | null, breaks: Uint8Array, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan'], hangTabs: boolean, dropsBidiControl: boolean, sourceOffsets: Int32Array): Effects<{ "breaks[*]": "grow"; "breaks[#]": "any" }, TextAnalysisWithOffsets> {   // PAPER: annotation
   const oneCluster = scan === 'gecko' ? ONE_CLUSTER : 0
   const starts: Dense<number[]> = []
   // A plain array, which measurement copies into the prepared handle's bytes: a Uint8Array for
@@ -378,8 +381,8 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   let droppedEnd = -1
   // The last segment's kind, -1 before the first unit, which starts one.
   let lastKind: SafeInt = -1
-  /** @invariant starts.length === flags.length && lastKind < 16 * flags.length && starts !== flags
-   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
+  /** @invariant safeInteger(i) && 0 <= i && starts.length === flags.length && lastKind < 16 * flags.length && starts !== flags && starts.length <= i
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && k <= starts[k] && starts[k] < normalized.length */
   for (let i = 0; i < normalized.length; i++) {
     const code = normalized.charCodeAt(i)
     if (dropsBidiControl && i < droppedEnd) continue
@@ -454,7 +457,7 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   let hasUnbroken = false
   const count: SafeInt = flags.length
   /** @invariant j + 2 <= count && count === flags.length && starts.length === flags.length && starts !== flags
-   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && k <= starts[k] && starts[k] < normalized.length */
   for (let j: SafeInt = count - 2; j >= 0; j--) {
     const kind = flags[j]! & KIND_BITS
     const next = flags[j + 1]! & KIND_BITS
@@ -472,7 +475,7 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   }
   if (hasUnbroken) {
     /** @invariant count === flags.length && starts.length === flags.length && starts !== flags
-     *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
+     *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && k <= starts[k] && starts[k] < normalized.length */
     for (let j = 0; j < count; j++) if ((flags[j]! & UNBROKEN) === 0) flags[j] = flags[j]! | RETURNABLE
   }
   // Each segment's text, sliced once here for measurement and the neighbours it reads: sliced
@@ -480,24 +483,39 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   // Keeping Work Bounded).
   const texts: Dense<string[]> = []
   /** @invariant texts.length === j && count === flags.length && starts.length === flags.length && starts !== flags && texts !== starts && texts !== flags
-   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && k <= starts[k] && starts[k] < normalized.length */
   for (let j: SafeInt = 0; j < count; j++) texts.push(normalized.slice(starts[j], j + 1 < count ? starts[j + 1] : normalized.length))
-  return { normalized, spaceSources, texts, starts, flags, hasUnbroken }
+  return { normalized, spaceSources, texts, starts, flags, hasUnbroken, sourceOffsets }
 }
 
-/** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length */
-export function analyzeText(
+const EMPTY_SOURCE_OFFSETS = new Int32Array(0)
+
+/** @invariant this.starts.length === this.flags.length && this.flags.length <= this.texts.length
+ *  @invariant this.spaceSources === null || this.spaceSources.length === this.normalized.length */
+type TextAnalysisWithOffsets = TextAnalysis & {
+  /** @stable */ readonly sourceOffsets: Int32Array
+}
+
+/** @invariant this.starts.length === this.flags.length && this.texts.length === this.flags.length
+ *  @invariant this.spaceSources === null || this.spaceSources.length === this.normalized.length
+ *  @invariant this.segmentSourceStarts.length === this.flags.length && this.segmentSourceEnds.length === this.flags.length */
+export type ParagraphAnalysis = TextAnalysis & {
+  /** @stable */ readonly sourceOffsets: Int32Array
+  /** @stable */ readonly segmentSourceStarts: Int32Array
+  /** @stable */ readonly segmentSourceEnds: Int32Array
+}
+
+/** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length
+ *  @ensures paragraph === null || result.sourceOffsets.length === result.normalized.length
+ *  @ensures forall k in result.starts: safeInteger(result.starts[k]) && 0 <= result.starts[k] && k <= result.starts[k] && result.starts[k] < result.normalized.length */
+function analyzeCore(
   text: string,
   profile: AnalysisProfile,
-  whiteSpace: WhiteSpaceMode = 'normal',
-  wordBreak: WordBreakMode = 'normal',
-  // Preparation's language (getPreparationLanguage), which picks Chrome's and WebKit's
-  // line tables, WebKit's quotation remap and Gecko's rule for newlines next to East
-  // Asian punctuation.
-  language: string | null = null,
-  // The items of the rich-inline paragraph whose text this is, else null.
-  paragraph: ParagraphItems | null = null,
-): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, TextAnalysis> {   // PAPER: annotation
+  whiteSpace: WhiteSpaceMode,
+  wordBreak: WordBreakMode,
+  language: string | null,
+  paragraph: ParagraphItems | null,
+): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, TextAnalysisWithOffsets> {   // PAPER: annotation
   const preserve = whiteSpace === 'pre-wrap'
   // Where each of a paragraph's items starts in the source the engine scans.
   let scanStarts: Dense<number[]> | null = null
@@ -636,12 +654,73 @@ export function analyzeText(
       breaks = mapSourceLineBreaks(source, normalized, sourceBreaks, whiteSpace, spaceSources)
     }
   }
-  if (paragraph !== null) markItemStarts(text, normalized, breaks, paragraph, profile.lineBreakScan)
+  const sourceOffsets = paragraph !== null
+    ? markItemStarts(text, normalized, breaks, paragraph, profile.lineBreakScan)
+    : EMPTY_SOURCE_OFFSETS.length === 0 ? EMPTY_SOURCE_OFFSETS : new Int32Array(0)
   // PAPER: workaround (guarded-fact join): split on spaceSources === null || spaceSources.length === normalized.length after branch join
   if (spaceSources !== null && spaceSources.length === normalized.length) {
-    return segmentAtLineBreaks(normalized, spaceSources, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl)
+    return segmentAtLineBreaks(normalized, spaceSources, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl, sourceOffsets)
   }
-  return segmentAtLineBreaks(normalized, null, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl)
+  return segmentAtLineBreaks(normalized, null, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl, sourceOffsets)
+}
+
+/** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length */
+export function analyzeText(
+  text: string,
+  profile: AnalysisProfile,
+  whiteSpace: WhiteSpaceMode = 'normal',
+  wordBreak: WordBreakMode = 'normal',
+  // Preparation's language (getPreparationLanguage), which picks Chrome's and WebKit's
+  // line tables, WebKit's quotation remap and Gecko's rule for newlines next to East
+  // Asian punctuation.
+  language: string | null = null,
+  // The items of the rich-inline paragraph whose text this is, else null.
+  paragraph: ParagraphItems | null = null,
+): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, TextAnalysis> {   // PAPER: annotation
+  return analyzeCore(text, profile, whiteSpace, wordBreak, language, paragraph)
+}
+
+/** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length
+ *  @ensures result.sourceOffsets.length === result.normalized.length
+ *  @ensures result.segmentSourceStarts.length === result.flags.length && result.segmentSourceEnds.length === result.flags.length */
+export function analyzeParagraph(
+  text: string,
+  profile: AnalysisProfile,
+  whiteSpace: WhiteSpaceMode,
+  wordBreak: WordBreakMode,
+  language: string | null,
+  paragraph: ParagraphItems,
+): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, ParagraphAnalysis> {   // PAPER: annotation
+  const base = analyzeCore(text, profile, whiteSpace, wordBreak, language, paragraph)
+  const starts = base.starts
+  const flags = base.flags
+  const texts = base.texts
+  const normalized = base.normalized
+  const spaceSources = base.spaceSources
+  const offsets = base.sourceOffsets
+  const count = flags.length
+  const segmentSourceStarts = new Int32Array(count)
+  const segmentSourceEnds = new Int32Array(count)
+  /** @invariant safeInteger(i) && safeInteger(count) && 0 <= i && i <= count && count === flags.length && starts.length === count && texts.length === count && offsets.length === normalized.length && segmentSourceStarts.length === count && segmentSourceEnds.length === count
+   *  @invariant spaceSources === null || spaceSources.length === normalized.length
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && k <= starts[k] && starts[k] < normalized.length */
+  for (let i = 0; i < count; i++) {
+    const start = starts[i]!
+    const end = i + 1 < count ? starts[i + 1]! : normalized.length
+    segmentSourceStarts[i] = offsets[start]!
+    segmentSourceEnds[i] = offsets[end - 1]! + 1
+  }
+  return {
+    normalized,
+    spaceSources,
+    texts,
+    starts,
+    flags,
+    hasUnbroken: base.hasUnbroken,
+    sourceOffsets: offsets,
+    segmentSourceStarts,
+    segmentSourceEnds,
+  }
 }
 
 // A paragraph's text after each item's own segment break transformation, where the engine
@@ -710,14 +789,58 @@ export function alignToSource(source: string, normalized: string, scan: Analysis
   return offsets
 }
 
+export type SegmentAlignResult = {
+  readonly pos: number
+  readonly start: number
+  readonly end: number
+  readonly units: Dense<number[]> | null
+}
+
+export function alignSegmentInSource(
+  source: string,
+  seg: string,
+  pos: number,
+  cr: number,
+  ff: number,
+): Effects<{}, SegmentAlignResult> {   // PAPER: annotation
+  let srcPos = pos
+  let srcStart = 0
+  let lastOffset = 0
+  let srcUnits: Dense<number[]> | null = null
+  const segLen = seg.length
+  for (let j = 0; j < segLen; j++) {
+    const unit = seg.charCodeAt(j)
+    while (srcPos < source.length) {
+      const code = source.charCodeAt(srcPos)
+      if (code === unit || (isCollapsibleSpaceCode(code) && (unit === 0x20 ? code !== cr && code !== ff : unit === 0x0A))) break
+      srcPos++
+    }
+    const at = srcPos++
+    if (unit === 0x0A && source.charCodeAt(srcPos - 1) === 0x0D && source.charCodeAt(srcPos) === 0x0A) srcPos++
+    if (j === 0) {
+      srcStart = at
+    } else if (srcUnits !== null) {
+      srcUnits.push(at)
+    } else if (at !== srcStart + j) {
+      const units: Dense<number[]> = []
+      for (let u = 0; u < j; u++) units.push(srcStart + u)
+      units.push(at)
+      srcUnits = units
+    }
+    lastOffset = at
+  }
+  return { pos: srcPos, start: srcStart, end: lastOffset + 1, units: srcUnits }
+}
+
 // Marks where each item of a paragraph starts in its normalized text (ITEM_START), at the first
 // unit that comes from the item or from one after it, and a break on both sides of an atomic item,
 // under keep-all too: Blink breaks after an atomic inline and before one (CanBreakAfterAtomicInline
 // and CanBreakAfter, line_breaker.cc:1168-1263 in core/layout/inline), WebKit finds a soft wrap
 // opportunity on either side of one (InlineFormattingUtils.cpp:445-449), and Gecko records a break
 // after one and breaks before one that doesn't fit (nsLineLayout.cpp:1057-1068, 1339-1340).
-/** @requires normalized.length < breaks.length */
-function markItemStarts(text: string, normalized: string, breaks: Uint8Array, paragraph: ParagraphItems, scan: AnalysisProfile['lineBreakScan']): Effects<{ "paragraph.sourceOffsets": "any"; "breaks[*]": "grow"; "breaks[#]": "any" }, void> {   // PAPER: annotation
+/** @requires normalized.length < breaks.length
+ *  @ensures result.length === normalized.length */
+function markItemStarts(text: string, normalized: string, breaks: Uint8Array, paragraph: ParagraphItems, scan: AnalysisProfile['lineBreakScan']): Effects<{ "paragraph.sourceOffsets": "any"; "breaks[*]": "grow"; "breaks[#]": "any" }, Int32Array> {   // PAPER: annotation
   const offsets = paragraph.sourceOffsets = alignToSource(text, normalized, scan)
   const { starts, atomic } = paragraph
   /** @invariant safeInteger(j) && 0 <= j && j <= normalized.length && offsets.length === normalized.length */
@@ -732,6 +855,7 @@ function markItemStarts(text: string, normalized: string, breaks: Uint8Array, pa
       breaks[j + 1] = breaks[j + 1]! | BREAK | ITEM_START
     }
   }
+  return offsets
 }
 
 // Where a line may start in a paragraph's source, in WebKit: it finds breaks inside each inline

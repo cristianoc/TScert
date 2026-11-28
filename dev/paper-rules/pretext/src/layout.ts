@@ -8,12 +8,10 @@
 // Browser measurement limitations are documented in README.md and PLATFORM_BUGS.md.
 // Based on Sebastian Markbage's text-layout research (github.com/chenglou/text-layout).
 
-import { missing } from './checked.js'
 import { clearWordSegmenter } from './line-breaks.js'
 import {
   analyzeText,
   KIND_BITS,
-  SEGMENT_KINDS,
   type SegmentBreakKind,
   type WhiteSpaceMode,
   type WordBreakMode as AnalysisWordBreakMode,
@@ -167,9 +165,15 @@ export function prepare(text: string, font: string, options?: PrepareOptions): P
 export function prepareWithSegments(text: string, font: string, options?: PrepareOptions): PreparedTextWithSegments {
   const segments: string[] = []
   const prepared = prepareInternal(text, font, segments, options)
-  // Each segment's kind by name, from its flags.
+  // Each segment's kind by name, from its flags. prepareInternal() only emits
+  // kind codes 0..8 (TEXT..HARD_BREAK); the trailing entries cover unreachable
+  // 4-bit values 9..15 so indexing by `segmentFlags[i] & KIND_BITS` is in bounds.
+  const segmentKinds: readonly SegmentBreakKind[] = [
+    'text', 'space', 'zero-width-break', 'soft-hyphen', 'preserved-space', 'tab', 'zero-width-glue', 'control', 'hard-break',
+    'hard-break', 'hard-break', 'hard-break', 'hard-break', 'hard-break', 'hard-break', 'hard-break',
+  ]
   const kinds: SegmentBreakKind[] = []
-  /** @invariant prepared.segmentFlags.length === prepared.widths.length && prepared.breakableFitAdvances.length === prepared.widths.length && prepared.widths !== kinds
+  /** @invariant prepared.segmentFlags.length === prepared.widths.length && prepared.breakableFitAdvances.length === prepared.widths.length && prepared.widths !== kinds && segmentKinds.length === 16 && kinds !== segmentKinds
    *  @invariant prepared.lineStartExtras === null || prepared.widths.length <= prepared.lineStartExtras.length
    *  @invariant prepared.lineEndTrims === null || prepared.widths.length <= prepared.lineEndTrims.length
    *  @invariant prepared.overflowLineEndTrims === null || prepared.widths.length <= prepared.overflowLineEndTrims.length
@@ -187,7 +191,7 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
    *  @invariant prepared.items === undefined || prepared.items.openingEdges === null || prepared.widths.length <= prepared.items.openingEdges.length
    *  @invariant prepared.items === undefined || prepared.items.emptyObjectSpaces === null || prepared.widths.length <= prepared.items.emptyObjectSpaces.length
    *  @invariant prepared.items === undefined || prepared.items.emptyObjectReturns === null || prepared.widths.length <= prepared.items.emptyObjectReturns.length */
-  for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
+  for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(segmentKinds[prepared.segmentFlags[i]! & KIND_BITS]!)
   return { ...prepared, segments, kinds }
 }
 

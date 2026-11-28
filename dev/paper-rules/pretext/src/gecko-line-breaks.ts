@@ -47,6 +47,7 @@ import {
   SOFT_HYPHEN_BREAK,
   getBreakLanguage,
   getClass,
+  getClassFrom,
   getWordSegmenter,
   hasProperty,
   unpackClasses,
@@ -56,7 +57,8 @@ import {
 
 const CH_SHY = 0x00ad
 
-function isSurrogatePair(a: number, b: number): Effects<{}, boolean> { return (a & 0xfc00) === 0xd800 && (b & 0xfc00) === 0xdc00 }   // PAPER: annotation
+/** @requires safeInteger(a) && 0xd800 <= a && a <= 0xdbff && safeInteger(b) && 0xdc00 <= b && b <= 0xdfff
+ *  @ensures safeInteger(result) && 0x10000 <= result && result <= 0x10ffff */
 function combine(a: number, b: number): Effects<{}, number> { return 0x10000 + ((a - 0xd800) << 10) + (b - 0xdc00) }   // PAPER: annotation
 
 // East_Asian_Width H (2), F (3) or W (5), and 0 for any other value, which the first East Asian
@@ -78,17 +80,20 @@ function isClusterExtenderExcludingJoiners(cp: number): Effects<{ "@state": "any
 }
 
 // UnicodeProperties.h:205-218
+/** @requires safeInteger(cp) && 0 <= cp && cp <= 0x10ffff */
 function isEastAsianWidthFHWExcludingEmoji(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const width = getClass(widths, cp)
   return width === 2 || width === 3 || (width === 5 && !hasProperty(cp, EMOJI))
 }
 
 // nsUnicharUtils.cpp:500-504
+/** @requires safeInteger(cp) && 0 <= cp && cp <= 0x10ffff */
 function isSegmentBreakSkipChar(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return isEastAsianWidthFHWExcludingEmoji(widths, cp) && !hasProperty(cp, HANGUL) && cp !== 0x20a9
 }
 
 // nsUnicharUtils.cpp:506-527, with UnicodeProperties.h:187-199
+/** @requires safeInteger(cp) && 0 <= cp && cp <= 0x10ffff */
 function isEastAsianPunctuation(widths: ClassTable, cp: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   return getClass(widths, cp) !== 0 && ((hasProperty(cp, PUNCTUATION) && cp !== 0x20a9) || cp === 0xff5e || cp === 0x3000)
 }
@@ -140,20 +145,24 @@ export function isJapaneseOrChinese(language: string | null): Effects<{}, boolea
 // ones, both segment-break skip characters, or on a `ja` or `zh` page either one East Asian
 // punctuation. Only an interior run qualifies.
 export function isEastAsianSegmentBreak(text: string, start: number, end: number, japaneseOrChinese: boolean): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
-  if (!Number.isSafeInteger(end)) return false
-  if (end < 0 || start === 0 || end >= text.length) return false
-  const widths = eastAsianWidths ??= unpackClasses('gecko/east_asian_width')
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return false
+  if (start <= 0 || start > text.length || end < 0 || end >= text.length) return false
+  let cachedWidths = eastAsianWidths
+  if (cachedWidths === null || cachedWidths.index.length !== 0x1100) {
+    cachedWidths = eastAsianWidths = unpackClasses('gecko/east_asian_width')
+  }
+  const widths: ClassTable = cachedWidths
   let before: number
   let pos = start
-  /** @invariant safeInteger(end) && 0 <= end && end < text.length */
+  /** @invariant safeInteger(pos) && 1 <= pos && pos <= text.length && safeInteger(end) && 0 <= end && end < text.length && widths.index.length === 4352 */
   do {
     const low = text.charCodeAt(pos - 1)
     const high = pos > 1 ? text.charCodeAt(pos - 2) : 0
-    if (isSurrogatePair(high, low)) { before = combine(high, low); pos -= 2 } else { before = low; pos-- }
+    if (high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) { before = combine(high, low); pos -= 2 } else { before = low; pos-- }
   } while (hasProperty(before, DEFAULT_IGNORABLE) && pos > 0)
   let after: number
   pos = end
-  /** @invariant safeInteger(pos) && 0 <= pos && pos < text.length */
+  /** @invariant safeInteger(pos) && 0 <= pos && pos < text.length && safeInteger(before) && 0 <= before && before <= 0x10ffff && widths.index.length === 4352 */
   do {
     after = text.codePointAt(pos)!
     if (after > 0xffff) pos += 2
@@ -392,10 +401,13 @@ function extendCluster(g: Glyphs, i: number): Effects<{ "g.clusterStart[*]": "gr
 // reads the word alone (intl/lwbrk/Segmenter.cpp:174-187). Below U+0300 only CR and LF share a
 // cluster, which the generator checks, and words hold neither, so a word of such units has a
 // cluster at every unit. `ends` has room for the word's clusters.
-/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= text.length && to - from <= ends.length */
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from < to && to <= text.length && to - from <= ends.length */
 function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: number, graphemeTable: GraphemeTable, ends: Int32Array): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any"; "ends[*]": "grow"; "ends[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   let ch0 = text.charCodeAt(from)
-  if (to - from > 1 && isSurrogatePair(ch0, text.charCodeAt(from + 1))) ch0 = combine(ch0, text.charCodeAt(from + 1))
+  if (to - from > 1) {
+    const ch1 = text.charCodeAt(from + 1)
+    if (ch0 >= 0xd800 && ch0 <= 0xdbff && ch1 >= 0xdc00 && ch1 <= 0xdfff) ch0 = combine(ch0, ch1)
+  }
   if (isClusterExtender(ch0)) extendCluster(g, from)
   let low = from
   while (low < to && text.charCodeAt(low) < 0x300) low++
@@ -441,12 +453,17 @@ function splitAndInitTextRun(g: Glyphs, text: string, graphemeTable: GraphemeTab
 // --- 3. ICU4X 2.1.2's line iterator for one word (icu_segmenter src/line.rs) ---
 
 // Firefox's line data, which the first scan unpacks (getGeckoLineBreaks).
-type LineData = { readonly classes: ClassTable, readonly states: Uint8Array }
+type LineData = {
+  /** @stable */
+  readonly classes: ClassTable
+  readonly states: Uint8Array
+}
 let lineData: LineData | null = null
 
 // The Line_Break value, with error value 0 above U+10FFFF.
-function getLineBreakClass(line: LineData, c: number): Effects<{}, number> {   // PAPER: annotation
-  return c > 0x10ffff ? 0 : getClass(line.classes, c)
+/** @requires classIndex.length === 4352 && safeInteger(c) && 0 <= c */
+function getLineBreakClass(classIndex: Uint16Array, classValues: Uint8Array, c: number): Effects<{}, number> {   // PAPER: annotation
+  return c > 0x10ffff ? 0 : getClassFrom(classIndex, classValues, c)
 }
 
 // Line_Break property values of the data (line.rs:18-128).
@@ -494,13 +511,22 @@ function isKeepAllLetter(p: number): Effects<{}, boolean> {   // PAPER: annotati
 
 // Utf16Indices::next (indices.rs:58-83): the code point at text[i], in a pair that ends before `end`,
 // or an unpaired surrogate as a code point of its own.
+/** @requires safeInteger(i) && 0 <= i && i < text.length && safeInteger(end) && end <= text.length
+ *  @ensures safeInteger(result) && 0 <= result && result <= 0x10ffff */
 function readCodePoint(text: string, i: number, end: number): Effects<{}, number> {   // PAPER: annotation
   const c = text.charCodeAt(i)
-  if ((c & 0xfc00) === 0xd800 && i + 1 < end) {
+  if (c >= 0xd800 && c <= 0xdbff && i + 1 < end) {
     const next = text.charCodeAt(i + 1)
-    if ((next & 0xfc00) === 0xdc00) return ((c & 0x3ff) << 10) + (next & 0x3ff) + 0x10000
+    if (next >= 0xdc00 && next <= 0xdfff) return ((c - 0xd800) << 10) + (next - 0xdc00) + 0x10000
   }
   return c
+}
+
+/** @requires safeInteger(pos) && safeInteger(len) && 0 <= pos && pos < len
+ *  @ensures safeInteger(result) && 0 <= result && result <= len */
+function advanceCodePoint(pos: number, cp: number, len: number): Effects<{}, number> {   // PAPER: annotation
+  if (cp > 0xffff && pos + 1 < len) return pos + 2
+  return pos + 1
 }
 
 // LineBreakIterator (line.rs:820-1130) over the word text[start, end), drained: state[start + p] = 1
@@ -509,30 +535,31 @@ function readCodePoint(text: string, i: number, end: number): Effects<{}, number
 // Utf16Indices' front_offset and current_pos_data (:821-823): `pos` is the current code point's
 // offset in the word, `cp` its code point and `front` the next one's offset, and `pos` reaches
 // the word's length past its end.
-function markWordBreaks(line: LineData, text: string, start: number, end: number, keepAll: boolean, state: Uint8Array): Effects<{ "state[*]": "grow"; "state[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
+/** @requires classIndex.length === 4352 && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length */
+function markWordBreaks(classIndex: Uint16Array, classValues: Uint8Array, states: Uint8Array, text: string, start: number, end: number, keepAll: boolean, state: Uint8Array): Effects<{ "state[*]": "grow"; "state[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const len = end - start
-  const states = line.states
   let pos = 0
   let cp = readCodePoint(text, start, end)
-  let front = cp > 0xffff ? 2 : 1
+  let front = advanceCodePoint(pos, cp, len)
   // Break points cached by a complex-script run, each less `cacheOffset`, from `cacheAt`.
   let cache: number[] = []
   let cacheAt = 0
   let cacheOffset = 0
 
-  /** @invariant safeInteger(cacheAt) && 0 <= cacheAt */
+  /** @invariant safeInteger(cacheAt) && 0 <= cacheAt && safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
   for (;;) {
     // Break points cached by a complex-script run (:840-855).
     if (cacheAt < cache.length) {
       const firstPos = cache[cacheAt]! - cacheOffset
       cacheAt++
       let i = 0
+      /** @invariant safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
       while (i !== firstPos) {
         i += cp > 0xffff ? 2 : 1 // Utf16::char_len (rule_segmenter.rs:335-341)
         pos = front
         if (pos >= len) return
         cp = readCodePoint(text, start + pos, end)
-        front += cp > 0xffff ? 2 : 1
+        front = advanceCodePoint(pos, cp, len)
       }
       cacheOffset += i
       state[start + pos] = 1
@@ -541,15 +568,17 @@ function markWordBreaks(line: LineData, text: string, start: number, end: number
 
     let lb9Left = -1 // (:858)
     let lb8aAfterLb9 = false // (:861)
-    outer: for (;;) {
+    outer:
+    /** @invariant safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
+    for (;;) {
       const leftCodepoint = cp
-      const leftProp = lb9Left >= 0 ? lb9Left : getLineBreakClass(line, leftCodepoint)
+      const leftProp = lb9Left >= 0 ? lb9Left : getLineBreakClass(classIndex, classValues, leftCodepoint)
       const afterZwj = lb8aAfterLb9 || (lb9Left < 0 && leftProp === ZWJ)
       pos = front
       if (pos >= len) return
       cp = readCodePoint(text, start + pos, end)
-      front += cp > 0xffff ? 2 : 1
-      const rightProp = getLineBreakClass(line, cp)
+      front = advanceCodePoint(pos, cp, len)
+      const rightProp = getLineBreakClass(classIndex, classValues, cp)
 
       // LB9 (:878-893)
       if ((rightProp === CM || rightProp === ZWJ) && leftProp !== BK && leftProp !== CR && leftProp !== LF &&
@@ -566,24 +595,26 @@ function markWordBreaks(line: LineData, text: string, start: number, end: number
 
       // Complex scripts (:941-950), Utf16 line_handle_complex_language (:1263-1316), which counts
       // code points one unit each: they are truncated to u16 there.
-      if (getLineBreakClass(line, leftCodepoint) === SA && rightProp === SA) {
+      if (getLineBreakClass(classIndex, classValues, leftCodepoint) === SA && rightProp === SA) {
         const units = [leftCodepoint & 0xffff]
+        /** @invariant safeInteger(p) && 0 <= p && p < len && safeInteger(c) && 0 <= c && c <= 0x10ffff && safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
         for (let p = pos, c = cp; ;) {
           units.push(c & 0xffff)
-          p += c > 0xffff ? 2 : 1
+          p = advanceCodePoint(p, c, len)
           if (p >= len) break
           c = readCodePoint(text, start + p, end)
-          if (getLineBreakClass(line, c) !== SA) break
+          if (getLineBreakClass(classIndex, classValues, c) !== SA) break
         }
         cache = segmentComplex(units)
         cacheAt = 1
         let i = 1
+        /** @invariant safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
         while (i !== cache[0]) {
           i++
           pos = front
           if (pos >= len) return
           cp = readCodePoint(text, start + pos, end)
-          front += cp > 0xffff ? 2 : 1
+          front = advanceCodePoint(pos, cp, len)
         }
         cacheOffset = i
         break
@@ -606,6 +637,7 @@ function markWordBreaks(line: LineData, text: string, start: number, end: number
       // (:976-981), where lb8a_after_lb9 is false once LB9 has passed.
       const isIntermediateRuleNoMatch = index > geckoLineLastCodepointProperty
 
+      /** @invariant safeInteger(pos) && safeInteger(front) && 0 <= pos && 0 <= front && front <= len && safeInteger(prevPos) && safeInteger(prevFront) && 0 <= prevPos && 0 <= prevFront && prevFront <= len && safeInteger(cp) && 0 <= cp && cp <= 0x10ffff && safeInteger(prevCp) && 0 <= prevCp && prevCp <= 0x10ffff && safeInteger(len) && len === end - start && safeInteger(start) && safeInteger(end) && 0 <= start && start < end && end <= text.length && classIndex.length === 4352 */
       for (;;) {
         const innerAfterZwj = leftPropPreLb9 === ZWJ
         const previousBreakStateIsCpProp = index <= geckoLineLastCodepointProperty
@@ -617,8 +649,8 @@ function markWordBreaks(line: LineData, text: string, start: number, end: number
           break outer
         }
         cp = readCodePoint(text, start + pos, end)
-        front += cp > 0xffff ? 2 : 1
-        const prop = getLineBreakClass(line, cp)
+        front = advanceCodePoint(pos, cp, len)
+        const prop = getLineBreakClass(classIndex, classValues, cp)
 
         if ((prop === CM || prop === ZWJ) && leftPropPreLb9 !== BK && leftPropPreLb9 !== CR && leftPropPreLb9 !== LF &&
           leftPropPreLb9 !== NL && leftPropPreLb9 !== SP && leftPropPreLb9 !== ZW) { // (:1009-1019)
@@ -678,12 +710,17 @@ const NON_BREAKABLE_ASCII = new Uint8Array([
 // word's FlushCurrentWord from Reset (nsLineBreaker.cpp:134-226, 710-720). Each word of more than
 // ASCII letters goes to LineBreaker::ComputeBreakPositions (intl/lwbrk/LineBreaker.cpp:112-194),
 // which keeps the state before its first unit (AutoRestore, :342, :604; skipSet = 1, :200-206).
+/** @requires line.classes.index.length === 4352 */
 function getBreakStates(line: LineData, text: string, is8bit: boolean, afterLeadingWhitespace: boolean, keepAll: boolean): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const len = text.length
   const state = new Uint8Array(len)
+  const classIndex = line.classes.index
+  const classValues = line.classes.values
+  const states = line.states
   let afterBreakableSpace = afterLeadingWhitespace
   let wordStart = 0
   let wordMightBeBreakable = false
+  /** @invariant safeInteger(offset) && safeInteger(wordStart) && safeInteger(len) && 0 <= offset && offset <= len && 0 <= wordStart && len === text.length && classIndex.length === 4352 */
   for (let offset = 0; offset <= len; offset++) {
     const ch = offset < len ? text.charCodeAt(offset) : -1
     // nsLineBreaker::IsSegmentSpace, nsLineBreaker.h:260-264
@@ -695,7 +732,8 @@ function getBreakStates(line: LineData, text: string, is8bit: boolean, afterLead
       if (!(ch >= 0x20 && ch <= 0x7f && NON_BREAKABLE_ASCII[ch - 0x20] === 1)) wordMightBeBreakable = true
       continue
     }
-    if (offset > wordStart && wordMightBeBreakable) markWordBreaks(line, text, wordStart, offset, keepAll, state)
+    if (offset > wordStart && wordMightBeBreakable) markWordBreaks(classIndex, classValues, states, text, wordStart, offset, keepAll, state)
+    if (offset === len) break
     wordMightBeBreakable = false
     wordStart = offset + 1
   }
@@ -742,7 +780,11 @@ export function getGeckoLineBreaks(
   const ends = new Int32Array(n)
   splitAndInitTextRun(g, tr.text, graphemeTable, ends)
 
-  const line = lineData ??= { classes: unpackClasses('gecko/line'), states: unpackTable(geckoLineBreakStatesPacked) }
+  let line = lineData
+  if (line === null || line.classes.index.length !== 0x1100) {
+    const classes = unpackClasses('gecko/line')
+    line = lineData = { classes, states: unpackTable(geckoLineBreakStatesPacked) }
+  }
   const state = getBreakStates(line, tr.text, is8bit, hasCompressedLeadingWhitespace(source, tr.skipped, is8bit, preserveWhiteSpace), keepAll)
   /** @invariant safeInteger(t) && safeInteger(n) && 1 <= t && t <= n && n === orig.length */
   for (let t = 1; t < n; t++) {
