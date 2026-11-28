@@ -400,6 +400,8 @@ structure GroupContext where
   givenLines : Std.HashMap String Json
   fuel : Nat
 
+  printFailure : SourceClaimJson.PassDiagnostic → String := SourceClaimJson.PassDiagnostic.render
+
 /-- The prepared file's front: its units, their identities and groups. -/
 def GroupContext.fr (p : GroupContext) : SourceClaimJson.Front := p.front.2
 
@@ -419,7 +421,7 @@ def GroupContext.groupVerdict (p : GroupContext) (i : Nat) (planned : Except Str
   | .error reason => ⟨WorkerWire.verdictLine unit members (.error reason) (some reason) [], some reason, []⟩
   | .ok f =>
     let (lines, verdict, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
-      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i) (counting := counting) (located := true)
+      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i) (counting := counting) (located := true) (print := p.printFailure)
     let diagnostics := lines ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else [])
     let line := WorkerWire.verdictLine unit members verdict (f.elaborationRefusal (some [SourceClaimJson.memberName unit]))
       (f.contractReads (p.fr.group i))
@@ -475,8 +477,8 @@ theorem GroupContext.groupOperation_eq (p : GroupContext) (i : Nat)
 /-- Names used at the slice boundary, indexed once on the validated front. -/
 structure SliceIndex where
   units : Array (Fragment.Fn × List Fragment.TypeParam × Option (SourceClaimJson.Function EquationGraphs.Tree))
+  names : GroupProjection.UnitNames
   unitIds : Array String
-  ids : Std.HashSet String
   functions : Std.HashMap String (List Nat)
   selectors : Std.HashMap String (List Nat)
   initMentions : Std.HashSet String
@@ -492,7 +494,7 @@ def SliceIndex.ofFront (fr : SourceClaimJson.Front) : SliceIndex := Id.run do
     if c.isNone then functions := functions.insert fn.name (i :: functions.getD fn.name [])
     let name := SourceClaimJson.memberName (ids.getD i "")
     selectors := selectors.insert name (i :: selectors.getD name [])
-  return ⟨units, ids, .ofArray ids, functions, selectors, .ofList (fr.init.flatMap SourceElaboration.stmtNames),
+  return ⟨units, GroupProjection.UnitNames.ofFront fr, ids, functions, selectors, .ofList (fr.init.flatMap SourceElaboration.stmtNames),
     fr.init.toArray, .ofList fr.initNames⟩
 
 /-- The same-name selection can include several overloads. Their bodies
@@ -796,50 +798,80 @@ def PreparedFile.sliceInput (p : PreparedFile) (i : Nat) (demand : Bool) (below 
     (returnedBelow : Bool) : Except String GroupProjection.Slice := do
   let members := p.fr.group i
   let layout := p.layout i
-  let ast ← GroupProjection.sliceProgram p.ast (← p.declarations.get) layout.bodies layout.signatures layout.statements layout.reads
+  let ast ← GroupProjection.sliceProgram p.ast layout.bodies layout.signatures layout.statements
   -- Slot resolution sees the original declaration document, including
   -- ambiguous bindings. Only this group's executable code can read a slot.
   let imports := p.imports.get.bind fun ctx =>
-    let code := Thunk.mk fun _ => SourceClaimJson.decodeImporter ast
+    let code := Thunk.mk fun _ => do
+      let full ← ctx.code.get
+      let functions := full.functions.toArray
+      let indices := ((layout.bodies ++ layout.signatures).eraseDups.mergeSort (· ≤ ·))
+      let selected ← indices.mapM fun j => do
+        let some (name, async_, body) := functions[j]? | throw "missing importer declaration"
+        return (name, async_, if layout.bodies.contains j then body else Thunk.pure [])
+      return if layout.statements.isEmpty then ⟨selected, [], Thunk.pure []⟩ else {full with functions := selected}
     SourceClaimJson.groupImports (.ok { ctx with code }) p.ast (some [SourceClaimJson.memberName (p.unitId i)]) {} p.est
   let (imports, est, tables) := GroupProjection.groupEnvironment layout.reads imports p.est p.tables
-  let id := (p.index.unitIds.getD · "")
+  let code := Json.arr #[ast.getObjValD "functions", ast.getObjValD "init"]
+  let (declarations, missing) := (← p.declarations.get).slice code layout.reads (!tables.isEmpty)
+  -- Preparation supplies the ownership decision. Omitted source mentions are
+  -- read only to construct the full front’s ownership set.
+  let ast := ast.setObjVal! "declarations" declarations
+  let id := (p.index.names.references.getD · .initialization)
   let names := (layout.bodies ++ layout.signatures).filterMap fun j => p.index.units[j]?.map (·.1.name)
   let consumers := (names.filter p.index.initMentions.contains).eraseDups
   let owned := if layout.statements.isEmpty then [] else p.fr.moduleOwned
   return ⟨layout.externalGroups.map (·.map id), (p.fr.dependencies members).map id, returnedBelow,
-    layout.order.map id, consumers, ast, members.map id, owned,
+    layout.order.map id, consumers, ast, members.map id, GroupProjection.ownedIn owned layout.reads code,
     if members.any (fun j => p.unitId j == "init") then p.fr.initOrder else none, demand,
-    below.filter (fun (n, _) => names.contains n), imports, est, tables, p.force, p.fuel, p.budget, p.counting⟩
+    below.filter (fun (n, _) => names.contains n), imports, est, tables, p.force, p.fuel, p.budget, p.counting, missing, none⟩
 
 /-- Plan and check with the slice as the only input. Every call builds its
 own equation store, including the stores at the two proposal priors. -/
 private abbrev ProposalResult := List SourceClaimJson.StandIn
 
-private def planSliceWithResult (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache)
-    (resolved : Option ProposalResult) : Except String (PlannedGroup × ProposalResult) := do
+private def sliceFront (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache) :
+    Except String (Json × SourceClaimJson.Front) := do
   let key ← s.ast.getObjValAs? String "file"
   let claims ← SinglePass.work "slice: claims" key fun _ => SourceClaimJson.fragmentClaims s.ast key {} s.force
   let source ← SinglePass.work "slice: lower equations" key fun _ => SourceClaimJson.lowerEquationFront s.ast claims s.budget definitions
   let raw ← SinglePass.work "slice: build front" key fun _ => SourceClaimJson.fileFrontFrom s.ast
     (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront s.ast key source) [] (lenient := true)
+  let raw ← match s.bindings with
+    | none => pure raw
+    | some env => env.install raw
+  return (claims, raw)
+
+private def planSliceWithResult (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache)
+    (resolved : Option ProposalResult)
+    (printFailure : SourceClaimJson.PassDiagnostic → String := SourceClaimJson.PassDiagnostic.render)
+    (prepared : Option (Json × SourceClaimJson.Front) := none) : Except String (PlannedGroup × ProposalResult) := do
+  let key ← s.ast.getObjValAs? String "file"
+  let (claims, raw) ← match prepared with
+    | some input => pure input
+    | none => sliceFront s definitions
   let fr := { raw with moduleOwned := s.owned, initOrder := s.initOrder }
   let some leader := s.members.head? | throw "empty slice group"
-  let some i := (List.range fr.units.length).find? (fr.unitId · == leader) | throw "missing slice leader"
-  unless (fr.group i).map fr.unitId == s.members do throw "slice changes group membership"
-  let indices := Std.HashMap.ofList ((List.range fr.units.length).map fun j => (fr.unitId j, j))
-  let indexOf := fun (id : String) => match indices.get? id with
+  let refs := (GroupProjection.UnitNames.ofFront fr).references
+  let some i := refs.finIdxOf? leader | throw "missing slice leader"
+  let i := i.val
+  let indices := Std.HashMap.ofList refs.toList.zipIdx
+  let indexOf := fun (id : SourceClaimJson.UnitRef) => match indices.get? id with
     | some j => Except.ok j
-    | none => .error s!"missing slice unit {id}"
-  let mut groups := fr.groupTable
+    | none => .error s!"missing slice unit {repr id}"
+  let members ← s.members.mapM indexOf
+  unless (fr.group i).mergeSort (· ≤ ·) == members.mergeSort (· ≤ ·) do throw "slice changes group membership"
+  let mut groups := members.foldl (fun gs j => gs.setIfInBounds j members) fr.groupTable
   for external in s.externalGroups do
     let group ← external.mapM indexOf
     unless external.all (!s.members.contains ·) do throw "external group includes a checked member"
     for j in group do groups := groups.setIfInBounds j group
   let fr := { fr with groupTable := groups }
-  unless (fr.dependencies (fr.group i)).map fr.unitId == s.dependencies do throw "slice changes group dependencies"
+  let deps ← s.dependencies.mapM indexOf
+  unless (fr.dependencies members).mergeSort (· ≤ ·) == deps.mergeSort (· ≤ ·) do
+    throw "slice changes group dependencies"
   let context : GroupContext := {
-    ast := s.ast, fileKey := key, budget := s.budget, est := s.established, tables := s.tables,
+    ast := s.ast, fileKey := key, budget := s.budget, est := s.established, tables := s.tables, printFailure,
     force := s.force, front := (claims, fr), givenLines := {}, fuel := s.fuel }
   let order ← s.proposalOrder.mapM indexOf
   let own := (fr.group i).filterMap fun j => fr.units[j]?.map (·.1.name)
@@ -860,11 +892,15 @@ def planSlice (s : GroupProjection.Slice) (definitions : EquationLowering.Defini
 /-- Measure reuse of the relative input by executing it and materializing its verdict. -/
 private def replayFields (p : PreparedFile) (physical : GroupProjection.Slice)
     (group : PlannedGroup) (verdict : String) : List (String × Json) := Id.run do
-  let (relative, sites) := physical.relative p.declarationSites.get
+  let .ok (relative, sites) := physical.relative p.declarationSites.get | return [("relative", toJson false)]
   let agreement : Except String (Option String) := do
     let localPlan ← planSlice relative p.declarationSites.get.definitions
-    let line := (localPlan.verdict p.counting).line
-    if (← sites.materialize line) == verdict && localPlan.answers == group.answers then return some line
+    let file ← localPlan.planned
+    let line ← Json.parse (localPlan.verdict p.counting).line
+    let named ← (GroupProjection.UnitNames.ofFront file.fr).nameVerdict line
+    unless (named.getObjValD "refusal").isNull && (named.getObjValD "elaboration").isNull do return none
+    let current ← p.index.names.printVerdict named
+    if (← sites.printContracts current) == verdict && localPlan.answers == group.answers then return some named.compress
     return none
   let line := agreement.toOption.join
   let input := if line.isSome then relative else physical
@@ -914,7 +950,7 @@ def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : Grou
   let returnedBelow ← p.inheritedReturn i
   let slice := Thunk.mk fun _ => p.sliceInput i demand below returnedBelow
   let localPlan := Thunk.mk fun _ =>
-    match slice.get >>= (planSlice · p.definitions) with
+    match slice.get >>= (fun s => (planSliceWithResult s p.definitions none (printFailure := p.printFailure)).map Prod.fst) with
     | .ok g => g
     | .error reason => ⟨.error reason, p.emptyAnswers i, p.groupVerdict i (.error reason)⟩
   if !p.reportGroups then return localPlan.get
@@ -953,9 +989,8 @@ def PreparedFile.lowerAnswers (p : PreparedFile) (groups : List Nat) : IO GroupA
   return values.flatten
 
 /-- Diagnostic text includes the names and numbering of the physical equation
-store. Check the refusing group on the prepared file front with the published
-slot answers fixed in both rounds, so no proposal is settled again. -/
-private def PreparedFile.physicalVerdict (p : PreparedFile) (i : Nat) (own : GroupAnswers) : IO GroupVerdict := do
+store. Resolve the diagnostic node on the prepared file front with published answers. -/
+private def PreparedFile.diagnosticPlan (p : PreparedFile) (i : Nat) (own : GroupAnswers) : IO (Except String PlannedGroup) := do
   let id := p.unitId i
   let selected := (p.fr.selected (some [SourceClaimJson.memberName id])).flatMap p.fr.group
   let order := (SourceClaimJson.PassProposals.calleesFirst p.fr selected).filter (!p.fr.isInitialization ·)
@@ -967,8 +1002,40 @@ private def PreparedFile.physicalVerdict (p : PreparedFile) (i : Nat) (own : Gro
     | .ok imports =>
       let front ← p.frontAt imports
       pure (.ok (imports, { front with proposalInputs := some ⟨order, p.index.initMentions.toList, fixed, false⟩ }))
-  IO.lazyPure fun _ => SinglePass.work "slice: physical" id fun _ =>
-    (p.groupOperation i true fixed inputs).1.verdict p.counting
+  return .ok (p.groupOperation i true fixed inputs).1
+
+private def memberError (plan : Except String SourceClaimJson.FilePlans) (unit : SourceClaimJson.UnitRef) :
+    Except String (String × String) := do
+  let f ← plan
+  let some i := f.fr.unitReferences.finIdxOf? unit | throw "missing elaboration unit"
+  let some (.error reason) := f.plans[i.val]? | throw "missing elaboration error"
+  return (reason, f.beforePass i.val true reason)
+
+private def failureMessage (failure : GroupProjection.StoredFailure) (sites : GroupProjection.Sites)
+    (plan : Except String SourceClaimJson.FilePlans) (fuel : Nat) : Except String String :=
+  match failure with
+  | .planning reason => pure (match plan with | .error msg => msg | .ok _ => reason)
+  | .text msg => pure msg
+  | .located msg => msg.print sites (fun n => do n.read (← plan) fuel)
+  | .elaboration unit => (memberError plan unit).map Prod.snd
+  | .expression unit index exhausted => do
+    let f ← plan
+    let some i := f.fr.unitReferences.finIdxOf? unit | throw "missing expression obligation unit"
+    let some (.ok (.graph _ _ r)) := f.plans[i.val]? | throw "missing expression obligation graph"
+    let some obligation := r.obligations[index]? | throw "missing expression obligation"
+    if exhausted then
+      -- An exhausted search names an intermediate comparison within the obligation.
+      -- The prefix shares its answer cache and vocabulary with that comparison.
+      let result := ExpressionClaims.produceUsing (LabelStore.StoreView.graph r.types)
+        (LabelStore.StoreView.images r.types) r.searchLabels (LabelStore.StoreView.valid r.types)
+        (LabelStore.StoreView.projection r.types) fuel r.obligations
+      if let .error reason := result then
+        if SourceClaimJson.expressionObligation? reason == some (index, true) then return reason
+      throw "missing exhausted expression comparison"
+    return obligation.failure index fuel (LabelStore.StoreView.projection r.types)
+
+private def encodeFailure (failure : SourceClaimJson.PassDiagnostic) :=
+  (toJson (GroupProjection.StoredFailure.ofFailure failure)).compress
 
 /-- Resolve each outstanding dependency once, stopping the walk at a
 published answer. Planning consumes the slots selected by the group's
@@ -1006,6 +1073,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := p.counting
+  let p := if p.reportGroups then p else {p with printFailure := encodeFailure}
   let group ← match (← p.plans.get).get? i with
     | some group => do p.plans.modify (·.erase i); pure group
     | none => do
@@ -1032,9 +1100,20 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       if raw then
         if let .error reason := observed then IO.eprintln reason
   let result ← IO.lazyPure fun _ => group.verdict counting
-  let result ← if result.refusal.isSome && !(p.layout i).signatures.isEmpty then do
-      let located ← p.physicalVerdict i group.answers
-      pure (if located.refusal.isSome then located else result)
+  let result ← if let some raw := result.refusal then do
+      if p.reportGroups || !group.planned.isOk then pure result else do
+        let failure ← IO.ofExcept (Json.parse raw >>= fromJson? (α := GroupProjection.StoredFailure))
+        let plan ← if failure.readsPlan then do
+            pure ((← p.diagnosticPlan i group.answers).bind (·.planned))
+          else pure group.planned
+        let reason ← IO.ofExcept (failureMessage failure {} plan p.fuel)
+        let j ← IO.ofExcept (Json.parse result.line)
+        let j ← match failure with
+          | .elaboration unit => do
+            let (why, _) ← IO.ofExcept (memberError plan unit)
+            pure (j.setObjVal! "elaboration" (toJson why))
+          | _ => pure j
+        pure {result with refusal := some reason, line := (j.setObjVal! "refusal" (toJson reason)).compress}
     else pure result
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
@@ -1065,21 +1144,48 @@ private def sliceLookup (operation : String) : IO Json := do
 /-- The stored value is a function of the operation and the slice.
 The definition cache reads each entry by its complete declaration JSON. -/
 private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
-    (definitions : EquationLowering.DefinitionCache) (resume : Option (Except String ProposalResult)) : Json := Id.run do
-  let planned : Except String (PlannedGroup × ProposalResult) := do
+    (definitions : EquationLowering.DefinitionCache) (resume : Option (Except String ProposalResult))
+    (prepared : Option (Json × SourceClaimJson.Front)) : Json := Id.run do
+  let planned : Except String (GroupAnswers × Option String × ProposalResult) := do
     let prior ← resume.mapM id
-    let (g, result) ← planSliceWithResult slice definitions prior
-    let _ ← g.planned
-    return (g, result)
+    let (g, result) ← planSliceWithResult slice definitions prior (printFailure := encodeFailure) (prepared := prepared)
+    let file ← g.planned
+    let line ← if check then do
+        let j ← Json.parse (g.verdict slice.counting).line
+        let symbolic ← (GroupProjection.UnitNames.ofFront file.fr).nameVerdict j
+        let symbolic : Json ← if let .ok ds := symbolic.getObjValAs? (List Json) "depends" then do
+            let (imported, localRefs) := ds.partition fun (d : Json) => d.getStr?.toOption.any (·.startsWith "module:")
+            let expected := slice.dependencies.map toJson
+            unless (localRefs.map Json.compress).mergeSort (· ≤ ·) == (expected.map Json.compress).mergeSort (· ≤ ·) do
+              throw "slice verdict changes group dependencies"
+            pure (symbolic.setObjVal! "depends" (toJson (expected ++ imported)))
+          else pure symbolic
+        let symbolic ← if let .ok refusal := symbolic.getObjValAs? String "refusal" then do
+            let message ← Json.parse refusal
+            pure (symbolic.setObjVal! "refusal" message)
+          else pure symbolic
+        let symbolic ← if (symbolic.getObjValD "elaboration").isNull then pure symbolic else do
+          let selected := match slice.members.headD .initialization with
+            | .initialization => ":init"
+            | .declaration name _ => name
+          let some (i, _) := file.failedElaboration (some [selected]) | throw "missing failed elaboration"
+          let some unit := file.fr.unitReferences[i]? | throw "missing elaboration unit"
+          pure (symbolic.setObjVal! "elaboration" (toJson unit))
+        pure (some symbolic.compress)
+      else pure none
+    return (g.answers, line, result)
   let (answers, line, resolution) := match planned with
-    | .ok (g, computed) =>
-      (g.answers, if check then some (g.verdict slice.counting).line else none, Json.mkObj
+    | .ok (answers, line, computed) =>
+      (answers, line, Json.mkObj
         [("computed", GroupProjection.answersWire (computed.map fun (s : SourceClaimJson.StandIn) => (s.name, some s)))])
     | .error reason =>
-      let empty := (slice.members.filter (· != "init")).map fun (id : String) =>
-        (String.intercalate "@" (id.splitOn "@").dropLast, none)
-      (empty, if check then some (WorkerWire.verdictLine (slice.members.headD "")
-        slice.members (.error reason) (some reason) []) else none, Json.mkObj [("error", toJson reason)])
+      let empty : GroupAnswers := slice.members.filterMap fun
+        | SourceClaimJson.UnitRef.initialization => none
+        | .declaration name _ => some (name, none)
+      let verdict := Json.mkObj [("unit", toJson (slice.members.headD .initialization)),
+        ("members", toJson slice.members), ("refusal", toJson (GroupProjection.StoredFailure.planning reason)),
+        ("elaboration", toJson reason), ("contracts", .arr #[])]
+      (empty, if check then some verdict.compress else none, Json.mkObj [("error", toJson reason)])
   return Json.mkObj [("operation", toJson (if check then "check-slice" else "propose-slice")),
     ("members", toJson slice.members), ("answers", GroupProjection.answersWire answers), ("line", toJson line),
     ("resolution", resolution)]
@@ -1097,13 +1203,15 @@ private def decodeResolution (j : Json) : Except String (Except String ProposalR
   return .ok computed
 
 private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjection.Slice)
-    (sites : GroupProjection.Sites) (operation : String) (payload : Json) (render := true) :
-    Except String (Option (Option String × GroupAnswers)) := do
+    (sites : GroupProjection.Sites)
+    (operation : String) (payload : Json) (render := true)
+    (plan : Except String SourceClaimJson.FilePlans := .error "missing diagnostic plan") :
+    Except String (Option String × GroupAnswers) := do
   let unit := p.unitId i
   let members := (p.fr.group i).map p.unitId
   fieldsExactly payload ["operation", "members", "answers", "line", "resolution"]
   unless (← payload.getObjValAs? String "operation") == operation &&
-      (← payload.getObjValAs? (List String) "members") == slice.members do throw "wrong slice result"
+      (← payload.getObjVal? "members") == toJson slice.members do throw "wrong slice result"
   let answers ← GroupProjection.decodeAnswers (← payload.getObjVal? "answers")
   let names := answers.map Prod.fst
   let synchronous := (p.fr.group i).filterMap fun j => do
@@ -1113,22 +1221,79 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
       answers.all (fun (n,v) => v.all (·.name == n)) do throw "wrong slice proposal members"
   let relative ← payload.getObjValAs? (Option String) "line"
   unless relative.isSome == (operation == "check-slice") do throw "missing or unexpected slice verdict"
-  let some l := relative | return some (none, answers)
+  let some l := relative | return (none, answers)
   let raw ← Json.parse l
-  unless (← raw.getObjValAs? String "unit") == slice.members.headD "" &&
-      (← raw.getObjValAs? (List String) "members") == slice.members do throw "wrong relative slice members"
-  unless render do return some (none, answers)
-  let .ok current := sites.materialize l | return none
-  let j ← Json.parse current
+  unless (← raw.getObjVal? "unit") == toJson (slice.members.headD .initialization) &&
+      (← raw.getObjVal? "members") == toJson slice.members do throw "wrong relative slice members"
+  unless render do return (none, answers)
+  let failure ← (raw.getObjVal? "refusal").toOption.mapM (fromJson? (α := GroupProjection.StoredFailure))
+  let raw ← match failure with
+    | some (.planning reason) =>
+      let current := match plan with | .error msg => msg | .ok _ => reason
+      pure ((raw.setObjVal! "elaboration" (toJson current)).setObjVal! "refusal" (toJson current))
+    | _ => do
+      let raw ← if (raw.getObjValD "elaboration").isNull then pure raw else do
+        let unit ← fromJson? (raw.getObjValD "elaboration")
+        let (reason, _) ← memberError plan unit
+        pure (raw.setObjVal! "elaboration" (toJson reason))
+      match failure with
+      | none => pure raw
+      | some reason => do
+        let text ← failureMessage reason sites plan p.fuel
+        pure (raw.setObjVal! "refusal" (toJson text))
+  let raw ← if let .ok deps := raw.getObjValAs? (List Json) "depends" then
+      pure (raw.setObjVal! "depends" (toJson (deps.map fun dep =>
+        (dep.getStr?.toOption.bind sites.moduleUnits.get?).map Json.str |>.getD dep)))
+    else pure raw
+  let j ← p.index.names.printVerdict raw
   unless (← j.getObjValAs? String "unit") == unit &&
-    (← j.getObjValAs? (List String) "members") == members do return none
-  if (← raw.getObj?).contains "accepted" then
-    for dep in ← raw.getObjValAs? (List String) "depends" do
-      if dep.startsWith "module:" || dep == "init" then continue
-      let id := sites.unit dep true
-      unless p.index.ids.contains id && sites.unit id false == dep do
-        return none
-  return some (some current, answers)
+    (← j.getObjValAs? (List String) "members") == members do throw "wrong resolved slice members"
+  return (some (← sites.printContracts j), answers)
+
+/-- A separately checked initializer supplies its captured slots. Its
+declarators supply the binding sites and written annotations to lowering. -/
+private def bindingSlice (p : PreparedFile) (s : GroupProjection.Slice) (i : Nat) : IO GroupProjection.Slice := do
+  if s.members.contains .initialization || !(s.dependencies.contains .initialization) ||
+      !s.resultConsumers.isEmpty then return s
+  let some imports := s.imports.toOption | return s
+  let layout := p.layout i
+  let reads := (layout.bodies.flatMap fun j =>
+    (p.index.units[j]?.map fun (fn, _, _) => SourceElaboration.moduleReadNames fn.body).getD []).eraseDups
+  -- A class brings its constructor and generic declaration into the front.
+  if reads.any (SourceElaboration.sourceClasses p.fr.init).contains then return s
+  let front ← p.frontAt imports
+  p.fronts.modify fun fs => if fs.any (·.qualified == front.qualified) then fs else front :: fs
+  let some env := GroupProjection.bindingEnvironment front.base.get.2.get reads | return s
+  let slots := env.slots.map Prod.fst
+  if slots.isEmpty then return s
+  let mut init := #[]
+  for statement in (s.ast.getObjValAs? (Array Json) "init").toOption.getD #[] do
+    let bindings := (statement.getObjValAs? (Array Json) "bindings").toOption.getD #[]
+    for binding in bindings do
+      let name := (binding.getObjValAs? String "name").toOption.getD ""
+      if slots.contains name then
+        let pos := binding.getObjValD "namePos"
+        let value := Json.mkObj [("k", "lit"), ("pos", pos), ("lit", Json.mkObj [("a", "undefined")])]
+        let binder := binding.setObjVal! "init" value
+        init := init.push (statement.setObjVal! "pos" pos |>.setObjVal! "bindings" (.arr #[binder]))
+  if init.size != slots.length then return s
+  let ast := s.ast.setObjVal! "init" (.arr init)
+  let names := (layout.bodies ++ layout.signatures).filterMap fun j => p.index.units[j]?.map (·.1.name)
+  let names := (reads ++ names).eraseDups
+  let (imports, established, tables) := GroupProjection.groupEnvironment names s.imports s.established s.tables
+  let code := Json.arr #[ast.getObjValD "functions", .arr init, toJson (env.origins.toList.filterMap id)]
+  let index ← IO.ofExcept p.declarations.get
+  -- The original lowering may expose an implicit module value because of
+  -- an initializer statement. Its presence fixes the reader's frame slots.
+  let original := s.ast.getObjValD "declarations"
+  let captured := ((original.getObjValAs? (List Json) "values").toOption.getD []).filterMap fun v =>
+    ((v.getObjValD "binding").getObjValAs? String "local").toOption
+  let readBuiltins := ((original.getObjValAs? (List Json) "definitions").toOption.getD []).any fun d =>
+    EquationLowering.ImplicitDependency.arrayProto.selects (d.getObjValD "declaration")
+  let (declarations, missing) := index.slice code names readBuiltins captured
+  return {s with
+    ast := ast.setObjVal! "declarations" declarations
+    imports, established, tables, missing, bindings := some env}
 
 /-- Resolve a group against the driver's store. Only the result uses the
 reply channel. The occurrence map belongs to this worker's preparation. -/
@@ -1136,13 +1301,15 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
     (check : Bool) : IO (Option String × GroupAnswers) := do
   let unit := p.unitId i
   let returnedBelow ← p.inheritedReturn i
-  let projected ← IO.lazyPure fun _ => SinglePass.work "slice: project" unit fun _ => do
-    let physical ← p.sliceInput i (p.needsInterface i) below returnedBelow
-    let (slice, sites) := physical.relative p.declarationSites.get
-    return (slice, sites, slice.wire)
-  let .ok (slice, sites, input) := projected | do
-    let group ← p.plan i (p.needsInterface i) below
-    return (if check then some (group.verdict p.counting).line else none, group.answers)
+  let physical ← IO.ofExcept (p.sliceInput i (p.needsInterface i) below returnedBelow)
+  let candidate ← bindingSlice p physical i
+  let (slice, sites, prepared, input) ← IO.ofExcept <| SinglePass.work "slice: project" unit fun _ => do
+    if candidate.bindings.isSome then
+      if let .ok (s, sites) := candidate.relative p.declarationSites.get then
+        if let .ok front := sliceFront s p.declarationSites.get.definitions then
+          return (s, sites, some front, s.wire)
+    let (s, sites) ← physical.relative p.declarationSites.get
+    return (s, sites, none, s.wire)
   IO.FS.writeFile "slice-input" input
   -- A dependency outside this request can consume a completed check's
   -- answers. On a miss it needs only the proposal operation.
@@ -1162,25 +1329,21 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
   let fresh := stored.isNull || resume
   let payload ← if !fresh then pure stored else
     IO.lazyPure fun _ => SinglePass.work "slice: execute" unit fun _ =>
-      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions resolution
+      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions resolution prepared
   if resume && payload.getObjValD "answers" != stored.getObjValD "answers" then
     throw (IO.userError "the resumed plan changed its proposal")
+  let mut diagnostic : Except String SourceClaimJson.FilePlans := .error "missing diagnostic plan"
+  if check then
+    if let .ok raw := payload.getObjValAs? String "line" >>= Json.parse then
+      let failure := (raw.getObjValAs? GroupProjection.StoredFailure "refusal").toOption
+      if failure.any (·.readsPlan) || (raw.getObjValAs? SourceClaimJson.UnitRef "elaboration").isOk then
+        let answers ← IO.ofExcept (GroupProjection.decodeAnswers (payload.getObjValD "answers"))
+        diagnostic := (← p.diagnosticPlan i answers).bind (·.planned)
   let result ← IO.ofExcept (← IO.lazyPure fun _ =>
     SinglePass.work (if fresh then "slice: render" else "slice: replay") unit fun _ =>
-      readSliceResult p i slice sites operation payload check)
-  if let some rendered := result then
-    printFlushed (if fresh then "slice-result " ++ payload.compress else "slice-hit")
-    return rendered
-  -- The diagnostic producer owns its text and any positions embedded in it.
-  -- Run refusals on the prepared file front with the same resolved callees.
-  printFlushed (if fresh then "slice-result-physical " ++ payload.compress else "slice-physical")
-  let answers ← IO.ofExcept (GroupProjection.decodeAnswers (payload.getObjValD "answers"))
-  let relative ← IO.ofExcept (payload.getObjValAs? String "line" >>= Json.parse)
-  if (relative.getObjVal? "refusal").isOk then
-    let located ← p.physicalVerdict i answers
-    if located.refusal.isSome then return (some located.line, answers)
-  let group ← p.plan i (p.needsInterface i) below
-  return (some (group.verdict p.counting).line, group.answers)
+      readSliceResult p i slice sites operation payload check diagnostic)
+  printFlushed (if fresh then "slice-result " ++ payload.compress else "slice-hit")
+  return result
 
 private def checkWithStore (p : PreparedFile) (i : Nat)
     (lines : IO.Ref (Std.HashMap Nat String)) : IO String := do

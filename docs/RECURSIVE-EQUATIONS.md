@@ -536,6 +536,12 @@ lifted literals are keyed by their occurrence. An alias
 such as `type T<X> = X | T<[X]>` recurs under no constructor, so it is
 refused as unguarded.
 
+When compaction identifies equal literal templates, the retained draft
+supplies the head's diagnostic name. A reference to another occurrence
+of the same template consequently prints the retained draft's name.
+The [replay example](drafts/function-replay.md#cost-and-diagnostic-scope)
+shows this choice for an imported array type.
+
 Definitions are created per source construct, so their
 number is bounded by the size of the source, whatever families it defines.
 `Pair<T>`'s `push<U>(): Pair<[T, U]>` has the result type

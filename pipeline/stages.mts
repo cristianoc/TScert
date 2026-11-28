@@ -321,7 +321,7 @@ export type WorkerPart = {
  * preparation names that has a result, in order; and how many worker
  * processes it started. */
 export type WorkerRun = { preparation: WorkerPart; parts: WorkerPart[]; starts: number;
-  slices: { executed: number; replayed: number; proposalsExecuted: number; proposalsReplayed: number } };
+  slices: { physicalChecks: number; executed: number; replayed: number; proposalsExecuted: number; proposalsReplayed: number } };
 
 /** What decides whether a worker stage's part times out, beside its limit:
  * the process stage's policy, the worker started with `spawn` and each part
@@ -455,7 +455,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
   };
   const done = (): boolean => state.preparation !== null &&
     (state.preparation.status !== 0 || (state.parts ?? []).every((p) => state.results.has(p)) && state.parts !== null);
-  const slices = { executed: 0, replayed: 0, proposalsExecuted: 0, proposalsReplayed: 0 };
+  const slices = { physicalChecks: 0, executed: 0, replayed: 0, proposalsExecuted: 0, proposalsReplayed: 0 };
   const result = (starts: number): WorkerRun => {
     if (state.preparation === null) throw Error("a worker stage ended without its preparation");
     return { preparation: state.preparation, parts: (state.parts ?? []).flatMap((p) => state.results.get(p) ?? []), starts, slices };
@@ -674,6 +674,7 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
           // The published result supplies its proposals. The physical
           // diagnostic has its own time limit within this file's part.
           physicalStart = performance.now();
+          slices.physicalChecks++;
           slices.executed++;
         } else if (slice.proposal) {
           if (slice.hit) slices.proposalsReplayed++;

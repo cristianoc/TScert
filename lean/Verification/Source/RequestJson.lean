@@ -548,16 +548,16 @@ present — a context this cannot describe is a lowering error, not a slot
 number shown to a reader. -/
 structure Descriptor where
   name : String := ""
-  span : Option (Nat × Nat) := none
+  span : Option Span := none
   deriving ToJson, Repr, DecidableEq
 
 def Descriptor.describes (d : Descriptor) : Bool := d.name != "" || d.span.isSome
 
 /-- One graph label's source map entry. `context` runs in context order. -/
 structure SourceMapEntry where
-  pos : Nat × Nat
+  pos : Span
   role : String := "node-typing"
-  environmentStart : Option Nat := none
+  environmentStart : Option SourcePoint := none
   context : List Descriptor := []
   deriving ToJson
 

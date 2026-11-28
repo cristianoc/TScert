@@ -11,12 +11,27 @@ open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 variable {ι : Type}
 
 structure Required (ι : Type) where
-  pos : Nat × Nat
+  pos : Span
   sequent : Sequent ι
   plan : Option (DirectProof.Plan ι) := none
   role : String := "expression-claim"
   /-- This obligation's source map: one descriptor per context binding. -/
   context : List Descriptor := []
+
+/-- The diagnostic for the indexed expression obligation whose proof search failed. -/
+@[nospecialize] def Required.failure [DecidableEq ι] (r : Required ι) (index fuel : Nat)
+    (project : List ι → LabelStore.Projection ι) : String :=
+  let j := r.sequent
+  let p := project (j.type ++ j.context.flatten).eraseDups
+  -- This record's table shows each row's clauses alone: a parameter,
+  -- scheme or meet row as no clauses.
+  withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
+    ([("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
+     ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"expression:{index}"),
+     ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
+     ("sequent",toJson (Sequent.mk (j.context.map p.shown) j.term (p.shown j.type))),
+     ("fuel",toJson fuel),("types",toJson (p.rows.map GraphRow.union))] ++
+     (if p.names.isEmpty then [] else [("names",toJson p.names)]))
 
 section
 variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
@@ -90,16 +105,7 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
               ("judgment",Json.mkObj [("kind",toJson "subtyping"),("subject",toJson r.pos),
                 ("actual",toJson (p.shown stop.source)),("expected",toJson (p.shown stop.target))]),
               ("fuel",toJson fuel)] ++ p.fields))
-        let p := project (j.type ++ j.context.flatten).eraseDups
-        -- This record's table shows each row's clauses alone: a parameter,
-        -- scheme or meet row as no clauses.
-        throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
-          ([("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
-           ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"expression:{index}"),
-           ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
-           ("sequent",toJson (Sequent.mk (j.context.map p.shown) j.term (p.shown j.type))),
-           ("fuel",toJson fuel),("types",toJson (p.rows.map GraphRow.union))] ++
-           (if p.names.isEmpty then [] else [("names",toJson p.names)])))
+        throw (r.failure index fuel project)
     es := es.push e
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks

@@ -84,6 +84,29 @@ def encodeRowTable {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (ifaces
   let (j, ifs, _) := encodeRowTableWithMap T ifaces
   (j, ifs)
 
+/-- Keep the equations of the requested interfaces. The store map also
+compares the two stores' array builtins, including their absence. -/
+def RowTable.restrict (t : RowTable) (names : List String) : RowTable := Id.run do
+  let interfaces := t.interfaces.filter (names.contains ·.1)
+  let roots := interfaces.flatMap Prod.snd ++ t.builtins.toList.flatMap (fun b => b.proto ++ b.unknown)
+  let mut order := #[]
+  let mut positions : Std.HashMap Nat Nat := {}
+  let mut pending := roots
+  while let i :: rest := pending do
+    pending := rest
+    if positions.contains i then continue
+    positions := positions.insert i order.size
+    order := order.push i
+    let row := t.rows[i]!
+    let children := match row with
+      | .param binder _ _ => [binder]
+      | _ => row.operands.flatten
+    pending := children ++ pending
+  let index := fun i => positions[i]!
+  let rows := order.map fun i => t.rows[i]!.map index (·.map index)
+  let builtins := t.builtins.map fun b => {b with proto := b.proto.map index, unknown := b.unknown.map index}
+  return ⟨rows, builtins, interfaces.map fun (n,A) => (n,A.map index)⟩
+
 /-- A table's rows on the wire. -/
 def RowTable.rowsWire (t : RowTable) : Json :=
   Json.mkObj [("types", toJson t.rows.toList), ("builtins", builtinsWire t.builtins)]

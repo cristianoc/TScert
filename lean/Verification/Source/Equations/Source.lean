@@ -64,7 +64,7 @@ as their name placeholders; an instance substitutes them
 (`EquationStore.rebind`). -/
 structure GenericValue where
   name : String
-  pos : Nat × Nat
+  pos : Span
   binders : List String
   /-- Source binders with no written bound, for inference proposals. -/
   widenBinders : List String := []
@@ -89,7 +89,7 @@ structure SourceLowering where
   /-- Each array or tuple annotation's parts, by its path. -/
   arrays : List (String × ArrayParts)
   /-- Each imported value's type, by its local name, with its span. -/
-  values : List (String × (Nat × Nat) × Union)
+  values : List (String × Span × Union)
   generics : List GenericValue
   /-- Each generic unit's binders, by its path: an owned parameter of the
   unit's head, with its declared bound over those parameters (`enterUnit`). -/
@@ -230,7 +230,7 @@ private partial def stripBodyGenericType (term : Json) : Except String Json := d
     pure (term.setObjVal! "parts" (.arr parts'))
   | _ => pure term
 
-private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
+private def genericOf (name : String) (pos : Span) (path : String) (node : Json) (tps : Array Json)
     (type : List (String × Binding) → M GenericType) (packed : List String := [])
     (ownFunction : Bool := false) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
@@ -255,7 +255,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
 /-- Everything the source path lowers, in one run: the declarations, every
 annotation, the imported values, the generic units' binders, the producer's
 rows and the claims. -/
-def lowerSource (ast claims : Json) : M (List (String × Union) × List (String × (Nat × Nat) × Union) ×
+def lowerSource (ast claims : Json) : M (List (String × Union) × List (String × Span × Union) ×
     List GenericValue × List (String × List (String × Tree × Option Union)) ×
     List (String × Tree × Option Union) × Json) := do
   primitives
@@ -295,7 +295,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     let _ ← enterUnit path [] (restView f) tps
     units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
     let name ← str f "name"
-    let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
+    let pos ← (fromJson? (← field f "namePos") : Except String Span)
     -- A declaration with overloads, one unit per overload: its value is
     -- generic once, at every overload's signature under the binders they
     -- share, as an imported declaration with overloads is.
@@ -341,7 +341,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
         return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", recv),
           ("params", .arr (restParams.pop.map (·.getObjValD "type"))), ("rest", restParams.back!.getObjValD "type"),
           ("result", f.getObjValD "retType"), ("effect", ← EffectJson.effectJson effect),
-          ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
+          ("span", toJson (← (fromJson? (← field f "namePos") : Except String Span)))]))
       let rawParams ← arr f "params"
       let (receiver, paramList) ← match rawParams.toList with
         | p :: ps =>
@@ -415,7 +415,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       if tps.isEmpty then continue
       let path := s!"/init/{si}/bindings/{bi}"
       let name ← str b "name"
-      let pos ← (fromJson? (← field b "namePos") : Except String (Nat × Nat))
+      let pos ← (fromJson? (← field b "namePos") : Except String Span)
       -- A binder typing both a value and a rest's argument lists in the
       -- class's construct signature: its rest reads its packed name, which
       -- each instance gives the argument lists of its array (`instancePack`).
@@ -433,7 +433,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     let binding ← field v "binding"
     fieldsExactly binding ["local", "imported", "specifier", "span"]
     let name ← str binding "local"
-    let span ← (fromJson? (← field binding "span") : Except String (Nat × Nat))
+    let span ← (fromJson? (← field binding "span") : Except String Span)
     let _ ← bool v "construct"
     let path := s!"/declarations/values/{vi}"
     let tps ← arr v "typeParams"

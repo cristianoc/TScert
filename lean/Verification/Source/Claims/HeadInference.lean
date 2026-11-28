@@ -1635,13 +1635,13 @@ def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := I
 mutual
 /-- The walk: each loop's head facts by its statement's start, and the facts
 after the statements. -/
-partial def walk (rules : Rules) (ctx : Ctx) (ss : List Stmt) : StateM (List (Nat × List Fact)) Ctx := do
+partial def walk (rules : Rules) (ctx : Ctx) (ss : List Stmt) : StateM (List (SourcePoint × List Fact)) Ctx := do
   let mut ctx := ctx
   for s in ss do
     ctx ← walkStmt rules ctx s
   return ctx
 
-partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat × List Fact)) Ctx
+partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (SourcePoint × List Fact)) Ctx
     | .constants _ bs | .mutables _ bs => do
       let mut ctx := ctx
       for b in bs do
@@ -1727,7 +1727,7 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
 end
 
 /-- A unit's loop heads' proposals, by each loop statement's start. -/
-def proposals (rules : Rules) (body : List Stmt) (entry : Ctx := []) : List (Nat × List Fact) :=
+def proposals (rules : Rules) (body : List Stmt) (entry : Ctx := []) : List (SourcePoint × List Fact) :=
   ((walk rules entry body).run []).2
 
 /-- The kind of the `length` of a value of a written type (the parser's

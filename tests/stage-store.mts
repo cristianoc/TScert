@@ -654,6 +654,7 @@ if (eligible) {
   const ok = fallback(0.65);
   assert.equal(ok.parts[0]?.stdout, "u\n");
   assert.equal(ok.slices.executed, 1);
+  assert.equal(ok.slices.physicalChecks, 1);
   assert.equal(fallback(2).parts[0]?.execution, "timed-out", "the physical check has the same stage limit");
 }
 

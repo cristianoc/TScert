@@ -157,6 +157,17 @@ in the worker's private execution directory.
 - The driver hashes the program line and each consumed result line and atomically renames a complete reply to
   `slice-reply`. JSON null requests execution. A hit supplies the stored
   object with fields `operation`, `members`, `answers`, `resolution` and `line`.
+  Members and local dependencies identify initialization or a declaration
+  and overload ordinal. A module dependency identifies its provider through a
+  reached declaration. A stored located refusal carries its heading,
+  site, reason and raw checker line. A node record adds the member, optional
+  closure, graph label and checker witness. An edge adds its exit, target,
+  required knowledge and optional handler type reference. An expression claim
+  identifies its obligation in the member by index and records whether the
+  subtype search exhausted its budget. For exhaustion the public record
+  carries the current source span in both the judgment and the source map. A member elaboration failure
+  names the member whose plan supplies its message. The worker resolves
+  these references when printing the public verdict.
   The resolution holds the ordered computed stand-ins or a planning error.
   A check that finds a standalone proposal receives `{"resume":object}`.
   A proposal lookup that finds a completed check receives `{"checked":object}`.
@@ -164,11 +175,6 @@ in the worker's private execution directory.
 - A miss produces `slice-result <JSON object>` after the proposals and
   verdict are available. A validated hit produces `slice-hit`. The
   worker materializes source coordinates locally in both cases.
-- `slice-result-physical <JSON object>` publishes the relative result before
-  a physical check. A hit requiring physical diagnostics emits
-  `slice-physical`. Both release the lookup claim. The worker computes this group
-  at its physical positions when the occurrence map cannot render its result.
-  Its line and proposals belong to the current file.
 - An unrequested dependency first probes with `slice-lookup probe-check-slice`.
   A miss receives null and ends with `slice-skip` before the proposal-only
   lookup. A complete check can supply its named answers on a hit.

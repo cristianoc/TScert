@@ -26,6 +26,7 @@ import { decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall }
   from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { createHash } from "node:crypto";
@@ -371,7 +372,8 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.match(located.parts[0]?.stdout ?? "", /"refusal"/);
         writeFileSync(fragment, moveSites(bad));
         const relocated = check();
-        assert.equal(relocated.slices.executed, 1, "opaque diagnostics execute at current sites");
+        assert.equal(relocated.slices.executed, 0);
+        assert.equal(relocated.slices.replayed, 1);
         assert.deepEqual(relocated.parts.map(p => p.stdout.trimEnd()), worker(null).lines, "the moved refusal's current diagnostic");
 
         const opaque: Ast = { ...bad, functions: [fn("bad", 10, number,
@@ -454,6 +456,25 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         const movedBadInit = must(movedWidened.parts.find(p => p.part === "badInit@150")?.stdout, "moved badInit verdict");
         assert.match(movedBadInit, /\[168,173\)/);
 
+        const bindings: Ast = { ...ast,
+          functions: [fn("reader", 30, number, { k: "id", name: "value", pos: [34, 39] })],
+          init: [{ k: "const", pos: [10, 20], bindings: [{ name: "value", namePos: [12, 17], annot: null,
+            early: false, init: { k: "lit", pos: [18, 19], lit: { a: "numberlit", v: "1" } } }] }] };
+        writeFileSync(fragment, JSON.stringify(bindings));
+        const firstBinding = check();
+        assert.deepEqual(firstBinding.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        const unrelatedBinding: Ast = { ...bindings, init: [...bindings.init,
+          { k: "const", pos: [51, 65], bindings: [{ name: "other", namePos: [57, 62], annot: null,
+            early: false, init: { k: "lit", pos: [63, 64], lit: { a: "numberlit", v: "2" } } }] }] };
+        writeFileSync(fragment, JSON.stringify(unrelatedBinding));
+        const sameBinding = check();
+        assert.deepEqual([sameBinding.slices.executed, sameBinding.slices.replayed], [1, 1]);
+        assert.deepEqual(sameBinding.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        writeFileSync(fragment, JSON.stringify(unrelatedBinding).replace('"v":"1"', '"v":"3"'));
+        const changedBinding = check();
+        assert.equal(changedBinding.slices.executed, 2, "a changed captured literal is a new input");
+        assert.deepEqual(changedBinding.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+
         const chain = (literal: string): Ast => ({ ...ast, init: [], functions: [
           fn("left", 10, number, { k: "lit", pos: [14, 15], lit: { a: "numberlit", v: literal } }),
           fn("middle", 30, number, callAt("left", 34)),
@@ -498,12 +519,12 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.ok(middle && "accepted" in middle && middle.depends.includes("left@10"));
         writeFileSync(fragment, moveSites(wrong));
         const movedRefusal = check();
-        assert.equal(movedRefusal.slices.executed, 1);
-        assert.equal(movedRefusal.slices.replayed, 2);
+        assert.equal(movedRefusal.slices.executed, 0);
+        assert.equal(movedRefusal.slices.replayed, 3);
         const physical = must(movedRefusal.parts[0], "the relocated refusal");
         const workTable = readFileSync(join(profile, "work", physical.record.attempt + ".jsonl"), "utf8");
         assert.doesNotMatch(workTable, /"kind":"slice: execute"/, "the relative refusal and its proposal replay");
-        assert.match(workTable, /"kind":"slice: physical"/);
+        assert.doesNotMatch(workTable, /"kind":"check: group"/);
         assert.deepEqual(movedRefusal.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
       } finally {
         writeFileSync(fragment, JSON.stringify(ast));
@@ -1694,7 +1715,11 @@ control("exhausted footprint check", async (): Promise<void> => {
   // A check that runs out of subtype rounds is inconclusive, not a refusal.
   using searched = checkSource(join(root, "pipeline/examples/declaration-preserving-callback.ts"), undefined, false, 1, true);
   assert.equal(searched.status, "exhausted", JSON.stringify(searched).slice(0, 1500));
-  assert.match("detail" in searched ? searched.detail : "", /exhausted/);
+  const diagnostic = readDiagnostic("detail" in searched ? searched.detail : "");
+  assert.ok(diagnostic?.kind === "direct-obligation" && diagnostic.outcome.kind === "exhausted");
+  assert.equal(diagnostic.outcome.resource.limit, 1);
+  assert.deepEqual(diagnostic.judgment.subject, diagnostic.sourceMap.pos);
+  assert.equal(diagnostic.id, "expression:0");
   assert.doesNotMatch("detail" in searched ? searched.detail : "", /source effect refusal/);
   say(`exhausted footprint check: reported exhausted (${searched.status})`);
 });
