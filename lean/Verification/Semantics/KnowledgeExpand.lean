@@ -158,19 +158,34 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let vs := (k.values.map fun F => { F with contents := restrict (classCtxIn ctx cs F.slot) F.contents }) ++
     (k.links.filter fun g => !g.alias).filterMap fun g =>
       (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
+  let cells := k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents)
   let rel := released ctx cs k.indices
-  ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents), vs, ls, k.separation, k.elems,
-    k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel) ++
-      HeapKnowledge.restateReads ls (fun v => (HeapKnowledge.bridgeReads ls).any (·.2.2 == v)) (k.indices ++ rel)⟩
+  let restated := HeapKnowledge.restateReads ls (fun v => (HeapKnowledge.bridgeReads ls).any (·.2.2 == v)) (k.indices ++ rel)
+  let base := k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel) ++ restated
+  let ref := HeapKnowledge.refuteGuardedBodies base
+  let extra :=
+    if ref.isEmpty then []
+    else
+      let k0 : Knowledge := ⟨cells, vs, ls, k.separation, k.elems, base ++ ref⟩
+      let k1 := HeapKnowledge.dischargeGuards k0
+      let added := k1.indices.drop base.length
+      let rel2 := released ctx cs (k1.indices.drop k0.indices.length)
+      if rel2.isEmpty then added else added ++ rel2
+  ⟨cells, vs, ls, k.separation, k.elems,
+    k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel) ++ (restated ++ extra)⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
     (hk : HeapKnowledge.Holds k ε ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ε ρ h := by
+  unfold expandLinks
+  dsimp only
   have hs : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
     fun _ _ hy => members_eq hk.2.2.1 hy
-  have hv : ValueHolds ((k.values.map fun F =>
-      { F with contents := restrict (classCtxIn ctx (LinkClasses.closure k.links) F.slot) F.contents }) ++
-      (k.links.filter fun g => !g.alias).filterMap fun g =>
-        (classCtxIn ctx (LinkClasses.closure k.links) g.value).map fun C => ⟨g.value, C, valueField⟩) ρ := by
+  let cs := LinkClasses.closure k.links
+  let ls := links k cs
+  let vs : Facts := (k.values.map fun F => { F with contents := restrict (classCtxIn ctx cs F.slot) F.contents }) ++
+    (k.links.filter fun g => !g.alias).filterMap fun g =>
+      (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
+  have hv : ValueHolds vs ρ := by
     intro F hF
     rcases List.mem_append.mp hF with hF | hF
     · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
@@ -178,21 +193,61 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
     · obtain ⟨g, -, hF⟩ := List.mem_filterMap.mp hF
       obtain ⟨C, hC, rfl⟩ := Option.map_eq_some_iff.mp hF
       exact classCtxIn_mem hc (hs g.value) hC
-  have hl := links_holds hk
+  have hl : HeapLinks.Holds ls ρ h := links_holds hk
   have hrel := released_holds (ε := ε) hc hs hk.2.2.2.2.2
-  have hall : HeapKnowledge.IndexHolds ε (k.indices ++ released ctx (LinkClasses.closure k.links) k.indices) ρ h :=
+  have hall : HeapKnowledge.IndexHolds ε (k.indices ++ released ctx cs k.indices) ρ h :=
     fun a ha hcond => (List.mem_append.mp ha).elim (fun ha => hk.2.2.2.2.2 a ha hcond) (fun ha => hrel a ha hcond)
-  refine ⟨fun F hF => ?_, hv, hl, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => (List.mem_append.mp ha).elim
-    (fun ha => (List.mem_append.mp ha).elim (fun ha => hall a ha hcond)
-      (fun ha => HeapKnowledge.lowerAtoms_holds hl hall a ha hcond))
-    (fun ha => HeapKnowledge.restateReads_holds hl hall a ha hcond)⟩
-  rcases List.mem_append.mp hF with hF | hF
-  · exact hk.1 F hF
-  · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
-    have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, [], []⟩ ε ρ h :=
-      ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
-        indexHolds_nil ρ h⟩
-    exact linkFacts_holds hk' (hv V hV) F hF
+  let restated := HeapKnowledge.restateReads ls (fun v => (HeapKnowledge.bridgeReads ls).any (·.2.2 == v)) (k.indices ++ released ctx cs k.indices)
+  let base := k.indices ++ released ctx cs k.indices ++ HeapKnowledge.lowerAtoms ls (k.indices ++ released ctx cs k.indices) ++ restated
+  have hrestated : HeapKnowledge.IndexHolds ε restated ρ h :=
+    HeapKnowledge.restateReads_holds hl hall
+  have hbase : HeapKnowledge.IndexHolds ε base ρ h :=
+    fun a ha hcond => (List.mem_append.mp ha).elim
+      (fun ha => (List.mem_append.mp ha).elim (fun ha => hall a ha hcond)
+        (fun ha => HeapKnowledge.lowerAtoms_holds hl hall a ha hcond))
+      (fun ha => hrestated a ha hcond)
+  have hcells : HeapFacts.Holds (k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents)) ρ h := by
+    intro F hF
+    rcases List.mem_append.mp hF with hF | hF
+    · exact hk.1 F hF
+    · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
+      have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, [], []⟩ ε ρ h :=
+        ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
+          indexHolds_nil ρ h⟩
+      exact linkFacts_holds hk' (hv V hV) F hF
+  have hextra : HeapKnowledge.IndexHolds ε
+      (if (HeapKnowledge.refuteGuardedBodies base).isEmpty then []
+       else
+         let k0 : Knowledge := ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents),
+           vs, ls, k.separation, k.elems, base ++ HeapKnowledge.refuteGuardedBodies base⟩
+         let k1 := HeapKnowledge.dischargeGuards k0
+         let added := k1.indices.drop base.length
+         let rel2 := released ctx cs (k1.indices.drop k0.indices.length)
+         if rel2.isEmpty then added else added ++ rel2) ρ h := by
+    split
+    · exact indexHolds_nil ρ h
+    · have hk0 : HeapKnowledge.Holds
+          ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents), vs, ls,
+            k.separation, k.elems, base ++ HeapKnowledge.refuteGuardedBodies base⟩ ε ρ h :=
+        ⟨hcells, hv, hl, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => (List.mem_append.mp ha).elim
+          (fun ha => hbase a ha hcond) (fun ha => HeapKnowledge.refuteGuardedBodies_holds hbase a ha hcond)⟩
+      have hk1 := HeapKnowledge.dischargeGuards_holds hk0
+      dsimp only
+      split
+      · exact fun a ha hcond => hk1.2.2.2.2.2 a (List.mem_of_mem_drop ha) hcond
+      · intro a ha hcond
+        rcases List.mem_append.mp ha with ha | ha
+        · exact hk1.2.2.2.2.2 a (List.mem_of_mem_drop ha) hcond
+        · exact released_holds (ε := ε) hc hs
+            (fun b hb hbc => hk1.2.2.2.2.2 b (List.mem_of_mem_drop hb) hbc) a ha hcond
+  refine ⟨hcells, hv, hl, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => ?_⟩
+  rcases List.mem_append.mp ha with ha | ha
+  · rcases List.mem_append.mp ha with ha | ha
+    · exact hall a ha hcond
+    · exact HeapKnowledge.lowerAtoms_holds hl hall a ha hcond
+  · rcases List.mem_append.mp ha with ha | ha
+    · exact hrestated a ha hcond
+    · exact hextra a ha hcond
 
 end sound
 

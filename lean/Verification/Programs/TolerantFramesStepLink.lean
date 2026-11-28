@@ -316,15 +316,53 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
       ha0, .inr ⟨_, _, _, congrArg (fun f => keepSummaries (keepSummaries answers a0) (f (keepSummaries answers a0)).2)
         hS.symm⟩, ?_⟩
     step_rest
-  · gen_discr h as RV with hRV
-    rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
-    · close_errors
-    simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
-    obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
-    simp only [Option.isSome_some, ite_true] at h
-    simp only [keepSummaries_self] at h
-    refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
-    step_rest
+  · cases passChecker with
+    | ordinary =>
+      rw [PromiseCalls.ordinaryStepFused_eq rfl] at h
+      dsimp only at h
+      gen_discr h as RV with hRV
+      rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
+      · close_errors
+      simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
+      obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
+      simp only [Option.isSome_some, ite_true, keepSummaries_self] at h
+      refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
+      cases hT : checkTreeUsing G images e codes (keepSummaries answers a0).summaries.toList with
+      | true =>
+        simp only [hT, Bool.not_true, Bool.false_eq_true, ite_false, ite_true] at h
+        step_tail (passTreeCheck_tree (p := e) rfl (by simp [hT])), wholeCheck_none
+      | false =>
+        simp only [hT, Bool.false_eq_true, ite_false] at h
+        gen_ite h as C with hC
+        rcases C with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
+        · have hR : PromiseCalls.requiresTree G images
+              (IndexWrites.typedKnowledge G c.context
+                (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) M.fst) ms)
+              codes (keepSummaries answers a0).summaries.toList e = true := by
+            simpa using hC
+          simp only [hR, ite_true] at h
+          step_tail (passTreeCheck_pre (p := e) rfl (by simp [hT]) hR), (wholeCheck_some hQ)
+        · close_errors
+    | qualified s o =>
+      dsimp only at h
+      gen_discr h as RV with hRV
+      rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
+      · close_errors
+      simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
+      obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
+      simp only [Option.isSome_some, ite_true, keepSummaries_self] at h
+      refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
+      step_rest
+    | extended chk =>
+      dsimp only at h
+      gen_discr h as RV with hRV
+      rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
+      · close_errors
+      simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
+      obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
+      simp only [Option.isSome_some, ite_true, keepSummaries_self] at h
+      refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
+      step_rest
 
 end StepLink
 end Verification.TolerantFrames

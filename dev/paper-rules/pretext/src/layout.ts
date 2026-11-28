@@ -176,10 +176,17 @@ export function prepareWithSegments(text: string, font: string, options?: Prepar
    *  @invariant prepared.breakableLineStartExtras === null || prepared.widths.length <= prepared.breakableLineStartExtras.length
    *  @invariant forall i in prepared.breakableFitAdvances: prepared.breakableFitAdvances[i] === null || 1 <= prepared.breakableFitAdvances[i].length
    *  @invariant prepared.breakableLineStartExtras === null || forall i in prepared.breakableFitAdvances: prepared.breakableFitAdvances[i] === null || prepared.breakableLineStartExtras[i] === null || prepared.breakableFitAdvances[i].length <= prepared.breakableLineStartExtras[i].length
+   *  @invariant prepared.discretionaryHyphenContexts === null || prepared.widths.length <= prepared.discretionaryHyphenContexts.length
    *  @invariant prepared.items === undefined || prepared.items.hyphenWidths === null || prepared.widths.length <= prepared.items.hyphenWidths.length
+   *  @invariant prepared.items === undefined || prepared.items.tabStopAdvances === null || prepared.widths.length <= prepared.items.tabStopAdvances.length
+   *  @invariant prepared.items === undefined || prepared.items.minimumTabAdvances === null || prepared.widths.length <= prepared.items.minimumTabAdvances.length
    *  @invariant prepared.items === undefined || prepared.items.hyphenRooms === null || prepared.widths.length < prepared.items.hyphenRooms.length
    *  @invariant prepared.items === undefined || prepared.items.itemEndHalts === null || prepared.widths.length <= prepared.items.itemEndHalts.length
-   *  @invariant prepared.items === undefined || prepared.items.openingEdges === null || prepared.widths.length <= prepared.items.openingEdges.length */
+   *  @invariant prepared.items === undefined || prepared.items.insideExtras === null || prepared.widths.length <= prepared.items.insideExtras.length
+   *  @invariant prepared.items === undefined || prepared.items.fillExtras === null || prepared.widths.length <= prepared.items.fillExtras.length
+   *  @invariant prepared.items === undefined || prepared.items.openingEdges === null || prepared.widths.length <= prepared.items.openingEdges.length
+   *  @invariant prepared.items === undefined || prepared.items.emptyObjectSpaces === null || prepared.widths.length <= prepared.items.emptyObjectSpaces.length
+   *  @invariant prepared.items === undefined || prepared.items.emptyObjectReturns === null || prepared.widths.length <= prepared.items.emptyObjectReturns.length */
   for (let i = 0; i < prepared.segmentFlags.length; i++) kinds.push(SEGMENT_KINDS[prepared.segmentFlags[i]! & KIND_BITS] ?? missing())
   return { ...prepared, segments, kinds }
 }

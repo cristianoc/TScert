@@ -133,8 +133,15 @@ def Front.elaborateSome {ω : Type} (fr : Front) (wanted : Std.HashSet Nat) (ret
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
-/-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceElaboration.ClassSummary × Footprints.Closed × Option Nat × Nat))
+/-- Proposals dropped while settling a member during `PassProposals`: the
+head candidates dropped, by label, and the implications dropped
+`(label, test, target)`. -/
+abbrev SettledDrops := List (Nat × List HeapKnowledge.Candidate) × List (Nat × Nat × Nat)
+
+/-- What proposals established, by their inputs' digest (`FilePlans.proposed`),
+along with the proposals dropped while settling that member. -/
+abbrev ProposalMemo := Std.HashMap UInt64
+  (Option (SourceElaboration.ClassSummary × Footprints.Closed × Option Nat × Nat) × SettledDrops)
 
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/
@@ -157,6 +164,10 @@ structure FilePlans where
   /-- Non-recursive functions whose own proposal run (`PassProposals.proposeOne`)
   refused at an open plan (`none`), with no forced proposals or stand-ins. -/
   proposalRefused : List String := []
+  /-- Proposals dropped while settling during `PassProposals`, by function name,
+  applied before mode 8's inferred settling so a member already settled during
+  proposal does not re-drop the same facts. -/
+  proposalDropped : Std.HashMap String SettledDrops := {}
 
 /-- A group's dependencies on the wire: the groups its members reach, where
 its code names a qualified read, the module runs, and the module units the

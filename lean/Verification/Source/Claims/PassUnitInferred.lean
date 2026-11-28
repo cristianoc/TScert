@@ -123,9 +123,9 @@ theorem withFreshApart_recandidated (f : FilePlans) (force : Bool) (group : List
 related to the first by any reflexive, transitive relation each next state
 keeps. -/
 theorem settleInferred_last {S G R W : Type} {run : S → G → R} {refusal : R → Option W}
-    {next : S → G → W → Option (S × G × List String × Nat)} (Q : S → S → Prop)
+    {next : Nat → S → G → W → Option (S × G × List String × Nat)} (Q : S → S → Prop)
     (hrefl : ∀ s, Q s s) (htrans : ∀ a b c, Q a b → Q b c → Q a c)
-    (hnext : ∀ s g w s' g' ls d, next s g w = some (s', g', ls, d) → Q s s') :
+    (hnext : ∀ runs s g w s' g' ls d, next runs s g w = some (s', g', ls, d) → Q s s') :
     ∀ n s g ls d runs, Q s (settleInferred run refusal next n s g ls d runs).state ∧
       (settleInferred run refusal next n s g ls d runs).last =
         run (settleInferred run refusal next n s g ls d runs).state (settleInferred run refusal next n s g ls d runs).given := by
@@ -139,13 +139,13 @@ theorem settleInferred_last {S G R W : Type} {run : S → G → R} {refusal : R 
     | none => exact ⟨hrefl s, rfl⟩
     | some w =>
       dsimp only
-      cases hn : next s g w with
+      cases hn : next runs s g w with
       | none => exact ⟨hrefl s, rfl⟩
       | some x =>
         obtain ⟨s', g', ls', d'⟩ := x
         dsimp only
         obtain ⟨hq, hr⟩ := ih s' g' (ls ++ ls') (d + d') (runs + 1)
-        exact ⟨htrans _ _ _ (hnext _ _ _ _ _ _ _ hn) hq, hr⟩
+        exact ⟨htrans _ _ _ (hnext _ _ _ _ _ _ _ _ hn) hq, hr⟩
 
 /-- A next state of `inferredNext` is `Recandidated` (proved). -/
 theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List (Nat × List HeapKnowledge.Candidate)}
@@ -209,8 +209,9 @@ theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List H
 theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
     {protect : List (Nat × List HeapKnowledge.Candidate)}
     {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.Candidate)}
+    {diagnose : Bool}
     {f' : FilePlans} {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
-    (h : f.inferredNextAll fuel fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
+    (h : f.inferredNextAll fuel fixed protect given i w diagnose = some (f', given', ls, d)) : Recandidated f f' := by
   unfold FilePlans.inferredNextAll at h
   split at h
   · cases h
@@ -224,6 +225,39 @@ theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
       obtain ⟨rfl, -, -, -⟩ := h
       exact h₁.trans (dropAll_recandidated _ _ _)
 
+/-- Applying proposal drops keeps the plans `Recandidated` (proved). -/
+theorem applyProposalDropped_recandidated (f : FilePlans)
+    (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (group : List Nat) :
+    Recandidated f (f.applyProposalDropped keep group) := by
+  unfold FilePlans.applyProposalDropped
+  have key : ∀ (xs : List Nat) (g : FilePlans), Recandidated f g →
+      Recandidated f (xs.foldl (init := g) fun acc j =>
+        match acc.fr.units[j]? with
+        | some (fn, _, none) =>
+          match acc.proposalDropped.get? fn.name with
+          | some (candDrops, _) =>
+            let protect := keep j
+            let filtered := candDrops.filterMap fun (l, ds) =>
+              let kept := (protect.filter (·.1 == l)).flatMap (·.2)
+              let ds := ds.filter (!kept.contains ·)
+              if ds.isEmpty then none else some (l, ds)
+            acc.dropAll j filtered
+          | none => acc
+        | _ => acc) := by
+    intro xs
+    induction xs with
+    | nil => intro g hg; exact hg
+    | cons j rest ih =>
+      intro g hg
+      apply ih
+      dsimp only
+      split
+      · split
+        · exact hg.trans (dropAll_recandidated _ _ _)
+        · exact hg
+      · exact hg
+  exact key group f (Recandidated.refl f)
+
 /-- **A member's runs end at an inferred run of plans with other
 candidates** (proved). -/
 theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (Nat × List HeapKnowledge.Candidate)}
@@ -236,7 +270,7 @@ theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (N
           (f.inferredSettle fuel keep fixed compare debugNode repeats observe counting located given i).given i := by
   unfold FilePlans.inferredSettle
   exact settleInferred_last Recandidated Recandidated.refl (fun _ _ _ => Recandidated.trans)
-    (fun _ _ _ _ _ _ _ hn => inferredNextAll_recandidated hn) _ _ _ _ _ _
+    (fun _ _ _ _ _ _ _ _ hn => inferredNextAll_recandidated hn) _ _ _ _ _ _
 
 /-- An accepted inferred run is the pass's accepted run (proved). -/
 theorem inferredRun_accepted {g : FilePlans} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
@@ -322,8 +356,15 @@ theorem passGroupMode8_safe
   | true =>
     intro j hj
     have ha := withFreshApart_recandidated f (force.contains "head-apart") (f.fr.group i)
+    have hpre : Recandidated (f.withFreshApart (force.contains "head-apart") (f.fr.group i))
+        (if (!force.any (·.startsWith "head-") && (none : Option SinglePass.PassLayer).isNone) = true then
+          (f.withFreshApart (force.contains "head-apart") (f.fr.group i)).applyProposalDropped keep (f.fr.group i)
+        else f.withFreshApart (force.contains "head-apart") (f.fr.group i)) := by
+      split
+      · exact applyProposalDropped_recandidated _ keep _
+      · exact Recandidated.refl _
     obtain ⟨f', hr, hm⟩ := passGroupInferred_members haccepted j hj
-    have hr' := ha.trans hr
+    have hr' := (ha.trans hpre).trans hr
     exact hr'.memberSafe (member_safe (hrun _) (hkeep _) (hr'.overStore hover) hm)
 
 /-- **The headline** (proved, under the graph-level hypotheses `RunSound`

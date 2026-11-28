@@ -966,6 +966,27 @@ theorem slotGuardTag_sound {as : List IndexAtom} {s : Nat} {t : GuardTag} {ρ : 
   obtain ⟨a, haa, hcond, hm⟩ := ht
   exact atomGuardTags_sound (ha a haa fun b hb => by rw [hcond] at hb; cases hb) (atomHasGuardTag_mem hm)
 
+/-- A non-empty guard path witnessed directly by an impossible-body guarded fact
+(`guarded s p g B` with `!p.isEmpty` and `impossibleFact B`). -/
+def atomPathGuardTag : IndexFact → Option (Nat × List String × GuardTag)
+  | .guarded s p g B => if !p.isEmpty && impossibleFact B then some (s, p, g) else none
+  | _ => none
+
+theorem atomPathGuardTag_sound {F : IndexFact} {s : Nat} {p : List String} {t : GuardTag} {ρ : Env} {h : Heap}
+    (hF : F.HoldsAt ε ρ h) (hm : atomPathGuardTag F = some (s, p, t)) :
+    ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v := by
+  cases F with
+  | guarded x q g B =>
+    simp only [atomPathGuardTag] at hm
+    split at hm
+    · rename_i hc
+      simp only [Option.some.injEq, Prod.mk.injEq] at hm
+      obtain ⟨rfl, rfl, rfl⟩ := hm
+      obtain ⟨v, hv, hor⟩ := hF
+      exact ⟨v, hv, hor.elim id fun hB => (impossibleFact_sound (Bool.and_eq_true_iff.mp hc).2 hB).elim⟩
+    · cases hm
+  | _ => simp [atomPathGuardTag] at hm
+
 /-- Whether an unconditional atom states that a term denotes an integer: a
 linear fact names it; a slot's value, where an atom states the slot a safe
 integer (`intSlot`); a slot's length, where a length atom names it. -/
@@ -5641,6 +5662,7 @@ structure GuardTagTable where
   valByRep : Std.HashMap Nat (List ValueSets.ValueSet)
   cellByRep : Std.HashMap (Nat × String) (List ValueSets.ValueSet)
   tagByRep : Std.HashMap Nat (List GuardTag) := {}
+  pathTagByRep : Std.HashMap (Nat × List String) (List GuardTag) := {}
 
 def GuardTagTable.ofKnowledge (k : Knowledge) : GuardTagTable :=
   let rep := HeapLinks.repMap (HeapLinks.classes k.links)
@@ -5661,7 +5683,16 @@ def GuardTagTable.ofKnowledge (k : Knowledge) : GuardTagTable :=
           let key := HeapLinks.repOf rep p.1
           m'.insert key (p.2 :: m'.getD key [])) m
       else m) {}
-  { rep, valByRep, cellByRep, tagByRep }
+  let pathTagByRep : Std.HashMap (Nat × List String) (List GuardTag) :=
+    k.indices.foldl (fun m a =>
+      if a.cond.isNone then
+        match atomPathGuardTag a.fact with
+        | some (x, p, g) =>
+          let key := (HeapLinks.repOf rep x, p)
+          m.insert key (g :: m.getD key [])
+        | none => m
+      else m) {}
+  { rep, valByRep, cellByRep, tagByRep, pathTagByRep }
 
 def GuardTagTable.check (gt : GuardTagTable) (s : Nat) (p : List String) (t : GuardTag) : Bool :=
   match p with
@@ -5669,14 +5700,89 @@ def GuardTagTable.check (gt : GuardTagTable) (s : Nat) (p : List String) (t : Gu
       (gt.tagByRep.getD (HeapLinks.repOf gt.rep s) []).contains t
   | [g] =>
     (gt.cellByRep.getD (HeapLinks.repOf gt.rep s, g) []).any (onlyTag · t) ||
-    (t.holdsUndef && (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (·.omitsKey (.str g)))
-  | _ => false
+    (t.holdsUndef && (gt.valByRep.getD (HeapLinks.repOf gt.rep s) []).any (·.omitsKey (.str g))) ||
+    (gt.pathTagByRep.getD (HeapLinks.repOf gt.rep s, [g]) []).contains t
+  | _ => (gt.pathTagByRep.getD (HeapLinks.repOf gt.rep s, p) []).contains t
 
 theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
     ∀ s p t, (GuardTagTable.ofKnowledge k).check s p t = true → ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v := by
   intro s p t ht
   have hr : ∀ x, ρ (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x) = ρ x :=
     HeapLinks.repOf_eq (HeapLinks.classes_one hk.2.2.1)
+  have hpathTag : ∀ {q : List String},
+      ((k.indices.foldl (fun (m : Std.HashMap (Nat × List String) (List GuardTag)) a =>
+        if a.cond.isNone then
+          match atomPathGuardTag a.fact with
+          | some (x, p', g') =>
+            let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x, p')
+            m.insert key (g' :: m.getD key [])
+          | none => m
+        else m) {}).getD (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, q) []).contains t = true →
+      ∃ v, readGuard h (ρ s) q = some v ∧ t.holds v := by
+    intro q hpt
+    have hstep : ∀ (xs : List IndexAtom) (m : Std.HashMap (Nat × List String) (List GuardTag)),
+        (∀ a ∈ xs, a ∈ k.indices) →
+        (∀ {rs q' ts tg}, m[(rs, q')]? = some ts → tg ∈ ts →
+          ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧
+            ∃ v, readGuard h (ρ x) q' = some v ∧ tg.holds v) →
+        ∀ {rs q' ts tg}, (xs.foldl (fun (m : Std.HashMap (Nat × List String) (List GuardTag)) a =>
+          if a.cond.isNone then
+            match atomPathGuardTag a.fact with
+            | some (x, p', g') =>
+              let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x, p')
+              m.insert key (g' :: m.getD key [])
+            | none => m
+          else m) m)[(rs, q')]? = some ts →
+          tg ∈ ts → ∃ x, HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x = rs ∧
+            ∃ v, readGuard h (ρ x) q' = some v ∧ tg.holds v := by
+      intro xs
+      induction xs with
+      | nil => intro m _ hm rs q' ts tg h htg; exact hm h htg
+      | cons a0 xs ih =>
+        intro m hsub hm
+        dsimp only [List.foldl_cons]
+        apply ih _ (fun a ha => hsub a (List.mem_cons_of_mem _ ha))
+        intro rs q' ts tg h htg
+        by_cases hcond : a0.cond.isNone = true
+        · simp only [hcond, ite_true] at h
+          cases hat : atomPathGuardTag a0.fact with
+          | none => rw [hat] at h; exact hm h htg
+          | some xpg =>
+            obtain ⟨x, p', g'⟩ := xpg
+            rw [hat] at h
+            dsimp only at h
+            rw [Std.HashMap.getElem?_insert] at h
+            split at h
+            · rename_i heq
+              simp only [Option.some.injEq] at h; subst h
+              simp only [beq_iff_eq, Prod.mk.injEq] at heq
+              obtain ⟨heq, rfl⟩ := heq
+              rcases List.mem_cons.mp htg with rfl | htg
+              · have hnone : a0.cond = none := Option.isNone_iff_eq_none.mp hcond
+                exact ⟨x, heq, atomPathGuardTag_sound
+                  (hk.2.2.2.2.2 a0 (hsub a0 (List.mem_cons_self ..)) (fun b hb => by rw [hnone] at hb; cases hb)) hat⟩
+              · rw [Std.HashMap.getD_eq_getD_getElem?] at htg
+                cases hm0 : m[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x, p')]? with
+                | none => rw [hm0] at htg; cases htg
+                | some ts0 => rw [hm0] at htg; rw [heq] at hm0; exact hm hm0 htg
+            · exact hm h htg
+        · simp only [hcond, Bool.false_eq_true, ite_false] at h; exact hm h htg
+    rw [Std.HashMap.getD_eq_getD_getElem?] at hpt
+    cases hm : (k.indices.foldl (fun (m : Std.HashMap (Nat × List String) (List GuardTag)) a =>
+        if a.cond.isNone then
+          match atomPathGuardTag a.fact with
+          | some (x, p', g') =>
+            let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) x, p')
+            m.insert key (g' :: m.getD key [])
+          | none => m
+        else m) {})[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, q)]? with
+    | none => rw [hm] at hpt; simp at hpt
+    | some ts =>
+      rw [hm] at hpt
+      obtain ⟨x, heq, v, hv, htv⟩ := hstep k.indices {} (fun _ h => h) (by intro rs q' ts tg h; simp at h) hm (List.contains_iff_mem.mp hpt)
+      have hxs : ρ x = ρ s := by rw [← hr x, heq, hr]
+      rw [hxs] at hv
+      exact ⟨v, hv, htv⟩
   have hvalMap : ∀ {rs : Nat} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
       (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
         let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
@@ -5809,131 +5915,172 @@ theorem GuardTagTable.check_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Ho
   | [g], ht =>
     unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
     dsimp only at ht
-    rcases Bool.or_eq_true_iff.mp ht with ht | ht
-    · have hcellMap : ∀ {rs : Nat} {g' : String} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
-          (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
-            | .str g0 =>
-              let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
-              m.insert key (f.contents :: m.getD key [])
-            | .sym _ => m) {})[(rs, g')]? = some vs →
-          c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-        have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)),
-            (∀ f ∈ xs, f ∈ k.cells) →
-            (∀ {rs g' vs c}, m[(rs, g')]? = some vs → c ∈ vs →
-              ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
-            ∀ {rs g' vs c}, (xs.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+    rcases Bool.or_eq_true_iff.mp ht with ht | hpt
+    · rcases Bool.or_eq_true_iff.mp ht with ht | ht
+      · have hcellMap : ∀ {rs : Nat} {g' : String} {vs : List ValueSets.ValueSet} {c : ValueSets.ValueSet},
+            (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
               | .str g0 =>
                 let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
                 m.insert key (f.contents :: m.getD key [])
-              | .sym _ => m) m)[(rs, g')]? = some vs →
-              c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
-          intro xs
-          induction xs with
-          | nil => intro m _ hm rs g' vs c h hc; exact hm h hc
-          | cons f0 xs ih =>
-            intro m hsub hm
-            apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
-            cases hfld : f0.field with
-            | sym _ =>
-              intro rs g' vs c h hc
-              dsimp only at h; rw [hfld] at h
-              exact hm h hc
-            | str g0 =>
-              intro rs g' vs c h hc
-              dsimp only at h; rw [hfld] at h; dsimp only at h
-              rw [Std.HashMap.getElem?_insert] at h
-              split at h
-              · rename_i heq
-                simp only [Option.some.injEq] at h
-                subst h
-                simp only [beq_iff_eq, Prod.mk.injEq] at heq
-                obtain ⟨heq, rfl⟩ := heq
-                rcases List.mem_cons.mp hc with rfl | hc
-                · exact ⟨f0, hsub f0 (List.mem_cons_self ..), hfld, heq, rfl⟩
-                · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
-                  cases hm0 : m[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot, g0)]? with
-                  | none => rw [hm0] at hc; cases hc
-                  | some vs0 =>
-                    rw [hm0] at hc
-                    rw [heq] at hm0
-                    exact hm hm0 hc
-              · exact hm h hc
-        exact fun {rs g' vs c} => hstep k.cells {} (fun _ h => h) (by intro rs g' vs c h; simp at h)
-      rw [Std.HashMap.getD_eq_getD_getElem?] at ht
-      cases hm : (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
-          | .str g0 =>
-            let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
-            m.insert key (f.contents :: m.getD key [])
-          | .sym _ => m) {})[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, g)]? with
-      | none => rw [hm] at ht; simp at ht
-      | some vs =>
-        rw [hm] at ht
-        obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
-        obtain ⟨f, hf, hfld, heq, rfl⟩ := hcellMap hm hc
-        obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
-        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-        rw [hfs] at he
-        rw [hfld] at hrg
-        exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
-    · obtain ⟨htu, ht⟩ := Bool.and_eq_true_iff.mp ht
-      rw [Std.HashMap.getD_eq_getD_getElem?] at ht
-      cases hm : (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
-          let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
-          m.insert key (f.contents :: m.getD key [])) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
-      | none => rw [hm] at ht; simp at ht
-      | some vs =>
-        rw [hm] at ht
-        obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
-        obtain ⟨f, hf, heq, rfl⟩ := hvalMap hm hc
-        have hv := hk.2.1 f hf
-        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-        rw [hfs] at hv
-        obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
-        exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
-  | _ :: _ :: _, ht => simp [GuardTagTable.check] at ht
+              | .sym _ => m) {})[(rs, g')]? = some vs →
+            c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+          have hstep : ∀ (xs : List HeapFacts.Fact) (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)),
+              (∀ f ∈ xs, f ∈ k.cells) →
+              (∀ {rs g' vs c}, m[(rs, g')]? = some vs → c ∈ vs →
+                ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c) →
+              ∀ {rs g' vs c}, (xs.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+                | .str g0 =>
+                  let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
+                  m.insert key (f.contents :: m.getD key [])
+                | .sym _ => m) m)[(rs, g')]? = some vs →
+                c ∈ vs → ∃ f ∈ k.cells, f.field = .str g' ∧ HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot = rs ∧ f.contents = c := by
+            intro xs
+            induction xs with
+            | nil => intro m _ hm rs g' vs c h hc; exact hm h hc
+            | cons f0 xs ih =>
+              intro m hsub hm
+              apply ih _ (fun f hf => hsub f (List.mem_cons_of_mem _ hf))
+              cases hfld : f0.field with
+              | sym _ =>
+                intro rs g' vs c h hc
+                dsimp only at h; rw [hfld] at h
+                exact hm h hc
+              | str g0 =>
+                intro rs g' vs c h hc
+                dsimp only at h; rw [hfld] at h; dsimp only at h
+                rw [Std.HashMap.getElem?_insert] at h
+                split at h
+                · rename_i heq
+                  simp only [Option.some.injEq] at h
+                  subst h
+                  simp only [beq_iff_eq, Prod.mk.injEq] at heq
+                  obtain ⟨heq, rfl⟩ := heq
+                  rcases List.mem_cons.mp hc with rfl | hc
+                  · exact ⟨f0, hsub f0 (List.mem_cons_self ..), hfld, heq, rfl⟩
+                  · rw [Std.HashMap.getD_eq_getD_getElem?] at hc
+                    cases hm0 : m[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f0.slot, g0)]? with
+                    | none => rw [hm0] at hc; cases hc
+                    | some vs0 =>
+                      rw [hm0] at hc
+                      rw [heq] at hm0
+                      exact hm hm0 hc
+                · exact hm h hc
+          exact fun {rs g' vs c} => hstep k.cells {} (fun _ h => h) (by intro rs g' vs c h; simp at h)
+        rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+        cases hm : (k.cells.foldl (fun (m : Std.HashMap (Nat × String) (List ValueSets.ValueSet)) f => match f.field with
+            | .str g0 =>
+              let key := (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot, g0)
+              m.insert key (f.contents :: m.getD key [])
+            | .sym _ => m) {})[(HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s, g)]? with
+        | none => rw [hm] at ht; simp at ht
+        | some vs =>
+          rw [hm] at ht
+          obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
+          obtain ⟨f, hf, hfld, heq, rfl⟩ := hcellMap hm hc
+          obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
+          have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+          rw [hfs] at he
+          rw [hfld] at hrg
+          exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+      · obtain ⟨htu, ht⟩ := Bool.and_eq_true_iff.mp ht
+        rw [Std.HashMap.getD_eq_getD_getElem?] at ht
+        cases hm : (k.values.foldl (fun (m : Std.HashMap Nat (List ValueSets.ValueSet)) f =>
+            let key := HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) f.slot
+            m.insert key (f.contents :: m.getD key [])) {})[HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes k.links)) s]? with
+        | none => rw [hm] at ht; simp at ht
+        | some vs =>
+          rw [hm] at ht
+          obtain ⟨c, hc, ho⟩ := List.any_eq_true.mp ht
+          obtain ⟨f, hf, heq, rfl⟩ := hvalMap hm hc
+          have hv := hk.2.1 f hf
+          have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+          rw [hfs] at hv
+          obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
+          exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
+    · exact hpathTag hpt
+  | _ :: _ :: _, ht =>
+    unfold GuardTagTable.check GuardTagTable.ofKnowledge at ht
+    exact hpathTag ht
 
 /-- Which guard paths a knowledge states satisfy a guard tag: lightweight
 single-shot check (for repeated checks on one `Knowledge`, precompute
 `GuardTagTable.ofKnowledge`). -/
 def guardTags (k : Knowledge) (s : Nat) (p : List String) (t : GuardTag) : Bool :=
   let r := HeapLinks.rep (HeapLinks.classes k.links)
+  let rs := r s
   match p with
   | [] =>
-    let rs := r s
-    k.values.any fun f => onlyTag f.contents t && r f.slot == rs
+    (k.values.any fun f => onlyTag f.contents t && r f.slot == rs) ||
+    (k.indices.any fun a => a.cond.isNone && (atomGuardTags a.fact).any fun (x, g) => g == t && r x == rs)
   | [g] =>
-    let rs := r s
-    k.cells.any (fun f => f.field == .str g && onlyTag f.contents t && r f.slot == rs) ||
-    (t.holdsUndef && k.values.any fun f => f.contents.omitsKey (.str g) && r f.slot == rs)
-  | _ => false
+    (k.cells.any fun f => f.field == .str g && onlyTag f.contents t && r f.slot == rs) ||
+    (t.holdsUndef && k.values.any fun f => f.contents.omitsKey (.str g) && r f.slot == rs) ||
+    (k.indices.any fun a => a.cond.isNone && match atomPathGuardTag a.fact with
+      | some (x, q, g') => q == [g] && g' == t && r x == rs
+      | none => false)
+  | _ =>
+    k.indices.any fun a => a.cond.isNone && match atomPathGuardTag a.fact with
+      | some (x, q, g') => q == p && g' == t && r x == rs
+      | none => false
 
 theorem guardTags_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
     ∀ s p t, guardTags k s p t = true → ∃ v, readGuard h (ρ s) p = some v ∧ t.holds v := by
   intro s p t ht
   have hr : ∀ x, ρ (HeapLinks.rep (HeapLinks.classes k.links) x) = ρ x :=
     HeapLinks.rep_eq (HeapLinks.classes_one hk.2.2.1)
+  have hpath : ∀ {q : List String},
+      (k.indices.any fun a => a.cond.isNone && match atomPathGuardTag a.fact with
+        | some (x, q', g') => q' == q && g' == t && HeapLinks.rep (HeapLinks.classes k.links) x == HeapLinks.rep (HeapLinks.classes k.links) s
+        | none => false) = true →
+      ∃ v, readGuard h (ρ s) q = some v ∧ t.holds v := by
+    intro q hp
+    obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hp
+    obtain ⟨hcond, hm⟩ := Bool.and_eq_true_iff.mp hm
+    cases hat : atomPathGuardTag a.fact with
+    | none => rw [hat] at hm; cases hm
+    | some xpg =>
+      obtain ⟨x, q', g'⟩ := xpg
+      rw [hat] at hm
+      simp only [Bool.and_eq_true, beq_iff_eq] at hm
+      obtain ⟨⟨rfl, rfl⟩, heq⟩ := hm
+      have hnone : a.cond = none := Option.isNone_iff_eq_none.mp hcond
+      obtain ⟨v, hv, htv⟩ := atomPathGuardTag_sound (hk.2.2.2.2.2 a ha fun b hb => by rw [hnone] at hb; cases hb) hat
+      have hxs : ρ x = ρ s := by rw [← hr x, heq, hr]
+      rw [hxs] at hv
+      exact ⟨v, hv, htv⟩
   match p, ht with
   | [], ht =>
-    simp only [guardTags, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at ht
-    obtain ⟨f, hf, ho, heq⟩ := ht
-    have hv := hk.2.1 f hf
-    have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-    rw [hfs] at hv
-    exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
-  | [g], ht =>
-    simp only [guardTags, Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at ht
-    rcases ht with ⟨f, hf, ⟨hg, ho⟩, heq⟩ | ⟨htu, f, hf, ho, heq⟩
-    · obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
-      have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
-      rw [hfs] at he
-      rw [hg] at hrg
-      exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+    simp only [guardTags, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at ht
+    rcases ht with ⟨f, hf, ho, heq⟩ | ⟨a, ha, hcond, ⟨x, g⟩, hmem, rfl, heq⟩
     · have hv := hk.2.1 f hf
       have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
       rw [hfs] at hv
-      obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
-      exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
-  | _ :: _ :: _, ht => simp [guardTags] at ht
+      exact ⟨ρ s, rfl, onlyTag_mem ho hv⟩
+    · have hnone : a.cond = none := Option.isNone_iff_eq_none.mp hcond
+      have htx := atomGuardTags_sound (hk.2.2.2.2.2 a ha fun b hb => by rw [hnone] at hb; cases hb) hmem
+      have hxs : ρ x = ρ s := by rw [← hr x, heq, hr]
+      rw [hxs] at htx
+      exact ⟨ρ s, rfl, htx⟩
+  | [g], ht =>
+    unfold guardTags at ht
+    dsimp only at ht
+    rcases Bool.or_eq_true_iff.mp ht with ht | hpt
+    · simp only [Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at ht
+      rcases ht with ⟨f, hf, ⟨hg, ho⟩, heq⟩ | ⟨htu, f, hf, ho, heq⟩
+      · obtain ⟨flds, cd, oid, v, he, hrg, hv⟩ := hk.1 f hf
+        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+        rw [hfs] at he
+        rw [hg] at hrg
+        exact ⟨v, by rw [he, readGuard_readGave hrg []]; rfl, onlyTag_mem ho hv⟩
+      · have hv := hk.2.1 f hf
+        have hfs : ρ f.slot = ρ s := by rw [← hr f.slot, heq, hr]
+        rw [hfs] at hv
+        obtain ⟨fs, cd, oid, he, hlk, hproto⟩ := ValueSets.ValueSet.omitsKey_sound ho hv
+        exact ⟨.undef, by simp [readGuard, he, hlk, hproto], GuardTag.holds_undef htu⟩
+    · exact hpath hpt
+  | _ :: _ :: _, ht =>
+    unfold guardTags at ht
+    exact hpath ht
 
 /-- Discharges guarded index atoms in `k` whose guard's complement holds under
 `GuardTagTable.ofKnowledge k`. -/
@@ -10563,18 +10710,19 @@ theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds
               | _ => simp only at hme; cases hme
 
 
-/-- Whether a linear fact contradicts a prepared linear context `K`, checked
-by its targeted negation over `F`'s variables rather than a whole-store
-contradiction search. -/
+/-- Whether a linear fact (or disjunction of linear facts) contradicts a prepared
+linear context `K`, checked by its targeted negation over `F`'s variables rather
+than a whole-store contradiction search. -/
 def contradictsIn (K : Linear.Known Term) : IndexFact → Bool
   | .linear (.le form d) => K.entails (.le (form.map fun (t, c) => (t, -c)) (-d - 1))
   | .linear (.ne form d) =>
     K.entails (.le form d) && K.entails (.le (form.map fun (t, c) => (t, -c)) (-d))
+  | .either A B => contradictsIn K A && contradictsIn K B
   | _ => false
 
 theorem contradictsIn_sound {K : Linear.Known Term} {F : IndexFact} {ρ : Env} {h : Heap}
     (hK : K.Holds (termValuation ε ρ h)) (hc : contradictsIn K F = true) (hF : F.HoldsAt ε ρ h) : False := by
-  cases F with
+  induction F with
   | linear L =>
     cases L with
     | le form d =>
@@ -10589,8 +10737,146 @@ theorem contradictsIn_sound {K : Linear.Known Term} {F : IndexFact} {ρ : Env} {
       simp only [Linear.Fact.Holds, eval_negForm] at hle2
       have hne : Linear.Form.eval (termValuation ε ρ h) form ≠ d := hF.2
       omega
-  | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _
+  | either A B iha ihb =>
+    obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.mp hc
+    exact hF.elim (iha h1) (ihb h2)
+  | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | guarded _ _ _ _
   | element _ _ _ | fieldRead _ _ _ | every _ _ _ _ | atIndex _ _ _ _ _ | apart _ _ _ _ | spineApart _ _ _ _ | elemSpineApart _ _ _ _ | same _ _ => simp [contradictsIn] at hc
+
+/-- Rename the terms of a linear or disjunctive linear fact by `c`. -/
+def mapFactTerms (c : Term → Term) : IndexFact → IndexFact
+  | .linear L => .linear (renameFact c L)
+  | .either A B => .either (mapFactTerms c A) (mapFactTerms c B)
+  | F => F
+
+theorem mapFactTerms_holds {c : Term → Term} {ρ : Env} {h : Heap}
+    (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t) :
+    ∀ {F : IndexFact}, F.HoldsAt ε ρ h → (mapFactTerms c F).HoldsAt ε ρ h
+  | .linear L, hF =>
+    (IndexFact.holdsAt_linear_mapVars (renameFact_mapVars c L) fun x _ y hy => by
+      cases hy; exact hc x).mpr hF
+  | .either A B, hF => hF.imp (mapFactTerms_holds hc) (mapFactTerms_holds hc)
+  | .index _, hF | .length _ _, hF | .bound _ _ _, hF | .int _, hF | .pastSafe _, hF
+  | .guarded _ _ _ _, hF | .element _ _ _, hF | .fieldRead _ _ _, hF | .every _ _ _ _ _, hF
+  | .atIndex _ _ _ _ _, hF | .apart _ _ _ _, hF | .spineApart _ _ _ _, hF
+  | .elemSpineApart _ _ _ _, hF | .same _ _, hF => hF
+
+/-- Whether an index fact is of a shape `contradictsIn` can refute. -/
+def mayRefuteByLinear : IndexFact → Bool
+  | .linear _ => true
+  | .either A B => mayRefuteByLinear A && mayRefuteByLinear B
+  | _ => false
+
+/-- Whether every variable of a linear/disjunctive fact occurs in `K`'s variable index. -/
+def allVarsIn (K : Linear.Known Term) : IndexFact → Bool
+  | .linear L => L.vars.all (K.byVar.contains ·)
+  | .either A B => allVarsIn K A && allVarsIn K B
+  | _ => false
+
+/-- Whether `K.direct` already witnesses `F` (so refutation need not run Fourier–Motzkin). -/
+def directIn (K : Linear.Known Term) : IndexFact → Bool
+  | .linear L => K.direct L
+  | .either A B => directIn K A || directIn K B
+  | _ => false
+
+/-- Collect the unconditional linear facts and all terms they mention in a single
+pass, so guarded-body refutation skips building `Linear.Known` when no guarded
+body overlaps the held linear terms (or every such body is already held). -/
+private def linearFactAndTermSets (as : List IndexAtom) : Std.HashSet (Linear.Fact Term) × Std.HashSet Term :=
+  as.foldl (fun (fs, ts) a =>
+    if a.cond.isNone then
+      match a.fact with
+      | .linear F => (fs.insert F, F.vars.foldl (·.insert ·) ts)
+      | .length x n =>
+        let f1 : Linear.Fact Term := .le [(.value n, 1), (.length x, -1)] 0
+        let f2 : Linear.Fact Term := .le [(.value n, -1), (.length x, 1)] 0
+        ((fs.insert f1).insert f2, (ts.insert (.value n)).insert (.length x))
+      | _ => (fs, ts)
+    else (fs, ts)) ({}, {})
+
+/-- Whether a linear/disjunctive body is not already held verbatim in `fs` and
+every one of its variables occurs in `ts`. -/
+private def candidateLinearBody (fs : Std.HashSet (Linear.Fact Term)) (ts : Std.HashSet Term) : IndexFact → Bool
+  | .linear L => !fs.contains L && L.vars.all (ts.contains ·)
+  | .either A B => candidateLinearBody fs ts A && candidateLinearBody fs ts B
+  | _ => false
+
+/-- Filter `as` for unconditional guarded atoms whose body, under term bridge `c`,
+is contradicted by `K` (skipping atoms already in `already` or directly held in `K`). -/
+private def refuteGuardedWithBridge (c : Term → Term) (K : Linear.Known Term)
+    (already : Std.HashSet (Nat × List String × GuardTag)) (as : List IndexAtom) : List IndexAtom :=
+  as.filterMap fun a => match a with
+    | ⟨.guarded s p g B, none, _⟩ =>
+      if !impossibleFact B && !already.contains (s, p, g) && mayRefuteByLinear B then
+        let B' := mapFactTerms c B
+        if !directIn K B' && allVarsIn K B' && contradictsIn K B' then
+          some { fact := .guarded s p g (.linear (.le [] (-1))) }
+        else none
+      else none
+    | _ => none
+
+private theorem refuteGuardedWithBridge_holds {c : Term → Term} {K : Linear.Known Term}
+    {already : Std.HashSet (Nat × List String × GuardTag)} {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
+    (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε as ρ h) :
+    IndexHolds ε (refuteGuardedWithBridge c K already as) ρ h := by
+  intro b hb _
+  obtain ⟨a, haa, hab⟩ := List.mem_filterMap.mp hb
+  cases a with
+  | mk af ac an =>
+    cases ac with
+    | some _ => cases af <;> simp at hab
+    | none =>
+      cases af with
+      | guarded s p g B =>
+        dsimp only at hab
+        split at hab
+        · split at hab
+          · rename_i hchk
+            simp only [Option.some.injEq] at hab; subst hab
+            obtain ⟨v, hv, hor⟩ := ha _ haa (fun _ hc' => by cases hc')
+            exact ⟨v, hv, .inl (hor.elim id fun hB => False.elim
+              (contradictsIn_sound hK (Bool.and_eq_true_iff.mp hchk).2 (mapFactTerms_holds hc hB)))⟩
+          · cases hab
+        · cases hab
+      | _ => simp at hab
+
+/-- Discharges unconditional guarded facts `guarded s p g B` whose body `B` is
+refuted by the held linear facts of `as`, producing `guarded s p g (0 ≤ -1)` so
+every downstream guard-tag consumer reads `g` on `s.p` in `O(1)`. Skips building
+`Linear.Known` whenever no guarded body's variables all occur in `as`'s linear
+facts (or every such body is already held verbatim). -/
+def refuteGuardedBodies (as : List IndexAtom) : List IndexAtom :=
+  if !as.any (fun a => a.cond.isNone && match a.fact with
+      | .guarded _ _ _ B => !impossibleFact B && mayRefuteByLinear B
+      | _ => false) then []
+  else
+    let (fs, ts) := linearFactAndTermSets as
+    if fs.isEmpty then []
+    else
+      if !as.any (fun a => match a with
+          | ⟨.guarded _ _ _ B, none, _⟩ => !impossibleFact B && candidateLinearBody fs ts B
+          | _ => false) then []
+      else
+        let already : Std.HashSet (Nat × List String × GuardTag) :=
+          as.foldl (fun acc a => match a with
+            | ⟨.guarded s p g B, none, _⟩ => if impossibleFact B then acc.insert (s, p, g) else acc
+            | _ => acc) {}
+        refuteGuardedWithBridge id (Linear.Known.build (linearRaw as) []) already as
+
+theorem refuteGuardedBodies_holds {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (ha : IndexHolds ε as ρ h) :
+    IndexHolds ε (refuteGuardedBodies as) ρ h := by
+  unfold refuteGuardedBodies
+  split
+  · exact indexHolds_nil ρ h
+  · dsimp only
+    split
+    · exact indexHolds_nil ρ h
+    · split
+      · exact indexHolds_nil ρ h
+      · exact refuteGuardedWithBridge_holds (fun _ => rfl)
+          (Linear.Known.build_holds (linearRaw_holds ha) (by simp)) ha
 
 /-- An alternative whose other arm contradicts the prepared linear facts `K`. -/
 def releaseEitherIn (K : Linear.Known Term) (a : IndexAtom) : List IndexAtom :=
@@ -11447,60 +11733,250 @@ theorem releaseEithersIn_holds {K : Linear.Known Term} {as eithers : List IndexA
     IndexHolds ε (releaseEithersIn K eithers) ρ h :=
   releaseEithersInOracle_holds (TypeOracle.empty_ok ρ) hK ha hsub
 
-/-- Release every unconditional `.either` in `k` whose opposite arm (or
-conjunction of linear opposite arms sharing the same surviving arm) is
-contradicted by `k`'s linear facts together with the type oracle `O`. -/
-def releaseEithersStepOracle (O : TypeOracle) (k : Knowledge) : Knowledge :=
-  if !k.indices.any (fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false) then k else
-  let kSet := Std.HashSet.ofList k.indices
-  let eithers := k.indices.filter fun a => a.cond.isNone && match a.fact with
-    | .either A B => !kSet.contains { fact := A } && !kSet.contains { fact := B }
-    | _ => false
-  if eithers.isEmpty then k else
+/-- Whether a fact has a shape `contradictsInOracle` can refute. -/
+def mayRefuteByOracle : IndexFact → Bool
+  | .linear _ | .int _ | .pastSafe _ => true
+  | .guarded _ [] _ B => mayRefuteByOracle B
+  | .either A B => mayRefuteByOracle A && mayRefuteByOracle B
+  | _ => false
+
+/-- Targeted version of `contradictsInOracle` for guarded bodies: skips linear
+entailment when a linear body is directly satisfied or mentions a variable
+absent from `K`. -/
+def contradictsInOracleGuarded (O : TypeOracle) (K : Linear.Known Term) : IndexFact → Bool
+  | .linear L =>
+    (L.vars.any fun t =>
+      !t.atEntry && t.kind == .value && t.path.isEmpty && O.excludesInt t.slot) ||
+    (!K.direct L && L.vars.all (K.byVar.contains ·) && contradictsIn K (.linear L))
+  | .int s => O.excludesInt s
+  | .pastSafe s => O.excludesPastSafe s
+  | .guarded s [] tag B => O.excludesGuard s tag && contradictsInOracleGuarded O K B
+  | .either A B => contradictsInOracleGuarded O K A && contradictsInOracleGuarded O K B
+  | _ => false
+
+theorem contradictsInOracleGuarded_sound {O : TypeOracle} {K : Linear.Known Term} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hK : K.Holds (termValuation ε ρ h)) :
+    ∀ {F : IndexFact}, contradictsInOracleGuarded O K F = true → F.HoldsAt ε ρ h → False
+  | .linear L, hc, hF => by
+    simp only [contradictsInOracleGuarded, Bool.or_eq_true] at hc
+    rcases hc with hc | hc
+    · exact contradictsInOracle_sound hO hK (by simp [contradictsInOracle, hc]) hF
+    · exact contradictsIn_sound hK (Bool.and_eq_true_iff.mp hc).2 hF
+  | .int s, hc, hF => contradictsInOracle_sound hO hK (by simpa [contradictsInOracle, contradictsInOracleGuarded] using hc) hF
+  | .pastSafe s, hc, hF => contradictsInOracle_sound hO hK (by simpa [contradictsInOracle, contradictsInOracleGuarded] using hc) hF
+  | .guarded s [] tag B, hc, hF => by
+    simp only [contradictsInOracleGuarded, Bool.and_eq_true] at hc
+    obtain ⟨v, hv, hor⟩ := hF
+    simp only [readGuard, Option.some.injEq] at hv
+    exact contradictsInOracleGuarded_sound hO hK hc.2 (hor.resolve_left (hv ▸ hO.guard s tag hc.1))
+  | .either A B, hc, hF => by
+    simp only [contradictsInOracleGuarded, Bool.and_eq_true] at hc
+    exact hF.elim (contradictsInOracleGuarded_sound hO hK hc.1) (contradictsInOracleGuarded_sound hO hK hc.2)
+  | .guarded _ (_ :: _) _ _, hc, _ | .index _, hc, _ | .length _ _, hc, _ | .bound _ _ _, hc, _
+  | .element _ _ _, hc, _ | .fieldRead _ _ _, hc, _ | .every _ _ _ _ _, hc, _
+  | .atIndex _ _ _ _ _, hc, _ | .apart _ _ _ _, hc, _ | .spineApart _ _ _ _, hc, _
+  | .elemSpineApart _ _ _ _, hc, _ | .same _ _, hc, _ => by
+    simp [contradictsInOracleGuarded] at hc
+
+/-- Discharge every unconditional `.guarded s p g B` in `guardeds` whose body
+`B` is contradicted by `O` and `K` (directly or modulo links in `ls`), emitting
+`guarded s p g (0 ≤ -1)`. -/
+def releaseGuardedBodiesInOracle (O : TypeOracle) (K : Linear.Known Term) (ls : HeapLinks.Links)
+    (guardeds : List IndexAtom) : List IndexAtom :=
+  let Kt := withTypeLinear O K guardeds
+  let bridged : Thunk ((Term → Term) × Linear.Known Term) := Thunk.mk fun _ =>
+    let rm := HeapLinks.repMap (HeapLinks.classes ls)
+    let r := HeapLinks.repOf rm
+    let reads := bridgeReads ls
+    let lm := liftReadMap r reads
+    let dm := lowerReadMap r reads
+    let rn := reads.length
+    let lt := fun t => liftTermMap r lm rn (lowerTermAllMap r dm rn t)
+    (lt, Linear.Known.build (bridgeFacts lt Kt.facts.toList) [])
+  guardeds.filterMap fun a => match a with
+    | ⟨.guarded s p g B, none, _⟩ =>
+      if contradictsInOracleGuarded O Kt B ||
+         (!ls.isEmpty && mayRefuteByLinear B &&
+           let (lt, Klt) := bridged.get
+           let B' := mapFactTerms lt B
+           !directIn Klt B' && allVarsIn Klt B' && contradictsIn Klt B') then
+        some { fact := .guarded s p g (.linear (.le [] (-1))) }
+      else none
+    | _ => none
+
+theorem releaseGuardedBodiesInOracle_holds {O : TypeOracle} {K : Linear.Known Term}
+    {ls : HeapLinks.Links} {as guardeds : List IndexAtom} {ρ : Env} {h : Heap}
+    (hO : TypeOracleOk O ρ) (hK : K.Holds (termValuation ε ρ h))
+    (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds ε as ρ h) (hsub : ∀ b ∈ guardeds, b ∈ as) :
+    IndexHolds ε (releaseGuardedBodiesInOracle O K ls guardeds) ρ h := by
+  intro a hm _
+  unfold releaseGuardedBodiesInOracle at hm
+  dsimp only at hm
+  have hKt := withTypeLinear_holds (eithers := guardeds) hO hK
+  obtain ⟨b, hb, hbm⟩ := List.mem_filterMap.mp hm
+  cases b with
+  | mk bf bc bn =>
+    cases bc with
+    | some _ => cases bf <;> simp at hbm
+    | none =>
+      cases bf with
+      | guarded s p g B =>
+        simp only at hbm
+        split at hbm
+        · rename_i hdis
+          simp only [Option.some.injEq] at hbm; subst hbm
+          obtain ⟨v, hv, hor⟩ := ha _ (hsub _ hb) (fun _ hc => by cases hc)
+          refine ⟨v, hv, .inl (hor.elim id fun hB => False.elim ?_)⟩
+          rcases Bool.or_eq_true_iff.mp hdis with h1 | h2
+          · exact contradictsInOracleGuarded_sound hO hKt h1 hB
+          · have hcontra := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp h2).2).2
+            have hr := HeapLinks.repOf_eq (HeapLinks.classes_one hl)
+            have hlt : ∀ u, termValue ε ρ h (liftTermMap (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes ls)))
+                (liftReadMap (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes ls))) (bridgeReads ls))
+                (bridgeReads ls).length
+                (lowerTermAllMap (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes ls)))
+                  (lowerReadMap (HeapLinks.repOf (HeapLinks.repMap (HeapLinks.classes ls))) (bridgeReads ls))
+                  (bridgeReads ls).length u)) = termValue ε ρ h u :=
+              fun u => (liftTermMap_eq hl hr _ _).trans (lowerTermAllMap_eq hl hr _ _)
+            have hKtList : ∀ F ∈ (withTypeLinear O K guardeds).facts.toList, F.Holds (termValuation ε ρ h) :=
+              fun F hF => hKt F (Array.mem_toList_iff.mp hF)
+            exact contradictsIn_sound
+              (Linear.Known.build_holds (bridgeFacts_holds hlt hKtList) (by simp))
+              hcontra (mapFactTerms_holds hlt hB)
+        · cases hbm
+      | _ => simp at hbm
+
+/-- Whether the type oracle `O` mentions any constraint relevant to refuting `F`. -/
+private def oracleRelevantTo (O : TypeOracle) : IndexFact → Bool
+  | .linear L => L.vars.any fun t =>
+      !t.atEntry && t.kind == .value && t.path.isEmpty && (O.excludesInt t.slot || (O.finiteInts t.slot).isSome)
+  | .int s => O.excludesInt s
+  | .pastSafe s => O.excludesPastSafe s
+  | .guarded s [] tag B => O.excludesGuard s tag && oracleRelevantTo O B
+  | .either A B => oracleRelevantTo O A && oracleRelevantTo O B
+  | _ => false
+
+/-- Unconditional guarded atoms in `k` whose body may be refuted by `O` or by
+the linear facts currently held in `k`. -/
+private def guardedRefutationCandidates (O : TypeOracle) (k : Knowledge) : List IndexAtom :=
+  if !k.indices.any (fun a => a.cond.isNone && match a.fact with
+      | .guarded _ _ _ B => !impossibleFact B && mayRefuteByOracle B
+      | _ => false) then []
+  else
+    let (fs, ts) := linearFactAndTermSets k.indices
+    let reads : Thunk (List (Nat × String × Nat)) := Thunk.mk fun _ => bridgeReads k.links
+    k.indices.filter fun a => a.cond.isNone && match a.fact with
+      | .guarded _ _ _ B =>
+        !impossibleFact B && mayRefuteByOracle B &&
+        (oracleRelevantTo O B ||
+          (!fs.isEmpty && (candidateLinearBody fs ts B ||
+            (!k.links.isEmpty && mayRefuteByLinear B &&
+              candidateLinearBody fs ts (mapFactTerms (lowerByLinks reads.get) B)))))
+      | _ => false
+
+private theorem guardedRefutationCandidates_sub {O : TypeOracle} {k : Knowledge} :
+    ∀ b ∈ guardedRefutationCandidates O k, b ∈ k.indices := by
+  intro b hb
+  unfold guardedRefutationCandidates at hb
+  split at hb
+  · cases hb
+  · exact (List.mem_filter.mp hb).1
+
+private def releaseEithersApply (O : TypeOracle) (k : Knowledge)
+    (kSet : Std.HashSet IndexAtom) (eithers guardeds : List IndexAtom) : Knowledge :=
+  if eithers.isEmpty && guardeds.isEmpty then k else
   let K := Linear.Known.build (linearRaw k.indices) []
-  let released := releaseEithersInOracle O K eithers
+  let relEithers := if eithers.isEmpty then [] else releaseEithersInOracle O K eithers
+  let relGuardeds := if guardeds.isEmpty then [] else releaseGuardedBodiesInOracle O K k.links guardeds
+  let released := relEithers ++ relGuardeds
   if released.isEmpty then k else
   let lowered := dedupNew kSet (released ++ lowerAtoms k.links released)
   if lowered.isEmpty then k else
   let k1 := { k with indices := k.indices ++ lowered }
-  if lowered.any (fun a => a.cond.isNone && match a.fact with | .atIndex .. | .every .. => true | _ => false) then
-    elementInstances k1
-  else k1
+  let k2 := if !relGuardeds.isEmpty then dischargeGuards k1 else k1
+  if lowered.any (fun a => a.cond.isNone && match a.fact with | .atIndex .. | .every .. => true | _ => false) ||
+     k2.indices.length > k1.indices.length then
+    elementInstances k2
+  else k2
+
+private theorem releaseEithersApply_holds {O : TypeOracle} {k : Knowledge}
+    {kSet : Std.HashSet IndexAtom} {eithers guardeds : List IndexAtom}
+    {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h)
+    (hsubE : ∀ b ∈ eithers, b ∈ k.indices) (hsubG : ∀ b ∈ guardeds, b ∈ k.indices) :
+    Holds (releaseEithersApply O k kSet eithers guardeds) ε ρ h := by
+  unfold releaseEithersApply
+  split
+  · exact hk
+  · dsimp only
+    have hK : (Linear.Known.build (linearRaw k.indices) []).Holds (termValuation ε ρ h) :=
+      Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp)
+    have hrelE : IndexHolds ε (if eithers.isEmpty then []
+        else releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) []) eithers) ρ h := by
+      split
+      · exact indexHolds_nil ρ h
+      · exact releaseEithersInOracle_holds hO hK hk.2.2.2.2.2 hsubE
+    have hrelG : IndexHolds ε (if guardeds.isEmpty then []
+        else releaseGuardedBodiesInOracle O (Linear.Known.build (linearRaw k.indices) []) k.links guardeds) ρ h := by
+      split
+      · exact indexHolds_nil ρ h
+      · exact releaseGuardedBodiesInOracle_holds hO hK hk.2.2.1 hk.2.2.2.2.2 hsubG
+    have hrel : IndexHolds ε ((if eithers.isEmpty then []
+          else releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) []) eithers) ++
+        (if guardeds.isEmpty then []
+          else releaseGuardedBodiesInOracle O (Linear.Known.build (linearRaw k.indices) []) k.links guardeds)) ρ h :=
+      fun a ha hc => (List.mem_append.mp ha).elim (fun h => hrelE a h hc) (fun h => hrelG a h hc)
+    generalize (if eithers.isEmpty then []
+        else releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) []) eithers) = relE at hrel ⊢
+    generalize (if guardeds.isEmpty then []
+        else releaseGuardedBodiesInOracle O (Linear.Known.build (linearRaw k.indices) []) k.links guardeds) = relG at hrel ⊢
+    split
+    · exact hk
+    · split
+      · exact hk
+      · have hk1 : Holds { k with indices := k.indices ++ dedupNew kSet ((relE ++ relG) ++ lowerAtoms k.links (relE ++ relG)) } ε ρ h := by
+          refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+          rcases List.mem_append.mp ha with ha | ha
+          · exact hk.2.2.2.2.2 a ha hc
+          · have ha' := dedupNew_sub ha
+            rcases List.mem_append.mp ha' with ha' | ha'
+            · exact hrel a ha' hc
+            · exact lowerAtoms_holds hk.2.2.1 hrel a ha' hc
+        split
+        · split
+          · exact elementInstances_holds (dischargeGuards_holds hk1)
+          · exact dischargeGuards_holds hk1
+        · split
+          · exact elementInstances_holds hk1
+          · exact hk1
+
+/-- Release every unconditional `.either` in `k` whose opposite arm (or
+conjunction of linear opposite arms sharing the same surviving arm) is
+contradicted by `k`'s linear facts together with the type oracle `O`, and
+discharge every unconditional `.guarded s p g B` whose body `B` is so
+contradicted. -/
+def releaseEithersStepOracle (O : TypeOracle) (k : Knowledge) : Knowledge :=
+  let hasEither := k.indices.any fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false
+  let candG := guardedRefutationCandidates O k
+  if !hasEither && candG.isEmpty then k else
+  let kSet := Std.HashSet.ofList k.indices
+  let eithers := if !hasEither then [] else k.indices.filter fun a => a.cond.isNone && match a.fact with
+    | .either A B => !kSet.contains { fact := A } && !kSet.contains { fact := B }
+    | _ => false
+  let guardeds := candG.filter fun a => match a.fact with
+    | .guarded s p g _ => !kSet.contains { fact := .guarded s p g (.linear (.le [] (-1))) }
+    | _ => false
+  releaseEithersApply O k kSet eithers guardeds
 
 theorem releaseEithersStepOracle_holds {O : TypeOracle} {k : Knowledge}
     {ρ : Env} {h : Heap} (hO : TypeOracleOk O ρ) (hk : Holds k ε ρ h) :
     Holds (releaseEithersStepOracle O k) ε ρ h := by
   unfold releaseEithersStepOracle
+  dsimp only
   split
   · exact hk
-  · dsimp only
-    split
-    · exact hk
-    · have hrel : IndexHolds ε (releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) [])
-          (k.indices.filter fun a => a.cond.isNone && match a.fact with
-            | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
-            | _ => false)) ρ h :=
-        releaseEithersInOracle_holds hO (Linear.Known.build_holds (linearRaw_holds hk.2.2.2.2.2) (by simp))
-          hk.2.2.2.2.2 fun _ hb => (List.mem_filter.mp hb).1
-      generalize releaseEithersInOracle O (Linear.Known.build (linearRaw k.indices) [])
-          (k.indices.filter fun a => a.cond.isNone && match a.fact with
-            | .either A B => !(Std.HashSet.ofList k.indices).contains { fact := A } && !(Std.HashSet.ofList k.indices).contains { fact := B }
-            | _ => false) = released at hrel ⊢
-      split
-      · exact hk
-      · split
-        · exact hk
-        · have hk1 : Holds { k with indices := k.indices ++ dedupNew (Std.HashSet.ofList k.indices) (released ++ lowerAtoms k.links released) } ε ρ h := by
-            refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
-            rcases List.mem_append.mp ha with ha | ha
-            · exact hk.2.2.2.2.2 a ha hc
-            · have ha' := dedupNew_sub ha
-              rcases List.mem_append.mp ha' with ha' | ha'
-              · exact hrel a ha' hc
-              · exact lowerAtoms_holds hk.2.2.1 hrel a ha' hc
-          split
-          · exact elementInstances_holds hk1
-          · exact hk1
+  · exact releaseEithersApply_holds hO hk
+      (fun b hb => by split at hb <;> first | cases hb | exact (List.mem_filter.mp hb).1)
+      (fun b hb => guardedRefutationCandidates_sub b (List.mem_filter.mp hb).1)
 
 def releaseEithersStep (k : Knowledge) : Knowledge :=
   releaseEithersStepOracle TypeOracle.empty k
@@ -11577,10 +12053,14 @@ def withElementsAfterOracle (O : TypeOracle) (recheck : Bool) (baseIndices baseL
       let hasElem := added.any fun a => a.cond.isNone && match a.fact with
         | .element .. | .every .. | .atIndex .. => true | _ => false
       let hasEither := added.any fun a => a.cond.isNone && match a.fact with
-        | .either .. => true | _ => false
+        | .either .. => true
+        | .guarded _ _ _ B => !impossibleFact B && mayRefuteByOracle B
+        | _ => false
       let k1 := if hasLin || hasElem then unguardedInstances (elementInstances k) else k
       let k1HasLinOrEither := (k1.indices.drop k.indices.length).any fun a => a.cond.isNone && match a.fact with
-        | .linear .. | .length .. | .bound .. | .int .. | .either .. => true | _ => false
+        | .linear .. | .length .. | .bound .. | .int .. | .either .. => true
+        | .guarded _ _ _ B => !impossibleFact B && mayRefuteByOracle B
+        | _ => false
       if recheck || hasLin || hasEither || k1HasLinOrEither then
         releaseEithersStepOracle O k1
       else k1

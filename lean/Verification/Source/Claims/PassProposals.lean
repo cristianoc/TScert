@@ -470,12 +470,51 @@ def openUnbounded (f : FilePlans) (i : Nat) : Bool :=
   | some (.ok (.graph _ _ r)) => !r.fresh && r.regional.isNone
   | _ => false
 
+/-- The implications listed in `given` for unit `u`, as `(label, test, target)`. -/
+private def implicationsIn («given» : Option (Std.HashMap String Json)) (u : String) :
+    List (Nat × Nat × Nat) :=
+  match given.bind (·.get? u) with
+  | none => []
+  | some line =>
+    match ((line.getObjVal? "graph").bind Json.getArr?).toOption with
+    | none => []
+    | some rows =>
+      rows.toList.flatMap fun row =>
+        match (row.getObjValAs? Nat "label").toOption,
+            ((row.getObjVal? "implies").bind Json.getArr?).toOption with
+        | some l, some imps =>
+          imps.toList.filterMap fun x => do
+            let a ← (x.getObjValAs? Nat "test").toOption
+            let b ← (x.getObjValAs? Nat "target").toOption
+            pure (l, a, b)
+        | _, _ => []
+
+/-- The head candidates and implications dropped while settling member `i`
+from `(orig, origGiven)` to `(settled, settledGiven)`. -/
+private def settledDropsOf (orig settled : FilePlans) (origGiven settledGiven : Option (Std.HashMap String Json))
+    (i : Nat) : SettledDrops :=
+  let origCands : List (Nat × List HeapKnowledge.Candidate) := match orig.plans[i]? with
+    | some (.ok (.graph _ _ r)) => r.candidates
+    | _ => []
+  let settledCands : List (Nat × List HeapKnowledge.Candidate) := match settled.plans[i]? with
+    | some (.ok (.graph _ _ r)) => r.candidates
+    | _ => []
+  let candDrops := origCands.filterMap fun (l, cs) =>
+    let kept := (settledCands.filter (·.1 == l)).flatMap (·.2)
+    let dropped := cs.filter (!kept.contains ·)
+    if dropped.isEmpty then none else some (l, dropped)
+  let u := orig.fr.unitId i
+  let settledImps := implicationsIn settledGiven u
+  let implDrops := (implicationsIn origGiven u).filter (!settledImps.contains ·)
+  (candDrops, implDrops)
+
 /-- Member `i`'s plans and given lines settled with its footprint open, as
 `passGroupMode8` settles them (`inferredSettle`'s runs and next states),
 each run reporting its visits' records (`passMember`'s `grading`),
 then its interface from its steps there: from the last run's, where that
-run walked its graph with no bound. -/
-def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established :=
+run walked its graph with no bound. Also returns the proposals dropped
+during settling (`SettledDrops`). -/
+def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established × SettledDrops :=
   let f := openAt f i
   let group := f.fr.group i
   let given := some (f.computedGiven {} false false none group)
@@ -508,15 +547,17 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
       | .error _ => (none, none))
     (fun (res : Option (String × Option (Nat × List HeapKnowledge.Candidate)) ×
           Option (Option (Array SinglePass.VisitRecord × Nat))) => res.1)
-    (fun (g : FilePlans) gv w => g.inferredNextAll fuel false [] gv i w)
+    (fun runs (g : FilePlans) gv w => g.inferredNextAll fuel false [] gv i w (diagnose := runs % 2 == 0))
     (4 * heads + 3) f given [] 0 0
-  SinglePass.work "propose: member interface" (f.fr.workItem i) fun _ =>
+  let drops := settledDropsOf f s.state given s.given i
+  let est := SinglePass.work "propose: member interface" (f.fr.workItem i) fun _ =>
     match s.last.2 with
     -- (the last run's walk with no bound refused: the walk `interface`
     -- would make is that walk, so the pass establishes nothing)
     | some none => none
     | some (some (gs, v)) => interface s.state fuel i s.given (some gs) v
     | none => interface s.state fuel i s.given none 0
+  (est, drops)
 
 /-- The search depth of a proposal's runs: the pipeline's
 (`pipeline/verify-source.mts`, `searchDepth`), which every check is given. -/
@@ -589,7 +630,7 @@ With `results` (`--force-proposals`, the adversarial proposal), each returned
 function's footprint keep/keep. -/
 def proposeOne (fr : Front) (controls : List String) (force : List String) (prior : List StandIn)
     (found : List StandIn) (planOf : List StandIn → String → Except String FilePlans) (i : Nat) (f : Fragment.Fn)
-    (memo : ProposalMemo) : Option StandIn × ProposalMemo :=
+    (memo : ProposalMemo) : Option StandIn × SettledDrops × ProposalMemo :=
   let cycle := (fr.group i).filterMap fun j => match fr.units[j]? with
     | some (g, _, none) => if j != i && (fr.group i).length > 1 then some g.name else none
     | _ => none
@@ -608,29 +649,29 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
   let establish := fun (own : Option StandIn) (memo : ProposalMemo) =>
       SinglePass.work "propose: establish" (fr.nameItem f.name) fun _ =>
     match planOf (reads own) f.name with
-    | .error _ => ((none : Option Established), memo)
+    | .error _ => ((none : Option Established), (([] , []) : SettledDrops), memo)
     | .ok fp =>
       match (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
         | some (g, _, none) => g.name == f.name && g.namePos == f.namePos
         | _ => false with
-      | none => (none, memo)
+      | none => (none, ([], []), memo)
       | some j =>
         let key := inputDigest fp j (reads own)
         match memo.get? key with
-        | some got => (got.map fun (S, R, ra, v) => ⟨S, R, ra, v⟩, memo)
+        | some (got, drops) => (got.map fun (S, R, ra, v) => ⟨S, R, ra, v⟩, drops, memo)
         | none =>
-          let got := settledInterface fp proposalDepth j
-          (got, memo.insert key (got.map fun e => (e.summary, e.result, e.returnAlias, e.visits)))
+          let (got, drops) := settledInterface fp proposalDepth j
+          (got, drops, memo.insert key (got.map (fun e => (e.summary, e.result, e.returnAlias, e.visits)), drops))
   -- A written effect fixes `summary` to `S`; `establish` can only contribute a
   -- returned function's footprint, which `resultWithFootprint` rejects unless
   -- `f.ret` is a function type whose signatures state no effect.
   let canReturnFn := (resultWithFootprint fr.d.types f.ret keepAll).isOk
-  let (r, memo) : Option Established × ProposalMemo := if let some S := written f then
+  let (r, drops, memo) : Option Established × SettledDrops × ProposalMemo := if let some S := written f then
       if !canReturnFn then
-        (some { summary := S, result := .top, visits := 0 }, memo)
+        (some { summary := S, result := .top, visits := 0 }, ([], []), memo)
       else
-        let (got, memo) := establish (some { name := f.name, summary := S }) memo
-        (got.map fun got => { got with summary := S }, memo)
+        let (got, drops, memo) := establish (some { name := f.name, summary := S }) memo
+        (got.map fun got => { got with summary := S }, drops, memo)
     else if (fr.mentions i).contains f.name then Id.run do
       -- A recursion assumption, per exit, found by a bounded search: first
       -- both exits keeping everything; kept where each exit of what the
@@ -642,22 +683,24 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       -- for each of the 3 components of the 2 exits.)
       let mut assumed : SourceElaboration.ClassSummary := .ofFormat keepAll true
       let mut memo := memo
+      let mut lastDrops : SettledDrops := ([], [])
       for _ in List.range 25 do
-        let (got, memo') := establish (some { name := f.name, summary := assumed }) memo
+        let (got, drops, memo') := establish (some { name := f.name, summary := assumed }) memo
         memo := memo'
+        lastDrops := drops
         match got with
-        | none => return (none, memo)
+        | none => return (none, lastDrops, memo)
         | some got =>
           if got.summary.within assumed then
-            return (some { got with summary := assumed }, memo)
+            return (some { got with summary := assumed }, lastDrops, memo)
           assumed := assumed.choice got.summary
-      return (none, memo)
+      return (none, lastDrops, memo)
     else establish none memo
   (r.map fun got =>
     let R := if force.contains "results" then keepAll else got.result
     let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
     { name := f.name, summary := got.summary, resultFootprint := R, returnAlias := got.returnAlias },
-    memo)
+    drops, memo)
 
 /-- The functions a wanted unit reaches, callees first: each after every
 function it reaches outside its group (a depth-first walk of `Front.edges`). -/
@@ -681,12 +724,14 @@ unit reaches, callees first (`calleesFirst`; async functions `top` by the
 language, stand-ins at their controls' footprints), proposed by
 `proposeOne`; a function `known` names taken as known (`none`: nothing
 proposed, read at its written effect or `top`). Every function proposed
-and known, with its proposal. -/
+and known, with its proposal, the settled drops recorded during proposal,
+and the updated memo. -/
 def proposalsOf (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
     (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := [])
-    (memo : ProposalMemo := {}) : List (String × Option StandIn) × ProposalMemo := Id.run do
+    (memo : ProposalMemo := {}) : List (String × Option StandIn) × Std.HashMap String SettledDrops × ProposalMemo := Id.run do
   let controls := standIns.functions.map (·.name)
   let mut out : List (String × Option StandIn) := []
+  let mut dropped : Std.HashMap String SettledDrops := {}
   let mut memo := memo
   for i in calleesFirst fr wanted do
     let some (f, _, none) := fr.units[i]? | continue
@@ -695,17 +740,19 @@ def proposalsOf (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : 
       out := out ++ [(f.name, k)]
       continue
     let found := out.filterMap (·.2)
-    let (got, memo') := proposeOne fr controls force prior found planOf i f memo
+    let (got, drops, memo') := proposeOne fr controls force prior found planOf i f memo
     memo := memo'
+    if !drops.1.isEmpty || !drops.2.isEmpty then
+      dropped := dropped.insert f.name drops
     out := out ++ [(f.name, got)]
-  return (out, memo)
+  return (out, dropped, memo)
 
 /-- The proposals that state more than the ordinary effect
 (`proposalsOf`), and the memo of what was established. -/
 def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
     (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := [])
     (memo : ProposalMemo := {}) : List StandIn × ProposalMemo :=
-  let (out, memo) := proposalsOf fr wanted standIns force prior planOf known memo
+  let (out, _, memo) := proposalsOf fr wanted standIns force prior planOf known memo
   (out.filterMap (·.2) |>.filter fun s => s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome, memo)
 
 end PassProposals

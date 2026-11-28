@@ -7768,3 +7768,335 @@ index (`IndexWrites`), each keeping its input's stable links. -/
     |>.negatingSlots.indexing.boundedWrites.keepingStable
 
 end Verification.HeapExpressionRules
+
+namespace Verification.PromiseCalls
+open ProgramTyping PositiveGraphs PositiveCertificates ProgramCertificates CallEffects
+
+section OrdinaryDirectFast
+variable {ι : Type} [DecidableEq ι]
+
+/-- `requiresAppFast` reusing a precomputed `kPre` (`HeapKnowledge.unguardedByTypes G Γ k`)
+whenever the derivation's context equals `Γ`. -/
+def requiresAppWithPre (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (kPre : Thunk HeapKnowledge.Knowledge)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : ProgramCertificates.Evidence ι → Bool
+  | .node j (.app eff) ps =>
+    (eff.requires.isSome || !eff.pre.isEmpty) &&
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    preconditionHolds (if j.context == Γ then kPre.get else HeapKnowledge.unguardedByTypes G j.context k) eff j.term
+  | .node j (.construct eff) ps =>
+    (eff.requires.isSome || !eff.pre.isEmpty) &&
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.construct eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    preconditionHolds (if j.context == Γ then kPre.get else HeapKnowledge.unguardedByTypes G j.context k) eff j.term
+  | _ => false
+
+theorem requiresAppWithPre_eq {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {Γ : List (Ty ι)} {k : HeapKnowledge.Knowledge} {kPre : Thunk HeapKnowledge.Knowledge}
+    (hkPre : kPre.get = HeapKnowledge.unguardedByTypes G Γ k)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (p : ProgramCertificates.Evidence ι) :
+    requiresAppWithPre G images Γ k kPre codes sums p = requiresApp G images k codes sums p := by
+  rw [requiresApp_eq_fast]
+  cases p with
+  | node j r ps =>
+    cases r <;> simp only [requiresAppWithPre, requiresAppFast]
+    · by_cases h : j.context = Γ
+      · subst h; simp [hkPre]
+      · simp [beq_false_of_ne h]
+    · by_cases h : j.context = Γ
+      · subst h; simp [hkPre]
+      · simp [beq_false_of_ne h]
+
+/-- `requiresTree` reusing `kPre` (`HeapKnowledge.unguardedByTypes G Γ k`). -/
+def requiresTreeWithPre (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (kPre : Thunk HeapKnowledge.Knowledge)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : ProgramCertificates.Evidence ι → Bool
+  | .node j (.sub c) [p] =>
+    decide (LocalUsing G images j (.sub c) [claim p] codes (sums := sums)) &&
+      requiresAppWithPre G images Γ k kPre codes sums p
+  | p => requiresAppWithPre G images Γ k kPre codes sums p
+
+theorem requiresTreeWithPre_eq {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {Γ : List (Ty ι)} {k : HeapKnowledge.Knowledge} {kPre : Thunk HeapKnowledge.Knowledge}
+    (hkPre : kPre.get = HeapKnowledge.unguardedByTypes G Γ k)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (p : ProgramCertificates.Evidence ι) :
+    requiresTreeWithPre G images Γ k kPre codes sums p = requiresTree G images k codes sums p := by
+  unfold requiresTreeWithPre requiresTree
+  split
+  · rw [requiresAppWithPre_eq hkPre]
+  · exact requiresAppWithPre_eq hkPre p
+
+/-- Post-call layers of `Checker.ordinary` (`negatingSlots`, `emptyArrays`,
+`indexing`, `boundedWrites`, `keepingStable`) applied to an `.ordinary` step's
+output. -/
+@[nospecialize] def applyPostCallLayers (G : NormalGraph ι) (j : Sequent ι)
+    (k : HeapKnowledge.Knowledge) (out : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  let out := match negationOf j with
+    | some x => { out with elems := out.elems ++ negatedAtoms k x, indices := out.indices ++ negatedIndices k x }
+    | none => out
+  let out :=
+    let lit := IndexWrites.literalArrayAtoms j.context.length j.term
+    { out with
+        indices := out.indices ++ lit ++ (if lit.isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
+          IndexWrites.regionAtoms G j.context k j.term,
+        separation := if lit.isEmpty then out.separation
+          else HeapSeparation.allocate k.separation j.context.length (HeapExpressionRules.contractFields G j.context) }
+  let out := { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
+      IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term ++
+      IndexWrites.bitMaskAtoms j.context k j.term) }
+  let out := IndexWrites.growOutput G j k out
+  HeapExpressionRules.withStable G j.context k out
+
+/-- Fused evaluation of `Checker.ordinary`'s `select`, tree/precondition check,
+and `normal` on an `.ordinary p` step: evaluates `checkTreeUsing`,
+`requiresTree` (reusing `kPre`), and the `ensuresCall`/`withEnsures` frame
+lists at most once. -/
+@[nospecialize] def ordinaryStepFused (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (j : Sequent ι) (k : HeapKnowledge.Knowledge) (kPre : Thunk HeapKnowledge.Knowledge)
+    (p : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    CheckResult ι HeapKnowledge.Knowledge × Bool × Option (ProgramCertificates.Evidence ι) × Bool :=
+  let claimEq := decide (claim p = j)
+  let selOps := ExpressionEffects.selectedOperands p
+  let selEff := ExpressionEffects.selectedEffect p
+  let treeOk : Thunk Bool := Thunk.mk fun _ => checkTreeUsing G images p codes sums
+  let reqOk : Thunk Bool := Thunk.mk fun _ => requiresTreeWithPre G images j.context k kPre codes sums p
+  let elemHit : Option (Nat × ElemPred) := match selEff, receiverSlot j.term with
+    | some eff, some x =>
+      if keepsHeap eff then
+        match eff.schema.normal.elementsWhenTrue.head? with
+        | some R => if claimEq && selOps && onlyBool G j.type && treeOk.get then some (x, R) else none
+        | none => none
+      else none
+    | _, _ => none
+  let (baseRes, normalEff) : CheckResult ι HeapKnowledge.Knowledge × Footprints.Closed :=
+    match elemHit with
+    | some (x, R) => (pure (elementsOutput k x R), .empty)
+    | none =>
+      if claimEq && reqOk.get then
+        let n := if selEff.any keepsHeap then Footprints.Closed.empty else .top
+        (pure (requiresOutput G (.ordinary p) k), n)
+      else
+        let freshHit := claimEq && selOps &&
+          (match selEff with | some eff => keepsHeap eff && eff.schema.normal.freshObjectResult | none => false) &&
+          treeOk.get
+        if freshHit then (pure (freshOutput G j.context k), .empty)
+        else
+          let ownHit := claimEq && selOps &&
+            (match selEff with | some eff => ownOnly eff.schema.normal.frame | none => false) &&
+            treeOk.get
+          match (if ownHit then receiverSlot j.term else none) with
+          | some i => (pure (ownOutput k i), .top)
+          | none =>
+            let keepHit := claimEq && ExpressionEffects.selectedCallWithin .empty p &&
+              (match promiseOf G p with | some (effect, _, _) => keepsHeap effect | none => true) &&
+              treeOk.get
+            if keepHit then (pure (HeapKnowledge.shift k), .empty)
+            else
+              ((HeapExpressionRules.Checker.steps G images).select j k (.ordinary p) codes sums,
+               (HeapExpressionRules.Checker.steps G images).normal j k (.ordinary p) codes sums)
+  let stable := HeapExpressionRules.stableFirst G j.context
+  let ensRes : CheckResult ι HeapKnowledge.Knowledge :=
+    match selEff with
+    | some eff =>
+      if isCallTerm j.term && claimEq && (selOps && treeOk.get || reqOk.get) then
+        let arrPath := HeapExpressionRules.arrayPathOf G j.context
+        let eKept := effectKept G j.context stable arrPath eff j.term k
+        let aKept := appendKept G j.context eff j.term k
+        let wKept := writeKept G j.context eff j.term k
+        let lKept := linearAppendKept G j.context eff j.term k
+        let pElems := pushElemAtoms G j.context eff j.term k
+        let fCells := frameCells stable eff j.term k
+        let fLinks := frameLinks stable eff j.term k
+        let sLinks := sameLinks eff j.term
+        if eff.schema.normal.facts.isEmpty && !eff.schema.normal.freshResult &&
+            !eff.schema.normal.freshRegionResult && !eff.schema.normal.shallowCopyResult &&
+            eKept.isEmpty && aKept.isEmpty && wKept.isEmpty && lKept.isEmpty &&
+            pElems.isEmpty && fCells.isEmpty && fLinks.isEmpty && sLinks.isEmpty then
+          baseRes
+        else
+          baseRes.map fun out =>
+            let kLinks := Std.HashSet.ofList out.links
+            let out' := HeapKnowledge.dischargeGuards <| HeapKnowledge.withElementsAfter out.indices.length out.links.length
+              { out with
+                cells := out.cells ++ fCells.filter (!out.cells.contains ·),
+                links := out.links ++ fLinks.filter (!kLinks.contains ·) ++ sLinks,
+                indices := out.indices ++ ensuresAtoms eff j.term ++ eKept ++ aKept ++ wKept ++ lKept ++
+                  ensuresComposed stable eff j.term k ++
+                  freshCallSpineApart stable G j.context eff j.term k ++
+                  freshCallApart stable G j.context eff j.term k ++
+                  pElems ++ shallowCopyKept G j.context eff j.term k }
+            withGrown eff out' (IndexWrites.grownRegions G j.context k j.term)
+      else baseRes
+    | none => baseRes
+  let selectRes := ensRes.map (applyPostCallLayers G j k)
+  let (derivOk, precond) :=
+    if treeOk.get then (true, none)
+    else if reqOk.get then (true, some p)
+    else (false, none)
+  (selectRes, derivOk, precond, normalEff == Footprints.Closed.empty)
+
+theorem ordinaryStepFused_eq {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : HeapKnowledge.Knowledge} {kPre : Thunk HeapKnowledge.Knowledge}
+    (hkPre : kPre.get = HeapKnowledge.unguardedByTypes G j.context k)
+    {p : ProgramCertificates.Evidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} :
+    ordinaryStepFused G images j k kPre p codes sums =
+      let c := HeapExpressionRules.Checker.ordinary G images
+      let tOk := checkTreeUsing G images p codes sums
+      let rOk := if tOk then true else requiresTree G images k codes sums p
+      let pre := if tOk then none else if rOk then some p else none
+      (c.select j k (.ordinary p) codes sums, rOk, pre, c.normal j k (.ordinary p) codes sums == Footprints.Closed.empty) := by
+  have hr : requiresTreeWithPre G images j.context k kPre codes sums p = requiresTree G images k codes sums p :=
+    requiresTreeWithPre_eq hkPre p
+  have hel : (match ExpressionEffects.selectedEffect p, receiverSlot j.term with
+      | some eff, some x =>
+        if keepsHeap eff then
+          match eff.schema.normal.elementsWhenTrue.head? with
+          | some R => if decide (claim p = j) && ExpressionEffects.selectedOperands p && onlyBool G j.type &&
+              checkTreeUsing G images p codes sums then some (x, R) else none
+          | none => none
+        else none
+      | _, _ => none) = elementsCall G images j (.ordinary p) codes sums := by
+    rw [elementsCall_eq_fast]
+    rfl
+  have hbase : ∀ (r : CheckResult ι HeapKnowledge.Knowledge),
+      CheckResult.map (HeapExpressionRules.withStable G j.context k)
+        (CheckResult.map (IndexWrites.growOutput G j k)
+          (CheckResult.map (fun out =>
+            { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
+                IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term ++
+                IndexWrites.bitMaskAtoms j.context k j.term) })
+            (CheckResult.map (fun out =>
+              { out with
+                indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term ++
+                  (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
+                  IndexWrites.regionAtoms G j.context k j.term,
+                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
+                  else HeapSeparation.allocate k.separation j.context.length (HeapExpressionRules.contractFields G j.context) })
+              (match negationOf j with
+                | some x => r.map fun out =>
+                    { out with elems := out.elems ++ negatedAtoms k x, indices := out.indices ++ negatedIndices k x }
+                | none => r)))) = r.map (applyPostCallLayers G j k) := by
+    intro r
+    unfold applyPostCallLayers
+    cases r with
+    | mk v =>
+      cases v with
+      | none => cases negationOf j <;> rfl
+      | some out => cases negationOf j <;> rfl
+  have htg : ∀ {α : Type} (f : Unit → α), (Thunk.mk f).get = f () := fun _ => rfl
+  unfold ordinaryStepFused
+  simp only [htg, hr, hel]
+  simp only [HeapExpressionRules.Checker.ordinary, HeapExpressionRules.Checker.keepingStable,
+    HeapExpressionRules.Checker.boundedWrites, HeapExpressionRules.Checker.indexing,
+    HeapExpressionRules.Checker.emptyArrays, HeapExpressionRules.Checker.negatingSlots,
+    HeapExpressionRules.Checker.ensuringCalls, HeapExpressionRules.Checker.elementCalls,
+    HeapExpressionRules.Checker.requiringCalls, HeapExpressionRules.Checker.allocatingCalls,
+    HeapExpressionRules.Checker.keepingOwnCalls, HeapExpressionRules.Checker.keepingCalls]
+  rw [hbase]
+  have hens : ensuresCall G images j k (.ordinary p) codes sums =
+      match ExpressionEffects.selectedEffect p with
+      | some eff =>
+        if isCallTerm j.term && decide (claim p = j) &&
+            (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
+             requiresTree G images k codes sums p) then
+          if eff.schema.normal.facts.isEmpty && !eff.schema.normal.freshResult &&
+              !eff.schema.normal.freshRegionResult && !eff.schema.normal.shallowCopyResult &&
+              (effectKept G j.context (HeapExpressionRules.stableFirst G j.context)
+                (HeapExpressionRules.arrayPathOf G j.context) eff j.term k).isEmpty &&
+              (appendKept G j.context eff j.term k).isEmpty &&
+              (writeKept G j.context eff j.term k).isEmpty &&
+              (linearAppendKept G j.context eff j.term k).isEmpty &&
+              (pushElemAtoms G j.context eff j.term k).isEmpty &&
+              (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty &&
+              (frameLinks (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty &&
+              (sameLinks eff j.term).isEmpty then none
+          else some eff
+        else none
+      | none => none := by
+    unfold ensuresCall
+    dsimp only
+    split <;> cases ExpressionEffects.selectedEffect p <;> simp
+  have hbn :
+      (match elementsCall G images j (.ordinary p) codes sums with
+      | some (x, R) => (pure (elementsOutput k x R), Footprints.Closed.empty)
+      | none =>
+        if decide (claim p = j) && requiresTree G images k codes sums p then
+          (pure (requiresOutput G (.ordinary p) k),
+            if (ExpressionEffects.selectedEffect p).any keepsHeap then Footprints.Closed.empty else .top)
+        else if decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+            (match ExpressionEffects.selectedEffect p with
+             | some eff => keepsHeap eff && eff.schema.normal.freshObjectResult
+             | none => false) && checkTreeUsing G images p codes sums then
+          (pure (freshOutput G j.context k), Footprints.Closed.empty)
+        else
+          match if decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+              (match ExpressionEffects.selectedEffect p with
+               | some eff => ownOnly eff.schema.normal.frame
+               | none => false) && checkTreeUsing G images p codes sums then receiverSlot j.term else none with
+          | some i => (pure (ownOutput k i), Footprints.Closed.top)
+          | none =>
+            if decide (claim p = j) && ExpressionEffects.selectedCallWithin .empty p &&
+                (match promiseOf G p with | some (effect, _, _) => keepsHeap effect | none => true) &&
+                checkTreeUsing G images p codes sums then
+              (pure (HeapKnowledge.shift k), Footprints.Closed.empty)
+            else
+              ((HeapExpressionRules.Checker.steps G images).select j k (.ordinary p) codes sums,
+               (HeapExpressionRules.Checker.steps G images).normal j k (.ordinary p) codes sums)) =
+      (match elementsCall G images j (.ordinary p) codes sums with
+       | some (x, R) => pure (elementsOutput k x R)
+       | none =>
+         if requiresCall G images j k (.ordinary p) codes sums then pure (requiresOutput G (.ordinary p) k)
+         else if freshCall G images j (.ordinary p) codes sums then pure (freshOutput G j.context k)
+         else match ownCall G images j (.ordinary p) codes sums with
+           | some i => pure (ownOutput k i)
+           | none =>
+             if keepsCall G images j (.ordinary p) codes sums then pure (HeapKnowledge.shift k)
+             else (HeapExpressionRules.Checker.steps G images).select j k (.ordinary p) codes sums,
+       match elementsCall G images j (.ordinary p) codes sums with
+       | some _ => .empty
+       | none =>
+         if requiresCall G images j k (.ordinary p) codes sums then
+           if (ExpressionEffects.selectedEffect p).any keepsHeap then .empty else .top
+         else if freshCall G images j (.ordinary p) codes sums then .empty
+         else match ownCall G images j (.ordinary p) codes sums with
+           | some _ => .top
+           | none =>
+             if keepsCall G images j (.ordinary p) codes sums then .empty
+             else (HeapExpressionRules.Checker.steps G images).normal j k (.ordinary p) codes sums) := by
+    unfold requiresCall freshCall ownCall ownCallChecked keepsCall
+    dsimp only
+    cases elementsCall G images j (.ordinary p) codes sums with
+    | some _ => rfl
+    | none =>
+      dsimp only
+      split
+      · simp
+      · split
+        · simp
+        · split
+          · rename_i _ h3; rw [h3]
+          · rename_i h3; rw [h3]; split <;> simp
+  rw [hbn]
+  dsimp only
+  simp only [Prod.mk.injEq]
+  refine ⟨?_, ?_, ?_, trivial⟩
+  · congr 1
+    rw [hens]
+    cases ExpressionEffects.selectedEffect p with
+    | none => rfl
+    | some eff =>
+      dsimp only
+      split
+      · split
+        · simp
+        · simp [withEnsures]
+      · simp
+  · cases checkTreeUsing G images p codes sums <;> cases requiresTree G images k codes sums p <;> rfl
+  · cases checkTreeUsing G images p codes sums <;> cases requiresTree G images k codes sums p <;> rfl
+
+end OrdinaryDirectFast
+
+end Verification.PromiseCalls

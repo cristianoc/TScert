@@ -118,7 +118,41 @@ def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
       exitDiagnosed G images droppable implied l en sd ysAll outAll exi (((droppable exi.1.target.label).length) + 2) s)
       (env, dropped, acc0)
 
-/-- One node's visit (`visitBody`, `visit`), its exits diagnosed. -/
+/-- Backward CFG reachability: `canReach[v] = true` iff node `v` has a nonempty
+path (`≥ 1` step) to some head `h` with `targets[h] = true`. A node that cannot
+reach any target head has no edge leading into any target head, so skipping it
+during the diagnosing walk leaves every state and check at every target head
+unchanged. -/
+private def nodesReachingTargets (nodes : Array Node) (targets : Array Bool) : Array Bool := Id.run do
+  let n := nodes.size
+  let mut preds : Array (List Nat) := Array.replicate n []
+  for u in [0:n] do
+    for ex in Exit.ofNode nodes[u]! do
+      let v := ex.target.label
+      if v < n then
+        preds := preds.modify v (u :: ·)
+  let mut reach : Array Bool := Array.replicate n false
+  let mut work : List Nat := []
+  for h in [0:n] do
+    if targets.getD h false then
+      for p in preds.getD h [] do
+        if !reach.getD p false then
+          reach := reach.set! p true
+          work := p :: work
+  for _ in [0:n + 1] do
+    match work with
+    | [] => break
+    | u :: rest =>
+      work := rest
+      for p in preds.getD u [] do
+        if !reach.getD p false then
+          reach := reach.set! p true
+          work := p :: work
+  return reach
+
+/-- One node's visit (`visitBody`, `visit`), its exits diagnosed. Skips
+maintaining `walk.labels` / `walk.visits` since `driveDiagnosed` only returns
+the dropped head proposals. -/
 def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool)
     (env : WalkEnv ι G images) (dropped : List (Nat × LeftOut)) (σ : WalkState ι G) (l : Nat) :
     Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × WalkState ι G) :=
@@ -126,27 +160,36 @@ def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
   | .error stop => .error stop
   | .ok en => match visitStep G images env σ l en with
     | .error stop => .error stop
-    | .ok sd => match exitsDiagnosed G images droppable implied env dropped σ l en (keptDone env l en sd) with
+    | .ok sd =>
+      let σx := { σ with walk := { σ.walk with labels := #[], visits := #[] } }
+      let sdx := sd.light
+      match exitsDiagnosed G images droppable implied env dropped σx l en (keptDone env l en sdx) with
       | .error stop => .error stop
       | .ok (env, dropped, ex) =>
         .ok (env, dropped,
-          { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))),
+          { walk := { labels := #[],
                       incoming := ex.incoming, incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges,
                       edges := ex.edges, visited := σ.walk.visited + 1 },
             answers := keepSummaries σ.answers ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg,
-            fresh := sd.fresh, regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue,
-            unsat := ex.unsat, lastStamp := en.lastStamp, lastKind := sd.lastKind })
+            fresh := sdx.fresh, regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue,
+            unsat := ex.unsat, lastStamp := en.lastStamp, lastKind := sdx.lastKind })
 
 /-- The walk on fuel (`drive`), each visit diagnosed: the facts left out by
-head, up to where it ends or stops. -/
-def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool) :
+head, up to where it ends or stops. Nodes that cannot reach any head holding
+droppable proposals (`canReach`) are skipped. -/
+def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List HeapKnowledge.Candidate) (implied : Bool)
+    (canReach : Array Bool) :
     Nat → WalkEnv ι G images → List (Nat × LeftOut) → WalkState ι G → List (Nat × LeftOut)
   | 0, _, dropped, _ => dropped
   | fuel + 1, env, dropped, σ => match σ.queue with
     | [] => dropped
-    | l :: rest => match visitDiagnosed G images droppable implied env dropped { σ with queue := rest } l with
-      | .ok (env, dropped, σ') => driveDiagnosed G images droppable implied fuel env dropped σ'
-      | .error _ => dropped
+    | l :: rest =>
+      if !canReach.getD l false then
+        driveDiagnosed G images droppable implied canReach fuel env dropped { σ with queue := rest }
+      else
+        match visitDiagnosed G images droppable implied env dropped { σ with queue := rest } l with
+        | .ok (env, dropped, σ') => driveDiagnosed G images droppable implied canReach fuel env dropped σ'
+        | .error _ => dropped
 
 /-- **The diagnosing walk over one graph** (`runWalk`'s arguments): the
 setup, then the visits each diagnosed (`driveDiagnosed`); the given facts
@@ -168,7 +211,12 @@ def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable
       suggestions known codes aliases passChecker answers #[] 1000000000 bound givenImplies givenArgs ensures
       givenInputs entrySeparation none false false regional false framed with
   | .error _ => []
-  | .ok (env, σ0) => driveDiagnosed G images droppable implied (env.n + 1) env [] σ0
+  | .ok (env, σ0) =>
+    let targets : Array Bool := Array.ofFn fun (h : Fin env.n) =>
+      !(droppable h.1).isEmpty || (implied && !(env.givenImplies.getD h.1 []).isEmpty)
+    if !targets.any id then [] else
+    let canReach := nodesReachingTargets env.nodes targets
+    driveDiagnosed G images droppable implied canReach (env.n + 1) env [] σ0
 
 end
 end Verification.SinglePass

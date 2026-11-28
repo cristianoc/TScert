@@ -160,7 +160,7 @@ theorem drive_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env 
       drive (visit G images (env.rebound b d)) fuel σ = drive (visit G images env) fuel σ := by
   intro fuel
   induction fuel with
-  | zero => intro σ _; rfl
+  | zero => intro σ _; simp [drive]
   | succ fuel ih =>
     intro σ h
     unfold drive

@@ -2092,6 +2092,204 @@ meets establishes every candidate. -/
 def byLabel {α : Type} (n : Nat) (xs : List (Nat × α)) : Array (Option α) :=
   xs.reverse.foldl (fun acc (l, v) => if l < n then acc.set! l (some v) else acc) (Array.replicate n none)
 
+/-- Whether an `IndexFact` contains a `.fieldRead` sub-fact. -/
+def hasFieldRead : HeapKnowledge.IndexFact → Bool
+  | .fieldRead .. => true
+  | .either A B => hasFieldRead A || hasFieldRead B
+  | .guarded _ _ _ B => hasFieldRead B
+  | _ => false
+
+/-- Hash table of non-alias, non-optional string read links `(rep c, f, rep v)`
+under the alias representative map `rep`. -/
+def fieldReadLinkSet (rep : Std.HashMap Nat Nat) (ls : HeapLinks.Links) :
+    Std.HashSet (Nat × String × Nat) :=
+  ls.foldl (init := {}) fun acc l =>
+    if !l.alias && !l.optional then match l.field with
+      | .str f => acc.insert (HeapLinks.repOf rep l.cell, f, HeapLinks.repOf rep l.value)
+      | .sym _ => acc
+    else acc
+
+/-- O(1) syntactic/tag/link sufficiency check for an unconditional `IndexFact`
+against a knowledge's index set `pSet`, optional precomputed `GuardTagTable`
+`tags`, and optional representative-indexed read-link set `links`. -/
+def factTrivialIn (pSet : Std.HashSet HeapKnowledge.IndexAtom)
+    (tags : Option HeapKnowledge.GuardTagTable)
+    (links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))) :
+    HeapKnowledge.IndexFact → Bool
+  | .either A B =>
+      pSet.contains { fact := A } || pSet.contains { fact := B } ||
+        factTrivialIn pSet tags links A || factTrivialIn pSet tags links B
+  | .guarded s p t B =>
+      (match tags with | some tg => tg.check s p t | none => false) ||
+        (p.isEmpty && factTrivialIn pSet tags links B)
+  | .fieldRead v c f =>
+      pSet.contains { fact := .fieldRead v c f } ||
+        match links with
+        | some (rep, lset) => lset.contains (HeapLinks.repOf rep c, f, HeapLinks.repOf rep v)
+        | none => false
+  | F => pSet.contains { fact := F }
+
+/-- O(1) syntactic/tag/link sufficiency check for an `IndexAtom` against `pSet`,
+optional `GuardTagTable` `tags`, and optional read-link set `links`. -/
+def atomTrivialIn (pSet : Std.HashSet HeapKnowledge.IndexAtom)
+    (tags : Option HeapKnowledge.GuardTagTable)
+    (links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat)))
+    (a : HeapKnowledge.IndexAtom) : Bool :=
+  pSet.contains a || (a.cond.isNone && factTrivialIn pSet tags links a.fact)
+
+/-- Insert `(score, entry)` into a descending-score list. -/
+def insertByDesc {α : Type} (x : Nat × α) : List (Nat × α) → List (Nat × α)
+  | [] => [x]
+  | y :: ys => if x.1 ≥ y.1 then x :: y :: ys else y :: insertByDesc x ys
+
+/-- Sort scored entries by descending score. -/
+def sortByDesc {α : Type} : List (Nat × α) → List (Nat × α)
+  | [] => []
+  | x :: xs => insertByDesc x (sortByDesc xs)
+
+/-- Collect whether `F` contains any guard, any non-empty path guard, and the
+alias representatives of any empty-path guard slots it mentions. -/
+def collectGuardNeed (rep : Std.HashMap Nat Nat) :
+    HeapKnowledge.IndexFact → Bool × Bool × List Nat
+  | .guarded s [] _ B =>
+      let (_, hp, rs) := collectGuardNeed rep B
+      (true, hp, HeapLinks.repOf rep s :: rs)
+  | .guarded _ (_ :: _) _ _ => (true, true, [])
+  | .either A B =>
+      let (g1, p1, r1) := collectGuardNeed rep A
+      let (g2, p2, r2) := collectGuardNeed rep B
+      (g1 || g2, p1 || p2, r1 ++ r2)
+  | _ => (false, false, [])
+
+/-- Restrict `p.indices` before invoking `HeapKnowledge.indicesFilter` on `slow`:
+drop unconditional non-contradictory `.guarded` atoms whose guard slot cannot
+match any guard in `slow` (preserving `Holds` by `filter_holds`). -/
+def narrowKnowledge (p : HeapKnowledge.Knowledge) (rep? : Option (Std.HashMap Nat Nat))
+    (slow : List HeapKnowledge.IndexAtom) : HeapKnowledge.Knowledge :=
+  let rep := rep?.getD {}
+  let (hasGuarded, hasPathGuard, repList) := slow.foldl (init := (false, false, [])) fun (hg, hp, rs) a =>
+    let (g, p', r) := collectGuardNeed rep a.fact
+    (hg || g, hp || p', r ++ rs)
+  if hasPathGuard then p
+  else if !hasGuarded then
+    { p with indices := p.indices.filter fun a =>
+      !(a.cond.isNone && match a.fact with
+        | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B
+        | _ => false) }
+  else if rep?.isNone then p
+  else
+    let keepReps0 : Std.HashSet Nat := repList.foldl (·.insert ·) {}
+    let sharedFields : Std.HashSet (Nat × String) := p.links.foldl (init := {}) fun acc l =>
+      if !l.alias && !l.optional && keepReps0.contains (HeapLinks.repOf rep l.value) then
+        match l.field with | .str f => acc.insert (HeapLinks.repOf rep l.cell, f) | .sym _ => acc
+      else acc
+    let keepReps := if sharedFields.isEmpty then keepReps0 else
+      p.links.foldl (init := keepReps0) fun acc l =>
+        if !l.alias && !l.optional then
+          match l.field with
+          | .str f => if sharedFields.contains (HeapLinks.repOf rep l.cell, f) then acc.insert (HeapLinks.repOf rep l.value) else acc
+          | .sym _ => acc
+        else acc
+    { p with indices := p.indices.filter fun a =>
+      !(a.cond.isNone && match a.fact with
+        | .guarded s [] _ B => !HeapKnowledge.impossibleFact B && !keepReps.contains (HeapLinks.repOf rep s)
+        | _ => false) }
+
+/-- One step of fast candidate filtering against a precomputed projection tuple
+`(p, pSet, tags, links)`: resolves trivial atoms in O(1) and calls
+`HeapKnowledge.indicesFilter` only on the remaining candidates over a narrowed
+view of `p`. -/
+def filterOnePrepared (useCases : Bool)
+    (cur : List HeapKnowledge.IndexAtom)
+    (entry : HeapKnowledge.Knowledge × Std.HashSet HeapKnowledge.IndexAtom ×
+      Option HeapKnowledge.GuardTagTable ×
+      Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))) :
+    List HeapKnowledge.IndexAtom :=
+  if cur.isEmpty then [] else
+  let (p, pSet, tags, links) := entry
+  let (fast, slow) := cur.partition (atomTrivialIn pSet tags links)
+  if slow.isEmpty then fast
+  else
+    let rep? : Option (Std.HashMap Nat Nat) := match tags, links with
+      | some tg, _ => some tg.rep
+      | none, some (r, _) => some r
+      | none, none => none
+    fast ++ HeapKnowledge.indicesFilter (narrowKnowledge p rep? slow) slow useCases
+
+/-- Fast `HeapKnowledge.indicesFilter`: resolves atoms entailed syntactically,
+by `GuardTagTable`, or by read links in O(1) and invokes
+`HeapKnowledge.indicesFilter` only on the remaining candidates (skipping it
+entirely when none remain). -/
+def indicesFilterFast (p : HeapKnowledge.Knowledge) (cs : List HeapKnowledge.IndexAtom)
+    (useCases : Bool := true) (tags? : Option HeapKnowledge.GuardTagTable := none) :
+    List HeapKnowledge.IndexAtom :=
+  if cs.isEmpty then [] else
+  let pSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList p.indices
+  let needTags := cs.any fun a => a.cond.isNone && match a.fact with | .guarded .. => true | _ => false
+  let tags : Option HeapKnowledge.GuardTagTable :=
+    if !needTags then none else some (tags?.getD (HeapKnowledge.GuardTagTable.ofKnowledge p))
+  let needLinks := cs.any fun a => a.cond.isNone && hasFieldRead a.fact
+  let rep := match tags with
+    | some tg => tg.rep
+    | none => if needLinks then HeapLinks.repMap (HeapLinks.classes p.links) else {}
+  let links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat)) :=
+    if !needLinks then none else some (rep, fieldReadLinkSet rep p.links)
+  filterOnePrepared useCases cs (p, pSet, tags, links)
+
+/-- Filter `cs` across a list of prepared projections: resolves candidates
+trivially entailed by every projection in O(1) (`allFast`), then orders the
+projections by descending miss count on the remainder so doomed candidates are
+eliminated on the earliest projections. -/
+def filterPreparedAll (useCases : Bool)
+    (prepared : List (HeapKnowledge.Knowledge × Std.HashSet HeapKnowledge.IndexAtom ×
+      Option HeapKnowledge.GuardTagTable ×
+      Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))))
+    (cs : List HeapKnowledge.IndexAtom) : List HeapKnowledge.IndexAtom :=
+  if cs.isEmpty then [] else
+  match prepared with
+  | [] => cs
+  | [e] => filterOnePrepared useCases cs e
+  | _ =>
+    let (allFast, rest) := cs.partition fun a =>
+      prepared.all fun (_, pSet, tg, links) => atomTrivialIn pSet tg links a
+    if rest.isEmpty then allFast else
+    let scored := prepared.map fun entry@(_, pSet, tg, links) =>
+      (rest.foldl (fun n a => if atomTrivialIn pSet tg links a then n else n + 1) 0, entry)
+    let ordered := (sortByDesc scored).map Prod.snd
+    let keptRest := ordered.foldl (filterOnePrepared useCases) rest
+    allFast ++ keptRest
+
+/-- Fold `indicesFilterFast` across a list of knowledge projections. -/
+def filterAllFast (ps : List HeapKnowledge.Knowledge) (cs : List HeapKnowledge.IndexAtom)
+    (useCases : Bool := true) : List HeapKnowledge.IndexAtom :=
+  if cs.isEmpty then [] else
+  let needTags := cs.any fun a => a.cond.isNone && match a.fact with | .guarded .. => true | _ => false
+  let needLinks := cs.any fun a => a.cond.isNone && hasFieldRead a.fact
+  let prepared := ps.map fun p =>
+    let pSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList p.indices
+    let tags : Option HeapKnowledge.GuardTagTable :=
+      if !needTags then none else some (HeapKnowledge.GuardTagTable.ofKnowledge p)
+    let rep := match tags with
+      | some tg => tg.rep
+      | none => if needLinks then HeapLinks.repMap (HeapLinks.classes p.links) else {}
+    let links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat)) :=
+      if !needLinks then none else some (rep, fieldReadLinkSet rep p.links)
+    (p, pSet, tags, links)
+  filterPreparedAll useCases prepared cs
+
+/-- Fold `indicesFilterFast` across knowledge projections paired with their
+precomputed `GuardTagTable`s. -/
+def filterTaggedFast (ps : List HeapKnowledge.Knowledge) (tags : List HeapKnowledge.GuardTagTable)
+    (cs : List HeapKnowledge.IndexAtom) (useCases : Bool := true) : List HeapKnowledge.IndexAtom :=
+  if cs.isEmpty then [] else
+  let needLinks := cs.any fun a => a.cond.isNone && hasFieldRead a.fact
+  let prepared := (ps.zip tags).map fun (p, tg) =>
+    let pSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList p.indices
+    let links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat)) :=
+      if !needLinks then none else some (tg.rep, fieldReadLinkSet tg.rep p.links)
+    (p, pSet, some tg, links)
+  filterPreparedAll useCases prepared cs
+
 /-- The guarded facts a merge keeps (ARITHMETIC.md, "Guarded clauses", the
 join), of the knowledge `projections` its edges carry, beside `k`: each
 one's guarded atoms, also restated through its read links; and a spine
@@ -2103,6 +2301,7 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
     List HeapKnowledge.IndexAtom :=
   let projTags := projections.map HeapKnowledge.GuardTagTable.ofKnowledge
   let projAliases := projections.map (fun p => HeapLinks.aliasesMap p.links)
+  let kSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList k.indices
   let existingGuards : List (Nat × HeapKnowledge.GuardTag) :=
     (keepFirst {} (projections.flatMap fun p => p.indices.filterMap fun a =>
       if a.cond.isSome then none else match a.fact with
@@ -2123,13 +2322,21 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
           projTags.any fun tg => tg.check z [] g).map fun g =>
             ({ fact := .guarded z [] g (.element z x idx) } : HeapKnowledge.IndexAtom)
     | .every .. | .apart .. =>
+      if kSet.contains a then [] else
       a :: existingGuards.map fun (g, t) => ({ fact := .guarded g [] t a.fact } : HeapKnowledge.IndexAtom)
     | .atIndex .. | .guarded _ [] _ (.every ..) | .guarded _ [] _ (.apart ..) => [a]
     | _ => []
-  let kSet : Std.HashSet HeapKnowledge.IndexAtom := Std.HashSet.ofList k.indices
-  let raw := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices) ++ restated
+  let raw := (projections.flatMap fun p =>
+    let guarded := p.indices.filter fun a =>
+      match a.fact with
+      | .guarded _ [] _ _ => !kSet.contains a
+      | .guarded .. => true
+      | _ => false
+    if guarded.any (fun a => match a.fact with | .guarded _ (_ :: _) _ _ => true | _ => false) then
+      HeapKnowledge.lowerGuards p.links guarded
+    else guarded) ++ restated
   let candidates := (keepFirst {} raw).2.toList.filter fun a => !kSet.contains a
-  projections.foldl (fun cs p => HeapKnowledge.indicesFilter p cs) candidates
+  filterTaggedFast projections projTags candidates true
 
 /-- Propagate established postconditions along single-predecessor paths. The
 entry starts at its requirement; a statement entry (a cut) at its requirement

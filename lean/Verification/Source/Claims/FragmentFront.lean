@@ -612,6 +612,42 @@ def Front.proposes (fr : Front) (n : String) : Bool :=
     fr.statesMore n
 
 
+/-- Compute the file's declaration proposals (`PassProposals.proposalsOf`),
+running a second round when initialization calls a function proposed a
+returned function's footprint. -/
+private def proposeDeclarations (ast : Json) (fr : Front) (wanted : List Nat) (standIns : StandIns)
+    (force : List String) (planOf : List StandIn → String → Except String FilePlans)
+    (known : List (String × Option StandIn)) (memo : ProposalMemo) :
+    List StandIn × List String × Std.HashMap String SettledDrops × ProposalMemo :=
+  if force.contains "callees" || force.contains "throws" then ([], [], {}, memo) else
+  let (computed, refused, dropped, memo) := SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+    let res : List (String × Option StandIn) × Std.HashMap String SettledDrops × ProposalMemo :=
+      PassProposals.proposalsOf fr wanted standIns force [] planOf known memo
+    let out := res.1
+    let dropped := res.2.1
+    let memo := res.2.2
+    let computed := out.filterMap (·.2) |>.filter fun s =>
+      s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
+    let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
+      out.filterMap fun (n, o) => if o.isNone && !known.any (·.1 == n) then some n else none
+    (computed, refused, dropped, memo)
+  let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
+  if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
+    (computed, refused, dropped, memo)
+  else
+    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+      SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
+      let res : List (String × Option StandIn) × Std.HashMap String SettledDrops × ProposalMemo :=
+        PassProposals.proposalsOf fr wanted standIns force computed planOf [] memo
+      let out := res.1
+      let dropped := res.2.1
+      let memo := res.2.2
+      let computed := out.filterMap (·.2) |>.filter fun s =>
+        s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
+      let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
+        out.filterMap fun (n, o) => if o.isNone then some n else none
+      (computed, refused, dropped, memo)
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type, at its stand-in's footprint, or at the footprint `qualified` gives it
@@ -677,35 +713,13 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       (some (instancesFromWalk force)) (some (writtenSchemes force))
     let F ← EquationStore.freeze T
     let f : FilePlans := ⟨⟨ast, withStandIns claims sis, qualified, [], depends⟩, fr', F,
-      plans.map fun e => e.bind (FunctionPlan.over F), [], {}, []⟩
+      plans.map fun e => e.bind (FunctionPlan.over F), [], {}, [], {}⟩
     return f.withHeadFacts {} false (inferred := true) : Except String FilePlans)
   -- The functions' footprints their own steps establish, as stand-ins
   -- (`PassProposals.proposals`); the claims and the front again where any
   -- is found.
-  let (computed, refused, memo) := if force.contains "callees" || force.contains "throws" then ([], [], memo) else
-    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      let (out, memo) := PassProposals.proposalsOf fr (wantedOf fr names) standIns force [] planOf known memo
-      let computed := out.filterMap (·.2) |>.filter fun s =>
-        s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
-      let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
-        out.filterMap fun (n, o) => if o.isNone && !known.any (·.1 == n) then some n else none
-      (computed, refused, memo)
-  -- Where the initialization calls a function proposed a returned
-  -- function's footprint, the module values it types hold such functions:
-  -- the proposals once more, every function not yet proposed again read
-  -- at its first proposal; a function planned at the same inputs as
-  -- before read from the memo.
-  let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
-  let (computed, refused, memo) := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
-    (computed, refused, memo) else
-    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
-      let (out, memo) := PassProposals.proposalsOf fr (wantedOf fr names) standIns force computed planOf [] memo
-      let computed := out.filterMap (·.2) |>.filter fun s =>
-        s.footprint != .top || s.resultFootprint != .top || s.returnAlias.isSome
-      let refused := if !force.isEmpty || !standIns.functions.isEmpty then [] else
-        out.filterMap fun (n, o) => if o.isNone then some n else none
-      (computed, refused, memo)
+  let (computed, refused, dropped, memo) :=
+    proposeDeclarations ast fr (wantedOf fr names) standIns force planOf known memo
   let claims := if computed.isEmpty then claims else withStandIns claims computed
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initWith computed
   -- With `proposed`, the selected functions whose footprint is more than
@@ -730,7 +744,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     SinglePass.work "prepare: plans over the store" (fileItem ast) fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
-  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, memo, refused⟩
+  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, memo, refused, dropped⟩
 
 /-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
 def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
