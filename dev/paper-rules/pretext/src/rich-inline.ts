@@ -1,7 +1,8 @@
 import { missing } from './checked.js'
 import type { LayoutCursor, WordBreakMode } from './layout.js'
 import {
-  alignToSource,
+  alignSegmentInSource,
+  analyzeParagraph,
   analyzeText,
   isCollapsibleSpaceCode,
   DROPPED,
@@ -320,6 +321,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   // How many text items have extraWidth: each may get one segment more than the analysis gives it,
   // the start edge of its opening (below).
   let padded = 0
+  const paddedItems: Dense<number[]> = []
   // The letter spacing the text items that aren't atomic share, and whether two of them differ: the
   // walkers take one for the handle, so where items differ, each segment's width holds its own.
   let sharedSpacing: number | null = null
@@ -328,8 +330,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   let mayNarrow = false
   // PAPER: workaround (coarse-effect framing in loop): pre-measure atomic items before the main loop because measureAtomicItem calls analyzeText (coarse effects)
   let atomicMeasures: Dense<(AtomicMeasure | null)[]> | null = null
-  /** @invariant safeInteger(padded) && 0 <= padded && safeInteger(index) && 0 <= index && index <= items.length && 0 < items.length && starts.length === index && atomic.length === index && items !== starts && items !== atomic && starts !== atomic
-   *  @invariant atomicMeasures === null || atomicMeasures.length === items.length && atomicMeasures !== items && atomicMeasures !== starts && atomicMeasures !== atomic */
+  /** @invariant safeInteger(padded) && 0 <= padded && paddedItems.length === padded && safeInteger(index) && 0 <= index && index <= items.length && 0 < items.length && starts.length === index && atomic.length === index && items !== starts && items !== atomic && starts !== atomic && paddedItems !== items && paddedItems !== starts && paddedItems !== atomic
+   *  @invariant atomicMeasures === null || atomicMeasures.length === items.length && atomicMeasures !== items && atomicMeasures !== starts && atomicMeasures !== atomic && atomicMeasures !== paddedItems */
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!
     starts.push(source.length)
@@ -360,13 +362,17 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       }
     }
     if (isAtomic || (item.extraWidth ?? 0) !== 0) paddedOrObject = true
-    if (!isAtomic && (item.extraWidth ?? 0) !== 0) padded++
+    if (!isAtomic && (item.extraWidth ?? 0) !== 0) {
+      padded++
+      paddedItems.push(index)
+    }
     if ((item.extraWidth ?? 0) < 0) mayNarrow = true
   }
   const paragraph: ParagraphItems = { items, starts, atomic, ownSegmentBreaks: !profile.transformsSegmentBreaksAcrossItems, sourceOffsets: null }
-  const analysis = analyzeText(source, profile, whiteSpace, wordBreak, language, paragraph)
-  const offsets = paragraph.sourceOffsets
-  if (offsets === undefined || offsets === null) throw new RangeError('missing value')
+  const analysis = analyzeParagraph(source, profile, whiteSpace, wordBreak, language, paragraph)
+  const offsets = analysis.sourceOffsets
+  const segSourceStarts = analysis.segmentSourceStarts
+  const segSourceEnds = analysis.segmentSourceEnds
   const count: SafeInt = analysis.flags.length
 
   // The paragraph's lists, which each item's measurement adds its segments to (measureAnalysis).
@@ -422,14 +428,15 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   let hasEmptyObject = false
 
   let segs: SafeInt = 0
-  /** @invariant safeInteger(from) && safeInteger(segs) && 0 <= from && from <= count && count <= analysis.flags.length && count <= analysis.starts.length && count <= analysis.texts.length && segs === widths.length && widths.length === breakableFitAdvances.length && segs + count <= flags.length + from
+  let paddedCursor: SafeInt = 0
+  /** @invariant safeInteger(from) && safeInteger(segs) && safeInteger(padded) && safeInteger(paddedCursor) && 0 <= from && from <= count && count <= analysis.flags.length && count <= analysis.starts.length && count <= analysis.texts.length && segSourceStarts.length === count && segSourceEnds.length === count && segs === widths.length && widths.length === breakableFitAdvances.length && 0 <= paddedCursor && paddedCursor <= padded && padded === paddedItems.length && count + padded === flags.length && segs <= from + paddedCursor
    *  @invariant 0 < items.length && starts.length === items.length && itemSegments.length <= items.length
    *  @invariant readsItemFonts === false || hyphenWidths.length === items.length
    *  @invariant readsItemFonts === false || tabStopAdvances.length === items.length
    *  @invariant readsItemFonts === false || minimumTabAdvances.length === items.length
-   *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== starts && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
-   *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== starts && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
-   *  @invariant itemSegments !== analysis.flags && itemSegments !== analysis.starts && itemSegments !== analysis.texts && itemSegments !== segments && itemSegments !== sourceStarts && itemSegments !== sourceEnds && itemSegments !== starts && itemSegments !== hyphenWidths && itemSegments !== tabStopAdvances && itemSegments !== minimumTabAdvances
+   *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== starts && widths !== paddedItems && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
+   *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== starts && breakableFitAdvances !== paddedItems && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
+   *  @invariant itemSegments !== analysis.flags && itemSegments !== analysis.starts && itemSegments !== analysis.texts && itemSegments !== segments && itemSegments !== sourceStarts && itemSegments !== sourceEnds && itemSegments !== starts && itemSegments !== paddedItems && itemSegments !== hyphenWidths && itemSegments !== tabStopAdvances && itemSegments !== minimumTabAdvances
    *  @invariant lineStartExtras === null || flags.length <= lineStartExtras.length && lineStartExtras !== widths && lineStartExtras !== itemSegments && lineStartExtras !== breakableFitAdvances
    *  @invariant lineEndTrims === null || flags.length <= lineEndTrims.length && lineEndTrims !== widths && lineEndTrims !== itemSegments && lineEndTrims !== breakableFitAdvances
    *  @invariant overflowLineEndTrims === null || flags.length <= overflowLineEndTrims.length && overflowLineEndTrims !== widths && overflowLineEndTrims !== itemSegments && overflowLineEndTrims !== breakableFitAdvances
@@ -441,8 +448,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
    *  @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length */   // PAPER: annotation
   for (let from: SafeInt = 0; from < count;) {
     // The item this segment starts in, and the segments that start in it.
-    const offset = offsets[analysis.starts[from]!]
-    if (offset === undefined) throw new RangeError('missing value')
+    const offset = segSourceStarts[from]!
     const index = findItemIndex(starts, itemSegments.length === 0 ? 0 : itemSegments.length - 1, offset, starts.length)
     const item = items[index]!
     padItemSegments(itemSegments, index, widths.length, null)
@@ -522,12 +528,12 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     // white space, where the browsers break.
     const extraWidth = item.extraWidth ?? 0
     let first = to
-    if (extraWidth !== 0) {
+    if (extraWidth !== 0 && paddedCursor < paddedItems.length) {
+      paddedCursor = findItemIndex(paddedItems, paddedCursor, index, paddedItems.length)
       first = findFirstContent(analysis.flags, from, to)
       const firstKind = first < to ? analysis.flags[first]! & KIND_BITS : TEXT
       if (firstKind === PRESERVED_SPACE || firstKind === TAB || firstKind === HARD_BREAK || (firstKind === ZERO_WIDTH_BREAK && first === from)) {
         const at = segs
-        if (at + (count - from) >= flags.length) throw new RangeError('index')   // PAPER: workaround (accumulated segment count bound): SinglePass does not track opening-edge count <= padded across the outer loop
         const afterObject = at > 0 && (flags[at - 1]! & KIND_BITS) === OBJECT
         // Whether the item follows preserved spaces that follow text in their own text item. Blink
         // ends a text item at each character it makes a control item (IsControlItemCharacter,
@@ -559,6 +565,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         breakableFitAdvances.push(null)
         widths.push(extraWidth)
         segs++
+        paddedCursor++
         openingEdges ??= zeroList(flags.length)
         openingEdges[at] = extraWidth
         if (!breaksBefore && !analysis.hasUnbroken) marksReturnable = true
@@ -586,6 +593,8 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
           lineEndTrims[at] = extraWidth - fit
         }
         first = from - 1
+      } else {
+        paddedCursor++
       }
     }
     // An item that is one segment holding all of its text, as a styled word, is measured by the
@@ -600,7 +609,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     const itemAt = segs
     const sub = measureParagraphAnalysis(analysis, from, to, item.font, letterSpacing, profile, language, widths, flags, breakableFitAdvances, itemAt)
     simple &&= sub.simpleLineCountFastPath
-    /** @invariant safeInteger(i) && safeInteger(from) && safeInteger(to) && safeInteger(itemAt) && safeInteger(segs) && safeInteger(index) && 0 <= from && from <= i && i <= to && to <= count && count <= analysis.flags.length && count <= analysis.starts.length && count <= analysis.texts.length && 0 <= itemAt && segs === itemAt && 0 <= index && index < items.length && widths.length === itemAt + (to - from) && breakableFitAdvances.length === widths.length && widths.length + count <= flags.length + to
+    /** @invariant safeInteger(i) && safeInteger(from) && safeInteger(to) && safeInteger(itemAt) && safeInteger(segs) && safeInteger(index) && safeInteger(padded) && safeInteger(paddedCursor) && 0 <= from && from <= i && i <= to && to <= count && count <= analysis.flags.length && count <= analysis.starts.length && count <= analysis.texts.length && segSourceStarts.length === count && segSourceEnds.length === count && 0 <= itemAt && segs === itemAt && 0 <= index && index < items.length && widths.length === itemAt + (to - from) && breakableFitAdvances.length === widths.length && 0 <= paddedCursor && paddedCursor <= padded && padded === paddedItems.length && count + padded === flags.length && widths.length <= to + paddedCursor
      *  @invariant 0 < items.length && starts.length === items.length && itemSegments.length <= items.length
      *  @invariant readsItemFonts === false || hyphenWidths.length === items.length
      *  @invariant readsItemFonts === false || tabStopAdvances.length === items.length
@@ -609,9 +618,9 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
      *  @invariant sub.lineEndTrims === null || to - from <= sub.lineEndTrims.length
      *  @invariant sub.overflowLineEndTrims === null || to - from <= sub.overflowLineEndTrims.length
      *  @invariant sub.discretionaryHyphenContexts === null || to - from <= sub.discretionaryHyphenContexts.length
-     *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== starts && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
-     *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== starts && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
-     *  @invariant itemSegments !== analysis.flags && itemSegments !== analysis.starts && itemSegments !== analysis.texts && itemSegments !== segments && itemSegments !== sourceStarts && itemSegments !== sourceEnds && itemSegments !== starts && itemSegments !== hyphenWidths && itemSegments !== tabStopAdvances && itemSegments !== minimumTabAdvances
+     *  @invariant widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && widths !== analysis.texts && widths !== itemSegments && widths !== segments && widths !== sourceStarts && widths !== sourceEnds && widths !== starts && widths !== paddedItems && widths !== hyphenWidths && widths !== tabStopAdvances && widths !== minimumTabAdvances
+     *  @invariant breakableFitAdvances !== analysis.flags && breakableFitAdvances !== analysis.starts && breakableFitAdvances !== analysis.texts && breakableFitAdvances !== itemSegments && breakableFitAdvances !== segments && breakableFitAdvances !== sourceStarts && breakableFitAdvances !== sourceEnds && breakableFitAdvances !== starts && breakableFitAdvances !== paddedItems && breakableFitAdvances !== hyphenWidths && breakableFitAdvances !== tabStopAdvances && breakableFitAdvances !== minimumTabAdvances
+     *  @invariant itemSegments !== analysis.flags && itemSegments !== analysis.starts && itemSegments !== analysis.texts && itemSegments !== segments && itemSegments !== sourceStarts && itemSegments !== sourceEnds && itemSegments !== starts && itemSegments !== paddedItems && itemSegments !== hyphenWidths && itemSegments !== tabStopAdvances && itemSegments !== minimumTabAdvances
      *  @invariant lineStartExtras === null || flags.length <= lineStartExtras.length && lineStartExtras !== widths && lineStartExtras !== itemSegments && lineStartExtras !== breakableFitAdvances
      *  @invariant lineEndTrims === null || flags.length <= lineEndTrims.length && lineEndTrims !== widths && lineEndTrims !== itemSegments && lineEndTrims !== breakableFitAdvances
      *  @invariant overflowLineEndTrims === null || flags.length <= overflowLineEndTrims.length && overflowLineEndTrims !== widths && overflowLineEndTrims !== itemSegments && overflowLineEndTrims !== breakableFitAdvances
@@ -648,10 +657,10 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       }
       const normalizedStart = analysis.starts[i]!
       const normalizedEnd = i + 1 < count ? analysis.starts[i + 1]! : analysis.normalized.length
-      const sourceEnd = (offsets[normalizedEnd - 1] ?? missing()) + 1
+      const sourceEnd = segSourceEnds[i]!
       // Where the segment's text ends in the normalized text.
       let textEnd = normalizedEnd
-      const srcStart = (offsets[normalizedStart] ?? missing()) - starts[index]!
+      const srcStart = segSourceStarts[i]! - starts[index]!
       sourceStarts.push(srcStart)
       if (sourceEnd > itemEnd) {
         // The Gecko analysis keeps the soft hyphens and bidi controls Firefox's text run drops with
@@ -1769,25 +1778,31 @@ const textSources = new WeakMap<InternalPreparedRichInline, TextSources>()
 /** @ensures result.sourceStarts.length === flow.data.widths.length && result.sourceEnds.length === flow.data.widths.length && flow.data.widths.length <= result.sourceUnits.length */
 function findSegmentSources(flow: InternalPreparedRichInline): Effects<{ "flow.sourceStarts": "any"; "flow.sourceEnds": "any"; "flow.sourceUnits": "any"; "@state": "any" }, TextSources> {   // PAPER: annotation
   const { segments } = flow.data
-  const offsets = alignToSource(flow.text, segments.join(''), getEngineProfile().lineBreakScan)
+  const source = flow.text
+  const scan = getEngineProfile().lineBreakScan
+  const cr = scan === 'blink' ? -1 : 0x0D
+  const ff = scan === 'gecko' ? 0x0C : -1
   const sourceStarts: Dense<number[]> = []
   const sourceEnds: Dense<number[]> = []
   const sourceUnits: Dense<(Dense<number[]> | null)[]> = []
-  let at = 0
-  /** @invariant safeInteger(i) && safeInteger(at) && 0 <= i && i <= segments.length && 0 <= at && sourceStarts.length === i && sourceEnds.length === i && sourceUnits.length === i && flow.data.segmentFlags.length === flow.data.widths.length && flow.data.segments.length === flow.data.widths.length && segments.length === flow.data.widths.length && flow.data.widths !== sourceStarts && flow.data.widths !== sourceEnds && flow.data.widths !== sourceUnits && flow.data.segments !== sourceStarts && flow.data.segments !== sourceEnds && flow.data.segments !== sourceUnits && segments !== sourceStarts && segments !== sourceEnds && segments !== sourceUnits && sourceStarts !== sourceEnds && sourceStarts !== sourceUnits && sourceEnds !== sourceUnits */   // PAPER: annotation
+  let srcPos = 0
+  /** @invariant safeInteger(i) && 0 <= i && i <= segments.length && sourceStarts.length === i && sourceEnds.length === i && sourceUnits.length === i && flow.data.segmentFlags.length === flow.data.widths.length && flow.data.segments.length === flow.data.widths.length && segments.length === flow.data.widths.length && flow.data.widths !== sourceStarts && flow.data.widths !== sourceEnds && flow.data.widths !== sourceUnits && flow.data.segments !== sourceStarts && flow.data.segments !== sourceEnds && flow.data.segments !== sourceUnits && segments !== sourceStarts && segments !== sourceEnds && segments !== sourceUnits && sourceStarts !== sourceEnds && sourceStarts !== sourceUnits && sourceEnds !== sourceUnits */   // PAPER: annotation
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]!
-    const segLen = seg.length
-    const nextAt = at + segLen
-    if (!(segLen >= 1 && at < offsets.length && Number.isSafeInteger(nextAt) && 1 <= nextAt && nextAt <= offsets.length)) return missing()
-    const end = offsets[nextAt - 1]! + 1
-    const srcStart = offsets[at]!
-    const srcEnd = flow.text.charCodeAt(end - 1) === 0x0D && flow.text.charCodeAt(end) === 0x0A && seg === '\n' ? end + 1 : end
-    const srcUnits = getSourceUnits(offsets, at, nextAt, 0)
+    if (seg.length === 0) {
+      sourceStarts.push(0)
+      sourceEnds.push(0)
+      sourceUnits.push(null)
+      continue
+    }
+    const span = alignSegmentInSource(source, seg, srcPos, cr, ff)
+    srcPos = span.pos
+    const end = span.end
+    const srcStart = span.start
+    const srcEnd = source.charCodeAt(end - 1) === 0x0D && source.charCodeAt(end) === 0x0A && seg === '\n' ? end + 1 : end
     sourceStarts.push(srcStart)
     sourceEnds.push(srcEnd)
-    sourceUnits.push(srcUnits)
-    at = nextAt
+    sourceUnits.push(span.units)
   }
   const sources = { sourceStarts, sourceEnds, sourceUnits }
   if (Object.isFrozen(flow)) {

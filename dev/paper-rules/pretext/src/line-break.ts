@@ -347,7 +347,7 @@ export function walkPreparedLinesRaw<E extends AtMost<{ "prepared.**": "keep"; e
 ): number {
   const cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
   if (!prepared.simpleLineWalkFastPath) {
-    if (normalizePreparedLineStart(prepared, cursor)) walkPreparedComplexLines<E>(prepared, cursor, maxWidth, onLine, stats)   // PAPER: forwards E
+    if (normalizePreparedLineStart(prepared, cursor)) walkPreparedComplexLines<E>(prepared, cursor, maxWidth, onLine, stats, false)   // PAPER: forwards E
     return stats.lineCount
   }
   // A fast-path handle is one chunk of text, spaces and ZWSPs, so each line steps
@@ -537,15 +537,16 @@ function returnsFromUnfitHyphen(
  *  @requires safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
  *  @requires cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
  *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex
+ *  @ensures singleLine === false || cursor.segmentIndex <= prepared.widths.length
  *  @ensures safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
- *  @ensures cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */
+ *  @ensures singleLine === false || cursor.graphemeIndex === 0 || (cursor.segmentIndex < prepared.widths.length && prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */
 function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cursor.segmentIndex": "keep"; "cursor.graphemeIndex": "keep"; else: "any" }>>(   // PAPER
   prepared: PreparedLineData,
   cursor: LayoutCursor,
   maxWidth: number,
   onLine: InternalLineVisitor<E> | undefined,
   stats: LineStats | null,
-  singleLine = false,
+  singleLine: boolean,
 ): number | null {
   const {
     widths,
@@ -685,7 +686,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
          *  @invariant hasContent === false || lineStartSegmentIndex < i
          *  @invariant safeInteger(lineEndSegmentIndex) && lineStartSegmentIndex <= lineEndSegmentIndex && lineEndSegmentIndex <= segmentCount
          *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-         *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
+         *  @invariant lineEndGraphemeIndex === 0 || (lineEndSegmentIndex < segmentCount && prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
          *  @invariant safeInteger(endSegmentIndex) && endSegmentIndex === -1 && safeInteger(endGraphemeIndex) && endGraphemeIndex === 0 && safeInteger(fitBreakSegmentIndex) && fitBreakSegmentIndex <= segmentCount
          *  @invariant hyphenWidths === null || segmentCount <= hyphenWidths.length
          *  @invariant hyphenRooms === null || segmentCount < hyphenRooms.length
@@ -1127,7 +1128,7 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
            *  @invariant safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
            *  @invariant cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
            *  @invariant safeInteger(lineEndGraphemeIndex) && 0 <= lineEndGraphemeIndex
-           *  @invariant lineEndGraphemeIndex === 0 || (prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
+           *  @invariant lineEndGraphemeIndex === 0 || (lineEndSegmentIndex < segmentCount && prepared.breakableFitAdvances[lineEndSegmentIndex] !== null && lineEndGraphemeIndex < prepared.breakableFitAdvances[lineEndSegmentIndex].length)
            *  @invariant safeInteger(fitCount) && breakableFitAdvances[i] !== null && fitCount <= breakableFitAdvances[i].length */   // PAPER: annotation
           for (let g = fillStart; g < fitCount; g++) {
             const baseGw = fitAdvances[g]!   // PAPER: guard removed
@@ -1228,9 +1229,9 @@ function walkPreparedComplexLines<E extends AtMost<{ "prepared.**": "keep"; "cur
 /** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
  *  @requires safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
  *  @requires cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
- *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex <= prepared.widths.length
  *  @ensures safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
- *  @ensures cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */
+ *  @ensures cursor.graphemeIndex === 0 || (cursor.segmentIndex < prepared.widths.length && prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */
 function stepPreparedSimpleLineGeometry(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
@@ -1302,6 +1303,7 @@ function stepPreparedSimpleLineGeometry(
         end = i + 1
       } else if (kind === ZERO_WIDTH_BREAK && engineProfile.zeroWidthSpaceStaysAfterAtomic && ((segmentFlags[i - 1]!) & KIND_BITS) === OBJECT) {   // PAPER: guard removed
         end = i + 1
+        /** @invariant safeInteger(end) && 0 <= end && end <= widths.length */
         while (end < widths.length && ((segmentFlags[end]!) & KIND_BITS) === ZERO_WIDTH_BREAK) end++   // PAPER: guard removed
       }
       cursor.segmentIndex = end
@@ -1322,8 +1324,9 @@ function stepPreparedSimpleLineGeometry(
 /** @requires safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex < prepared.widths.length
  *  @requires safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
  *  @requires cursor.graphemeIndex === 0 || (prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length)
- *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex
- *  @ensures safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex */
+ *  @ensures safeInteger(cursor.segmentIndex) && 0 <= cursor.segmentIndex && cursor.segmentIndex <= prepared.widths.length
+ *  @ensures safeInteger(cursor.graphemeIndex) && 0 <= cursor.graphemeIndex
+ *  @ensures cursor.graphemeIndex === 0 || (cursor.segmentIndex < prepared.widths.length && prepared.breakableFitAdvances[cursor.segmentIndex] !== null && cursor.graphemeIndex < prepared.breakableFitAdvances[cursor.segmentIndex].length) */
 export function stepPreparedLineGeometryFromStart(
   prepared: PreparedLineData,
   cursor: LayoutCursor,
