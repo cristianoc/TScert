@@ -79,8 +79,8 @@ initialization order where applicable, declaration roots and reachable
 definitions, symbol identities, qualified import answers, row tables and
 unbound reads or their planning error. Written application obligations are
 checked once on the whole file during preparation and omitted from slices.
-Local equation lowering rebuilds the store from this input. The declaration
-cache matches complete declaration JSON.
+Local equation lowering rebuilds the store from this input. Slice preparation and checking decode each declaration row from the slice.
+Physical file preparation caches declaration decoding.
 
 For a factory that returns a closure, a stand-in can carry the returned
 callable's footprint as well as the call's own normal and exceptional
@@ -116,7 +116,8 @@ The [wire protocol](../REQUEST-PROTOCOL.md) defines the two operations.
 The first compact JSON line describes the program. Each subsequent line
 is an ordered named proposal consumed by it. The driver hashes each line
 and keys the operation on its name, implementation identity, program
-digest and result digests. Consequently the input identity of a callee
+digest and result digests. A resumed check also keys the complete reply
+it reads from the proposal entry. Consequently the input identity of a callee
 can change while the digest read by its caller stays equal.
 
 For example, `gathersKind` in Pretext’s `analysis.ts` reads `SPACE` and
@@ -163,10 +164,30 @@ An imported slot rests on its providers' checks.
 `Mode8Accepted.slice` requires successful explicit import planning and
 an accepting `passGroupMode8` on those prepared requests.
 `PassUnit.sliceVerdict_sound` proves `PassUnitSafe` for that group.
-Under the store's integrity assumptions a hit identifies this same
-operation at the same input and implementation. SHA-256 integrity,
-the worker protocol, projection from the TypeScript fragment and transport
-back to source sites have the [existing correspondence obligations](../DESIGN.md#what-verified-means).
+For the chain leaf `f0`, a declaration starting at the integer 16 passes
+planning. A Lean JSON number with mantissa 160 and exponent 1 at the same
+endpoint fails the integer check. The program lines encode these numbers
+as `16` and `160e-1`. The encoding also preserves object tree shape and
+size, every string, and each constructor and field of the slice.
+`ReplayText.decode_encode` inverts the text printer by induction.
+`GroupProjection.Slice.decode_wire` inverts the program line and ordered
+proposal lines for every slice. The worker writes this same encoding.
+
+`RequestCli.preparedSliceFront_eq` proves the optional prepared front
+equals the front computed from the slice. The operation selects a check
+or proposal, and a resumed check reads the exact proposal reply whose
+digest is in its key. For either operation, any resume input, and any
+two prepared fronts, `RequestCli.sliceResult_of_wire` proves equal wires
+give equal results, including the published bytes.
+
+`PassUnit.wire_eq_of_lineDigests` proves that matching ordered SHA-256
+digests identify the wire under collision resistance on the compared lines.
+The driver splits its UTF-8 bytes at byte 10. Store integrity identifies the bytes published by the
+named operation and implementation. Given that publication and a successful
+read of its bytes at the current sites, `RequestCli.replayedLine_premise`
+proves an accepted line carries the successful import plan and group check
+for the current slice’s leader. `PassUnit.replayedSliceVerdict_sound` applies
+`PassUnit.sliceVerdict_sound` to those two premises.
 The theorem's scope is the prepared group. Equivalence of its bindings
 and their meaning to those of the physical file is a source-correspondence
 obligation. The shadow modes compare plans, proposals and physical lines

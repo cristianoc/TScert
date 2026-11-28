@@ -618,12 +618,13 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
           const probe = line === "slice-lookup probe-check-slice";
           const proposal = line !== "slice-lookup check-slice";
           const digests = sliceDigests(join(directory, "slice-input"));
-          const describe = (operation: string): string =>
-            canonical({ operation, implementation: bound.sliceImplementation, ...digests });
+          const describe = (operation: string, resume?: string): string =>
+            canonical({ operation, implementation: bound.sliceImplementation, ...digests,
+              ...(resume === undefined ? {} : { resume: sha256(resume) }) });
           const checkInput = describe("check-slice");
           const proposalInput = describe("propose-slice");
-          const input = proposal && !probe ? proposalInput : checkInput;
-          const key = sha256(input);
+          let input = proposal && !probe ? proposalInput : checkInput;
+          let key = sha256(input);
           const started = performance.now();
           const active = ineligible === null ? replaying : null;
           let found = forced ? null : active?.finished(call.stage, key, input);
@@ -642,14 +643,27 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
               claimMs += performance.now() - waiting;
             }
           }
-          const otherInput = proposal ? checkInput : proposalInput;
-          const other = !found && active && !forced && !probe
-            ? active.finished(call.stage, sha256(otherInput), otherInput) : null;
-          if ((found ?? other)?.result.exitStatus) throw Error("invalid stored slice exit status");
-          const checked = proposal && !!other;
+          let reply = "null";
+          let checked = false;
+          if (!found && active && !forced) {
+            const wantsCheck = !proposal || probe;
+            const otherInput = wantsCheck ? proposalInput : checkInput;
+            const other = active.finished(call.stage, sha256(otherInput), otherInput);
+            if (other?.result.exitStatus) throw Error("invalid stored slice exit status");
+            if (other && wantsCheck) {
+              const resume = `{"resume":${text(other.result.stdout)}}`;
+              input = describe("check-slice", resume);
+              key = sha256(input);
+              found = active.finished(call.stage, key, input);
+              if (!probe) reply = resume;
+            } else if (other) {
+              checked = true;
+              reply = `{"checked":${text(other.result.stdout)}}`;
+            }
+          }
+          if (found?.result.exitStatus) throw Error("invalid stored slice exit status");
           slice = { input, key, hit: !!found || checked, probe, proposal, started };
           const tmp = join(directory, "slice-reply.tmp");
-          const reply = other ? `{"${checked ? "checked" : "resume"}":${text(other.result.stdout)}}` : "null";
           writeFileSync(tmp, found ? found.result.stdout : reply);
           renameSync(tmp, join(directory, "slice-reply"));
           return;

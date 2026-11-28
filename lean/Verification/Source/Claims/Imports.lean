@@ -76,30 +76,28 @@ binding is written, the module's initialization holds it: no function's
 entry states it, and the import is read at its declared contract. -/
 private def resolveRead (values : List Json) (fragmentModules : List Fragment.ModuleAst)
     (code : ModuleCode) (q : Json) (location name : String) (span : Span) :
-    Except String (Option (String × Json)) := do
+    Except String (Option String) := do
   let some v := importedValue values q
     | throw s!"a qualified read names no imported value: {q.compress}"
   let localName ← jStr (← jField (← jField v "binding") "local")
   let some m := fragmentModules.find? (·.location == location)
     | throw s!"a qualified read names a module the fragment does not list: {location}"
-  let some unit := (← jArr m.document "functions").find? fun f =>
+  unless (← jArr m.document "functions").any (fun f =>
       (f.getObjValAs? String "name").toOption == some name &&
-        ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false
-    | return none
+        ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false) do return none
   let decoded ← match code[location]? with
     | some decoded => decoded.get
     | none => decodeCode m
   if !decoded.stable.contains name then return none
-  return some (localName, unit)
+  return some localName
 
 /-- An import the fragment alone resolves to a function of a module it lists
 (`resolveRead`): the importer's local name, the module's location, and the
-unit's name and name position. -/
+unit's name. -/
 structure FragmentRead where
   localName : String
   location : String
   name : String
-  namePos : Span
   deriving Repr, BEq
 
 /-- **The fragment's reads of one document** (mode 8): each imported value
@@ -124,9 +122,7 @@ private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : Mo
     let some name := (q.getObjValAs? String "name").toOption | continue
     let some span := (fromJson? (q.getObjValD "span") : Except String Span).toOption | continue
     match resolveRead values fragmentModules code q location name span with
-    | .ok (some (localName, unit)) =>
-      let some namePos := (fromJson? (unit.getObjValD "namePos") : Except String Span).toOption | continue
-      out := out ++ [⟨localName, location, name, namePos⟩]
+    | .ok (some localName) => out := out ++ [⟨localName, location, name⟩]
     | .ok none | .error _ => continue
   let names := out.map (·.localName)
   return out.filter fun r => names.count r.localName == 1

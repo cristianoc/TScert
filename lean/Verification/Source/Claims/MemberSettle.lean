@@ -576,4 +576,16 @@ def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   { f with plans := f.plans.map fun p => p.map (FunctionPlan.mapRequest fun r =>
       { r with candidates := (r.start, [fact]) :: r.candidates }) }
 
+namespace PassUnit
+
+/-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
+head facts, with `infer` beside the proposals inference recorded, then the
+false start fact where `--force-proposals` names `start-facts`. -/
+def preparedMode8 (force : List String) (givenLines : Std.HashMap String Json) (infer : Bool) (f : FilePlans) :
+    FilePlans :=
+  if force.contains "start-facts" then (f.withHeadFacts givenLines false infer).withFalseStartFact
+  else f.withHeadFacts givenLines false infer
+
+end PassUnit
+
 end Verification.SourceClaimJson

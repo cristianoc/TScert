@@ -495,6 +495,20 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         }
         assert.deepEqual(completed.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
         assert.equal(completed.slices.executed, 2, "each callee checks at its saved proposal");
+        const proposalStore = new Store(join(work, "proposal-first"));
+        const replies = new Map<string, string>();
+        const resumedKeys = new Map<string, string>();
+        for (const key of readdirSync(join(proposalStore.root, "entries", "pass"))) {
+          const entry = must(proposalStore.finished("pass", key, null), "published worker entry").result;
+          const manifest: unknown = JSON.parse(entry.input);
+          if (!isObject(manifest) || typeof manifest.slice !== "string") continue;
+          if (manifest.operation === "propose-slice") {
+            const digest = createHash("sha256").update('{"resume":').update(entry.stdout).update("}").digest("hex");
+            replies.set(manifest.slice, digest);
+          } else if (typeof manifest.resume === "string") resumedKeys.set(manifest.slice, manifest.resume);
+        }
+        assert.equal(replies.size, 2);
+        assert.deepEqual(resumedKeys, replies, "each resumed check keys the exact proposal reply it reads");
         writeFileSync(fragment, JSON.stringify(chain("2")));
         const edited = check();
         assert.equal(edited.slices.executed, 1, "only the edited callee checks");

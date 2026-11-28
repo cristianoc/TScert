@@ -447,8 +447,8 @@ structure BindingEnvironment where
 deriving instance ToJson for HeadKind
 
 def BindingEnvironment.wire (env : BindingEnvironment) : Json :=
-  toJson (env.slots, env.heads.zipIdx.map fun (d,i) =>
-    (env.origins[i]?.join, d.name, toJson d.kind, toJson d.kinds,
+  toJson (env.slots, env.origins, env.heads.map fun d =>
+    (d.name, toJson d.kind, toJson d.kinds,
       d.binders.map (fun (b : EquationGraphs.Binder) => (b.name,toJson b.kind)), toJson d.body, toJson d.defaults))
 
 /-- Heads rebuilt by the reader's lowering refer to their declarations.
@@ -702,7 +702,6 @@ structure DeclarationSites where
   physicalIds : Std.HashMap Json Json
   symbols : Array Json
   localNames : Std.HashMap String String
-  definitions : EquationLowering.DefinitionCache
 
 def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
   let symbols := (Fragment.symbolIdentities [ast]).eraseDups.toArray
@@ -731,7 +730,6 @@ def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
     physical := physical.insert canonical id
   let subst := fun row => Id.run (mapSites (pure ∘ toJson) relative row)
   let mut replacements := relative
-  let mut defs := #[]
   let mut occurrences : Std.HashMap Json Nat := {}
   for k in ["definitions", "values", "roots"] do
     for row in rows k do
@@ -744,7 +742,6 @@ def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
       let normalized := nameTypeSites (toJson (ownerKey, occurrence)) relative body
       let normalized := if let .ok b := binding then normalized.setObjVal! "binding" b else normalized
       replacements := replacements.insert row normalized
-      if k == "definitions" then defs := defs.push normalized
   let mut locals := {}
   for fn in (ast.getObjValAs? (Array Json) "functions").toOption.getD #[] do
     let body := subst fn
@@ -757,8 +754,7 @@ def DeclarationSites.of (ast : Json) : DeclarationSites := Id.run do
     replacements := replacements.insert signature (subst signature)
   for row in (ast.getObjValAs? (Array Json) "init").toOption.getD #[] do
     replacements := replacements.insert row (subst row)
-  return ⟨replacements, physical, symbols, locals, EquationLowering.DefinitionCache.ofDocument
-    (Json.mkObj [("definitions", .arr defs)])⟩
+  return ⟨replacements, physical, symbols, locals⟩
 
 def Slice.relative (s : Slice) (decls : DeclarationSites) : Except String (Slice × Sites) := do
   let replace := fun (doc : Json) (k : String) =>
@@ -839,18 +835,6 @@ def Slice.relative (s : Slice) (decls : DeclarationSites) : Except String (Slice
   let names := fun (ns : List String) => (ns.map fun n => decls.localNames.getD n n).mergeSort
   let missing := { s.missing with definitions, roots := names s.missing.roots, values := names s.missing.values }
   return ({ s with ast, force, tables, imports, established, missing, bindings }, sites)
-
-/-- The complete input of the stored operation, including the entire slice
-Fragment. Field hashes in the shadow report are for comparisons only. -/
-def Slice.wire (s : Slice) : String :=
-  let ⟨externalGroups, dependencies, inheritedReturn, order, consumers, ast, members, owned, initOrder, demand, below, imports, est, tables,
-    force, fuel, budget, counting, missing, bindings⟩ := s
-  let program := Json.mkObj ([("ast", ast), ("bindings", toJson (bindings.map BindingEnvironment.wire)), ("missing", toJson missing), ("externalGroups", toJson externalGroups), ("dependencies", toJson dependencies),
-    ("inheritedReturn", toJson inheritedReturn), ("group", toJson members), ("owned", toJson owned), ("initOrder", toJson initOrder),
-    ("demand", toJson demand), ("resultConsumers", toJson consumers), ("proposalOrder", toJson order),
-    ("controls", toJson (force, fuel, budget.rounds, budget.select, budget.rerun, counting))] ++
-    importFields imports est tables)
-  String.intercalate "\n" (program.compress :: below.map (fun answer => (answersWire [answer]).compress))
 
 /-- Splitting the functions by membership for diagnostics retains their
 interleaving and every other input field, including errors and controls. -/

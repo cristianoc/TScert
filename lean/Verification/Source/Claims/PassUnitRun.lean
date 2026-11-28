@@ -77,6 +77,57 @@ theorem sliceVerdict_sound {imports : GroupImports} {ast : Json} {fileKey : Stri
   · exact withFalseStartFact_overStore h
   · exact h
 
+/-- The byte strings the driver hashes, in program and proposal order. -/
+def sliceInputLines (s : GroupProjection.Slice) : List (List UInt8) :=
+  s.wire.toByteArray.data.toList.splitOn 10
+
+private theorem equalInputs {digest : α → β} {xs ys : List α}
+    (keys : xs.map digest = ys.map digest)
+    (collision : ∀ x ∈ xs, ∀ y ∈ ys, digest x = digest y → x = y) : xs = ys := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at keys
+    | cons y ys =>
+      obtain ⟨head, tail⟩ := List.cons.inj keys
+      have hh := collision x (by simp) y (by simp) head
+      have ht := ih tail (fun a ha b hb => collision a (List.mem_cons_of_mem _ ha) b (List.mem_cons_of_mem _ hb))
+      rw [hh, ht]
+
+theorem wire_eq_of_lineDigests {s t : GroupProjection.Slice} {digest : List UInt8 → δ}
+    (keys : (sliceInputLines s).map digest = (sliceInputLines t).map digest)
+    (collision : ∀ x ∈ sliceInputLines s, ∀ y ∈ sliceInputLines t, digest x = digest y → x = y) :
+    s.wire = t.wire := by
+  have h := congrArg ([(10 : UInt8)].intercalate ·) (equalInputs keys collision)
+  simp only [sliceInputLines, List.intercalate_splitOn] at h
+  exact String.toByteArray_inj.mp (ByteArray.ext (Array.toList_inj.mp h))
+
+/-- Safety of the prepared group selected by a replayed physical verdict
+line. The store supplies the publication and SHA-256 identifies its input
+bytes; the remaining premises are the worker's read and accepted flag. -/
+theorem replayedSliceVerdict_sound {s t : GroupProjection.Slice} {digest : List UInt8 → δ}
+    (keys : (sliceInputLines s).map digest = (sliceInputLines t).map digest)
+    (collision : ∀ x ∈ sliceInputLines s, ∀ y ∈ sliceInputLines t, digest x = digest y → x = y)
+    {resume : Option String} {front : Option (RequestCli.PreparedSliceFront t)}
+    {previous payload : Json} {bytes : String}
+    (published : RequestCli.sliceResult t true resume front = .ok (previous, bytes))
+    (reply : Json.parse bytes = .ok payload) {p : RequestCli.PreparedFile} {i : Nat}
+    {sites : GroupProjection.Sites} {plan : Except String FilePlans} {line : String} {answers : RequestCli.GroupAnswers}
+    (read : RequestCli.readSliceResult p i s sites "check-slice" payload true plan = .ok (some line, answers))
+    (accepted : RequestCli.lineAccepted line = true) :
+    ∃ fileKey claims raw leader j imports names planning known f₀ updated,
+      s.ast.getObjValAs? String "file" = .ok fileKey ∧ RequestCli.sliceFront s = .ok (claims, raw) ∧
+      s.members.head? = some leader ∧
+      ((GroupProjection.UnitNames.ofFront {raw with moduleOwned := s.owned, initOrder := s.initOrder}).references.finIdxOf? leader).map Fin.val = some j ∧
+      s.imports = .ok imports ∧ imports.plan s.ast fileKey s.budget names {} s.force s.established s.tables
+        (some planning) known = .ok (f₀, updated) ∧ PassUnitSafe (preparedMode8 s.force {} true f₀) j := by
+  obtain ⟨k, claims, raw, leader, j, imports, hk, hr, hl, hj, hi, hc⟩ :=
+    RequestCli.replayedLine_premise (wire_eq_of_lineDigests keys collision) published reply read accepted
+  obtain ⟨names, planning, known, f₀, updated, _, hp, ha⟩ := hc
+  exact ⟨k, claims, raw, leader, j, imports, names, planning, known, f₀, updated,
+    hk, hr, hl, hj, hi, hp, sliceVerdict_sound hp ha⟩
+
 /-- The plans checked at a fresh module's print site in `establishStep`.
 The supplied lines are `moduleLines location` in `verifyUnitsFile`. -/
 def preparedModuleMode8 (force : List String) (infer : Bool) (lines : Std.HashMap String Json)
