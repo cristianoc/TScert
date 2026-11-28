@@ -174,33 +174,45 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   const { checker } = context;
   const form = computedForm(node) ?? "a computed type";
   context.captures(node);
-  // Sound TypeTerm-level conditional `infer` on generic references must run
-  // BEFORE `literalUnion` so TScert never trusts TS's structural `extends`
-  // check for ambiguous cases even when the result happens to be a primitive.
-  if (ts.isConditionalTypeNode(node) && isReferenceInferConditional(node)) {
-    const checkTerm = read(node.checkType);
-    return evaluateConditionalOnTerm({
-      body: node,
-      checkTerm,
-      distributive: false,
-      span,
-      readBranch: (branch, bindings) =>
-        context.withBindings ? context.withBindings(branch, bindings, read) : read(branch),
-      targetInfo: ref => context.conditionalTarget?.(ref) ?? null,
-      memberInfo: ref => context.conditionalMember?.(ref) ?? null,
-    });
+  // Sound TypeTerm-level conditional evaluation must run BEFORE `literalUnion`
+  // so TScert never trusts TS's structural `extends` check for ambiguous cases
+  // even when the result happens to be a primitive or literal.
+  if (ts.isConditionalTypeNode(node)) {
+    const tupleNeverInner = isTupleNeverConditional(node);
+    if (tupleNeverInner) {
+      return evaluateTupleNeverConditional(node, read(tupleNeverInner), span, read);
+    }
+    const bareRef = isBareReferenceConditional(node);
+    if (isReferenceInferConditional(node) || (bareRef && context.conditionalTarget?.(bareRef))) {
+      const checkTerm = read(node.checkType);
+      return evaluateConditionalOnTerm({
+        body: node,
+        checkTerm,
+        distributive: false,
+        span,
+        readBranch: (branch, bindings) =>
+          context.withBindings ? context.withBindings(branch, bindings, read) : read(branch),
+        targetInfo: ref => context.conditionalTarget?.(ref) ?? null,
+        memberInfo: ref => context.conditionalMember?.(ref) ?? null,
+      });
+    }
   }
   if (ts.isTypeReferenceNode(node)) {
     const alias = context.alias(node);
     if (alias && computedAlias(alias, context.alias, new Set(), context.isLibrary)) {
       let body = alias.type;
       while (ts.isParenthesizedTypeNode(body)) body = body.type;
-      if (ts.isConditionalTypeNode(body) && isReferenceInferConditional(body)) {
-        const type = checker.getTypeFromTypeNode(node);
-        const computed = type && !type.isErrorType() ? describe(checker, type) : alias.name.text;
-        return aliasApplication(context, node, span, read, computed);
-      }
-      if (ts.isMappedTypeNode(body)) {
+      const mappedIndexed = ts.isIndexedAccessTypeNode(body) && (() => {
+        let obj = body.objectType;
+        while (ts.isParenthesizedTypeNode(obj)) obj = obj.type;
+        return ts.isMappedTypeNode(obj);
+      })();
+      const soundConditional = ts.isConditionalTypeNode(body) && (
+        isTupleNeverConditional(body) !== null ||
+        isReferenceInferConditional(body) ||
+        (() => { const b = isBareReferenceConditional(body); return !!b && !!context.conditionalTarget?.(b); })()
+      );
+      if (soundConditional || ts.isMappedTypeNode(body) || ts.isIntersectionTypeNode(body) || mappedIndexed) {
         const type = checker.getTypeFromTypeNode(node);
         const computed = type && !type.isErrorType() ? describe(checker, type) : alias.name.text;
         return aliasApplication(context, node, span, read, computed);
@@ -240,7 +252,12 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
   const atArguments = context.applied(alias, applied.args, node);
-  if (ts.isMappedTypeNode(body)) return atArguments(body);
+  if (ts.isMappedTypeNode(body) || ts.isIntersectionTypeNode(body)) return atArguments(body);
+  if (ts.isIndexedAccessTypeNode(body)) {
+    let obj = body.objectType;
+    while (ts.isParenthesizedTypeNode(obj)) obj = obj.type;
+    if (ts.isMappedTypeNode(obj)) return atArguments(body);
+  }
   if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members, atArguments);
   // An application of an alias that is no computed alias, one of whose
   // arguments is computed (`Pick<T, Exclude<keyof T, K>>`), is that alias
@@ -314,7 +331,12 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
     : -1;
   const parameter = (alias.typeParameters ?? [])[index];
   const decided = parameter && args.get(parameter);
-  if (isReferenceInferConditional(body)) {
+  const tupleNeverInner = isTupleNeverConditional(body);
+  if (tupleNeverInner) {
+    return evaluateTupleNeverConditional(body, atArguments(tupleNeverInner), span, atArguments);
+  }
+  const bareRef = isBareReferenceConditional(body);
+  if (isReferenceInferConditional(body) || (bareRef && context.conditionalTarget?.(bareRef))) {
     const checkTerm = decided
       ? (() => {
           const ms = unionMembers(context, decided.node, decided.read, new Set<Node>(), decided.params).map(m => m.read(m.node));
@@ -828,6 +850,124 @@ function sameTermList(a: readonly TypeTerm[], b: readonly TypeTerm[]): boolean {
   return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Whether `node` is a non-distributive tuple-wrapped `never` guard
+ * `[X] extends [never] ? T : F`. Returns `X` when matched, null otherwise. */
+export function isTupleNeverConditional(node: ts.ConditionalTypeNode): TypeNode | null {
+  let check = node.checkType;
+  while (ts.isParenthesizedTypeNode(check)) check = check.type;
+  let ext = node.extendsType;
+  while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
+  if (!ts.isTupleTypeNode(check) || check.elements.length !== 1) return null;
+  if (!ts.isTupleTypeNode(ext) || ext.elements.length !== 1) return null;
+  const checkEl = check.elements[0];
+  const extEl = ext.elements[0];
+  if (!checkEl || !extEl || ts.isOptionalTypeNode(checkEl) || ts.isRestTypeNode(checkEl) ||
+      ts.isNamedTupleMember(checkEl) || ts.isOptionalTypeNode(extEl) || ts.isRestTypeNode(extEl) ||
+      ts.isNamedTupleMember(extEl)) return null;
+  let innerExt: TypeNode = extEl;
+  while (ts.isParenthesizedTypeNode(innerExt)) innerExt = innerExt.type;
+  if (innerExt.kind !== ts.SyntaxKind.NeverKeyword) return null;
+  return checkEl;
+}
+
+/** Whether `node` is a conditional type `Check extends Ref ? T : F` where `Ref`
+ * is a 0-arity type reference (no type arguments). Caller checks whether `Ref`
+ * resolves to a declared type (not a type parameter). */
+export function isBareReferenceConditional(node: ts.ConditionalTypeNode): TypeReferenceNode | null {
+  let ext = node.extendsType;
+  while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
+  if (!ts.isTypeReferenceNode(ext) || ext.typeArguments?.length) return null;
+  return ext;
+}
+
+/** Evaluate `[X] extends [never] ? T : F` on a settled `TypeTerm` for `X`. */
+export function evaluateTupleNeverConditional(
+  body: ts.ConditionalTypeNode,
+  checkInnerTerm: TypeTerm,
+  span: Span,
+  readBranch: (branch: TypeNode) => TypeTerm,
+): TypeTerm {
+  const parts = flattenUnion(checkInnerTerm);
+  for (const part of parts) {
+    if (part.k === "binder" || part.k === "parameter")
+      throw Error("conditional `[X] extends [never]` on an open type parameter is evaluated only at a concrete instance");
+    if (part.k === "reference" && part.reference.target.module === "#deferred-mapped-identity")
+      throw Error("conditional `[X] extends [never]` on an unsettled deferred mapped type is outside the fragment");
+  }
+  const isNever = parts.every(p => p.k === "atom" && p.name === "never");
+  void span;
+  return readBranch(isNever ? body.trueType : body.falseType);
+}
+
+const COND_PRIMITIVE_ATOMS = new Set(["string", "number", "bigint", "boolean", "symbol", "null", "undefined", "void", "never", "unknown"]);
+
+function isCondLiteralOrPrimitive(term: TypeTerm): boolean {
+  if (term.k === "literal" || term.k === "unique") return true;
+  if (term.k === "atom") return COND_PRIMITIVE_ATOMS.has(term.name);
+  if (term.k === "union") return term.parts.every(isCondLiteralOrPrimitive);
+  return false;
+}
+
+function atomOrLiteralSubtype(part: TypeTerm, extParts: readonly TypeTerm[]): boolean {
+  if (part.k === "atom" && part.name === "never") return true;
+  if (extParts.some(e => e.k === "atom" && e.name === "unknown")) return true;
+  if (part.k === "atom" && part.name === "boolean") {
+    if (extParts.some(e => e.k === "atom" && e.name === "boolean")) return true;
+    const hasTrue = extParts.some(e => e.k === "literal" && e.name === "true");
+    const hasFalse = extParts.some(e => e.k === "literal" && e.name === "false");
+    return hasTrue && hasFalse;
+  }
+  for (const e of extParts) {
+    if (part.k === "atom" && e.k === "atom" && part.name === e.name) return true;
+    if (part.k === "literal" && e.k === "literal" && part.name === e.name && part.text === e.text) return true;
+    if (part.k === "unique" && e.k === "unique" && part.symbol === e.symbol) return true;
+    if (part.k === "literal" && e.k === "atom") {
+      if (part.name === "string" && e.name === "string") return true;
+      if (part.name === "number" && e.name === "number") return true;
+      if (part.name === "bigint" && e.name === "bigint") return true;
+      if ((part.name === "true" || part.name === "false") && e.name === "boolean") return true;
+    }
+    if (part.k === "unique" && e.k === "atom" && e.name === "symbol") return true;
+  }
+  return false;
+}
+
+/** Sound exact evaluation of a conditional type whose check and extends operands
+ * are settled unions of literals, primitives, and unique symbols (e.g.
+ * `Exclude<U, V>` = `T extends U ? never : T`). Returns null if either operand
+ * is outside that domain. */
+export function evaluateLiteralConditional(
+  body: ts.ConditionalTypeNode,
+  checkTerm: TypeTerm,
+  extTerm: TypeTerm,
+  distributive: boolean,
+  checkParamName: string | null,
+  span: Span,
+  readBranch: (branch: TypeNode, bindings: ReadonlyMap<string, TypeTerm>) => TypeTerm,
+): TypeTerm | null {
+  if (!isCondLiteralOrPrimitive(checkTerm) || !isCondLiteralOrPrimitive(extTerm)) return null;
+  const extParts = flattenUnion(extTerm).filter(p => !(p.k === "atom" && p.name === "never"));
+  const checkParts = flattenUnion(checkTerm).filter(p => !(p.k === "atom" && p.name === "never"));
+  if (distributive) {
+    if (!checkParts.length) return { k: "atom", name: "never", span };
+    const results: TypeTerm[] = [];
+    for (const part of checkParts) {
+      const bindings = checkParamName ? new Map<string, TypeTerm>([[checkParamName, part]]) : new Map<string, TypeTerm>();
+      const branch = atomOrLiteralSubtype(part, extParts)
+        ? readBranch(body.trueType, bindings)
+        : readBranch(body.falseType, bindings);
+      for (const r of flattenUnion(branch)) {
+        if (!(r.k === "atom" && r.name === "never")) results.push(r);
+      }
+    }
+    const [only] = results;
+    if (!only) return { k: "atom", name: "never", span };
+    return results.length === 1 ? only : { k: "union", parts: results, span };
+  }
+  const holds = checkParts.every(p => atomOrLiteralSubtype(p, extParts));
+  return readBranch(holds ? body.trueType : body.falseType, new Map());
+}
+
 /** Whether `body`'s `extendsType` is a generic reference containing `infer` parameters. */
 export function isReferenceInferConditional(body: ts.ConditionalTypeNode): boolean {
   let ext = body.extendsType;
@@ -856,10 +996,10 @@ export function evaluateConditionalOnTerm(options: ConditionalEvalOptions): Type
   const { body, checkTerm, distributive, span, readBranch, targetInfo, memberInfo } = options;
   let ext = body.extendsType;
   while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
-  if (!ts.isTypeReferenceNode(ext) || !ext.typeArguments?.length)
-    throw Error("conditional `infer` requires a generic reference pattern `Ref<infer ...>`");
+  if (!ts.isTypeReferenceNode(ext))
+    throw Error("conditional check requires a reference pattern `Ref` or `Ref<infer ...>`");
   const inferNames: string[] = [];
-  for (const arg of ext.typeArguments) {
+  for (const arg of ext.typeArguments ?? []) {
     let inner = arg;
     while (ts.isParenthesizedTypeNode(inner)) inner = inner.type;
     if (!ts.isInferTypeNode(inner))
@@ -1087,9 +1227,10 @@ export function projectTerm(object: TypeTerm, keys: TypeTerm, span: Span,
   const keyList = flattenUnion(keys).filter(k => !(k.k === "atom" && k.name === "never"));
   if (!keyList.length) return { k: "atom", name: "never", span };
   const combine = (parts: TypeTerm[]): TypeTerm => {
-    const [only] = parts;
+    const flat = parts.flatMap(flattenUnion).filter(p => !(p.k === "atom" && p.name === "never"));
+    const [only] = flat;
     if (!only) return { k: "atom", name: "never", span };
-    return parts.length === 1 ? only : { k: "union", parts, span };
+    return flat.length === 1 ? only : { k: "union", parts: flat, span };
   };
   const go = (obj: TypeTerm, depth: number): TypeTerm | null => {
     if (depth > 32) return null;
@@ -1142,6 +1283,9 @@ export function projectTerm(object: TypeTerm, keys: TypeTerm, span: Span,
             else return null;
           } else if (key.k === "atom" && key.name === "string" && obj.stringIndex) {
             out.push(obj.stringIndex.value);
+            for (const f of obj.fields) {
+              if (typeof f.name === "string") out.push(f.optional ? optionalTerm(f.type, span) : f.type);
+            }
           } else if (key.k === "atom" && key.name === "number" && (obj.numberIndex ?? obj.stringIndex)) {
             const idx = obj.numberIndex ?? obj.stringIndex;
             if (idx) out.push(idx.value);
