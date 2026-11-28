@@ -323,11 +323,15 @@ import Verification.Source.Lowering.Operands
 import Verification.Source.Lowering.Plans
 import Verification.Source.Lowering.State
 import Verification.Source.Lowering.Types
+import Verification.Source.ReplayCodec
+import Verification.Source.ReplayEffectCodec
+import Verification.Source.ReplayText
 import Verification.Source.RequestCli
 import Verification.Source.RequestJson
 import Verification.Source.ResolutionCapabilities
 import Verification.Source.ResolutionWire
 import Verification.Source.RuleExport
+import Verification.Source.SliceWire
 import Verification.Source.SourceClaims
 import Verification.Source.SourceFacts
 import Verification.Source.SourceRequests

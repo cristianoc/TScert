@@ -268,7 +268,11 @@ physical member identities and executable graphs, accept/refuse outcomes
 and ordered proposals. It compares input and result types by their finite
 equation templates or a checked store map. The direct
 worker checks the physical slice. The [stage store](STAGE-STORE.md#worker-stages)
-replays the closed relative slice and materializes its current verdict. The file supplies
+replays the published check bytes and renders the verdict at the current sites.
+Under SHA-256 collision resistance and store integrity,
+`PassUnit.replayedSliceVerdict_sound` proves group safety for an accepted
+line rendered on a hit. Its [replay premise](drafts/function-replay.md#soundness-obligation)
+identifies the successful import plan and group check on the current slice. The file supplies
 interface demand, proposal order, initialization’s demand for returned
 callables, ownership and initialization order.
 [Group-local lowering](drafts/function-replay.md#group-local-lowering)

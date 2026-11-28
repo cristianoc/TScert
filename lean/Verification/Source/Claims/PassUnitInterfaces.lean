@@ -399,14 +399,6 @@ theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverSto
     simp only [Except.map, Except.ok.injEq] at he
     exact ⟨q, _, hp, he.symm, rfl⟩
 
-/-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
-head facts, with `infer` beside the proposals inference recorded, then the
-false start fact where `--force-proposals` names `start-facts`. -/
-def preparedMode8 (force : List String) (givenLines : Std.HashMap String Json) (infer : Bool) (f : FilePlans) :
-    FilePlans :=
-  if force.contains "start-facts" then (f.withHeadFacts givenLines false infer).withFalseStartFact
-  else f.withHeadFacts givenLines false infer
-
 /-- **The plans mode 8 checks are over the file's store** (proved): either
 planning route's plans, prepared for mode 8. -/
 theorem preparedMode8_overStore

@@ -1,4 +1,4 @@
-import Verification.Source.GroupProjection
+import Verification.Source.SliceWire
 import Verification.Source.FlowJson
 -- FlowJson.lean supplies the execution graphs `--lower-control-flow` prints.
 import Verification.Source.Claims.Json
@@ -474,6 +474,65 @@ theorem GroupContext.groupOperation_eq (p : GroupContext) (i : Nat)
     cases imports.plan p.ast p.fileKey p.budget (some [SourceClaimJson.memberName (p.fr.unitId i)]) {}
       p.force p.est p.tables (some front) (if demand then below else below ++ p.emptyAnswers i) <;> rfl
 
+/-- The two premises of the group safety theorem at the inputs of a check. -/
+def CheckedGroup (ast : Json) (key : String) (budget : PositiveCertificates.SearchBudget)
+    (force : List String) (est : SourceClaimJson.Established) (tables : List (String × SourceClaimJson.RowTable))
+    (imports : SourceClaimJson.GroupImports) (i fuel : Nat) (lines : Std.HashMap String Json)
+    (counting : Bool) : Prop :=
+  ∃ names front known f₀ updated deps,
+    imports.plan ast key budget names {} force est tables (some front) known = .ok (f₀, updated) ∧
+    (let f := SourceClaimJson.PassUnit.preparedMode8 force lines true f₀
+     (f.passGroupMode8 true force (f.givenAt lines) fuel (f.fr.group i)
+       (counting := counting) (located := true)).2.1) = .ok deps
+
+private theorem groupVerdict_checked (p : GroupContext) (i : Nat) (f : SourceClaimJson.FilePlans)
+    (counting : Bool) (h : (p.groupVerdict i (.ok f) counting).refusal = none) :
+    ∃ deps, (f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+      (counting := counting) (located := true)).2.1 = .ok deps := by
+  let printed := (f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+      (counting := counting) (located := true) (print := p.printFailure)).2.1
+  change (match printed with | .ok _ => none | .error why => some why) = none at h
+  have same := f.passGroupMode8_print p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+    none counting p.printFailure
+  change printed.toOption = _ at same
+  cases he : printed with
+  | error _ => simp [he] at h
+  | ok ds =>
+    refine ⟨ds, ?_⟩
+    cases he' : (f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+        (counting := counting) (located := true)).2.1 <;> simp_all [Except.toOption]
+
+theorem GroupContext.groupOperation_checked (p : GroupContext) (i : Nat) (demand : Bool)
+    (below : GroupAnswers) (reads : Except String SourceClaimJson.GroupImports)
+    (mkFront : SourceClaimJson.GroupImports → SourceClaimJson.PlanningFront p.force) (counting : Bool)
+    (h : (((p.groupOperation i demand below (reads.map fun r => (r, mkFront r))).1.verdict counting).refusal) = none) :
+    ∃ imports, reads = .ok imports ∧
+      CheckedGroup p.ast p.fileKey p.budget p.force p.est p.tables imports i p.fuel p.givenLines counting := by
+  cases reads with
+  | error _ => contradiction
+  | ok imports =>
+    let names := some [SourceClaimJson.memberName (p.fr.unitId i)]
+    let known := if demand then below else below ++ p.emptyAnswers i
+    cases hp : imports.plan p.ast p.fileKey p.budget names {} p.force p.est p.tables (some (mkFront imports)) known with
+    | error msg =>
+      have herr : (p.groupOperation i demand below (.ok (imports, mkFront imports))).1.planned = .error msg := by
+        unfold groupOperation
+        dsimp only [SinglePass.work, Bind.bind, Except.bind]
+        rw [hp]; rfl
+      change (p.groupVerdict i (p.groupOperation i demand below (.ok (imports, mkFront imports))).1.planned counting).refusal = none at h
+      rw [herr] at h; contradiction
+    | ok pair =>
+      obtain ⟨f₀, updated⟩ := pair
+      let f := SourceClaimJson.PassUnit.preparedMode8 p.force p.givenLines true f₀
+      have hplan : (p.groupOperation i demand below (.ok (imports, mkFront imports))).1.planned = .ok f := by
+        unfold groupOperation
+        dsimp only [SinglePass.work, Bind.bind, Except.bind]
+        rw [hp]; rfl
+      change (p.groupVerdict i (p.groupOperation i demand below (.ok (imports, mkFront imports))).1.planned counting).refusal = none at h
+      rw [hplan] at h
+      obtain ⟨ds, ha⟩ := groupVerdict_checked p i f counting h
+      exact ⟨imports, rfl, names, mkFront imports, known, f₀, updated, ds, hp, ha⟩
+
 /-- Names used at the slice boundary, indexed once on the validated front. -/
 structure SliceIndex where
   units : Array (Fragment.Fn × List Fragment.TypeParam × Option (SourceClaimJson.Function EquationGraphs.Tree))
@@ -537,7 +596,6 @@ def SliceIndex.layout (x : SliceIndex) (fr : SourceClaimJson.Front) (i : Nat) : 
 structure PreparedFile extends GroupContext where
   index : SliceIndex
   layouts : Array (Thunk SliceLayout)
-  definitions : EquationLowering.DefinitionCache
   declarations : Thunk (Except String GroupProjection.DeclarationIndex)
   declarationSites : Thunk GroupProjection.DeclarationSites
   replayDetails : Bool
@@ -611,7 +669,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let shadow ← IO.getEnv "TSCERT_GROUP_SHADOW"
   let fileAnswers ← IO.mkRef {}
   let prepared : Except String (SourceClaimJson.Established × List (String × SourceClaimJson.RowTable) ×
-      (Json × SourceClaimJson.Front) × Json × EquationLowering.DefinitionCache) ← IO.lazyPure fun _ => do
+      (Json × SourceClaimJson.Front) × Json) ← IO.lazyPure fun _ => do
     let cached ← interfaces
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
@@ -627,7 +685,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
       let source ← SourceClaimJson.lowerEquationFront a' claims budget definitions
       SourceClaimJson.fileFrontFrom a'
         (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront a' fileKey source) [] (lenient := true)
-    return (est, tables, (claims, fr), a, definitions)
+    return (est, tables, (claims, fr), a)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms"
@@ -641,10 +699,10 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
   let fronts ← IO.mkRef []
-  return prepared.map fun (est, tables, front, a, definitions) =>
+  return prepared.map fun (est, tables, front, a) =>
     let index := SliceIndex.ofFront front.2
     { ast := a, index, layouts := (List.range index.units.size).toArray.map (fun i => Thunk.mk fun _ => index.layout front.2 i),
-      definitions, reportGroups := ["1", "replay"].contains (shadow.getD ""),
+      reportGroups := ["1", "replay"].contains (shadow.getD ""),
       replayDetails := shadow == some "replay", fileAnswers, counting,
       declarations := Thunk.mk fun _ => GroupProjection.DeclarationIndex.of (a.getObjValD "declarations")
       declarationSites := Thunk.mk fun _ => GroupProjection.DeclarationSites.of a
@@ -830,11 +888,11 @@ def PreparedFile.sliceInput (p : PreparedFile) (i : Nat) (demand : Bool) (below 
 own equation store, including the stores at the two proposal priors. -/
 private abbrev ProposalResult := List SourceClaimJson.StandIn
 
-private def sliceFront (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache) :
+def sliceFront (s : GroupProjection.Slice) :
     Except String (Json × SourceClaimJson.Front) := do
   let key ← s.ast.getObjValAs? String "file"
   let claims ← SinglePass.work "slice: claims" key fun _ => SourceClaimJson.fragmentClaims s.ast key {} s.force
-  let source ← SinglePass.work "slice: lower equations" key fun _ => SourceClaimJson.lowerEquationFront s.ast claims s.budget definitions
+  let source ← SinglePass.work "slice: lower equations" key fun _ => SourceClaimJson.lowerEquationFront s.ast claims s.budget ∅
   let raw ← SinglePass.work "slice: build front" key fun _ => SourceClaimJson.fileFrontFrom s.ast
     (Thunk.mk fun _ => SourceClaimJson.prepareEquationFront s.ast key source) [] (lenient := true)
   let raw ← match s.bindings with
@@ -842,19 +900,49 @@ private def sliceFront (s : GroupProjection.Slice) (definitions : EquationLoweri
     | some env => env.install raw
   return (claims, raw)
 
-private def planSliceWithResult (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache)
-    (resolved : Option ProposalResult)
-    (printFailure : SourceClaimJson.PassDiagnostic → String := SourceClaimJson.PassDiagnostic.render)
-    (prepared : Option (Json × SourceClaimJson.Front) := none) : Except String (PlannedGroup × ProposalResult) := do
-  let key ← s.ast.getObjValAs? String "file"
-  let (claims, raw) ← match prepared with
-    | some input => pure input
-    | none => sliceFront s definitions
+/-- A front retained by slice preparation carries its origin. -/
+abbrev PreparedSliceFront (s : GroupProjection.Slice) :=
+  { front : Json × SourceClaimJson.Front // sliceFront s = .ok front }
+
+def preparedSliceFront (s : GroupProjection.Slice) (prepared : Option (PreparedSliceFront s)) :
+    Except String (Json × SourceClaimJson.Front) :=
+  match prepared with
+  | some input => .ok input.val
+  | none => sliceFront s
+
+theorem preparedSliceFront_eq (s : GroupProjection.Slice) (prepared : Option (PreparedSliceFront s)) :
+    preparedSliceFront s prepared = sliceFront s := by
+  cases prepared with
+  | none => rfl
+  | some input => exact input.property.symm
+
+/-- Successful planning and checking at the index of this slice's leader. -/
+def SlicePremise (s : GroupProjection.Slice) : Prop :=
+  ∃ key claims raw leader i imports,
+    s.ast.getObjValAs? String "file" = .ok key ∧ sliceFront s = .ok (claims, raw) ∧
+    s.members.head? = some leader ∧
+    ((GroupProjection.UnitNames.ofFront {raw with moduleOwned := s.owned, initOrder := s.initOrder}).references.finIdxOf? leader).map Fin.val = some i ∧
+    s.imports = .ok imports ∧ CheckedGroup s.ast key s.budget s.force s.established s.tables imports i s.fuel {} s.counting
+
+private structure SlicePlan (s : GroupProjection.Slice) extends PlannedGroup where
+  checked : (verdict s.counting).refusal = none → SlicePremise s
+
+private def success (x : Except ε α) : Except ε {a // x = .ok a} :=
+  match x with
+  | .ok a => .ok ⟨a,rfl⟩
+  | .error e => .error e
+
+private def planOnSlice (s : GroupProjection.Slice)
+    (resolved : Option ProposalResult) (printFailure : SourceClaimJson.PassDiagnostic → String)
+    (source : {r : Except String (Json × SourceClaimJson.Front) // r = sliceFront s}) :
+    Except String (SlicePlan s × ProposalResult) := do
+  let ⟨key,hkey⟩ ← success (s.ast.getObjValAs? String "file")
+  let ⟨(claims, raw),hraw⟩ ← success source.val
   let fr := { raw with moduleOwned := s.owned, initOrder := s.initOrder }
-  let some leader := s.members.head? | throw "empty slice group"
+  let some ⟨leader,hleader⟩ := s.members.head?.attach | throw "empty slice group"
   let refs := (GroupProjection.UnitNames.ofFront fr).references
-  let some i := refs.finIdxOf? leader | throw "missing slice leader"
-  let i := i.val
+  let some ⟨index,hindex⟩ := (refs.finIdxOf? leader).attach | throw "missing slice leader"
+  let i := index.val
   let indices := Std.HashMap.ofList refs.toList.zipIdx
   let indexOf := fun (id : SourceClaimJson.UnitRef) => match indices.get? id with
     | some j => Except.ok j
@@ -881,20 +969,37 @@ private def planSliceWithResult (s : GroupProjection.Slice) (definitions : Equat
       let (f, _, none) ← fr.units[j]? | none
       return (f.name, computed.find? (·.name == f.name))
   let below := if resolved.isSome then known else known.filter fun (n, _) => !own.contains n
-  let inputs := s.imports.map fun reads =>
-    (reads, { claims, raw := fr, proposalInputs := some ⟨order, s.resultConsumers, below, s.inheritedReturn⟩, qualified := reads.qualified : SourceClaimJson.PlanningFront s.force })
-  let (group, updated) := context.groupOperation i s.demand known inputs
-  return (group, (updated.map (·.rounds.result)).getD [])
+  let mkFront := fun (reads : SourceClaimJson.GroupImports) =>
+    { claims, raw := fr, proposalInputs := some ⟨order, s.resultConsumers, below, s.inheritedReturn⟩,
+      qualified := reads.qualified : SourceClaimJson.PlanningFront s.force }
+  let operation := context.groupOperation i s.demand known (s.imports.map fun r => (r, mkFront r))
+  have checked : (operation.1.verdict s.counting).refusal = none → SlicePremise s := by
+    intro h
+    obtain ⟨imports, hi, hc⟩ := context.groupOperation_checked i s.demand known s.imports mkFront s.counting h
+    exact ⟨key, claims, raw, leader, i, imports, hkey, source.property.symm.trans hraw,
+      hleader, congrArg (Option.map Fin.val) hindex, hi, hc⟩
+  return (⟨operation.1, checked⟩, (operation.2.map (·.rounds.result)).getD [])
 
-def planSlice (s : GroupProjection.Slice) (definitions : EquationLowering.DefinitionCache := ∅) : Except String PlannedGroup :=
-  (planSliceWithResult s definitions none).map Prod.fst
+private def planSliceWithResult (s : GroupProjection.Slice) (resolved : Option ProposalResult)
+    (printFailure : SourceClaimJson.PassDiagnostic → String := SourceClaimJson.PassDiagnostic.render)
+    (prepared : Option (PreparedSliceFront s) := none) :=
+  planOnSlice s resolved printFailure ⟨preparedSliceFront s prepared, preparedSliceFront_eq s prepared⟩
+
+private theorem planSlice_prepared (s : GroupProjection.Slice) (resolved : Option ProposalResult)
+    (print : SourceClaimJson.PassDiagnostic → String) (prepared : Option (PreparedSliceFront s)) :
+    planSliceWithResult s resolved print prepared = planSliceWithResult s resolved print none := by
+  apply congrArg (planOnSlice s resolved print)
+  exact Subtype.ext (preparedSliceFront_eq s prepared)
+
+def planSlice (s : GroupProjection.Slice) : Except String PlannedGroup :=
+  (planSliceWithResult s none).map (·.1.toPlannedGroup)
 
 /-- Measure reuse of the relative input by executing it and materializing its verdict. -/
 private def replayFields (p : PreparedFile) (physical : GroupProjection.Slice)
     (group : PlannedGroup) (verdict : String) : List (String × Json) := Id.run do
   let .ok (relative, sites) := physical.relative p.declarationSites.get | return [("relative", toJson false)]
   let agreement : Except String (Option String) := do
-    let localPlan ← planSlice relative p.declarationSites.get.definitions
+    let localPlan ← planSlice relative
     let file ← localPlan.planned
     let line ← Json.parse (localPlan.verdict p.counting).line
     let named ← (GroupProjection.UnitNames.ofFront file.fr).nameVerdict line
@@ -950,7 +1055,7 @@ def PreparedFile.plan (p : PreparedFile) (i : Nat) (demand : Bool) (below : Grou
   let returnedBelow ← p.inheritedReturn i
   let slice := Thunk.mk fun _ => p.sliceInput i demand below returnedBelow
   let localPlan := Thunk.mk fun _ =>
-    match slice.get >>= (fun s => (planSliceWithResult s p.definitions none (printFailure := p.printFailure)).map Prod.fst) with
+    match slice.get >>= (fun s => (planSliceWithResult s none (printFailure := p.printFailure)).map (·.1.toPlannedGroup)) with
     | .ok g => g
     | .error reason => ⟨.error reason, p.emptyAnswers i, p.groupVerdict i (.error reason)⟩
   if !p.reportGroups then return localPlan.get
@@ -1133,25 +1238,30 @@ def printFlushed (line : String) : IO Unit := do
 
 /-- The worker waits only after flushing its lookup. The driver renames
 the complete reply into this worker's private execution directory. -/
-private def sliceLookup (operation : String) : IO Json := do
+private def sliceLookup (operation : String) : IO (String × Json) := do
   printFlushed ("slice-lookup " ++ operation)
   let reply : System.FilePath := "slice-reply"
   while !(← reply.pathExists) do IO.sleep 1
-  let stored ← IO.ofExcept (Json.parse (← IO.FS.readFile reply))
+  let bytes ← IO.FS.readFile reply
+  let stored ← IO.ofExcept (Json.parse bytes)
   IO.FS.removeFile reply
-  return stored
+  return (bytes, stored)
 
-/-- The stored value is a function of the operation and the slice.
-The definition cache reads each entry by its complete declaration JSON. -/
-private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
-    (definitions : EquationLowering.DefinitionCache) (resume : Option (Except String ProposalResult))
-    (prepared : Option (Json × SourceClaimJson.Front)) : Json := Id.run do
-  let planned : Except String (GroupAnswers × Option String × ProposalResult) := do
+private abbrev Acceptance (s : GroupProjection.Slice) := {ok : Bool // ok = true → SlicePremise s}
+
+private def noAcceptance (s : GroupProjection.Slice) : Acceptance s := ⟨false, by intro h; contradiction⟩
+
+/-- Execute the proposed or checked group with its prepared front. -/
+private def computeSlice (slice : GroupProjection.Slice) (check : Bool)
+    (resume : Option (Except String ProposalResult))
+    (prepared : Option (PreparedSliceFront slice)) : Json × Acceptance slice := Id.run do
+  let planned : Except String (GroupAnswers × Option String × ProposalResult × Acceptance slice) := do
     let prior ← resume.mapM id
-    let (g, result) ← planSliceWithResult slice definitions prior (printFailure := encodeFailure) (prepared := prepared)
+    let (g, result) ← planSliceWithResult slice prior (printFailure := encodeFailure) (prepared := prepared)
     let file ← g.planned
-    let line ← if check then do
-        let j ← Json.parse (g.verdict slice.counting).line
+    let (line, permit) ← if check then do
+        let verdict := g.verdict slice.counting
+        let j ← Json.parse verdict.line
         let symbolic ← (GroupProjection.UnitNames.ofFront file.fr).nameVerdict j
         let symbolic : Json ← if let .ok ds := symbolic.getObjValAs? (List Json) "depends" then do
             let (imported, localRefs) := ds.partition fun (d : Json) => d.getStr?.toOption.any (·.startsWith "module:")
@@ -1171,13 +1281,13 @@ private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
           let some (i, _) := file.failedElaboration (some [selected]) | throw "missing failed elaboration"
           let some unit := file.fr.unitReferences[i]? | throw "missing elaboration unit"
           pure (symbolic.setObjVal! "elaboration" (toJson unit))
-        pure (some symbolic.compress)
-      else pure none
-    return (g.answers, line, result)
-  let (answers, line, resolution) := match planned with
-    | .ok (answers, line, computed) =>
+        pure (some symbolic.compress, ⟨verdict.refusal.isNone, fun h => g.checked (Option.isNone_iff_eq_none.mp h)⟩)
+      else pure (none, noAcceptance _)
+    return (g.answers, line, result, permit)
+  let (answers, line, resolution, permit) := match planned with
+    | .ok (answers, line, computed, permit) =>
       (answers, line, Json.mkObj
-        [("computed", GroupProjection.answersWire (computed.map fun (s : SourceClaimJson.StandIn) => (s.name, some s)))])
+        [("computed", GroupProjection.answersWire (computed.map fun (s : SourceClaimJson.StandIn) => (s.name, some s)))], permit)
     | .error reason =>
       let empty : GroupAnswers := slice.members.filterMap fun
         | SourceClaimJson.UnitRef.initialization => none
@@ -1185,10 +1295,10 @@ private def sliceResult (slice : GroupProjection.Slice) (check : Bool)
       let verdict := Json.mkObj [("unit", toJson (slice.members.headD .initialization)),
         ("members", toJson slice.members), ("refusal", toJson (GroupProjection.StoredFailure.planning reason)),
         ("elaboration", toJson reason), ("contracts", .arr #[])]
-      (empty, if check then some verdict.compress else none, Json.mkObj [("error", toJson reason)])
-  return Json.mkObj [("operation", toJson (if check then "check-slice" else "propose-slice")),
+      (empty, if check then some verdict.compress else none, Json.mkObj [("error", toJson reason)], noAcceptance _)
+  return (Json.mkObj [("operation", toJson (if check then "check-slice" else "propose-slice")),
     ("members", toJson slice.members), ("answers", GroupProjection.answersWire answers), ("line", toJson line),
-    ("resolution", resolution)]
+    ("resolution", resolution)], permit)
 
 private def decodeResolution (j : Json) : Except String (Except String ProposalResult) := do
   if let .ok msg := j.getObjValAs? String "error" then
@@ -1202,11 +1312,71 @@ private def decodeResolution (j : Json) : Except String (Except String ProposalR
     return s
   return .ok computed
 
-private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjection.Slice)
+/-- The accepted flag of the stored relative line, as read on a hit. -/
+def lineAccepted (line : String) : Bool :=
+  ((Json.parse line >>= (·.getObjValAs? Bool "accepted")).toOption == some true)
+
+def payloadAccepted (payload : Json) : Bool :=
+  (payload.getObjValAs? (Option String) "line").toOption.join.any lineAccepted
+
+def storedAccepted (bytes : String) : Bool := (Json.parse bytes).toOption.any payloadAccepted
+
+private def publishSlice (s : GroupProjection.Slice) (payload : Json) (permit : Acceptance s) :
+    Except String (Json × String) :=
+  let bytes := payload.compress
+  if permit.val || !storedAccepted bytes then .ok (payload, bytes)
+  else .error "refused group encoded an accepted line"
+
+private def readResume (bytes : String) : Except String (Except String ProposalResult) := do
+  let reply ← Json.parse bytes
+  let proposal ← reply.getObjVal? "resume"
+  decodeResolution (← proposal.getObjVal? "resolution")
+
+/-- The result and the bytes published for it. A resumed check reads the
+complete reply whose digest occurs in the driver's check key. -/
+def sliceResult (s : GroupProjection.Slice) (check : Bool) (resume : Option String)
+    (prepared : Option (PreparedSliceFront s) := none) : Except String (Json × String) := do
+  let prior ← resume.mapM readResume
+  let (payload, permit) := computeSlice s check prior prepared
+  publishSlice s payload permit
+
+theorem sliceResult_prepared (s : GroupProjection.Slice) (check : Bool) (resume : Option String)
+    (prepared : Option (PreparedSliceFront s)) :
+    sliceResult s check resume prepared = sliceResult s check resume none := by
+  simp only [sliceResult, computeSlice, planSlice_prepared]
+
+/-- Equal operation inputs give equal published bytes and results. -/
+theorem sliceResult_of_wire {s t : GroupProjection.Slice} (h : s.wire = t.wire)
+    (check : Bool) (resume : Option String) (p : Option (PreparedSliceFront s))
+    (q : Option (PreparedSliceFront t)) :
+    sliceResult s check resume p = sliceResult t check resume q := by
+  obtain rfl := GroupProjection.Slice.wire_injective h
+  exact (sliceResult_prepared s check resume p).trans (sliceResult_prepared s check resume q).symm
+
+/-- A store hit identifies a publication under the same implementation and
+operation, with equal slice and resumption bytes by collision resistance. -/
+theorem replayedAccepted_premise {s t : GroupProjection.Slice} (h : s.wire = t.wire)
+    {check : Bool} {resume : Option String} {p : Option (PreparedSliceFront t)}
+    {payload : Json} {bytes : String} (published : sliceResult t check resume p = .ok (payload, bytes))
+    (accepted : storedAccepted bytes = true) : SlicePremise s := by
+  obtain rfl := GroupProjection.Slice.wire_injective h
+  unfold sliceResult at published
+  cases prior : resume.mapM readResume with
+  | error e => rw [prior] at published; contradiction
+  | ok r =>
+    rw [prior] at published
+    let out := computeSlice s check r p
+    change publishSlice s out.1 out.2 = .ok (payload, bytes) at published
+    unfold publishSlice at published
+    dsimp only at published
+    split at published <;> cases published
+    exact out.2.property (by simp_all)
+
+private def readCertifiedSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjection.Slice)
     (sites : GroupProjection.Sites)
     (operation : String) (payload : Json) (render := true)
     (plan : Except String SourceClaimJson.FilePlans := .error "missing diagnostic plan") :
-    Except String (Option String × GroupAnswers) := do
+    Except String (Option {l : String // lineAccepted l = true → payloadAccepted payload = true} × GroupAnswers) := do
   let unit := p.unitId i
   let members := (p.fr.group i).map p.unitId
   fieldsExactly payload ["operation", "members", "answers", "line", "resolution"]
@@ -1219,10 +1389,14 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
     if f.async then none else some f.name
   unless (names == synchronous || names == (p.emptyAnswers i).map Prod.fst) &&
       answers.all (fun (n,v) => v.all (·.name == n)) do throw "wrong slice proposal members"
-  let relative ← payload.getObjValAs? (Option String) "line"
+  let ⟨relative,hr⟩ ← success (payload.getObjValAs? (Option String) "line")
   unless relative.isSome == (operation == "check-slice") do throw "missing or unexpected slice verdict"
-  let some l := relative | return (none, answers)
-  let raw ← Json.parse l
+  let some ⟨l,hl⟩ := relative.attach | return (none, answers)
+  let ⟨raw,hraw⟩ ← success (Json.parse l)
+  let accepted := (raw.getObjValAs? Bool "accepted").toOption == some true
+  have origin : payloadAccepted payload = accepted := by
+    change relative = some l at hl
+    simp [payloadAccepted, hr, hl, lineAccepted, hraw, EffectCodec.ok_bind, accepted, Except.toOption]
   unless (← raw.getObjVal? "unit") == toJson (slice.members.headD .initialization) &&
       (← raw.getObjVal? "members") == toJson slice.members do throw "wrong relative slice members"
   unless render do return (none, answers)
@@ -1248,7 +1422,37 @@ private def readSliceResult (p : PreparedFile) (i : Nat) (slice : GroupProjectio
   let j ← p.index.names.printVerdict raw
   unless (← j.getObjValAs? String "unit") == unit &&
     (← j.getObjValAs? (List String) "members") == members do throw "wrong resolved slice members"
-  return (some (← sites.printContracts j), answers)
+  let text ← sites.printContracts j
+  if h : accepted || !lineAccepted text then
+    return (some ⟨text, fun ht => by simpa [origin, ht] using h⟩, answers)
+  throw "refused group rendered an accepted line"
+
+def readSliceResult (p : PreparedFile) (i : Nat) (s : GroupProjection.Slice)
+    (sites : GroupProjection.Sites) (operation : String) (payload : Json) (render := true)
+    (plan : Except String SourceClaimJson.FilePlans := .error "missing diagnostic plan") :=
+  (readCertifiedSliceResult p i s sites operation payload render plan).map
+    fun (line, answers) => (line.map Subtype.val, answers)
+
+/-- The actual materialized line of a replayed check supplies the current
+slice's successful planning and pass premises. -/
+theorem replayedLine_premise {s t : GroupProjection.Slice} (key : s.wire = t.wire)
+    {resume : Option String} {front : Option (PreparedSliceFront t)} {previous payload : Json} {bytes : String}
+    (published : sliceResult t true resume front = .ok (previous, bytes))
+    (reply : Json.parse bytes = .ok payload) {p : PreparedFile} {i : Nat} {sites : GroupProjection.Sites}
+    {plan : Except String SourceClaimJson.FilePlans} {line : String} {answers : GroupAnswers}
+    (read : readSliceResult p i s sites "check-slice" payload true plan = .ok (some line, answers))
+    (accepted : lineAccepted line = true) : SlicePremise s := by
+  apply replayedAccepted_premise key published
+  simp only [storedAccepted, reply, Except.toOption, Option.any_some]
+  unfold readSliceResult at read
+  cases h : readCertifiedSliceResult p i s sites "check-slice" payload true plan with
+  | error => rw [h] at read; contradiction
+  | ok pair =>
+    obtain ⟨l, a⟩ := pair
+    rw [h] at read
+    cases l with
+    | none => cases read
+    | some v => cases read; exact v.property accepted
 
 /-- A separately checked initializer supplies its captured slots. Its
 declarators supply the binding sites and written annotations to lowering. -/
@@ -1303,18 +1507,19 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
   let returnedBelow ← p.inheritedReturn i
   let physical ← IO.ofExcept (p.sliceInput i (p.needsInterface i) below returnedBelow)
   let candidate ← bindingSlice p physical i
-  let (slice, sites, prepared, input) ← IO.ofExcept <| SinglePass.work "slice: project" unit fun _ => do
+  let ⟨slice, sites, prepared, input⟩ ← IO.ofExcept <| SinglePass.work "slice: project" unit fun _ => show Except String ((s : GroupProjection.Slice) × GroupProjection.Sites × Option (PreparedSliceFront s) × String) from do
     if candidate.bindings.isSome then
       if let .ok (s, sites) := candidate.relative p.declarationSites.get then
-        if let .ok front := sliceFront s p.declarationSites.get.definitions then
-          return (s, sites, some front, s.wire)
+        match h : sliceFront s with
+        | .ok front => return ⟨s, sites, some ⟨front, h⟩, s.wire⟩
+        | .error _ => pure ()
     let (s, sites) ← physical.relative p.declarationSites.get
-    return (s, sites, none, s.wire)
+    return ⟨s, sites, none, s.wire⟩
   IO.FS.writeFile "slice-input" input
   -- A dependency outside this request can consume a completed check's
   -- answers. On a miss it needs only the proposal operation.
   let full ← sliceLookup (if check then "check-slice" else "probe-check-slice")
-  let (operation, stored) ← if !check && full.isNull then do
+  let (operation, replyBytes, stored) ← if !check && full.2.isNull then do
       printFlushed "slice-skip"
       pure ("propose-slice", ← sliceLookup "propose-slice")
     else pure ("check-slice", full)
@@ -1322,14 +1527,13 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
     ("check-slice", stored.getObjValD "checked") else (operation, stored)
   let resume := operation == "check-slice" && (stored.getObjVal? "resume").isOk
   let stored := if resume then stored.getObjValD "resume" else stored
-  let resolution ← if resume then do
+  if resume then do
       let _ ← IO.ofExcept (readSliceResult p i slice sites "propose-slice" stored)
-      pure (some (← IO.ofExcept (decodeResolution (stored.getObjValD "resolution"))))
-    else pure none
+      pure ()
   let fresh := stored.isNull || resume
-  let payload ← if !fresh then pure stored else
-    IO.lazyPure fun _ => SinglePass.work "slice: execute" unit fun _ =>
-      sliceResult slice (operation == "check-slice") p.declarationSites.get.definitions resolution prepared
+  let (payload, published) ← if !fresh then pure (stored, "") else
+    IO.ofExcept (← IO.lazyPure fun _ => SinglePass.work "slice: execute" unit fun _ =>
+      sliceResult slice (operation == "check-slice") (if resume then some replyBytes else none) prepared)
   if resume && payload.getObjValD "answers" != stored.getObjValD "answers" then
     throw (IO.userError "the resumed plan changed its proposal")
   let mut diagnostic : Except String SourceClaimJson.FilePlans := .error "missing diagnostic plan"
@@ -1342,7 +1546,7 @@ private def resolveSlice (p : PreparedFile) (i : Nat) (below : GroupAnswers)
   let result ← IO.ofExcept (← IO.lazyPure fun _ =>
     SinglePass.work (if fresh then "slice: render" else "slice: replay") unit fun _ =>
       readSliceResult p i slice sites operation payload check diagnostic)
-  printFlushed (if fresh then "slice-result " ++ payload.compress else "slice-hit")
+  printFlushed (if fresh then "slice-result " ++ published else "slice-hit")
   return result
 
 private def checkWithStore (p : PreparedFile) (i : Nat)

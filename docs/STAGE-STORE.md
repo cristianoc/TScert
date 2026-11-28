@@ -743,7 +743,9 @@ code identity, Node runtime identity, executable and library identity,
 runner identity and stage environment. The slice is the SHA-256 digest
 of the first compact JSON line of `GroupProjection.Slice.wire`, the relative
 program and its environment. The proposals are SHA-256 digests of the
-following lines, one for each consumed named result in order.
+following lines, one for each consumed named result in order. A check that
+resumes a proposal includes an additional `resume` field, the SHA-256 digest
+of the exact reply bytes passed to the worker.
 
 A check entry holds the operation, members by declaration and overload, named proposals,
 settlement result and relative verdict. A proposal-only entry has a null
