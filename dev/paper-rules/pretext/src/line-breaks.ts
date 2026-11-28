@@ -147,37 +147,49 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
   const index = new Uint16Array(0x1100)
   const values = new Uint8Array(blocks << 8)
   // The block each class fills whole, once a run covers one.
-  const whole = new Int32Array(0x100).fill(-1)
+  const whole = new Int32Array(0x100)
+  whole.fill(-1)
   let count = 0
   let c = 0
   let end = 0
   let value = -1
+  /** @invariant safeInteger(r) && safeInteger(value) && 0 <= r && -1 <= value && value < whole.length && whole.length === 256 */
   for (let r = 0; r <= runs.length; r += 2) {
     // Runs of joint classes that are one class in this map make one run, [c, end), written once
     // the next run's class differs or no run is left.
-    const following = r < runs.length ? (remap[(runs[r + 1] ?? missing())] ?? missing()) : -1
-    if (following !== value) {
-      while (c < end) {
-        const block = c >> 8
-        if ((c & 0xff) === 0 && end - c >= 0x100) {
-          if ((whole[value] ?? missing()) < 0) {
-            whole[value] = count
-            values.fill(value, count << 8, ++count << 8)
+    let nextClass = -1
+    if (r < runs.length) {
+      if (r + 1 >= runs.length) return missing()
+      const cls = runs[r + 1]!
+      if (cls < 0 || cls >= remap.length) return missing()
+      nextClass = remap[cls]!
+    }
+    if (nextClass !== value) {
+      if (value >= 0) {
+        /** @invariant safeInteger(r) && safeInteger(value) && safeInteger(nextClass) && 0 <= r && r <= runs.length && 0 <= value && value < whole.length && -1 <= nextClass && nextClass < whole.length && whole.length === 256 */
+        while (c < end) {
+          const block = c >> 8
+          if ((c & 0xff) === 0 && end - c >= 0x100) {
+            if (whole[value]! < 0) {
+              whole[value] = count
+              values.fill(value, count << 8, ++count << 8)
+            }
+            index.fill(whole[value]!, block, end >> 8)
+            c = end & ~0xff
+          } else {
+            // A block that several runs share is its own: the first of them starts it.
+            if ((c & 0xff) === 0) index[block] = count++
+            const stop = Math.min(end, (block + 1) << 8)
+            const shift = ((index[block] ?? missing()) - block) << 8
+            values.fill(value, c + shift, stop + shift)
+            c = stop
           }
-          index.fill(whole[value] ?? missing(), block, end >> 8)
-          c = end & ~0xff
-        } else {
-          // A block that several runs share is its own: the first of them starts it.
-          if ((c & 0xff) === 0) index[block] = count++
-          const stop = Math.min(end, (block + 1) << 8)
-          const shift = ((index[block] ?? missing()) - block) << 8
-          values.fill(value, c + shift, stop + shift)
-          c = stop
         }
       }
-      value = following
+      value = nextClass
     }
-    if (r < runs.length) end += (runs[r] ?? missing()) + 1
+    if (runs.length - r < 2) break
+    end += runs[r]! + 1
   }
   if (end !== 0x110000) throw new Error('The class runs don\'t cover U+0000..U+10FFFF')
   return { index, values }
@@ -279,14 +291,21 @@ export type BreakRules = {
 export function unpackStateRows(width: number, states: number, base: Uint16Array | null, differences: Int32Array): Effects<{}, Uint16Array> {   // PAPER: annotation
   const rows = new Uint16Array(states * width)
   if (base !== null) rows.set(base)
+  /** @invariant safeInteger(i) && 0 <= i */
   for (let i = 0, row = -width; i < differences.length;) {
-    row += ((differences[i++] ?? missing()) + 1) * width
-    const back = (differences[i++] ?? missing()) * width
+    if (differences.length - i < 3) return missing()
+    row += (differences[i]! + 1) * width
+    const back = differences[i + 1]! * width
+    const count = differences[i + 2]!
+    i += 3
     if (back > 0) rows.copyWithin(row, row - back, row - back + width)
     let at = row - 1
-    for (let n = differences[i++] ?? missing(); n > 0; n--) {
-      at += 1 + (differences[i++] ?? missing())
-      rows[at] = differences[i++] ?? missing()
+    /** @invariant safeInteger(i) && 0 <= i */
+    for (let n = count; n > 0; n--) {
+      if (differences.length - i < 2) return missing()
+      at += 1 + differences[i]!
+      rows[at] = differences[i + 1]!
+      i += 2
     }
   }
   return rows
@@ -315,7 +334,12 @@ export function getBreakRules(table: RuleTable): Effects<{ "@state": "any" }, Br
 
 // Apple's quotation remap for a locale: code points the line rules read as another category
 // (apple-rbbi.cpp:1061-1084).
-type CategoryOverrides = { readonly chars: readonly number[], readonly categories: readonly number[] }
+type CategoryOverrides = {
+  /** @stable */
+  readonly chars: readonly number[]
+  /** @stable */
+  readonly categories: readonly number[]
+}
 const NO_OVERRIDES: CategoryOverrides = { chars: [], categories: [] }
 
 // ICU's handleNext() (rbbi.cpp:779-952) from each boundary to the next over the whole text:
@@ -333,8 +357,10 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
   const length = text.length
   const matches = new Int32Array(r.lookAheadResultsSize).fill(-1)
   const overrideChars = overrides.chars
-  const overrideCount = overrideChars.length
+  const overrideCategories = overrides.categories
+  const overrideCount = overrideChars.length < overrideCategories.length ? overrideChars.length : overrideCategories.length
 
+  /** @invariant safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
   for (let start = 0; start < length;) { // rbbi.cpp:809-813
     let dictionaryCharCount = 0
     let result = start
@@ -350,6 +376,7 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
     let row = START_STATE * width
     let category = 0
 
+    /** @invariant safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
     for (;;) {
       if (atEnd) { // rbbi.cpp:832-843
         if (ended) break
@@ -357,8 +384,9 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
         category = 1
       } else { // rbbi.cpp:850-855, with Apple's overrides (apple-rbbi.cpp:1061-1084)
         let overridden = false
+        /** @invariant safeInteger(i) && safeInteger(overrideCount) && 0 <= i && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
         for (let i = 0; i < overrideCount; i++) {
-          if (c === overrideChars[i]) { category = overrides.categories[i] ?? missing(); overridden = true; break }
+          if (c === overrideChars[i]) { category = overrideCategories[i]!; overridden = true; break }
         }
         if (!overridden) {
           category = getClass(r.classes, c)
@@ -373,9 +401,12 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
       if (accepting === undefined) throw new RangeError('missing value')
       if (accepting === ACCEPTING_UNCONDITIONAL) {
         result = pos
-      } else if (accepting > ACCEPTING_UNCONDITIONAL && (matches[accepting] ?? missing()) >= 0) {
-        boundary = matches[accepting] ?? missing()
-        break
+      } else if (accepting > ACCEPTING_UNCONDITIONAL) {
+        const match = matches[accepting] ?? missing()
+        if (match >= 0) {
+          boundary = match
+          break
+        }
       }
 
       const rule = rows[row + 1] // rbbi.cpp:904-910
@@ -653,47 +684,57 @@ function classify(c: number): Effects<{}, number> {   // PAPER: annotation
 // CachedLineBreakIteratorFactory (TBI.h:236-351) with two characters of prior context
 // (TBI.h:239-290), and ubrk_following over the prior context followed by the text
 // (TBIICU.h:99-124, 136-142).
+/** @invariant safeInteger(this.priorLength) && 0 <= this.priorLength && this.priorLength <= 2 */
 type Factory = {
+  /** @stable */
   readonly text: string
-  secondToLast: number
-  last: number
+  readonly secondToLast: number
+  readonly last: number
   // PriorContext::length counts trailing non-zero characters (TBI.h:277-283).
-  priorLength: number
+  /** @stable */
+  readonly priorLength: number
   readonly line: WebKitLineRules
   nextBoundary: Int32Array | null
 }
 
-function createFactory(text: string, line: WebKitLineRules): Effects<{}, Factory> {   // PAPER: annotation
-  return { text, secondToLast: 0, last: 0, priorLength: 0, line, nextBoundary: null }
+/** @requires safeInteger(priorLength) && 0 <= priorLength && priorLength <= 2 */
+function createFactory(text: string, line: WebKitLineRules, secondToLast: number, last: number, priorLength: number): Effects<{}, Factory> {   // PAPER: annotation
+  return { text, secondToLast, last, priorLength, line, nextBoundary: null }
 }
 
 // The first ICU boundary after `location`, or -1. `location` is -1 only with a prior
 // context; WebKit's unsigned arithmetic then lands on the last prior character
 // (TBIICU.h:136-142).
+/** @requires safeInteger(location) && -1 <= location
+ *  @ensures safeInteger(result) */
 function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
+  const priorLength = f.priorLength
   let next = f.nextBoundary
   if (next === null) {
-    const prior = f.priorLength === 2
+    const prior = priorLength === 2
       ? String.fromCharCode(f.secondToLast, f.last)
-      : f.priorLength === 1 ? String.fromCharCode(f.last) : ''
+      : priorLength === 1 ? String.fromCharCode(f.last) : ''
     const text = prior + f.text
     const flags = new Uint8Array(text.length + 1)
     markRuleBoundaries(f.line.rules, text, flags, f.line.overrides)
     const fresh = new Int32Array(text.length + 2)
-    fresh[text.length + 1] = -1
-    for (let p = text.length; p >= 0; p--) fresh[p] = flags[p] === 1 ? p : (fresh[p + 1] ?? missing())
+    const freshLen = fresh.length
+    fresh[freshLen - 1] = -1
+    /** @invariant safeInteger(p) && safeInteger(freshLen) && -2 <= p && p <= freshLen - 2 && freshLen === fresh.length */
+    for (let p = freshLen - 2; p >= 0; p--) fresh[p] = flags[p] === 1 ? p : fresh[p + 1]!
     next = f.nextBoundary = fresh
   }
-  const o = location + f.priorLength + 1
-  if (o >= next.length) return -1
-  const b = next[o]
-  if (b === undefined) throw new RangeError('missing value')
-  return b < 0 ? -1 : b - f.priorLength
+  if (location >= next.length - priorLength - 1) return -1
+  const o = location + priorLength + 1
+  const b = next[o]!
+  return b < 0 ? -1 : b - priorLength
 }
 
 // BP.h:142-255 for LineBreakRules::Normal, WordBreakBehavior::Normal and
 // NoBreakSpaceBehavior::Normal. During the fast-forward over units where ICU agrees
 // (BP.h:241-249) the characters before are not read again.
+/** @requires safeInteger(startPosition) && 0 <= startPosition
+ *  @ensures safeInteger(result) && 0 <= result */
 function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   const s = f.text
   const length = s.length
@@ -707,6 +748,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
   let after = 0
   let afterType = 0
   let nextBreak = -1
+  /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && 0 <= i && length === f.text.length */
   for (let i = startPosition; i < length; beforeBefore = before, before = after, beforeType = afterType, i++) {
     after = s.charCodeAt(i)
     afterType = 0
@@ -746,7 +788,9 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
     // ICU lookup.
     if (nextBreak < i) nextBreak = following(f, i - 1)
     if (nextBreak >= 0 && i < nextBreak) {
-      for (const max = Math.min(nextBreak, length - 1); i < max; beforeBefore = before, before = after, beforeType = afterType, i++) {
+      const max = nextBreak < length - 1 ? nextBreak : length - 1
+      /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(max) && 0 <= i && i < length && max <= length - 1 && length === f.text.length */
+      for (; i < max; beforeBefore = before, before = after, beforeType = afterType, i++) {
         const lookahead = s.charCodeAt(i + 1)
         if (lookahead <= 0xff && !isASCIIAlpha(lookahead)) break
       }
@@ -758,7 +802,10 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
 
 // BP.h:258-274: keep-all breaks at spaces, before ZWSP and after U+3000, and with
 // punctuation breaks after any punctuation but the text's last character.
+/** @requires safeInteger(startPosition) && 0 <= startPosition
+ *  @ensures safeInteger(result) && 0 <= result */
 function nextBreakableSpace(s: string, startPosition: number, punctuationBreaks: boolean): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
+  /** @invariant safeInteger(i) && 0 <= i */
   for (let i = startPosition; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (isWebKitBreakableSpace(c) || c === ZWSP) return i
@@ -784,7 +831,7 @@ export function getWebKitLineRules(language: string | null): Effects<{ "@state":
   let name = (subtags[0] ?? missing()).toLowerCase()
   for (let k = 1; k < subtags.length; k++) {
     const subtag = subtags[k]!
-    name += '_' + (subtag.length === 4 ? (subtag[0] ?? missing()).toUpperCase() + subtag.slice(1).toLowerCase() : subtag.toUpperCase())
+    name += '_' + (subtag.length === 4 ? subtag.charAt(0).toUpperCase() + subtag.slice(1).toLowerCase() : subtag.toUpperCase())
   }
   let remap = appleQuoteRemapTable.get(name)
   while (remap === undefined) {
@@ -794,6 +841,7 @@ export function getWebKitLineRules(language: string | null): Effects<{ "@state":
   }
   const chars: number[] = []
   const categories: number[] = []
+  /** @invariant safeInteger(k) && 0 <= k && chars.length === categories.length */
   for (let k = 0; k < remap.length; k += 2) {
     chars.push(remap[k]!)
     categories.push(getClass(rules.classes, remap[k + 1] === 0 ? 0x7b : 0x7d))
@@ -821,7 +869,7 @@ export function getWebKitLineBreaks(
   language: string | null,
 ): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const pairs = webkitPairs ??= unpackTable(webkitLinePairsPacked)
-  const f = createFactory(source, getWebKitLineRules(language))
+  const f = createFactory(source, getWebKitLineRules(language), 0, 0, 0)
   const length = source.length
   const breaks = new Uint8Array(length + 1)
   // WebKit stores a text holding a code unit above U+00FF in 16 bits, where keep-all also
@@ -830,6 +878,7 @@ export function getWebKitLineBreaks(
   for (let i = 0; keepAll && i < length && !sixteenBit; i++) sixteenBit = source.charCodeAt(i) > 0xff
   let previousKind = -1
   // handleTextContent, IIB:924-1051, for hyphens manual and nbsp-mode normal.
+  /** @invariant safeInteger(position) && 0 <= position */
   for (let position = 0; position < length;) {
     let kind = WHITESPACE
     let end = position
@@ -841,6 +890,7 @@ export function getWebKitLineBreaks(
       if (c !== LF) breaks[end] = FORCED_BREAK
     } else {
       // handleWhitespace, IIB:963-992, with moveToNextNonWhitespacePosition (IIB:55-73).
+      /** @invariant safeInteger(end) && 0 <= end */
       for (; end < length; end++) {
         const c = source.charCodeAt(end)
         if (c !== SPACE && c !== TAB && (preserveNewlines || c !== LF)) break
@@ -850,6 +900,7 @@ export function getWebKitLineBreaks(
         // TU:398-422 with line-break auto (LineMode Default, TU:450-466) and BP.h:287-300.
         kind = TEXT
         end = length
+        /** @invariant safeInteger(p) && 0 <= p */
         for (let p = position; p < length; p++) {
           const next = keepAll ? nextBreakableSpace(source, p, sixteenBit) : nextBreakablePosition(pairs, f, p)
           if (next !== position) { end = next; break }
@@ -881,10 +932,10 @@ export function getWebKitBreakBetweenItems(previous: string, next: string, keepA
   if (last === SPACE || last === TAB || first === SPACE || first === TAB) return true
   if (keepAll) return nextBreakableSpace(next, 0, false) === 0
   const pairs = webkitPairs ??= unpackTable(webkitLinePairsPacked)
-  const f = createFactory(next, getWebKitLineRules(language))
   const n = previous.length
-  f.secondToLast = n > 1 ? previous.charCodeAt(n - 2) : 0
-  f.last = n > 0 ? previous.charCodeAt(n - 1) : 0
-  f.priorLength = f.last === 0 ? 0 : f.secondToLast === 0 ? 1 : 2
+  const secondToLast = n > 1 ? previous.charCodeAt(n - 2) : 0
+  const lastChar = n > 0 ? previous.charCodeAt(n - 1) : 0
+  const priorLength = lastChar === 0 ? 0 : secondToLast === 0 ? 1 : 2
+  const f = createFactory(next, getWebKitLineRules(language), secondToLast, lastChar, priorLength)
   return nextBreakablePosition(pairs, f, 0) === 0
 }

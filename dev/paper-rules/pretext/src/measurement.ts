@@ -512,19 +512,22 @@ function getWebKitGenericFamilies(language: string, ctx: CanvasRenderingContext2
     tag = tag.slice(0, Math.max(0, tag.lastIndexOf('-')))
     row = webkitGenericFamilyTable.get(tag)
   }
-  const families: string[] = []
-  for (let i = 0; i < row.length; i++) {
+  const r = row
+  const count = r.length
+  const families: Dense<string[]> = new Array<string>(count).fill('')
+  /** @invariant safeInteger(i) && safeInteger(count) && 0 <= i && i <= count && families.length === count */
+  for (let i = 0; i < count && i < r.length; i++) {
     // Keywords with the same entry share its family, and the context is asked once.
-    const first = row.indexOf(row[i]!)
-    if (first < i) {
-      families.push(families[first] ?? missing())
+    const first = r.indexOf(r[i]!)
+    if (first >= 0 && first < i) {
+      families[i] = families[first]!
       continue
     }
-    const name = webkitGenericFamilyNames[row[i]!]
+    const name = webkitGenericFamilyNames[r[i]!]
     if (name === undefined) throw new RangeError('missing value')
     const pair = name.indexOf('|')
     const family = pair < 0 ? name : hasFamily(ctx, name.slice(0, pair)) ? name.slice(0, pair) : name.slice(pair + 1)
-    families.push(family === '' ? '' : `"${family}"`)
+    if (family !== '') families[i] = `"${family}"`
   }
   return families
 }
@@ -534,7 +537,7 @@ function getWebKitGenericFamilies(language: string, ctx: CanvasRenderingContext2
 const familyProbeText = 'Hamburg 한中 नम សួ ನಮ ສະ നമ မင ନମ ආය བཀ'
 
 // Whether the context has a family: the probe text measures differently with it first.
-function hasFamily(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, family: string): Effects<{ fields: "any" }, boolean> {   // PAPER: annotation
+function hasFamily(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, family: string): Effects<{ "ctx.font": "any" }, boolean> {   // PAPER: annotation
   for (const fallback of ['monospace', 'serif']) {
     ctx.font = `16px ${fallback}`
     const width = ctx.measureText(familyProbeText).width
@@ -900,7 +903,7 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
     const lists = families === null ? 1 : families.length
     let own: TextMetrics | null = null
     for (let i = 0; i < lists; i++) {
-      const list = i === 0 ? font : font.slice(0, start) + (families ?? missing()).slice(i).join(',')
+      const list = i === 0 || families === null ? font : font.slice(0, start) + families.slice(i).join(',')
       measurement.kanaFont = list
       const context = getWholeRunContext(measurement)
       const kerned = context.measureText(KANA_PROBE).width
@@ -944,9 +947,9 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
 // in the font's table by its two characters, where a pair not asked about yet is NaN.
 export function getKanaKerning(text: string, start: number, at: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ fields: "any"; views: "grow" }, number> {   // PAPER: annotation
   const second = text.charCodeAt(at)
-  if (second < 0x3041 || second > 0x30ff) return 0
+  if (!(second >= 0x3041 && second <= 0x30ff)) return 0
   const first = text.charCodeAt(at - 1)
-  if (first < 0x3041 || first > 0x30ff) return 0
+  if (!(first >= 0x3041 && first <= 0x30ff)) return 0
   if (at > start) {
     if (!isCanvasWordLetter(second)) return 0
     // What Canvas's word held before the marks that end it.
@@ -961,14 +964,14 @@ export function getKanaKerning(text: string, start: number, at: number, measurem
   const index = (first - 0x3041) * KANA_COUNT + second - 0x3041
   const kerning = kernings[index]
   if (kerning === undefined) throw new RangeError('missing value')
-  return Number.isNaN(kerning) ? kernings[index] = measureKanaKerning(text.slice(at - 1, at + 1), measurement) : kerning
+  return Number.isNaN(kerning) ? kernings[index] = measureKanaKerning(text.slice(at - 1, at + 1), first, second, measurement) : kerning
 }
 
 // The kerning of two kana in a row: the two in one string on the context that shapes a string
 // whole, less each alone.
-function measureKanaKerning(pair: string, measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
+function measureKanaKerning(pair: string, first: number, second: number, measurement: FontMeasurement): Effects<{ fields: "any" }, number> {   // PAPER: annotation
   const pairWidth = getWholeRunContext(measurement).measureText(pair).width
-  const kerning = pairWidth - getSegmentMetrics(pair[0] ?? missing(), measurement).width - getSegmentMetrics(pair[1] ?? missing(), measurement).width
+  const kerning = pairWidth - getSegmentMetrics(String.fromCharCode(first), measurement).width - getSegmentMetrics(String.fromCharCode(second), measurement).width
   // As for a character and a space, up to the pair's width / 2^22 is rounding.
   return Math.abs(kerning) <= pairWidth / 0x400000 ? 0 : kerning
 }
