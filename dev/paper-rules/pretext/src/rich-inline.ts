@@ -1653,7 +1653,11 @@ function createLine(
   for (let k = fragments.length - 1; k >= 0 && rest > 0; k--) {
     const last = fragments[k]!
     // The edge of a padded opening stays painted: it is the first segment of its item, so of a fragment.
-    const edge = openingEdges === null || last.start.graphemeIndex > 0 ? 0 : (openingEdges[(itemSegments[last.itemIndex] ?? missing()) + last.start.segmentIndex] ?? missing())
+    let edge = 0
+    if (openingEdges !== null && last.start.graphemeIndex <= 0 && Number.isSafeInteger(last.itemIndex) && 0 <= last.itemIndex && last.itemIndex < itemSegments.length) {
+      const seg = itemSegments[last.itemIndex]! + last.start.segmentIndex
+      if (Number.isSafeInteger(seg) && 0 <= seg && seg < openingEdges.length) edge = openingEdges[seg]!
+    }
     if (last.occupiedWidth > edge) {
       const part = Math.min(rest, last.occupiedWidth - edge)
       last.occupiedWidth -= part

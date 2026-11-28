@@ -1,4 +1,3 @@
-import { missing } from './checked.js'
 import { getGeckoLineBreaks, isDiscardable, isEastAsianSegmentBreak, isJapaneseOrChinese, isSpaceCombiningSequenceTail, isSpaceOrTabOrSegmentBreak } from './gecko-line-breaks.js'
 import { isBidiControl, type GraphemeTable } from './graphemes.js'
 import { BREAK, CLUSTER_START, FORCED_BREAK, ITEM_START, SOFT_HYPHEN_BREAK, getBlinkLineBreaks, getWebKitBreakBetweenItems, getWebKitLineBreaks } from './line-breaks.js'
@@ -567,7 +566,7 @@ export function analyzeText(
           if (!paragraph.atomic[k]) continue
           let after = scanStarts[k]! + 1
           while (after < source.length && isDiscardable(source.charCodeAt(after), false)) after++
-          sourceBreaks[after] = (sourceBreaks[after] ?? missing()) & ~SOFT_HYPHEN_BREAK
+          if (Number.isSafeInteger(after) && 0 <= after && after < sourceBreaks.length) sourceBreaks[after] = sourceBreaks[after]! & ~SOFT_HYPHEN_BREAK
         }
       }
       // Gecko's white-space run reads through the soft hyphens and bidi controls in it, which its
@@ -766,14 +765,21 @@ function getWebKitParagraphBreaks(source: string, paragraph: ParagraphItems, pre
     // (getWebKitLineBreaks), so only those are scanned.
     const first = source.charCodeAt(start)
     if (end - start > 1 || first === 0x2028 || first === 0x2029) {
-      const itemText = items[k]!.text ?? missing()
-      const itemBreaks = getWebKitLineBreaks(itemText, preserve, keepAll, language)
-      for (let i = 1; i <= itemText.length; i++) breaks[start + i] = itemBreaks[i]!
+      const itemText = items[k]!.text
+      if (itemText !== undefined) {
+        const itemBreaks = getWebKitLineBreaks(itemText, preserve, keepAll, language)
+        for (let i = 1; i <= itemText.length; i++) breaks[start + i] = itemBreaks[i]!
+      }
     }
     if (previous >= 0 && !atomic[k] && !atomic[previous]) {
       const last = source.charCodeAt(start - 1)
       const collapses = !preserve && ((first !== 0x0D && isCollapsibleSpaceCode(first)) || (last !== 0x0D && isCollapsibleSpaceCode(last)))
-      if (collapses || getWebKitBreakBetweenItems(items[previous]!.text ?? missing(), items[k]!.text ?? missing(), keepAll, language)) breaks[start] = (breaks[start] ?? missing()) | BREAK
+      const prevText = items[previous]!.text
+      const currText = items[k]!.text
+      if ((collapses || (prevText !== undefined && currText !== undefined && getWebKitBreakBetweenItems(prevText, currText, keepAll, language))) &&
+        Number.isSafeInteger(start) && 0 <= start && start < breaks.length) {
+        breaks[start] = breaks[start]! | BREAK
+      }
     }
     previous = k
   }
