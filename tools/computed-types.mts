@@ -252,6 +252,9 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
   const atArguments = context.applied(alias, applied.args, node);
+  // Rule intersection-alias (SOURCE-CONTRACTS.md, "Computed types"): an alias
+  // whose equation is an intersection containing a computed part is read at
+  // its application with the parameters substituted in every operand.
   if (ts.isMappedTypeNode(body) || ts.isIntersectionTypeNode(body)) return atArguments(body);
   if (ts.isIndexedAccessTypeNode(body)) {
     let obj = body.objectType;
@@ -870,9 +873,12 @@ export function isTupleNeverConditional(node: ts.ConditionalTypeNode): TypeNode 
   return checkEl;
 }
 
-/** Whether `node` is a conditional type `Check extends Ref ? T : F` where `Ref`
- * is a 0-arity type reference (no type arguments). Caller checks whether `Ref`
- * resolves to a declared type (not a type parameter). */
+/** Rule **conditional-nominal** (SOURCE-CONTRACTS.md, "Computed types"): the
+ * form `Check extends Ref ? T : F` with `Ref` a reference without type
+ * arguments to a declared type (the caller checks it is not a type
+ * parameter). `evaluateConditionalOnTerm` decides it: the true branch where
+ * the check is `Ref`'s own declaration, the false branch where its record
+ * is disjoint from `Ref`'s, and a refusal where they overlap structurally. */
 export function isBareReferenceConditional(node: ts.ConditionalTypeNode): TypeReferenceNode | null {
   let ext = node.extendsType;
   while (ts.isParenthesizedTypeNode(ext)) ext = ext.type;
@@ -880,7 +886,10 @@ export function isBareReferenceConditional(node: ts.ConditionalTypeNode): TypeRe
   return ext;
 }
 
-/** Evaluate `[X] extends [never] ? T : F` on a settled `TypeTerm` for `X`. */
+/** Rule **conditional-tuple-never** (SOURCE-CONTRACTS.md, "Computed types"):
+ * `[X] extends [never] ? T : F`, not distributive, is `T` where every member
+ * of the settled `X` is `never` and `F` otherwise (`any` and `unknown`
+ * included, as TypeScript decides). An open or unsettled `X` is refused. */
 export function evaluateTupleNeverConditional(
   body: ts.ConditionalTypeNode,
   checkInnerTerm: TypeTerm,
@@ -890,9 +899,9 @@ export function evaluateTupleNeverConditional(
   const parts = flattenUnion(checkInnerTerm);
   for (const part of parts) {
     if (part.k === "binder" || part.k === "parameter")
-      throw Error("conditional `[X] extends [never]` on an open type parameter is evaluated only at a concrete instance");
+      throw Error("rule conditional-tuple-never: `[X] extends [never]` on an open type parameter is evaluated only at a concrete instance");
     if (part.k === "reference" && part.reference.target.module === "#deferred-mapped-identity")
-      throw Error("conditional `[X] extends [never]` on an unsettled deferred mapped type is outside the fragment");
+      throw Error("rule conditional-tuple-never: `[X] extends [never]` on an unsettled deferred mapped type is outside the fragment");
   }
   const isNever = parts.every(p => p.k === "atom" && p.name === "never");
   void span;
@@ -932,10 +941,16 @@ function atomOrLiteralSubtype(part: TypeTerm, extParts: readonly TypeTerm[]): bo
   return false;
 }
 
-/** Sound exact evaluation of a conditional type whose check and extends operands
- * are settled unions of literals, primitives, and unique symbols (e.g.
- * `Exclude<U, V>` = `T extends U ? never : T`). Returns null if either operand
- * is outside that domain. */
+/** Rule **conditional-literal** (SOURCE-CONTRACTS.md, "Computed types"): a
+ * conditional type whose check and extends operands are settled unions of
+ * literals, primitives and unique symbols (`Exclude<U, V>` is
+ * `T extends U ? never : T`). Distributive over a bare check parameter: each
+ * member takes the true branch where it is a subtype of some member of the
+ * extends operand by `atomOrLiteralSubtype` (`never` and anything below
+ * `unknown`; equal primitives, literals and symbols; a literal below its
+ * primitive; `true` and `false` below `boolean`, and `boolean` below both;
+ * a unique symbol below `symbol`). Not distributive: the true branch where
+ * every member is. Returns null outside that domain. */
 export function evaluateLiteralConditional(
   body: ts.ConditionalTypeNode,
   checkTerm: TypeTerm,
@@ -1282,6 +1297,10 @@ export function projectTerm(object: TypeTerm, keys: TypeTerm, span: Span,
             else if (obj.stringIndex) out.push(obj.stringIndex.value);
             else return null;
           } else if (key.k === "atom" && key.name === "string" && obj.stringIndex) {
+            // Rule index-string-fields (SOURCE-CONTRACTS.md, "Computed types"):
+            // `X[string]` at a string index is the index's value with the
+            // types of the string-named fields, which TypeScript requires to
+            // lie within the index's value, so the union adds no value.
             out.push(obj.stringIndex.value);
             for (const f of obj.fields) {
               if (typeof f.name === "string") out.push(f.optional ? optionalTerm(f.type, span) : f.type);
