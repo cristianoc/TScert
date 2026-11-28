@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childOf, childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
-import { wildcardReadings, classInstance, isAmbientClass, computedAlias, emptyObject, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, reduceLiteralIntersection, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { wildcardReadings, classInstance, isAmbientClass, computedAlias, emptyObject, literalDefaultName, computedForm, deferredOf, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, reduceLiteralIntersection, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, FRESH_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember, type MappedTransform,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -35,7 +35,7 @@ import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
-import { computedType, enclosingBinders, evaluateConditionalOnTerm, inferredTerm, isInstanceReference, isReferenceInferConditional, keyofTerm, literalUnion, projectTerm, type ComputedContext, type ConditionalTargetInfo, type MemberReferenceInfo } from "./computed-types.mts";
+import { computedType, enclosingBinders, evaluateConditionalOnTerm, evaluateLiteralConditional, evaluateTupleNeverConditional, inferredTerm, isBareReferenceConditional, isInstanceReference, isReferenceInferConditional, isTupleNeverConditional, keyofTerm, literalUnion, projectTerm, type ComputedContext, type ConditionalTargetInfo, type MemberReferenceInfo } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, Region, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { FRAME_ARGUMENT, literal, parameterKinds, SweepError, withoutMeaning, writtenApplications, type Entity, type ParameterKind } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
@@ -2902,8 +2902,140 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       };
       return typeTerm(boundScope, branch);
     };
+    const recordShapeOf = (reading: DeclarationReading, ref: Extract<TypeTerm, { k: "reference" }>,
+        seen: ReadonlySet<string> = new Set()): Extract<TypeTerm, { k: "object" }> | null => {
+      const key = definitionKey(ref.reference.target);
+      if (seen.has(key)) return null;
+      const decl = declarationByKey.get(key);
+      if (!decl || isLibraryDeclaration(decl) || hostType(decl) || ts.isClassDeclaration(decl)) return null;
+      const nextSeen = new Set([...seen, key]);
+      if (isTypeAlias(decl)) {
+        const declIsComputed: boolean = isComputedAlias(decl);
+        if (declIsComputed) return null;
+        const body = instantiateAt(reading, decl, ref.args, null)(decl.type);
+        if (body.k === "object" && !body.calls.length && !body.prototype && !body.host && !body.view) return body;
+        if (body.k === "reference" && !deferredOf(body)) return recordShapeOf(reading, body, nextSeen);
+        return null;
+      }
+      if (!ts.isInterfaceDeclaration(decl)) return null;
+      const parts = partners.get(decl) ?? [decl];
+      const ownParts: Extract<TypeTerm, { k: "object" }>[] = [];
+      for (const part of parts) {
+        if (!ts.isInterfaceDeclaration(part)) return null;
+        const file = part.getSourceFile();
+        const span: Span = [part.getStart(file), part.end];
+        const partScope = instantiateAtScope(reading, part, ref.args, null);
+        const m = members(partScope, part.members, part, span, true);
+        if (m.k !== "object" || m.calls.length || m.prototype || m.host || m.view) return null;
+        ownParts.push(m);
+      }
+      const keyStr = (n: PropertyKey) => (typeof n === "string" ? n : `[symbol ${n.symbol}]`);
+      const mergeObj = (acc: Extract<TypeTerm, { k: "object" }>, add: Extract<TypeTerm, { k: "object" }>): Extract<TypeTerm, { k: "object" }> | null => {
+        const fields = [...acc.fields];
+        for (const f of add.fields) {
+          const existing = fields.find(x => keyStr(x.name) === keyStr(f.name));
+          if (!existing) fields.push(f);
+          else if (termText(existing.type) !== termText(f.type) || existing.optional !== f.optional || existing.readonly !== f.readonly) return null;
+        }
+        const mergeIdx = (a: typeof acc.stringIndex, b: typeof acc.stringIndex) => {
+          if (!a) return b;
+          if (!b) return a;
+          if (termText(a.value) !== termText(b.value) || a.readonly !== b.readonly) return "conflict" as const;
+          return a;
+        };
+        const stringIndex = mergeIdx(acc.stringIndex, add.stringIndex);
+        const numberIndex = mergeIdx(acc.numberIndex ?? null, add.numberIndex ?? null);
+        const symbolIndex = mergeIdx(acc.symbolIndex ?? null, add.symbolIndex ?? null);
+        if (stringIndex === "conflict" || numberIndex === "conflict" || symbolIndex === "conflict") return null;
+        return {
+          k: "object",
+          fields,
+          stringIndex,
+          ...(numberIndex ? { numberIndex } : {}),
+          ...(symbolIndex ? { symbolIndex } : {}),
+          calls: [],
+          span: acc.span,
+        };
+      };
+      let shape: Extract<TypeTerm, { k: "object" }> | null = ownParts[0] ?? null;
+      if (!shape) return null;
+      for (const p of ownParts.slice(1)) {
+        shape = mergeObj(shape, p);
+        if (!shape) return null;
+      }
+      const inst = instantiateAt(reading, decl, ref.args, null);
+      for (const part of parts) {
+        if (!ts.isInterfaceDeclaration(part)) continue;
+        for (const clause of part.heritageClauses ?? []) {
+          if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+          for (const expr of clause.types) {
+            if (!ts.isIdentifier(expr.expression)) return null;
+            const baseDecls = typeDeclarationsOf(expr.expression).filter(isTypeDeclaration);
+            if (!baseDecls.length) return null;
+            const baseNode = declarationOf(baseDecls, expr.expression.text);
+            const argTerms = (expr.typeArguments ?? []).map(a => inst(a));
+            const completed = completeArguments(reading, baseNode, argTerms, null, baseNode.name?.text ?? expr.expression.text);
+            const span: Span = [expr.getStart(expr.getSourceFile()), expr.end];
+            const baseShape = recordShapeOf(reading, {
+              k: "reference",
+              reference: { name: baseNode.name?.text ?? expr.expression.text, span, arguments: [], target: identityOf(baseNode) },
+              args: completed,
+              span,
+            }, nextSeen);
+            if (!baseShape) return null;
+            shape = mergeObj(shape, baseShape);
+            if (!shape) return null;
+          }
+        }
+      }
+      return shape;
+    };
+    const evaluateTermConditional = (
+      reading: DeclarationReading,
+      scope: TermScope,
+      part: ts.ConditionalTypeNode,
+      pos: Span,
+      read: (n: TypeNode) => TypeTerm,
+      ownParamNames: readonly string[] | null,
+      allowLiteralCond: boolean = true,
+    ): TypeTerm | null => {
+      const tupleNeverInner = isTupleNeverConditional(part);
+      if (tupleNeverInner) {
+        return evaluateTupleNeverConditional(part, read(tupleNeverInner), pos, branch => typeTerm(scope, branch));
+      }
+      let check = part.checkType;
+      while (ts.isParenthesizedTypeNode(check)) check = check.type;
+      const nakedName = ownParamNames && ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) &&
+        !check.typeArguments?.length && ownParamNames.includes(check.typeName.text) ? check.typeName.text : null;
+      const bareRef = isBareReferenceConditional(part);
+      if (isReferenceInferConditional(part) || (bareRef && conditionalTargetInfo(reading, bareRef))) {
+        const checkTerm = read(part.checkType);
+        return evaluateConditionalOnTerm({
+          body: part,
+          checkTerm,
+          distributive: nakedName !== null,
+          span: pos,
+          readBranch: (branch, bindings) =>
+            readWithInferBindings(reading, branch, bindings, n => typeTerm(scope, n), scope),
+          targetInfo: ref => conditionalTargetInfo(reading, ref),
+          memberInfo: ref => conditionalMemberInfo(reading, ref),
+        });
+      }
+      if (!allowLiteralCond) return null;
+      const checkTerm = read(part.checkType);
+      const extTerm = read(part.extendsType);
+      return evaluateLiteralConditional(
+        part,
+        checkTerm,
+        extTerm,
+        nakedName !== null,
+        nakedName,
+        pos,
+        (branch, bindings) => readWithInferBindings(reading, branch, bindings, n => typeTerm(scope, n), scope),
+      );
+    };
     const makeMappedTransform = (reading: DeclarationReading, baseScope: TermScope,
-        mappedNode: ts.MappedTypeNode, objectNode: TypeNode, keyName: string): MappedTransform => {
+        mappedNode: ts.MappedTypeNode, objectNode: TypeNode | null, keyName: string): MappedTransform => {
       const id = `t${nextTransformId++}`;
       const apply = (fieldType: TypeTerm, keyTerm: TypeTerm, span: Span): TypeTerm => {
         const valueNode = mappedNode.type;
@@ -2911,6 +3043,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const memberScope: TermScope = {
           ...baseScope,
           source: mappedNode.getSourceFile(),
+          keys: () => null,
+          record: ref => recordShapeOf(reading, ref),
           named: (part, pos, read) => {
             if (ts.isIdentifier(part.typeName) && !part.typeArguments?.length && part.typeName.text === keyName)
               return keyTerm;
@@ -2929,26 +3063,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             if (ts.isIndexedAccessTypeNode(part)) {
               let idx = part.indexType;
               while (ts.isParenthesizedTypeNode(idx)) idx = idx.type;
-              if (ts.isTypeReferenceNode(idx) && ts.isIdentifier(idx.typeName) && !idx.typeArguments?.length &&
+              if (objectNode && ts.isTypeReferenceNode(idx) && ts.isIdentifier(idx.typeName) && !idx.typeArguments?.length &&
                   idx.typeName.text === keyName && sameSyntaxNode(part.objectType, objectNode))
                 return fieldType;
               const obj = read(part.objectType);
               const k = read(part.indexType);
-              const proj = projectTerm(obj, k, pos, r => conditionalMemberInfo(reading, r)?.unfolded ?? null);
+              const proj = projectTerm(obj, k, pos, r => recordShapeOf(reading, r) ?? conditionalMemberInfo(reading, r)?.unfolded ?? null);
               if (proj) return proj;
             }
-            if (ts.isConditionalTypeNode(part) && isReferenceInferConditional(part)) {
-              const checkTerm = read(part.checkType);
-              return evaluateConditionalOnTerm({
-                body: part,
-                checkTerm,
-                distributive: false,
-                span: pos,
-                readBranch: (branch, bindings) =>
-                  readWithInferBindings(reading, branch, bindings, n => typeTerm(memberScope, n), memberScope),
-                targetInfo: ref => conditionalTargetInfo(reading, ref),
-                memberInfo: ref => conditionalMemberInfo(reading, ref),
-              });
+            if (ts.isConditionalTypeNode(part)) {
+              const cond = evaluateTermConditional(reading, memberScope, part, pos, read, null);
+              if (cond) return cond;
             }
             if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword) {
               const target = read(part.type);
@@ -3004,27 +3129,14 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const keys = keyofTerm(target, pos, r => referenceKeysOf(reading, r, pos), true);
           if (keys) return keys;
         }
-        if (ts.isConditionalTypeNode(part) && isReferenceInferConditional(part)) {
-          let check = part.checkType;
-          while (ts.isParenthesizedTypeNode(check)) check = check.type;
-          const isNakedOwn = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) &&
-            !check.typeArguments?.length && parameters.includes(check.typeName.text);
-          const checkTerm = read(part.checkType);
-          return evaluateConditionalOnTerm({
-            body: part,
-            checkTerm,
-            distributive: isNakedOwn,
-            span: pos,
-            readBranch: (branch, bindings) =>
-              readWithInferBindings(reading, branch, bindings, n => typeTerm(scope, n), scope),
-            targetInfo: ref => conditionalTargetInfo(reading, ref),
-            memberInfo: ref => conditionalMemberInfo(reading, ref),
-          });
+        if (ts.isConditionalTypeNode(part)) {
+          const cond = evaluateTermConditional(reading, scope, part, pos, read, parameters, !canProbe);
+          if (cond) return cond;
         }
         if (ts.isIndexedAccessTypeNode(part)) {
           const obj = read(part.objectType);
           const idx = read(part.indexType);
-          const proj = projectTerm(obj, idx, pos, r => conditionalMemberInfo(reading, r)?.unfolded ?? null);
+          const proj = projectTerm(obj, idx, pos, r => recordShapeOf(reading, r) ?? conditionalMemberInfo(reading, r)?.unfolded ?? null);
           if (proj) return proj;
         }
         if (ts.isIntersectionTypeNode(part)) {
@@ -3037,8 +3149,19 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           if (alias && isComputedAlias(alias)) {
             let body = alias.type;
             while (ts.isParenthesizedTypeNode(body)) body = body.type;
+            const mappedIndexed = ts.isIndexedAccessTypeNode(body) && (() => {
+              let obj = body.objectType;
+              while (ts.isParenthesizedTypeNode(obj)) obj = obj.type;
+              return ts.isMappedTypeNode(obj);
+            })();
             const termComputed = ts.isMappedTypeNode(body) ||
-              (ts.isConditionalTypeNode(body) && isReferenceInferConditional(body));
+              ts.isIntersectionTypeNode(body) ||
+              mappedIndexed ||
+              (ts.isConditionalTypeNode(body) && (
+                isTupleNeverConditional(body) !== null ||
+                isReferenceInferConditional(body) ||
+                (() => { const b = isBareReferenceConditional(body); return !!b && !!conditionalTargetInfo(reading, b); })()
+              ));
             if (termComputed || !canProbe) {
               const argTerms = (part.typeArguments ?? []).map(read);
               const completed = completeArguments(reading, alias, argTerms, use, alias.name.text, captured);
@@ -3057,6 +3180,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
       };
       const scope: TermScope = { ...outer,
+        keys: part => (namesParameter(part) ? null : keyTypeOf(part)),
+        record: ref => recordShapeOf(reading, ref),
         named: (part, pos, read) => {
           const argument = argumentOf(part);
           if (argument) return argument;
@@ -3429,30 +3554,42 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // module's object that no named export holds).
         if (value && (direct || origin !== null)) throw unreviewed();
         const [node] = nodes;
-        // Merged type declarations are one, as `lookup` reads them.
-        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
+        // Separate type-space declarations (`interface`, `type`, `class`) from
+        // value-space declarations (`const`/`var`, `function`, `class`, `enum`)
+        // so a merged `interface` + companion `const`/`function` (e.g.
+        // `ServiceInstance`) resolves cleanly in each namespace while genuinely
+        // ambiguous or unsupported multi-declarations (e.g. `namespace` merges,
+        // duplicate `const`s, duplicate `type` aliases) remain refused.
+        const valueNodes = nodes.filter(n => !isTypeAlias(n) && !ts.isInterfaceDeclaration(n));
+        const typeNodes = nodes.filter(isTypeDeclaration);
+        const allowedMerged = nodes.every(n => isTypeDeclaration(n) || ts.isVariableDeclaration(n) ||
+          ts.isFunctionDeclaration(n) || ts.isEnumDeclaration(n));
+        const validValueSide = valueNodes.length <= 1 || valueNodes.every(ts.isFunctionDeclaration) ||
+          valueNodes.every(ts.isEnumDeclaration);
+        if (!node || (nodes.length > 1 && (!allowedMerged || !validValueSide || (!typeNodes.length && !valueNodes.length))))
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.name}`);
         // A class is a type and, imported as a value, a constructor too.
-        if (!binding.typeOnly && nodes.some(n => !isTypeAlias(n) && !ts.isInterfaceDeclaration(n))) {
-          const guard = node && nodes.length === 1 && ts.isFunctionDeclaration(node) && node.name &&
-            isHostFile(node.getSourceFile().fileName) ? bindingGuard(binding) : null;
+        if (!binding.typeOnly && valueNodes.length > 0) {
+          const [valueNode] = valueNodes;
+          const guard = valueNode && valueNodes.length === 1 && ts.isFunctionDeclaration(valueNode) && valueNode.name &&
+            isHostFile(valueNode.getSourceFile().fileName) ? bindingGuard(binding) : null;
           // A guard whose runtime function is of another family than its
           // declaration is no guard.
-          const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name &&
-            familyOfGuard(guard) === familyOfFile(node.getSourceFile().fileName) ? guard : null;
-          const value = valueOf(emptyDeclarationReading, nodes, binding.name, entry);
+          const entry = guard && valueNode && ts.isFunctionDeclaration(valueNode) && valueNode.name?.text === guard.name &&
+            familyOfGuard(guard) === familyOfFile(valueNode.getSourceFile().fileName) ? guard : null;
+          const value = valueOf(emptyDeclarationReading, valueNodes, binding.name, entry);
           const valueIndex = values.length;
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...value });
-          if (nodes.length === 1 && node && ts.isFunctionDeclaration(node) && computedFunctionDecls.has(node)) {
-            const external = !programFile(node.getSourceFile()) || ambient(node);
-            pendingComputedValues.push({ index: valueIndex, reading: emptyDeclarationReading, node, what: binding.name, external, span: binding.span });
+          if (valueNodes.length === 1 && valueNode && ts.isFunctionDeclaration(valueNode) && computedFunctionDecls.has(valueNode)) {
+            const external = !programFile(valueNode.getSourceFile()) || ambient(valueNode);
+            pendingComputedValues.push({ index: valueIndex, reading: emptyDeclarationReading, node: valueNode, what: binding.name, external, span: binding.span });
           }
           const forms = value.type.k === "intersection" ? value.type.parts : [value.type];
           const plainForm = forms.find(f => f.k === "function" && f.effect.promise === null);
           const domain = plainForm?.k === "function" ? plainForm.params[0] : undefined;
-          if (entry && domain && node && ts.isFunctionDeclaration(node)) {
-            const constants = guardConstants(node, entry);
+          if (entry && domain && valueNode && ts.isFunctionDeclaration(valueNode)) {
+            const constants = guardConstants(valueNode, entry);
             const tags = entry.tags.map(name => {
               const value = constants.find(c => c.name === name)?.value;
               if (value === undefined) throw Error(`the family's constants hold no ${name}, a tag of ${entry.name}`);
@@ -4823,8 +4960,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           return { k: "reference", reference: { name: symbol.name, span, arguments: args.map(() => span),
             target: identityOf(declared) }, args, span };
         }
-        if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
-          if (ts.isClassDeclaration(node) && !isInstanceReference(type))
+        const nonLibTypeNodes = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
+        const [typeNode] = nonLibTypeNodes;
+        if (nonLibTypeNodes.length === 1 && typeNode && typeNode.name &&
+            nodes.every(n => !!n && (isTypeDeclaration(n) || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n))) &&
+            !libraryFile(typeNode.getSourceFile())) {
+          if (ts.isClassDeclaration(typeNode) && !isInstanceReference(type))
             throw Error(`the contextual type ${text()} is a class constructor, not an instance type`);
           // An alias's own arguments, none for an alias without parameters
           // (`type AbstractKeyword = Token<SyntaxKind.AbstractKeyword>`); a
@@ -4834,7 +4975,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           // None at a parameter without type meaning (`parameterKinds`), the
           // declaration's own after the ones it captures; a type parameter at
           // a frame, refused otherwise (`withoutMeaning`).
-          const positions: readonly ParameterKind[] = [...capturedOf(node).map((): ParameterKind => "meaning"), ...kindsOf([node])];
+          const positions: readonly ParameterKind[] = [...capturedOf(typeNode).map((): ParameterKind => "meaning"), ...kindsOf([typeNode])];
           const args = actuals.map((argument, index): TypeTerm => {
             const kind = positions[index] ?? "meaning";
             if (kind === "meaning") return contextualTerm(closureBinders, typesRead, argument, span);
@@ -4843,21 +4984,21 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           });
           // A type declared in a block closing over a type parameter has
           // arguments TypeScript's type does not state.
-          if (args.length !== parametersOf(node).length)
+          if (args.length !== parametersOf(typeNode).length)
             throw Error(`the contextual type ${text()} does not state every declaration argument`);
-          if (isTypeAlias(node) && isComputedAlias(node)) {
+          if (isTypeAlias(typeNode) && isComputedAlias(typeNode)) {
             if (args.some(hasOpenTypeParam)) throw Error(`the contextual computed alias ${text()} needs closed type arguments`);
-            recordInstantiatedApplication(emptyDeclarationReading, node, args, null, span, `${idOf(client)}#${node.name.text}`);
-            return instantiateAt(emptyDeclarationReading, node, args, null)(node.type);
+            recordInstantiatedApplication(emptyDeclarationReading, typeNode, args, null, span, `${idOf(client)}#${typeNode.name.text}`);
+            return instantiateAt(emptyDeclarationReading, typeNode, args, null)(typeNode.type);
           }
-          if (computedMembers(node)) {
+          if (computedMembers(typeNode)) {
             if (args.some(hasOpenTypeParam)) throw Error(`the contextual type ${text()} needs closed type arguments to read its computed members`);
-            recordInstantiatedApplication(emptyDeclarationReading, node, args, null, span, `${idOf(client)}#${node.name.text}`);
-            return instanceOf(node, args, client, span);
+            recordInstantiatedApplication(emptyDeclarationReading, typeNode, args, null, span, `${idOf(client)}#${typeNode.name.text}`);
+            return instanceOf(typeNode, args, client, span);
           }
-          const declared = declarationOf([node], text());
+          const declared = declarationOf(nonLibTypeNodes, text());
           contextualStarts.push({ node: declared, span });
-          return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
+          return { k: "reference", reference: { name: typeNode.name.text, span, arguments: args.map(() => span), target: identityOf(typeNode) },
             args, span };
         }
         if (isUnionType(type) || isIntersectionType(type)) {
@@ -4886,7 +5027,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const elements = checker.getTypeArguments(type);
           const required: TypeTerm[] = [];
           let rest: TypeTerm | null = null;
-          for (const [i, flag] of tuple.elementFlags.entries()) {
+          for (const [i, flag] of (tuple.elementFlags ?? []).entries()) {
             const element = elements[i];
             if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
             if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(closureBinders, typesRead, element, span));
@@ -4948,7 +5089,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           match(node.type, actual, depth + 1);
           return;
         }
-        if (ts.isTypeLiteralNode(node) && (actual.flags & TypeFlags.Object)) {
+        if (ts.isIntersectionTypeNode(node)) {
+          for (const part of node.types) match(part, actual, depth + 1);
+          return;
+        }
+        if (ts.isTypeLiteralNode(node) && ((actual.flags & TypeFlags.Object) || isIntersectionType(actual))) {
           for (const m of node.members) {
             if (ts.isPropertySignatureDeclaration(m) && m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) {
               const prop = checker.getPropertyOfType(actual, m.name.text);
@@ -5602,7 +5747,28 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           const reference = name.parent;
           if (reference && ts.isTypeReferenceNode(reference) && reference.typeName === name && isStatedType(name))
             return { declarations: [], members: () => [], stated: true };
-          return resolved(name)?.entity ?? null;
+          const entity = resolved(name)?.entity ?? null;
+          if (!entity || entity.declarations.length <= 1) return entity;
+          let top: Node = name;
+          while (top.parent && (ts.isQualifiedName(top.parent) || ts.isPropertyAccessExpression(top.parent)))
+            top = top.parent;
+          const parent = top.parent;
+          const inTypeQuery = !!parent && ts.isTypeQueryNode(parent) && parent.exprName === top;
+          const inTypeRef = !!parent && (
+            (ts.isTypeReferenceNode(parent) && parent.typeName === top) ||
+            (ts.isExpressionWithTypeArguments(parent) && parent.expression === top) ||
+            (ts.isImportTypeNode(parent) && parent.qualifier === top)
+          );
+          if (inTypeRef) {
+            const typeDecls = entity.declarations.filter(d => !ts.isVariableDeclaration(d) && !ts.isFunctionDeclaration(d));
+            if (typeDecls.length && typeDecls.length < entity.declarations.length && typeDecls.some(isTypeDeclaration))
+              return { ...entity, declarations: typeDecls };
+          } else if (inTypeQuery) {
+            const valDecls = entity.declarations.filter(d => !ts.isInterfaceDeclaration(d) && !isTypeAlias(d));
+            if (valDecls.length && valDecls.length < entity.declarations.length)
+              return { ...entity, declarations: valDecls };
+          }
+          return entity;
         },
         moduleOf: specifier => entityOf(checker.getSymbolAtLocation(specifier)),
         members: (object, key) => {
@@ -8031,12 +8197,13 @@ function resolutionResolveDeclarations(checker: Checker, verifierFile: (file: So
   return nodes;
 }
 
-/** Require one declaration for a resolved name. */
+/** Require one value declaration for a resolved name (ignoring companion pure type declarations). */
 function resolutionResolveDeclaration(resolveDeclarations: (identifier: Identifier, what: string) => Node[], identifier: Identifier, what: string): Node {
-  const nodes = resolveDeclarations(identifier, what);
+  const all = resolveDeclarations(identifier, what);
+  const nodes = all.filter(n => !ts.isInterfaceDeclaration(n) && !isTypeAlias(n));
   const [node] = nodes;
   if (nodes.length !== 1 || !node)
-    throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+    throw Error(`TypeScript found ${all.length} declarations for ${what}`);
   return node;
 }
 

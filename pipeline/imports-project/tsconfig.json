@@ -59,7 +59,8 @@
       "@fixture/failures-default-hook": ["./failures-default-hook.ts"],
       "@fixture/failures-heritage-hook": ["./failures-heritage-hook.ts"],
       "@fixture/failures-setter-hook": ["./failures-setter-hook.ts"],
-      "@fixture/mapped-service-api": ["./mapped-service-api.d.ts"]
+      "@fixture/mapped-service-api": ["./mapped-service-api.d.ts"],
+      "@fixture/merged-interface-value": ["./merged-interface-value.d.ts"]
     }
   },
   "include": [
@@ -111,6 +112,7 @@
     "./stated-ambient.d.ts",
     "./hooks-ambient.d.ts",
     "./mapped-service-api.d.ts",
+    "./merged-interface-value.d.ts",
     "./partial.ts",
     "./partial-init.ts",
     "./failures.ts",

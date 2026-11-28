@@ -324,7 +324,7 @@ export type MappedTransform = {
   id: string;
   apply: (fieldType: TypeTerm, keyTerm: TypeTerm, span: Span) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>;
 };
-export type MappedTransformHook = (node: ts.MappedTypeNode, objectNode: TypeNode, keyName: string) => Modifies<{ values: "any"; spines: "grow" }, MappedTransform | null>;
+export type MappedTransformHook = (node: ts.MappedTypeNode, objectNode: TypeNode | null, keyName: string) => Modifies<{ values: "any"; spines: "grow" }, MappedTransform | null>;
 export type ComputedMethodHook = (member: ts.MethodSignatureDeclaration, span: Span) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null>;
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
@@ -356,23 +356,30 @@ export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode
     seen: Set<Node> = new Set(), isLibrary?: (node: Node) => boolean): node is TypeAliasDeclaration {
   if (!isTypeAlias(node) || !node.typeParameters?.length || seen.has(node)) return false;
   seen.add(node);
-  const body = unwrap(node.type);
-  if (computedForm(body) !== null) return true;
-  // A user/non-library generic mapped-type alias (e.g. `AllInputDefs<T>`,
-  // `InputCollections<Defs>`) is expanded at each concrete application.
-  // Standard-library mapped aliases (`Partial`, `Readonly`, `Required`, `Pick`,
-  // `Record`) remain handled by `libraryTerm`.
-  if (ts.isMappedTypeNode(body) && !isLibrary?.(node)) return true;
-  if (!ts.isTypeReferenceNode(body)) return false;
+  const isLib = isLibrary?.(node) === true;
   const computed = (reference: TypeReferenceNode): boolean => {
     const target = aliasOf(reference);
     return !!target && computedAlias(target, aliasOf, new Set(seen), isLibrary);
   };
   const computedArg = (arg: TypeNode): boolean => {
     const a = unwrap(arg);
-    return computedForm(a) !== null || ts.isMappedTypeNode(a) || (ts.isTypeReferenceNode(a) && computed(a));
+    return computedForm(a) !== null || ts.isMappedTypeNode(a) ||
+      (ts.isIntersectionTypeNode(a) && intersectionOperands(a).some(computedArg)) ||
+      (ts.isTypeReferenceNode(a) && (computed(a) || (a.typeArguments ?? []).some(computedArg)));
   };
-  return computed(body) || (body.typeArguments ?? []).some(computedArg);
+  // A user/non-library generic mapped-type alias (or intersection containing
+  // one, e.g. `AllInputDefs<T>`, `AllSharedCollections<T>`) is expanded at each
+  // concrete application. Standard-library mapped aliases (`Partial`,
+  // `Readonly`, `Required`, `Pick`, `Record`) remain handled by `libraryTerm`.
+  const computedPart = (part: TypeNode): boolean => {
+    const a = unwrap(part);
+    if (computedForm(a) !== null) return true;
+    if (ts.isMappedTypeNode(a) && !isLib) return true;
+    if (ts.isIntersectionTypeNode(a)) return intersectionOperands(a).some(computedPart);
+    if (ts.isTypeReferenceNode(a)) return computed(a) || (a.typeArguments ?? []).some(computedArg);
+    return false;
+  };
+  return computedPart(node.type);
 }
 
 const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.UndefinedKeyword,
@@ -701,7 +708,7 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
  * nothing is copied, so a `-` modifier states nothing; over `keyof X`, X's
  * are copied where none is written, and each member's are TypeScript's. */
 export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean;
-  members?: readonly MappedMember[]; identity?: Identity };
+  members?: readonly MappedMember[]; identity?: Identity; transform?: MappedTransform };
 /** A mapped type whose value is `X[P]`, `P` its key and `X` a type that
  * names no `P`: over `keyof X`, X's own members and indexes (`Readonly`,
  * `Partial`, `Required`); over a key union `K`, the fields of X that K names
@@ -711,16 +718,42 @@ export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readon
  * decides the value type `-?` gives an optional field; null where the scope
  * reading the mapped type does not state the program's option. */
 export type Identity = { object: TypeTerm; homomorphic: boolean; readonlyMod: Modifier; optionalMod: Modifier;
-  exact: boolean | null; constant?: TypeTerm; transform?: MappedTransform };
+  exact: boolean | null; constant?: TypeTerm; transform?: MappedTransform; stringOnly?: boolean };
 export type Modifier = "keep" | "add" | "remove";
 /** A property of a mapped type over `keyof X` and its modifiers. */
 export type MappedMember = { name: string; optional: boolean; readonly: boolean };
 
-/** Whether a mapped type `{ [K in keyof X]: V }` transforms each key's value
- * (i.e. `V` names `K`, and is not the plain identity `X[K]`). */
+/** Match `keyof X` or `keyof X & string` (or `string & keyof X`) as a
+ * homomorphic mapped type constraint. */
+function keyofConstraint(node: TypeNode | undefined): Modifies<{ values: "any"; spines: "grow" }, { target: TypeNode; stringOnly: boolean } | null> {
+  if (!node) return null;
+  const u = unwrap(node);
+  if (ts.isTypeOperatorNode(u) && u.operator === ts.SyntaxKind.KeyOfKeyword)
+    return { target: u.type, stringOnly: false };
+  if (ts.isIntersectionTypeNode(u)) {
+    const ops = intersectionOperands(u);
+    let target: TypeNode | null = null;
+    let hasString = false;
+    for (const op of ops) {
+      if (ts.isTypeOperatorNode(op) && op.operator === ts.SyntaxKind.KeyOfKeyword) {
+        if (target) return null;
+        target = op.type;
+      } else if (op.kind === ts.SyntaxKind.StringKeyword) {
+        hasString = true;
+      } else {
+        return null;
+      }
+    }
+    if (target && hasString) return { target, stringOnly: true };
+  }
+  return null;
+}
+
+/** Whether a mapped type `{ [K in keyof X]: V }` or `{ [K in keyof X & string]: V }`
+ * transforms each key's value (i.e. `V` names `K`, and is not the plain identity `X[K]`). */
 export function isTransformingMappedNode(node: ts.MappedTypeNode): Modifies<{ values: "any"; spines: "grow" }, boolean> {
-  const constraint = node.typeParameter.constraint;
-  if (!constraint || !ts.isTypeOperatorNode(constraint) || constraint.operator !== ts.SyntaxKind.KeyOfKeyword) return false;
+  const kc = keyofConstraint(node.typeParameter.constraint);
+  if (!kc) return false;
   const value = node.type;
   if (!value) return false;
   const name = node.typeParameter.name.text;
@@ -728,7 +761,7 @@ export function isTransformingMappedNode(node: ts.MappedTypeNode): Modifies<{ va
     (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === name) ||
     (t.forEachChild(names) ?? false);
   if (!names(value)) return false;
-  if (ts.isIndexedAccessTypeNode(value) && ts.isTypeReferenceNode(value.indexType) &&
+  if (!kc.stringOnly && ts.isIndexedAccessTypeNode(value) && ts.isTypeReferenceNode(value.indexType) &&
       ts.isIdentifier(value.indexType.typeName) && value.indexType.typeName.text === name && !value.indexType.typeArguments &&
       !names(value.objectType))
     return false;
@@ -789,18 +822,33 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ va
     }
   }
   const constraint = parameter.constraint;
-  const isKeyof = !!constraint && ts.isTypeOperatorNode(constraint) && constraint.operator === ts.SyntaxKind.KeyOfKeyword;
+  const kc = keyofConstraint(constraint);
   // Homomorphic mapped type transforming each key's value `X[P]` (e.g.
-  // `{ readonly [K in keyof Defs]: Defs[K] extends ... ? ... : ... }`).
+  // `{ readonly [K in keyof Defs]: Defs[K] extends ... ? ... : ... }`, or
+  // `{ [K in keyof T & string]: ... }`), or a non-homomorphic transforming
+  // mapped type over a concrete literal key union (`{ [K in LazyKeys<T>]: ... }`).
   if (node.type && names(node.type)) {
-    if (isKeyof && scope.mappedTransform) {
-      const transform = scope.mappedTransform(node, constraint.type, name);
+    if (kc && constraint && scope.mappedTransform) {
+      const transform = scope.mappedTransform(node, kc.target, name);
       if (transform) {
-        const object = typeTerm(scope, constraint.type);
+        const object = typeTerm(scope, kc.target);
         const key: TypeTerm = { k: "atom", name: "never", span: [constraint.pos, constraint.end] };
         return { key, value: object, optional: false, readonly: false,
           identity: { object, homomorphic: true, readonlyMod: modifier(node.readonlyToken),
-            optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null, transform } };
+            optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null,
+            ...(kc.stringOnly ? { stringOnly: true } : {}), transform } };
+      }
+    }
+    if (!kc && constraint && scope.mappedTransform) {
+      const transform = scope.mappedTransform(node, null, name);
+      if (transform) {
+        const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
+          !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
+        const key = scope.keys?.(constraint) ?? typeTerm(scope, constraint, parameter);
+        return { key, value: { k: "atom", name: "never", span: [node.type.pos, node.type.end] },
+          optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
+          readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword),
+          transform };
       }
     }
     scope.fail(node, "a mapped type's value names its key");
@@ -809,13 +857,14 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ va
   // Homomorphic mapped type with a fixed value `{ [mod] [P in keyof X][mod]: V }`:
   // iterate X's record shape (directly or deferred at a named X) to preserve/override
   // X's modifiers and index signatures without requiring TS's property list.
-  if (isKeyof) {
-    const object = typeTerm(scope, constraint.type);
+  if (kc && constraint) {
+    const object = typeTerm(scope, kc.target);
     const constant = typeTerm(scope, node.type);
     const key: TypeTerm = { k: "atom", name: "never", span: [constraint.pos, constraint.end] };
     return { key, value: object, optional: false, readonly: false,
       identity: { object, homomorphic: true, readonlyMod: modifier(node.readonlyToken),
-        optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null, constant } };
+        optionalMod: modifier(node.questionToken), exact: scope.exactOptional ?? null,
+        ...(kc.stringOnly ? { stringOnly: true } : {}), constant } };
   }
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
@@ -834,6 +883,30 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ va
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never,
     record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record, alias);
+  const transform = m.transform;
+  if (transform) {
+    const names: string[] = [];
+    const collect = (t: TypeTerm): void => {
+      if (t.k === "union") t.parts.forEach(collect);
+      else if (t.k === "literal" && t.name === "string") { if (!names.includes(t.text)) names.push(t.text); }
+      else if (t.k === "literal" && t.name === "number") {
+        const nk = numericKey(t.text);
+        if (!names.includes(nk)) names.push(nk);
+      } else if (!(t.k === "atom" && t.name === "never")) {
+        fail("a mapped type's value names its key, over keys that are not literals");
+      }
+    };
+    collect(m.key);
+    if (!names.length) return emptyObject(span);
+    const neverTerm: TypeTerm = { k: "atom", name: "never", span };
+    return { k: "object", fields: names.map(name => ({
+      name,
+      optional: m.optional,
+      readonly: m.readonly,
+      type: transform.apply(neverTerm, { k: "literal", name: "string", text: name, span }, span),
+      span,
+    })), stringIndex: null, calls: [], span };
+  }
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -891,14 +964,16 @@ export const DEFERRED_MODULE = "#deferred-mapped-identity";
  * refused (`deferredInDocument`, `deferredInAst`, `deferredInModule`). */
 export function deferredIdentity(id: Identity, key: TypeTerm, span: Span): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   if (id.transform) {
+    const tag = id.stringOnly ? "transform-str" : "transform";
     return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
       arguments: [], target: { module: DEFERRED_MODULE,
-        name: `transform:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}:${id.transform.id}`, span } } };
+        name: `${tag}:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}:${id.transform.id}`, span } } };
   }
   if (id.constant) {
+    const tag = id.stringOnly ? "const-str" : "const";
     return { k: "reference", span, args: [id.object, key, id.constant], reference: { name: "a mapped type over a named type", span,
       arguments: [], target: { module: DEFERRED_MODULE,
-        name: `const:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}`, span } } };
+        name: `${tag}:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}`, span } } };
   }
   return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
     arguments: [], target: { module: DEFERRED_MODULE,
@@ -920,16 +995,18 @@ export function deferredOf(term: TypeTerm): Modifies<{ values: "any"; spines: "g
   const exact = exactOf(exactText);
   if (!isModifier(readonlyMod) || !isModifier(optionalMod) || exact === undefined || !object || !key || more.length)
     throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
-  if (form === "transform") {
+  if (form === "transform" || form === "transform-str") {
     const [transformId, ...extra] = rest;
     if (!transformId || extra.length || third)
       throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
-    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact }, key, transformId };
+    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact,
+      ...(form === "transform-str" ? { stringOnly: true } : {}) }, key, transformId };
   }
-  if (form === "const") {
+  if (form === "const" || form === "const-str") {
     if (rest.length || !third)
       throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
-    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact, constant: third }, key };
+    return { identity: { object, homomorphic: true, readonlyMod, optionalMod, exact, constant: third,
+      ...(form === "const-str" ? { stringOnly: true } : {}) }, key };
   }
   if ((form !== "keyof" && form !== "pick") || rest.length || third)
     throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
@@ -966,9 +1043,12 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
   const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
   const optional = (own: boolean): boolean => apply(id.optionalMod, own);
   if (id.homomorphic && (id.constant || id.transform)) {
-    if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
+    const keepFields = id.stringOnly ? x.fields.filter(f => typeof f.name === "string") : x.fields;
+    const keepNumberIndex = id.stringOnly ? undefined : x.numberIndex;
+    const keepSymbolIndex = id.stringOnly ? undefined : x.symbolIndex;
+    if ((x.stringIndex || keepNumberIndex || keepSymbolIndex) && id.optionalMod === "add")
       return fail("an optional mapped type over an index signature's keys is outside the fragment");
-    if (!x.fields.length && !x.stringIndex && !x.numberIndex && !x.symbolIndex) return emptyObject(span);
+    if (!keepFields.length && !x.stringIndex && !keepNumberIndex && !keepSymbolIndex) return emptyObject(span);
     const mapField = (f: Extract<TypeTerm, { k: "object" }>["fields"][number]): TypeTerm => {
       if (id.constant) return id.constant;
       const transform = id.transform;
@@ -985,11 +1065,12 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
         : id.transform ? id.transform.apply(idx.value, { k: "atom", name: keyAtom, span }, span) : idx.value;
       return { readonly: readonly(idx.readonly), value, span };
     };
-    return { ...x,
-      fields: x.fields.map(f => ({ ...f, type: mapField(f), readonly: readonly(f.readonly), optional: optional(f.optional), span })),
+    return { k: "object",
+      fields: keepFields.map(f => ({ ...f, type: mapField(f), readonly: readonly(f.readonly), optional: optional(f.optional), span })),
       stringIndex: x.stringIndex && mapIndex(x.stringIndex, "string"),
-      ...(x.numberIndex ? { numberIndex: mapIndex(x.numberIndex, "number") } : {}),
-      ...(x.symbolIndex ? { symbolIndex: mapIndex(x.symbolIndex, "symbol") } : {}),
+      ...(keepNumberIndex ? { numberIndex: mapIndex(keepNumberIndex, "number") } : {}),
+      ...(keepSymbolIndex ? { symbolIndex: mapIndex(keepSymbolIndex, "symbol") } : {}),
+      calls: [],
       span };
   }
   // `-?` keeps an optional field's type where `exactOptionalPropertyTypes`
