@@ -12,13 +12,15 @@
 
 import { missing } from './checked.js'
 import type { CharTable } from './generated/engine-break-data.js'
-import { getBreakRules, getClass, START_STATE, type BreakRules } from './line-breaks.js'
+import { getBreakRules, getClass, readCodePoint, START_STATE, type BreakRules } from './line-breaks.js'
 
 const CLUSTER_END = 0x80
 
 export type GraphemeTable = CharTable | 'gecko/char'
 
+/** @invariant this.rules.classes.index.length === 4352 */
 type GraphemeRules = {
+  /** @stable */
   readonly rules: BreakRules
   // The next state for each state and category, from the start state's row where
   // CLUSTER_END is set: a cluster ends before the code point.
@@ -40,7 +42,9 @@ function parseGraphemeRules(table: GraphemeTable): Effects<{ "@state": "any" }, 
   const rows = rules.rows
   const states = rows.length / width
   const transitions = new Uint8Array(states * rules.catCount)
+  /** @invariant rules.classes.index.length === 4352 */
   for (let state = 0; state < states; state++) {
+    /** @invariant rules.classes.index.length === 4352 */
     for (let category = 0; category < rules.catCount; category++) {
       const next = rows[state * width + 3 + category]
       if (next === undefined) throw new RangeError('missing value')
@@ -52,7 +56,7 @@ function parseGraphemeRules(table: GraphemeTable): Effects<{ "@state": "any" }, 
   return { rules, transitions, skipped: table === 'gecko/char' ? getClass(rules.classes, 0x00ad) : -1 }
 }
 
-const graphemeRules: Partial<Record<GraphemeTable, GraphemeRules>> = {}
+const graphemeRules = new Map<GraphemeTable, GraphemeRules>()
 
 // nsBidiUtils.h:84-90
 export function isBidiControl(cp: number): Effects<{}, boolean> {   // PAPER: annotation
@@ -66,20 +70,22 @@ export function isBidiControl(cp: number): Effects<{}, boolean> {   // PAPER: an
 /** @requires safeInteger(start) && safeInteger(end) && 0 <= start && start <= end && end <= text.length
  *  @ensures safeInteger(result) && 0 <= result && result <= end - start */
 export function findGraphemeEnds(table: GraphemeTable, text: string, start: number, end: number, ends: Int32Array | null): Effects<{ "@state": "any"; "ends[*]": "grow"; "ends[#]": "any" }, number> {   // PAPER: annotation
-  const { rules, transitions, skipped } = graphemeRules[table] ?? (graphemeRules[table] = parseGraphemeRules(table))
+  let entry = graphemeRules.get(table)
+  if (entry === undefined || entry.rules.classes.index.length !== 0x1100) {
+    entry = parseGraphemeRules(table)
+    graphemeRules.set(table, entry)
+  }
+  const { rules, transitions, skipped } = entry
   const catCount = rules.catCount
   let state = START_STATE
   let count = 0
-  /** @invariant safeInteger(start) && safeInteger(end) && safeInteger(i) && safeInteger(count) && safeInteger(state) && 0 <= start && start <= i && i <= end && end <= text.length && 0 <= count && count <= i - start
+  /** @invariant safeInteger(start) && safeInteger(end) && safeInteger(i) && safeInteger(count) && safeInteger(state) && 0 <= start && start <= i && i <= end && end <= text.length && 0 <= count && count <= i - start && rules.classes.index.length === 4352
    *  @invariant i <= start || count < i - start
    *  @invariant state === 1 || count < i - start */
   for (let i = start; i < end;) {
-    let c = text.charCodeAt(i)
+    const c = readCodePoint(text, i, end)
     let next = i + 1
-    if ((c & 0xfc00) === 0xd800 && next < end) {
-      const trail = text.charCodeAt(next)
-      if ((trail & 0xfc00) === 0xdc00) { next++; c = ((c - 0xd800) << 10) + trail - 0xdc00 + 0x10000 }
-    }
+    if (c > 0xffff && next < end) next++
     const category = getClass(rules.classes, c)
     if (category === skipped && (c === 0x00ad || isBidiControl(c))) {
       i = next

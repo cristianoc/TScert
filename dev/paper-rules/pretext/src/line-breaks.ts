@@ -145,13 +145,36 @@ export function unpackVarints(base64: string): Effects<{}, Int32Array> {   // PA
 // A code point's class in one of the generated maps, in two loads: `index` has, for every 256 code
 // points up to U+10FFFF, their block of `values`. Code points that share a class through a whole
 // block share one block.
-export type ClassTable = { readonly index: Uint16Array, readonly values: Uint8Array }
+/** @invariant this.index.length === 4352 */
+export type ClassTable = {
+  /** @stable */
+  readonly index: Uint16Array
+  readonly values: Uint8Array
+}
+
+/** @requires index.length === 4352 && safeInteger(c) && 0 <= c && c <= 0x10ffff */
+export function getClassFrom(index: Uint16Array, values: Uint8Array, c: number): Effects<{}, number> {   // PAPER: annotation
+  return values[(index[c >> 8]! << 8) | (c & 0xff)] ?? missing()
+}
 
 // For c in U+0000..U+10FFFF, which is every code point a scan decodes from UTF-16: `index` has no
 // entry above that, where the engines' tries give their error value (unicode/ucptrie.h:615-620;
 // getLineBreakClass in src/gecko-line-breaks.ts gives ICU4X's itself).
+/** @requires safeInteger(c) && 0 <= c && c <= 0x10ffff */
 export function getClass(table: ClassTable, c: number): Effects<{}, number> {   // PAPER: annotation
-  return table.values[((table.index[c >> 8] ?? missing()) << 8) | (c & 0xff)] ?? missing()
+  return getClassFrom(table.index, table.values, c)
+}
+
+// The code point at text[i], in a surrogate pair ending before `end`, or the code unit itself.
+/** @requires safeInteger(i) && 0 <= i && i < text.length && safeInteger(end) && end <= text.length
+ *  @ensures safeInteger(result) && 0 <= result && result <= 0x10ffff */
+export function readCodePoint(text: string, i: number, end: number): Effects<{}, number> {   // PAPER: annotation
+  const c = text.charCodeAt(i)
+  if (c >= 0xd800 && c <= 0xdbff && i + 1 < end) {
+    const next = text.charCodeAt(i + 1)
+    if (next >= 0xdc00 && next <= 0xdfff) return ((c - 0xd800) << 10) + (next - 0xdc00) + 0x10000
+  }
+  return c
 }
 
 // The maps ship as one list of runs over U+0000..U+10FFFF, each run a length - 1 and a joint class:
@@ -311,7 +334,8 @@ export type BreakRules = {
   rowWidth: number
   rows: Uint16Array
   lookAheadResultsSize: number
-  classes: ClassTable
+  /** @stable */
+  readonly classes: ClassTable
 }
 
 // A state table ships as its rows' differences from rows it repeats. The rows start as zeros or
@@ -348,17 +372,20 @@ function unpackTableRows(table: RuleTable): Effects<{}, Uint16Array> {   // PAPE
   return unpackStateRows(catCount + 3, states, base === null ? null : unpackTableRows(base), unpackVarints(differences))
 }
 
-const breakRules: Partial<Record<RuleTable, BreakRules>> = {}
+const breakRules = new Map<RuleTable, BreakRules>()
 
 // A line or character table's rules, unpacked the first time a scan asks for them.
+/** @ensures result.classes.index.length === 4352 */
 export function getBreakRules(table: RuleTable): Effects<{ "@state": "any" }, BreakRules> {   // PAPER: annotation
-  let rules = breakRules[table]
-  if (rules === undefined) {
+  let rules = breakRules.get(table)
+  if (rules === undefined || rules.classes.index.length !== 0x1100) {
     const [catCount, dictCategoriesStart, lookAheadResultsSize] = ruleTables[table]
-    rules = breakRules[table] = {
+    const classes = unpackClasses(table)
+    rules = {
       catCount, dictCategoriesStart, rowWidth: catCount + 3, rows: unpackTableRows(table), lookAheadResultsSize,
-      classes: unpackClasses(table),
+      classes,
     }
+    breakRules.set(table, rules)
   }
   return rules
 }
@@ -381,7 +408,13 @@ const NO_OVERRIDES: CategoryOverrides = { chars: [], categories: [] }
 // utext_next32() over UTF-16 (utext.cpp:272-308), with unpaired surrogates as code points. ICU
 // allocates the look-ahead slots uninitialized (rbbi.cpp:122-129) and never resets them between
 // calls, since the rules read a slot only after setting it; here they start at -1 for each text.
+/** @requires r.classes.index.length === 4352 */
 export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Array, overrides: CategoryOverrides = NO_OVERRIDES): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
+  markRuleBoundariesWith(r, r.classes.index, r.classes.values, text, flags, overrides)
+}
+
+/** @requires classIndex.length === 4352 */
+function markRuleBoundariesWith(r: BreakRules, classIndex: Uint16Array, classValues: Uint8Array, text: string, flags: Uint8Array, overrides: CategoryOverrides): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const rows = r.rows
   const width = r.rowWidth
   const dictionaryStart = r.dictCategoriesStart
@@ -391,23 +424,23 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
   const overrideCategories = overrides.categories
   const overrideCount = overrideChars.length < overrideCategories.length ? overrideChars.length : overrideCategories.length
 
-  /** @invariant safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
+  /** @invariant safeInteger(start) && 0 <= start && safeInteger(length) && length === text.length && safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length && classIndex.length === 4352 */
   for (let start = 0; start < length;) { // rbbi.cpp:809-813
     let dictionaryCharCount = 0
     let result = start
     let boundary = -1
     let pos = start
     let c = text.charCodeAt(pos++)
-    if ((c & 0xfc00) === 0xd800 && pos < length) {
+    if (c >= 0xd800 && c <= 0xdbff && pos < length) {
       const trail = text.charCodeAt(pos)
-      if ((trail & 0xfc00) === 0xdc00) { pos++; c = ((c - 0xd800) << 10) + trail - 0xdc00 + 0x10000 }
+      if (trail >= 0xdc00 && trail <= 0xdfff) { pos++; c = ((c - 0xd800) << 10) + (trail - 0xdc00) + 0x10000 }
     }
     let atEnd = false
     let ended = false
     let row = START_STATE * width
     let category = 0
 
-    /** @invariant safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
+    /** @invariant safeInteger(start) && 0 <= start && safeInteger(boundary) && -1 <= boundary && safeInteger(result) && 0 <= result && result <= length && safeInteger(pos) && 0 <= pos && pos <= length && safeInteger(c) && 0 <= c && c <= 0x10ffff && safeInteger(length) && length === text.length && safeInteger(overrideCount) && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length && classIndex.length === 4352 */
     for (;;) {
       if (atEnd) { // rbbi.cpp:832-843
         if (ended) break
@@ -415,12 +448,12 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
         category = 1
       } else { // rbbi.cpp:850-855, with Apple's overrides (apple-rbbi.cpp:1061-1084)
         let overridden = false
-        /** @invariant safeInteger(i) && safeInteger(overrideCount) && 0 <= i && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length */
+        /** @invariant safeInteger(i) && safeInteger(overrideCount) && 0 <= i && overrideCount <= overrideChars.length && overrideCount <= overrideCategories.length && classIndex.length === 4352 */
         for (let i = 0; i < overrideCount; i++) {
           if (c === overrideChars[i]) { category = overrideCategories[i]!; overridden = true; break }
         }
         if (!overridden) {
-          category = getClass(r.classes, c)
+          category = getClassFrom(classIndex, classValues, c)
           if (category >= dictionaryStart) dictionaryCharCount++
         }
       }
@@ -434,7 +467,7 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
         result = pos
       } else if (accepting > ACCEPTING_UNCONDITIONAL) {
         const match = matches[accepting] ?? missing()
-        if (match >= 0) {
+        if (Number.isSafeInteger(match) && match >= 0) {
           boundary = match
           break
         }
@@ -451,9 +484,9 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
           atEnd = true
         } else {
           c = text.charCodeAt(pos++)
-          if ((c & 0xfc00) === 0xd800 && pos < length) {
+          if (c >= 0xd800 && c <= 0xdbff && pos < length) {
             const trail = text.charCodeAt(pos)
-            if ((trail & 0xfc00) === 0xdc00) { pos++; c = ((c - 0xd800) << 10) + trail - 0xdc00 + 0x10000 }
+            if (trail >= 0xdc00 && trail <= 0xdfff) { pos++; c = ((c - 0xd800) << 10) + (trail - 0xdc00) + 0x10000 }
           }
         }
       }
@@ -468,30 +501,25 @@ export function markRuleBoundaries(r: BreakRules, text: string, flags: Uint8Arra
       }
     }
     flags[boundary] = 1
-    if (dictionaryCharCount > 0) markDictionaryWords(r, text, start, boundary, flags)
+    if (dictionaryCharCount > 0) markDictionaryWords(classIndex, classValues, dictionaryStart, text, start, boundary, flags)
     start = boundary // rbbi.cpp:945
   }
 }
 
 // --- Line tables ---
 
-// Line_Break=SA for one code point: the line rules' dictionary categories.
-function isComplexContext(rules: BreakRules, c: number): Effects<{}, boolean> {   // PAPER: annotation
-  return getClass(rules.classes, c) >= rules.dictCategoriesStart
-}
-
-function markDictionaryWords(rules: BreakRules, text: string, start: number, end: number, flags: Uint8Array): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
+/** @requires classIndex.length === 4352 && safeInteger(start) && 0 <= start */
+function markDictionaryWords(classIndex: Uint16Array, classValues: Uint8Array, dictionaryStart: number, text: string, start: number, end: number, flags: Uint8Array): Effects<{ "flags[*]": "grow"; "flags[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   let runStart = -1
+  /** @invariant safeInteger(i) && 0 <= i && classIndex.length === 4352 */
   for (let i = start; i <= end;) {
     let dictionary = false
-    let size = 1
-    if (i < end) {
-      let c = text.charCodeAt(i)
-      if ((c & 0xfc00) === 0xd800 && i + 1 < text.length && (text.charCodeAt(i + 1) & 0xfc00) === 0xdc00) {
-        c = ((c - 0xd800) << 10) + text.charCodeAt(i + 1) - 0xdc00 + 0x10000
-        size = 2
-      }
-      dictionary = isComplexContext(rules, c)
+    let next = i
+    if (i < end && i < text.length) {
+      const c = readCodePoint(text, i, text.length)
+      if (c > 0xffff && i + 1 < text.length) next = i + 2
+      else next = i + 1
+      dictionary = getClassFrom(classIndex, classValues, c) >= dictionaryStart
     }
     if (dictionary) {
       if (runStart < 0) runStart = i
@@ -503,7 +531,8 @@ function markDictionaryWords(rules: BreakRules, text: string, start: number, end
       }
       runStart = -1
     }
-    i += size
+    if (next === i) break
+    i = next
   }
 }
 
@@ -568,10 +597,11 @@ function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: 
 }
 
 // ShouldKeepAfterKeepAll, tbi.cc:157-165, per UTF-16 code unit.
-function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: number, ch: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+/** @requires classIndex.length === 4352 && safeInteger(lastLast) && 0 <= lastLast && lastLast <= 0xffff && safeInteger(last) && 0 <= last && last <= 0xffff && safeInteger(ch) && 0 <= ch && ch <= 0xffff */
+function shouldKeepAfterKeepAll(classIndex: Uint16Array, classValues: Uint8Array, dictionaryStart: number, lastLast: number, last: number, ch: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const pre = hasProperty(last, MARK) ? lastLast : last
-  return hasProperty(pre, LETTER_OR_NUMBER) && !isComplexContext(rules, pre) &&
-    hasProperty(ch, LETTER_OR_NUMBER) && !isComplexContext(rules, ch)
+  return hasProperty(pre, LETTER_OR_NUMBER) && getClassFrom(classIndex, classValues, pre) < dictionaryStart &&
+    hasProperty(ch, LETTER_OR_NUMBER) && getClassFrom(classIndex, classValues, ch) < dictionaryStart
 }
 
 // Where a line may start in text Blink collapsed as Pretext does: flags[i] = 1 for
@@ -599,23 +629,26 @@ export function getBlinkLineBreaks(text: string, keepAll: boolean, language: str
   if (length < 2) return breaks
   const pairs = getBlinkPairs()
   const rules = getBreakRules(getBreakLanguage(language) === 'zh' ? 'chromium/line_normal_cj' : 'chromium/line_normal')
+  const classIndex = rules.classes.index
+  const classValues = rules.classes.values
+  const dictionaryStart = rules.dictCategoriesStart
   let icu: Uint8Array | null = null
   let lastLast = 0
   let last = text.charCodeAt(0)
-  /** @invariant safeInteger(i) && safeInteger(last) && safeInteger(length) && 1 <= i && length === text.length && pairs.length === 6244 && breaks.length === text.length + 1 */
+  /** @invariant safeInteger(i) && safeInteger(lastLast) && 0 <= lastLast && lastLast <= 0xffff && safeInteger(last) && 0 <= last && last <= 0xffff && safeInteger(length) && 1 <= i && length === text.length && pairs.length === 6244 && breaks.length === text.length + 1 && classIndex.length === 4352 */
   for (let i = 1; i < length; lastLast = last, last = text.charCodeAt(i), i++) {
     const ch = text.charCodeAt(i)
     if (isBlinkBreakableSpace(ch)) continue // tbi.cc:284-291
     if (isBlinkBreakableSpace(last)) { breaks[i] = 1; continue }
     const fast = shouldBreakFast(pairs, lastLast, last, ch)
     if (fast === CAN_BREAK) { breaks[i] = 1; continue } // tbi.cc:305-309
-    if (keepAll && shouldKeepAfterKeepAll(rules, lastLast, last, ch)) continue // tbi.cc:338-344
+    if (keepAll && shouldKeepAfterKeepAll(classIndex, classValues, dictionaryStart, lastLast, last, ch)) continue // tbi.cc:338-344
     if (fast === NO_BREAK) continue // tbi.cc:346-348
     // tbi.cc:350-383: ICU's first boundary after i - 1 is i exactly when i is a boundary,
     // since the unit before it isn't a space here.
     if (icu === null) {
       icu = new Uint8Array(length + 1)
-      markRuleBoundaries(rules, text, icu)
+      markRuleBoundariesWith(rules, classIndex, classValues, text, icu, NO_OVERRIDES)
     }
     if (icu[i] === 1) breaks[i] = 1
   }
@@ -648,7 +681,11 @@ function getWebKitPairs(): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER
   }
   return webkitPairs
 }
-type WebKitLineRules = { readonly rules: BreakRules, readonly overrides: CategoryOverrides }
+type WebKitLineRules = {
+  /** @stable */
+  readonly rules: BreakRules
+  readonly overrides: CategoryOverrides
+}
 const webkitLineRules = new Map<string, WebKitLineRules>()
 
 // BP.h:125-139 with NoBreakSpaceBehavior::Normal.
@@ -746,6 +783,7 @@ type Factory = {
   // PriorContext::length counts trailing non-zero characters (TBI.h:277-283).
   /** @stable */
   readonly priorLength: number
+  /** @stable */
   readonly line: WebKitLineRules
   nextBoundary: Int32Array | null
 }
@@ -758,9 +796,9 @@ function createFactory(text: string, line: WebKitLineRules, secondToLast: number
 // The first ICU boundary after `location`, or -1. `location` is -1 only with a prior
 // context; WebKit's unsigned arithmetic then lands on the last prior character
 // (TBIICU.h:136-142).
-/** @requires safeInteger(location) && -1 <= location
+/** @requires classIndex.length === 4352 && safeInteger(location) && -1 <= location
  *  @ensures safeInteger(result) */
-function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
+function following(f: Factory, location: number, classIndex: Uint16Array, classValues: Uint8Array): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   const priorLength = f.priorLength
   let next = f.nextBoundary
   if (next === null) {
@@ -769,7 +807,7 @@ function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "a
       : priorLength === 1 ? String.fromCharCode(f.last) : ''
     const text = prior + f.text
     const flags = new Uint8Array(text.length + 1)
-    markRuleBoundaries(f.line.rules, text, flags, f.line.overrides)
+    markRuleBoundariesWith(f.line.rules, classIndex, classValues, text, flags, f.line.overrides)
     const fresh = new Int32Array(text.length + 2)
     const freshLen = fresh.length
     fresh[freshLen - 1] = -1
@@ -786,9 +824,9 @@ function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "a
 // BP.h:142-255 for LineBreakRules::Normal, WordBreakBehavior::Normal and
 // NoBreakSpaceBehavior::Normal. During the fast-forward over units where ICU agrees
 // (BP.h:241-249) the characters before are not read again.
-/** @requires pairs.length === 6244 && safeInteger(startPosition) && 0 <= startPosition
+/** @requires pairs.length === 6244 && classIndex.length === 4352 && safeInteger(startPosition) && 0 <= startPosition
  *  @ensures safeInteger(result) && 0 <= result */
-function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
+function nextBreakablePosition(pairs: Uint8Array, f: Factory, classIndex: Uint16Array, classValues: Uint8Array, startPosition: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   const s = f.text
   const length = s.length
   if (startPosition === 0 && f.priorLength === 0) {
@@ -802,7 +840,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
   let after = 0
   let afterType = 0
   let nextBreak = -1
-  /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(before) && safeInteger(after) && 0 <= i && length === f.text.length */
+  /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(before) && safeInteger(after) && 0 <= i && length === f.text.length && classIndex.length === 4352 */
   for (let i = startPosition; i < length; beforeBefore = before, before = after, beforeType = afterType, i++) {
     after = s.charCodeAt(i)
     afterType = 0
@@ -840,7 +878,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
       if ((pair & ID) !== 0) return i
     }
     // ICU lookup.
-    if (nextBreak < i) nextBreak = following(f, i - 1)
+    if (nextBreak < i) nextBreak = following(f, i - 1, classIndex, classValues)
     if (nextBreak >= 0 && i < nextBreak) {
       const max = nextBreak < length - 1 ? nextBreak : length - 1
       /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(max) && safeInteger(before) && safeInteger(after) && 0 <= i && i < length && max <= length - 1 && length === f.text.length */
@@ -875,10 +913,11 @@ function nextBreakableSpace(s: string, startPosition: number, punctuationBreaks:
 // under ICU's case: lowercase language, title-case script, uppercase region (uloc_getName).
 const appleQuoteRemapTable: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(appleQuoteRemaps))
 
+/** @ensures result.rules.classes.index.length === 4352 */
 export function getWebKitLineRules(language: string | null): Effects<{ "@state": "any" }, WebKitLineRules> {   // PAPER: annotation
   const locale = language ?? ''
   let line = webkitLineRules.get(locale)
-  if (line !== undefined) return line
+  if (line !== undefined && line.rules.classes.index.length === 0x1100) return line
   const breakLanguage = getBreakLanguage(locale)
   const rules = getBreakRules(breakLanguage === 'ja' || breakLanguage === 'ko' ? 'apple/line_normal' : breakLanguage === 'zh' ? 'apple/line_cj' : 'apple/line')
   const subtags = locale.split(/[-_]/)
@@ -895,7 +934,7 @@ export function getWebKitLineRules(language: string | null): Effects<{ "@state":
   }
   const chars: number[] = []
   const categories: number[] = []
-  /** @invariant safeInteger(k) && 0 <= k && chars.length === categories.length */
+  /** @invariant safeInteger(k) && 0 <= k && chars.length === categories.length && rules.classes.index.length === 4352 */
   for (let k = 0; k < remap.length; k += 2) {
     chars.push(remap[k]!)
     categories.push(getClass(rules.classes, remap[k + 1] === 0 ? 0x7b : 0x7d))
@@ -923,7 +962,10 @@ export function getWebKitLineBreaks(
   language: string | null,
 ): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const pairs = getWebKitPairs()
-  const f = createFactory(source, getWebKitLineRules(language), 0, 0, 0)
+  const line = getWebKitLineRules(language)
+  const classIndex = line.rules.classes.index
+  const classValues = line.rules.classes.values
+  const f = createFactory(source, line, 0, 0, 0)
   const length = source.length
   const breaks = new Uint8Array(length + 1)
   // WebKit stores a text holding a code unit above U+00FF in 16 bits, where keep-all also
@@ -932,7 +974,7 @@ export function getWebKitLineBreaks(
   for (let i = 0; keepAll && i < length && !sixteenBit; i++) sixteenBit = source.charCodeAt(i) > 0xff
   let previousKind = -1
   // handleTextContent, IIB:924-1051, for hyphens manual and nbsp-mode normal.
-  /** @invariant safeInteger(position) && 0 <= position && pairs.length === 6244 */
+  /** @invariant safeInteger(position) && 0 <= position && pairs.length === 6244 && classIndex.length === 4352 */
   for (let position = 0; position < length;) {
     let kind = WHITESPACE
     let end = position
@@ -944,7 +986,7 @@ export function getWebKitLineBreaks(
       if (c !== LF) breaks[end] = FORCED_BREAK
     } else {
       // handleWhitespace, IIB:963-992, with moveToNextNonWhitespacePosition (IIB:55-73).
-      /** @invariant safeInteger(end) && 0 <= end && pairs.length === 6244 */
+      /** @invariant safeInteger(end) && 0 <= end && pairs.length === 6244 && classIndex.length === 4352 */
       for (; end < length; end++) {
         const c = source.charCodeAt(end)
         if (c !== SPACE && c !== TAB && (preserveNewlines || c !== LF)) break
@@ -954,9 +996,9 @@ export function getWebKitLineBreaks(
         // TU:398-422 with line-break auto (LineMode Default, TU:450-466) and BP.h:287-300.
         kind = TEXT
         end = length
-        /** @invariant safeInteger(p) && 0 <= p && pairs.length === 6244 */
+        /** @invariant safeInteger(p) && 0 <= p && pairs.length === 6244 && classIndex.length === 4352 */
         for (let p = position; p < length; p++) {
-          const next = keepAll ? nextBreakableSpace(source, p, sixteenBit) : nextBreakablePosition(pairs, f, p)
+          const next = keepAll ? nextBreakableSpace(source, p, sixteenBit) : nextBreakablePosition(pairs, f, classIndex, classValues, p)
           if (next !== position) { end = next; break }
         }
       }
@@ -990,6 +1032,7 @@ export function getWebKitBreakBetweenItems(previous: string, next: string, keepA
   const secondToLast = n > 1 ? previous.charCodeAt(n - 2) : 0
   const lastChar = n > 0 ? previous.charCodeAt(n - 1) : 0
   const priorLength = lastChar === 0 ? 0 : secondToLast === 0 ? 1 : 2
-  const f = createFactory(next, getWebKitLineRules(language), secondToLast, lastChar, priorLength)
-  return nextBreakablePosition(pairs, f, 0) === 0
+  const line = getWebKitLineRules(language)
+  const f = createFactory(next, line, secondToLast, lastChar, priorLength)
+  return nextBreakablePosition(pairs, f, line.rules.classes.index, line.rules.classes.values, 0) === 0
 }
