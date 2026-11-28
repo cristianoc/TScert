@@ -965,6 +965,7 @@ function measureAnalysisInto(
 // them from index 0; a kana that starts an item takes no kerning with the item before it.
 /** @requires safeInteger(from) && safeInteger(to) && safeInteger(base) && 0 <= from && from <= to && to <= analysis.flags.length && to <= analysis.starts.length && 0 <= base && base + (to - from) <= widths.length
  *  @requires extras === null || to - from <= extras.length
+ *  @requires kernings.length === 36481
  *  @ensures result === null || to - from <= result.length */
 function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>, base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ "extras[#]": "any"; "widths[#]": "any"; fields: "any"; views: "grow" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis

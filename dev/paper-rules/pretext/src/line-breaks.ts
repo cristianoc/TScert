@@ -78,7 +78,9 @@ export function getBreakLanguage(tag: string | null): Effects<{}, BreakLanguage>
 // bytes, each followed by a copy of earlier bytes (length - 4, then distance back), every count a
 // little-endian base-128 varint. Packing keeps the tables a page parses small; a page unpacks only
 // its engine's tables.
-export function unpackTable(packed: string): Effects<{}, Uint8Array> {   // PAPER: annotation
+/** @requires expectedLength === null || (safeInteger(expectedLength) && 0 <= expectedLength)
+ *  @ensures expectedLength === null || (safeInteger(expectedLength) && result.length === expectedLength) */
+function unpackTableWithLength(packed: string, expectedLength: number | null): Effects<{}, Uint8Array> {   // PAPER: annotation
   const input = atob(packed)
   let at = 0
   const varint = (): number => {
@@ -100,12 +102,26 @@ export function unpackTable(packed: string): Effects<{}, Uint8Array> {   // PAPE
     const length = varint() + 4
     const from = out - varint()
     // A copy that overlaps the bytes it writes repeats them, so it goes one byte at a time.
-    if (from + length <= out) bytes.copyWithin(out, from, from + length)
-    else for (let k = 0; k < length; k++) bytes[out + k] = bytes[from + k] ?? missing()
+    if (from + length <= out) {
+      bytes.copyWithin(out, from, from + length)
+    } else {
+      if (!Number.isSafeInteger(from) || !Number.isSafeInteger(length) || from < 0 || length < 0 || length > bytes.length || from > bytes.length - length) {
+        out = -1
+        break
+      }
+      /** @invariant safeInteger(k) && safeInteger(from) && safeInteger(length) && 0 <= k && 0 <= from && from + length <= bytes.length */
+      for (let k = 0; k < length; k++) bytes[out + k] = bytes[from + k]!
+    }
     out += length
   }
-  if (out !== bytes.length) throw new Error('A packed table unpacked to the wrong length')
+  if (out !== bytes.length || (expectedLength !== null && bytes.length !== expectedLength)) {
+    throw new Error('A packed table unpacked to the wrong length')
+  }
   return bytes
+}
+
+export function unpackTable(packed: string): Effects<{}, Uint8Array> {   // PAPER: annotation
+  return unpackTableWithLength(packed, null)
 }
 
 // The little-endian base-128 varints a table in base64 holds. Tables of varints ship without
@@ -153,7 +169,7 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
   let c = 0
   let end = 0
   let value = -1
-  /** @invariant safeInteger(r) && safeInteger(value) && 0 <= r && -1 <= value && value < whole.length && whole.length === 256 */
+  /** @invariant safeInteger(r) && safeInteger(value) && safeInteger(c) && safeInteger(end) && 0 <= r && -1 <= value && value < whole.length && whole.length === 256 && 0 <= c && 0 <= end && end <= 1114112 && index.length === 4352 */
   for (let r = 0; r <= runs.length; r += 2) {
     // Runs of joint classes that are one class in this map make one run, [c, end), written once
     // the next run's class differs or no run is left.
@@ -166,7 +182,7 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
     }
     if (nextClass !== value) {
       if (value >= 0) {
-        /** @invariant safeInteger(r) && safeInteger(value) && safeInteger(nextClass) && 0 <= r && r <= runs.length && 0 <= value && value < whole.length && -1 <= nextClass && nextClass < whole.length && whole.length === 256 */
+        /** @invariant safeInteger(r) && safeInteger(value) && safeInteger(nextClass) && safeInteger(c) && safeInteger(end) && 0 <= r && r <= runs.length && 0 <= value && value < whole.length && -1 <= nextClass && nextClass < whole.length && whole.length === 256 && 0 <= c && 0 <= end && end <= 1114112 && index.length === 4352 */
         while (c < end) {
           const block = c >> 8
           if ((c & 0xff) === 0 && end - c >= 0x100) {
@@ -174,13 +190,15 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
               whole[value] = count
               values.fill(value, count << 8, ++count << 8)
             }
-            index.fill(whole[value]!, block, end >> 8)
-            c = end & ~0xff
+            const endBlock = end >> 8
+            index.fill(whole[value]!, block, endBlock)
+            c = endBlock * 256
           } else {
             // A block that several runs share is its own: the first of them starts it.
             if ((c & 0xff) === 0) index[block] = count++
-            const stop = Math.min(end, (block + 1) << 8)
-            const shift = ((index[block] ?? missing()) - block) << 8
+            const nextBlockStart = (block + 1) * 256
+            const stop = end < nextBlockStart ? end : nextBlockStart
+            const shift = (index[block]! - block) << 8
             values.fill(value, c + shift, stop + shift)
             c = stop
           }
@@ -189,7 +207,9 @@ export function unpackClassRuns(runs: Int32Array, remap: Uint8Array, blocks: num
       value = nextClass
     }
     if (runs.length - r < 2) break
-    end += runs[r]! + 1
+    const runLen = runs[r]!
+    if (runLen < 0 || runLen > 0x110000 - 1 - end) { end = -1; break }
+    end += runLen + 1
   }
   if (end !== 0x110000) throw new Error('The class runs don\'t cover U+0000..U+10FFFF')
   return { index, values }
@@ -219,15 +239,13 @@ export function lazyRegExp(source: string, flags: string): () => RegExp {
 // whether it was tested, and whether the code point has it. A scan tests a property the first time it
 // asks about a code point, so a page builds and runs only the tests its engine's scan makes. Code
 // points below U+10000 keep their bits in one table, the others in a map.
-const PROPERTY_TESTS = [
-  lazyRegExp(String.raw`^[\p{L}\p{N}]$`, 'u'),
-  lazyRegExp(String.raw`^\p{M}$`, 'u'),
-  lazyRegExp(String.raw`^\p{P}$`, 'u'),
-  lazyRegExp(String.raw`^[\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Po}]$`, 'u'),
-  lazyRegExp(String.raw`^\p{Default_Ignorable_Code_Point}$`, 'u'),
-  lazyRegExp(String.raw`^\p{Emoji}$`, 'u'),
-  lazyRegExp(String.raw`^\p{sc=Hangul}$`, 'u'),
-]
+const letterOrNumberRe = lazyRegExp(String.raw`^[\p{L}\p{N}]$`, 'u')
+const markRe = lazyRegExp(String.raw`^\p{M}$`, 'u')
+const punctuationRe = lazyRegExp(String.raw`^\p{P}$`, 'u')
+const punctuationButDashOrConnectorRe = lazyRegExp(String.raw`^[\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Po}]$`, 'u')
+const defaultIgnorableRe = lazyRegExp(String.raw`^\p{Default_Ignorable_Code_Point}$`, 'u')
+const emojiRe = lazyRegExp(String.raw`^\p{Emoji}$`, 'u')
+const hangulRe = lazyRegExp(String.raw`^\p{sc=Hangul}$`, 'u')
 export const LETTER_OR_NUMBER = 0
 export const MARK = 1
 export const PUNCTUATION = 2
@@ -238,13 +256,26 @@ export const HANGUL = 6
 let bmpProperties: Uint16Array | null = null
 const astralProperties = new Map<number, number>()
 
+function testProperty(property: number, ch: string): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+  switch (property) {
+    case LETTER_OR_NUMBER: return letterOrNumberRe().test(ch)
+    case MARK: return markRe().test(ch)
+    case PUNCTUATION: return punctuationRe().test(ch)
+    case PUNCTUATION_BUT_DASH_OR_CONNECTOR: return punctuationButDashOrConnectorRe().test(ch)
+    case DEFAULT_IGNORABLE: return defaultIgnorableRe().test(ch)
+    case EMOJI: return emojiRe().test(ch)
+    case HANGUL: return hangulRe().test(ch)
+    default: return false
+  }
+}
+
 export function hasProperty(cp: number, property: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
   const bmp = bmpProperties ??= new Uint16Array(0x10000)
   const has = 1 << (property * 2)
-  let bits = cp < 0x10000 ? (bmp[cp] ?? missing()) : astralProperties.get(cp) ?? 0
+  let bits = Number.isSafeInteger(cp) && cp >= 0 && cp < bmp.length ? bmp[cp]! : astralProperties.get(cp) ?? 0
   if ((bits & has << 1) === 0) {
-    bits |= has << 1 | ((PROPERTY_TESTS[property] ?? missing())().test(String.fromCodePoint(cp)) ? has : 0)
-    if (cp < 0x10000) bmp[cp] = bits
+    bits |= has << 1 | (testProperty(property, String.fromCodePoint(cp)) ? has : 0)
+    if (cp >= 0 && cp < bmp.length) bmp[cp] = bits
     else astralProperties.set(cp, bits)
   }
   return (bits & has) !== 0
@@ -486,8 +517,18 @@ const IDEOGRAPHIC_SPACE = 0x3000
 
 // --- Blink ---
 
+const PAIR_TABLE_LENGTH = 6244
+
 let blinkPairs: Uint8Array | null = null
 let blinkDefaultLocale: string | undefined
+
+/** @ensures result.length === 6244 */
+function getBlinkPairs(): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
+  if (blinkPairs === null || blinkPairs.length !== PAIR_TABLE_LENGTH) {
+    blinkPairs = unpackTableWithLength(blinkLinePairsPacked, PAIR_TABLE_LENGTH)
+  }
+  return blinkPairs
+}
 
 // Blink's default language as Intl shows it (getBlinkLineBreaks), read once.
 export function getBlinkDefaultLocale(): string {
@@ -506,6 +547,7 @@ function isBlinkBreakableSpace(c: number): Effects<{}, boolean> {   // PAPER: an
 // Context::ShouldBreakFast, tbi.cc:216-260, with soft hyphens enabled (hyphens: manual).
 // The pair table is Chromium's generated kFastLineBreakTable for U+0021..U+00FF
 // (gen.cc:422-551).
+/** @requires pairs.length === 6244 && safeInteger(last) && safeInteger(ch) */
 function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: number): Effects<{}, number> {   // PAPER: annotation
   if (last < 0x21 || ch < 0x21) return NO_BREAK
   if (last === 0x2d) {
@@ -520,7 +562,7 @@ function shouldBreakFast(pairs: Uint8Array, lastLast: number, last: number, ch: 
   }
   if (last <= 0xff && ch <= 0xff) {
     const x = ch - 0x21
-    return ((pairs[(last - 0x21) * 28 + (x >> 3)] ?? missing()) & (1 << (x & 7))) !== 0 ? CAN_BREAK : NO_BREAK
+    return (pairs[(last - 0x21) * 28 + (x >> 3)]! & (1 << (x & 7))) !== 0 ? CAN_BREAK : NO_BREAK
   }
   return UNKNOWN
 }
@@ -550,15 +592,17 @@ function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: numbe
 // so preparation gives the scan that language from Intl for a page without one
 // (getPreparationLanguage in src/measurement.ts); navigator.language follows the accept
 // languages instead. Without a document the scan reads root.
+/** @ensures result.length === text.length + 1 */
 export function getBlinkLineBreaks(text: string, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const length = text.length
   const breaks = new Uint8Array(length + 1)
   if (length < 2) return breaks
-  const pairs = blinkPairs ??= unpackTable(blinkLinePairsPacked)
+  const pairs = getBlinkPairs()
   const rules = getBreakRules(getBreakLanguage(language) === 'zh' ? 'chromium/line_normal_cj' : 'chromium/line_normal')
   let icu: Uint8Array | null = null
   let lastLast = 0
   let last = text.charCodeAt(0)
+  /** @invariant safeInteger(i) && safeInteger(last) && safeInteger(length) && 1 <= i && length === text.length && pairs.length === 6244 && breaks.length === text.length + 1 */
   for (let i = 1; i < length; lastLast = last, last = text.charCodeAt(i), i++) {
     const ch = text.charCodeAt(i)
     if (isBlinkBreakableSpace(ch)) continue // tbi.cc:284-291
@@ -596,6 +640,14 @@ const PF = 1024
 const WEIRD = 32768
 
 let webkitPairs: Uint8Array | null = null
+
+/** @ensures result.length === 6244 */
+function getWebKitPairs(): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
+  if (webkitPairs === null || webkitPairs.length !== PAIR_TABLE_LENGTH) {
+    webkitPairs = unpackTableWithLength(webkitLinePairsPacked, PAIR_TABLE_LENGTH)
+  }
+  return webkitPairs
+}
 type WebKitLineRules = { readonly rules: BreakRules, readonly overrides: CategoryOverrides }
 const webkitLineRules = new Map<string, WebKitLineRules>()
 
@@ -684,11 +736,12 @@ function classify(c: number): Effects<{}, number> {   // PAPER: annotation
 // CachedLineBreakIteratorFactory (TBI.h:236-351) with two characters of prior context
 // (TBI.h:239-290), and ubrk_following over the prior context followed by the text
 // (TBIICU.h:99-124, 136-142).
-/** @invariant safeInteger(this.priorLength) && 0 <= this.priorLength && this.priorLength <= 2 */
+/** @invariant safeInteger(this.priorLength) && 0 <= this.priorLength && this.priorLength <= 2 && safeInteger(this.last) */
 type Factory = {
   /** @stable */
   readonly text: string
   readonly secondToLast: number
+  /** @stable */
   readonly last: number
   // PriorContext::length counts trailing non-zero characters (TBI.h:277-283).
   /** @stable */
@@ -697,7 +750,7 @@ type Factory = {
   nextBoundary: Int32Array | null
 }
 
-/** @requires safeInteger(priorLength) && 0 <= priorLength && priorLength <= 2 */
+/** @requires safeInteger(priorLength) && 0 <= priorLength && priorLength <= 2 && safeInteger(last) */
 function createFactory(text: string, line: WebKitLineRules, secondToLast: number, last: number, priorLength: number): Effects<{}, Factory> {   // PAPER: annotation
   return { text, secondToLast, last, priorLength, line, nextBoundary: null }
 }
@@ -733,7 +786,7 @@ function following(f: Factory, location: number): Effects<{ "f.nextBoundary": "a
 // BP.h:142-255 for LineBreakRules::Normal, WordBreakBehavior::Normal and
 // NoBreakSpaceBehavior::Normal. During the fast-forward over units where ICU agrees
 // (BP.h:241-249) the characters before are not read again.
-/** @requires safeInteger(startPosition) && 0 <= startPosition
+/** @requires pairs.length === 6244 && safeInteger(startPosition) && 0 <= startPosition
  *  @ensures safeInteger(result) && 0 <= result */
 function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: number): Effects<{ "f.nextBoundary": "any"; "@state": "any" }, number> {   // PAPER: annotation
   const s = f.text
@@ -742,13 +795,14 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
     if (length <= 1) return length
     startPosition++
   }
+  if (startPosition >= length) return length
   let beforeBefore = startPosition > 1 ? s.charCodeAt(startPosition - 2) : f.secondToLast
   let before = startPosition > 0 ? s.charCodeAt(startPosition - 1) : f.last
   let beforeType = 0
   let after = 0
   let afterType = 0
   let nextBreak = -1
-  /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && 0 <= i && length === f.text.length */
+  /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(before) && safeInteger(after) && 0 <= i && length === f.text.length */
   for (let i = startPosition; i < length; beforeBefore = before, before = after, beforeType = afterType, i++) {
     after = s.charCodeAt(i)
     afterType = 0
@@ -761,7 +815,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
     if (before <= 0xff && after <= 0xff) {
       if (before >= 0x21 && after >= 0x21) {
         const x = after - 0x21
-        if (((pairs[(before - 0x21) * 28 + (x >> 3)] ?? missing()) & (1 << (x & 7))) !== 0) return i
+        if ((pairs[(before - 0x21) * 28 + (x >> 3)]! & (1 << (x & 7))) !== 0) return i
       }
       continue
     }
@@ -789,7 +843,7 @@ function nextBreakablePosition(pairs: Uint8Array, f: Factory, startPosition: num
     if (nextBreak < i) nextBreak = following(f, i - 1)
     if (nextBreak >= 0 && i < nextBreak) {
       const max = nextBreak < length - 1 ? nextBreak : length - 1
-      /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(max) && 0 <= i && i < length && max <= length - 1 && length === f.text.length */
+      /** @invariant safeInteger(i) && safeInteger(length) && safeInteger(nextBreak) && safeInteger(max) && safeInteger(before) && safeInteger(after) && 0 <= i && i < length && max <= length - 1 && length === f.text.length */
       for (; i < max; beforeBefore = before, before = after, beforeType = afterType, i++) {
         const lookahead = s.charCodeAt(i + 1)
         if (lookahead <= 0xff && !isASCIIAlpha(lookahead)) break
@@ -828,7 +882,7 @@ export function getWebKitLineRules(language: string | null): Effects<{ "@state":
   const breakLanguage = getBreakLanguage(locale)
   const rules = getBreakRules(breakLanguage === 'ja' || breakLanguage === 'ko' ? 'apple/line_normal' : breakLanguage === 'zh' ? 'apple/line_cj' : 'apple/line')
   const subtags = locale.split(/[-_]/)
-  let name = (subtags[0] ?? missing()).toLowerCase()
+  let name = (subtags[0] ?? '').toLowerCase()
   for (let k = 1; k < subtags.length; k++) {
     const subtag = subtags[k]!
     name += '_' + (subtag.length === 4 ? subtag.charAt(0).toUpperCase() + subtag.slice(1).toLowerCase() : subtag.toUpperCase())
@@ -868,7 +922,7 @@ export function getWebKitLineBreaks(
   keepAll: boolean,
   language: string | null,
 ): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
-  const pairs = webkitPairs ??= unpackTable(webkitLinePairsPacked)
+  const pairs = getWebKitPairs()
   const f = createFactory(source, getWebKitLineRules(language), 0, 0, 0)
   const length = source.length
   const breaks = new Uint8Array(length + 1)
@@ -878,7 +932,7 @@ export function getWebKitLineBreaks(
   for (let i = 0; keepAll && i < length && !sixteenBit; i++) sixteenBit = source.charCodeAt(i) > 0xff
   let previousKind = -1
   // handleTextContent, IIB:924-1051, for hyphens manual and nbsp-mode normal.
-  /** @invariant safeInteger(position) && 0 <= position */
+  /** @invariant safeInteger(position) && 0 <= position && pairs.length === 6244 */
   for (let position = 0; position < length;) {
     let kind = WHITESPACE
     let end = position
@@ -890,7 +944,7 @@ export function getWebKitLineBreaks(
       if (c !== LF) breaks[end] = FORCED_BREAK
     } else {
       // handleWhitespace, IIB:963-992, with moveToNextNonWhitespacePosition (IIB:55-73).
-      /** @invariant safeInteger(end) && 0 <= end */
+      /** @invariant safeInteger(end) && 0 <= end && pairs.length === 6244 */
       for (; end < length; end++) {
         const c = source.charCodeAt(end)
         if (c !== SPACE && c !== TAB && (preserveNewlines || c !== LF)) break
@@ -900,7 +954,7 @@ export function getWebKitLineBreaks(
         // TU:398-422 with line-break auto (LineMode Default, TU:450-466) and BP.h:287-300.
         kind = TEXT
         end = length
-        /** @invariant safeInteger(p) && 0 <= p */
+        /** @invariant safeInteger(p) && 0 <= p && pairs.length === 6244 */
         for (let p = position; p < length; p++) {
           const next = keepAll ? nextBreakableSpace(source, p, sixteenBit) : nextBreakablePosition(pairs, f, p)
           if (next !== position) { end = next; break }
@@ -931,7 +985,7 @@ export function getWebKitBreakBetweenItems(previous: string, next: string, keepA
   if (first === LF || first === LINE_SEPARATOR || first === PARAGRAPH_SEPARATOR) return false
   if (last === SPACE || last === TAB || first === SPACE || first === TAB) return true
   if (keepAll) return nextBreakableSpace(next, 0, false) === 0
-  const pairs = webkitPairs ??= unpackTable(webkitLinePairsPacked)
+  const pairs = getWebKitPairs()
   const n = previous.length
   const secondToLast = n > 1 ? previous.charCodeAt(n - 2) : 0
   const lastChar = n > 0 ? previous.charCodeAt(n - 1) : 0
