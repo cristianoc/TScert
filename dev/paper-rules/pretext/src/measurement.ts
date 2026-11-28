@@ -750,11 +750,10 @@ function addMetrics(cache: Map<string, SegmentMetrics>, seg: string, text: strin
   return metrics
 }
 
-// A character of the Hiragana and Katakana blocks, U+3041 to U+30FF, two of them in a row, and
-// how many the blocks hold.
+// A character of the Hiragana and Katakana blocks, U+3041 to U+30FF, two of them in a row
+// (191 code points, 191 * 191 = 36481 pairs).
 const kanaRe = /[\u3041-\u30FF]/
 export const kanaPairRe: RegExp = /[\u3041-\u30FF]{2}/
-const KANA_COUNT = 0x30ff - 0x3041 + 1
 
 // The kerning of every segment that takes none.
 export const noSpaceKerning: SpaceKerning = { after: 0, before: 0 }
@@ -892,47 +891,50 @@ function sameInk(a: TextMetrics, b: TextMetrics): Effects<{}, boolean> {   // PA
 // one that shows kerning. Premises: a font that kerns kana kerns one of the probe's pairs
 // (RESEARCH.md, Kerning At Line Edges, has the fonts measured), and one of its hiragana with
 // U+3002 (ENGINE_FOLLOWUPS.md, Kerning between kana).
+/** @ensures result === null || result.length === 36481 */
 export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fields: "any"; "@state": "any" }, Float64Array | null> {   // PAPER: annotation
-  let kerning = measurement.kanaKerning
-  if (kerning === undefined) {
-    kerning = measurement.kanaKerning = null
-    const font = measurement.canvasFont
-    const size = fontSizeRe.exec(font)
-    const start = size === null ? 0 : size.index + size[0].length
-    const families = size === null ? null : font.slice(start).match(familyRe)
-    const lists = families === null ? 1 : families.length
-    let own: TextMetrics | null = null
-    for (let i = 0; i < lists; i++) {
-      const list = i === 0 || families === null ? font : font.slice(0, start) + families.slice(i).join(',')
+  const kerning = measurement.kanaKerning
+  if (kerning === null) return null
+  if (kerning !== undefined && kerning.length === 36481) return kerning
+  measurement.kanaKerning = null
+  const font = measurement.canvasFont
+  const size = fontSizeRe.exec(font)
+  const start = size === null ? 0 : size.index + size[0].length
+  const families = size === null ? null : font.slice(start).match(familyRe)
+  const lists = families === null ? 1 : families.length
+  let own: TextMetrics | null = null
+  for (let i = 0; i < lists; i++) {
+    const list = i === 0 || families === null ? font : font.slice(0, start) + families.slice(i).join(',')
+    measurement.kanaFont = list
+    const context = getWholeRunContext(measurement)
+    const kerned = context.measureText(KANA_PROBE).width
+    context.fontKerning = 'none'
+    const unkerned = context.measureText(KANA_PROBE)
+    context.fontKerning = 'auto'
+    if (own === null) own = unkerned
+    else if (!sameInk(own, unkerned)) break
+    if (kerned === unkerned.width) continue
+    if (i > 0) {
+      // Each hiragana letter before a U+3002: Canvas shapes each pair as one word under any list.
+      let pairs = ''
+      for (let code = 0x3041; code <= 0x3096; code++) pairs += String.fromCharCode(code, 0x3002)
+      const shorter = context.measureText(pairs).width
+      measurement.kanaFont = font
+      const ownContext = getWholeRunContext(measurement)
+      const ownKerned = ownContext.measureText(pairs).width
+      ownContext.fontKerning = 'none'
+      const ownUnkerned = ownContext.measureText(pairs).width
+      ownContext.fontKerning = 'auto'
+      if (ownKerned === ownUnkerned || Math.abs(shorter - ownKerned) > ownKerned / 0x400000) break
       measurement.kanaFont = list
-      const context = getWholeRunContext(measurement)
-      const kerned = context.measureText(KANA_PROBE).width
-      context.fontKerning = 'none'
-      const unkerned = context.measureText(KANA_PROBE)
-      context.fontKerning = 'auto'
-      if (own === null) own = unkerned
-      else if (!sameInk(own, unkerned)) break
-      if (kerned === unkerned.width) continue
-      if (i > 0) {
-        // Each hiragana letter before a U+3002: Canvas shapes each pair as one word under any list.
-        let pairs = ''
-        for (let code = 0x3041; code <= 0x3096; code++) pairs += String.fromCharCode(code, 0x3002)
-        const shorter = context.measureText(pairs).width
-        measurement.kanaFont = font
-        const ownContext = getWholeRunContext(measurement)
-        const ownKerned = ownContext.measureText(pairs).width
-        ownContext.fontKerning = 'none'
-        const ownUnkerned = ownContext.measureText(pairs).width
-        ownContext.fontKerning = 'auto'
-        if (ownKerned === ownUnkerned || Math.abs(shorter - ownKerned) > ownKerned / 0x400000) break
-        measurement.kanaFont = list
-      }
-      kerning = measurement.kanaKerning = new Float64Array(KANA_COUNT * KANA_COUNT).fill(NaN)
-      break
     }
-    if (kerning === null) measurement.kanaFont = font
+    const table = new Float64Array(36481)
+    table.fill(NaN)
+    measurement.kanaKerning = table
+    return table
   }
-  return kerning
+  measurement.kanaFont = font
+  return null
 }
 
 // The kerning Blink's layout gives text[at - 1] and text[at] that no measured width holds, or
@@ -945,25 +947,26 @@ export function getFontKanaKerning(measurement: FontMeasurement): Effects<{ fiel
 // measured those pairs together; a character below the CJK ranges is in a word of other
 // scripts, which ends before the letter. Each pair is asked of Canvas once per font and kept
 // in the font's table by its two characters, where a pair not asked about yet is NaN.
+/** @requires kernings.length === 36481 */
 export function getKanaKerning(text: string, start: number, at: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ fields: "any"; views: "grow" }, number> {   // PAPER: annotation
   const second = text.charCodeAt(at)
-  if (!(second >= 0x3041 && second <= 0x30ff)) return 0
+  if (!(Number.isSafeInteger(second) && second >= 0x3041 && second <= 0x30ff)) return 0
   const first = text.charCodeAt(at - 1)
-  if (!(first >= 0x3041 && first <= 0x30ff)) return 0
+  if (!(Number.isSafeInteger(first) && first >= 0x3041 && first <= 0x30ff)) return 0
   if (at > start) {
     if (!isCanvasWordLetter(second)) return 0
     // What Canvas's word held before the marks that end it.
     let k = at - 1
     let code = first
+    /** @invariant safeInteger(first) && 0x3041 <= first && first <= 0x30ff && safeInteger(second) && 0x3041 <= second && second <= 0x30ff */
     while (code >= 0x3041 && code <= 0x30ff && !isCanvasWordLetter(code)) {
       if (k === start) return 0
       code = text.charCodeAt(--k)
     }
     if (code >= 0x2e80 && !isCanvasWordLetter(code)) return 0
   }
-  const index = (first - 0x3041) * KANA_COUNT + second - 0x3041
-  const kerning = kernings[index]
-  if (kerning === undefined) throw new RangeError('missing value')
+  const index = (first - 0x3041) * 191 + (second - 0x3041)
+  const kerning = kernings[index]!
   return Number.isNaN(kerning) ? kernings[index] = measureKanaKerning(text.slice(at - 1, at + 1), first, second, measurement) : kerning
 }
 

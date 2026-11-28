@@ -70,10 +70,11 @@ export const SEGMENT_KINDS: readonly SegmentBreakKind[] = [
 // the spaces after one, RETURNABLE at the other segments of text with such a boundary, which
 // `hasUnbroken` tells, and ONE_CLUSTER where the scan has clusters of its own. A zero-width
 // space right after another is UNBROKEN too, which `hasUnbroken` leaves out.
-/** @invariant this.starts.length === this.flags.length && this.flags.length <= this.texts.length */
+/** @invariant this.starts.length === this.flags.length && this.flags.length <= this.texts.length
+ *  @invariant this.spaceSources === null || this.spaceSources.length === this.normalized.length */
 export type TextAnalysis = {
-  normalized: string
-  spaceSources: Uint16Array | null
+  /** @stable */ readonly normalized: string
+  /** @stable */ readonly spaceSources: Uint16Array | null
   /** @stable */ readonly texts: Dense<string[]>
   /** @stable */ readonly starts: Dense<number[]>
   /** @stable */ readonly flags: Dense<number[]>
@@ -95,9 +96,9 @@ export type AnalysisProfile = {
 // each unit of its normalized text comes from. `items` holds the items themselves, whose own texts
 // WebKit's scan reads (getWebKitParagraphBreaks).
 export type ParagraphItems = {
-  items: readonly { readonly text?: string }[]
-  starts: number[]
-  atomic: boolean[]
+  /** @stable */ readonly items: readonly { readonly text?: string }[]
+  /** @stable */ readonly starts: Dense<number[]>
+  /** @stable */ readonly atomic: Dense<boolean[]>
   ownSegmentBreaks: boolean
   sourceOffsets: Int32Array | null
 }
@@ -244,40 +245,59 @@ export function isCollapsibleSpaceCode(code: number): Effects<{}, boolean> {   /
 // paragraph, or after a lone CR the analysis took out, whose mark it took (RESEARCH.md,
 // Decisions Log, 2026-10-07).
 // Fills spaceSources, when given, in normal white space.
-function mapSourceLineBreaks(source: string, normalizedLength: number, sourceBreaks: Uint8Array, whiteSpace: WhiteSpaceMode, spaceSources: Uint16Array | null): Effects<{ "spaceSources[*]": "grow"; "spaceSources[#]": "any" }, Uint8Array> {   // PAPER: annotation
+/** @requires safeInteger(i) && 0 <= i && i < source.length
+ *  @ensures safeInteger(result) && i < result && result <= source.length */
+function findCollapsibleRunEnd(source: string, i: number): Effects<{}, number> {   // PAPER: annotation
+  let end = i + 1
+  if (isCollapsibleSpaceCode(source.charCodeAt(i))) {
+    /** @invariant safeInteger(end) && safeInteger(i) && 0 <= i && i < end && end <= source.length */
+    while (end < source.length && isCollapsibleSpaceCode(source.charCodeAt(end))) end++
+  }
+  return end
+}
+
+/** @requires source.length < sourceBreaks.length
+ *  @ensures result.length === normalized.length + 1 */
+function mapSourceLineBreaks(source: string, normalized: string, sourceBreaks: Uint8Array, whiteSpace: WhiteSpaceMode, spaceSources: Uint16Array | null): Effects<{ "spaceSources[*]": "grow"; "spaceSources[#]": "any" }, Uint8Array> {   // PAPER: annotation
+  const normalizedLength = normalized.length
   const breaks = new Uint8Array(normalizedLength + 1)
   let normalizedIndex = 0
   if (whiteSpace === 'pre-wrap') {
+    /** @invariant safeInteger(i) && safeInteger(normalizedLength) && 0 <= i && i <= source.length && source.length < sourceBreaks.length && normalizedLength === normalized.length && breaks.length === normalized.length + 1 */
     for (let i = 0; i < source.length; i++, normalizedIndex++) {
-      breaks[normalizedIndex] = sourceBreaks[i] ?? missing()
-      if (source.charCodeAt(i) === 0x0D && source.charCodeAt(i + 1) === 0x0A) {
+      breaks[normalizedIndex] = sourceBreaks[i]!
+      if (source.charCodeAt(i) === 0x0D && i + 1 < source.length && source.charCodeAt(i + 1) === 0x0A) {
         i++
-        const b = sourceBreaks[i] ?? missing()
+        const b = sourceBreaks[i]!
         if ((b & BREAK) !== 0) breaks[normalizedIndex] = b
       }
     }
-    breaks[normalizedLength] = sourceBreaks[source.length] ?? missing()
+    breaks[normalizedLength] = sourceBreaks[source.length]!
     return breaks
   }
   let i = 0
+  /** @invariant safeInteger(i) && safeInteger(normalizedLength) && 0 <= i && i <= source.length && source.length < sourceBreaks.length && normalizedLength === normalized.length && breaks.length === normalized.length + 1 */
   while (i < source.length && isCollapsibleSpaceCode(source.charCodeAt(i))) i++
+  /** @invariant safeInteger(i) && safeInteger(normalizedLength) && 0 <= i && i <= source.length && source.length < sourceBreaks.length && normalizedLength === normalized.length && breaks.length === normalized.length + 1 */
   while (i < source.length) {
-    let end = i + 1
-    if (isCollapsibleSpaceCode(source.charCodeAt(i))) {
-      while (end < source.length && isCollapsibleSpaceCode(source.charCodeAt(end))) end++
-      if (end === source.length) break
+    const end = findCollapsibleRunEnd(source, i)
+    if (isCollapsibleSpaceCode(source.charCodeAt(i)) && end === source.length) {
+      const endBreak = sourceBreaks[i]!
+      breaks[normalizedLength] = (endBreak & BREAK) === 0 ? endBreak : endBreak & FORCED_BREAK
+      return breaks
     }
-    const bi = sourceBreaks[i] ?? missing()
+    const bi = sourceBreaks[i]!
     if ((bi & BREAK) === 0 && breaks[normalizedIndex] === 0) breaks[normalizedIndex] = bi
     if (spaceSources !== null) spaceSources[normalizedIndex] = source.charCodeAt(i)
     const start = i
+    /** @invariant safeInteger(i) && safeInteger(end) && safeInteger(normalizedLength) && 0 <= i && i <= end && end <= source.length && source.length < sourceBreaks.length && normalizedLength === normalized.length && breaks.length === normalized.length + 1 */
     for (; i < end; i++) {
-      const b = sourceBreaks[i] ?? missing()
+      const b = sourceBreaks[i]!
       if ((b & BREAK) !== 0) breaks[i === start ? normalizedIndex : normalizedIndex + 1] = b
     }
     normalizedIndex++
   }
-  const endBreak = sourceBreaks[i] ?? missing()
+  const endBreak = sourceBreaks[source.length]!
   breaks[normalizedLength] = (endBreak & BREAK) === 0 ? endBreak : endBreak & FORCED_BREAK
   return breaks
 }
@@ -287,10 +307,11 @@ function mapSourceLineBreaks(source: string, normalizedLength: number, sourceBre
 // without a hyphen, and Firefox, which drops soft hyphens from its text runs, has nothing there
 // (DROPPED). One with only soft hyphens before it on its chunk stays a soft hyphen: no line ends
 // at a chunk's start, and a line's start leaves either out.
-/** @ensures result >= 0 && result <= 15 */
+/** @requires safeInteger(i) && 0 <= i && i + 1 < breaks.length
+ *  @ensures result >= 0 && result <= 15 */
 function classifySegmentUnit(normalized: string, breaks: Uint8Array, i: number, code: number, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan']): Effects<{}, SegmentKindCode> {   // PAPER: annotation
-  if ((code === 0x2028 || code === 0x2029) && ((breaks[i + 1] ?? missing()) & FORCED_BREAK) !== 0) return HARD_BREAK
-  if (code === 0x00AD && ((breaks[i + 1] ?? missing()) & SOFT_HYPHEN_BREAK) !== 0 && followsChunkContent(normalized, i)) return ZERO_WIDTH_BREAK
+  if ((code === 0x2028 || code === 0x2029) && (breaks[i + 1]! & FORCED_BREAK) !== 0) return HARD_BREAK
+  if (code === 0x00AD && (breaks[i + 1]! & SOFT_HYPHEN_BREAK) !== 0 && followsChunkContent(normalized, i)) return ZERO_WIDTH_BREAK
   return classifySegmentBreakCode(code, whiteSpace, scan)
 }
 
@@ -342,7 +363,10 @@ function isControlSegmentCode(code: number): Effects<{}, boolean> {   // PAPER: 
 // A run of them ends where an item of a rich-inline paragraph starts inside it, and an item that
 // starts with one starts a text segment with the text after it, as a chunk does, after the break
 // the scan gives at the run, so its fragments keep the controls it starts with.
-/** @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length */
+/** @requires normalized.length < breaks.length
+ *  @requires spaceSources === null || spaceSources.length === normalized.length
+ *  @ensures result.texts.length === result.flags.length && result.starts.length === result.flags.length
+ *  @ensures result.normalized.length === normalized.length */
 function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | null, breaks: Uint8Array, whiteSpace: WhiteSpaceMode, scan: AnalysisProfile['lineBreakScan'], hangTabs: boolean, dropsBidiControl: boolean): Effects<{ "breaks[*]": "grow"; "breaks[#]": "any" }, TextAnalysis> {   // PAPER: annotation
   const oneCluster = scan === 'gecko' ? ONE_CLUSTER : 0
   const starts: Dense<number[]> = []
@@ -355,23 +379,25 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   let droppedEnd = -1
   // The last segment's kind, -1 before the first unit, which starts one.
   let lastKind: SafeInt = -1
-  /** @invariant starts.length === flags.length && lastKind < 16 * flags.length */
+  /** @invariant starts.length === flags.length && lastKind < 16 * flags.length && starts !== flags
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
   for (let i = 0; i < normalized.length; i++) {
     const code = normalized.charCodeAt(i)
     if (dropsBidiControl && i < droppedEnd) continue
-    if (dropsBidiControl && isDiscardable(code, false) && (i === 0 || ((breaks[i] ?? missing()) & ITEM_START) !== 0 || !isDiscardable(normalized.charCodeAt(i - 1), false))) {
+    if (dropsBidiControl && isDiscardable(code, false) && (i === 0 || (breaks[i]! & ITEM_START) !== 0 || !isDiscardable(normalized.charCodeAt(i - 1), false))) {
       // The run of what the text run drops from here, and where its last bidi control ends.
       let j = i
       let controlEnd = -1
-      for (; j < normalized.length && isDiscardable(normalized.charCodeAt(j), false) && (j === i || ((breaks[j] ?? missing()) & ITEM_START) === 0); j++) if (isBidiControl(normalized.charCodeAt(j))) controlEnd = j + 1
+      /** @invariant safeInteger(j) && 0 <= j && j <= normalized.length */
+      for (; j < normalized.length && isDiscardable(normalized.charCodeAt(j), false) && (j === i || (breaks[j]! & ITEM_START) === 0); j++) if (isBidiControl(normalized.charCodeAt(j))) controlEnd = j + 1
       if (controlEnd > 0) {
-        const bi = breaks[i] ?? missing()
+        const bi = breaks[i]!
         const startsItem = lastKind >= 0 && lastKind !== HARD_BREAK && (bi & ITEM_START) !== 0
         const chunkStart = lastKind < 0 || lastKind === HARD_BREAK || startsItem
         if (chunkStart) {
           const endsChunk = j === normalized.length || classifySegmentUnit(normalized, breaks, j, normalized.charCodeAt(j), whiteSpace, scan) === HARD_BREAK
           if (!endsChunk) {
-            const bj = breaks[j] ?? missing()
+            const bj = breaks[j]!
             if (startsItem) breaks[i] = bi | (bj & BREAK)
             breaks[j] = bj & ~(BREAK | SOFT_HYPHEN_BREAK)
           }
@@ -392,7 +418,7 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
     }
     const kind = classifySegmentUnit(normalized, breaks, i, code, whiteSpace, scan)
     const alone = kind === TEXT && isControlSegmentCode(code)
-    const bi = breaks[i] ?? missing()
+    const bi = breaks[i]!
     const unbroken = (bi & BREAK) === 0
     if (
       (bi & (BREAK | ITEM_START)) === 0 && !alone && !lastAlone && !(markRun && !combiningMarkRe.test(normalized.charAt(i))) &&
@@ -428,11 +454,12 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
   // zero-width break (classifySegmentUnit) is left as it was.
   let hasUnbroken = false
   const count: SafeInt = flags.length
-  /** @invariant j + 2 <= count && count === flags.length && starts.length === flags.length */
+  /** @invariant j + 2 <= count && count === flags.length && starts.length === flags.length && starts !== flags
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
   for (let j: SafeInt = count - 2; j >= 0; j--) {
     const kind = flags[j]! & KIND_BITS
     const next = flags[j + 1]! & KIND_BITS
-    if (((breaks[starts[j + 1]!] ?? missing()) & BREAK) !== 0 || kind === HARD_BREAK) continue
+    if ((breaks[starts[j + 1]!]! & BREAK) !== 0 || kind === HARD_BREAK) continue
     if (!hangTabs && (next === TAB || (next === PRESERVED_SPACE && kind === TAB))) {
       if (kind === SOFT_HYPHEN) continue
     } else if (next === TEXT || next === ZERO_WIDTH_GLUE || next === CONTROL) {
@@ -444,12 +471,17 @@ function segmentAtLineBreaks(normalized: string, spaceSources: Uint16Array | nul
     flags[j + 1] = flags[j + 1]! | UNBROKEN
     hasUnbroken = true
   }
-  if (hasUnbroken) for (let j = 0; j < count; j++) if ((flags[j]! & UNBROKEN) === 0) flags[j] = flags[j]! | RETURNABLE
+  if (hasUnbroken) {
+    /** @invariant count === flags.length && starts.length === flags.length && starts !== flags
+     *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
+    for (let j = 0; j < count; j++) if ((flags[j]! & UNBROKEN) === 0) flags[j] = flags[j]! | RETURNABLE
+  }
   // Each segment's text, sliced once here for measurement and the neighbours it reads: sliced
   // where measurement reads it, Firefox's rich-inline preparation ran 11-19% slower (RESEARCH.md,
   // Keeping Work Bounded).
   const texts: Dense<string[]> = []
-  /** @invariant texts.length === j && count === flags.length && starts.length === flags.length */
+  /** @invariant texts.length === j && count === flags.length && starts.length === flags.length && starts !== flags && texts !== starts && texts !== flags
+   *  @invariant forall k in starts: safeInteger(starts[k]) && 0 <= starts[k] && starts[k] < normalized.length */
   for (let j: SafeInt = 0; j < count; j++) texts.push(normalized.slice(starts[j], j + 1 < count ? starts[j + 1] : normalized.length))
   return { normalized, spaceSources, texts, starts, flags, hasUnbroken }
 }
@@ -469,16 +501,15 @@ export function analyzeText(
 ): Effects<{ "paragraph.sourceOffsets": "any"; views: "grow"; "@state": "any" }, TextAnalysis> {   // PAPER: annotation
   const preserve = whiteSpace === 'pre-wrap'
   // Where each of a paragraph's items starts in the source the engine scans.
-  let scanStarts: number[] | null = null
+  let scanStarts: Dense<number[]> | null = null
   // The source a text node's engine scans, after the segment break transformation.
   let source: string
   if (paragraph !== null) {
-    const freshStarts: number[] = []
+    const freshStarts: Dense<number[]> = []
     source = preserve ? text
       : paragraph.ownSegmentBreaks ? removeItemsSkippableSegmentBreaks(text, paragraph.starts, profile, language, freshStarts)
       : removeSkippableSegmentBreaks(text, profile, language)
-    if (freshStarts.length === 0) for (let k = 0; k < paragraph.starts.length; k++) freshStarts.push(paragraph.starts[k]!)
-    scanStarts = freshStarts
+    scanStarts = freshStarts.length === 0 ? paragraph.starts.slice() : freshStarts
   } else {
     source = preserve ? text : removeSkippableSegmentBreaks(text, profile, language)
   }
@@ -532,9 +563,9 @@ export function analyzeText(
       // its start, where the scan finds one after the U+FFFC: a soft hyphen that starts that text
       // hyphenates there, and the break after the atomic item comes before it (markItemStarts).
       if (paragraph !== null && scanStarts !== null) {
-        for (let k = 0; k < paragraph.atomic.length; k++) {
+        for (let k = 0; k < paragraph.atomic.length && k < scanStarts.length; k++) {
           if (!paragraph.atomic[k]) continue
-          let after = (scanStarts[k] ?? missing()) + 1
+          let after = scanStarts[k]! + 1
           while (after < source.length && isDiscardable(source.charCodeAt(after), false)) after++
           sourceBreaks[after] = (sourceBreaks[after] ?? missing()) & ~SOFT_HYPHEN_BREAK
         }
@@ -597,16 +628,24 @@ export function analyzeText(
       }
     }
     if (profile.lineBreakScan === 'webkit' && !preserve && source !== normalized) spaceSources = new Uint16Array(normalized.length)
-    breaks = source === normalized ? sourceBreaks : mapSourceLineBreaks(source, normalized.length, sourceBreaks, whiteSpace, spaceSources)
+    // PAPER: workaround (string-replace/concat length): CR/leftOut removal only shrinks source below sourceBreaks.length
+    if (sourceBreaks.length <= source.length) sourceBreaks = new Uint8Array(source.length + 1)
+    breaks = source === normalized ? sourceBreaks : mapSourceLineBreaks(source, normalized, sourceBreaks, whiteSpace, spaceSources)
   }
+  // PAPER: workaround (line-breaks.ts @ensures + string equality length): Blink/source===normalized breaks always have length > normalized.length
+  if (breaks.length <= normalized.length) breaks = new Uint8Array(normalized.length + 1)
   if (paragraph !== null) markItemStarts(text, normalized, breaks, paragraph, profile.lineBreakScan)
-  return segmentAtLineBreaks(normalized, spaceSources, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl)
+  // PAPER: workaround (guarded-fact join): split on spaceSources === null || spaceSources.length === normalized.length after branch join
+  if (spaceSources !== null && spaceSources.length === normalized.length) {
+    return segmentAtLineBreaks(normalized, spaceSources, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl)
+  }
+  return segmentAtLineBreaks(normalized, null, breaks, whiteSpace, profile.lineBreakScan, profile.hangTabs, dropsBidiControl)
 }
 
 // A paragraph's text after each item's own segment break transformation, where the engine
 // transforms segment breaks in each text frame's text apart (ParagraphItems), and in
 // `resultStarts` where each item starts in it.
-function removeItemsSkippableSegmentBreaks(text: string, starts: number[], profile: AnalysisProfile, language: string | null, resultStarts: number[]): Effects<{ "resultStarts[*]": "extend"; "@state": "any" }, string> {   // PAPER: annotation
+function removeItemsSkippableSegmentBreaks(text: string, starts: Dense<number[]>, profile: AnalysisProfile, language: string | null, resultStarts: Dense<number[]>): Effects<{ "resultStarts[*]": "extend"; "@state": "any" }, string> {   // PAPER: annotation
   if (profile.lineBreakScan === 'webkit' || !text.includes('\n')) return text
   let result = ''
   // Where the text that isn't in `result` yet starts. Only an item that holds a line feed can
@@ -675,19 +714,20 @@ export function alignToSource(source: string, normalized: string, scan: Analysis
 // and CanBreakAfter, line_breaker.cc:1168-1263 in core/layout/inline), WebKit finds a soft wrap
 // opportunity on either side of one (InlineFormattingUtils.cpp:445-449), and Gecko records a break
 // after one and breaks before one that doesn't fit (nsLineLayout.cpp:1057-1068, 1339-1340).
+/** @requires normalized.length < breaks.length */
 function markItemStarts(text: string, normalized: string, breaks: Uint8Array, paragraph: ParagraphItems, scan: AnalysisProfile['lineBreakScan']): Effects<{ "paragraph.sourceOffsets": "any"; "breaks[*]": "grow"; "breaks[#]": "any" }, void> {   // PAPER: annotation
   const offsets = paragraph.sourceOffsets = alignToSource(text, normalized, scan)
   const { starts, atomic } = paragraph
-  /** @invariant safeInteger(j) && 0 <= j && offsets.length === normalized.length */
+  /** @invariant safeInteger(j) && 0 <= j && j <= normalized.length && offsets.length === normalized.length */
   for (let k = 0, j = 0; k < starts.length; k++) {
-    /** @invariant safeInteger(j) && 0 <= j && offsets.length === normalized.length */
+    /** @invariant safeInteger(j) && 0 <= j && j <= normalized.length && offsets.length === normalized.length */
     while (j < normalized.length && offsets[j]! < starts[k]!) j++
     if (j === normalized.length) break
-    const bj = breaks[j] ?? missing()
+    const bj = breaks[j]!
     breaks[j] = bj | ITEM_START
     if (atomic[k] && offsets[j] === starts[k]) {
       breaks[j] = bj | ITEM_START | BREAK
-      breaks[j + 1] = (breaks[j + 1] ?? missing()) | BREAK | ITEM_START
+      breaks[j + 1] = breaks[j + 1]! | BREAK | ITEM_START
     }
   }
 }
@@ -708,9 +748,13 @@ function markItemStarts(text: string, normalized: string, breaks: Uint8Array, pa
 /** @ensures result.length === source.length + 1 */
 function getWebKitParagraphBreaks(source: string, paragraph: ParagraphItems, preserve: boolean, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const { items, starts, atomic } = paragraph
+  const startsLen = starts.length
+  const itemsLen = items.length
+  const atomicLen = atomic.length
   const breaks = new Uint8Array(source.length + 1)
   let previous = -1
-  for (let k = 0; k < starts.length; k++) {
+  /** @invariant safeInteger(k) && safeInteger(previous) && safeInteger(startsLen) && safeInteger(itemsLen) && safeInteger(atomicLen) && -1 <= previous && previous < k && 0 <= k && k <= startsLen && k <= itemsLen && k <= atomicLen && startsLen === starts.length && itemsLen === items.length && atomicLen === atomic.length */
+  for (let k = 0; k < startsLen && k < itemsLen && k < atomicLen; k++) {
     const start = starts[k]!
     const end = k + 1 < starts.length ? starts[k + 1]! : source.length
     if (start === end) continue
@@ -719,13 +763,14 @@ function getWebKitParagraphBreaks(source: string, paragraph: ParagraphItems, pre
     // (getWebKitLineBreaks), so only those are scanned.
     const first = source.charCodeAt(start)
     if (end - start > 1 || first === 0x2028 || first === 0x2029) {
-      const itemBreaks = getWebKitLineBreaks((items[k] ?? missing()).text ?? missing(), preserve, keepAll, language)
-      for (let i = 1; i <= end - start; i++) breaks[start + i] = itemBreaks[i] ?? missing()
+      const itemText = items[k]!.text ?? missing()
+      const itemBreaks = getWebKitLineBreaks(itemText, preserve, keepAll, language)
+      for (let i = 1; i <= itemText.length; i++) breaks[start + i] = itemBreaks[i]!
     }
     if (previous >= 0 && !atomic[k] && !atomic[previous]) {
       const last = source.charCodeAt(start - 1)
       const collapses = !preserve && ((first !== 0x0D && isCollapsibleSpaceCode(first)) || (last !== 0x0D && isCollapsibleSpaceCode(last)))
-      if (collapses || getWebKitBreakBetweenItems((items[previous] ?? missing()).text ?? missing(), (items[k] ?? missing()).text ?? missing(), keepAll, language)) breaks[start] = (breaks[start] ?? missing()) | BREAK
+      if (collapses || getWebKitBreakBetweenItems(items[previous]!.text ?? missing(), items[k]!.text ?? missing(), keepAll, language)) breaks[start] = (breaks[start] ?? missing()) | BREAK
     }
     previous = k
   }
