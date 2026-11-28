@@ -1,0 +1,531 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-439"><code>51623d162bca5ea53a494aaa93b98968d0a1aee4..pr-439</code></a><ul><li>1 commit</li><li>changes: 2 Lowering, 1 Proposal</li><li>parts: <span class="chip">parser</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-439"><code>51623d162bca5ea53a494aaa93b98968d0a1aee4..pr-439</code></h2><article class="card" id="c-fac5d99d5"><header><div><div class="sha">fac5d99d5 · Cristiano Calcagno · Nov 28, 04:12</div><h3>Extend front end for merged interface+value imports, mapped intersections, and const tuple followers</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Three TypeScript front-end patterns in <code>SkipLabs/skip</code> <code>main</code> were refused before reaching Lean: 1. Merged <code>interface</code> + companion <code>const</code>/<code>function</code> declarations (such as <code>export interface ServiceInstance</code> + <code>export declare const ServiceInstance</code>) failed import resolution, contextual type lookup, and written-application sweeps with <code>TypeScript found 2 declarations</code>. 2. Computed generic type aliases whose body is an intersection containing a homomorphic mapped type (such as <code>AllInputDefs&lt;T&gt;</code> / <code>AllSharedCollections&lt;T&gt;</code> intersecting with <code>{ readonly [Symbol.iterator]?: never }</code>) were not classified by <code>computedAlias</code>, causing generic reading to fail before concrete call-site instantiation. 3. Call-site instantiation of <code>const</code> tuple type parameters in intersection parameter types (such as <code>asFollower</code>'s <code>const Eager extends readonly EagerKeys&lt;ResourceInputs&gt;[]</code>) failed to extract <code>Eager</code> across the intersection, crashed on empty tuple <code>elementFlags</code>, and lacked sound <code>TypeTerm</code>-level evaluation for mapped-index conditionals over <code>keyof T &amp; string</code>, bare nominal reference conditionals, tuple-wrapped <code>[X] extends [never]</code> guards, literal/primitive <code>Exclude</code>, and literal-key-union transforming mapped types (<code>FollowerLazies</code>).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">merged interface and value namespace separation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">Import reading, <code class="m-code">contextualTerm</code>, <code class="m-code">resolutionResolveDeclaration</code>, and</span></span></div><div class="cond"><span class="tgt"><code class="m-code">writtenApplications</code>'<var>s</var> <code class="m-code">resolve</code> <span class="m-text">treated companion</span> <code class="m-code"><span class="tk-k">interface</span></code>/<code class="m-code"><span class="tk-k">type</span></code> <span class="m-text">and</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-k">const</span></code>/<code class="m-code"><span class="tk-k">function</span></code> <span class="m-text">declarations as a single conflicting multi-declaration</span></span></div><div class="cond"><span class="tgt"><span class="m-text">(or swept the companion value declaration from a type-position reference)</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">Type-position resolution filters out companion <code class="m-code"><span class="tk-t">VariableDeclaration</span></code> and</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-t">FunctionDeclaration</span></code> <span class="m-text">nodes when a type declaration is present, while</span></span></div><div class="cond"><span class="tgt"><span class="m-text">value-position resolution filters out companion <code class="m-code"><span class="tk-t">InterfaceDeclaration</span></code> and</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-t">TypeAliasDeclaration</span></code> <span class="m-text">nodes</span>. <span class="m-text">Unsupported merges (such as</span> <code class="m-code"><span class="tk-k">interface</span></code> +</span></div><div class="cond"><span class="tgt"><code class="m-code">namespace</code>, <span class="m-text">duplicate</span> <code class="m-code"><span class="tk-k">const</span></code><var>s</var>, <span class="m-text">or duplicate <code class="m-code"><span class="tk-k">type</span></code> aliases) remain</span></span></div><div class="cond"><span class="tgt"><span class="refused">refused</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">intersection-body computed mapped aliases</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">computedAlias</code>, <code class="m-code">computedType</code>, <code class="m-code">aliasApplication</code>, <span class="m-text">and</span></span></div><div class="cond"><span class="tgt"><code class="m-code">instantiateAtScope</code> <span class="m-text">only expanded generic aliases whose top-level body was</span></span></div><div class="cond"><span class="tgt"><span class="m-text">a <code class="m-code"><span class="tk-t">MappedTypeNode</span></code>, <code class="m-code"><span class="tk-t">ConditionalTypeNode</span></code>, or computed reference</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><code class="m-code">computedAlias</code> <span class="m-text">recognizes intersections containing a computed form or</span></span></div><div class="cond"><span class="tgt"><span class="m-text">non-library mapped type, and concrete applications expand them via</span></span></div><div class="cond"><span class="tgt"><code class="m-code">instantiateAt</code> <span class="m-text">so Lean checks both the mapped fields and intersected</span></span></div><div class="cond"><span class="tgt"><span class="m-text">members (including optional <code class="m-code">never</code> symbol properties) against actuals and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">declared bounds</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">call-site const tuple extraction and sound TypeTerm conditionals</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>extractTypeParamProposal</code> did not descend through <code>IntersectionTypeNode</code> patterns or intersection actuals, <code>contextualTerm</code> assumed non-null <code>tuple.elementFlags</code> on empty tuples, and <code>TypeTerm</code>-level evaluation did not handle <code>keyof T &amp; string</code> homomorphic mapped types, literal-union transforming mapped types, <code>[X] extends [never]</code> guards, bare nominal reference conditionals (<code>T[K] extends Base</code>), or literal/primitive conditionals (<code>Exclude</code>).</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>extractTypeParamProposal</code> descends through intersections to propose concrete <code>const</code> tuple arguments (empty or populated) for Lean to verify against both instantiated bounds and call actuals; <code>contextualTerm</code> guards <code>tuple.elementFlags ?? []</code>; <code>tools/type-term.mts</code>, <code>tools/computed-types.mts</code>, and <code>tools/declaration-graph.mts</code> evaluate mapped-index conditionals, <code>[X] extends [never]</code>, nominal reference checks (refusing ambiguous structural overlaps), literal/primitive conditionals when <code>probe</code> does not apply, and literal-key-union mapped transforms on settled <code>TypeTerm</code>s (unfolding named records via <code>recordShapeOf</code>).</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>merged-interface-value-import</code> <span class="kind positive">positive</span> <span class="was">positive  new</span> <span class="arrow">→</span> <span class="now">verified  resolves merged interface+const in type and value positions</span></summary><pre class="code"><span class="tk-c">// Importing a symbol declared as both an `interface` and a companion `const`</span>
+<span class="tk-c">// resolves the interface in type position and the const in value position.</span>
+<span class="tk-k">import</span> { <span class="tk-t">ServiceHandle</span>, openHandle } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/merged-interface-value&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> checkHandle(handle: <span class="tk-t">ServiceHandle</span>): boolean {
+  <span class="tk-k">const</span> fresh = openHandle();
+  <span class="tk-k">const</span> constructed: <span class="tk-t">ServiceHandle</span> = <span class="tk-k">new</span> <span class="tk-t">ServiceHandle</span>(fresh.id);
+  <span class="tk-k">return</span> handle.ping() &amp;&amp; constructed.ping();
+}</pre></details></li><li><details><summary><code>invalid-merged-namespace-value-import</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">interface merged with namespace remains refused at source</span></summary><pre class="code"><span class="tk-c">// An interface merged with a `namespace` remains outside the fragment and is</span>
+<span class="tk-c">// still refused as a multi-declaration import.</span>
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">BadNamespaceMerge</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/merged-interface-value&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readX(v: <span class="tk-t">BadNamespaceMerge</span>): number {
+  <span class="tk-k">return</span> v.x;
+}</pre></details></li><li><details><summary><code>mapped-intersection-record</code> <span class="kind positive">positive</span> <span class="was">positive  new</span> <span class="arrow">→</span> <span class="now">verified  expands mapped-type intersection aliases at call sites</span></summary><pre class="code"><span class="tk-c">// Computed alias whose body is an intersection of a homomorphic mapped type</span>
+<span class="tk-c">// with a record (including an optional `never` symbol property).</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> itemBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">BaseItem</span> {
+  <span class="tk-k">readonly</span> [itemBrand]: never;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">SubItem</span> <span class="tk-k">extends</span> <span class="tk-t">BaseItem</span> {
+  <span class="tk-k">readonly</span> label: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">AllItems</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">BaseItem</span>;
+} &amp; {
+  <span class="tk-k">readonly</span> [<span class="tk-t">Symbol</span>.iterator]?: never;
+};
+
+<span class="tk-k">type</span> <span class="tk-t">TaggedItems</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">BaseItem</span>;
+} &amp; {
+  <span class="tk-k">readonly</span> extra?: <span class="tk-t">BaseItem</span>;
+};
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> acceptItems&lt;<span class="tk-t">T</span> <span class="tk-k">extends</span> <span class="tk-t">AllItems</span>&lt;<span class="tk-t">T</span>&gt;&gt;(items: <span class="tk-t">T</span>): number;
+<span class="tk-k">declare</span> <span class="tk-k">function</span> acceptTagged&lt;<span class="tk-t">T</span> <span class="tk-k">extends</span> <span class="tk-t">TaggedItems</span>&lt;<span class="tk-t">T</span>&gt;&gt;(items: <span class="tk-t">T</span>): number;
+
+<span class="tk-k">type</span> <span class="tk-t">MarkedItems</span> = {
+  <span class="tk-k">readonly</span> first: <span class="tk-t">SubItem</span>;
+  <span class="tk-k">readonly</span> [<span class="tk-t">Symbol</span>.iterator]?: never;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> useMappedIntersections(
+  marked: <span class="tk-t">MarkedItems</span>,
+  item: <span class="tk-t">SubItem</span>,
+): number {
+  <span class="tk-k">const</span> a = acceptItems(marked);
+  <span class="tk-k">const</span> b = acceptTagged({ first: item, extra: item });
+  <span class="tk-k">return</span> a + b;
+}</pre></details></li><li><details><summary><code>invalid-mapped-intersection-open-symbol</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Lean soundly rejects open record against <code>[Symbol.iterator]?: never</code></span></summary><pre class="code"><span class="tk-c">// Soundness: an open record `{ readonly first: SubItem }` does not rule out an</span>
+<span class="tk-c">// extra `[Symbol.iterator]` property, so Lean soundly rejects it against</span>
+<span class="tk-c">// `{ readonly [K in keyof T]: BaseItem } &amp; { readonly [Symbol.iterator]?: never }`.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> itemBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">BaseItem</span> {
+  <span class="tk-k">readonly</span> [itemBrand]: never;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">SubItem</span> <span class="tk-k">extends</span> <span class="tk-t">BaseItem</span> {
+  <span class="tk-k">readonly</span> label: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">AllItems</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">BaseItem</span>;
+} &amp; {
+  <span class="tk-k">readonly</span> [<span class="tk-t">Symbol</span>.iterator]?: never;
+};
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> acceptItems&lt;<span class="tk-t">T</span> <span class="tk-k">extends</span> <span class="tk-t">AllItems</span>&lt;<span class="tk-t">T</span>&gt;&gt;(items: <span class="tk-t">T</span>): number;
+
+<span class="tk-k">type</span> <span class="tk-t">OpenItems</span> = {
+  <span class="tk-k">readonly</span> first: <span class="tk-t">SubItem</span>;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rejectOpen(open: <span class="tk-t">OpenItems</span>): number {
+  <span class="tk-k">return</span> acceptItems(open);
+}</pre></details></li><li><details><summary><code>invalid-mapped-intersection-bad-field</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Lean rejects bad field type in mapped part of intersection bound</span></summary><pre class="code"><span class="tk-c">// A non-BaseItem field violates the mapped-type part of the intersection bound</span>
+<span class="tk-c">// directly in Lean.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> itemBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">BaseItem</span> {
+  <span class="tk-k">readonly</span> [itemBrand]: never;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">TaggedItems</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">BaseItem</span>;
+} &amp; {
+  <span class="tk-k">readonly</span> extra?: <span class="tk-t">BaseItem</span>;
+};
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> acceptTagged&lt;<span class="tk-t">T</span> <span class="tk-k">extends</span> <span class="tk-t">TaggedItems</span>&lt;<span class="tk-t">T</span>&gt;&gt;(items: <span class="tk-t">T</span>): number;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rejectBadField(): number {
+  <span class="tk-k">return</span> acceptTagged&lt;{ <span class="tk-k">readonly</span> first: number }&gt;({ first: <span class="tk-n">42</span> });
+}</pre></details></li><li><details><summary><code>callsite-const-tuple-follower</code> <span class="kind positive">positive</span> <span class="was">positive  new</span> <span class="arrow">→</span> <span class="now">verified  const tuple arg, EagerKeys/LazyKeys, FollowerLazies, FollowerCoverage, Record&lt;string, never&gt;</span></summary><pre class="code"><span class="tk-c">// Call-site instantiation of `const Eager` tuple parameters with mapped-index</span>
+<span class="tk-c">// conditionals (`EagerKeys`, `LazyKeys`), `[X] extends [never]`, `Exclude`,</span>
+<span class="tk-c">// `Tuple[number]`, `{ readonly [K in never]: never }`, and `typeof uniqueSymbol`.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> eagerBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> lazyBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> missingBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">readonly</span> [eagerBrand]: never;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazy</span> {
+  <span class="tk-k">readonly</span> [lazyBrand]: never;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">EagerCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">get</span>(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">LazyCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span> {
+  compute(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">Ctx</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEager</span> | <span class="tk-t">AbstractLazy</span>;
+};
+
+<span class="tk-k">type</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; = [<span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;] <span class="tk-k">extends</span> [never]
+  ? { <span class="tk-k">readonly</span> lazies?: { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> never]: never } }
+  : {
+      <span class="tk-k">readonly</span> lazies: {
+        <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;]: (
+          ctx: <span class="tk-t">Ctx</span>,
+        ) =&gt; <span class="tk-t">ResourceInputs</span>[<span class="tk-t">K</span>];
+      };
+    };
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> string[]&gt; = [
+  <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+] <span class="tk-k">extends</span> [never]
+  ? unknown
+  : {
+      <span class="tk-k">readonly</span> missingEagerCollections: <span class="tk-k">readonly</span> [
+        <span class="tk-k">typeof</span> missingBrand,
+        <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+      ];
+    };
+
+<span class="tk-k">interface</span> <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;&gt; {
+  <span class="tk-k">readonly</span> resources: <span class="tk-t">ResourceInputs</span>;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  <span class="tk-k">const</span> <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;[],
+&gt;(
+  service: <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  config: {
+    <span class="tk-k">readonly</span> collections: <span class="tk-t">Eager</span>;
+  } &amp; <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; &amp;
+    <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span>&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">type</span> <span class="tk-t">EagerOnly</span> = {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCol</span>&lt;string&gt;;
+};
+
+<span class="tk-k">type</span> <span class="tk-t">Mixed</span> = {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCol</span>&lt;string&gt;;
+  <span class="tk-k">readonly</span> echo: <span class="tk-t">LazyCol</span>&lt;number&gt;;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> followAll(
+  eagerSvc: <span class="tk-t">Service</span>&lt;<span class="tk-t">EagerOnly</span>&gt;,
+  mixedSvc: <span class="tk-t">Service</span>&lt;<span class="tk-t">Mixed</span>&gt;,
+  emptySvc: <span class="tk-t">Service</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;&gt;,
+  makeEcho: (ctx: <span class="tk-t">Ctx</span>) =&gt; <span class="tk-t">LazyCol</span>&lt;number&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">Record</span>&lt;string, never&gt;&gt; {
+  <span class="tk-k">const</span> _f1 = asFollower(eagerSvc, { collections: [<span class="tk-s">&quot;names&quot;</span>] });
+  <span class="tk-k">const</span> _f2 = asFollower(mixedSvc, {
+    collections: [<span class="tk-s">&quot;names&quot;</span>],
+    lazies: { echo: makeEcho },
+  });
+  <span class="tk-k">void</span> _f1;
+  <span class="tk-k">void</span> _f2;
+  <span class="tk-k">return</span> asFollower(emptySvc, { collections: [] });
+}</pre></details></li><li><details><summary><code>invalid-const-tuple-follower-missing-eager</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Lean rejects missing eager key via branded sentinel tuple</span></summary><pre class="code"><span class="tk-c">// Omitting an eager collection triggers `FollowerCoverage`'s branded</span>
+<span class="tk-c">// `missingEagerCollections` property, rejected by Lean.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> eagerBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> lazyBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> missingBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">readonly</span> [eagerBrand]: never;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazy</span> {
+  <span class="tk-k">readonly</span> [lazyBrand]: never;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">EagerCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">get</span>(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">LazyCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span> {
+  compute(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">Ctx</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEager</span> | <span class="tk-t">AbstractLazy</span>;
+};
+
+<span class="tk-k">type</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; = [<span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;] <span class="tk-k">extends</span> [never]
+  ? { <span class="tk-k">readonly</span> lazies?: { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> never]: never } }
+  : {
+      <span class="tk-k">readonly</span> lazies: {
+        <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;]: (
+          ctx: <span class="tk-t">Ctx</span>,
+        ) =&gt; <span class="tk-t">ResourceInputs</span>[<span class="tk-t">K</span>];
+      };
+    };
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> string[]&gt; = [
+  <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+] <span class="tk-k">extends</span> [never]
+  ? unknown
+  : {
+      <span class="tk-k">readonly</span> missingEagerCollections: <span class="tk-k">readonly</span> [
+        <span class="tk-k">typeof</span> missingBrand,
+        <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+      ];
+    };
+
+<span class="tk-k">interface</span> <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;&gt; {
+  <span class="tk-k">readonly</span> resources: <span class="tk-t">ResourceInputs</span>;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  <span class="tk-k">const</span> <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;[],
+&gt;(
+  service: <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  config: {
+    <span class="tk-k">readonly</span> collections: <span class="tk-t">Eager</span>;
+  } &amp; <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; &amp;
+    <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span>&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">type</span> <span class="tk-t">EagerOnly</span> = {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCol</span>&lt;string&gt;;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rejectMissingEager(
+  svc: <span class="tk-t">Service</span>&lt;<span class="tk-t">EagerOnly</span>&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">EagerOnly</span>&gt; {
+  <span class="tk-k">return</span> asFollower(svc, { collections: [] });
+}</pre></details></li><li><details><summary><code>invalid-const-tuple-follower-lazy-in-eager</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Lean rejects lazy key in eager collections tuple</span></summary><pre class="code"><span class="tk-c">// Listing a lazy collection in `collections` violates</span>
+<span class="tk-c">// `Eager &lt;= readonly EagerKeys&lt;ResourceInputs&gt;[]`, rejected by Lean.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> eagerBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> lazyBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">declare</span> <span class="tk-k">const</span> missingBrand: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">readonly</span> [eagerBrand]: never;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">abstract</span> <span class="tk-k">class</span> <span class="tk-t">AbstractLazy</span> {
+  <span class="tk-k">readonly</span> [lazyBrand]: never;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">EagerCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span> {
+  <span class="tk-k">get</span>(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">LazyCol</span>&lt;<span class="tk-t">V</span>&gt; <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span> {
+  compute(): <span class="tk-t">V</span>;
+}
+
+<span class="tk-k">interface</span> <span class="tk-t">Ctx</span> {
+  <span class="tk-k">readonly</span> id: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">T</span>&gt; = {
+  <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span>]: <span class="tk-t">AbstractEager</span> | <span class="tk-t">AbstractLazy</span>;
+};
+
+<span class="tk-k">type</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractEager</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: [<span class="tk-t">T</span>[<span class="tk-t">K</span>]] <span class="tk-k">extends</span> [never]
+    ? never
+    : <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">AbstractLazy</span>
+      ? <span class="tk-t">K</span>
+      : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; = [<span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;] <span class="tk-k">extends</span> [never]
+  ? { <span class="tk-k">readonly</span> lazies?: { <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> never]: never } }
+  : {
+      <span class="tk-k">readonly</span> lazies: {
+        <span class="tk-k">readonly</span> [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-t">LazyKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;]: (
+          ctx: <span class="tk-t">Ctx</span>,
+        ) =&gt; <span class="tk-t">ResourceInputs</span>[<span class="tk-t">K</span>];
+      };
+    };
+
+<span class="tk-k">type</span> <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> string[]&gt; = [
+  <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+] <span class="tk-k">extends</span> [never]
+  ? unknown
+  : {
+      <span class="tk-k">readonly</span> missingEagerCollections: <span class="tk-k">readonly</span> [
+        <span class="tk-k">typeof</span> missingBrand,
+        <span class="tk-t">Exclude</span>&lt;<span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;, <span class="tk-t">Eager</span>[number]&gt;,
+      ];
+    };
+
+<span class="tk-k">interface</span> <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;&gt; {
+  <span class="tk-k">readonly</span> resources: <span class="tk-t">ResourceInputs</span>;
+}
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> asFollower&lt;
+  <span class="tk-t">ResourceInputs</span> <span class="tk-k">extends</span> <span class="tk-t">AllShared</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  <span class="tk-k">const</span> <span class="tk-t">Eager</span> <span class="tk-k">extends</span> <span class="tk-k">readonly</span> <span class="tk-t">EagerKeys</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;[],
+&gt;(
+  service: <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;,
+  config: {
+    <span class="tk-k">readonly</span> collections: <span class="tk-t">Eager</span>;
+  } &amp; <span class="tk-t">FollowerLazies</span>&lt;<span class="tk-t">ResourceInputs</span>&gt; &amp;
+    <span class="tk-t">FollowerCoverage</span>&lt;<span class="tk-t">ResourceInputs</span>, <span class="tk-t">Eager</span>&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">ResourceInputs</span>&gt;;
+
+<span class="tk-k">type</span> <span class="tk-t">Mixed</span> = {
+  <span class="tk-k">readonly</span> names: <span class="tk-t">EagerCol</span>&lt;string&gt;;
+  <span class="tk-k">readonly</span> echo: <span class="tk-t">LazyCol</span>&lt;number&gt;;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rejectLazyInEager(
+  svc: <span class="tk-t">Service</span>&lt;<span class="tk-t">Mixed</span>&gt;,
+  makeEcho: (ctx: <span class="tk-t">Ctx</span>) =&gt; <span class="tk-t">LazyCol</span>&lt;number&gt;,
+): <span class="tk-t">Service</span>&lt;<span class="tk-t">Mixed</span>&gt; {
+  <span class="tk-k">return</span> asFollower(svc, {
+    collections: [<span class="tk-s">&quot;names&quot;</span>, <span class="tk-s">&quot;echo&quot;</span>],
+    lazies: { echo: makeEcho },
+  });
+}</pre></details></li><li><code>invalid-const-tuple-follower-sentinel-bypass negative  new → refused</code> <span class="why">Lean rejects forged <code>Symbol()</code> against <code>typeof uniqueSymbol</code></span></li><li><details><summary><code>invalid-mapped-index-ambiguous-conditional</code> <span class="kind negative">negative</span> <span class="was">negative  new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refuses ambiguous structural overlap without nominal match</span></summary><pre class="code"><span class="tk-c">// Soundness: a mapped-index conditional checking an unbranded interface</span>
+<span class="tk-c">// against a structurally overlapping record without nominal inheritance is</span>
+<span class="tk-c">// refused at source instead of trusting TypeScript's structural check.</span>
+<span class="tk-k">interface</span> <span class="tk-t">UnbrandedBase</span> {
+  <span class="tk-k">readonly</span> tag: string;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">MatchingKeys</span>&lt;<span class="tk-t">T</span>&gt; = {
+  [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string]: <span class="tk-t">T</span>[<span class="tk-t">K</span>] <span class="tk-k">extends</span> <span class="tk-t">UnbrandedBase</span> ? <span class="tk-t">K</span> : never;
+}[<span class="tk-k">keyof</span> <span class="tk-t">T</span> &amp; string];
+
+<span class="tk-k">declare</span> <span class="tk-k">function</span> pickKey&lt;<span class="tk-t">T</span>, <span class="tk-k">const</span> <span class="tk-t">K</span> <span class="tk-k">extends</span> <span class="tk-t">MatchingKeys</span>&lt;<span class="tk-t">T</span>&gt;&gt;(obj: <span class="tk-t">T</span>, key: <span class="tk-t">K</span>): <span class="tk-t">K</span>;
+
+<span class="tk-k">type</span> <span class="tk-t">StructuralOverlap</span> = {
+  <span class="tk-k">readonly</span> item: { <span class="tk-k">readonly</span> tag: string };
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rejectAmbiguous(s: <span class="tk-t">StructuralOverlap</span>): <span class="tk-s">&quot;item&quot;</span> {
+  <span class="tk-k">return</span> pickKey(s, <span class="tk-s">&quot;item&quot;</span>);
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>No Lean rules or trusted assumptions changed. Extracted <code>const</code> tuple type arguments remain untrusted proposals verified by Lean against both the instantiated bounds (<code>U_i &lt;= B_i[p := U]</code>) and call actuals. Bare reference conditionals reuse <code>evaluateConditionalOnTerm</code>'s nominal/disjoint check and refuse structurally overlapping unbranded records. Lean continues to refuse open records against <code>{ readonly [Symbol.iterator]?: never }</code>.</p></div>
+<h4 class="change">Validation</h4><div class="prose"><p>- <code>(cd tools &amp;&amp; npx tsc -p tsconfig.json)</code>: pass. - <code>npx prettier --check</code> on changed <code>.ts</code>/<code>.d.ts</code>/<code>.json</code> files: pass. - <code>node tests/docs.mts</code>: 88 documents, 939 citations, 0 problems. - <code>node pipeline/run-cases.mts</code> (10 new cases + <code>mapped-</code>, <code>computed-</code>, <code>written-</code>, <code>callsite-instantiation</code>, <code>class-method-fewer-params</code>, <code>nested-</code>, <code>block-type</code>, <code>invalid-bind-union</code>, <code>blocker-compiler-api</code>): 323 of 323 cases as expected. - <code>./test-all.sh</code>: 27 passed, 0 failed (including 183 Controls and <code>tools/unchecked.mts</code>).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">merged-interface-value-import</span> <span class="test neg">invalid-merged-namespace-value-import</span> <span class="test pos">mapped-intersection-record</span> <span class="test neg">invalid-mapped-intersection-open-symbol</span> <span class="test neg">invalid-mapped-intersection-bad-field</span> <span class="test pos">callsite-const-tuple-follower</span> <span class="test neg">invalid-const-tuple-follower-missing-eager</span> <span class="test neg">invalid-const-tuple-follower-lazy-in-eager</span> <span class="test neg">invalid-const-tuple-follower-sentinel-bypass</span> <span class="test neg">invalid-mapped-index-ambiguous-conditional</span></dd></dl>
+<details><summary>16 files changed, 1071 insertions(+), 134 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                 |  10 +
+ pipeline/examples/callsite-const-tuple-follower.ts | 107 ++++++++
+ .../invalid-const-tuple-follower-lazy-in-eager.ts  |  96 +++++++
+ .../invalid-const-tuple-follower-missing-eager.ts  |  91 +++++++
+ ...invalid-const-tuple-follower-sentinel-bypass.ts |  94 +++++++
+ .../invalid-mapped-index-ambiguous-conditional.ts  |  20 ++
+ .../invalid-mapped-intersection-bad-field.ts       |  19 ++
+ .../invalid-mapped-intersection-open-symbol.ts     |  28 ++
+ .../invalid-merged-namespace-value-import.ts       |   7 +
+ pipeline/examples/mapped-intersection-record.ts    |  40 +++
+ pipeline/examples/merged-interface-value-import.ts |   9 +
+ .../imports-project/merged-interface-value.d.ts    |  22 ++
+ pipeline/imports-project/tsconfig.json             |   4 +-
+ tools/computed-types.mts                           | 200 ++++++++++++--
+ tools/declaration-graph.mts                        | 299 ++++++++++++++++-----
+ tools/type-term.mts                                | 159 ++++++++---</pre></details>
+</article>
+</main></body></html>
