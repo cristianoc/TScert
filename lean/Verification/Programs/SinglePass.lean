@@ -2179,11 +2179,17 @@ def afterUnguardedOracle (O : Thunk HeapKnowledge.TypeOracle) (recheck : Thunk B
     (baseIndices baseLinks : Nat) (k : Knowledge) : Knowledge :=
   if k.links.length > baseLinks then
     let k1 := HeapKnowledge.unguardedInstances (HeapKnowledge.elementInstances k)
-    if k1.indices.any (fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false) then
+    if k1.indices.any (fun a => a.cond.isNone && match a.fact with
+        | .either .. => true
+        | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B
+        | _ => false) then
       HeapKnowledge.releaseEithersStepOracle O.get k1
     else k1
   else if k.indices.length ≤ baseIndices then
-    if k.indices.any (fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false) && recheck.get then
+    if k.indices.any (fun a => a.cond.isNone && match a.fact with
+        | .either .. => true
+        | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B
+        | _ => false) && recheck.get then
       HeapKnowledge.releaseEithersStepOracle O.get k
     else k
   else
@@ -2193,16 +2199,24 @@ def afterUnguardedOracle (O : Thunk HeapKnowledge.TypeOracle) (recheck : Thunk B
     let hasElem := added.any fun a => a.cond.isNone && match a.fact with
       | .element .. | .every .. | .atIndex .. => true | _ => false
     let hasEither := added.any fun a => a.cond.isNone && match a.fact with
-      | .either .. => true | _ => false
+      | .either .. => true
+      | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B
+      | _ => false
     let k1 := if hasLin || hasElem then HeapKnowledge.unguardedInstances (HeapKnowledge.elementInstances k) else k
     let k1HasLinOrEither := (k1.indices.drop k.indices.length).any fun a => a.cond.isNone && match a.fact with
-      | .linear .. | .length .. | .bound .. | .int .. | .either .. => true | _ => false
-    if k1.indices.any (fun a => a.cond.isNone && match a.fact with | .either .. => true | _ => false) &&
+      | .linear .. | .length .. | .bound .. | .int .. | .either .. => true
+      | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B
+      | _ => false
+    if k1.indices.any (fun a => a.cond.isNone && match a.fact with
+        | .either .. => true
+        | .guarded _ _ _ B => !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B
+        | _ => false) &&
         (hasLin || hasEither || k1HasLinOrEither || recheck.get) then
       HeapKnowledge.releaseEithersStepOracle O.get k1
     else k1
 
-/-- Whether a typed oracle may still release an existing disjunction in `k`. -/
+/-- Whether a typed oracle may still release an existing disjunction or
+refutable guarded fact in `k`. -/
 def typedRecheck (o : HeapKnowledge.TypeOracle) (k : Knowledge) : Bool :=
   let cls0 := HeapLinks.aliases k.links 0
   cls0.any (fun s => (o.finiteInts s).isSome || o.excludesPastSafe s) ||
@@ -2210,6 +2224,12 @@ def typedRecheck (o : HeapKnowledge.TypeOracle) (k : Knowledge) : Bool :=
     | .either (.guarded ..) _ | .either _ (.guarded ..) => true
     | .either A B =>
       (A.slots ++ B.slots).any fun s =>
+        (o.finiteInts s).isSome || o.excludesPastSafe s ||
+        (cls0.contains s && o.excludesInt s)
+    | .guarded _ _ _ (.guarded ..) => true
+    | .guarded _ _ _ B =>
+      !HeapKnowledge.impossibleFact B && HeapKnowledge.mayRefuteByOracle B &&
+      B.slots.any fun s =>
         (o.finiteInts s).isSome || o.excludesPastSafe s ||
         (cls0.contains s && o.excludesInt s)
     | _ => false
