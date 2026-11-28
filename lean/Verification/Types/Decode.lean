@@ -13,9 +13,54 @@ language's file. -/
 namespace Verification
 open Lean
 
-/-- A half-open span of the source, in UTF-16 code units. Several languages
-carry spans, so the abbreviation belongs to none of them. -/
-abbrev Span := Nat × Nat
+/-- A source endpoint. A file range uses UTF-16 offsets. In a checked
+unit, its declaration and an endpoint's ordinal give the lexical order
+of its syntax. A generated endpoint can follow that point by a fixed
+number of UTF-16 code units. -/
+inductive SourcePoint where
+  | offset (n : Nat)
+  | occurrence (owner : String) (index : Nat) (advance : Nat := 0)
+  deriving DecidableEq, Ord, Repr, Inhabited
+
+instance : Hashable SourcePoint where
+  hash
+    | .offset n => hash n
+    | .occurrence owner i delta => hash (owner, i, delta)
+
+instance : Coe Nat SourcePoint := ⟨.offset⟩
+instance {n : Nat} : OfNat SourcePoint n := ⟨.offset n⟩
+instance : LT SourcePoint := ⟨fun a b => compare a b = .lt⟩
+instance : LE SourcePoint := ⟨fun a b => compare a b ≠ .gt⟩
+instance (a b : SourcePoint) : Decidable (a < b) := inferInstanceAs (Decidable (compare a b = .lt))
+instance (a b : SourcePoint) : Decidable (a ≤ b) := inferInstanceAs (Decidable (compare a b ≠ .gt))
+instance : Min SourcePoint := ⟨fun a b => if a ≤ b then a else b⟩
+instance : Max SourcePoint := ⟨fun a b => if a ≤ b then b else a⟩
+instance : HAdd SourcePoint Nat SourcePoint where
+  hAdd
+    | .offset n, k => .offset (n+k)
+    | .occurrence o i d, k => .occurrence o i (d+k)
+
+instance : ToJson SourcePoint where
+  toJson
+    | .offset n => toJson n
+    | .occurrence o i d => toJson (o,i,d)
+
+instance : FromJson SourcePoint where
+  fromJson? j := do
+    if let .ok n := j.getNat? then return .offset n
+    let (o,i,d) ← fromJson? j
+    return .occurrence o i d
+
+instance : ToString SourcePoint where
+  toString
+    | .offset i => toString i
+    | p => (toJson p).compress
+
+abbrev Span := SourcePoint × SourcePoint
+
+def Span.offsets? : Span → Option (Nat × Nat)
+  | (.offset start, .offset stop) => some (start, stop)
+  | _ => none
 
 def spanStr (p : Span) : String := s!"[{p.1},{p.2})"
 
@@ -38,8 +83,8 @@ def jArr (j : Json) (k : String) : Except String (List Json) := do
 def jSpan (j : Json) (k : String) : Except String Span := do
   let a ← (← jField j k).getArr?
   if h : a.size = 2 then
-    let s ← a[0].getNat?
-    let e ← a[1].getNat?
+    let s ← fromJson? a[0]
+    let e ← fromJson? a[1]
     return (s, e)
   else .error s!"field '{k}' is not a [start, end] pair"
 

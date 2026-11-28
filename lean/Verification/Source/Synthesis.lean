@@ -134,7 +134,7 @@ structure Walk where
   never completes. -/
   completion : Option (List (String × Ty Tree)) := none
   lastInstance : Option (List (String × Ty Tree)) := none
-  entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
+  entries : Std.HashMap SourcePoint (List (String × Ty Tree)) := {}
   /-- Each statement entry's bindings and narrowed member paths by the
   statement's whole span: where statements of one start nest (a guard's
   `return c` read as `if (c) return true; else return false;`, each part at
@@ -144,10 +144,10 @@ structure Walk where
   by the statement's start and the declared name: the entry of that
   declaration's own node. By a statement's start and `%return@p%`, the
   statement's entry in the copy of a finalizer the return at `p` passes. -/
-  declarations : Std.HashMap (Nat × String) (List (String × Ty Tree)) := {}
+  declarations : Std.HashMap (SourcePoint × String) (List (String × Ty Tree)) := {}
   /-- Each statement entry's narrowed member paths, by root: what a test or
   a write found a field to hold (the entry's `current` contents). -/
-  currents : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) := {}
+  currents : Std.HashMap SourcePoint (List (String × List (List PropKey × Ty Tree))) := {}
   /-- The member paths the walk reads at their narrowed types (a `.read` of a
   member path a test or a write narrowed there): an entry states a narrowed
   path only where this holds it or a longer path of the same root. -/
@@ -161,7 +161,7 @@ structure Walk where
   cellAssigned : List String := []
   /-- Each loop's head bindings narrower than declared, by the loop's
   start (`loopOverrides`). -/
-  loopNarrowed : Std.HashMap Nat (List (String × Ty Tree)) := {}
+  loopNarrowed : Std.HashMap SourcePoint (List (String × Ty Tree)) := {}
   /-- The bindings the unit and the function literals being walked hold in
   cells (`cellLocals`: one a closure shares, every `let` of a module's
   initialization), whether or not the walk has met their assignment. -/
@@ -2519,7 +2519,7 @@ under `--force-proposals point@<start>-<end>` at that span (a control's wrong
 proposal at one program point) a narrower or other one: the first of two or
 more members, else `false` for `true` and `true` for any other. The walk goes
 on with the computed type. -/
-def forcedPoint (force : List String) (span : Nat × Nat) (r : Except String (Ty Tree)) : Except String (Ty Tree) :=
+def forcedPoint (force : List String) (span : Span) (r : Except String (Ty Tree)) : Except String (Ty Tree) :=
   if !force.contains s!"point@{span.1}-{span.2}" then r else
   match r with
   | .ok A => .ok (if A.length ≥ 2 then A.take 1 else if A == [Labels.tru] then [Labels.fls] else [Labels.tru])
@@ -2960,7 +2960,7 @@ partial def throwOnly : List Stmt → Bool
 /-- A return's copy of a finalizer (or of a loop's close) walked to the
 entries `walked`: its statements' entries at `positions`, read by that
 copy's points (their scope holds `key`, `%return@p%`). -/
-def recordCopy (positions : List Nat) (key : String) (walked : Std.HashMap Nat (List (String × Ty Tree))) : W Unit :=
+def recordCopy (positions : List SourcePoint) (key : String) (walked : Std.HashMap SourcePoint (List (String × Ty Tree))) : W Unit :=
   modify fun w => { w with declarations := positions.foldl (fun m k =>
     ((walked.get? k).map (m.insert (k, key) ·)).getD m) w.declarations }
 
@@ -6730,7 +6730,7 @@ private def walkWithBindings (T : EquationStore.State) (f : Fragment.Fn)
     let start : Walk := {
       generics, expected, force, scope, locals, slots, schemes, initBinders,
       explicitConstructors, values, heldCells, moduleInit := f.name.isEmpty,
-      entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+      entries := (({} : Std.HashMap SourcePoint _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
       let mut assumed := initial
@@ -6801,12 +6801,12 @@ def undetermined (m : String) : String :=
 def retypeFromWalk (T' : EquationStore.State) (w : Walk) (fc : SourceClaims.Function Tree)
     (parts : String := "xec") :
     EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
-      Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
+      Std.HashMap (SourcePoint × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String) :=
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError undetermined)
-  let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
+  let envs : List (SourcePoint × List (String × SourceClaims.Candidate Tree)) :=
     w.entries.toList.map fun (pos, vars) => (pos, vars.map fun (n, A) => (n, .ok A))
   let contracts : SourceClaims.Contracts Tree := w.contracts.map fun (k, D) => (k, .ok D)
   let claimed := fc.exprs.foldl (fun (acc : List (Span × SourceClaims.Candidate Tree)) (sp, c) =>
@@ -6850,7 +6850,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
     (initBinders : List (String × Tree × Option (Ty Tree)) := []) (moduleCells : List String := []) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
-      Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
+      Std.HashMap (SourcePoint × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String)) := do
   -- A generic closure at the scheme its claim names.

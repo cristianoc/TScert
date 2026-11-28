@@ -41,7 +41,7 @@ certified request. The context must be describable binding for binding: a
 context this cannot name is a lowering bug, not a slot number for a reader,
 so it fails here rather than reaching a message. -/
 @[nospecialize] def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Tree)) (A : Ty Tree)
-    (role : String := "node-typing") (environmentStart : Option Nat := none)
+    (role : String := "node-typing") (environmentStart : Option SourcePoint := none)
     (scope : List (ScopeBinding Tree) := []) : Compiler Target := do
   -- Every write the lowering emits is a node's term: one at a reserved key
   -- needs a proto-free receiver (`reservedWriteCheck`).
@@ -150,7 +150,7 @@ holds the object of a key-adding write (`growSites`). -/
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
 @[nospecialize] def checkpoint (pos : Span) (Γ : List (Ty Tree)) (facts : HeapFacts.Facts)
-    (next : Target) (entry : Option Nat := none) (scope : List (ScopeBinding Tree) := []) :
+    (next : Target) (entry : Option SourcePoint := none) (scope : List (ScopeBinding Tree) := []) :
     Compiler Target := do
   let separation ← if entry.isSome then separationAt scope Γ else pure {}
   if facts.isEmpty && separation.facts.isEmpty then return next
@@ -273,7 +273,7 @@ nullish exclusions `A` implies. -/
 root binding through the path's one field, or from the witness of the path's
 prefix through its last field. Every incoming edge checks each link together
 with the witness's context type. -/
-@[nospecialize] def witnessLinks (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : Compiler HeapLinks.Links := do
+@[nospecialize] def witnessLinks (fc : SourceClaims.Function Tree) (pos : SourcePoint) (scope : List (ScopeBinding Tree)) : Compiler HeapLinks.Links := do
   scope.zipIdx.filterMapM fun (b,j) => do
     let some (root, path) := b.witness | return none
     let some field := path.getLast? | return none
@@ -293,7 +293,7 @@ with the witness's context type. -/
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
 must follow from the stable storage contract; no claim is silently dropped. -/
-@[nospecialize] def entryFacts (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
+@[nospecialize] def entryFacts (fc : SourceClaims.Function Tree) (pos : SourcePoint) (scope : List (ScopeBinding Tree)) :
     Compiler HeapFacts.Facts := do
   let cs := (fc.entryCurrent.lookup pos).getD []
   let vars := (fc.envs.lookup pos).getD []

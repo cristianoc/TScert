@@ -243,17 +243,17 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
-  let envMap : Std.HashMap Nat (List (String × SourceClaims.Candidate Tree)) :=
+  let envMap : Std.HashMap SourcePoint (List (String × SourceClaims.Candidate Tree)) :=
     fc.envs.foldl (fun m (pos, bs) => m.insert pos bs) {}
   -- A start several statements share (nested at one position): each node
   -- at its own statement's entry.
-  let shared : Std.HashSet Nat := Id.run do
-    let mut seen : Std.HashSet Nat := {}
-    let mut twice : Std.HashSet Nat := {}
+  let shared : Std.HashSet SourcePoint := Id.run do
+    let mut seen : Std.HashSet SourcePoint := {}
+    let mut twice : Std.HashSet SourcePoint := {}
     for (sp, _) in spanEntries.toList do
       if seen.contains sp.1 then twice := twice.insert sp.1 else seen := seen.insert sp.1
     return twice
-  let currentMap : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) :=
+  let currentMap : Std.HashMap SourcePoint (List (String × List (List PropKey × Ty Tree))) :=
     fc.entryCurrent.foldl (fun m (pos, cs) => m.insert pos cs) {}
   -- The loop heads' proposals (`HeadInference.proposals`), by each loop
   -- statement's start: the producer's door, its entry claims at the loop's
@@ -296,7 +296,7 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
             rest.all fun a => a.effect.schema.normal.facts.contains F
       | _ => []
     | _ => []
-  let heads : Std.HashMap Nat (List HeadInference.Fact) :=
+  let heads : Std.HashMap SourcePoint (List HeadInference.Fact) :=
     (HeadInference.proposals
       { headRules force with
           kind := HeadInference.kindsOf f lengthKind
@@ -307,8 +307,8 @@ def retypeFromFragment (force : List String := []) : Retype Synthesis.Walk := fu
           freshCallee := freshCallee } f.body
       (if (headRules force).carried then HeadInference.entryOf f else [])).foldl (fun m (pos, fs) => m.insert pos fs) {}
   let early := (earlyNames f.body).eraseDups
-  let headClaims (g : SourceFlow.Graph) (node : SourceFlow.Node) : List (Nat × List HeadInference.Fact) :=
-    let loopPos : Option Nat := match node.action with
+  let headClaims (g : SourceFlow.Graph) (node : SourceFlow.Node) : List (SourcePoint × List HeadInference.Fact) :=
+    let loopPos : Option SourcePoint := match node.action with
       | .branch (.loop pos ..) _ _ | .iteratorStep (.forOf pos ..) _ _ _ _ => some pos.1
       | _ => none
     match loopPos with
@@ -502,6 +502,7 @@ def instancesFromWalk (force : List String := []) : Instances Synthesis.Walk := 
 initialization unit's walk: a constant at its initializer's computed type
 with its annotation, a cell at its computed storage contract. -/
 def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.run do
+  if fr.init.isEmpty then return fr
   let some (f, _, some c) := fr.units.find? (·.2.2.isSome) | return fr
   let module := fr.moduleFunctions ++ fr.classSelves
   -- Its generic closures (a generic class's methods among them) claimed at

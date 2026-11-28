@@ -595,7 +595,7 @@ private def scopeAt (scopes : List (Span × List (String × ι))) (outer : List 
     (p : Span) : List (String × ι) :=
   let inside := scopes.filter fun (q, _) => q.1 ≤ p.1 && p.2 ≤ q.2 && q != p
   match inside.foldl (fun (best : Option (Span × List (String × ι))) x => match best with
-      | some b => if x.1.2 - x.1.1 < b.1.2 - b.1.1 then some x else some b
+      | some b => if b.1.1 ≤ x.1.1 && x.1.2 ≤ b.1.2 && x.1 != b.1 then some x else some b
       | none => some x) none with
   | some (_, rows) => rows
   | none => outer

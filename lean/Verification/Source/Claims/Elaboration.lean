@@ -209,6 +209,23 @@ def Front.isInitialization (fr : Front) (i : Nat) : Bool :=
 digits of its `sourceSha256`. -/
 def fileItem (ast : Json) : String := ((ast.getObjValAs? String "sourceSha256").toOption.getD "").take 12 |>.toString
 
+/-- Function declarations in one module. Overload order distinguishes the
+several obligations of one function. The initializer has its own identity.
+The physical spelling is a lookup for consumers of the worker wire. -/
+inductive UnitRef where
+  | initialization
+  | declaration (name : String) (overload : Nat)
+  deriving BEq, Hashable, ToJson, FromJson, Inhabited, Repr
+
+def Front.unitReferences (fr : Front) : Array UnitRef := Id.run do
+  let mut counts : Std.HashMap String Nat := {}
+  let mut refs := #[]
+  for (fn, _, init) in fr.units do
+    let i := counts.getD fn.name 0
+    refs := refs.push (if init.isSome then .initialization else .declaration fn.name i)
+    counts := counts.insert fn.name (i+1)
+  return refs
+
 /-- A function unit's lexical identity in its file: its name, and where
 several units share the name (an overloaded function's signatures), `~k`
 for the `k`-th of them in source order, each its own signature obligation;

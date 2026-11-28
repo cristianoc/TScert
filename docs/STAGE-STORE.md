@@ -745,23 +745,43 @@ of the first compact JSON line of `GroupProjection.Slice.wire`, the relative
 program and its environment. The proposals are SHA-256 digests of the
 following lines, one for each consumed named result in order.
 
-A check entry holds the operation, relative members, named proposals,
+A check entry holds the operation, members by declaration and overload, named proposals,
 settlement result and relative verdict. A proposal-only entry has a null
 verdict. Both operations share a claim. A completed check supplies the
 proposals to an unrequested dependency. A completed proposal supplies the
 settlement when a check is requested. The check validates its exported
 answers before publication.
+A function that reads a separately checked initializer can receive its
+binding results in the program line. Each slot carries its name, binding
+kind and inferred type or cell contract. Its declarator supplies the
+written annotation. Declaration heads resolve in the reader. Structural
+heads carry their templates and binder defaults. The reader checks an
+interned template against those inputs. The initialization unit and groups
+whose binding environment cannot be reconstructed use the initializer body.
+
+The program line includes the source definitions reached from the group and
+`missing`, which records unsuccessful definition, root, value and implicit
+resolution lookups. Definition misses use symbolic declarations. Root and
+value misses use the queried local names. At an imported call the provider table contributes the
+exported signature’s rows and both stores contribute their array built-ins
+to the store-map check. Each dependency on a provider unit uses the first
+reached declaration in lexical order that names that unit. Printing resolves
+it to the current module and unit position. Preparation checks written type applications.
+For a type reference, equation lowering reads the applied type terms in
+`args`. The parser's duplicate list of argument ranges contributes no sites
+to the group key.
 The preparation numbers annotation sites within each carried declaration and
 keeps the inverse map for member contract identities. It renders those reads
-at their current declarations and sorts them in the wire order. The worker
-checks a group at physical sites when projection or materialization fails.
-Refusal and elaboration strings contain opaque diagnostic text, including
-generated names, so these lines use the physical check and the exact W entry.
-The relative operation publishes its answers and releases its claim before
-the physical check starts. Its refusal can supply those same proposals to a
-caller. An edited file that hits this entry executes the physical diagnostic.
-Each check has the stage time limit. The W measurement covers both checks,
-and the only response after a requested physical check is its verdict.
+at their current declarations and sorts them in the wire order.
+A located refusal carries its heading, source site, reason and checker line.
+A failed node records the member, closure, graph label and witness. An edge
+records its target, exit, required knowledge and optional handler type reference.
+The printer resolves these references against the current diagnostic plan.
+An undischarged expression claim identifies the member and its obligation
+index and whether subtype search exhausted its budget. The printer reproduces
+the exhausted comparison with the current plan’s labels. A failed elaboration identifies the member whose plan supplies its text.
+Building this plan can elaborate transitive bodies. The same check supplies
+the verdict and named proposals on a miss. A hit reads both from its entry.
 
 Under the store's integrity assumptions, equal keys identify the result of
 the same operation on the same input. A hit therefore has the same premise

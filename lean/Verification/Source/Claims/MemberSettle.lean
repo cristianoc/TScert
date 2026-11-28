@@ -86,7 +86,7 @@ def branchImplications {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVi
           | none => []
       | _, _, _, _ => []
     | _ => []
-  let within := fun (a b : Nat × Nat) => b.1 ≤ a.1 && a.2 ≤ b.2
+  let within := fun (a b : Span) => b.1 ≤ a.1 && a.2 ≤ b.2
   if narrowed.isEmpty then [] else
   let spans := r.cuts.filterMap fun h => (entryAt h).map (·.pos)
   r.cuts.filterMap fun h => do
@@ -179,10 +179,10 @@ def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.
     match entryAt l with
     | none => []
     | some e =>
-      let within := fun (a b : Nat × Nat) => b.1 ≤ a.1 && a.2 ≤ b.2 && a != b
+      let within := fun (a b : Span) => b.1 ≤ a.1 && a.2 ≤ b.2 && a != b
       -- (the innermost head's span holding `l`'s)
       let outer := (r.candidates.filterMap fun (l', _) => (entryAt l').bind fun e' =>
-        if within e.pos e'.pos then some e'.pos else none).foldl (fun (acc : Option (Nat × Nat)) p =>
+        if within e.pos e'.pos then some e'.pos else none).foldl (fun (acc : Option Span) p =>
           match acc with
           | some q => if within p q then some p else some q
           | none => some p) none
@@ -234,6 +234,17 @@ def withoutRegional («given» : Std.HashMap String Json) (u : String) : Option 
   guard (kvs.contains "regional" || kvs.contains "footprintRegional")
   pure (given.insert u (.obj ((kvs.erase "regional").erase "footprintRegional")))
 
+/-- The producer identifies an undischarged expression obligation by its
+ordinal in the member's request on the diagnostic wire. -/
+def expressionObligation? (reason : String) : Option (Nat × Bool) := do
+  let [_, wire] := reason.splitOn "\nobligation-diagnostic: " | none
+  let record ← (Json.parse wire).toOption
+  let exhausted := (record.getObjValD "outcome").getObjValD "kind" == .str "exhausted"
+  guard (record.getObjValD "kind" == .str (if exhausted then "direct-obligation" else "expression-claim"))
+  let id ← (record.getObjValAs? String "id").toOption
+  guard (id.startsWith "expression:")
+  return (← (id.drop 11).toString.toNat?, exhausted)
+
 /-- A member's run as the inferred route reads it (`passGroup`'s wording):
 its line, its refusal where refused, and its failure, the refusal's text
 located with `located` (`FilePlans.placeRefusal`), deferred: a settling
@@ -241,26 +252,30 @@ run's failure is read only where it is the member's last. -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (observe : Option String) (counting located : Bool) («given» : Option (Std.HashMap String Json)) (i : Nat)
     (layer : Option SinglePass.PassLayer := none) :
-    String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk String) :=
+    String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk PassDiagnostic) :=
   match g.passMember fuel i compare debugNode repeats given observe counting (layer := layer) with
   | .ok m =>
     -- (deferred: only the settled run's failure is reported, `inferredStep`)
-    let failure : Option (Thunk String) := match m.outcome with
+    let failure : Option (Thunk PassDiagnostic) := match m.outcome with
       | .accepted => none
       | .refused w _ pre => some (Thunk.mk fun _ =>
-        g.placeRefusal fuel located i w s!"single pass: {m.outcome} ({w.length})" pre)
-      | .notHandled w => some (Thunk.pure s!"single pass: {m.outcome} ({w.length})")
-      | o => some (Thunk.pure s!"single pass: {o} ({(toString o).length})")
+        g.refusalData fuel located i w s!"single pass: {m.outcome} ({w.length})" pre)
+      | .notHandled w => some (Thunk.pure (.text s!"single pass: {m.outcome} ({w.length})"))
+      | o => some (Thunk.pure (.text s!"single pass: {o} ({(toString o).length})"))
     let why := match m.outcome with
       | .refused w lacks _ => some (w, lacks)
       | _ => none
     (s!"{m.name}: {m.outcome}; {m.line}", why, failure)
   | .error reason =>
-    let reason := if !located || (reason.splitOn " at [").length > 1 then reason else
-      match g.fr.units[i]? with
-      | some (fn, _, _) => s!"source refusal at [{fn.namePos.1},{fn.namePos.2}): {reason}"
-      | none => reason
-    (s!"refused before the pass: {reason.take 200}", none, some (Thunk.pure reason))
+    let rendered := g.beforePass i located reason
+    let failure := Thunk.mk fun _ => match g.plans[i]?, g.fr.unitReferences[i]? with
+      | some (.error _), some unit => PassDiagnostic.before unit rendered
+      | some (.ok _), some unit =>
+        match expressionObligation? reason with
+        | some (index, exhausted) => .expression unit index exhausted rendered
+        | none => .text rendered
+      | _, _ => .text rendered
+    (s!"refused before the pass: {rendered.take 200}", none, some failure)
 
 /-- An implication left out, as a line names it. -/
 def implicationShown : Option (Nat × Nat) → String
@@ -428,7 +443,7 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
     («given» : Option (Std.HashMap String Json)) (i : Nat) (layer : Option SinglePass.PassLayer := none) :
     Settled FilePlans (Option (Std.HashMap String Json))
-      (String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk String)) :=
+      (String × Option (String × Option (Nat × List HeapKnowledge.Candidate)) × Option (Thunk PassDiagnostic)) :=
   let candidates : List (Nat × List HeapKnowledge.Candidate) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
@@ -447,7 +462,7 @@ structure InferredAcc where
   plans : FilePlans
   «given» : Option (Std.HashMap String Json)
   lines : List String
-  failed : Option String
+  failed : Option PassDiagnostic
   dropped : Nat
   runs : Nat
 
@@ -500,13 +515,13 @@ def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
     (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fixed : Bool := false) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) («given» : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (located : Bool := false)
-    (layer : Option SinglePass.PassLayer := none) :
+    (layer : Option SinglePass.PassLayer := none) (print : PassDiagnostic → String := PassDiagnostic.render) :
     List String × Except String (List String) × Nat × Nat :=
   let acc := group.foldl (fun acc i => FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located acc i
       (layer := layer))
     ⟨f, given, [], none, 0, 0⟩
   (acc.lines, (match acc.failed with
-    | some reason => .error reason
+    | some reason => .error (print reason)
     | none => .ok (acc.plans.dependencies group)), acc.dropped, acc.runs)
 
 /-- **Mode 8's check of a group**: with `infer` (no given file, or a forced
@@ -520,16 +535,28 @@ def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String
     (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fuel : Nat) (group : List Nat)
     (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1)
     («given» : Option (Std.HashMap String Json) := none) (observe : Option String := none)
-    (counting : Bool := false) (located : Bool := false) (layer : Option SinglePass.PassLayer := none) :
+    (counting : Bool := false) (located : Bool := false) (layer : Option SinglePass.PassLayer := none)
+    (print : PassDiagnostic → String := PassDiagnostic.render) :
     List String × Except String (List String) × Nat × Nat :=
   if infer then
     let given := some (f.computedGiven (given.getD {}) (force.contains "head-inputs")
       (force.contains "head-implications") (force.find? (·.startsWith "head-region-")) group)
     (f.withFreshApart (force.contains "head-apart") group).passGroupInferred fuel group keep
-      (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located (layer := layer)
+      (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located (layer := layer) (print := print)
   else
     let r := f.passGroup fuel group compare debugNode repeats given observe counting located
     (r.1, r.2, 0, 0)
+
+/-- Rendering the failure cannot change the accepted dependencies. -/
+theorem FilePlans.passGroupMode8_print (f : FilePlans) (force : List String)
+    (keep : Nat → List (Nat × List HeapKnowledge.Candidate)) (fuel : Nat) (group : List Nat)
+    («given» : Option (Std.HashMap String Json)) (counting : Bool) (print : PassDiagnostic → String) :
+    (f.passGroupMode8 true force keep fuel group («given» := given) (counting := counting)
+      (located := true) (print := print)).2.1.toOption =
+    (f.passGroupMode8 true force keep fuel group («given» := given) (counting := counting)
+      (located := true)).2.1.toOption := by
+  simp only [passGroupMode8, ite_true, passGroupInferred]
+  split <;> rfl
 
 /-- The contracts the checks of a group's members read
 (`SourceRequest.contractReads`), on the wire: reported with the group's

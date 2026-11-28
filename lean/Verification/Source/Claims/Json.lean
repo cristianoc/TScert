@@ -163,13 +163,22 @@ def FilePlans.dependencies (f : FilePlans) (group : List Nat) : List String :=
     -- The module units a read of an import the group's code mentions rests on.
     ((f.p.depends.filter fun (n, _) => group.any fun i => (f.fr.mentions i).contains n).flatMap (·.2)).eraseDups
 
-/-- The first elaboration refusal among the groups `names` selects: a check
-reports it before any refusal at the evidence. -/
-def FilePlans.elaborationRefusal (f : FilePlans) (names : Option (List String)) : Option String :=
+/-- The first member whose elaboration fails, with its error. -/
+def FilePlans.failedElaboration (f : FilePlans) (names : Option (List String)) : Option (Nat × String) :=
   ((f.fr.selected names).flatMap f.fr.group).findSome? fun i =>
     match (f.plans[i]?).getD (.error "no unit") with
-    | Except.error reason => some reason
+    | Except.error reason => some (i, reason)
     | Except.ok _ => none
+
+def FilePlans.elaborationRefusal (f : FilePlans) (names : Option (List String)) : Option String :=
+  (f.failedElaboration names).map Prod.snd
+
+/-- An elaboration error at a member of the current file. -/
+def FilePlans.beforePass (f : FilePlans) (i : Nat) (located : Bool) (reason : String) : String :=
+  if !located || (reason.splitOn " at [").length > 1 then reason else
+    match f.fr.units[i]? with
+    | some (fn, _, _) => s!"source refusal at [{fn.namePos.1},{fn.namePos.2}): {reason}"
+    | none => reason
 
 /-- `produceGroup` and the check of its bundle, nothing encoded (`unchecked`: the
 search leaves the graph's check to that check). Search evidence for one group: each member's request searched in turn,
@@ -514,7 +523,7 @@ expression, its claim's context width and its source span. -/
 def layerSites {ι : Type} (program : ControlFlow.Program) (claims : List (CertificateProducer.PointClaim ι))
     (sourceMap : RequestJson.SourceMap) : List SinglePass.LayerSite :=
   program.zipIdx.map fun (node, l) =>
-    (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).map (·.pos))
+    (node.expression, ((claims[l]?).map (·.context.length)).getD 0, ((sourceMap[l]?).bind id).bind (Span.offsets? ∘ SourceMapEntry.pos))
 
 /-- Locate the unique creation node `l_mk` (`Tm.makeFn (.graph ...)`) of `entry`
 and follow straight-line `.bind` / `.effect` edges to the enclosing call node
@@ -598,8 +607,8 @@ argument, returning `(l_mk, l_call, argIndex, captureSlotsAtCall)`. -/
     match findClosureCall r.program entry with
     | none => base
     | some (l_mk, l_call, argIndex, captureSlots) =>
-      let closureSpan := ((r.sourceMap[l_mk]?).bind id).map (·.pos)
-      let callSpan := ((r.sourceMap[l_call]?).bind id).map (·.pos)
+      let closureSpan := ((r.sourceMap[l_mk]?).bind id).bind (Span.offsets? ∘ SourceMapEntry.pos)
+      let callSpan := ((r.sourceMap[l_call]?).bind id).bind (Span.offsets? ∘ SourceMapEntry.pos)
       if !L.wantsClosure name closureSpan callSpan then base else
       let sites := layerSites r.program r.claims r.sourceMap
       let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal
@@ -916,8 +925,10 @@ def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : 
     if w == "refusal" then some 1000000000 else
     if w.startsWith "node:" then (w.drop 5).toString.toNat? else
     if w.startsWith "offset:" then (w.drop 7).toString.toNat?.bind fun k =>
-      let holding := r.sourceMap.zipIdx.filterMap fun (e, l) => e.bind fun e =>
-        if e.pos.1 ≤ k && k < e.pos.2 then some (e.pos.2 - e.pos.1, l) else none
+      let holding := r.sourceMap.zipIdx.filterMap fun (e, l) => do
+        let (start, stop) ← (← e).pos.offsets?
+        guard (start ≤ k && k < stop)
+        return (stop - start, l)
       (holding.foldl (fun (b : Option (Nat × Nat)) x => match b with
         | some y => if x.1 < y.1 then some x else some y
         | none => some x) none).map (·.2)
@@ -1113,6 +1124,17 @@ def refusalLabel (w key : String) : Option Nat :=
   | _ :: rest :: _ => (rest.takeWhile Char.isDigit).toNat?
   | _ => none
 
+/-- A located explanation. The source site and the two prose fields are
+separate until the line is printed. -/
+structure LocatedMessage where
+  heading : String
+  pos : Span
+  reason : String
+  deriving ToJson, FromJson
+
+def LocatedMessage.render (m : LocatedMessage) : String :=
+  s!"{m.heading} at [{m.pos.1},{m.pos.2}): {m.reason}"
+
 /-- **A pass refusal, located** (the verdict's text): the obligation a
 refusal of the single pass names (`expression at node l`, `return at node
 l`, an edge into node `t`, `footprint at node l`, `spine regions at node l`,
@@ -1122,7 +1144,7 @@ obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
 a statement's spine regions refused at their entry conditions (`spine
 regions`) at the declaration; none where the refusal names no node with a
 source span. -/
-def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
+def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option LocatedMessage := do
   let .ok plan := (f.plans[i]?).getD (.error "") | none
   let (name, _, r) := plan.parts
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
@@ -1151,40 +1173,40 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
         let operands := slots.filterMap fun k => c.context[k]?.map (SourceTypes.renderIn G)
         let ops := if operands.isEmpty then "" else s!"its operands' claims are {", ".intercalate operands}; "
         s!"\nobligation: {ops}its claim is {SourceTypes.renderIn G c.type}"
-    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim{claimed}"
+    return ⟨"source expression obligation", o.pos, s!"evidence search failed: no derivation of its {o.role} claim{claimed}"⟩
   if w.startsWith "return at node " then
     let o ← at_ (← refusalLabel w "return at node ")
     if (w.splitOn ": the promise").length > 1 then
-      return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: the promised argument is not within the promise at this return"
+      return ⟨"source expression obligation", o.pos, s!"evidence search failed: the promised argument is not within the promise at this return"⟩
     if (w.splitOn ": the postcondition").length > 1 then
-      return s!"source ensures refusal at [{o.pos.1},{o.pos.2}): a return of '{name}' does not establish the postcondition stated by its declaration"
-    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
+      return ⟨"source ensures refusal", o.pos, s!"a return of '{name}' does not establish the postcondition stated by its declaration"⟩
+    return ⟨"source expression obligation", o.pos, s!"evidence search failed: no derivation of its {o.role} claim"⟩
   if w.startsWith "edge from node " || w.startsWith "handler edge from node " then
     let l ← refusalLabel w "edge from node "
     let t ← refusalLabel w " to node " <|> refusalLabel w " into statement entry " <|> refusalLabel w " into node "
     let o ← at_ t
-    return s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): evidence search failed: the edge from node {l} does not establish the claims at this point"
+    return ⟨"source incoming edge obligation", o.pos, s!"evidence search failed: the edge from node {l} does not establish the claims at this point"⟩
   if w.startsWith "footprint at node " || w.startsWith "footprint by spine regions: " then
     let l ← refusalLabel w "footprint at node "
     let o := at_ l
     let pos := (o.map (·.pos)).getD (f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0))
-    return s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
+    return ⟨"source effect refusal", pos, s!"the footprint claimed for {what} is not established by its body"⟩
   if w.startsWith "spine regions at node " then
     let o ← at_ (← refusalLabel w "spine regions at node ")
-    return s!"source effect refusal at [{o.pos.1},{o.pos.2}): the frame stated for {what} is not established by its body: a step changes a location outside its spine regions beyond the statement's bound"
+    return ⟨"source effect refusal", o.pos, s!"the frame stated for {what} is not established by its body: a step changes a location outside its spine regions beyond the statement's bound"⟩
   -- The regions' entry conditions, refused before the walk (`passMember`),
   -- at the declaration, as `effectRefusal` words them.
   if w == "spine regions" then
     let (_, regions) ← r.regional
     let pos := f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0)
     if !regions.all (GraphCode.ArgumentPathTracking.regionKindOk (RequestJson.graph r.toRequest) r.inputs) then
-      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} {kindRefusal}"
+      return ⟨"source effect refusal", pos, s!"the frame stated for {what} {kindRefusal}"⟩
     if !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
-      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"
-    return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} is not established by its body"
+      return ⟨"source effect refusal", pos, s!"the frame stated for {what} reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"⟩
+    return ⟨"source effect refusal", pos, s!"the frame stated for {what} is not established by its body"⟩
   if w.startsWith "handler of node " then
     let o ← at_ (← refusalLabel w "handler of node ")
-    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
+    return ⟨"source expression obligation", o.pos, s!"evidence search failed: no derivation of its {o.role} claim"⟩
   none
 
 /-- A refused step's preconditions as the record's `preconditions` field
@@ -1224,6 +1246,61 @@ def returnFactsJson (d : SinglePass.ReturnFacts) : Json :=
       Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray),
     ("known", toJson d.known)]
 
+/-- The diagnostic of a graph node reads the request at that node.
+The checker supplies the facts from its failed derivation. -/
+structure EdgeRecord where
+  target : Nat
+  exit : Nat
+  required : Json
+  /-- The handler type selected from its landing slots and vocabulary. -/
+  thrown : Option Nat
+  deriving ToJson, FromJson
+
+structure NodeRecord where
+  unit : UnitRef
+  code : Option Nat
+  label : Nat
+  witness : String × Json
+  edge : Option EdgeRecord := none
+  deriving ToJson, FromJson
+
+structure RefusalRecord where
+  fields : Thunk (List (String × Json))
+  node : NodeRecord
+
+private def handlerTypes {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
+    (r : RequestJson.Request σ ι) (labels : List ι) (source : Nat) : List (Ty ι) :=
+  let landing : Option (List (Ty ι)) := do
+    let node ← r.program[source]?
+    let handler ← node.handler
+    let claim ← r.claims[handler.label]?
+    return claim.context.zipIdx.filterMap fun (ty,i) =>
+      if PointClaims.slot handler.mapping i == 0 then some ty else none
+  landing.getD [] ++ CertificateProducer.vocabulary (RequestJson.graph r) labels r.claims r.inputs
+
+def NodeRecord.read (q : NodeRecord) (f : FilePlans) (fuel : Nat) : Except String (List (String × Json)) := do
+  let some i := f.fr.unitReferences.finIdxOf? q.unit | throw "missing diagnostic unit"
+  let some (.ok (.graph _ _ r)) := f.plans[i.val]? | throw "missing diagnostic graph"
+  let (request, source) ← match q.code with
+    | none => pure (r.toRequest, r.sourceMap)
+    | some ci => do
+      let some code := r.codes[ci]? | throw "missing diagnostic closure"
+      let some origin := r.codeSources[ci]? | throw "missing diagnostic closure source"
+      pure (code.asRequest r.toRequest, origin.sourceMap)
+  match q.edge with
+    | none => return RequestJson.failureDiagnostic request fuel source (.expression q.label) ++ [q.witness]
+    | some edge => do
+      let thrown ← edge.thrown.mapM fun index => do
+        let some ty := (handlerTypes request r.searchLabels q.label)[index]?
+          | throw "missing handler type in diagnostic graph"
+        return ty
+      let fields := RequestJson.failureDiagnostic request fuel source (.edge q.label edge.target edge.exit)
+        (thrown := thrown)
+      let fields := fields.map fun (k,v) =>
+        if k == "destination" || (k == "source" && edge.target == q.label) then
+          (k,v.setObjVal! "requiredKnowledge" edge.required) else (k,v)
+      return fields ++ [q.witness]
+
 /-- **The record of a refusal carrying its diagnostic's data**, of unit
 `i`'s own graph or, after `code c: `, of its code `c`'s (over that graph's
 request and source map, `RequestJson.failureDiagnostic`), the deferred
@@ -1237,7 +1314,7 @@ fallback's refusal), the edge's obligation, its target requiring the facts
 it requires, with the edge's facts (`edgeFactsJson`). -/
 def FilePlans.refusalRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
     (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
-    Option (List (String × Json)) := do
+    Option RefusalRecord := do
   let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
   -- (the regional fallback's refusal, its walk's refusal after its prefix)
   let w := if w.startsWith "footprint by spine regions: " then (w.drop 28).toString else w
@@ -1253,35 +1330,63 @@ def FilePlans.refusalRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
       let code ← r.codeSources[c]?
       pure (RequestJson.failureDiagnostic (q.asRequest r.toRequest) fuel code.sourceMap e requirements (thrown := thrown))
     | none => pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap e requirements (thrown := thrown))
+  let node := fun label witness => do
+    if let some c := ci then
+      guard (r.codes[c]?.isSome && r.codeSources[c]?.isSome)
+    let unit ← f.fr.unitReferences[i]?
+    let q : NodeRecord := ⟨unit, ci, label, witness, none⟩
+    return (⟨Thunk.mk fun _ => (diagnostic (.expression label) [] none).getD [] ++ [witness], q⟩ : RefusalRecord)
   if w.startsWith "expression at node " then
     let l ← refusalLabel w "expression at node "
     let .step d ← (← detail).get | none
     guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
-    let fields ← diagnostic (.expression l) [] none
-    return fields ++ [("preconditions", preconditionsJson d)]
+    return ← node l ("preconditions", preconditionsJson d)
   if w.startsWith "return at node " then
     let l ← refusalLabel w "return at node "
     let .postcondition d ← (← detail).get | none
     guard (d.facts.any (!·.2))
-    let fields ← diagnostic (.expression l) [] none
-    return fields ++ [("postcondition", returnFactsJson d)]
+    return ← node l ("postcondition", returnFactsJson d)
   guard (w.startsWith "edge from node ")
   let .edge d ← (← detail).get | none
   let fields ← diagnostic (.edge d.source d.target d.exit) [(d.target, d.required)] d.thrown
-  return fields ++ [("edgeFacts", edgeFactsJson d)]
+  let request ← match ci with
+    | none => pure r.toRequest
+    | some c => r.codes[c]?.map (·.asRequest r.toRequest)
+  let thrown ← d.thrown.mapM fun ty => (handlerTypes request r.searchLabels d.source).idxOf? ty
+  let unit ← f.fr.unitReferences[i]?
+  let witness := ("edgeFacts", edgeFactsJson d)
+  let ref : NodeRecord := ⟨unit, ci, d.source, witness, some ⟨d.target, d.exit, toJson d.required, thrown⟩⟩
+  return ⟨Thunk.mk fun _ => fields ++ [witness], ref⟩
 
 /-- **A pass refusal as a check reports it**: with `located`, the source
 obligation it names (`locatedRefusal`) before the pass's own text `raw`,
 and, for a refusal carrying its diagnostic's data (`refusalRecord`), that
 obligation's record after them; the pass's own text alone otherwise. -/
+inductive PassDiagnostic where
+  | text (reason : String)
+  | before (unit : UnitRef) (rendered : String)
+  | expression (unit : UnitRef) (index : Nat) (exhausted : Bool) (rendered : String)
+  | located (message : LocatedMessage) (raw : String) (record : Option RefusalRecord)
+
+def PassDiagnostic.render : PassDiagnostic → String
+  | .text reason | .before _ reason | .expression _ _ _ reason => reason
+  | .located message raw record =>
+    let text := s!"{message.render}\n{raw}"
+    match record with
+    | none => text
+    | some fields => RequestJson.withDiagnostic text fields.fields.get
+
+def FilePlans.refusalData (f : FilePlans) (fuel : Nat) (located : Bool) (i : Nat) (w raw : String)
+    (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
+    PassDiagnostic :=
+  if !located then .text raw else match f.locatedRefusal i w with
+    | some message => .located message raw (f.refusalRecord fuel i w detail)
+    | none => .text raw
+
 def FilePlans.placeRefusal (f : FilePlans) (fuel : Nat) (located : Bool) (i : Nat) (w raw : String)
     (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
     String :=
-  if !located then raw else match f.locatedRefusal i w with
-    | some l => match f.refusalRecord fuel i w detail with
-      | some fields => RequestJson.withDiagnostic s!"{l}\n{raw}" fields
-      | none => s!"{l}\n{raw}"
-    | none => raw
+  (f.refusalData fuel located i w raw detail).render
 
 /-- The single forward pass over each member of a group
 (`FilePlans.passMember`), no certificate built: per member its line, its

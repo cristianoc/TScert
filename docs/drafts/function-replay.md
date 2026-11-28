@@ -38,11 +38,11 @@ invokeWorker(W):
   visit the requested groups and unresolved dependencies in callee-first order
   for each group:
     project its members, read slots, initializer and environmental inputs
-    hash its relative program and the named results it consumes
+    hash its program with symbolic sites and the named results it consumes
     if a finished check exists, use its verdict and proposals
     if only a proposal is needed, compute or replay its result
     if a check is needed, check its plan with its saved or freshly computed proposal
-    materialize the line in the current file and publish the physical verdict
+    resolve the stored references in the current file and print the verdict
 singlePass resolves the current verdicts of all dependencies and providers
 ```
 
@@ -101,10 +101,15 @@ caller's caller and an initializer calling the factory.
 
 ## Exact inputs and replay
 
-The program uses source-relative member, dependency and occurrence
-identities. A declaration's annotation coordinates belong to its
-declaration identity. The worker restores the current physical contract
-sites and dependency IDs when rendering a verdict. Fuel, search controls,
+The group, its local dependencies and its proposal order use declaration
+names. An overload carries its ordinal among the signatures of that
+name. Initialization has its own identity. The file front associates
+these references with the unit IDs printed by the worker. A declaration
+row identifies a type occurrence by its owning row and its ordinal in the
+type. Executable range endpoints carry the owning function, binding or
+initializer and their ordinal there. A point-specific proposal control uses
+the same lookup as its selected expression. Rendering a member contract
+looks up its current declaration. Fuel, search controls,
 interface demand, forced proposals and the counting flag enter the key.
 The [wire protocol](../REQUEST-PROTOCOL.md) defines the two operations.
 
@@ -113,6 +118,27 @@ is an ordered named proposal consumed by it. The driver hashes each line
 and keys the operation on its name, implementation identity, program
 digest and result digests. Consequently the input identity of a callee
 can change while the digest read by its caller stays equal.
+
+For example, `gathersKind` in Pretext’s `analysis.ts` reads `SPACE` and
+other segment-kind constants. With the initializer body in its key,
+adding `const DROPPED = 128` changes the program line. With binding
+results, initialization walks the statements in order, and the reader
+receives the same numeric literal types for the names it reads. The
+initialization check executes and the function check replays. A module
+cell contributes its storage contract. The group retains its ownership
+decision and dependency on initialization. An initializer in the same
+group, a class read from the initializer, or a proposal consumed by
+initialization keeps the original initialization code in the group.
+The [stage store](../STAGE-STORE.md) describes the binding inputs.
+
+The worker-order control sets `let cell: number | string = 1`, executes
+`cell = "oops"`, then binds `const saved = cell`. The function’s
+`const y: number = saved` is refused at the read of `saved`. Computing
+the binding in statement order preserves the intervening write. The
+capture list also determines slot numbers in a diagnostic. In
+`measureAnalysis`, the implicit `%ThrowUninitialized%` slot occupies
+a place in that list. Dropping it changes the depth and slot numbers of
+the precondition witness at node 118.
 
 A check publishes its exported answers with its verdict. A standalone
 proposal publishes those answers and its settlement result or planning
@@ -160,22 +186,89 @@ each input.
 
 A change inside one function can also change a module input. Add
 `const values: number[] = [x]` to the numeric leaf in the three-function
-example. Its published proposal stays equal. The parser supplies the
-module's first `ArrayProto` declaration. `EquationLowering.lowerSource`
-reads its presence when constructing every slice's built-ins and excluded
-keys. All three groups execute. Replaying across that change would require
-establishing that the changed equation environment gives the same meaning
-to the caller's requests.
+example. Its published proposal stays equal. The allocation in that leaf reads the array prototype.
+The caller reads the signature of the leaf and its published proposal. Its own
+number operations and the signature reach the same declarations across the
+edit. Only the leaf executes. At an imported call the checked store map also
+compares the built-ins in its two tables. Even an imported identity on numbers
+therefore depends on the presence and definition of the array prototype.
 
-Opaque refusals carry physical equation-head names. In Pretext's
+Adding an unused top-level `let cache: { [key: string]: number } = {}`
+to a numeric identity creates an initialization unit. Preparation determines
+whether the module owns `cache`. The identity neither queries that binding
+nor accesses an early cell. Its input omits the ownership answer and
+`%ThrowUninitialized%`. Only initialization executes.
+
+In a file with `unrelated() { return 1 }` followed by
+`refused(x: number | undefined): number { return x }`, replacing `1` by
+`12345` moves the refused return four UTF-16 code units. A stored string
+would print the old range. The stored return obligation carries the source
+site, its heading and the reason. Looking up the site prints `[118,119)`
+for the same obligation that printed `[114,115)` in the first file. Only
+the group for `unrelated` executes.
+
+A declaration used as a unique symbol also crosses module interfaces
+under its canonical symbol number. In a file beginning with
+`const key: unique symbol = Symbol()`, the declaration span is
+`[6,35]`. Inserting `// comment` and a newline before the declaration
+gives it the span `[17,46]` in the same module. Both spans name the same
+TypeScript declaration. The public interface's symbol number uses that span. The group reads
+its referenced symbols by declaration, orders them by symbolic identity and
+uses their indices as keys. The printer looks the indices up in the current
+interface. The comment executes zero groups.
+
+**What this duplicates.** The local unit reference identifies the same
+declaration as the front's lexical unit identity. It replaces the use
+of the public `name@offset` spelling in local group membership. The
+endpoint lookup replaces stride-based numbering and arithmetic
+relocation. Contract printing looks up each member declaration in the
+current file. `DeclarationIndex.slice` supplies the declaration rows for group-local equation lowering.
+The slice includes the reached declaration rows, the identities it sought
+without finding a definition, the missing binding and resolution lookups, and
+the referenced symbols. Its provider references resolve through the module
+interface to the current unit ID.
+
+`SourceRequest.searchLabels` starts with four primitives, input and result
+types, hints, the promised type, claims in the function and its closures,
+and expression obligations. It follows clause operands and looks up the
+union of a meet row’s clauses. The checked equation store bounds expansion by the search limit of 120. A failed
+union lookup contributes no label. The group constructs this store from its
+source slice. Its key records missing declaration definitions. Individual
+clause-interning hits and misses during search have no separate entry.
+
+In `intersection-binder.ts`, the body of `field<T>(x: T & A): number`
+reads `x.a`, with `A` declaring `a: number`. Its group-local store answers
+one clause lookup in the search vocabulary. Keeping just this key out of
+179 entries in the prepared request's intern index preserves all 55 labels
+and the accepted verdict. Removing just this key gives 54 labels and a
+refusal. Replay therefore depends on the answer to this lookup.
+
+The refusal uses the verifier's source map to
+identify the syntax that failed. Equation compaction has a distinct role
+in diagnostic printing because it chooses which occurrence names a head.
+
+Refusals with projected equation rows carry physical equation-head names. In Pretext's
 `prepare.ts` at `a6d353cf`, the refusal of `measureAnalysis` at
 `[38096,38112)` quotes a literal array at `[16039,16056)` in a frozen
-head. Relative serialization gives that head different coordinates.
-`PreparedFile.physicalVerdict` checks the refusing group on the prepared file
-front with published stand-ins fixed in both rounds, so no proposal is settled
-again and all initialization statements stay intact. It supplies diagnostic
-text only when both checks refuse. The stored relative result supplies its
-proposals to callers and avoids repeating settlement during relocation. A
-result whose acceptance or dependencies cannot be materialized requires a
-current physical check. Physical diagnostics therefore fall outside the
-one-check and bounded-input cost of an accepting chain.
+head. Both projections have the same 487 type rows. The slice spells label 130
+with the range `[0,0]`. The physical head takes its name from the
+`readonly number[]` type of the imported `scriptClassFacts` value.
+Printing that name requires resolving the representative selected by
+[equation compaction](../RECURSIVE-EQUATIONS.md).
+The failed step stores its unit, closure if any, graph label and
+precondition witness. At printing, `PreparedFile.diagnosticPlan`
+elaborates the diagnostic environment with its published stand-ins.
+`NodeRecord.read` selects that node and its equation projection. The
+printer uses the physical representative for label 130. The checker runs
+once on this refusal. Looking up the node can cost the elaboration of
+transitive bodies. A member that failed elaboration likewise identifies
+its plan by unit. An expression obligation, such as the cast of an object missing the `right`
+field in `invalid-interface-intersection-base.ts`, identifies its sequent by
+member and obligation index. An edge record carries the required knowledge,
+the edge witness and the handler type reference. Opaque pass text is stored verbatim.
+
+For a numeric identity with a written nonnegative safe-integer postcondition,
+adding an array allocation to an unrelated function leaves the refused return
+at the same source range. Its public diagnostic gains an array prototype in
+the claim context and the corresponding type rows. Resolving the source range
+alone cannot reconstruct those fields.

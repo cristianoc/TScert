@@ -246,7 +246,7 @@ structure SpinesApart where
   deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
-  start : Nat
+  start : SourcePoint
   bindings : List (Binding ι)
   bounds : List Bound
   facts : List Fact

@@ -79,7 +79,7 @@ asserted of the root binding (`current`), or else the declared read of the
 field from what the entry states of the shorter prefix, the root's claimed
 type for none (HOST-FAMILIES.md, "Entries"). -/
 @[nospecialize] def pathType (T : EquationStore.State) (fc : SourceClaims.Function Tree)
-    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) := do
+    (pos : SourcePoint) (root : String) (path : List PropKey) : Option (Ty Tree) := do
   let asserted := ((fc.entryCurrent.lookup pos).getD []).lookup root
   let raw ← ((fc.envs.lookup pos).getD []).lookup root
   let R ← (SourceClaims.resolve T raw).toOption
@@ -93,7 +93,7 @@ neither the declared read contract nor, for one member, the supported field
 predicates establish it. Inclusions are decided by `wi`: `within T`, read
 from its answers (`withinAt`). -/
 @[nospecialize] def ownWitnessWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
-    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    (fc : SourceClaims.Function Tree) (pos : SourcePoint) (root : String) (path : List PropKey) :
     m (Option (Ty Tree)) := do
   let some A := ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path) | return none
   let G := SourceTypes.graph T
@@ -131,7 +131,7 @@ asserts the field's contents, which the declared read
 establishes, and an edge after a step that may change the field (a call
 whose footprint changes any value) need not carry the link. -/
 @[nospecialize] def impliedWitnessWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
-    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    (fc : SourceClaims.Function Tree) (pos : SourcePoint) (root : String) (path : List PropKey) :
     m (Option (Ty Tree)) := do
   let some A := ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path) | return none
   let some field := path.getLast? | return none
@@ -153,7 +153,7 @@ asserted type or declared read, so that each segment's read link has its
 receiver (HOST-FAMILIES.md, "Entries"). Existing field predicates and
 declared contracts retain their own entry checks. -/
 @[nospecialize] def witnessClaimWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
-    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    (fc : SourceClaims.Function Tree) (pos : SourcePoint) (root : String) (path : List PropKey) :
     m (Option (Ty Tree)) := do
   if let some A ← ownWitnessWith T wi fc pos root path then return some A
   if path.isEmpty then return none
@@ -166,12 +166,12 @@ declared contracts retain their own entry checks. -/
   return if prefixed then pathType T fc pos root path else none
 
 /-- `witnessClaimWith` at the current store, reading `within`'s answers there. -/
-@[nospecialize] def witnessClaimHere (fc : SourceClaims.Function Tree) (pos : Nat) (root : String)
+@[nospecialize] def witnessClaimHere (fc : SourceClaims.Function Tree) (pos : SourcePoint) (root : String)
     (path : List PropKey) : Compiler (Option (Ty Tree)) := do
   let (T, gen) ← tableAt
   witnessClaimWith T (withinAt T gen) fc pos root path
 
-@[nospecialize] private def envCore (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
+@[nospecialize] private def envCore (fc : SourceClaims.Function Tree) (pos : SourcePoint) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do
   let T ← table
   let vars ← match fc.envs.lookup pos with

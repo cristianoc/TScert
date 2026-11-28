@@ -47,7 +47,7 @@ inductive ImplicitDependency where
   | arrayProto
   | stable
   | promise
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, ToJson
 
 /-- Whether a declaration identity is the one lowering reads for `d`. -/
 def ImplicitDependency.selects : ImplicitDependency → Json → Bool

@@ -67,33 +67,33 @@ inductive ClauseClaim where
 inside that point; separate copies of a finalizer have separate point IDs. -/
 structure PointData (ι : Type) where
   exprs : List (Span × Candidate ι) := []
-  envs : List (Nat × List (String × Candidate ι)) := []
-  entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
+  envs : List (SourcePoint × List (String × Candidate ι)) := []
+  entryCurrent : List (SourcePoint × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   /-- At a statement entry, the bounds a guard states: an array binding's name
   and an index binding's. -/
-  entryBounds : List (Nat × List (String × String × Bool)) := []
+  entryBounds : List (SourcePoint × List (String × String × Bool)) := []
   /-- At a statement entry, the linear facts the producer proposes: its
   guards, each a value binding's name, a path and a tag (ARITHMETIC.md,
   "Guarded clauses"), then terms of value bindings' names with integer
   coefficients, and a bound. -/
-  entryFacts : List (Nat × List ClauseClaim) := []
+  entryFacts : List (SourcePoint × List ClauseClaim) := []
   /-- At a statement entry, the quantified facts the producer proposes. -/
-  entryEvery : List (Nat × List EveryClaim) := []
+  entryEvery : List (SourcePoint × List EveryClaim) := []
   /-- At a statement entry, the region facts the producer proposes: pairs of
   value bindings' names (FOOTPRINTS.md, "Element regions"). -/
-  entryApart : List (Nat × List (String × String)) := []
+  entryApart : List (SourcePoint × List (String × String)) := []
   /-- At a statement entry, the spine separations the producer proposes,
   each guarded (ARITHMETIC.md, "Spine separation"). -/
-  entrySpinesApart : List (Nat × List SpinesApartClaim) := []
+  entrySpinesApart : List (SourcePoint × List SpinesApartClaim) := []
   /-- At a statement entry, the read links proposed: `(cell, value, field)`,
   stating that `value` holds the value read from `cell.field`. -/
-  entryLinks : List (Nat × List (String × String × String)) := []
+  entryLinks : List (SourcePoint × List (String × String × String)) := []
   /-- At a statement entry, the element reads proposed: `(guards, value, array, index)`. -/
-  entryElements : List (Nat × List ElementClaim) := []
+  entryElements : List (SourcePoint × List ElementClaim) := []
   /-- At a statement entry, the guarded field-read facts proposed:
   `(guards, value, object, field)`. -/
-  entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
+  entryFieldReads : List (SourcePoint × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -135,18 +135,18 @@ structure Function (ι : Type) where
   namePos : Span
   params : List (String × Candidate ι)
   ret : Candidate ι
-  envs : List (Nat × List (String × Candidate ι))
+  envs : List (SourcePoint × List (String × Candidate ι))
   exprs : List (Span × Candidate ι)
-  entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
+  entryCurrent : List (SourcePoint × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
-  entryBounds : List (Nat × List (String × String × Bool)) := []
-  entryFacts : List (Nat × List ClauseClaim) := []
-  entryEvery : List (Nat × List EveryClaim) := []
-  entryApart : List (Nat × List (String × String)) := []
-  entrySpinesApart : List (Nat × List SpinesApartClaim) := []
-  entryLinks : List (Nat × List (String × String × String)) := []
-  entryElements : List (Nat × List ElementClaim) := []
-  entryFieldReads : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
+  entryBounds : List (SourcePoint × List (String × String × Bool)) := []
+  entryFacts : List (SourcePoint × List ClauseClaim) := []
+  entryEvery : List (SourcePoint × List EveryClaim) := []
+  entryApart : List (SourcePoint × List (String × String)) := []
+  entrySpinesApart : List (SourcePoint × List SpinesApartClaim) := []
+  entryLinks : List (SourcePoint × List (String × String × String)) := []
+  entryElements : List (SourcePoint × List ElementClaim) := []
+  entryFieldReads : List (SourcePoint × List (List (String × List String × HeapKnowledge.GuardTag) × String × String × String)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The declaring unit's parameter rows for each internal constructor scheme. -/

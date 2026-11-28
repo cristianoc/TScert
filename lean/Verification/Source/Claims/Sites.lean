@@ -6,7 +6,7 @@ import Verification.Source.SourceFacts
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
-private abbrev Sites := List Nat × List Span × List Span
+private abbrev Sites := List SourcePoint × List Span × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 ++ b.2.2)
 /-- Field reads and fresh rest objects/arrays have independently checked
 result claims at their pattern spans. -/
@@ -113,7 +113,7 @@ private def stmtSites := stmtSitesCore true
 def allFunctionSites (f : Fragment.Fn) : Sites :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 
-def functionSites (f : Fragment.Fn) : List Nat × List Span :=
+def functionSites (f : Fragment.Fn) : List SourcePoint × List Span :=
   let sites := allFunctionSites f
   (sites.1, sites.2.1)
 
