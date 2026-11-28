@@ -29,7 +29,6 @@
 //   normal or keep-all under Strict line breaking, which line-break: auto selects
 //   (intl/lwbrk/LineBreaker.cpp:26-31).
 
-import { missing } from './checked.js'
 import {
   geckoLineBreakStatesPacked,
   geckoLineEotProperty,
@@ -131,8 +130,9 @@ export function isSpaceCombiningSequenceTail(text: string, from: number): Effect
 
 // aLangIsJapaneseOrChinese, nsTextFrameUtils.cpp:273-285, which takes only `-` after the subtag.
 export function isJapaneseOrChinese(language: string | null): Effects<{}, boolean> {   // PAPER: annotation
+  if (language === null) return false
   const breakLanguage = getBreakLanguage(language)
-  return (breakLanguage === 'ja' || breakLanguage === 'zh') && (language ?? missing()).charCodeAt(2) !== 0x5f
+  return (breakLanguage === 'ja' || breakLanguage === 'zh') && language.charCodeAt(2) !== 0x5f
 }
 
 // Gecko's East Asian test for the white-space run [start, end) (TransformWhiteSpaces,
@@ -140,10 +140,12 @@ export function isJapaneseOrChinese(language: string | null): Effects<{}, boolea
 // ones, both segment-break skip characters, or on a `ja` or `zh` page either one East Asian
 // punctuation. Only an interior run qualifies.
 export function isEastAsianSegmentBreak(text: string, start: number, end: number, japaneseOrChinese: boolean): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
-  if (start === 0 || end >= text.length) return false
+  if (!Number.isSafeInteger(end)) return false
+  if (end < 0 || start === 0 || end >= text.length) return false
   const widths = eastAsianWidths ??= unpackClasses('gecko/east_asian_width')
   let before: number
   let pos = start
+  /** @invariant safeInteger(end) && 0 <= end && end < text.length */
   do {
     const low = text.charCodeAt(pos - 1)
     const high = pos > 1 ? text.charCodeAt(pos - 2) : 0
@@ -151,9 +153,11 @@ export function isEastAsianSegmentBreak(text: string, start: number, end: number
   } while (hasProperty(before, DEFAULT_IGNORABLE) && pos > 0)
   let after: number
   pos = end
+  /** @invariant safeInteger(pos) && 0 <= pos && pos < text.length */
   do {
-    after = text.codePointAt(pos) ?? missing()
-    pos += after > 0xffff ? 2 : 1
+    after = text.codePointAt(pos)!
+    if (after > 0xffff) pos += 2
+    else pos += 1
   } while (hasProperty(after, DEFAULT_IGNORABLE) && pos < text.length)
   return (isSegmentBreakSkipChar(widths, before) && isSegmentBreakSkipChar(widths, after)) ||
     (japaneseOrChinese && (isEastAsianPunctuation(widths, before) || isEastAsianPunctuation(widths, after)))
@@ -179,6 +183,7 @@ export function isEastAsianSegmentBreak(text: string, start: number, end: number
 // that frame. In 16px Arial at 56px Firefox fits `see this` of items `see`, ` \u00AD`,
 // ` this word` on a 55.15px line, and not of `see `, `\u00AD `, `this word`, whose text in one node
 // it fits.
+/** @ensures result.orig.length === result.text.length */
 function transformText(input: string, is8bit: boolean, preserveWhiteSpace: boolean, frameStarts: number[] | null): Effects<{ "@state": "any" }, Transformed> {   // PAPER: annotation
   const len = input.length
   // The source index of each kept unit.
@@ -187,122 +192,170 @@ function transformText(input: string, is8bit: boolean, preserveWhiteSpace: boole
   let leftOut: Uint8Array | null = null
   let n = 0
   let dropsBidiControl = false
-  if (preserveWhiteSpace) {
-    // COMPRESS_NONE, nsTextFrameUtils.cpp:222-271
-    for (let i = 0; i < len; i++) {
-      const ch = input.charCodeAt(i)
-      if (!isDiscardable(ch, is8bit)) {
-        orig[n++] = i
-      } else {
-        skipped[i] = 1
-        dropsBidiControl ||= ch !== CH_SHY
-      }
-    }
-  } else {
-    // COMPRESS_WHITESPACE_NEWLINE, :272-387
-    let inWhitespace = false
-    let i = 0
-    // Where the frame a white-space run starts in ends, the next frame start past the run's start:
-    // the input's end for one text. Only a run reads it, so it is found where one starts.
-    let frame = 0
-    let frameEnd = frameStarts === null ? len : 0
-    while (i < len) {
-      const ch = input.charCodeAt(i)
-      if (!isSpaceOrTabOrSegmentBreak(ch) && !isDiscardable(ch, is8bit)) {
-        // A CR or FF is no white space to TransformText (:51-57), so it ends a white-space run and
-        // stays in the text run, which gives it no glyph and no advance: it skips a control
-        // character it doesn't draw as a hexbox, which is never CR and, in release and beta builds,
-        // no other one either (gfxFont::SplitAndInitTextRun, gfxFont.cpp:3620-3627 and :3874-3892;
-        // layout.css.control-characters.visible, StaticPrefList.yaml:10926-10929). Every Canvas
-        // measures it as a space (Firefox's: CanvasRenderingContext2D.cpp:4634-4637), so a layout
-        // of the source leaves it out. Kept as a control of no advance, as the profile keeps the
-        // other controls Firefox hides (hidesControlCharacters), it is text at a line's edges,
-        // where Firefox trims it, and takes text with CRLF off the simple line walk (RESEARCH.md,
-        // Dead Ends). A CR right before a line feed needs no mark: the run that starts there keeps
-        // that line feed, and the CR, a breakable space to the scan too, collapses into it.
-        if (ch === 0x0c || (ch === 0x0d && input.charCodeAt(i + 1) !== 0x0a)) (leftOut ??= new Uint8Array(len))[i] = 1
-        orig[n++] = i
-        inWhitespace = false
-        i++
-        continue
-      }
-      if (isSpaceOrTabOrSegmentBreak(ch)) {
-        if (i >= frameEnd) {
-          while (frame < (frameStarts ?? missing()).length && ((frameStarts ?? missing())[frame] ?? missing()) <= i) frame++
-          frameEnd = frame < (frameStarts ?? missing()).length ? ((frameStarts ?? missing())[frame] ?? missing()) : len
-        }
-        let keepLastSpace = false
-        let hasSegmentBreak = ch === 0x0a
-        let trailingDiscardables = 0
-        // How many characters the run holds that the text run drops.
-        let dropped = 0
-        // A run that goes on from the frame before, after the characters that frame's run dropped at
-        // its end, leaves out white space that doesn't touch the unit the run kept.
-        const goesOnPastDropped = inWhitespace && i > 0 && isDiscardable(input.charCodeAt(i - 1), is8bit)
-        let j = i + 1
-        for (; j < frameEnd; j++) {
-          const c = input.charCodeAt(j)
-          if (c === 0x0a) hasSegmentBreak = true
-          else if (isDiscardable(c, is8bit)) dropped++
-          else if (!isSpaceOrTab(c)) break
-        }
-        while (isDiscardable(input.charCodeAt(j - 1), is8bit)) { j--; trailingDiscardables++ } // :334-336
-        if (!is8bit && input.charCodeAt(j - 1) === 0x20 && j < frameEnd && isSpaceCombiningSequenceTail(input, j)) { keepLastSpace = true; j-- } // :339-345
-        // TransformWhiteSpaces over [i, j), :84-209. The runs it deletes whole, next to a ZWSP or
-        // between East Asian characters (:120-150), are gone already (removeSkippableSegmentBreaks in
-        // src/analysis.ts), so a run keeps one space. A space or tab in a run with a segment break
-        // goes (:152-162), and the run's first segment break stays as a space (:181-193).
-        for (let k = i; k < j; k++) {
-          const c = input.charCodeAt(k)
-          if (isDiscardable(c, is8bit)) {
-            skipped[k] = 1
-            dropsBidiControl ||= c !== CH_SHY
-          } else if (inWhitespace || (hasSegmentBreak && isSpaceOrTab(c))) {
-            skipped[k] = 1
-            // Where the run reads through a dropped character, white space it leaves out may not
-            // touch the unit it keeps, so collapsing adjacent white space wouldn't drop it.
-            if (dropped > trailingDiscardables || goesOnPastDropped) (leftOut ??= new Uint8Array(len))[k] = 1
-          } else {
-            orig[n++] = k
-            inWhitespace = true
-          }
-        }
-        if (keepLastSpace) orig[n++] = j++
-        for (let k = 0; k < trailingDiscardables; k++) {
-          dropsBidiControl ||= input.charCodeAt(j) !== CH_SHY
-          skipped[j++] = 1
-        }
-        i = j
-        continue
-      }
-      skipped[i] = 1 // :370-379
-      dropsBidiControl ||= ch !== CH_SHY
-      inWhitespace = false
-      i++
-    }
-  }
   // The kept units, as slices of the input where they run unchanged: in collapsed white space, a kept
   // tab or segment break becomes a space.
   let text = ''
   let sliceStart = 0
   let sliceEnd = 0
-  for (let k = 0; k < n; k++) {
-    const i = orig[k]
-    if (i === undefined) throw new RangeError('missing value')
-    const ch = input.charCodeAt(i)
-    if (!preserveWhiteSpace && (ch === 0x09 || ch === 0x0a)) {
-      text += input.slice(sliceStart, sliceEnd) + ' '
-      sliceStart = sliceEnd = i + 1
-    } else if (i !== sliceEnd) {
-      text += input.slice(sliceStart, sliceEnd)
-      sliceStart = i
-      sliceEnd = i + 1
-    } else {
-      sliceEnd++
+  if (preserveWhiteSpace) {
+    // COMPRESS_NONE, nsTextFrameUtils.cpp:222-271
+    /** @invariant safeInteger(i) && safeInteger(n) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i <= len && 0 <= n && n <= i && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n */
+    for (let i = 0; i < len; i++) {
+      const ch = input.charCodeAt(i)
+      if (!isDiscardable(ch, is8bit)) {
+        orig[n++] = i
+        if (i !== sliceEnd) {
+          text += input.slice(sliceStart, sliceEnd)
+          sliceStart = i
+          sliceEnd = i + 1
+        } else {
+          sliceEnd++
+        }
+      } else {
+        skipped[i] = 1
+        dropsBidiControl ||= ch !== CH_SHY
+      }
     }
+    text += input.slice(sliceStart, sliceEnd)
+    const kept = orig.subarray(0, n)
+    return { text, orig: kept, skipped, leftOut, dropsBidiControl }
+  }
+  // COMPRESS_WHITESPACE_NEWLINE, :272-387
+  let inWhitespace = false
+  let i = 0
+  // Where the frame a white-space run starts in ends, the next frame start past the run's start:
+  // the input's end for one text. Only a run reads it, so it is found where one starts.
+  let frame = 0
+  let frameEnd = frameStarts === null ? len : 0
+  /** @invariant safeInteger(i) && safeInteger(n) && safeInteger(len) && safeInteger(frame) && safeInteger(frameEnd) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i <= len && 0 <= n && n <= i && 0 <= frame && 0 <= frameEnd && frameEnd <= len && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+   *  @invariant frameStarts !== null || frameEnd === len */
+  while (i < len) {
+    const ch = input.charCodeAt(i)
+    if (!isSpaceOrTabOrSegmentBreak(ch) && !isDiscardable(ch, is8bit)) {
+      // A CR or FF is no white space to TransformText (:51-57), so it ends a white-space run and
+      // stays in the text run, which gives it no glyph and no advance: it skips a control
+      // character it doesn't draw as a hexbox, which is never CR and, in release and beta builds,
+      // no other one either (gfxFont::SplitAndInitTextRun, gfxFont.cpp:3620-3627 and :3874-3892;
+      // layout.css.control-characters.visible, StaticPrefList.yaml:10926-10929). Every Canvas
+      // measures it as a space (Firefox's: CanvasRenderingContext2D.cpp:4634-4637), so a layout
+      // of the source leaves it out. Kept as a control of no advance, as the profile keeps the
+      // other controls Firefox hides (hidesControlCharacters), it is text at a line's edges,
+      // where Firefox trims it, and takes text with CRLF off the simple line walk (RESEARCH.md,
+      // Dead Ends). A CR right before a line feed needs no mark: the run that starts there keeps
+      // that line feed, and the CR, a breakable space to the scan too, collapses into it.
+      if (ch === 0x0c || (ch === 0x0d && input.charCodeAt(i + 1) !== 0x0a)) (leftOut ??= new Uint8Array(len))[i] = 1
+      const nextI = i + 1
+      orig[n++] = i
+      if (i !== sliceEnd) {
+        text += input.slice(sliceStart, sliceEnd)
+        sliceStart = i
+      }
+      sliceEnd = nextI
+      inWhitespace = false
+      i = nextI
+      continue
+    }
+    if (isSpaceOrTabOrSegmentBreak(ch)) {
+      if (frameStarts !== null && i >= frameEnd) {
+        /** @invariant safeInteger(i) && safeInteger(n) && safeInteger(len) && safeInteger(frame) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i < len && 0 <= n && n <= i && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n */
+        while (frame < frameStarts.length && frameStarts[frame]! <= i) frame++
+        const nextFrame = frame < frameStarts.length ? frameStarts[frame]! : len
+        frameEnd = Number.isSafeInteger(nextFrame) && nextFrame > i && nextFrame < len ? nextFrame : len
+      }
+      let hasSegmentBreak = ch === 0x0a
+      let trailingDiscardables = 0
+      // How many characters the run holds that the text run drops.
+      let dropped = 0
+      // A run that goes on from the frame before, after the characters that frame's run dropped at
+      // its end, leaves out white space that doesn't touch the unit the run kept.
+      const goesOnPastDropped = inWhitespace && i > 0 && isDiscardable(input.charCodeAt(i - 1), is8bit)
+      let j = i + 1
+      /** @invariant safeInteger(i) && safeInteger(j) && safeInteger(n) && safeInteger(frame) && safeInteger(frameEnd) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i + 1 <= j && j <= frameEnd && frameEnd <= len && 0 <= n && n <= i && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+       *  @invariant frameStarts !== null || frameEnd === len */
+      for (; j < frameEnd; j++) {
+        const c = input.charCodeAt(j)
+        if (c === 0x0a) hasSegmentBreak = true
+        else if (isDiscardable(c, is8bit)) dropped++
+        else if (!isSpaceOrTab(c)) break
+      }
+      /** @invariant safeInteger(i) && safeInteger(j) && safeInteger(n) && safeInteger(frame) && safeInteger(trailingDiscardables) && safeInteger(frameEnd) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i + 1 <= j && 0 <= trailingDiscardables && j + trailingDiscardables <= frameEnd && frameEnd <= len && 0 <= n && n <= i && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+       *  @invariant frameStarts !== null || frameEnd === len */
+      while (j > i + 1 && isDiscardable(input.charCodeAt(j - 1), is8bit)) { j--; trailingDiscardables++ } // :334-336
+      const keepLastSpace = !is8bit && input.charCodeAt(j - 1) === 0x20 && j < frameEnd && isSpaceCombiningSequenceTail(input, j) ? 1 : 0 // :339-345
+      j -= keepLastSpace
+      // TransformWhiteSpaces over [i, j), :84-209. The runs it deletes whole, next to a ZWSP or
+      // between East Asian characters (:120-150), are gone already (removeSkippableSegmentBreaks in
+      // src/analysis.ts), so a run keeps one space. A space or tab in a run with a segment break
+      // goes (:152-162), and the run's first segment break stays as a space (:181-193).
+      let k = i
+      /** @invariant safeInteger(i) && safeInteger(j) && safeInteger(k) && safeInteger(n) && safeInteger(frame) && safeInteger(frameEnd) && safeInteger(keepLastSpace) && safeInteger(trailingDiscardables) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= i && i <= k && k <= j && 0 <= keepLastSpace && keepLastSpace <= 1 && 0 <= trailingDiscardables && j + keepLastSpace + trailingDiscardables <= frameEnd && frameEnd <= len && 0 <= n && n <= k && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+       *  @invariant frameStarts !== null || frameEnd === len */
+      while (k < j) {
+        const c = input.charCodeAt(k)
+        if (isDiscardable(c, is8bit)) {
+          skipped[k] = 1
+          dropsBidiControl ||= c !== CH_SHY
+          k++
+          continue
+        }
+        if (inWhitespace || (hasSegmentBreak && isSpaceOrTab(c))) {
+          skipped[k] = 1
+          // Where the run reads through a dropped character, white space it leaves out may not
+          // touch the unit it keeps, so collapsing adjacent white space wouldn't drop it.
+          if (dropped > trailingDiscardables || goesOnPastDropped) (leftOut ??= new Uint8Array(len))[k] = 1
+          k++
+          continue
+        }
+        inWhitespace = true
+        const nextK = k + 1
+        orig[n++] = k
+        if (c === 0x09 || c === 0x0a) {
+          text += input.slice(sliceStart, sliceEnd) + ' '
+          sliceStart = sliceEnd = nextK
+          k = nextK
+          continue
+        }
+        if (k !== sliceEnd) {
+          text += input.slice(sliceStart, sliceEnd)
+          sliceStart = k
+        }
+        sliceEnd = nextK
+        k = nextK
+      }
+      let pendingLastSpace = keepLastSpace
+      /** @invariant safeInteger(j) && safeInteger(n) && safeInteger(frame) && safeInteger(frameEnd) && safeInteger(pendingLastSpace) && safeInteger(trailingDiscardables) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= pendingLastSpace && pendingLastSpace <= 1 && 0 <= trailingDiscardables && 0 <= j && j + pendingLastSpace + trailingDiscardables <= frameEnd && frameEnd <= len && 0 <= n && n <= j && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+       *  @invariant frameStarts !== null || frameEnd === len */
+      while (pendingLastSpace > 0) {
+        orig[n++] = j
+        if (j !== sliceEnd) {
+          text += input.slice(sliceStart, sliceEnd)
+          sliceStart = j
+          j++
+          sliceEnd = j
+          pendingLastSpace = 0
+          continue
+        }
+        j++
+        sliceEnd = j
+        pendingLastSpace = 0
+      }
+      /** @invariant safeInteger(j) && safeInteger(k) && safeInteger(n) && safeInteger(frame) && safeInteger(frameEnd) && safeInteger(trailingDiscardables) && safeInteger(len) && safeInteger(sliceStart) && safeInteger(sliceEnd) && 0 <= k && k <= trailingDiscardables && 0 <= j && j + (trailingDiscardables - k) <= frameEnd && frameEnd <= len && 0 <= n && n <= j && 0 <= frame && len === input.length && orig.length === len && 0 <= sliceStart && sliceStart <= sliceEnd && sliceEnd <= len && text.length + (sliceEnd - sliceStart) === n
+       *  @invariant frameStarts !== null || frameEnd === len */
+      for (let k = 0; k < trailingDiscardables; k++) {
+        dropsBidiControl ||= input.charCodeAt(j) !== CH_SHY
+        skipped[j++] = 1
+      }
+      i = j
+      continue
+    }
+    skipped[i] = 1 // :370-379
+    dropsBidiControl ||= ch !== CH_SHY
+    inWhitespace = false
+    i++
   }
   text += input.slice(sliceStart, sliceEnd)
-  return { text, orig: orig.subarray(0, n), skipped, leftOut, dropsBidiControl }
+  const kept = orig.subarray(0, n)
+  return { text, orig: kept, skipped, leftOut, dropsBidiControl }
 }
 
 // IsTrimmableSpace, nsTextFrame.cpp:921-942, in normal white space.
@@ -339,7 +392,7 @@ function extendCluster(g: Glyphs, i: number): Effects<{ "g.clusterStart[*]": "gr
 // reads the word alone (intl/lwbrk/Segmenter.cpp:174-187). Below U+0300 only CR and LF share a
 // cluster, which the generator checks, and words hold neither, so a word of such units has a
 // cluster at every unit. `ends` has room for the word's clusters.
-/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= text.length */
+/** @requires safeInteger(from) && safeInteger(to) && 0 <= from && from <= to && to <= text.length && to - from <= ends.length */
 function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: number, graphemeTable: GraphemeTable, ends: Int32Array): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any"; "ends[*]": "grow"; "ends[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   let ch0 = text.charCodeAt(from)
   if (to - from > 1 && isSurrogatePair(ch0, text.charCodeAt(from + 1))) ch0 = combine(ch0, text.charCodeAt(from + 1))
@@ -347,12 +400,18 @@ function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: numbe
   let low = from
   while (low < to && text.charCodeAt(low) < 0x300) low++
   const count = low === to ? 0 : findGraphemeEnds(graphemeTable, text, from, to, ends)
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(k) && safeInteger(pos) && 0 <= from && from <= pos && 0 <= k && k <= pos - from && to - from <= ends.length */
   for (let k = 0, pos = from; pos < to; k++) {
     const ch = text.charCodeAt(pos)
     if (ch === 0x20 || ch === 0x3000) g.isSpace[pos] = 1
     else if (ch === 0x09af && pos > from && text.charCodeAt(pos - 1) === 0x09cd) extendCluster(g, pos) // BENGALI_YA after BENGALI_VIRAMA
-    const end = count === 0 ? pos + 1 : (ends[k] ?? missing())
-    for (pos++; pos < end; pos++) extendCluster(g, pos)
+    if (count === 0) {
+      pos++
+    } else {
+      const end = ends[k]!
+      /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(k) && safeInteger(pos) && safeInteger(end) && 0 <= from && from <= pos && 0 <= k && k + 1 <= pos - from && to - from <= ends.length && end <= 2147483647 */
+      for (pos++; pos < end; pos++) extendCluster(g, pos)
+    }
   }
 }
 
@@ -363,10 +422,11 @@ function setupClusterBoundaries(g: Glyphs, text: string, from: number, to: numbe
 // IsBoundarySpace and SetupClusterBoundaries(uint8_t) (gfxFont.cpp:771-795) answer as the char16_t
 // versions, so 8-bit text and 8-bit words take the char16_t path, at any word length (:3569-3577,
 // :3817-3821).
+/** @requires text.length <= ends.length */
 function splitAndInitTextRun(g: Glyphs, text: string, graphemeTable: GraphemeTable, ends: Int32Array): Effects<{ "g.clusterStart[*]": "grow"; "g.clusterStart[#]": "any"; "g.isSpace[*]": "grow"; "g.isSpace[#]": "any"; "ends[*]": "grow"; "ends[#]": "any"; "@state": "any" }, void> {   // PAPER: annotation
   const end = text.length
   let wordStart = 0
-  /** @invariant safeInteger(wordStart) && safeInteger(i) && safeInteger(end) && 0 <= wordStart && wordStart <= i && i <= end && end === text.length */
+  /** @invariant safeInteger(wordStart) && safeInteger(i) && safeInteger(end) && 0 <= wordStart && wordStart <= i && i <= end && end === text.length && end <= ends.length */
   for (let i = 0; i < end; i++) {
     const ch = text.charCodeAt(i)
     const boundary = (ch === 0x20 || ch === 0xa0) && !(i + 1 < end && isClusterExtender(text.charCodeAt(i + 1)))
@@ -460,10 +520,11 @@ function markWordBreaks(line: LineData, text: string, start: number, end: number
   let cacheAt = 0
   let cacheOffset = 0
 
+  /** @invariant safeInteger(cacheAt) && 0 <= cacheAt */
   for (;;) {
     // Break points cached by a complex-script run (:840-855).
     if (cacheAt < cache.length) {
-      const firstPos = (cache[cacheAt] ?? missing()) - cacheOffset
+      const firstPos = cache[cacheAt]! - cacheOffset
       cacheAt++
       let i = 0
       while (i !== firstPos) {
@@ -671,6 +732,7 @@ export function getGeckoLineBreaks(
   for (let i = 0; i < len && is8bit; i++) is8bit = source.charCodeAt(i) < 0x100
   // CharacterDataBuffer::SetTo stores 1b text when every unit is below 256 (CharacterDataBuffer.cpp:235-286).
   const tr = transformText(source, is8bit, preserveWhiteSpace, frameStarts)
+  const orig = tr.orig
   const n = tr.text.length
   if (n === 0) return { breaks: flags, leftOut: null, dropsBidiControl: tr.dropsBidiControl }
 
@@ -682,9 +744,9 @@ export function getGeckoLineBreaks(
 
   const line = lineData ??= { classes: unpackClasses('gecko/line'), states: unpackTable(geckoLineBreakStatesPacked) }
   const state = getBreakStates(line, tr.text, is8bit, hasCompressedLeadingWhitespace(source, tr.skipped, is8bit, preserveWhiteSpace), keepAll)
+  /** @invariant safeInteger(t) && safeInteger(n) && 1 <= t && t <= n && n === orig.length */
   for (let t = 1; t < n; t++) {
-    const rawPos = tr.orig[t]
-    if (rawPos === undefined) throw new RangeError('missing value')
+    const rawPos = orig[t]!
     const normal = state[t] === 1 && (g.clusterStart[t] === 1 || g.isSpace[t - 1] === 1)
     const afterSoftHyphen = tr.skipped[rawPos - 1] === 1 && source.charCodeAt(rawPos - 1) === CH_SHY
     if (normal || afterSoftHyphen) {

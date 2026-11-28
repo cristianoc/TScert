@@ -86,8 +86,8 @@ function needsComplexTextPath(text: string): Effects<{}, boolean> {   // PAPER: 
     i += codePoint > 0xFFFF ? 2 : 1
     if (codePoint === 0x200D && previousIsEmoji) return true
     previousIsEmoji = codePoint > 0xFFFF && extendedPictographicRe.test(String.fromCodePoint(codePoint))
-    for (let range = 0; range < complexTextPathRanges.length && codePoint >= complexTextPathRanges[range]!; range += 2) {
-      if (codePoint <= (complexTextPathRanges[range + 1] ?? missing())) return true
+    for (let range = 0; range + 1 < complexTextPathRanges.length && codePoint >= complexTextPathRanges[range]!; range += 2) {
+      if (codePoint <= complexTextPathRanges[range + 1]!) return true
     }
   }
   return false
@@ -143,13 +143,13 @@ function getScriptFacts(c: number): Effects<{ "@state": "any" }, number> {   // 
 
 // The facts of the character at text[i], with the scripts it has there, as Blink reads them
 // (GetScripts, script_run_iterator.cc:118-215).
+/** @requires safeInteger(i) && 0 <= i && i < text.length */
 function getScriptFactsAt(text: string, i: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
-  const c = text.codePointAt(i)
-  if (c === undefined) throw new RangeError('missing value')
+  const c = text.codePointAt(i)!
   const facts = getScriptFacts(c)
   const next = i + (c > 0xFFFF ? 2 : 1)
   if ((facts & TAKES_MARK_SCRIPTS) !== 0 && next < text.length) {
-    const markScripts = getScriptFacts(text.codePointAt(next) ?? missing()) >> MARK_SCRIPTS_SHIFT & ANY_SCRIPT
+    const markScripts = getScriptFacts(text.codePointAt(next)!) >> MARK_SCRIPTS_SHIFT & ANY_SCRIPT
     if (markScripts !== 0) return facts & ~ANY_SCRIPT | markScripts
   }
   return facts
@@ -189,16 +189,23 @@ function resetScriptRuns(): Effects<{ "@state": "any" }, void> {   // PAPER: ann
 // that run has ended, among the last 32 opened, and closes the ones opened since; its own
 // stays open, so a second closing bracket goes back to that run too (OpenBracket,
 // CloseBracket and FixupStack, :431-489, :567-590).
+/** @requires safeInteger(to) && to <= text.length */
 function readScriptRuns(text: string, to: number): Effects<{ "@state": "any" }, number> {   // PAPER: annotation
-  while (scriptRead < to || (scriptMask === ANY_SCRIPT && scriptRead < text.length)) {
-    const c = text.codePointAt(scriptRead)
-    if (c === undefined) throw new RangeError('missing value')
-    const facts = getScriptFactsAt(text, scriptRead)
+  let read = scriptRead
+  if (!(Number.isSafeInteger(read) && 0 <= read)) return scriptMask
+  /** @invariant safeInteger(read) && 0 <= read && safeInteger(to) && to <= text.length */
+  while (read < to || (scriptMask === ANY_SCRIPT && read < text.length)) {
+    const c = text.codePointAt(read)!
+    let nextRead: number
+    if (c > 0xFFFF) nextRead = read + 2
+    else nextRead = read + 1
+    const facts = getScriptFactsAt(text, read)
     let scripts = facts & ANY_SCRIPT
     // No bracket's code is as low as a run's script.
     const opened = (facts & CLOSING_BRACKET) !== 0 ? scriptOpenBrackets.lastIndexOf(c - (facts >> OPENING_BRACKET_SHIFT)) : -1
     if (opened >= 0) {
-      if (scriptOpenBrackets[opened + 1] !== 0) scripts = scriptOpenBrackets[opened + 1] ?? missing()
+      const saved = scriptOpenBrackets[opened + 1]
+      if (saved !== undefined && saved !== 0) scripts = saved
       scriptOpenBrackets.splice(opened + 2)
     }
     if ((scriptMask & scripts) !== 0) {
@@ -206,7 +213,7 @@ function readScriptRuns(text: string, to: number): Effects<{ "@state": "any" }, 
     } else {
       // The run that ends resolves to its first script (ResolveCurrentScript, :639-642), which
       // the brackets opened in it take.
-      /** @invariant safeInteger(k) && k < scriptOpenBrackets.length */
+      /** @invariant safeInteger(k) && k < scriptOpenBrackets.length && safeInteger(nextRead) && 0 <= nextRead && safeInteger(to) && to <= text.length */
       for (let k = scriptOpenBrackets.length - 1; k > 0 && scriptOpenBrackets[k] === 0; k -= 2) {
         scriptOpenBrackets[k] = scriptMask & -scriptMask
       }
@@ -216,8 +223,9 @@ function readScriptRuns(text: string, to: number): Effects<{ "@state": "any" }, 
       if (scriptOpenBrackets.length === 64) scriptOpenBrackets.splice(0, 2)
       scriptOpenBrackets.push(c, 0)
     }
-    scriptRead += c > 0xFFFF ? 2 : 1
+    read = nextRead
   }
+  scriptRead = read
   return scriptMask
 }
 
@@ -228,10 +236,13 @@ function readScriptRuns(text: string, to: number): Effects<{ "@state": "any" }, 
 // text[at - 2], and ends there; a closing bracket, or a character of several scripts, takes its
 // script from the runs before it, which are then read.
 function spaceSharesScriptRun(text: string, at: number, end: number): Effects<{ "@state": "any" }, boolean> {   // PAPER: annotation
+  if (!Number.isSafeInteger(at) || at < 0 || at >= text.length) return true   // PAPER: workaround (analysis.ts @ensures): TextAnalysis does not prove starts[mi] - ownStart + text.length <= own.length
   let scripts = getScriptFactsAt(text, at) & ANY_SCRIPT
   // A default ignorable with a script of its own, as U+3164, counts as the word's first letter.
-  for (let first = at; scripts === ANY_SCRIPT && first + 1 < end && hasProperty(text.charCodeAt(first), DEFAULT_IGNORABLE); first++) scripts = getScriptFactsAt(text, first + 1) & ANY_SCRIPT
+  /** @invariant safeInteger(first) && safeInteger(at) && 0 <= at && at <= first && first < text.length && at < text.length */
+  for (let first = at; scripts === ANY_SCRIPT && first + 1 < end && first + 1 < text.length && hasProperty(text.charCodeAt(first), DEFAULT_IGNORABLE); first++) scripts = getScriptFactsAt(text, first + 1) & ANY_SCRIPT
   if (scripts === ANY_SCRIPT) return true
+  /** @invariant safeInteger(i) && safeInteger(at) && i < text.length && 0 <= at && at < text.length */
   for (let i = at - 2; i >= 0; i--) {
     if ((text.charCodeAt(i) & 0xFC00) === 0xDC00 && i > 0) i--
     const facts = getScriptFactsAt(text, i)
@@ -268,8 +279,10 @@ function getUnspacedGraphemes(text: string, start: number, end: number, grapheme
   const ends = new Int32Array(end - start)
   const count = findGraphemeEnds(graphemeTable, text, start, end, ends)
   let unspaced: number[] | null = null
+  /** @invariant safeInteger(g) && safeInteger(at) && safeInteger(count) && 0 <= g && g <= count && count <= ends.length */
   for (let g = 0, at = start; g < count; at = ends[g++]!) {
-    const joins = !useRuns ? (getScriptFacts(text.codePointAt(at) ?? missing()) & CURSIVE_LETTER) !== 0
+    if (at < 0 || at >= text.length) break
+    const joins = !useRuns ? (getScriptFacts(text.codePointAt(at)!) & CURSIVE_LETTER) !== 0
       : readScriptRuns(text, at + 1) === CURSIVE_SCRIPT && text.charCodeAt(at) !== 0xA0
     if (joins) (unspaced ??= []).push(g)
   }
@@ -282,7 +295,7 @@ function getUnspacedGraphemes(text: string, start: number, end: number, grapheme
 export type ParagraphLists = {
   readonly widths: Dense<number[]>
   readonly segmentFlags: Uint8Array
-  readonly breakableFitAdvances: (number[] | null)[]
+  readonly breakableFitAdvances: Dense<(number[] | null)[]>
 }
 
 // PAPER: annotation
@@ -345,14 +358,14 @@ function getTailKerning(item: string, measurement: FontMeasurement, spaceWidth: 
 // side as measured alone and takes none (unfitHyphenRetreat).
 /** @requires safeInteger(analysisIndex) && safeInteger(to) && 0 <= analysisIndex && analysisIndex < to && to <= analysis.flags.length && to <= analysis.texts.length */
 function getJoinedNarrowing(analysis: TextAnalysis, analysisIndex: number, to: number, before: string | null, beforeMetrics: SegmentMetrics | null, measurement: FontMeasurement, emojiCorrection: number, lineFitEpsilon: number): Effects<{ fields: "any"; "@state": "any" }, number> {   // PAPER: annotation
-  if (before === null) return 0
+  if (before === null || beforeMetrics === null) return 0
   const { texts, flags } = analysis
   let next = analysisIndex + 1
   /** @invariant safeInteger(next) && safeInteger(to) && 0 <= next && next <= to && to <= flags.length && to <= texts.length */
   while (next < to && (flags[next]! & KIND_BITS) === SOFT_HYPHEN) next++
   if (next >= to || (flags[next]! & KIND_BITS) !== TEXT) return 0
   const after = texts[next]!
-  const apart = getCorrectedSegmentWidth(before, beforeMetrics ?? missing(), measurement, emojiCorrection) + getTextWidth(after, measurement, emojiCorrection)
+  const apart = getCorrectedSegmentWidth(before, beforeMetrics, measurement, emojiCorrection) + getTextWidth(after, measurement, emojiCorrection)
   const together = getTextWidth(before + after, measurement, emojiCorrection)
   return apart - together > lineFitEpsilon ? apart - together : 0
 }
@@ -361,7 +374,7 @@ function getJoinedNarrowing(analysis: TextAnalysis, analysisIndex: number, to: n
 /** @requires safeInteger(base) && safeInteger(count) && 0 <= base && 0 <= count && base + count <= advances.length
  *  @ensures result.length === count
  *  @ensures forall k in result: advances[base + k] === null || result[k] === null || advances[base + k].length <= result[k].length */
-function emptyExtrasFor(advances: (number[] | null)[], base: number, count: number): Modifies<{}, Fresh<Dense<(number[] | null)[]>>> {   // PAPER: annotation
+function emptyExtrasFor(advances: Dense<(number[] | null)[]>, base: number, count: number): Modifies<{}, Fresh<Dense<(number[] | null)[]>>> {   // PAPER: annotation
   const res: Dense<(number[] | null)[]> = []
   const nil: number[] | null = null
   let k = 0
@@ -370,10 +383,10 @@ function emptyExtrasFor(advances: (number[] | null)[], base: number, count: numb
   for (; k < count; k++) {
     const idx = base + k
     const a = advances[idx]
-    if (a === undefined) throw new RangeError('index')
     if (a === null) {
       res.push(nil)
     } else {
+      void a!
       res.push(nil)
     }
   }
@@ -431,11 +444,10 @@ function adjustFitAdvances(
   }
   if (extraSpacings.length !== 0) {
     const copy = fitAdvances.slice()
-    /** @invariant copy.length === advances.length */
+    if (extraSpacings.length > copy.length) throw new RangeError('index')
+    /** @invariant copy.length === advances.length && extraSpacings.length <= copy.length */
     for (let k = 0; k < extraSpacings.length; k++) {
-      const value = (copy[k] ?? missing()) + extraSpacings[k]! * letterSpacing
-      if ((k & 0x7fffffff) !== k || k >= copy.length) throw new RangeError('index')
-      copy[k] = value
+      copy[k] = copy[k]! + extraSpacings[k]! * letterSpacing
     }
     fitAdvances = copy
   }
@@ -444,9 +456,8 @@ function adjustFitAdvances(
     /** @invariant copy.length === advances.length */
     for (let k = 0; k < unspaced.length; k++) {
       const idx = unspaced[k]!
-      const value = (copy[idx] ?? missing()) - letterSpacing
-      if ((idx & 0x7fffffff) !== idx || idx >= copy.length) throw new RangeError('index')
-      copy[idx] = value
+      if (!(Number.isSafeInteger(idx) && 0 <= idx && idx < copy.length)) throw new RangeError('index')
+      copy[idx] = copy[idx]! - letterSpacing
     }
     fitAdvances = copy
   }
@@ -474,7 +485,7 @@ function getTextSegmentWidth(text: string, textMetrics: SegmentMetrics, measurem
  * @requires safeInteger(base) && 0 <= base && base <= 4294967295
  * @requires paragraph !== null || base === 0
  * @requires segments === null || segments.length === 0
- * @requires paragraph === null || paragraph.widths !== paragraph.breakableFitAdvances && paragraph.widths !== analysis.flags && paragraph.widths !== analysis.starts
+ * @requires paragraph === null || paragraph.widths !== paragraph.breakableFitAdvances && paragraph.widths !== analysis.flags && paragraph.widths !== analysis.starts && paragraph.breakableFitAdvances !== analysis.texts
  * @requires paragraph === null || segments === null || paragraph.widths !== segments && paragraph.breakableFitAdvances !== segments
  * @requires paragraph === null || paragraph.widths.length === base && paragraph.breakableFitAdvances.length === base
  * @requires paragraph === null || forall i in paragraph.breakableFitAdvances: paragraph.breakableFitAdvances[i] === null || 1 <= paragraph.breakableFitAdvances[i].length
@@ -486,6 +497,7 @@ function getTextSegmentWidth(text: string, textMetrics: SegmentMetrics, measurem
  * @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
  * @ensures result.overflowLineEndTrims === null || to - from <= result.overflowLineEndTrims.length
  * @ensures result.breakableLineStartExtras === null || to - from <= result.breakableLineStartExtras.length
+ * @ensures result.discretionaryHyphenContexts === null || to - from <= result.discretionaryHyphenContexts.length
  * @ensures forall i in result.breakableFitAdvances: result.breakableFitAdvances[i] === null || 1 <= result.breakableFitAdvances[i].length
  * @ensures paragraph !== null || result.breakableLineStartExtras === null || forall i in result.breakableFitAdvances: result.breakableFitAdvances[i] === null || result.breakableLineStartExtras[i] === null || result.breakableFitAdvances[i].length <= result.breakableLineStartExtras[i].length
  */
@@ -511,11 +523,12 @@ export function measureAnalysis(
   if (paragraph === null) {
     const widths: Dense<number[]> = zeros(to - from)
     const segmentFlags: Uint8Array = new Uint8Array(to - from)
-    const breakableFitAdvances: (number[] | null)[] = []
+    const breakableFitAdvances: Dense<(number[] | null)[]> = []
     const res = measureAnalysisInto(analysis, from, to, font, segments, letterSpacing, engineProfile, language, overflowBreaks, widths, segmentFlags, breakableFitAdvances, base)
     const lineStartExtras = res.lineStartExtras
     const lineEndTrims = res.lineEndTrims
     const overflowLineEndTrims = res.overflowLineEndTrims
+    const discretionaryHyphenContexts = res.discretionaryHyphenContexts
     const resExtras = res.breakableLineStartExtras
     const breakableLineStartExtras = resExtras !== null ? alignSingleExtras(breakableFitAdvances, resExtras, base) : null
     const prepared: MeasuredSegments = {   // PAPER: annotation
@@ -526,7 +539,7 @@ export function measureAnalysis(
       breakableFitAdvances,
       letterSpacing: res.letterSpacing,
       discretionaryHyphenWidth: res.discretionaryHyphenWidth,
-      discretionaryHyphenContexts: res.discretionaryHyphenContexts,
+      discretionaryHyphenContexts,
       breakableLineStartExtras,
       lineStartExtras,
       lineEndTrims,
@@ -543,7 +556,7 @@ export function measureAnalysis(
 /**
  * @requires safeInteger(from) && 0 <= from && from <= to && safeInteger(to) && to <= analysis.flags.length && to <= analysis.starts.length && to <= analysis.texts.length
  * @requires safeInteger(base) && 0 <= base && base <= 4294967295
- * @requires widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts
+ * @requires widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && breakableFitAdvances !== analysis.texts
  * @requires widths.length === base && breakableFitAdvances.length === base
  * @requires forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
  * @ensures widths.length - base === to - from && breakableFitAdvances.length === widths.length
@@ -551,6 +564,7 @@ export function measureAnalysis(
  * @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
  * @ensures result.overflowLineEndTrims === null || to - from <= result.overflowLineEndTrims.length
  * @ensures result.breakableLineStartExtras === null || result.breakableLineStartExtras.length === to - from
+ * @ensures result.discretionaryHyphenContexts === null || to - from <= result.discretionaryHyphenContexts.length
  * @ensures forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
  * @ensures result.breakableLineStartExtras === null || forall k in result.breakableLineStartExtras: breakableFitAdvances[base + k] === null || result.breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= result.breakableLineStartExtras[k].length
  */
@@ -564,7 +578,7 @@ export function measureParagraphAnalysis(
   language: string | null,
   widths: Dense<number[]>,
   segmentFlags: Uint8Array,
-  breakableFitAdvances: (number[] | null)[],
+  breakableFitAdvances: Dense<(number[] | null)[]>,
   base: number,
 ): Effects<{ "widths[*]": "extend"; "widths[#]": "any"; "breakableFitAdvances[*]": "extend"; fields: "any"; views: "grow"; "@state": "any" }, MeasuredSegments> {   // PAPER: annotation
   extendZeros(widths, base, to - from)
@@ -575,7 +589,7 @@ export function measureParagraphAnalysis(
  * @requires safeInteger(from) && 0 <= from && from <= to && safeInteger(to) && to <= analysis.flags.length && to <= analysis.starts.length && to <= analysis.texts.length
  * @requires safeInteger(base) && 0 <= base && base <= 4294967295
  * @requires segments === null || segments.length === 0
- * @requires widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts
+ * @requires widths !== breakableFitAdvances && widths !== analysis.flags && widths !== analysis.starts && breakableFitAdvances !== analysis.texts
  * @requires segments === null || widths !== segments && breakableFitAdvances !== segments
  * @requires widths.length - base === to - from && breakableFitAdvances.length === base
  * @requires forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
@@ -585,6 +599,7 @@ export function measureParagraphAnalysis(
  * @ensures result.lineEndTrims === null || to - from <= result.lineEndTrims.length
  * @ensures result.overflowLineEndTrims === null || to - from <= result.overflowLineEndTrims.length
  * @ensures result.breakableLineStartExtras === null || result.breakableLineStartExtras.length === to - from
+ * @ensures result.discretionaryHyphenContexts === null || to - from <= result.discretionaryHyphenContexts.length
  * @ensures forall i in result.breakableFitAdvances: result.breakableFitAdvances[i] === null || 1 <= result.breakableFitAdvances[i].length
  * @ensures forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
  * @ensures result.breakableLineStartExtras === null || forall k in result.breakableLineStartExtras: breakableFitAdvances[base + k] === null || result.breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= result.breakableLineStartExtras[k].length
@@ -601,14 +616,14 @@ function measureAnalysisInto(
   overflowBreaks: boolean,
   widths: Dense<number[]>,
   segmentFlags: Uint8Array,
-  breakableFitAdvances: (number[] | null)[],
+  breakableFitAdvances: Dense<(number[] | null)[]>,
   base: number,
 ): Effects<{ "widths[*]": "extend"; "widths[#]": "any"; "breakableFitAdvances[*]": "extend"; "segments[*]": "extend"; fields: "any"; views: "grow"; "@state": "any" }, MeasuredSegments> {   // PAPER: annotation
   const { normalized, texts, starts, flags } = analysis
   // The measured text and where it starts in the analysis's: what is asked of the whole text
   // is asked of it, and places in it count from its start.
-  const ownStart = from === 0 ? 0 : (starts[from] ?? missing())
-  const own = from === 0 && to === flags.length ? normalized : to === from + 1 ? texts[from]! : normalized.slice(ownStart, to < flags.length ? (starts[to] ?? missing()) : normalized.length)
+  const ownStart = from === 0 || from === to ? 0 : starts[from]!
+  const own = from === to ? '' : from === 0 && to === flags.length ? normalized : to === from + 1 ? texts[from]! : normalized.slice(ownStart, to < flags.length ? starts[to]! : normalized.length)
   const hasLetterSpacing = letterSpacing !== 0
   const fontMeasurement = getFontMeasurement(font, language, hasLetterSpacing)
   const emojiCorrection = textMayContainEmoji(own) ? getEmojiCorrection(font, fontMeasurement) : 0
@@ -669,12 +684,12 @@ function measureAnalysisInto(
   // filled; Decisions Log, 2026-10-09, a paragraph's lists).
   let s = 0   // PAPER: workaround (shifted loop counter #397): 0-based counter s = mi - from so post-loop derives breakableLineStartExtras.length === to - from
   /**
-   * @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(at) && safeInteger(s) && 0 <= from && from <= mi && mi <= to && to <= flags.length && to <= starts.length && to <= texts.length && 0 <= base && base <= 4294967295 && s === mi - from && at === base + s && widths.length === base + (to - from) && breakableFitAdvances.length === at && widths !== breakableFitAdvances
+   * @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(at) && safeInteger(s) && 0 <= from && from <= mi && mi <= to && to <= flags.length && starts.length === flags.length && flags.length <= texts.length && 0 <= base && base <= 4294967295 && s === mi - from && at === base + s && widths.length === base + (to - from) && breakableFitAdvances.length === at && widths !== breakableFitAdvances && breakableFitAdvances !== texts
    * @invariant discretionaryHyphenContexts === null || discretionaryHyphenContexts.length === to - from && widths !== discretionaryHyphenContexts && breakableFitAdvances !== discretionaryHyphenContexts
    * @invariant discretionaryHyphenContexts === null || breakableLineStartExtras === null || breakableLineStartExtras !== discretionaryHyphenContexts
    * @invariant segments === null || segments.length === s && widths !== segments && breakableFitAdvances !== segments
    * @invariant segments === null || breakableLineStartExtras === null || breakableLineStartExtras !== segments
-   * @invariant breakableLineStartExtras === null || breakableLineStartExtras.length === s && breakableLineStartExtras !== breakableFitAdvances && breakableLineStartExtras !== widths
+   * @invariant breakableLineStartExtras === null || breakableLineStartExtras.length === s && breakableLineStartExtras !== breakableFitAdvances && breakableLineStartExtras !== widths && breakableLineStartExtras !== texts
    * @invariant forall i in breakableFitAdvances: breakableFitAdvances[i] === null || 1 <= breakableFitAdvances[i].length
    * @invariant breakableLineStartExtras === null || forall k in breakableLineStartExtras: breakableFitAdvances[base + k] === null || breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= breakableLineStartExtras[k].length
    */
@@ -796,7 +811,8 @@ function measureAnalysisInto(
     }
     if (kind !== TEXT && kind !== SPACE && kind !== ZERO_WIDTH_BREAK) simpleKinds = false
     if (kind !== TEXT && kind !== SOFT_HYPHEN) previousJoinablePiece = null
-    segmentFlags[at] = (segment & ~ONE_CLUSTER) | (hasLetterSpacing && spacingGraphemeCount > 0 ? SPACED : 0)
+    const flagsByte = (segment & ~ONE_CLUSTER) | (hasLetterSpacing && spacingGraphemeCount > 0 ? SPACED : 0)
+    segmentFlags[at] = flagsByte
     widths[at] = addInternalLetterSpacing(width, spacingGraphemeCount, letterSpacing)
     // PAPER: workaround (parallel push ordering): defer getSegmentFit out of switch and branch on breakableLineStartExtras === null so breakableFitAdvances.push and breakableLineStartExtras.push stay paired
     if (fitTextMetrics !== null) {
@@ -866,7 +882,7 @@ function measureAnalysisInto(
     // simple walkers take every zero-width break for a zero-width space.
     if (kind !== TEXT && text.charCodeAt(0) === 0xAD) {
       if (kind === ZERO_WIDTH_BREAK) {
-        segmentFlags[at] = (segmentFlags[at] ?? missing()) | DROPPED
+        segmentFlags[at] = flagsByte | DROPPED
         simpleKinds = false
       }
       discretionaryHyphenContexts ??= zeros(to - from)   // PAPER: workaround (dense-write pre-allocation): allocate full to - from zeros so discretionaryHyphenContexts writes are in-bounds overwrites
@@ -887,11 +903,12 @@ function measureAnalysisInto(
     hanKerning = getHanKerningTrims(fontMeasurement, analysis, from, to)
     const trims = hanKerning.widthTrims
     if (trims !== null) {
-      /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= to && 0 <= base && base <= 4294967295 && 0 <= i && widths.length - base === to - from && breakableFitAdvances.length === widths.length && widths !== breakableFitAdvances
+      /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= to && to <= flags.length && starts.length === flags.length && flags.length <= texts.length && 0 <= base && base <= 4294967295 && 0 <= i && widths.length - base === to - from && breakableFitAdvances.length === widths.length && widths !== breakableFitAdvances
        *  @invariant trims === null || i <= trims.length && trims.length <= to - from
        *  @invariant hanKerning.lineStartExtras === null || to - from <= hanKerning.lineStartExtras.length
        *  @invariant hanKerning.lineEndTrims === null || to - from <= hanKerning.lineEndTrims.length
        *  @invariant hanKerning.overflowLineEndTrims === null || to - from <= hanKerning.overflowLineEndTrims.length
+       *  @invariant discretionaryHyphenContexts === null || to - from <= discretionaryHyphenContexts.length && discretionaryHyphenContexts !== widths
        *  @invariant breakableLineStartExtras === null || breakableLineStartExtras.length === to - from && breakableLineStartExtras !== widths
        *  @invariant forall j in breakableFitAdvances: breakableFitAdvances[j] === null || 1 <= breakableFitAdvances[j].length
        *  @invariant breakableLineStartExtras === null || forall k in breakableLineStartExtras: breakableFitAdvances[base + k] === null || breakableLineStartExtras[k] === null || breakableFitAdvances[base + k].length <= breakableLineStartExtras[k].length */
@@ -951,14 +968,14 @@ function measureAnalysisInto(
  *  @ensures result === null || to - from <= result.length */
 function addKanaKerning(extras: Dense<number[]> | null, widths: Dense<number[]>, base: number, analysis: TextAnalysis, from: number, to: number, measurement: FontMeasurement, kernings: Float64Array): Effects<{ "extras[#]": "any"; "widths[#]": "any"; fields: "any"; views: "grow" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && to <= starts.length && 0 <= base && base + (to - from) <= widths.length
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && starts.length === flags.length && 0 <= base && base + (to - from) <= widths.length
    *  @invariant extras === null || to - from <= extras.length */
   for (let i = from; i < to; i++) {
     if ((flags[i]! & KIND_BITS) !== TEXT) continue
     const start = starts[i]!
-    const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
+    const end = i + 1 < flags.length ? starts[i + 1]! : normalized.length
     const at = base + (i - from)
-    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && safeInteger(at) && 0 <= from && from <= i && i < to && to <= flags.length && to <= starts.length && 0 <= base && base + (to - from) <= widths.length && at === base + (i - from)
+    /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(base) && safeInteger(i) && safeInteger(at) && 0 <= from && from <= i && i < to && to <= flags.length && starts.length === flags.length && 0 <= base && base + (to - from) <= widths.length && at === base + (i - from)
      *  @invariant extras === null || to - from <= extras.length */
     for (let k = i > from ? start : start + 1; k < end; k++) {
       const kerning = getKanaKerning(normalized, start, k, measurement, kernings)
@@ -1007,10 +1024,10 @@ function addIdeographicSpaceHangs(
   to: number,
 ): Effects<{ "trims[#]": "any"; fields: "any" }, Dense<number[]> | null> {   // PAPER: annotation
   const { normalized, starts, flags } = analysis
-  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && to <= starts.length
+  /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(i) && 0 <= from && from <= i && i <= to && to <= flags.length && starts.length === flags.length
    *  @invariant trims === null || to - from <= trims.length */
   for (let i = from; i < to; i++) {
-    const end = i + 1 < flags.length ? (starts[i + 1] ?? missing()) : normalized.length
+    const end = i + 1 < flags.length ? starts[i + 1]! : normalized.length
     if ((flags[i]! & KIND_BITS) !== TEXT || normalized.charCodeAt(end - 1) !== 0x3000) continue
     if (i + 1 < to) {
       const next = flags[i + 1]! & KIND_BITS
