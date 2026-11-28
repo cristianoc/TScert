@@ -629,11 +629,14 @@ export function analyzeText(
     }
     if (profile.lineBreakScan === 'webkit' && !preserve && source !== normalized) spaceSources = new Uint16Array(normalized.length)
     // PAPER: workaround (string-replace/concat length): CR/leftOut removal only shrinks source below sourceBreaks.length
-    if (sourceBreaks.length <= source.length) sourceBreaks = new Uint8Array(source.length + 1)
-    breaks = source === normalized ? sourceBreaks : mapSourceLineBreaks(source, normalized, sourceBreaks, whiteSpace, spaceSources)
+    if (source === normalized) {
+      if (sourceBreaks.length <= normalized.length) sourceBreaks = new Uint8Array(normalized.length + 1)
+      breaks = sourceBreaks
+    } else {
+      if (sourceBreaks.length <= source.length) sourceBreaks = new Uint8Array(source.length + 1)
+      breaks = mapSourceLineBreaks(source, normalized, sourceBreaks, whiteSpace, spaceSources)
+    }
   }
-  // PAPER: workaround (line-breaks.ts @ensures + string equality length): Blink/source===normalized breaks always have length > normalized.length
-  if (breaks.length <= normalized.length) breaks = new Uint8Array(normalized.length + 1)
   if (paragraph !== null) markItemStarts(text, normalized, breaks, paragraph, profile.lineBreakScan)
   // PAPER: workaround (guarded-fact join): split on spaceSources === null || spaceSources.length === normalized.length after branch join
   if (spaceSources !== null && spaceSources.length === normalized.length) {

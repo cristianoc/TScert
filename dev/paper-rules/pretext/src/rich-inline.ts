@@ -1334,7 +1334,11 @@ function padItemSegments(itemSegments: Dense<number[]>, index: number, value: nu
 function findItemEnd(analysis: TextAnalysis, offsets: Int32Array, from: number, count: number, itemEnd: number): Effects<{}, number> {   // PAPER: annotation
   let to = from + 1
   /** @invariant safeInteger(from) && safeInteger(to) && safeInteger(count) && 0 <= from && from < to && to <= count && count <= analysis.starts.length */
-  while (to < count && (offsets[analysis.starts[to]!] ?? missing()) < itemEnd) to++
+  while (to < count) {
+    const start = analysis.starts[to]!
+    if (!(Number.isSafeInteger(start) && 0 <= start && start < offsets.length) || offsets[start]! >= itemEnd) break
+    to++
+  }
   return to
 }
 
@@ -1372,8 +1376,11 @@ function adjustRichAdvances(advances: number[], spaced: boolean, holdsExtra: boo
 }
 
 function trimTextEnd(offsets: Int32Array, textEnd: number, itemEnd: number): Effects<{}, number> {   // PAPER: annotation
-  while ((offsets[textEnd - 1] ?? missing()) >= itemEnd) textEnd--
-  return textEnd
+  let end = textEnd
+  if (!Number.isSafeInteger(end) || end < 0 || end > offsets.length) return end
+  /** @invariant safeInteger(end) && 0 <= end && end <= offsets.length */
+  while (end > 0 && offsets[end - 1]! >= itemEnd) end--
+  return end
 }
 
 // PAPER: workaround (slice length / confined cache): delegate to zeros(count) instead of ZEROS.slice(0, count) so SinglePass proves result.length === count
@@ -1715,8 +1722,7 @@ export function layoutNextRichInlineLineRange(
 // one stretch of it: Gecko removes a line feed between two ideographs, and white space after a bidi
 // control that follows white space. Else null.
 function getSourceUnits(offsets: Int32Array, from: number, to: number, itemStart: number): Effects<{}, Dense<number[]> | null> {   // PAPER: annotation
-  if (to <= from) return null
-  if (!(Number.isSafeInteger(from) && Number.isSafeInteger(to) && 0 <= from && from < to && to <= offsets.length)) return missing()
+  if (!(Number.isSafeInteger(from) && Number.isSafeInteger(to) && 0 <= from && from < to && to <= offsets.length)) return null
   if (offsets[to - 1]! - offsets[from]! === to - 1 - from) return null
   const units: Dense<number[]> = []
   /** @invariant safeInteger(unit) && safeInteger(to) && 0 <= unit && unit <= to && to <= offsets.length */

@@ -592,6 +592,7 @@ function shouldKeepAfterKeepAll(rules: BreakRules, lastLast: number, last: numbe
 // so preparation gives the scan that language from Intl for a page without one
 // (getPreparationLanguage in src/measurement.ts); navigator.language follows the accept
 // languages instead. Without a document the scan reads root.
+/** @ensures result.length === text.length + 1 */
 export function getBlinkLineBreaks(text: string, keepAll: boolean, language: string | null): Effects<{ "@state": "any" }, Uint8Array> {   // PAPER: annotation
   const length = text.length
   const breaks = new Uint8Array(length + 1)
@@ -601,7 +602,7 @@ export function getBlinkLineBreaks(text: string, keepAll: boolean, language: str
   let icu: Uint8Array | null = null
   let lastLast = 0
   let last = text.charCodeAt(0)
-  /** @invariant safeInteger(i) && safeInteger(last) && safeInteger(length) && 1 <= i && length === text.length && pairs.length === 6244 */
+  /** @invariant safeInteger(i) && safeInteger(last) && safeInteger(length) && 1 <= i && length === text.length && pairs.length === 6244 && breaks.length === text.length + 1 */
   for (let i = 1; i < length; lastLast = last, last = text.charCodeAt(i), i++) {
     const ch = text.charCodeAt(i)
     if (isBlinkBreakableSpace(ch)) continue // tbi.cc:284-291
