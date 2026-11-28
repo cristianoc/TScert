@@ -356,14 +356,18 @@ tables before gathering any missing edge facts. With `fixed` (an
 adversarial proposal forced), use `inferredNext`'s state alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
     (protect : List (Nat × List HeapKnowledge.Candidate)) («given» : Option (Std.HashMap String Json)) (i : Nat)
-    (w : String × Option (Nat × List HeapKnowledge.Candidate)) (layer : Option SinglePass.PassLayer := none) :
+    (w : String × Option (Nat × List HeapKnowledge.Candidate)) (diagnose : Bool := true)
+    (layer : Option SinglePass.PassLayer := none) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   match f.inferredNext fixed protect given i w with
   | none => none
   | some (f₁, g₁, ls, d) =>
     -- A rejected regional table gives a deciding retry on its own. A
     -- subsequent missing edge fact still takes the ordinary diagnostic route.
-    if fixed || regionalTableRefused w then some (f₁, g₁, ls, d) else
+    -- On alternating rounds (`diagnose := false`), retry directly after
+    -- `inferredNext` (+ `laterDrops`) before running another full diagnosing
+    -- walk, avoiding a redundant full walk when one cascading drop settles.
+    if fixed || !diagnose || regionalTableRefused w then some (f₁, g₁, ls, d) else
     let candidates := match f₁.plans[i]? with
       | some (.ok (.graph _ _ r)) => r.candidates
       | _ => []
@@ -408,22 +412,23 @@ structure Settled (S G R : Type) where
 /-- A member's runs until one is accepted or its refusal stands, at most
 `n + 1`: each run `run` of the current plans and given lines, made once and
 both read for its refusal and returned, a refusal's next state from
-`next`. -/
+`next` (given the zero-based round index `runs`). -/
 def settleInferred {S G R W : Type} (run : S → G → R) (refusal : R → Option W)
-    (next : S → G → W → Option (S × G × List String × Nat)) :
+    (next : Nat → S → G → W → Option (S × G × List String × Nat)) :
     Nat → S → G → List String → Nat → Nat → Settled S G R
   | 0, f, g, ls, d, runs => ⟨f, g, ls, d, runs + 1, run f g⟩
   | n + 1, f, g, ls, d, runs =>
     let r := run f g
     match refusal r with
     | none => ⟨f, g, ls, d, runs + 1, r⟩
-    | some w => match next f g w with
+    | some w => match next runs f g w with
       | none => ⟨f, g, ls, d, runs + 1, r⟩
       | some (f', g', ls', d') => settleInferred run refusal next n f' g' (ls ++ ls') (d + d') (runs + 1)
 
 /-- Member `i`'s runs (`settleInferred`): each `inferredRun`, a refusal's
-next state from `inferredNextAll`, at most `4·h + 4` of a member with `h`
-statement entries holding candidates. -/
+next state from `inferredNextAll` (running the diagnosing walk on even
+rounds), at most `4·h + 4` of a member with `h` statement entries holding
+candidates. -/
 def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.Candidate))
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
     («given» : Option (Std.HashMap String Json)) (i : Nat) (layer : Option SinglePass.PassLayer := none) :
@@ -437,7 +442,8 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
       g.inferredRun fuel compare debugNode repeats observe counting located gv i (layer := layer))
     (fun res => res.2.1)
-    (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w (layer := layer))
+    (fun runs (g : FilePlans) gv w =>
+      g.inferredNextAll fuel fixed (keep i) gv i w (diagnose := runs % 2 == 0) (layer := layer))
     (4 * heads + 3) f given [] 0 0
 
 /-- The state `passGroupInferred` carries across a group's members: the
@@ -509,6 +515,38 @@ def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
     | some reason => .error reason
     | none => .ok (acc.plans.dependencies group)), acc.dropped, acc.runs)
 
+/-- Apply head-candidate drops recorded while settling during `PassProposals`
+to the members of `group`, preserving protected candidates (`keep`). -/
+def FilePlans.applyProposalDropped (f : FilePlans) (keep : Nat → List (Nat × List HeapKnowledge.Candidate))
+    (group : List Nat) : FilePlans :=
+  group.foldl (init := f) fun acc j =>
+    match acc.fr.units[j]? with
+    | some (fn, _, none) =>
+      match acc.proposalDropped.get? fn.name with
+      | some (candDrops, _) =>
+        let protect := keep j
+        let filtered := candDrops.filterMap fun (l, ds) =>
+          let kept := (protect.filter (·.1 == l)).flatMap (·.2)
+          let ds := ds.filter (!kept.contains ·)
+          if ds.isEmpty then none else some (l, ds)
+        acc.dropAll j filtered
+      | none => acc
+    | _ => acc
+
+/-- Remove implications dropped while settling during `PassProposals` from the
+computed `given` map for the members of `group`. -/
+def FilePlans.withoutProposalImplications (f : FilePlans) («given» : Std.HashMap String Json)
+    (group : List Nat) : Std.HashMap String Json :=
+  group.foldl (init := given) fun g j =>
+    match f.fr.units[j]? with
+    | some (fn, _, none) =>
+      match f.proposalDropped.get? fn.name with
+      | some (_, implDrops) =>
+        implDrops.foldl (init := g) fun acc (l, a, b) =>
+          (withoutImplications acc (f.fr.unitId j) l (some (a, b))).getD acc
+      | none => g
+    | _ => g
+
 /-- **Mode 8's check of a group**: with `infer` (no given file, or a forced
 head proposal), the given lines inference computes (`computedGiven`) and the
 region separations allocations state at the group's loop heads
@@ -523,9 +561,13 @@ def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String
     (counting : Bool := false) (located : Bool := false) (layer : Option SinglePass.PassLayer := none) :
     List String × Except String (List String) × Nat × Nat :=
   if infer then
-    let given := some (f.computedGiven (given.getD {}) (force.contains "head-inputs")
-      (force.contains "head-implications") (force.find? (·.startsWith "head-region-")) group)
-    (f.withFreshApart (force.contains "head-apart") group).passGroupInferred fuel group keep
+    let usePreSettled := !force.any (·.startsWith "head-") && layer.isNone
+    let gv0 := f.computedGiven (given.getD {}) (force.contains "head-inputs")
+      (force.contains "head-implications") (force.find? (·.startsWith "head-region-")) group
+    let given := some (if usePreSettled then f.withoutProposalImplications gv0 group else gv0)
+    let f₁ := f.withFreshApart (force.contains "head-apart") group
+    let f₂ := if usePreSettled then f₁.applyProposalDropped keep group else f₁
+    f₂.passGroupInferred fuel group keep
       (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located (layer := layer)
   else
     let r := f.passGroup fuel group compare debugNode repeats given observe counting located

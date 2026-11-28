@@ -185,20 +185,329 @@ theorem OnPath.projection_holds (P : OnPath preds width fresh0 p ε ρ η h) {v 
   obtain ⟨n, hn⟩ := selectedFromIndex v slots true false a ha
   exact hv a (about_storeAll hn)
 
-theorem foldl_indicesFilter_sub (useCases : Bool := true) : ∀ (ps : List Knowledge) (cs : List IndexAtom) (x : IndexAtom),
-    x ∈ ps.foldl (fun cs p => HeapKnowledge.indicesFilter p cs useCases) cs → x ∈ cs
-  | [], _, _, hx => hx
-  | _ :: ps, _, x, hx => HeapKnowledge.indicesFilter_sub (foldl_indicesFilter_sub useCases ps _ x hx)
+theorem mem_of_hashSet_ofList {as : List IndexAtom} {a : IndexAtom}
+    (h : (Std.HashSet.ofList as).contains a = true) : a ∈ as :=
+  List.contains_iff_mem.mp (Std.HashSet.mem_ofList.mp (Std.HashSet.contains_iff_mem.mp h))
 
-theorem foldl_indicesFilter_holds {ρ : Env} {h : Heap} (useCases : Bool := true) :
-    ∀ (ps : List Knowledge) (cs : List IndexAtom) {p : Knowledge},
-      p ∈ ps → Holds p ε ρ h → IndexHolds ε (ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs useCases) cs) ρ h
-  | [], _, _, hp, _ => by cases hp
-  | q :: ps, cs, p, hp, hk => by
-    rcases List.mem_cons.mp hp with rfl | hp
+theorem fieldReadLinkSet_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap}
+    (hl : HeapLinks.Holds ls ρ h) (rep : Std.HashMap Nat Nat)
+    (hrep : ∀ x, ρ (HeapLinks.repOf rep x) = ρ x)
+    {c v : Nat} {f : String}
+    (hm : (CertificateProducer.fieldReadLinkSet rep ls).contains
+      (HeapLinks.repOf rep c, f, HeapLinks.repOf rep v) = true) :
+    (HeapKnowledge.IndexFact.fieldRead v c f).HoldsAt ε ρ h := by
+  have key : ∀ (xs : HeapLinks.Links) (acc : Std.HashSet (Nat × String × Nat)),
+      (∀ l ∈ xs, l ∈ ls) →
+      (∀ {c' f' v'}, acc.contains (c', f', v') = true →
+        ∃ l ∈ ls, !l.alias = true ∧ !l.optional = true ∧ l.field = .str f' ∧
+          HeapLinks.repOf rep l.cell = c' ∧ HeapLinks.repOf rep l.value = v') →
+      ∀ {c' f' v'}, (xs.foldl (init := acc) fun acc l =>
+        if !l.alias && !l.optional then match l.field with
+          | .str fn => acc.insert (HeapLinks.repOf rep l.cell, fn, HeapLinks.repOf rep l.value)
+          | .sym _ => acc
+        else acc).contains (c', f', v') = true →
+        ∃ l ∈ ls, !l.alias = true ∧ !l.optional = true ∧ l.field = .str f' ∧
+          HeapLinks.repOf rep l.cell = c' ∧ HeapLinks.repOf rep l.value = v' := by
+    intro xs
+    induction xs with
+    | nil => intro acc _ hacc c' f' v' hc; exact hacc hc
+    | cons l rest ih =>
+      intro acc hsub hacc c' f' v' hc
+      refine ih _ (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) ?_ hc
+      intro c0 f0 v0 h0
+      dsimp only at h0
+      split at h0
+      · rename_i hna
+        cases hf : l.field with
+        | sym _ => rw [hf] at h0; exact hacc h0
+        | str fn =>
+          rw [hf] at h0
+          rw [Std.HashSet.contains_insert, Bool.or_eq_true] at h0
+          rcases h0 with heq | hprev
+          · simp only [beq_iff_eq, Prod.mk.injEq] at heq
+            obtain ⟨rfl, rfl, rfl⟩ := heq
+            simp only [Bool.and_eq_true] at hna
+            exact ⟨l, hsub l (List.mem_cons_self ..), hna.1, hna.2, hf, rfl, rfl⟩
+          · exact hacc hprev
+      · exact hacc h0
+  obtain ⟨l, hlmem, hna, hno, hfld, hrc, hrv⟩ := key ls {} (fun _ h => h) (by simp) hm
+  have hlink := hl l hlmem
+  cases hal : l.alias <;> cases hop : l.optional <;>
+    simp only [hal, hop, Bool.false_eq_true, ↓reduceIte] at hna hno hlink
+  · rw [hfld] at hlink
+    rcases hlink with ⟨flds, cl, oid, loc, hcell, hlookup, hval⟩
+    have hρc : ρ c = ρ l.cell := by rw [← hrep c, ← hrc, hrep]
+    have hρv : ρ v = ρ l.value := by rw [← hrep v, ← hrv, hrep]
+    simp only [HeapKnowledge.IndexFact.HoldsAt, hρc, hρv, HeapKnowledge.readPath, hcell, hlookup, hval]
+  · cases hno
+  · cases hna
+  · cases hna
+
+theorem factTrivialIn_holds {p : Knowledge} {ρ : Env} {h : Heap} (hk : Holds p ε ρ h)
+    {tags : Option HeapKnowledge.GuardTagTable}
+    (htags : ∀ tg, tags = some tg → tg = HeapKnowledge.GuardTagTable.ofKnowledge p)
+    {links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))}
+    (hlinks : ∀ rep lset, links = some (rep, lset) →
+      rep = HeapLinks.repMap (HeapLinks.classes p.links) ∧ lset = CertificateProducer.fieldReadLinkSet rep p.links) :
+    ∀ {F : HeapKnowledge.IndexFact},
+      CertificateProducer.factTrivialIn (Std.HashSet.ofList p.indices) tags links F = true →
+      F.HoldsAt ε ρ h := by
+  intro F
+  induction F with
+  | either A B ihA ihB =>
+    intro hf
+    unfold CertificateProducer.factTrivialIn at hf
+    simp only [Bool.or_eq_true] at hf
+    rcases hf with ((hA | hB) | hA) | hB
+    · exact Or.inl (hk.2.2.2.2.2 _ (mem_of_hashSet_ofList hA) (fun _ hc => by cases hc))
+    · exact Or.inr (hk.2.2.2.2.2 _ (mem_of_hashSet_ofList hB) (fun _ hc => by cases hc))
+    · exact Or.inl (ihA hA)
+    · exact Or.inr (ihB hB)
+  | guarded s q t B ihB =>
+    intro hf
+    unfold CertificateProducer.factTrivialIn at hf
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at hf
+    rcases hf with htg | ⟨hq, hB⟩
+    · cases hts : tags with
+      | none => rw [hts] at htg; cases htg
+      | some tg =>
+        rw [hts] at htg
+        have heq := htags tg hts
+        subst heq
+        obtain ⟨v, hv, ht⟩ := HeapKnowledge.GuardTagTable.check_sound hk s q t htg
+        exact ⟨v, hv, Or.inl ht⟩
+    · cases q with
+      | nil => exact ⟨ρ s, rfl, Or.inr (ihB hB)⟩
+      | cons _ _ => cases hq
+  | fieldRead v c f =>
+    intro hf
+    unfold CertificateProducer.factTrivialIn at hf
+    simp only [Bool.or_eq_true] at hf
+    rcases hf with hmem | hlk
+    · exact hk.2.2.2.2.2 _ (mem_of_hashSet_ofList hmem) (fun _ hc => by cases hc)
+    · cases hlq : links with
+      | none => rw [hlq] at hlk; cases hlk
+      | some rl =>
+        obtain ⟨rep, lset⟩ := rl
+        rw [hlq] at hlk
+        obtain ⟨rfl, rfl⟩ := hlinks rep lset hlq
+        exact fieldReadLinkSet_holds hk.2.2.1 _ (HeapLinks.repOf_eq (HeapLinks.classes_one hk.2.2.1)) hlk
+  | _ =>
+    intro hf
+    unfold CertificateProducer.factTrivialIn at hf
+    exact hk.2.2.2.2.2 _ (mem_of_hashSet_ofList hf) (fun _ hc => by cases hc)
+
+theorem atomTrivialIn_holds {p : Knowledge} {ρ : Env} {h : Heap} (hk : Holds p ε ρ h)
+    {tags : Option HeapKnowledge.GuardTagTable}
+    (htags : ∀ tg, tags = some tg → tg = HeapKnowledge.GuardTagTable.ofKnowledge p)
+    {links : Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))}
+    (hlinks : ∀ rep lset, links = some (rep, lset) →
+      rep = HeapLinks.repMap (HeapLinks.classes p.links) ∧ lset = CertificateProducer.fieldReadLinkSet rep p.links)
+    {a : IndexAtom} (ha : CertificateProducer.atomTrivialIn (Std.HashSet.ofList p.indices) tags links a = true) :
+    IndexHolds ε [a] ρ h := by
+  intro x hx hcond
+  have hxa : x = a := List.mem_singleton.mp hx
+  subst hxa
+  unfold CertificateProducer.atomTrivialIn at ha
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at ha
+  rcases ha with hmem | ⟨_, htriv⟩
+  · exact hk.2.2.2.2.2 x (mem_of_hashSet_ofList hmem) hcond
+  · exact factTrivialIn_holds hk htags hlinks htriv
+
+/-- Well-formedness of a prepared projection tuple `(p, pSet, tg, lk)`. -/
+def PreparedOk (entry : Knowledge × Std.HashSet IndexAtom ×
+    Option HeapKnowledge.GuardTagTable ×
+    Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))) : Prop :=
+  let (p, pSet, tg, lk) := entry
+  pSet = Std.HashSet.ofList p.indices ∧
+  (∀ t, tg = some t → t = HeapKnowledge.GuardTagTable.ofKnowledge p) ∧
+  (∀ r lset, lk = some (r, lset) →
+    r = HeapLinks.repMap (HeapLinks.classes p.links) ∧ lset = CertificateProducer.fieldReadLinkSet r p.links)
+
+theorem mem_insertByDesc {α : Type} {x y : Nat × α} {ys : List (Nat × α)} :
+    y ∈ CertificateProducer.insertByDesc x ys ↔ y = x ∨ y ∈ ys := by
+  induction ys with
+  | nil => simp [CertificateProducer.insertByDesc]
+  | cons z zs ih =>
+    unfold CertificateProducer.insertByDesc
+    split <;> simp [ih, or_left_comm]
+
+theorem mem_sortByDesc {α : Type} {y : Nat × α} {xs : List (Nat × α)} :
+    y ∈ CertificateProducer.sortByDesc xs ↔ y ∈ xs := by
+  induction xs with
+  | nil => simp [CertificateProducer.sortByDesc]
+  | cons x xs ih => simp [CertificateProducer.sortByDesc, mem_insertByDesc, ih]
+
+theorem narrowKnowledge_holds {p : Knowledge} {rep? : Option (Std.HashMap Nat Nat)}
+    {slow : List IndexAtom} {ρ : Env} {h : Heap} (hk : Holds p ε ρ h) :
+    Holds (CertificateProducer.narrowKnowledge p rep? slow) ε ρ h := by
+  unfold CertificateProducer.narrowKnowledge
+  dsimp only
+  split
+  · exact hk
+  · split
+    · exact filter_holds hk
+    · split
+      · exact hk
+      · exact filter_holds hk
+
+theorem filterOnePrepared_sub {useCases : Bool} {cur : List IndexAtom}
+    {entry : Knowledge × Std.HashSet IndexAtom × Option HeapKnowledge.GuardTagTable ×
+      Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))}
+    {x : IndexAtom} (hx : x ∈ CertificateProducer.filterOnePrepared useCases cur entry) : x ∈ cur := by
+  unfold CertificateProducer.filterOnePrepared at hx
+  split at hx
+  · cases hx
+  · dsimp only at hx
+    split at hx
+    · exact (List.mem_filter.mp (by simpa [List.partition_eq_filter_filter] using hx)).1
+    · rcases List.mem_append.mp hx with hf | hs
+      · exact (List.mem_filter.mp (by simpa [List.partition_eq_filter_filter] using hf)).1
+      · have hs' := HeapKnowledge.indicesFilter_sub hs
+        simp only [List.partition_eq_filter_filter, List.mem_filter] at hs'
+        exact hs'.1
+
+theorem filterOnePrepared_holds {useCases : Bool} {cur : List IndexAtom}
+    {entry : Knowledge × Std.HashSet IndexAtom × Option HeapKnowledge.GuardTagTable ×
+      Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))}
+    {ρ : Env} {h : Heap} (hok : PreparedOk entry) (hk : Holds entry.1 ε ρ h) :
+    IndexHolds ε (CertificateProducer.filterOnePrepared useCases cur entry) ρ h := by
+  intro x hx hcond
+  obtain ⟨p, pSet, tg, lk⟩ := entry
+  obtain ⟨rfl, htg, hlk⟩ := hok
+  unfold CertificateProducer.filterOnePrepared at hx
+  split at hx
+  · cases hx
+  · dsimp only at hx
+    split at hx
+    · have hf : x ∈ cur.filter (CertificateProducer.atomTrivialIn (Std.HashSet.ofList p.indices) tg lk) := by
+        simpa [List.partition_eq_filter_filter] using hx
+      exact atomTrivialIn_holds hk htg hlk (List.mem_filter.mp hf).2 x (List.mem_singleton.mpr rfl) hcond
+    · rcases List.mem_append.mp hx with hf | hs
+      · have hf' : x ∈ cur.filter (CertificateProducer.atomTrivialIn (Std.HashSet.ofList p.indices) tg lk) := by
+          simpa [List.partition_eq_filter_filter] using hf
+        exact atomTrivialIn_holds hk htg hlk (List.mem_filter.mp hf').2 x (List.mem_singleton.mpr rfl) hcond
+      · exact HeapKnowledge.indicesFilter_holds (narrowKnowledge_holds hk) x hs hcond
+
+theorem foldl_filterOnePrepared_sub (useCases : Bool) :
+    ∀ (es : List (Knowledge × Std.HashSet IndexAtom × Option HeapKnowledge.GuardTagTable ×
+        Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))))
+      (cur : List IndexAtom) (x : IndexAtom),
+      x ∈ es.foldl (CertificateProducer.filterOnePrepared useCases) cur → x ∈ cur
+  | [], _, _, hx => hx
+  | _ :: es, _, x, hx => filterOnePrepared_sub (foldl_filterOnePrepared_sub useCases es _ x hx)
+
+theorem foldl_filterOnePrepared_holds {ρ : Env} {h : Heap} (useCases : Bool) :
+    ∀ (es : List (Knowledge × Std.HashSet IndexAtom × Option HeapKnowledge.GuardTagTable ×
+        Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat))))
+      (cur : List IndexAtom) {e},
+      e ∈ es → PreparedOk e → Holds e.1 ε ρ h →
+      IndexHolds ε (es.foldl (CertificateProducer.filterOnePrepared useCases) cur) ρ h
+  | [], _, _, he, _, _ => by cases he
+  | q :: es, cur, e, he, hok, hk => by
+    rcases List.mem_cons.mp he with rfl | he
     · intro x hx hcond
-      exact HeapKnowledge.indicesFilter_holds hk x (foldl_indicesFilter_sub useCases ps _ x hx) hcond
-    · exact foldl_indicesFilter_holds useCases ps (HeapKnowledge.indicesFilter q cs useCases) hp hk
+      exact filterOnePrepared_holds hok hk x (foldl_filterOnePrepared_sub useCases es _ x hx) hcond
+    · exact foldl_filterOnePrepared_holds useCases es (CertificateProducer.filterOnePrepared useCases cur q) he hok hk
+
+theorem filterPreparedAll_holds {useCases : Bool}
+    {es : List (Knowledge × Std.HashSet IndexAtom × Option HeapKnowledge.GuardTagTable ×
+      Option (Std.HashMap Nat Nat × Std.HashSet (Nat × String × Nat)))}
+    {cs : List IndexAtom} {e} {ρ : Env} {h : Heap}
+    (he : e ∈ es) (hok : PreparedOk e) (hk : Holds e.1 ε ρ h) :
+    IndexHolds ε (CertificateProducer.filterPreparedAll useCases es cs) ρ h := by
+  intro x hx hcond
+  unfold CertificateProducer.filterPreparedAll at hx
+  split at hx
+  · cases hx
+  · cases es with
+    | nil => cases he
+    | cons e0 rest =>
+      cases rest with
+      | nil =>
+        have hEq : e = e0 := List.mem_singleton.mp he
+        subst hEq
+        exact filterOnePrepared_holds hok hk x hx hcond
+      | cons e1 rest' =>
+        dsimp only at hx
+        split at hx
+        · have hf : x ∈ cs.filter fun a => (e0 :: e1 :: rest').all fun (_, pSet, tg, links) =>
+              CertificateProducer.atomTrivialIn pSet tg links a := by
+            simpa [List.partition_eq_filter_filter] using hx
+          have hall := List.all_eq_true.mp (List.mem_filter.mp hf).2 e he
+          obtain ⟨p, pSet, tg, lk⟩ := e
+          obtain ⟨rfl, htg, hlk⟩ := hok
+          exact atomTrivialIn_holds hk htg hlk hall x (List.mem_singleton.mpr rfl) hcond
+        · rcases List.mem_append.mp hx with hf | hr
+          · have hf' : x ∈ cs.filter fun a => (e0 :: e1 :: rest').all fun (_, pSet, tg, links) =>
+                CertificateProducer.atomTrivialIn pSet tg links a := by
+              simpa [List.partition_eq_filter_filter] using hf
+            have hall := List.all_eq_true.mp (List.mem_filter.mp hf').2 e he
+            obtain ⟨p, pSet, tg, lk⟩ := e
+            obtain ⟨rfl, htg, hlk⟩ := hok
+            exact atomTrivialIn_holds hk htg hlk hall x (List.mem_singleton.mpr rfl) hcond
+          · have he' : e ∈ (CertificateProducer.sortByDesc ((e0 :: e1 :: rest').map fun entry =>
+                ((cs.partition fun a => (e0 :: e1 :: rest').all fun (_, pSet, tg, links) =>
+                  CertificateProducer.atomTrivialIn pSet tg links a).2.foldl
+                  (fun n a => if CertificateProducer.atomTrivialIn entry.2.1 entry.2.2.1 entry.2.2.2 a then n else n + 1) 0,
+                  entry))).map Prod.snd :=
+              List.mem_map.mpr ⟨_, mem_sortByDesc.mpr (List.mem_map.mpr ⟨e, he, rfl⟩), rfl⟩
+            exact foldl_filterOnePrepared_holds useCases _ _ he' hok hk x hr hcond
+
+theorem filterAllFast_holds {ρ : Env} {h : Heap} (useCases : Bool := true)
+    (ps : List Knowledge) (cs : List IndexAtom) {p : Knowledge}
+    (hp : p ∈ ps) (hk : Holds p ε ρ h) :
+    IndexHolds ε (CertificateProducer.filterAllFast ps cs useCases) ρ h := by
+  unfold CertificateProducer.filterAllFast
+  split
+  · intro x hx; cases hx
+  · refine filterPreparedAll_holds (List.mem_map.mpr ⟨p, hp, rfl⟩) ?_ hk
+    refine ⟨rfl, ?_, ?_⟩
+    · intro t ht
+      split at ht
+      · cases ht
+      · injection ht with ht; exact ht.symm
+    · intro r lset hl
+      split at hl
+      · cases hl
+      · rename_i hnl
+        injection hl with hl
+        simp only [Prod.mk.injEq] at hl
+        obtain ⟨hrep, hlset⟩ := hl
+        subst hrep
+        have hnl' : (cs.any fun a => a.cond.isNone && CertificateProducer.hasFieldRead a.fact) = true := by
+          simpa using hnl
+        refine ⟨?_, hlset.symm⟩
+        generalize (cs.any fun a => a.cond.isNone && match a.fact with | .guarded .. => true | _ => false) = b
+        cases b
+        · simp [hnl']
+        · rfl
+
+theorem filterTaggedFast_holds {ρ : Env} {h : Heap} (useCases : Bool := true)
+    (ps : List Knowledge) (cs : List IndexAtom) {p : Knowledge}
+    (hp : p ∈ ps) (hk : Holds p ε ρ h) :
+    IndexHolds ε (CertificateProducer.filterTaggedFast ps (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) cs useCases) ρ h := by
+  unfold CertificateProducer.filterTaggedFast
+  split
+  · intro x hx; cases hx
+  · have hmem : (p, HeapKnowledge.GuardTagTable.ofKnowledge p) ∈ ps.zip (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) := by
+      clear hk
+      induction ps with
+      | nil => cases hp
+      | cons q qs ih =>
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact List.mem_cons_self ..
+        · exact List.mem_cons_of_mem _ (ih hp)
+    refine filterPreparedAll_holds (List.mem_map.mpr ⟨_, hmem, rfl⟩) ?_ hk
+    refine ⟨rfl, fun t ht => by injection ht with ht; exact ht.symm, ?_⟩
+    intro r lset hl
+    split at hl
+    · cases hl
+    · injection hl with hl
+      simp only [Prod.mk.injEq] at hl
+      obtain ⟨hrep, hlset⟩ := hl
+      subst hrep
+      exact ⟨rfl, hlset.symm⟩
 
 theorem joinGuarded_holds {ρ : Env} {h : Heap} {ps : List Knowledge} {k : Knowledge} {p : Knowledge} {x : IndexAtom}
     (hx : x ∈ CertificateProducer.joinGuarded ps k) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
@@ -206,14 +515,94 @@ theorem joinGuarded_holds {ρ : Env} {h : Heap} {ps : List Knowledge} {k : Knowl
   intro y hy
   rw [List.mem_singleton.mp hy]
   unfold CertificateProducer.joinGuarded at hx
-  exact foldl_indicesFilter_holds true ps _ hp hk x hx
+  exact filterTaggedFast_holds true ps _ hp hk x hx
 
-theorem mem_foldl_indicesFilter_holds {ρ : Env} {h : Heap} {useCases : Bool} {ps : List Knowledge} {cs : List IndexAtom} {p : Knowledge} {x : IndexAtom}
-    (hx : x ∈ ps.foldl (fun cs q => HeapKnowledge.indicesFilter q cs useCases) cs) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
+theorem mem_filterAllFast_holds {ρ : Env} {h : Heap} {useCases : Bool} {ps : List Knowledge} {cs : List IndexAtom} {p : Knowledge} {x : IndexAtom}
+    (hx : x ∈ CertificateProducer.filterAllFast ps cs useCases) (hp : p ∈ ps) (hk : Holds p ε ρ h) :
     IndexHolds ε [x] ρ h := by
   intro y hy
   rw [List.mem_singleton.mp hy]
-  exact foldl_indicesFilter_holds useCases ps cs hp hk x hx
+  exact filterAllFast_holds useCases ps cs hp hk x hx
+
+theorem mem_filterTaggedFast_holds {ρ : Env} {h : Heap} {useCases : Bool} {ps : List Knowledge} {cs : List IndexAtom} {p : Knowledge} {x : IndexAtom}
+    (hx : x ∈ CertificateProducer.filterTaggedFast ps (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) cs useCases)
+    (hp : p ∈ ps) (hk : Holds p ε ρ h) :
+    IndexHolds ε [x] ρ h := by
+  intro y hy
+  rw [List.mem_singleton.mp hy]
+  exact filterTaggedFast_holds useCases ps cs hp hk x hx
+
+theorem loweredCond_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
+    Holds (if k.indices.any (fun a => match a.fact with | .guarded _ (_ :: _) _ _ => true | _ => false) then
+      let pSet : Std.HashSet IndexAtom := Std.HashSet.ofList k.indices
+      { k with indices := k.indices ++ ((lowerGuards k.links k.indices).filter (!pSet.contains ·)) }
+    else k) ε ρ h := by
+  split
+  · exact lowered_holds hk
+  · exact hk
+
+theorem mem_ite_append_filterTagged {ps : List Knowledge} {cs1 cs2 cs3 : List IndexAtom} {cond : Bool} {x : IndexAtom}
+    {p : Knowledge} (hp : p ∈ ps) (hk : Holds p ε ρ h)
+    (hx : x ∈ (if cond then CertificateProducer.filterTaggedFast ps (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) cs1 false
+      else CertificateProducer.filterTaggedFast ps (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) cs2 false ++
+        CertificateProducer.filterTaggedFast ps (ps.map HeapKnowledge.GuardTagTable.ofKnowledge) cs3 false)) :
+    IndexHolds ε [x] ρ h := by
+  split at hx
+  · exact mem_filterTaggedFast_holds hx hp hk
+  · rcases List.mem_append.mp hx with hx | hx
+    · exact mem_filterTaggedFast_holds hx hp hk
+    · exact mem_filterTaggedFast_holds hx hp hk
+
+theorem viewsK_holds {vs : List State} {v : State} (hv : v ∈ vs)
+    {width : Nat} {seedSlots slots : List Nat}
+    (h1 : Holds (SinglePass.materialize v width seedSlots false).1 ε ρ h)
+    (h2 : Holds (SinglePass.materialize v width slots false).1 ε ρ h) :
+    ∃ vk ∈ (if (!seedSlots.isEmpty && slots.all seedSlots.contains) = true then
+        (if seedSlots.isEmpty = true then [] else vs.map fun ps => (SinglePass.materialize ps width seedSlots false).1)
+      else vs.map fun ps => (SinglePass.materialize ps width slots false).1),
+      Holds vk ε ρ h := by
+  cases hse : seedSlots.isEmpty
+  · simp only [Bool.not_false, Bool.true_and, Bool.false_eq_true, ↓reduceIte]
+    split
+    · exact ⟨_, List.mem_map.mpr ⟨v, hv, rfl⟩, h1⟩
+    · exact ⟨_, List.mem_map.mpr ⟨v, hv, rfl⟩, h2⟩
+  · simp only [Bool.not_true, Bool.false_and, Bool.false_eq_true, ↓reduceIte]
+    exact ⟨_, List.mem_map.mpr ⟨v, hv, rfl⟩, h2⟩
+
+theorem mem_ite_nil_of {α : Type} {c : Bool} {l : List α} {x : α}
+    (h : x ∈ (if c then [] else l)) : c = false ∧ x ∈ l := by
+  cases c
+  · exact ⟨rfl, h⟩
+  · cases h
+
+theorem mem_filterAllFast_viewsK_holds {vs : List State} {v : State} (hv : v ∈ vs)
+    {width : Nat} {seedSlots slots : List Nat} {f : Knowledge → Knowledge}
+    (hf : ∀ k, Holds k ε ρ h → Holds (f k) ε ρ h)
+    {cs : List IndexAtom} {useCases : Bool} {x : IndexAtom}
+    (h1 : Holds (SinglePass.materialize v width seedSlots false).1 ε ρ h)
+    (h2 : Holds (SinglePass.materialize v width slots false).1 ε ρ h)
+    (hx : x ∈ CertificateProducer.filterAllFast
+      ((if (!seedSlots.isEmpty && slots.all seedSlots.contains) = true then
+          (if seedSlots.isEmpty = true then [] else vs.map fun ps => (SinglePass.materialize ps width seedSlots false).1)
+        else vs.map fun ps => (SinglePass.materialize ps width slots false).1).map f) cs useCases) :
+    IndexHolds ε [x] ρ h := by
+  obtain ⟨vk, hvkMem, hvkHolds⟩ := viewsK_holds hv h1 h2
+  exact mem_filterAllFast_holds hx (List.mem_map.mpr ⟨vk, hvkMem, rfl⟩) (hf vk hvkHolds)
+
+theorem mem_filterTaggedFast_if_holds {ps : List Knowledge} {cond : Bool} (hc : cond = false)
+    {cs1 cs2 cs3 : List IndexAtom} {want : Bool} {x : IndexAtom}
+    {p : Knowledge} (hp : p ∈ ps) (hk : Holds p ε ρ h)
+    (hx : x ∈ (if want then
+        CertificateProducer.filterTaggedFast ((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true })
+          (((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true }).map HeapKnowledge.GuardTagTable.ofKnowledge) cs1 false
+      else
+        CertificateProducer.filterTaggedFast ((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true })
+          (((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true }).map HeapKnowledge.GuardTagTable.ofKnowledge) cs2 false ++
+        CertificateProducer.filterTaggedFast ((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true })
+          (((if cond then [] else ps).map fun p => { p with indices := p.indices.filter fun a => match a.fact with | .either _ _ => false | _ => true }).map HeapKnowledge.GuardTagTable.ofKnowledge) cs3 false)) :
+    IndexHolds ε [x] ρ h := by
+  subst hc
+  exact mem_ite_append_filterTagged (List.mem_map.mpr ⟨p, hp, rfl⟩) (filter_holds hk) hx
 
 /-- **(Guarded join) The guarded facts the merge keeps hold** at the slot
 environment on the path through any predecessor `p`: `GuardedHolds`. -/
@@ -226,32 +615,29 @@ theorem guardedHolds_of_path (P : OnPath preds width fresh0 p ε ρ η h) : Guar
   intro x hx
   unfold mergeGuarded at hx
   rcases List.mem_append.mp hx with hx | hx
-  · replace hx := mem_ite_nil hx
+  · obtain ⟨hse, hx⟩ := mem_ite_nil_of hx
     rcases List.mem_append.mp hx with hx | hx
     · -- the joined facts: each checked against every lowered flat projection
-      simp only [SinglePass.timedKind] at hx
+      simp only [SinglePass.timedKind, hse, Bool.false_eq_true, ↓reduceIte] at hx
       exact joinGuarded_holds hx
         (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩, rfl⟩)
-        (lowered_holds (filter_holds (P.projection_holds hv hvn _ _)))
+        (loweredCond_holds (filter_holds (P.projection_holds hv hvn _ _)))
     · -- the tagged facts: each checked against every flat projection
       simp only [SinglePass.timedKind] at hx
       replace hx := mem_ite_nil hx
-      exact mem_foldl_indicesFilter_holds hx
-        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
-        (filter_holds (P.projection_holds hv hvn _ _))
-  · -- the disjoined facts: batched `indicesFilter` over filtered views
+      exact mem_filterTaggedFast_if_holds hse (List.mem_map.mpr ⟨v, hvm, rfl⟩)
+        (P.projection_holds hv hvn _ _) hx
+  · -- the disjoined facts: batched `filterAllFast` over filtered views
     simp only [SinglePass.timedKind] at hx
     replace hx := mem_ite_nil hx
     replace hx := mem_ite_nil hx
     rcases List.mem_append.mp hx with hx | hx
     · replace hx := mem_ite_nil hx
-      exact mem_foldl_indicesFilter_holds hx
-        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
-        (filter_holds (P.projection_holds hv hvn _ _))
+      exact mem_filterAllFast_viewsK_holds hvm (fun _ hk => filter_holds hk)
+        (P.projection_holds hv hvn _ _) (P.projection_holds hv hvn _ _) hx
     · replace hx := mem_ite_nil hx
-      exact mem_foldl_indicesFilter_holds hx
-        (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨v, hvm, rfl⟩, rfl⟩)
-        (filter_holds (P.projection_holds hv hvn _ _))
+      exact mem_filterAllFast_viewsK_holds hvm (fun _ hk => filter_holds hk)
+        (P.projection_holds hv hvn _ _) (P.projection_holds hv hvn _ _) hx
 
 end Path
 

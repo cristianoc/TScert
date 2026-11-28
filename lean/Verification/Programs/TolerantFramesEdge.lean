@@ -229,6 +229,92 @@ theorem stateHolds_noFresh {G : NormalGraph ι} {N : List Nat} {S : Store} {F : 
   obtain ⟨η, hn, hst, hI, -, hs⟩ := hS
   exact ⟨η, hn, hst, hI, (fun _ h => absurd h (List.not_mem_nil)), hs⟩
 
+theorem partitionUntouchedEithers_sub (baseIndices : Nat) (kObs : HeapKnowledge.Knowledge) :
+    let (keepOld, skipOld, newIdx) := partitionUntouchedEithers baseIndices kObs
+    (∀ a ∈ keepOld, a ∈ kObs.indices) ∧ (∀ a ∈ skipOld, a ∈ kObs.indices) ∧ (∀ a ∈ newIdx, a ∈ kObs.indices) := by
+  unfold partitionUntouchedEithers
+  dsimp only
+  split
+  · exact ⟨fun _ ha => List.mem_of_mem_take ha, fun _ ha => absurd ha List.not_mem_nil, fun _ ha => List.mem_of_mem_drop ha⟩
+  · split
+    · exact ⟨fun _ ha => List.mem_of_mem_take ha, fun _ ha => absurd ha List.not_mem_nil, fun _ ha => List.mem_of_mem_drop ha⟩
+    · refine ⟨?_, ?_, fun _ ha => List.mem_of_mem_drop ha⟩
+      · intro a ha
+        exact List.mem_of_mem_take (List.mem_filter.mp (by rw [List.partition_eq_filter_filter] at ha; exact ha)).1
+      · intro a ha
+        exact List.mem_of_mem_take (List.mem_filter.mp (by rw [List.partition_eq_filter_filter] at ha; exact ha)).1
+
+theorem afterUnguardedOracle_holds {O : Thunk HeapKnowledge.TypeOracle} {recheck : Thunk Bool}
+    {baseIndices baseLinks : Nat} {k : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hO : HeapKnowledge.TypeOracleOk O.get ρ) (hk : HeapKnowledge.Holds k ε ρ h) :
+    HeapKnowledge.Holds (afterUnguardedOracle O recheck baseIndices baseLinks k) ε ρ h := by
+  unfold afterUnguardedOracle
+  split
+  · dsimp only
+    have hk1 := HeapKnowledge.unguardedInstances_holds (HeapKnowledge.elementInstances_holds hk)
+    split
+    · exact HeapKnowledge.releaseEithersStepOracle_holds hO hk1
+    · exact hk1
+  · split
+    · split
+      · exact HeapKnowledge.releaseEithersStepOracle_holds hO hk
+      · exact hk
+    · dsimp only
+      have hk1 : HeapKnowledge.Holds (if ((k.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+              | .linear .. | .length .. | .bound .. | .int .. => true | _ => false) ||
+            ((k.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+              | .element .. | .every .. | .atIndex .. => true | _ => false)
+          then HeapKnowledge.unguardedInstances (HeapKnowledge.elementInstances k) else k) ε ρ h := by
+        split
+        · exact HeapKnowledge.unguardedInstances_holds (HeapKnowledge.elementInstances_holds hk)
+        · exact hk
+      generalize (if ((k.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+              | .linear .. | .length .. | .bound .. | .int .. => true | _ => false) ||
+            ((k.indices.drop baseIndices).any fun a => a.cond.isNone && match a.fact with
+              | .element .. | .every .. | .atIndex .. => true | _ => false)
+          then HeapKnowledge.unguardedInstances (HeapKnowledge.elementInstances k) else k) = k1 at hk1 ⊢
+      split
+      · exact HeapKnowledge.releaseEithersStepOracle_holds hO hk1
+      · exact hk1
+
+theorem withElementsAfterOracleFast_holds {O : Thunk HeapKnowledge.TypeOracle} {useRecheck : Bool}
+    {baseIndices baseLinks : Nat} {kObs : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hO : HeapKnowledge.TypeOracleOk O.get ρ) (hk : HeapKnowledge.Holds kObs ε ρ h) :
+    HeapKnowledge.Holds (withElementsAfterOracleFast O useRecheck baseIndices baseLinks kObs) ε ρ h := by
+  have hk := HeapKnowledge.unguardedInstances_holds hk
+  unfold withElementsAfterOracleFast
+  dsimp only
+  have hsub := partitionUntouchedEithers_sub baseIndices (HeapKnowledge.unguardedInstances kObs)
+  generalize hp : partitionUntouchedEithers baseIndices (HeapKnowledge.unguardedInstances kObs) = res at hsub ⊢
+  obtain ⟨keepOld, skipOld, newIdx⟩ := res
+  dsimp only at hsub ⊢
+  split
+  · exact afterUnguardedOracle_holds hO hk
+  · have hkSub : HeapKnowledge.Holds { HeapKnowledge.unguardedInstances kObs with indices := keepOld ++ newIdx } ε ρ h :=
+      ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => by
+        rcases List.mem_append.mp ha with ha | ha
+        · exact hk.2.2.2.2.2 a (hsub.1 a ha) hcond
+        · exact hk.2.2.2.2.2 a (hsub.2.2 a ha) hcond⟩
+    have hkSub' : ∀ (recheck : Thunk Bool),
+        HeapKnowledge.Holds (afterUnguardedOracle O recheck keepOld.length baseLinks
+          { HeapKnowledge.unguardedInstances kObs with indices := keepOld ++ newIdx }) ε ρ h :=
+      fun _ => afterUnguardedOracle_holds hO hkSub
+    refine ⟨(hkSub' _).1, (hkSub' _).2.1, (hkSub' _).2.2.1, (hkSub' _).2.2.2.1, (hkSub' _).2.2.2.2.1, fun a ha hcond => ?_⟩
+    rcases List.mem_append.mp ha with ha | ha
+    · exact (hkSub' _).2.2.2.2.2 a ha hcond
+    · exact hk.2.2.2.2.2 a (hsub.2.1 a ha) hcond
+
+theorem withElementsAfterTypedFast_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+    {baseIndices baseLinks : Nat} {kObs : HeapKnowledge.Knowledge} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds kObs ε ρ h) :
+    HeapKnowledge.Holds (withElementsAfterTypedFast G Γ baseIndices baseLinks kObs) ε ρ h :=
+  withElementsAfterOracleFast_holds (HeapKnowledge.typeOracleOf_ok he) hk
+
+theorem withElementsAfterFast_holds {baseIndices baseLinks : Nat} {kObs : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds kObs ε ρ h) :
+    HeapKnowledge.Holds (withElementsAfterFast baseIndices baseLinks kObs) ε ρ h :=
+  withElementsAfterOracleFast_holds (HeapKnowledge.TypeOracle.empty_ok ρ) hk
+
 /-- **An observed edge's store holds**: the observation's facts at slot 0
 (`HeapKnowledge.observeTyped`, an alternative it contradicts released,
 `withElements`) added to the store by the delta. -/
@@ -237,7 +323,7 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
     {s : IndexedHeap} {o : BranchRefinement.Observation} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.1
-      (HeapKnowledge.withElementsAfterTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
+      (withElementsAfterTypedFast G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
         (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.links.length
         (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 o)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
@@ -248,7 +334,7 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
-    (HeapKnowledge.withElementsAfterTyped_holds he (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
+    (withElementsAfterTypedFast_holds he (HeapKnowledge.observeTyped_holds he hk ho)) (edgeBack_ok hn)
 
 /-- **A promoted Boolean's store holds**: a branch's answer `q` promotes the
 facts guarded by the truthiness of slot 0 (`HeapKnowledge.promoteTruthy`). -/
@@ -257,7 +343,7 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
     {q : Bool} (d : Nat)
     (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (hq : tagHolds .truthy (ρ 0) = q) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).2.1
-      (HeapKnowledge.withElementsAfter (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
+      (withElementsAfterFast (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.indices.length
         (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1.links.length
         (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false (observeElements := true)).1 0 q)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
@@ -268,7 +354,7 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
   refine ⟨η, hn, ?_, hI, hF, hs⟩
   rw [hT]
   exact applyDelta_ok (deltaRemove_ok hst)
-    (HeapKnowledge.withElementsAfter_holds (HeapKnowledge.promoteTruthy_holds hk hq)) (edgeBack_ok hn)
+    (withElementsAfterFast_holds (HeapKnowledge.promoteTruthy_holds hk hq)) (edgeBack_ok hn)
 
 /-- A state at the pushed environment holds, without its first slot, at the
 node's environment. -/
