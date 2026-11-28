@@ -777,8 +777,10 @@ The worker's work table charges construction and serialization of the input
 to `slice: project`. `slice: execute` includes planning and, for a check,
 the verdict. `slice: replay` charges decoding and materialization on a hit.
 The enclosing W part accounts for the process time, including projection on
-a slice hit. `TSCERT_GROUP_REPLAY=0`, shadow comparisons and raw refusal
-diagnostics select the physical worker protocol.
+a slice hit. `TSCERT_GROUP_REPLAY=0`, shadow comparisons, raw refusal
+diagnostics and pass diagnostic flags (`TSCERT_COMPARE`, `TSCERT_NODE`,
+`TSCERT_REPEAT`, `TSCERT_OBSERVE`, `TSCERT_TRACE_PROPOSALS`) select the
+physical worker protocol.
 
 *Limits.* The driver reads the worker's output as it is written and
 publishes each piece as its line arrives. Each piece has the stage's limit,

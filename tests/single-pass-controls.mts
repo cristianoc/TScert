@@ -381,8 +381,9 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
         assert.match(quoted.parts[0]?.stdout ?? "", /missing\[3,4\)/);
         assert.deepEqual(quoted.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
 
-        // A comment moves Box, its member annotation, and the lexical
-        // location in a shadowing declarator's generated name.
+        // A comment moves Box, its member annotation, a file-wide written
+        // application, and the lexical location in a shadowing declarator.
+        // An unrelated module cell and omitted mention also stay out of `read`.
         const declaration: DeclarationIdentity = { module: key, name: "Box", span: [3, 20] };
         const box: TypeTerm = { k: "reference", span: [32, 35], args: [],
           reference: { name: "Box", target: declaration, arguments: [], span: [32, 35] } };
@@ -390,22 +391,68 @@ control("worker order: proposals and verdicts in fresh, reversed and resumed wor
           k: "object", fields: [{ name: "size", optional: false, readonly: true, type: number, span: [5, 15] }],
           calls: [], stringIndex: null, span: [4, 19],
         } };
+        const wrapDecl: DeclarationIdentity = { module: key, name: "Wrap", span: [75, 95] };
+        const wrapDef: TypeDefinition = { declaration: wrapDecl,
+          parameters: [{ name: "T", span: [80, 81], defaulted: false }], bases: [],
+          expression: { k: "object", fields: [{ name: "v", optional: false, readonly: true,
+            type: { k: "parameter", index: 0, span: [88, 89] }, span: [85, 90] }],
+            calls: [], stringIndex: null, span: [84, 92] } };
         const local = "item@4:7";
         const read: FunctionAst = { ...fn("read", 24, number, { k: "id", name: local, pos: [67, 71] }),
           params: [{ name: "box", type: box, pos: [28, 31] }],
           body: [{ k: "const", pos: [42, 60], bindings: [{ name: local, namePos: [46, 50], annot: null,
             early: false, init: { k: "read", field: "size", pos: [51, 59], e: { k: "id", name: "box", pos: [51, 54] } } }] },
             { k: "return", pos: [60, 72], e: { k: "id", name: local, pos: [67, 71] } }] };
-        const original: Ast = { ...ast, init: [], functions: [read], declarations: { ...ast.declarations,
-          roots: [{ declaration, binding: { kind: "local", local: "Box", span: declaration.span } }], definitions: [definition] } };
+        const original: Ast = { ...ast, init: [], omittedMentions: ["unrelated"], functions: [read],
+          declarations: { ...ast.declarations,
+            roots: [{ declaration, binding: { kind: "local", local: "Box", span: declaration.span } }],
+            definitions: [definition, wrapDef],
+            applications: [{ scope: [], reference: { name: "Wrap", target: wrapDecl, arguments: [[96, 99]], span: [91, 95] },
+              parameters: [{ name: "T", span: [80, 81] }], args: [box],
+              bounds: [{ k: "atom", name: "object", span: [82, 88] }], span: [91, 99], site: `${key}:1` }] } };
         writeFileSync(fragment, JSON.stringify(original));
         const firstRead = check();
         assert.equal(firstRead.slices.executed, 1);
         assert.match(firstRead.parts[0]?.stdout ?? "", /"key":"size"/);
-        writeFileSync(fragment, moveSites(original).replaceAll(local, "item@5:7"));
-        const movedRead = check();
+        const movedOriginal: Ast = { ...original, omittedMentions: ["other"],
+          init: [{ k: "let", pos: [101, 112], bindings: [{ name: "scratch", namePos: [105, 112], annot: null,
+            early: true, init: { k: "alloc", pos: [115, 117], fields: [] } }] }] };
+        writeFileSync(fragment, moveSites(movedOriginal).replaceAll(local, "item@5:7"));
+        const movedRead = invokeWorker(verifierCall(verifierBuild, [...args.slice(0, -1), "read"], { TSCERT_SLICE_DRIVER: "1" }),
+          fileWorkerProtocol, { limitMs: 60_000, force: false, recorder: null });
+        assert.equal(movedRead.slices.executed, 0, "written applications, omittedMentions and unused module cells stay out of read's slice");
         assert.equal(movedRead.slices.replayed, 1);
-        assert.deepEqual(movedRead.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        assert.deepEqual(movedRead.parts.map(p => p.stdout.trimEnd()), worker(null, "read").lines);
+
+        // A non-binding initializer statement widens a module cell before a
+        // constant reads it. Physical diagnostics keep all initializer statements.
+        const stringType: TypeTerm = { k: "atom", name: "string", span: [3, 4] };
+        const numOrStr: TypeTerm = { k: "union", parts: [number, stringType], span: [5, 6] };
+        const initWidened: Ast = { ...ast,
+          init: [
+            { k: "let", pos: [10, 20], bindings: [{ name: "cell", namePos: [14, 18], annot: numOrStr, early: true,
+              init: { k: "lit", pos: [19, 20], lit: { a: "numberlit", v: "1" } } }] },
+            { k: "effect", pos: [21, 32], e: { k: "assign", pos: [21, 32], name: "cell", namePos: [21, 25],
+              rhs: { k: "lit", pos: [28, 32], lit: { a: "stringlit", v: "oops" } } } },
+            { k: "const", pos: [33, 48], bindings: [{ name: "saved", namePos: [39, 44], annot: null, early: false,
+              init: { k: "id", pos: [45, 48], name: "cell" } }] },
+          ],
+          functions: [{ ...fn("badInit", 50, number, { k: "lit", pos: [80, 87], lit: { a: "stringlit", v: "wrong" } }),
+            body: [
+              { k: "const", pos: [55, 75], bindings: [{ name: "y", namePos: [61, 62], annot: number, early: false,
+                init: { k: "id", pos: [68, 73], name: "saved" } }] },
+              { k: "return", pos: [76, 88], e: { k: "lit", pos: [80, 87], lit: { a: "stringlit", v: "wrong" } } },
+            ] }] };
+        writeFileSync(fragment, JSON.stringify(initWidened));
+        const widened = check();
+        assert.deepEqual(widened.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        const badInitLine = must(widened.parts.find(p => p.part === "badInit@50")?.stdout, "badInit verdict");
+        assert.match(badInitLine, /\[68,73\)/, "physical refusal reports the widened initializer read, not the later return");
+        writeFileSync(fragment, moveSites(initWidened));
+        const movedWidened = check();
+        assert.deepEqual(movedWidened.parts.map(p => p.stdout.trimEnd()), worker(null).lines);
+        const movedBadInit = must(movedWidened.parts.find(p => p.part === "badInit@150")?.stdout, "moved badInit verdict");
+        assert.match(movedBadInit, /\[168,173\)/);
 
         const chain = (literal: string): Ast => ({ ...ast, init: [], functions: [
           fn("left", 10, number, { k: "lit", pos: [14, 15], lit: { a: "numberlit", v: literal } }),

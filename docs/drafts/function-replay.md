@@ -11,12 +11,10 @@ export function f2(x: number): number { return f1(x) + 1; }
 ```
 
 The [file worker](../STAGE-STORE.md#worker-stages) publishes one preparation
-and one verdict per selected group of mutually dependent units. In the
-transitive projection at `5ac962a77`, the three groups' inputs contain one,
-two and three bodies respectively. The worker constructs a front for each
-input. Editing the literal in `f0` changes all three keys. The old
-`Front.indexed` computes reachability from each vertex of each prefix
-before comparing pairs to identify the strongly connected components.
+and one verdict per selected group of mutually dependent units. Without
+direct-dependency slicing, each caller's input carries the bodies of every
+callee it reaches transitively, so editing the literal in `f0` invalidates
+all three keys.
 
 With direct dependencies, `f0` supplies its annotated slot and a named
 proposal to `f1`. The declaration of `f0` supplies the signature.
@@ -76,11 +74,13 @@ result supplies the binding types and can extend the equation store.
 The initializer's external function slots use their published answers.
 Group import discovery examines the executable slice and resolves its
 free import names against the physical module's declaration document.
-The input includes ownership, initialization order where applicable,
-declaration roots and reachable definitions, written application obligations,
-symbol identities, qualified import answers, row tables and unbound reads
-or their planning error. Local equation lowering rebuilds the store from
-this input. The declaration cache matches complete declaration JSON.
+The input includes ownership (when the slice carries the initializer),
+initialization order where applicable, declaration roots and reachable
+definitions, symbol identities, qualified import answers, row tables and
+unbound reads or their planning error. Written application obligations are
+checked once on the whole file during preparation and omitted from slices.
+Local equation lowering rebuilds the store from this input. The declaration
+cache matches complete declaration JSON.
 
 For a factory that returns a closure, a stand-in can carry the returned
 callable's footprint as well as the call's own normal and exceptional
@@ -171,11 +171,11 @@ Opaque refusals carry physical equation-head names. In Pretext's
 `prepare.ts` at `a6d353cf`, the refusal of `measureAnalysis` at
 `[38096,38112)` quotes a literal array at `[16039,16056)` in a frozen
 head. Relative serialization gives that head different coordinates.
-`PreparedFile.physicalVerdict` reconstructs the physical diagnostic
-environment, including transitive bodies, with published stand-ins fixed,
-and checks the refusing group there. It supplies diagnostic text only
-when both checks refuse. The stored relative result supplies its proposals
-to callers and avoids repeating settlement during relocation. A result whose acceptance or dependencies cannot
-be materialized requires a current physical check. Physical diagnostics
-therefore fall outside the one-check and bounded-input cost of an
-accepting chain.
+`PreparedFile.physicalVerdict` checks the refusing group on the prepared file
+front with published stand-ins fixed in both rounds, so no proposal is settled
+again and all initialization statements stay intact. It supplies diagnostic
+text only when both checks refuse. The stored relative result supplies its
+proposals to callers and avoids repeating settlement during relocation. A
+result whose acceptance or dependencies cannot be materialized requires a
+current physical check. Physical diagnostics therefore fall outside the
+one-check and bounded-input cost of an accepting chain.
