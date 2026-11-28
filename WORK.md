@@ -78,6 +78,7 @@ describes an item's design and evidence, not its progress.
 | Regression coverage for refusal-index rows | 42 rows of [the refusal index](docs/SOURCE-FRAGMENT.md#fragment-boundary) name no case (2026-11-05). Next: add or name a case for each. | Each enforced boundary of the index has a case reaching its refusal. |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | A stated limit: relations `any` satisfied in an outside declaration are not re-established (447 errors in the shadowed declarations, 2026-10-18). | A check re-establishes them and `tests/unchecked-project/gaps.mts` is refused. |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | A stopgap. Next: replace the helper declarations by a checker endpoint, or check the computation by an elaborator in Lean. | One of the two is in place. |
+| [Front-end type rules](docs/SOURCE-CONTRACTS.md#front-end-type-rules) | Seven named rules (`mapped-keyof-string`, `mapped-literal-keys`, `conditional-tuple-never`, `conditional-literal`, `conditional-nominal`, `index-string-fields`, `intersection-alias`) are trusted, each audited against `tsc` on its cases. `mapped-keyof-string` refuses a key that reads as a number. Next: state the semantics of these type operators and prove each rule against it in Lean, the front end applying the proved reduction. | Each rule is proved against a stated semantics, or replaced by a reduction Lean checks. |
 
 ### Investigations
 

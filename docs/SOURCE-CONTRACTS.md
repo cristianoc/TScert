@@ -2817,6 +2817,64 @@ TypeScript infers another type for (a `let`, a method, a `const` assertion);
 `typeof C` of a class with a static method or a private static, bindings of
 their own that no member of the class value's type states.
 
+### Front-end type rules
+
+The rules below are reductions the front end makes itself, each named in the
+code where it is applied and in the refusals it gives, rather than reading the
+type TypeScript's checker computes. Each is a claim about TypeScript the
+front end trusts: Lean checks programs against the type a rule gives, not
+that the type is TypeScript's. Each is audited against `tsc` on the cases
+listed with it, a value TypeScript accepts and one it rejects for each
+corner; their proof against a stated semantics of TypeScript's types is open
+work ([status](../WORK.md#status)).
+
+- **mapped-keyof-string** (`mappedKeyofString`, `tools/type-term.mts`).
+  `{ [K in keyof X & string]: V }` at a record `X`. TypeScript reads it as no
+  homomorphic mapped type, so no modifier of `X` carries over. Where `X` has a
+  string index, the result is that index alone, its value `V` at the key
+  `string`; the named fields are absorbed in it. Otherwise it has one field per
+  string-named field `a` of `X`, required and writable unless the mapped type
+  adds `?` or `readonly`, its value `V` at the key `"a"`, with `X[K]` holding
+  `undefined` for an optional `a`. Number and symbol keys and indexes give
+  nothing. A key that reads as a number is refused: the front end holds `0`
+  and `"0"` as one field name, and TypeScript keeps the second and drops the
+  first (`mapped-keyof-string`, `invalid-mapped-keyof-string-optional`,
+  `invalid-mapped-keyof-string-numeric`, `mapped-keyof-string-numeric-refused`).
+- **mapped-literal-keys** (`expandMapped`, `tools/type-term.mts`).
+  `{ [P in L]: V }` over a union `L` of string and number literals is one field
+  per literal, required and writable unless the mapped type adds `?` or
+  `readonly`, its value `V` with `P` the literal itself, a number literal
+  staying a number (`mapped-literal-number-key`,
+  `invalid-mapped-literal-number-key`, `mapped-literal-keys-value-refused`).
+- **conditional-tuple-never** (`evaluateTupleNeverConditional`,
+  `tools/computed-types.mts`). `[X] extends [never] ? T : F` is `T` where every
+  member of the settled `X` is `never` and `F` otherwise, `any` and `unknown`
+  included; an open `X` is refused (`conditional-literal-primitive`,
+  `callsite-const-tuple-follower`).
+- **conditional-literal** (`evaluateLiteralConditional`). A conditional type
+  whose operands are settled unions of literals, primitives and unique symbols,
+  `Exclude` among them: over a bare check parameter it distributes, each member
+  taking the true branch where it lies below a member of the extends operand,
+  and otherwise the true branch is taken where every member does. A member lies
+  below another where it is `never`, the other is `unknown`, they are equal,
+  it is a literal of the other's primitive, `true` or `false` below `boolean`
+  (and `boolean` below `true | false`), or a unique symbol below `symbol`
+  (`conditional-literal-primitive`, `invalid-conditional-literal-primitive`).
+- **conditional-nominal** (`isBareReferenceConditional`,
+  `evaluateConditionalOnTerm`). `C extends R ? T : F` with `R` a reference
+  without arguments to a declared type: the true branch where `C` is `R`'s own
+  declaration, the false branch where `C`'s record is disjoint from `R`'s, and
+  a refusal where they overlap (`callsite-const-tuple-follower`,
+  `invalid-mapped-index-ambiguous-conditional`).
+- **index-string-fields** (`projectTerm`). `X[string]` at a string index is the
+  index's value together with the types of the string-named fields, which
+  TypeScript requires to lie within it, so the union adds no value.
+- **intersection-alias** (`aliasApplication`). An alias whose equation is an
+  intersection containing a computed part is read at its application with the
+  parameters substituted in every operand (`mapped-intersection-record`,
+  `invalid-mapped-intersection-open-symbol`,
+  `invalid-mapped-intersection-bad-field`).
+
 ## Written applications
 
 A type application written in source syntax,

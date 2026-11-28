@@ -883,27 +883,31 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Modifies<{ va
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never,
     record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record, alias);
+  // Rule **mapped-literal-keys** (SOURCE-CONTRACTS.md, "Computed types"):
+  // `{ [P in L]: V }` over a union `L` of string and number literals is one
+  // field per literal, named by it, required and writable unless the mapped
+  // type adds `?` or `readonly`, its value `V` with `P` the literal itself
+  // (a number literal stays a number).
   const transform = m.transform;
   if (transform) {
-    const names: string[] = [];
+    const keys: { name: string; key: TypeTerm }[] = [];
     const collect = (t: TypeTerm): void => {
       if (t.k === "union") t.parts.forEach(collect);
-      else if (t.k === "literal" && t.name === "string") { if (!names.includes(t.text)) names.push(t.text); }
-      else if (t.k === "literal" && t.name === "number") {
-        const nk = numericKey(t.text);
-        if (!names.includes(nk)) names.push(nk);
+      else if (t.k === "literal" && (t.name === "string" || t.name === "number")) {
+        const name = t.name === "number" ? numericKey(t.text) : t.text;
+        if (!keys.some(k => k.name === name)) keys.push({ name, key: { ...t, span } });
       } else if (!(t.k === "atom" && t.name === "never")) {
-        fail("a mapped type's value names its key, over keys that are not literals");
+        fail("rule mapped-literal-keys: a mapped type's value names its key, over keys that are not literals");
       }
     };
     collect(m.key);
-    if (!names.length) return emptyObject(span);
+    if (!keys.length) return emptyObject(span);
     const neverTerm: TypeTerm = { k: "atom", name: "never", span };
-    return { k: "object", fields: names.map(name => ({
+    return { k: "object", fields: keys.map(({ name, key }) => ({
       name,
       optional: m.optional,
       readonly: m.readonly,
-      type: transform.apply(neverTerm, { k: "literal", name: "string", text: name, span }, span),
+      type: transform.apply(neverTerm, key, span),
       span,
     })), stringIndex: null, calls: [], span };
   }
@@ -1019,6 +1023,39 @@ export function deferredOf(term: TypeTerm): Modifies<{ values: "any"; spines: "g
  * or a named type, read at its outer record shape where `record` gives it
  * (`recordShape`) and deferred where the definitions it reaches are not yet
  * complete; a union or a type parameter is refused. */
+/** Rule **mapped-keyof-string** (SOURCE-CONTRACTS.md, "Computed types"):
+ * `{ [K in keyof X & string]: V }` at a record `X`. TypeScript does not read
+ * this mapped type as homomorphic, so no modifier of `X` carries over:
+ * - where `X` has a string index, the result is that index alone, its value
+ *   `V` at the key `string`, the named fields being absorbed in it;
+ * - otherwise one field per string-named field `a` of `X`, required and
+ *   writable unless the mapped type itself adds `?` or `readonly`, its value
+ *   `V` at the key `"a"`, where `X[K]` holds `undefined` for an optional `a`;
+ * - number and symbol keys and indexes contribute nothing.
+ * A field whose name reads as a number is refused: the record holds `0` and
+ * `"0"` alike, and TypeScript keeps the second and drops the first. */
+function mappedKeyofString(id: Identity, x: Extract<TypeTerm, { k: "object" }>, span: Span,
+    fail: (message: string) => never): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
+  const value = (input: TypeTerm, key: TypeTerm): TypeTerm =>
+    id.constant ?? (id.transform ? id.transform.apply(input, key, span) : input);
+  const readonly = id.readonlyMod === "add", optional = id.optionalMod === "add";
+  if (x.stringIndex) {
+    if (optional) return fail("rule mapped-keyof-string: an optional mapped type over a string index is outside the fragment");
+    return { k: "object", fields: [], calls: [], span,
+      stringIndex: { readonly, value: value(x.stringIndex.value, { k: "atom", name: "string", span }), span: x.stringIndex.span } };
+  }
+  const fields: Extract<TypeTerm, { k: "object" }>["fields"][number][] = [];
+  for (const f of x.fields) {
+    if (typeof f.name !== "string") continue;
+    if (String(Number(f.name)) === f.name)
+      return fail(`rule mapped-keyof-string: the key ${f.name} reads as a number, which \`keyof X & string\` keeps only when it is written as a string`);
+    const input = f.optional ? optionalTerm(f.type, span) : f.type;
+    fields.push({ ...f, type: value(input, { k: "literal", name: "string", text: f.name, span }), readonly, optional, span });
+  }
+  if (!fields.length) return emptyObject(span);
+  return { k: "object", fields, stringIndex: null, calls: [], span };
+}
+
 function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never,
     record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   let x = id.object;
@@ -1042,10 +1079,11 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
   const apply = (mod: Modifier, own: boolean): boolean => (mod === "keep" ? own : mod === "add");
   const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
   const optional = (own: boolean): boolean => apply(id.optionalMod, own);
+  if (id.stringOnly) return mappedKeyofString(id, x, span, fail);
   if (id.homomorphic && (id.constant || id.transform)) {
-    const keepFields = id.stringOnly ? x.fields.filter(f => typeof f.name === "string") : x.fields;
-    const keepNumberIndex = id.stringOnly ? undefined : x.numberIndex;
-    const keepSymbolIndex = id.stringOnly ? undefined : x.symbolIndex;
+    const keepFields = x.fields;
+    const keepNumberIndex = x.numberIndex;
+    const keepSymbolIndex = x.symbolIndex;
     if ((x.stringIndex || keepNumberIndex || keepSymbolIndex) && id.optionalMod === "add")
       return fail("an optional mapped type over an index signature's keys is outside the fragment");
     if (!keepFields.length && !x.stringIndex && !keepNumberIndex && !keepSymbolIndex) return emptyObject(span);
